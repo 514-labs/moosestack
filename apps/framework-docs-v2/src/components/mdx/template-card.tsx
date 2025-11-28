@@ -11,7 +11,8 @@ import {
   CardFooter,
   CardHeader,
 } from "@/components/ui/card";
-import { IconBrandGithub } from "@tabler/icons-react";
+import { IconBrandGithub, IconRocket, IconBook } from "@tabler/icons-react";
+import { Button } from "@/components/ui/button";
 import {
   Snippet,
   SnippetCopyButton,
@@ -51,12 +52,7 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
   const isTemplate = item.type === "template";
   const template = isTemplate ? (item as TemplateMetadata) : null;
   const app = !isTemplate ? (item as AppMetadata) : null;
-
-  const categoryColors = {
-    starter: "border-blue-200 dark:border-blue-800",
-    framework: "border-purple-200 dark:border-purple-800",
-    example: "border-green-200 dark:border-green-800",
-  };
+  const [chipsExpanded, setChipsExpanded] = React.useState(false);
 
   const categoryLabels = {
     starter: "Starter",
@@ -78,103 +74,120 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
   const description = isTemplate ? template!.description : app!.description;
   const name = isTemplate ? template!.name : app!.name;
 
+  // Combine frameworks and features into a single array with type info
+  const allChips = [
+    ...frameworks.map((f) => ({ value: f, type: "framework" as const })),
+    ...features.map((f) => ({ value: f, type: "feature" as const })),
+  ];
+
+  const MAX_VISIBLE_CHIPS = 3;
+  const visibleChips =
+    chipsExpanded ? allChips : allChips.slice(0, MAX_VISIBLE_CHIPS);
+  const hiddenCount = allChips.length - MAX_VISIBLE_CHIPS;
+
   return (
     <Card
       className={cn(
         "h-full flex flex-col transition-all hover:shadow-lg",
-        isTemplate && template ?
-          categoryColors[template.category]
-        : "border-orange-200 dark:border-orange-800",
         className,
       )}
     >
-      <CardHeader>
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              {language && (
-                <Badge
-                  variant={language === "typescript" ? "default" : "secondary"}
-                  className="text-xs"
-                >
-                  {language === "typescript" ? "TS" : "Python"}
-                </Badge>
-              )}
-              {isTemplate && template && (
-                <Badge variant="outline" className="text-xs">
-                  {categoryLabels[template.category]}
-                </Badge>
-              )}
-              {!isTemplate && (
-                <Badge variant="outline" className="text-xs">
-                  Demo App
-                </Badge>
-              )}
-            </div>
-            <h3 className="text-lg font-semibold text-foreground mb-1">
-              {isTemplate ? formatTemplateName(name) : name}
-            </h3>
-          </div>
+      <CardHeader className="gap-2">
+        <div className="flex items-center gap-1">
+          {(() => {
+            const labels: string[] = [];
+            if (language) {
+              labels.push(language === "typescript" ? "TypeScript" : "Python");
+            }
+            if (isTemplate && template) {
+              labels.push(categoryLabels[template.category]);
+            }
+            if (!isTemplate) {
+              labels.push("Demo App");
+            }
+            return (
+              <span className="text-xs text-muted-foreground">
+                {labels.join(" • ")}
+              </span>
+            );
+          })()}
         </div>
+        <h3 className="text-xl  text-foreground ">
+          {isTemplate ? formatTemplateName(name) : name}
+        </h3>
+        {allChips.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 justify-start w-full">
+            {visibleChips.map((chip) => (
+              <Badge
+                key={`${chip.type}-${chip.value}`}
+                variant={chip.type === "framework" ? "secondary" : "outline"}
+                className="text-xs"
+              >
+                {chip.value}
+              </Badge>
+            ))}
+            {!chipsExpanded && hiddenCount > 0 && (
+              <Badge
+                variant="outline"
+                className="text-xs cursor-pointer hover:bg-accent"
+                onClick={() => setChipsExpanded(true)}
+              >
+                {hiddenCount} more
+              </Badge>
+            )}
+            {chipsExpanded && (
+              <Badge
+                variant="outline"
+                className="text-xs cursor-pointer hover:bg-accent"
+                onClick={() => setChipsExpanded(false)}
+              >
+                Show less
+              </Badge>
+            )}
+          </div>
+        )}
       </CardHeader>
-      <CardContent className="flex-1">
-        <CardDescription className="mb-4">{description}</CardDescription>
-
-        {frameworks.length > 0 && (
-          <div className="mb-3">
-            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
-              Frameworks:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {frameworks.map((framework) => (
-                <Badge key={framework} variant="outline" className="text-xs">
-                  {framework}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {features.length > 0 && (
-          <div>
-            <p className="text-xs text-muted-foreground mb-1.5 font-medium">
-              Features:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {features.map((feature) => (
-                <Badge key={feature} variant="outline" className="text-xs">
-                  {feature}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-      </CardContent>
-      <CardFooter className="flex flex-col gap-2 pt-4 w-full">
+      <CardContent className="flex-1 flex flex-col gap-5">
+        <CardDescription className="flex-1">{description}</CardDescription>
         {isTemplate && template && (
           <div className="w-full min-w-0">
             <ShellSnippet code={template.initCommand} />
           </div>
         )}
-        {!isTemplate && app && app.blogPost && (
-          <Link
-            href={app.blogPost}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-full mb-1"
-          >
-            Read Blog Post →
-          </Link>
-        )}
-        <Link
-          href={githubUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 w-full"
-        >
-          <IconBrandGithub className="h-3 w-3" />
-          View on GitHub
-        </Link>
+      </CardContent>
+      <CardFooter className="flex flex-col gap-2 w-full">
+        <div className="flex w-full items-center justify-start gap-2 mt-auto">
+          <Button variant="default" asChild>
+            <Link
+              href={`https://moose.dev/deploy?template=${isTemplate ? template!.slug : app!.slug}`}
+            >
+              <IconRocket className="h-4 w-4" />
+              Deploy
+            </Link>
+          </Button>
+          {!isTemplate && app && app.blogPost && (
+            <Button variant="outline" size="icon" asChild>
+              <Link
+                href={app.blogPost}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Read Blog Post"
+              >
+                <IconBook className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+          <Button variant="outline" size="icon" asChild>
+            <Link
+              href={githubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="View on GitHub"
+            >
+              <IconBrandGithub className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   );
