@@ -24,6 +24,34 @@ import { createHash } from "node:crypto";
 import { Logger, Producer } from "../../commons";
 
 /**
+ * Utility to extract the first file path outside moose-lib internals from a stack trace.
+ * Works in both development (npm link) and production (npm install) environments.
+ * @internal
+ */
+function getSourceFileFromStack(stack?: string): string | undefined {
+  if (!stack) return undefined;
+  const lines = stack.split("\n");
+  for (const line of lines) {
+    // Skip lines from node_modules, internal loaders, and moose-lib internals
+    if (
+      line.includes("node_modules") || // Skip npm installed packages (prod)
+      line.includes("internal/modules") || // Skip Node.js internals
+      line.includes("ts-node") || // Skip TypeScript execution
+      line.includes("/ts-moose-lib/") || // Skip dev/linked moose-lib (Unix)
+      line.includes("\\ts-moose-lib\\") // Skip dev/linked moose-lib (Windows)
+    )
+      continue;
+    // Extract file path from the line
+    const match =
+      line.match(/\((.*):(\d+):(\d+)\)/) || line.match(/at (.*):(\d+):(\d+)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  return undefined;
+}
+
+/**
  * Represents zero, one, or many values of type T.
  * Used for flexible return types in transformations where a single input
  * can produce no output, one output, or multiple outputs.
@@ -104,6 +132,12 @@ export interface TransformConfig<T> {
    * unless a DeadLetterQueue is provided, or it is explicitly disabled with a null value
    */
   deadLetterQueue?: DeadLetterQueue<T> | null;
+
+  /**
+   * @internal Source file path where this transform was declared.
+   * Automatically captured from stack trace.
+   */
+  sourceFile?: string;
 }
 
 /**
@@ -125,6 +159,12 @@ export interface ConsumerConfig<T> {
    * unless a DeadLetterQueue is provided, or it is explicitly disabled with a null value
    */
   deadLetterQueue?: DeadLetterQueue<T> | null;
+
+  /**
+   * @internal Source file path where this consumer was declared.
+   * Automatically captured from stack trace.
+   */
+  sourceFile?: string;
 }
 
 export type SchemaRegistryEncoding = "JSON" | "AVRO" | "PROTOBUF";
@@ -458,8 +498,12 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     transformation: SyncOrAsyncTransform<T, U>,
     config?: TransformConfig<T>,
   ) {
-    const transformConfig = {
+    // Capture source file from call stack at this exact moment
+    const sourceFile = getSourceFileFromStack(new Error().stack);
+
+    const transformConfig: TransformConfig<T> = {
       ...(config ?? {}),
+      sourceFile,
     };
     if (transformConfig.deadLetterQueue === undefined) {
       transformConfig.deadLetterQueue = this.defaultDeadLetterQueue;
@@ -489,8 +533,12 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
    * @param config Optional configuration for this specific consumer, like a version.
    */
   addConsumer(consumer: Consumer<T>, config?: ConsumerConfig<T>) {
-    const consumerConfig = {
+    // Capture source file from call stack at this exact moment
+    const sourceFile = getSourceFileFromStack(new Error().stack);
+
+    const consumerConfig: ConsumerConfig<T> = {
       ...(config ?? {}),
+      sourceFile,
     };
     if (consumerConfig.deadLetterQueue === undefined) {
       consumerConfig.deadLetterQueue = this.defaultDeadLetterQueue;
