@@ -57,7 +57,7 @@
           pnpm = pkgs.pnpm;
 
           # Python with required packages (wrapped with safe-chain for malware protection)
-          python = pkgs.python312;
+          python = pkgs.python313;
           pythonEnv = (python.withPackages (
             ps: with ps; [
               pip
