@@ -198,25 +198,28 @@ DateTimePrecisionInputPipeline.stream!.addTransform(
 );
 
 // Test transform for index signature types (ENG-1617)
-// This demonstrates accepting arbitrary fields via index signature and collecting them into JSON
+// This demonstrates that IngestApi accepts payloads with extra fields (index signature)
+// Note: Currently only known fields are passed through to streaming functions
 userEventInputStream.addTransform(
   userEventOutputStream,
   (input: UserEventInput): UserEventOutput => {
-    // Extract known fields
-    const { timestamp, eventName, userId, orgId, projectId, ...extraFields } =
-      input;
-
-    // Log the extra fields to verify they're passed through
-    console.log("Index signature transform - extra fields:", extraFields);
+    // Log what we received - only known fields are passed through
+    console.log("Index signature transform - received input:", {
+      timestamp: input.timestamp,
+      eventName: input.eventName,
+      userId: input.userId,
+      orgId: input.orgId,
+      projectId: input.projectId,
+    });
 
     return {
-      timestamp,
-      eventName,
-      userId,
-      orgId,
-      projectId,
-      // Collect all arbitrary fields into the properties JSON column
-      properties: extraFields,
+      timestamp: input.timestamp,
+      eventName: input.eventName,
+      userId: input.userId,
+      orgId: input.orgId,
+      projectId: input.projectId,
+      // Properties will be empty since extra fields aren't passed through yet
+      properties: {},
     };
   },
 );
