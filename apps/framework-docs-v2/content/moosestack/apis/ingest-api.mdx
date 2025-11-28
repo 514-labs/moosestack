@@ -96,83 +96,54 @@ Example:
 
 ## Accepting Arbitrary Fields
 
-In some scenarios, you may need to accept payloads with arbitrary additional fields beyond your defined schema. This is common when:
+In some scenarios, you may need to accept payloads with arbitrary additional fields beyond your defined schema. This is useful when:
 - You don't control the payload structure from an upstream service
-- You want to capture dynamic event properties that vary by event type
-- You need to store extra fields in a JSON column for later processing
+- You want to gracefully accept extra fields without validation errors
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ### Using Index Signatures (TypeScript)
 
-TypeScript's index signatures allow you to accept any additional properties while still defining known fields:
+TypeScript's index signatures allow you to define types that accept additional properties. When used with `IngestApi` or `Stream`, the API will accept payloads with extra fields without returning validation errors:
 
-```typescript filename="DynamicPayload.ts" copy
-import { IngestApi, Stream, OlapTable, Key, DateTime, ClickHouseJson } from "@514labs/moose-lib";
+```typescript filename="FlexiblePayload.ts" copy
+import { IngestApi, Stream, Key, DateTime } from "@514labs/moose-lib";
 
-// Input type with known fields + index signature for arbitrary fields
+// Input type with known fields + index signature for flexibility
 type UserEventInput = {
   timestamp: DateTime;
   eventName: string;
   userId: Key<string>;
   orgId?: string;
-  // Accept any additional properties
+  // Index signature: accept any additional properties
   [key: string]: any;
 };
 
-// Output type with arbitrary fields collected into a JSON column
-interface UserEventOutput {
-  timestamp: DateTime;
-  eventName: string;
-  userId: Key<string>;
-  orgId?: string;
-  // All extra fields stored in a JSON column
-  properties: Record<string, any> & ClickHouseJson;
-}
-
-// Set up the pipeline
-const outputTable = new OlapTable<UserEventOutput>("UserEventOutput", {
-  orderByFields: ["userId", "timestamp"],
-});
-
-const outputStream = new Stream<UserEventOutput>("UserEventOutput", {
-  destination: outputTable,
-});
-
 const inputStream = new Stream<UserEventInput>("UserEventInput");
 
-// IngestApi accepts payloads with extra fields
+// IngestApi accepts payloads with extra fields without validation errors
 const ingestApi = new IngestApi<UserEventInput>("user-events", {
   destination: inputStream,
-});
-
-// In your streaming function, extract known fields and collect the rest:
-inputStream.addTransform(outputStream, (input) => {
-  const { timestamp, eventName, userId, orgId, ...extraFields } = input;
-  return {
-    timestamp,
-    eventName,
-    userId,
-    orgId,
-    properties: extraFields, // Arbitrary fields go to JSON column
-  };
 });
 ```
 
 **How it works:**
 - Known fields (`timestamp`, `eventName`, etc.) are validated against their declared types
-- Additional fields matching the index signature are passed through without validation
-- Use a streaming function to transform the input and collect extra fields into a JSON column
+- Additional fields matching the index signature are accepted by the API (no validation error returned)
+- Known fields are passed through to streaming functions for processing
+
+<Callout type="info" title="Current Behavior">
+Index signatures allow the API to accept extra fields gracefully. However, only the known (declared) fields are currently passed through to streaming functions. If you need to capture and process arbitrary fields, consider using a `ClickHouseJson` field type which stores the entire payload as JSON.
+</Callout>
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ### Using Extra Fields (Python)
 
 In Python, configure your Pydantic model to accept extra fields using `model_config`:
 
-```python filename="DynamicPayload.py" copy
+```python filename="FlexiblePayload.py" copy
 from pydantic import BaseModel, ConfigDict
-from typing import Any
-from moose_lib import IngestApi, Stream, OlapTable, Key, ClickHouseJson
+from moose_lib import IngestApi, Stream, Key
 from datetime import datetime
 
 # Input model accepts extra fields
@@ -184,46 +155,18 @@ class UserEventInput(BaseModel):
     user_id: Key[str]
     org_id: str | None = None
 
-# Output model with JSON column for extra fields
-class UserEventOutput(BaseModel):
-    timestamp: datetime
-    event_name: str
-    user_id: Key[str]
-    org_id: str | None = None
-    properties: dict[str, Any]  # Annotate with ClickHouseJson for typed paths
-
-# Set up the pipeline
-output_table = OlapTable[UserEventOutput]("UserEventOutput", OlapConfig(
-    order_by_fields=["user_id", "timestamp"]
-))
-
-output_stream = Stream[UserEventOutput]("UserEventOutput", StreamConfig(
-    destination=output_table
-))
-
 input_stream = Stream[UserEventInput]("UserEventInput")
 
 # IngestApi accepts payloads with extra fields
 ingest_api = IngestApi[UserEventInput]("user-events", IngestConfigWithDestination(
     destination=input_stream
 ))
-
-# In your streaming function, access extra fields via model_extra:
-@input_stream.add_transform(output_stream)
-def transform(input: UserEventInput) -> UserEventOutput:
-    return UserEventOutput(
-        timestamp=input.timestamp,
-        event_name=input.event_name,
-        user_id=input.user_id,
-        org_id=input.org_id,
-        properties=input.model_extra or {},  # Pydantic stores extra fields here
-    )
 ```
 
 **How it works:**
 - `model_config = ConfigDict(extra='allow')` tells Pydantic to accept undeclared fields
-- Extra fields are accessible via `input.model_extra` dictionary
-- Use a streaming function to collect extra fields into a JSON column
+- The API accepts payloads with extra fields without validation errors
+- Known fields are validated and passed through to streaming functions
   </LanguageTabContent>
 </LanguageTabs>
 
