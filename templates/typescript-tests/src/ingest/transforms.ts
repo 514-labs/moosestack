@@ -1,4 +1,10 @@
 import { FooPipeline, BarPipeline, Foo, Bar, arrayInputStream } from "./models";
+import {
+  userEventInputStream,
+  userEventOutputStream,
+  UserEventInput,
+  UserEventOutput,
+} from "./indexSignatureTests";
 import { DeadLetterQueue, MooseCache } from "@514labs/moose-lib";
 
 // Transform Foo events to Bar events
@@ -188,5 +194,32 @@ DateTimePrecisionInputPipeline.stream!.addTransform(
 
     // Pass through unchanged
     return input;
+  },
+);
+
+// Test transform for index signature types (ENG-1617)
+// This demonstrates that IngestApi accepts payloads with extra fields (index signature)
+// Note: Currently only known fields are passed through to streaming functions
+userEventInputStream.addTransform(
+  userEventOutputStream,
+  (input: UserEventInput): UserEventOutput => {
+    // Log what we received - only known fields are passed through
+    console.log("Index signature transform - received input:", {
+      timestamp: input.timestamp,
+      eventName: input.eventName,
+      userId: input.userId,
+      orgId: input.orgId,
+      projectId: input.projectId,
+    });
+
+    return {
+      timestamp: input.timestamp,
+      eventName: input.eventName,
+      userId: input.userId,
+      orgId: input.orgId,
+      projectId: input.projectId,
+      // Properties will be empty since extra fields aren't passed through yet
+      properties: {},
+    };
   },
 );
