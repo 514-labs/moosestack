@@ -22,7 +22,7 @@ pub struct SqlResource {
     pub database: Option<String>,
 
     /// Optional source file path where this SQL resource is defined
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(skip_serializing_if = "Option::is_none", default, alias = "sourceFile")]
     pub source_file: Option<String>,
 
     /// A list of SQL commands or script paths executed during the setup phase.

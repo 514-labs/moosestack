@@ -24,11 +24,13 @@ function getInstantiationFileInfo(stack?: string): {
   if (!stack) return {};
   const lines = stack.split("\n");
   for (const line of lines) {
-    // Skip lines from node_modules and internal loaders
+    // Skip lines from node_modules, internal loaders, and moose-lib internals
     if (
-      line.includes("node_modules") ||
-      line.includes("internal/modules") ||
-      line.includes("ts-node")
+      line.includes("node_modules") || // Skip npm installed packages (prod)
+      line.includes("internal/modules") || // Skip Node.js internals
+      line.includes("ts-node") || // Skip TypeScript execution
+      line.includes("/ts-moose-lib/") || // Skip dev/linked moose-lib (Unix)
+      line.includes("\\ts-moose-lib\\") // Skip dev/linked moose-lib (Windows)
     )
       continue;
     // Extract file path and line/column from the line
