@@ -1,4 +1,10 @@
 import { FooPipeline, BarPipeline, Foo, Bar, arrayInputStream } from "./models";
+import {
+  userEventInputStream,
+  userEventOutputStream,
+  UserEventInput,
+  UserEventOutput,
+} from "./indexSignatureTests";
 import { DeadLetterQueue, MooseCache } from "@514labs/moose-lib";
 
 // Transform Foo events to Bar events
@@ -188,5 +194,29 @@ DateTimePrecisionInputPipeline.stream!.addTransform(
 
     // Pass through unchanged
     return input;
+  },
+);
+
+// Test transform for index signature types (ENG-1617)
+// This demonstrates accepting arbitrary fields via index signature and collecting them into JSON
+userEventInputStream.addTransform(
+  userEventOutputStream,
+  (input: UserEventInput): UserEventOutput => {
+    // Extract known fields
+    const { timestamp, eventName, userId, orgId, projectId, ...extraFields } =
+      input;
+
+    // Log the extra fields to verify they're passed through
+    console.log("Index signature transform - extra fields:", extraFields);
+
+    return {
+      timestamp,
+      eventName,
+      userId,
+      orgId,
+      projectId,
+      // Collect all arbitrary fields into the properties JSON column
+      properties: extraFields,
+    };
   },
 );

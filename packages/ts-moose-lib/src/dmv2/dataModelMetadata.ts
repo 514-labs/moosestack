@@ -82,6 +82,10 @@ export const transformNewMooseResource = (
 
   const typeNode = node.typeArguments![0];
 
+  // Allow index signatures for IngestApi and Stream types
+  // These resources accept arbitrary payload fields that pass through to streaming functions
+  const allowIndexSignatures = ["IngestApi", "Stream"].includes(typeName);
+
   const internalArguments =
     typeName === "DeadLetterQueue" ?
       [typiaTypeGuard(node)]
@@ -89,7 +93,9 @@ export const transformNewMooseResource = (
         typiaJsonSchemas(typeNode),
         parseAsAny(
           JSON.stringify(
-            toColumns(checker.getTypeAtLocation(typeNode), checker),
+            toColumns(checker.getTypeAtLocation(typeNode), checker, {
+              allowIndexSignatures,
+            }),
           ),
         ),
       ];
