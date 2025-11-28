@@ -1,18 +1,23 @@
 import { visit } from "unist-util-visit";
 
 /**
- * Generic rehype plugin that extracts all code block meta attributes
- * and sets them as data-* attributes on the pre element.
+ * Rehype plugin that extracts code block meta attributes and sets them as
+ * data-* attributes on the pre element.
  *
- * Supports:
+ * Supports Nextra-style syntax:
  * - key="value" or key='value' (quoted values)
  * - key=value (unquoted values)
  * - key (flag-style, sets data-key="true")
+ * - {1,4-5} (line highlighting)
+ * - /substring/ (substring highlighting)
+ * - /substring/1 or /substring/1-3 or /substring/1,3 (occurrence filtering)
  *
  * Examples:
  * ```ts filename="example.ts" copy
- * ```bash variant="terminal" duration=3 delay=0.5
- * ```python copy=false lineNumbers
+ * ```js {1,4-5}
+ * ```js /useState/
+ * ```js /useState/1-3 showLineNumbers
+ * ```python animate
  */
 
 interface HastElement {
@@ -50,7 +55,7 @@ export function rehypeCodeMeta() {
           (child as HastElement).data?.meta
         ) {
           const meta = (child as HastElement).data?.meta as string;
-          const attributes = parseMetaString(meta);
+          const parsed = parseMetaString(meta);
 
           // Ensure properties object exists
           if (!node.properties) {
@@ -58,10 +63,22 @@ export function rehypeCodeMeta() {
           }
 
           // Set each parsed attribute as a data-* attribute
-          for (const [key, value] of Object.entries(attributes)) {
+          for (const [key, value] of Object.entries(parsed.attributes)) {
             // Use lowercase keys with data- prefix
             const dataKey = `data-${key.toLowerCase()}`;
             node.properties[dataKey] = value;
+          }
+
+          // Set line highlighting if present
+          if (parsed.highlightLines) {
+            node.properties["data-highlight-lines"] = parsed.highlightLines;
+          }
+
+          // Set substring highlighting if present
+          if (parsed.highlightStrings.length > 0) {
+            node.properties["data-highlight-strings"] = JSON.stringify(
+              parsed.highlightStrings,
+            );
           }
 
           // Only process the first code child
@@ -73,69 +90,148 @@ export function rehypeCodeMeta() {
 }
 
 /**
- * Parses a code block meta string into key-value pairs
+ * Parsed substring highlight with optional occurrence filter
+ */
+interface SubstringHighlight {
+  pattern: string;
+  occurrences?: number[]; // undefined = all occurrences
+}
+
+/**
+ * Result of parsing the meta string
+ */
+interface ParsedMeta {
+  attributes: Record<string, string>;
+  highlightLines: string | null; // e.g., "1,4-5"
+  highlightStrings: SubstringHighlight[];
+}
+
+/**
+ * Parses a code block meta string into key-value pairs, line highlights,
+ * and substring highlights.
  *
  * Handles:
  * - key="value" or key='value'
  * - key=value (no quotes)
  * - key (flag, becomes "true")
+ * - {1,4-5} (line highlighting)
+ * - /substring/ (substring highlighting)
+ * - /substring/1 or /substring/1-3 or /substring/1,3 (occurrence filtering)
  */
-function parseMetaString(meta: string): Record<string, string> {
-  const attributes: Record<string, string> = {};
+function parseMetaString(meta: string): ParsedMeta {
+  const result: ParsedMeta = {
+    attributes: {},
+    highlightLines: null,
+    highlightStrings: [],
+  };
 
   if (!meta || typeof meta !== "string") {
-    return attributes;
+    return result;
   }
 
-  // Regex patterns for different attribute formats
-  // Pattern 1: key="value" or key='value' (quoted)
-  const quotedPattern = /(\w+)=["']([^"']*)["']/g;
-  // Pattern 2: key=value (unquoted, stops at whitespace)
-  const unquotedPattern = /(\w+)=([^\s"']+)/g;
-  // Pattern 3: standalone key (flag-style)
-  const flagPattern = /(?:^|\s)(\w+)(?=\s|$)/g;
-
-  // Track which parts of the string we've processed
   let processed = meta;
 
-  // First, extract quoted values
-  let match: RegExpExecArray | null = quotedPattern.exec(meta);
-  while (match !== null) {
+  // 1. Extract line highlighting: {1,4-5}
+  const lineHighlightMatch = processed.match(/\{([^}]+)\}/);
+  if (lineHighlightMatch?.[1]) {
+    result.highlightLines = lineHighlightMatch[1];
+    processed = processed.replace(lineHighlightMatch[0], " ");
+  }
+
+  // 2. Extract substring highlighting: /pattern/ or /pattern/occurrences
+  // Pattern: /[^/]+/(?:\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)?
+  const substringPattern = /\/([^/]+)\/(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)?/g;
+  let substringMatch = substringPattern.exec(processed);
+  while (substringMatch !== null) {
+    const pattern = substringMatch[1];
+    const occurrenceSpec = substringMatch[2];
+
+    if (pattern) {
+      const highlight: SubstringHighlight = { pattern };
+
+      if (occurrenceSpec) {
+        highlight.occurrences = parseOccurrenceSpec(occurrenceSpec);
+      }
+
+      result.highlightStrings.push(highlight);
+    }
+    substringMatch = substringPattern.exec(processed);
+  }
+
+  // Remove substring patterns from processed string for attribute parsing
+  processed = processed.replace(substringPattern, " ");
+
+  // 3. Extract quoted values: key="value" or key='value'
+  const quotedPattern = /(\w+)=["']([^"']*)["']/g;
+  for (const match of meta.matchAll(quotedPattern)) {
     const key = match[1];
     const value = match[2];
     if (key) {
-      attributes[key] = value ?? "";
-      // Mark as processed by replacing with spaces
+      result.attributes[key] = value ?? "";
       processed = processed.replace(match[0], " ".repeat(match[0].length));
     }
-    match = quotedPattern.exec(meta);
   }
 
-  // Then, extract unquoted values from remaining string
-  match = unquotedPattern.exec(processed);
-  while (match !== null) {
+  // 4. Extract unquoted values: key=value
+  const unquotedPattern = /(\w+)=([^\s"'{}\/]+)/g;
+  for (const match of processed.matchAll(unquotedPattern)) {
     const key = match[1];
     const value = match[2];
-    if (key && !attributes[key]) {
-      attributes[key] = value ?? "";
+    if (key && !result.attributes[key]) {
+      result.attributes[key] = value ?? "";
     }
-    match = unquotedPattern.exec(processed);
   }
 
-  // Finally, extract flags from remaining string
+  // 5. Extract flags (standalone words)
   // Reset processed to only include non-key=value parts
-  const remainingParts = processed.split(/\w+=\S+/).join(" ");
-  match = flagPattern.exec(remainingParts);
-  while (match !== null) {
+  const remainingParts = processed
+    .replace(/\w+=\S+/g, " ")
+    .replace(/\{[^}]*\}/g, " ")
+    .replace(/\/[^/]+\/\S*/g, " ");
+  const flagPattern = /(?:^|\s)(\w+)(?=\s|$)/g;
+  for (const match of remainingParts.matchAll(flagPattern)) {
     const key = match[1];
-    // Only add if not already set
-    if (key && !attributes[key]) {
-      attributes[key] = "true";
+    if (key && !result.attributes[key]) {
+      result.attributes[key] = "true";
     }
-    match = flagPattern.exec(remainingParts);
   }
 
-  return attributes;
+  return result;
+}
+
+/**
+ * Parse occurrence specification like "1", "1-3", "1,3", "1-3,5"
+ * Returns array of 1-indexed occurrence numbers
+ */
+function parseOccurrenceSpec(spec: string): number[] {
+  const occurrences: number[] = [];
+  const parts = spec.split(",");
+
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.includes("-")) {
+      // Range: "1-3"
+      const [start, end] = trimmed.split("-").map((n) => parseInt(n, 10));
+      if (
+        start !== undefined &&
+        end !== undefined &&
+        !Number.isNaN(start) &&
+        !Number.isNaN(end)
+      ) {
+        for (let i = start; i <= end; i++) {
+          occurrences.push(i);
+        }
+      }
+    } else {
+      // Single number: "1"
+      const num = parseInt(trimmed, 10);
+      if (!Number.isNaN(num)) {
+        occurrences.push(num);
+      }
+    }
+  }
+
+  return occurrences;
 }
 
 export default rehypeCodeMeta;
