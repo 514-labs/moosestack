@@ -270,94 +270,168 @@ struct CustomFields {
     machine_id: String,
 }
 
-/// Layer that formats logs to match the legacy fern format exactly
-struct LegacyFormatLayer<W> {
-    writer: W,
-    format: LogFormat,
-    include_session_id: bool,
-    custom_fields: CustomFields,
+/// Trait for formatting log events. Implementations are monomorphized,
+/// allowing the compiler to inline the format logic directly into `on_event`.
+///
+/// Formatters write directly to the provided writer to avoid intermediate allocations.
+trait LegacyFormatter {
+    fn write_event<W: Write>(
+        &self,
+        writer: &mut W,
+        level: &Level,
+        target: &str,
+        event: &Event<'_>,
+    ) -> std::io::Result<()>;
 }
 
-impl<W> LegacyFormatLayer<W> {
-    fn new(
-        writer: W,
-        format: LogFormat,
-        include_session_id: bool,
-        custom_fields: CustomFields,
-    ) -> Self {
+/// Text formatter matching fern's text format exactly
+#[derive(Clone)]
+struct TextFormatter {
+    include_session_id: bool,
+    session_id: String,
+}
+
+impl TextFormatter {
+    fn new(include_session_id: bool, session_id: String) -> Self {
         Self {
-            writer,
-            format,
             include_session_id,
-            custom_fields,
+            session_id,
         }
     }
+}
 
-    fn format_text(&self, level: &Level, target: &str, message: &str) -> String {
-        // Match current fern text format exactly
-        format!(
-            "[{} {}{} - {}] {}",
+impl LegacyFormatter for TextFormatter {
+    #[inline]
+    fn write_event<W: Write>(
+        &self,
+        writer: &mut W,
+        level: &Level,
+        target: &str,
+        event: &Event<'_>,
+    ) -> std::io::Result<()> {
+        // Write prefix: [timestamp LEVEL - target]
+        write!(
+            writer,
+            "[{} {}",
             humantime::format_rfc3339_seconds(SystemTime::now()),
             level,
-            if self.include_session_id {
-                format!(" {}", self.custom_fields.session_id)
-            } else {
-                String::new()
-            },
-            target,
-            message
-        )
-    }
+        )?;
 
-    fn format_json(&self, level: &Level, target: &str, message: &str) -> String {
-        // Match current fern JSON format exactly
-        let mut log_json = serde_json::json!({
+        if self.include_session_id {
+            write!(writer, " {}", self.session_id)?;
+        }
+
+        write!(writer, " - {}] ", target)?;
+
+        // Write message directly without intermediate String
+        let mut visitor = DirectWriteVisitor { writer };
+        event.record(&mut visitor);
+
+        writeln!(writer)
+    }
+}
+
+/// JSON formatter matching fern's JSON format exactly
+#[derive(Clone)]
+struct JsonFormatter {
+    include_session_id: bool,
+    session_id: String,
+}
+
+impl JsonFormatter {
+    fn new(include_session_id: bool, session_id: String) -> Self {
+        Self {
+            include_session_id,
+            session_id,
+        }
+    }
+}
+
+impl LegacyFormatter for JsonFormatter {
+    #[inline]
+    fn write_event<W: Write>(
+        &self,
+        writer: &mut W,
+        level: &Level,
+        target: &str,
+        event: &Event<'_>,
+    ) -> std::io::Result<()> {
+        // Extract message first since it appears in the middle of the JSON object
+        let mut message_visitor = MessageVisitor::default();
+        event.record(&mut message_visitor);
+
+        // Build JSON object - serde_json handles escaping correctly
+        let mut log_entry = serde_json::json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "severity": level.to_string(),
             "target": target,
-            "message": message,
+            "message": message_visitor.message,
         });
 
         if self.include_session_id {
-            log_json["session_id"] =
-                serde_json::Value::String(self.custom_fields.session_id.clone());
+            log_entry["session_id"] = serde_json::Value::String(self.session_id.clone());
         }
 
-        serde_json::to_string(&log_json)
-            .expect("formatting `serde_json::Value` with string keys never fails")
+        serde_json::to_writer(&mut *writer, &log_entry).map_err(std::io::Error::other)?;
+        writeln!(writer)
     }
 }
 
-impl<S, W> Layer<S> for LegacyFormatLayer<W>
+/// Layer that formats logs to match the legacy fern format exactly.
+///
+/// Generic over the formatter type `F`, enabling monomorphization so the
+/// compiler can inline the format logic directly into `on_event`.
+struct LegacyFormatLayer<W, F> {
+    writer: W,
+    formatter: F,
+}
+
+impl<W, F> LegacyFormatLayer<W, F> {
+    fn new(writer: W, formatter: F) -> Self {
+        Self { writer, formatter }
+    }
+}
+
+impl<S, W, F> Layer<S> for LegacyFormatLayer<W, F>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
     W: for<'writer> MakeWriter<'writer> + 'static,
+    F: LegacyFormatter + 'static,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-        // Extract metadata
         let metadata = event.metadata();
-        let level = metadata.level();
-        let target = metadata.target();
-
-        // Extract message using visitor
-        let mut visitor = MessageVisitor::default();
-        event.record(&mut visitor);
-        let message = visitor.message;
-
-        // Format based on LogFormat
-        let output = if self.format == LogFormat::Text {
-            self.format_text(level, target, &message)
-        } else {
-            self.format_json(level, target, &message)
-        };
-
-        // Write to output
         let mut writer = self.writer.make_writer();
-        let _ = writer.write_all(output.as_bytes());
-        let _ = writer.write_all(b"\n");
+
+        // Write directly to output, avoiding intermediate allocations
+        let _ = self
+            .formatter
+            .write_event(&mut writer, metadata.level(), metadata.target(), event);
     }
 }
 
+/// Visitor that writes the message field directly to a writer, avoiding intermediate allocation.
+///
+/// For string messages (the common case), writes directly without any allocation.
+/// For debug-formatted messages, uses a small stack buffer to strip surrounding quotes.
+struct DirectWriteVisitor<'a, W> {
+    writer: &'a mut W,
+}
+
+impl<W: Write> Visit for DirectWriteVisitor<'_, W> {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        if field.name() == "message" {
+            let _ = write!(self.writer, "{:?}", value);
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            let _ = self.writer.write_all(value.as_bytes());
+        }
+    }
+}
+
+/// Visitor that extracts the message into a String (used for JSON where we need the value mid-output).
 #[derive(Default)]
 struct MessageVisitor {
     message: String,
@@ -367,10 +441,12 @@ impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
         if field.name() == "message" {
             self.message = format!("{:?}", value);
-            // Remove surrounding quotes from debug format
-            if self.message.starts_with('"') && self.message.ends_with('"') {
-                self.message = self.message[1..self.message.len() - 1].to_string();
-            }
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.message = value.to_string();
         }
     }
 }
@@ -594,64 +670,96 @@ fn setup_modern_format(
 
 fn setup_legacy_format(
     settings: &LoggerSettings,
-    _session_id: &str,
-    _machine_id: &str,
+    session_id: &str,
+    machine_id: &str,
     custom_fields: CustomFields,
 ) -> Result<(), LoggerError> {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
-    // Setup with or without OTEL based on configuration
-    if let Some(_endpoint) = &settings.export_to {
-        if settings.stdout {
-            let legacy_layer = LegacyFormatLayer::new(
-                std::io::stdout,
-                settings.format.clone(),
-                settings.include_session_id,
-                custom_fields,
-            );
-
+    // Branch on format type at setup time to get monomorphized Layer implementations.
+    // Each branch creates a concrete formatter type, enabling the compiler to inline
+    // the format logic directly into on_event.
+    match (&settings.format, &settings.export_to, settings.stdout) {
+        (LogFormat::Text, Some(endpoint), true) => {
+            let formatter =
+                TextFormatter::new(settings.include_session_id, custom_fields.session_id);
+            let otel_layer = create_otel_layer(endpoint, session_id, machine_id)?;
+            let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
             tracing_subscriber::registry()
+                .with(otel_layer)
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
-        } else {
+        }
+        (LogFormat::Text, Some(endpoint), false) => {
+            let formatter =
+                TextFormatter::new(settings.include_session_id, custom_fields.session_id);
+            let otel_layer = create_otel_layer(endpoint, session_id, machine_id)?;
             let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-            let legacy_layer = LegacyFormatLayer::new(
-                file_appender,
-                settings.format.clone(),
-                settings.include_session_id,
-                custom_fields,
-            );
-
+            let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
+            tracing_subscriber::registry()
+                .with(otel_layer)
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        }
+        (LogFormat::Text, None, true) => {
+            let formatter =
+                TextFormatter::new(settings.include_session_id, custom_fields.session_id);
+            let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
         }
-    } else {
-        // No OTEL export
-        if settings.stdout {
-            let legacy_layer = LegacyFormatLayer::new(
-                std::io::stdout,
-                settings.format.clone(),
-                settings.include_session_id,
-                custom_fields.clone(),
-            );
-
+        (LogFormat::Text, None, false) => {
+            let formatter =
+                TextFormatter::new(settings.include_session_id, custom_fields.session_id);
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
+            let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
-        } else {
+        }
+        (LogFormat::Json, Some(endpoint), true) => {
+            let formatter =
+                JsonFormatter::new(settings.include_session_id, custom_fields.session_id);
+            let otel_layer = create_otel_layer(endpoint, session_id, machine_id)?;
+            let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
+            tracing_subscriber::registry()
+                .with(otel_layer)
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        }
+        (LogFormat::Json, Some(endpoint), false) => {
+            let formatter =
+                JsonFormatter::new(settings.include_session_id, custom_fields.session_id);
+            let otel_layer = create_otel_layer(endpoint, session_id, machine_id)?;
             let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-            let legacy_layer = LegacyFormatLayer::new(
-                file_appender,
-                settings.format.clone(),
-                settings.include_session_id,
-                custom_fields,
-            );
-
+            let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
+            tracing_subscriber::registry()
+                .with(otel_layer)
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        }
+        (LogFormat::Json, None, true) => {
+            let formatter =
+                JsonFormatter::new(settings.include_session_id, custom_fields.session_id);
+            let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
+            tracing_subscriber::registry()
+                .with(env_filter)
+                .with(legacy_layer)
+                .init();
+        }
+        (LogFormat::Json, None, false) => {
+            let formatter =
+                JsonFormatter::new(settings.include_session_id, custom_fields.session_id);
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
+            let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(legacy_layer)
