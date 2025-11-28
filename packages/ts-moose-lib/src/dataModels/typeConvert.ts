@@ -939,8 +939,26 @@ const handleCodec = (t: ts.Type, checker: TypeChecker): string | null => {
   return codecType.value;
 };
 
-export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
-  if (checker.getIndexInfosOfType(t).length !== 0) {
+export interface ToColumnsOptions {
+  /**
+   * When true, allows types with index signatures (e.g., [key: string]: any).
+   * Only named properties will be extracted as columns.
+   * This is useful for IngestApi where arbitrary fields should be accepted
+   * and passed through to streaming functions.
+   */
+  allowIndexSignatures?: boolean;
+}
+
+export const toColumns = (
+  t: ts.Type,
+  checker: TypeChecker,
+  options?: ToColumnsOptions,
+): Column[] => {
+  // Only check for index signatures if not explicitly allowed
+  if (
+    !options?.allowIndexSignatures &&
+    checker.getIndexInfosOfType(t).length !== 0
+  ) {
     console.log("[CompilerPlugin]", checker.getIndexInfosOfType(t));
     throwIndexTypeError(t, checker);
   }

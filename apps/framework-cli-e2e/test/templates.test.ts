@@ -1127,6 +1127,122 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           }
         });
 
+        // Index signature test for TypeScript (ENG-1617)
+        it("should accept arbitrary fields via index signature and store in JSON column", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const userId = randomUUID();
+          const timestamp = new Date().toISOString();
+
+          // Send data with known fields plus arbitrary extra fields
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/userEventIngestApi`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    // Known fields defined in the type
+                    timestamp: timestamp,
+                    eventName: "page_view",
+                    userId: userId,
+                    orgId: "org-123",
+                    // Arbitrary extra fields (index signature)
+                    customProperty: "custom-value",
+                    pageUrl: "/dashboard",
+                    sessionDuration: 120,
+                    nested: {
+                      level1: "value1",
+                      level2: { deep: "nested" },
+                    },
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for the transform to process and write to output table
+          await waitForDBWrite(
+            devProcess!,
+            "UserEventOutput",
+            1,
+            60_000,
+            "local",
+            `userId = '${userId}'`,
+          );
+
+          // Verify the data was written correctly
+          const client = createClient(CLICKHOUSE_CONFIG);
+          const result = await client.query({
+            query: `
+              SELECT 
+                userId,
+                eventName,
+                orgId,
+                properties
+              FROM local.UserEventOutput 
+              WHERE userId = '${userId}'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const rows: any[] = await result.json();
+          await client.close();
+
+          if (rows.length === 0) {
+            throw new Error(
+              `No data found in UserEventOutput for userId ${userId}`,
+            );
+          }
+
+          const row = rows[0];
+
+          // Verify known fields
+          if (row.eventName !== "page_view") {
+            throw new Error(
+              `Expected eventName to be 'page_view', got '${row.eventName}'`,
+            );
+          }
+          if (row.orgId !== "org-123") {
+            throw new Error(
+              `Expected orgId to be 'org-123', got '${row.orgId}'`,
+            );
+          }
+
+          // Verify extra fields are in the properties JSON column
+          const properties = row.properties;
+          if (!properties) {
+            throw new Error("Expected properties JSON column to exist");
+          }
+
+          // The properties should contain our arbitrary fields
+          if (properties.customProperty !== "custom-value") {
+            throw new Error(
+              `Expected properties.customProperty to be 'custom-value', got '${properties.customProperty}'`,
+            );
+          }
+          if (properties.pageUrl !== "/dashboard") {
+            throw new Error(
+              `Expected properties.pageUrl to be '/dashboard', got '${properties.pageUrl}'`,
+            );
+          }
+          if (properties.sessionDuration !== 120) {
+            throw new Error(
+              `Expected properties.sessionDuration to be 120, got '${properties.sessionDuration}'`,
+            );
+          }
+
+          console.log(
+            "✅ Index signature test passed - arbitrary fields stored in JSON column",
+          );
+        });
+
         // DateTime precision test for TypeScript
         it("should preserve microsecond precision with DateTime64String types via streaming transform", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
