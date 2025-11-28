@@ -12,7 +12,6 @@ import {
   OlapTable,
   Key,
   DateTime,
-  ClickHouseJson,
 } from "@514labs/moose-lib";
 
 /**
@@ -41,8 +40,8 @@ export interface UserEventOutput {
   userId: Key<string>;
   orgId?: string;
   projectId?: string;
-  // All additional properties collected into a JSON column
-  properties: Record<string, any> & ClickHouseJson;
+  // JSON column for extra properties (uses Record<string, any> which maps to Json)
+  properties: Record<string, any>;
 }
 
 // Output table for processed events
