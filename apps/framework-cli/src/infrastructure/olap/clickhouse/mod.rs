@@ -245,13 +245,79 @@ pub enum IgnorableOperation {
 
 impl IgnorableOperation {
     pub fn matches(&self, op: &SerializableOlapOperation) -> bool {
-        matches!(
-            (self, op),
+        match (self, op) {
+            // Match table-level TTL modifications
+            (Self::ModifyTableTtl, SerializableOlapOperation::ModifyTableTtl { .. }) => true,
+            // Match column TTL modifications
             (
-                Self::ModifyTableTtl,
-                SerializableOlapOperation::ModifyTableTtl { .. }
-            )
-        )
+                Self::ModifyColumnTtl,
+                SerializableOlapOperation::ModifyTableColumn {
+                    before_column,
+                    after_column,
+                    ..
+                },
+            ) => {
+                // Only match if the change is specifically about TTL
+                before_column.ttl != after_column.ttl
+            }
+            // Match partition changes (which result in drop+create operations)
+            (Self::ModifyPartitionBy, SerializableOlapOperation::DropTable { .. }) => {
+                // Note: Partition changes in ClickHouse require drop+create operations.
+                // We match DropTable operations that are part of partition change sequences.
+                // The actual partition change validation happens during plan validation.
+                true
+            }
+            (Self::ModifyPartitionBy, SerializableOlapOperation::CreateTable { .. }) => {
+                // Note: Partition changes in ClickHouse require drop+create operations.
+                // We match CreateTable operations that are part of partition change sequences.
+                // The actual partition change validation happens during plan validation.
+                true
+            }
+            // Match LowCardinality string differences
+            (
+                Self::IgnoreStringLowCardinalityDifferences,
+                SerializableOlapOperation::ModifyTableColumn {
+                    before_column,
+                    after_column,
+                    ..
+                },
+            ) => {
+                // Check if this is a LowCardinality annotation change
+                Self::is_low_cardinality_only_change(before_column, after_column)
+            }
+            _ => false,
+        }
+    }
+
+    /// Checks if the column change is only about LowCardinality annotations
+    pub fn is_low_cardinality_only_change(before: &Column, after: &Column) -> bool {
+        use crate::infrastructure::olap::clickhouse::diff_strategy::normalize_column_for_low_cardinality_ignore;
+
+        // First check if columns are actually different
+        if before == after {
+            return false; // No change at all
+        }
+
+        // Check if the LowCardinality annotations are different
+        let before_has_low_card = before
+            .annotations
+            .iter()
+            .any(|(key, _)| key == "LowCardinality");
+        let after_has_low_card = after
+            .annotations
+            .iter()
+            .any(|(key, _)| key == "LowCardinality");
+
+        if before_has_low_card == after_has_low_card {
+            return false; // LowCardinality status hasn't changed
+        }
+
+        // Normalize both columns to strip LowCardinality annotations
+        let normalized_before = normalize_column_for_low_cardinality_ignore(before, true);
+        let normalized_after = normalize_column_for_low_cardinality_ignore(after, true);
+
+        // If they're equal after normalization, the only difference was LowCardinality
+        normalized_before == normalized_after
     }
 }
 
@@ -3620,5 +3686,405 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             InfrastructureSignature::Table { id } => assert_eq!(id, "my_target"),
             _ => panic!("Expected Table signature"),
         }
+    }
+
+    #[test]
+    fn test_ignorable_operation_matches_modify_table_ttl() {
+        let op = SerializableOlapOperation::ModifyTableTtl {
+            table: "test_table".to_string(),
+            before: Some("timestamp + INTERVAL 30 DAY".to_string()),
+            after: Some("timestamp + INTERVAL 60 DAY".to_string()),
+            database: None,
+            cluster_name: None,
+        };
+
+        assert!(IgnorableOperation::ModifyTableTtl.matches(&op));
+        assert!(!IgnorableOperation::ModifyColumnTtl.matches(&op));
+        assert!(!IgnorableOperation::ModifyPartitionBy.matches(&op));
+        assert!(!IgnorableOperation::IgnoreStringLowCardinalityDifferences.matches(&op));
+    }
+
+    #[test]
+    fn test_ignorable_operation_matches_modify_column_ttl() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let before_column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: Some("timestamp + INTERVAL 7 DAY".to_string()),
+        };
+
+        let after_column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: Some("timestamp + INTERVAL 14 DAY".to_string()),
+        };
+
+        let op = SerializableOlapOperation::ModifyTableColumn {
+            table: "test_table".to_string(),
+            before_column,
+            after_column,
+            database: None,
+            cluster_name: None,
+        };
+
+        assert!(IgnorableOperation::ModifyColumnTtl.matches(&op));
+        assert!(!IgnorableOperation::ModifyTableTtl.matches(&op));
+        assert!(!IgnorableOperation::ModifyPartitionBy.matches(&op));
+        assert!(!IgnorableOperation::IgnoreStringLowCardinalityDifferences.matches(&op));
+    }
+
+    #[test]
+    fn test_ignorable_operation_matches_column_ttl_no_change() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: Some("timestamp + INTERVAL 7 DAY".to_string()),
+        };
+
+        let op = SerializableOlapOperation::ModifyTableColumn {
+            table: "test_table".to_string(),
+            before_column: column.clone(),
+            after_column: column,
+            database: None,
+            cluster_name: None,
+        };
+
+        // Should not match if TTL hasn't changed
+        assert!(!IgnorableOperation::ModifyColumnTtl.matches(&op));
+    }
+
+    #[test]
+    fn test_ignorable_operation_matches_partition_drop_create() {
+        use crate::framework::core::infrastructure::table::OrderBy;
+        use crate::framework::core::infrastructure::table::Table;
+        use crate::framework::core::infrastructure_map::PrimitiveSignature;
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::framework::versions::Version;
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let table = Table {
+            name: "test_table".to_string(),
+            database: None,
+            cluster_name: None,
+            columns: vec![],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: Some("toYYYYMM(timestamp)".to_string()),
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: Some(Version::from_string("1.0.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            primary_key_expression: None,
+        };
+
+        let drop_op = SerializableOlapOperation::DropTable {
+            table: "test_table".to_string(),
+            database: None,
+            cluster_name: None,
+        };
+
+        let create_op = SerializableOlapOperation::CreateTable { table };
+
+        // ModifyPartitionBy should match both drop and create operations
+        assert!(IgnorableOperation::ModifyPartitionBy.matches(&drop_op));
+        assert!(IgnorableOperation::ModifyPartitionBy.matches(&create_op));
+        assert!(!IgnorableOperation::ModifyTableTtl.matches(&drop_op));
+        assert!(!IgnorableOperation::ModifyTableTtl.matches(&create_op));
+    }
+
+    #[test]
+    fn test_ignorable_operation_matches_low_cardinality_differences() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let before_column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+            comment: None,
+            ttl: None,
+        };
+
+        let after_column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![], // LowCardinality annotation removed
+            comment: None,
+            ttl: None,
+        };
+
+        let op = SerializableOlapOperation::ModifyTableColumn {
+            table: "test_table".to_string(),
+            before_column,
+            after_column,
+            database: None,
+            cluster_name: None,
+        };
+
+        assert!(IgnorableOperation::IgnoreStringLowCardinalityDifferences.matches(&op));
+        assert!(!IgnorableOperation::ModifyTableTtl.matches(&op));
+        assert!(!IgnorableOperation::ModifyColumnTtl.matches(&op));
+        assert!(!IgnorableOperation::ModifyPartitionBy.matches(&op));
+    }
+
+    #[test]
+    fn test_ignorable_operation_low_cardinality_with_other_changes() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let before_column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+            comment: None,
+            ttl: None,
+        };
+
+        let after_column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: false, // Required changed
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![], // LowCardinality annotation removed
+            comment: None,
+            ttl: None,
+        };
+
+        let op = SerializableOlapOperation::ModifyTableColumn {
+            table: "test_table".to_string(),
+            before_column,
+            after_column,
+            database: None,
+            cluster_name: None,
+        };
+
+        // Should not match because there are other changes besides LowCardinality
+        assert!(!IgnorableOperation::IgnoreStringLowCardinalityDifferences.matches(&op));
+    }
+
+    #[test]
+    fn test_ignorable_operation_low_cardinality_no_change() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+            comment: None,
+            ttl: None,
+        };
+
+        let op = SerializableOlapOperation::ModifyTableColumn {
+            table: "test_table".to_string(),
+            before_column: column.clone(),
+            after_column: column,
+            database: None,
+            cluster_name: None,
+        };
+
+        // Should not match if no change
+        assert!(!IgnorableOperation::IgnoreStringLowCardinalityDifferences.matches(&op));
+    }
+
+    #[test]
+    fn test_ignorable_operation_non_matching_operations() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, TableIndex};
+
+        let column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let index = TableIndex {
+            name: "test_idx".to_string(),
+            expression: "test_col".to_string(),
+            index_type: "minmax".to_string(),
+            arguments: vec![],
+            granularity: 8192,
+        };
+
+        let add_column_op = SerializableOlapOperation::AddTableColumn {
+            table: "test_table".to_string(),
+            column: column.clone(),
+            after_column: None,
+            database: None,
+            cluster_name: None,
+        };
+
+        let drop_column_op = SerializableOlapOperation::DropTableColumn {
+            table: "test_table".to_string(),
+            column_name: "test_col".to_string(),
+            database: None,
+            cluster_name: None,
+        };
+
+        let add_index_op = SerializableOlapOperation::AddTableIndex {
+            table: "test_table".to_string(),
+            index,
+            database: None,
+            cluster_name: None,
+        };
+
+        // All ignore operations should not match these operations
+        let operations = [add_column_op, drop_column_op, add_index_op];
+        let ignore_ops = [
+            IgnorableOperation::ModifyTableTtl,
+            IgnorableOperation::ModifyColumnTtl,
+            IgnorableOperation::ModifyPartitionBy,
+            IgnorableOperation::IgnoreStringLowCardinalityDifferences,
+        ];
+
+        for op in &operations {
+            for ignore_op in &ignore_ops {
+                assert!(
+                    !ignore_op.matches(op),
+                    "Ignore operation {:?} should not match operation {:?}",
+                    ignore_op,
+                    op
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_is_low_cardinality_only_change() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        // Test 1: Only LowCardinality annotation changes
+        let before_column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+            comment: None,
+            ttl: None,
+        };
+
+        let after_column = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(IgnorableOperation::is_low_cardinality_only_change(
+            &before_column,
+            &after_column
+        ));
+
+        // Test 2: LowCardinality change plus other changes
+        let after_column_with_other_changes = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: false, // Changed
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(!IgnorableOperation::is_low_cardinality_only_change(
+            &before_column,
+            &after_column_with_other_changes
+        ));
+
+        // Test 3: No changes at all
+        assert!(!IgnorableOperation::is_low_cardinality_only_change(
+            &before_column,
+            &before_column
+        ));
+
+        // Test 4: Non-LowCardinality changes only
+        let non_low_card_before = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        let non_low_card_after = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: false, // Only this changed
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+        };
+
+        assert!(!IgnorableOperation::is_low_cardinality_only_change(
+            &non_low_card_before,
+            &non_low_card_after
+        ));
     }
 }

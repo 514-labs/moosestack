@@ -1225,8 +1225,11 @@ pub async fn remote_gen_migration(
 
     plan_validator::validate(project, &plan)?;
 
-    let db_migration =
-        MigrationPlan::from_infra_plan(&plan.changes, &project.clickhouse_config.db_name)?;
+    let db_migration = MigrationPlan::from_infra_plan(
+        &plan.changes,
+        &project.clickhouse_config.db_name,
+        &project.migration_config.ignore_operations,
+    )?;
 
     Ok(MigrationPlanWithBeforeAfter {
         remote_state: remote_infra_map,
