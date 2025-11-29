@@ -1,0 +1,325 @@
+---
+title: Stream Data from Postgres with Debezium
+description: Learn how to adapt the Debezium CDC template to stream data from your PostgreSQL database to ClickHouse.
+---
+
+# Stream Data from Postgres with Debezium
+
+This guide shows you how to use the **Debezium CDC Template** with your own application. You will learn how to connect the pipeline to your PostgreSQL database and send your tables to ClickHouse for real-time analytics.
+
+## Architecture Overview
+
+At a high level, the pipeline works like this:
+```txt
+PostgreSQL -> Kafka -> ClickHouse
+```
+
+*   **Debezium** acts as the bridge between PostgreSQL and Kafka. It watches for changes in your database and publishes them to Kafka topics.
+*   **MooseStack** acts as the bridge between Kafka and ClickHouse. It serves as your "pipeline-as-code" layer where you define your ClickHouse tables, your Kafka streams, and the transformation logic that connects them.
+
+This template uses two Kafka topics for each table: one for the raw data and one for the clean, processed data. The data flow is as follows:
+
+1. Change happens in PostgreSQL
+2. Debezium publishes the change to Kafka (auto-creating a topic for each table)
+3. Raw events are consumed from each Debezium-managed topic and transformed into a format that can be stored in ClickHouse
+4. The transformed data is published to a second Moose Stream (the sink stream)
+5. Data from the sink stream is synced into your ClickHouse table
+6. Rows are deduplicated and versioned in the background in ClickHouse
+
+## Project Structure
+
+Here are the key files in the template you should know about:
+
+```
+cdc-pipeline/
+├── 1-sources/                   # Defines Kafka topics from Debezium
+├── 2-transforms/                # Sanitizes CDC events & maps to destination
+├── 3-destinations/              # Defines ClickHouse tables & streams
+docker-compose.dev.override.yaml # Infrastructure (Kafka Connect, Redpanda)
+setup-cdc.ts                     # Script that registers the connector
+moose.config.toml                # Project config (enables streaming)
+```
+
+## Step 0: Clone the Template
+
+Make sure you clone the [Debezium CDC Template](https://github.com/514labs/debezium-cdc) and install the dependencies:
+
+```bash
+git clone https://github.com/514labs/debezium-cdc.git
+cd debezium-cdc
+pnpm install
+```
+
+## Step 1: Configure Your Environment
+
+The template uses environment variables for database passwords and connector settings.
+
+1.  Copy the `.env.example` file:
+
+    ```bash
+    cp .env.example .env.dev
+    ```
+
+2.  Open `.env.dev` and customize the values for your environment.
+
+    **Database Connection:**
+    Set these to point to your source PostgreSQL database.
+    ```properties
+    DB_HOST=your_postgres_host
+    DB_PORT=your_postgres_port
+    DB_NAME=your_postgres_db
+    DB_USER=your_postgres_user
+    DB_PASSWORD=your_postgres_password
+    ```
+
+    **CDC Configuration:**
+    Choose which tables you want to capture.
+    ```properties
+    # List of tables to capture (schema.table), separated by commas
+    CDC_TABLE_INCLUDE_LIST=public.*
+    
+    # Prefix for the Kafka topics (default: pg-cdc)
+    CDC_TOPIC_PREFIX=pg-cdc
+    ```
+
+## Step 2: Prepare Your Database
+
+Debezium needs PostgreSQL's logical replication to work.
+
+1.  **Check `wal_level`**:
+    Run this SQL command on your source database:
+    ```sql
+    SHOW wal_level;
+    ```
+    It must be `logical`. If not, update your `postgresql.conf` and restart Postgres.
+
+2.  **Create a Replication User**:
+    It is best to use a separate user for this. Run these commands:
+    ```sql
+    CREATE USER cdc_user WITH PASSWORD 'secure_password';
+    ALTER USER cdc_user WITH REPLICATION;
+    GRANT USAGE ON SCHEMA public TO cdc_user;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO cdc_user;
+    ```
+    (Update your `.env.dev` file with this user's details).
+
+## Step 3: Start the Pipeline
+
+Start the development environment. The Moose CLI will start the infrastructure and run a script to register the Debezium connector.
+
+```bash
+moose dev
+```
+
+Check the logs for these messages:
+- Infrastructure starting (Redpanda, Kafka Connect, ClickHouse).
+- `setup-cdc.ts` running.
+- `✅ Connector registered!`
+
+Note: Moose does not manage Debezium or Kafka Connect by default. However, this template uses `docker-compose.dev.override.yaml` to add them. The example file starts Kafka Connect and includes a test database. If you want to use your own database, comment out the test database in that file and update `.env.dev`. See [Local Development](/moose/local-dev) for more details.
+
+## Step 4: Customize the Pipelines for Your Application
+
+The template comes set up for the provided test database. Follow these steps to change it for your own tables.
+
+> **Note:** These examples use the `customer_addresses` table from the template. Replace `CustomerAddress` with the names of your own tables (like `Users` or `Orders`).
+
+### 1. Import the Topics
+When the connector runs and a change happens, Debezium automatically creates a topic in Redpanda if it hasn't seen an event for that table before. Since Debezium manages these topics, you need to import their definitions into your project:
+
+```bash
+# Pulls topic definitions into cdc-pipeline/1-sources/externalTopics.ts
+moose-cli kafka pull localhost:19092 --path cdc-pipeline/1-sources
+```
+
+### 2. Define Source Schemas
+Moose imports the raw data streams as generic objects without types. You need to define what your data looks like so you when you transform the raw events you have complete type safety.
+
+#### Option A: Using your ORM Models (Recommended)
+If you already use an ORM like Drizzle, you can reuse your existing models.
+
+The template uses Drizzle, and the models are in `postgres/src/schema.ts`. You can export the inferred type in `cdc-pipeline/oltp/schema.ts`:
+
+```typescript
+import { customerAddresses } from "../../postgres/src/schema";
+
+// Automatically infers: { id: number, first_name: string, ... }
+export type CustomerAddress = typeof customerAddresses.$inferSelect;
+```
+
+Then, in your pipeline code, import the type and apply it to your stream:
+```typescript
+import { CustomerAddress } from "../../oltp/schema";
+
+export const cdcCustomerAddresses = PgCdcPublicCustomerAddressesStream as Stream<
+  GenericCDCEvent<CustomerAddress>
+>;
+```
+
+#### Option B: Using Generation Tools
+If you don't use an ORM, tools like [kanel](https://github.com/kristiandupont/kanel) or `pg-to-ts` can generate TypeScript interfaces from your database for you.
+
+```bash
+# Example with kanel
+npx kanel --connectionString $DATABASE_URL --output ./cdc-pipeline/generated-models
+```
+
+### 3. Model the Incoming Data (Create a Typed Topic)
+This step models the raw data coming from Debezium. These events are complex objects that contain metadata, the "before" state of the row, and the "after" state.
+
+`GenericCDCEvent<T>` (in `cdc-pipeline/models.ts`) matches this structure. By wrapping the raw topic with this type, your code knows exactly what the data looks like.
+
+```typescript
+export type GenericCDCEvent<T> = {
+  before: T | null;  // The row before the change (null for inserts)
+  after: T | null;   // The row after the change (null for deletes)
+  source: {          // Debezium metadata
+    lsn: number;     // Log Sequence Number (for ordering)
+    ts_ms: number;   // Timestamp of the change
+    table: string;
+  };
+  op: "c" | "u" | "d" | "r"; // Create, Update, Delete, Read
+  ts_ms: number;
+};
+```
+
+Update `cdc-pipeline/1-sources/typed-topics.ts` to export the typed stream.
+
+**Example:**
+
+```typescript
+import { Stream } from "@514labs/moose-lib";
+import { PgCdcPublicCustomerAddressesStream } from "./externalTopics"; // Generated by kafka pull
+import { GenericCDCEvent } from "../models";
+import { CustomerAddress } from "../../oltp/schema";
+
+export const cdcCustomerAddresses = PgCdcPublicCustomerAddressesStream as Stream<
+  GenericCDCEvent<CustomerAddress>
+>;
+```
+
+<details>
+<summary>✨ **Suggested Copilot Prompt**</summary>
+
+You can use this prompt to tell your AI assistant to generate the typed topics for all your tables at once. Open `cdc-pipeline/1-sources/typed-topics.ts` and ask:
+
+> "Import all the raw stream classes from `./externalTopics.ts` and all the OLTP types from `../../oltp/schema.ts`. For each table, export a new const named `cdc<TableName>` that casts the raw stream to `Stream<GenericCDCEvent<TableName>>`. Follow the pattern of the existing exports."
+
+</details>
+
+### 4. Model the Destination Data (Flatten the Payload)
+This step models the clean data that goes into ClickHouse.
+
+While the incoming data is nested (Step 3), the destination table should look just like your Postgres table. You need to "flatten" the structure so that `after.id` becomes just `id` in ClickHouse.
+
+You also need to add a few fields (`_is_deleted`, `lsn`, `ts_ms`) to handle updates and deletes correctly.
+
+Update `cdc-pipeline/3-destinations/olap-tables.ts`:
+
+```typescript
+import { OlapTable, ClickHouseEngines, UInt64, UInt8 } from "@514labs/moose-lib";
+import { CustomerAddress } from "../../oltp/schema";
+
+// 1. Define the OLAP Schema
+// Take the fields from Postgres and add metadata
+export type CdcFields = {
+  _is_deleted: UInt8;
+  ts_ms: UInt64;
+  lsn: UInt64;
+};
+
+export type OlapCustomerAddress = CustomerAddress & CdcFields;
+
+// 2. Define the ClickHouse Table
+export const olapCustomerAddresses = new OlapTable<OlapCustomerAddress>(
+  "customer_addresses",
+  {
+    engine: ClickHouseEngines.ReplacingMergeTree,
+    ver: "lsn",
+    isDeleted: "_is_deleted",
+    orderByFields: ["id"],
+  }
+);
+```
+
+You also need a sink stream. This acts as a buffer between your transformation and the final table.
+
+Update `cdc-pipeline/3-destinations/sink-topics.ts`:
+
+```typescript
+import { Stream } from "@514labs/moose-lib";
+import { OlapCustomerAddress } from "../models"; 
+import { olapCustomerAddresses } from "./olap-tables";
+
+// 3. Define the Destination Stream (The "Processed" Topic)
+export const processedCustomerAddresses = new Stream<OlapCustomerAddress>(
+  "ProcessedCustomerAddresses",
+  { destination: olapCustomerAddresses }
+);
+```
+
+### 5. Create the Transform
+Write the function that maps the Source Stream to the Sink Stream. It cleans the data and converts types where needed.
+
+Create `cdc-pipeline/2-transforms/customer-addresses.ts`:
+
+```typescript
+import { cdcCustomerAddresses } from "../1-sources/typed-topics";
+import { processedCustomerAddresses } from "../3-destinations/sink-topics";
+import { handleCDCPayload } from "./payload-handler"; // Helper from the template
+import { GenericCDCEvent, OlapCustomerAddress } from "../models";
+import { CustomerAddress } from "../../oltp/schema";
+
+// Connect Source Stream -> Destination Stream
+cdcCustomerAddresses.addTransform(
+  processedCustomerAddresses,
+  (message: GenericCDCEvent<CustomerAddress>) => {
+    // Use the helper function to clean the payload
+    const result = handleCDCPayload<CustomerAddress>(message);
+    
+    // Return the clean data
+    return result as unknown as OlapCustomerAddress;
+  }
+);
+```
+
+The `handleCDCPayload` function is a helper included in the template. It handles the logic for cleaning the data and managing deletes. You pass it the type of your source row, and it handles the rest.
+
+## Verification
+
+The pipeline is running! Any change in your Postgres `customer_addresses` table will instantly appear in ClickHouse.
+
+Check it by querying ClickHouse with the Moose CLI:
+
+```bash
+moose query "SELECT * FROM customer_addresses"
+```
+
+## Advanced: Optimizing for ClickHouse
+
+The setup above uses your Postgres types directly. To make your analytics faster and cheaper, you should optimize your ClickHouse schema.
+
+This involves using special column types like:
+*   **LowCardinality**: For columns with a finite number (10,000 or less) of unique values (e.g. countries, states, etc.).
+*   **UInt64**: For IDs and timestamps.
+*   **ClickHouseDefault**: To handle empty (null) values efficiently.
+
+Here is a preview of what an optimized schema looks like:
+
+```typescript
+export type OlapCustomerAddress = Omit<
+  CustomerAddress,
+  "id" | "country" | "state" | "work_address"
+> &
+  CdcFields & {
+    // Optimized types
+    id: UInt64;
+    country: string & LowCardinality;
+    state: string & LowCardinality;
+    work_address: string & ClickHouseDefault<"''">;
+  };
+```
+
+For a full guide on how to optimize your tables, see [Optimizing ClickHouse Schemas](/guides/clickhouse-optimization).
+
+## Next Steps: Transitioning to Production

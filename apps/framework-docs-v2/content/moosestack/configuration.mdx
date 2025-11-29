@@ -4,7 +4,7 @@ description: Configure your MooseStack project
 order: 1
 ---
 
-import { Callout } from "@/components/mdx";
+import { Callout, FileTree } from "@/components/mdx";
 
 # Project Configuration
 
@@ -117,14 +117,15 @@ MOOSE_<SECTION>__<KEY>=value
 ### Complete Example
 
 **File structure:**
-```
-my-moose-project/
-├── .env                 # Base config
-├── .env.dev            # Dev overrides  
-├── .env.prod           # Prod overrides
-├── .env.local          # Local secrets (gitignored)
-└── moose.config.toml   # Structured config
-```
+<FileTree>
+<FileTree.Folder name="my-moose-project">
+<FileTree.File name=".env" />
+<FileTree.File name=".env.dev" />
+<FileTree.File name=".env.prod" />
+<FileTree.File name=".env.local" />
+<FileTree.File name="moose.config.toml" />
+</FileTree.Folder>
+</FileTree>
 
 **.env** (committed):
 ```bash

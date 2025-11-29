@@ -1,0 +1,108 @@
+---
+title: Auto-Inferred Migrations
+description: Reference documentation for Moose's auto-inferred migration system used during local development.
+order: 3
+category: olap
+---
+
+import { Callout } from "@/components/mdx";
+
+# Auto-Inferred Migrations
+
+**Auto-inferred migrations** are a schema evolution mechanism in Moose that automatically detects changes in your data models and applies them to the underlying database in real-time. This system is designed primarily for local development.
+
+## Command
+
+Auto-inferred migrations are enabled implicitly when running the development server:
+
+```bash
+moose dev
+```
+
+## Production Usage
+
+While technically possible to use auto-inferred migrations in production environments, it is **strongly discouraged**.
+
+<Callout type="warning" title="Data Loss Risk">
+  Auto-inferred migrations will immediately drop columns containing data if a field is renamed or removed in the code. In production, this leads to irreversible data loss.
+</Callout>
+
+Production deployments should always use [Planned Migrations](/moosestack/migrate/planned-migrations) to ensure schema changes are reviewed, tested, and safe.
+
+## Behavior
+
+When active, the auto-inference engine performs the following cycle:
+
+1.  **Monitor:** Watches the file system for changes in exported table definitions in your data model files.
+2.  **Diff:** Compares the code-defined schema against the actual schema of the running ClickHouse instance.
+3.  **Generate:** Creates the necessary SQL DDL statements to reconcile the difference.
+4.  **Apply:** Executes the SQL statements immediately against the database.
+
+## Operation Reference
+
+The following table describes how code changes are translated into database operations by the auto-inference engine.
+
+| Code Change | Database Operation | SQL Equivalent (Approximate) | Data Impact |
+| :--- | :--- | :--- | :--- |
+| **New Table** | Create Table | `CREATE TABLE ...` | Safe |
+| **Add Field** | Add Column | `ALTER TABLE ... ADD COLUMN ...` | Safe |
+| **Remove Field** | Drop Column | `ALTER TABLE ... DROP COLUMN ...` | **Destructive** (Data Loss) |
+| **Change Field Type** | Modify Column | `ALTER TABLE ... MODIFY COLUMN ...` | Potentially Destructive (Cast dependent) |
+| **Rename Field** | Drop + Add | `DROP COLUMN old`; `ADD COLUMN new` | **Destructive** (Data Loss - see limitations) |
+| **Remove Table** | Drop Table | `DROP TABLE ...` | **Destructive** |
+
+## Limitations and Safety
+
+### Renaming Fields
+
+The auto-inference engine is stateless regarding user intent. It cannot distinguish between **renaming** a field and **deleting one field to add another**.
+
+If you rename `user_id` to `uid`:
+1.  Moose sees `user_id` is missing from the code -> Generates `DROP COLUMN user_id`.
+2.  Moose sees `uid` is new in the code -> Generates `ADD COLUMN uid`.
+
+**Result:** The column is dropped and re-added empty. Data in the original column is lost immediately.
+
+<Callout type="warning" title="Renaming in Production">
+  To rename columns without data loss, you must use [Planned Migrations](/moosestack/migrate/planned-migrations) and manually adjust the migration plan to use a `rename` operation instead of `drop` + `add`.
+</Callout>
+
+### Destructive Operations
+
+Auto-inferred migrations do not prompt for confirmation before dropping tables or columns. If you comment out a table export or remove a field definition, the corresponding data structure in the database is removed immediately.
+
+## Configuration
+
+Auto-inferred migrations rely on the `olap` feature flag in your project configuration.
+
+```toml filename="moose.config.toml"
+[features]
+olap = true # enabled by default
+```
+
+## CLI Output Reference
+
+The CLI communicates migration actions via standard output prefixes in the terminal.
+
+| Symbol | Meaning | Description |
+| :--- | :--- | :--- |
+| `+` | Add | Creating a new table or adding a column. |
+| `-` | Remove | Dropping a table or removing a column. |
+| `~` | Modify | Changing a column's data type or properties. |
+
+### Example Output
+
+```text
+⢹ Processing Infrastructure changes from file watcher
+             ~ Table page_views:
+                  Column changes:
+                    + user_agent: String
+                    - referrer: String
+                    ~ timestamp: DateTime -> DateTime64(3)
+```
+
+## See Also
+
+- [Planned Migrations](/moosestack/migrate/planned-migrations) - The reference for production-grade migration workflows.
+- [Schema Change Reference](/moosestack/migrate/reference) - Detailed breakdown of migration plan objects.
+- [Serverless (moose migrate)](/moosestack/migrate/apply-planned-migrations-cli) - Commands for managing migrations manually.

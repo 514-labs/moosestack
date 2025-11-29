@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { TemplateCard } from "./template-card";
 import type { ItemMetadata, TemplateMetadata } from "@/lib/template-types";
 import { IconSearch, IconX } from "@tabler/icons-react";
@@ -20,13 +20,33 @@ type CategoryFilter = ("starter" | "framework" | "example")[];
 type TypeFilter = "template" | "app" | null;
 
 export function TemplateGrid({ items, className }: TemplateGridProps) {
+  const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = React.useState("");
-  const [languageFilter, setLanguageFilter] =
-    React.useState<LanguageFilter>(null);
-  const [categoryFilter, setCategoryFilter] = React.useState<CategoryFilter>(
-    [],
-  );
-  const [typeFilter, setTypeFilter] = React.useState<TypeFilter>(null);
+
+  // Read filters from URL params (set by TemplatesSideNav)
+  const typeFilter = React.useMemo(() => {
+    const type = searchParams.get("type");
+    return (type === "template" || type === "app" ? type : null) as TypeFilter;
+  }, [searchParams]);
+
+  const languageFilter = React.useMemo(() => {
+    const language = searchParams.get("language");
+    return (
+      language === "typescript" || language === "python" ?
+        language
+      : null) as LanguageFilter;
+  }, [searchParams]);
+
+  const categoryFilter = React.useMemo(() => {
+    const categoryParam = searchParams.get("category");
+    if (!categoryParam) return [];
+    return categoryParam
+      .split(",")
+      .filter(
+        (c): c is "starter" | "framework" | "example" =>
+          c === "starter" || c === "framework" || c === "example",
+      ) as CategoryFilter;
+  }, [searchParams]);
 
   const filteredItems = React.useMemo(() => {
     return items.filter((item) => {
@@ -88,18 +108,10 @@ export function TemplateGrid({ items, className }: TemplateGridProps) {
     categoryFilter.length > 0 ||
     typeFilter !== null;
 
-  const clearFilters = () => {
-    setSearchQuery("");
-    setLanguageFilter(null);
-    setCategoryFilter([]);
-    setTypeFilter(null);
-  };
-
   return (
     <div className={cn("w-full", className)}>
-      {/* Filters */}
-      <div className="mb-6 space-y-4">
-        {/* Search */}
+      {/* Search - kept in main content area */}
+      <div className="mb-6">
         <div className="relative">
           <IconSearch className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -121,118 +133,9 @@ export function TemplateGrid({ items, className }: TemplateGridProps) {
             </Button>
           )}
         </div>
-
-        {/* Type Filter */}
-        <div>
-          <label className="text-sm font-medium mb-2 block">Type</label>
-          <ToggleGroup
-            type="single"
-            value={typeFilter || ""}
-            onValueChange={(value) => {
-              if (value === "" || value === undefined) {
-                setTypeFilter(null);
-              } else if (value === "template" || value === "app") {
-                setTypeFilter(value as TypeFilter);
-              }
-            }}
-            variant="outline"
-            className="w-full"
-          >
-            <ToggleGroupItem
-              value="template"
-              className="flex-1"
-              aria-label="Templates"
-            >
-              Templates
-            </ToggleGroupItem>
-            <ToggleGroupItem value="app" className="flex-1" aria-label="Apps">
-              Apps
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-
-        {/* Language and Category Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1">
-            <label className="text-sm font-medium mb-2 block">Language</label>
-            <ToggleGroup
-              type="single"
-              value={languageFilter || ""}
-              onValueChange={(value) => {
-                if (value === "" || value === undefined) {
-                  setLanguageFilter(null);
-                } else if (value === "typescript" || value === "python") {
-                  setLanguageFilter(value as LanguageFilter);
-                }
-              }}
-              variant="outline"
-              className="w-full"
-            >
-              <ToggleGroupItem
-                value="typescript"
-                className="flex-1"
-                aria-label="TypeScript"
-              >
-                TypeScript
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="python"
-                className="flex-1"
-                aria-label="Python"
-              >
-                Python
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-
-          <div className="flex-1">
-            <label className="text-sm font-medium mb-2 block">Category</label>
-            <ToggleGroup
-              type="multiple"
-              value={categoryFilter}
-              onValueChange={(value) => {
-                setCategoryFilter(value as CategoryFilter);
-              }}
-              variant="outline"
-              className="w-full"
-            >
-              <ToggleGroupItem
-                value="starter"
-                className="flex-1"
-                aria-label="Starter templates"
-              >
-                Starter
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="framework"
-                className="flex-1"
-                aria-label="Framework templates"
-              >
-                Framework
-              </ToggleGroupItem>
-              <ToggleGroupItem
-                value="example"
-                className="flex-1"
-                aria-label="Example templates"
-              >
-                Example
-              </ToggleGroupItem>
-            </ToggleGroup>
-          </div>
-        </div>
-
-        {/* Clear filters button */}
+        {/* Results count */}
         {hasActiveFilters && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearFilters}
-              className="h-8"
-            >
-              <IconX className="h-3 w-3 mr-1" />
-              Clear filters
-            </Button>
+          <div className="mt-3 flex items-center gap-2">
             <Badge variant="secondary" className="text-xs">
               {filteredItems.length} item{filteredItems.length !== 1 ? "s" : ""}
             </Badge>
