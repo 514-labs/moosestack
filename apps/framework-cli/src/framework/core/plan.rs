@@ -1687,6 +1687,7 @@ mod tests {
             crate::framework::core::migration_plan::MigrationPlan::from_infra_plan(
                 &changes,
                 DEFAULT_DATABASE_NAME,
+                &[],
             )
             .unwrap();
 
