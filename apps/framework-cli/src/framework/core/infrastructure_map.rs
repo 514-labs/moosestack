@@ -1790,7 +1790,8 @@ impl InfrastructureMap {
                         );
                     } else {
                         // Compute the basic diff components
-                        let mut column_changes = compute_table_columns_diff(table, target_table);
+                        let mut column_changes =
+                            compute_table_columns_diff(table, target_table, ignore_ops);
 
                         // For DeletionProtected tables, filter out destructive column changes
                         if target_table.life_cycle == LifeCycle::DeletionProtected
@@ -2009,7 +2010,7 @@ impl InfrastructureMap {
             return None;
         }
 
-        let column_changes = compute_table_columns_diff(table, target_table);
+        let column_changes = compute_table_columns_diff(table, target_table, &[]);
         let order_by_changed = !table.order_by_equals(target_table);
 
         let order_by_change = if order_by_changed {
@@ -2078,7 +2079,7 @@ impl InfrastructureMap {
             return None;
         }
 
-        let mut column_changes = compute_table_columns_diff(table, target_table);
+        let mut column_changes = compute_table_columns_diff(table, target_table, &[]);
 
         // For DeletionProtected tables, filter out destructive column changes
         if target_table.life_cycle == LifeCycle::DeletionProtected {
@@ -2769,21 +2770,40 @@ fn ttl_expressions_are_equivalent(before: &Option<String>, after: &Option<String
 ///
 /// # Returns
 /// `true` if the columns are semantically equivalent, `false` otherwise
-fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
-    // Check all non-data_type and non-ttl and non-codec fields first
-    if before.name != after.name
-        || before.required != after.required
-        || before.unique != after.unique
+fn columns_are_equivalent(
+    before: &Column,
+    after: &Column,
+    ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
+) -> bool {
+    use crate::infrastructure::olap::clickhouse::{
+        diff_strategy::{column_types_are_equivalent, normalize_column_for_low_cardinality_ignore},
+        IgnorableOperation,
+    };
+
+    // Check if we should ignore LowCardinality differences
+    let ignore_low_cardinality =
+        ignore_ops.contains(&IgnorableOperation::IgnoreStringLowCardinalityDifferences);
+
+    // Normalize columns if ignore flag is set
+    let normalized_before =
+        normalize_column_for_low_cardinality_ignore(before, ignore_low_cardinality);
+    let normalized_after =
+        normalize_column_for_low_cardinality_ignore(after, ignore_low_cardinality);
+
+    // Check all non-data_type and non-ttl fields first
+    if normalized_before.name != normalized_after.name
+        || normalized_before.required != normalized_after.required
+        || normalized_before.unique != normalized_after.unique
         // primary_key change is handled at the table level
-        || before.default != after.default
-        || before.annotations != after.annotations
-        || before.comment != after.comment
+        || normalized_before.default != normalized_after.default
+        || normalized_before.annotations != normalized_after.annotations
+        || normalized_before.comment != normalized_after.comment
     {
         return false;
     }
 
     // Special handling for TTL comparison: normalize both expressions before comparing
-    if !ttl_expressions_are_equivalent(&before.ttl, &after.ttl) {
+    if !ttl_expressions_are_equivalent(&normalized_before.ttl, &normalized_after.ttl) {
         return false;
     }
 
@@ -2795,8 +2815,11 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
 
     // Use ClickHouse-specific semantic comparison for data types
     // This handles special cases like enums and JSON types with order-independent typed_paths
-    use crate::infrastructure::olap::clickhouse::diff_strategy::column_types_are_equivalent;
-    column_types_are_equivalent(&before.data_type, &after.data_type)
+    column_types_are_equivalent(
+        &normalized_before.data_type,
+        &normalized_after.data_type,
+        ignore_low_cardinality,
+    )
 }
 
 /// Check if two topics are equal, ignoring metadata
@@ -2865,7 +2888,11 @@ fn api_endpoints_equal_ignore_metadata(a: &ApiEndpoint, b: &ApiEndpoint) -> bool
 ///
 /// # Returns
 /// A vector of `ColumnChange` objects describing the differences
-pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnChange> {
+pub fn compute_table_columns_diff(
+    before: &Table,
+    after: &Table,
+    ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
+) -> Vec<ColumnChange> {
     let mut diff = Vec::new();
 
     // Create a HashMap of the 'before' columns: O(n)
@@ -2879,7 +2906,7 @@ pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnCh
     // Process additions and updates: O(n)
     for (i, after_col) in after.columns.iter().enumerate() {
         if let Some(&before_col) = before_columns.get(&after_col.name) {
-            if !columns_are_equivalent(before_col, after_col) {
+            if !columns_are_equivalent(before_col, after_col, ignore_ops) {
                 tracing::debug!(
                     "Column '{}' modified from {:?} to {:?}",
                     after_col.name,
@@ -3138,7 +3165,7 @@ mod tests {
             primary_key_expression: None,
         };
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
 
         assert_eq!(diff.len(), 3);
         assert!(
@@ -3325,7 +3352,7 @@ mod diff_tests {
         let table1 = create_test_table("test", "1.0");
         let table2 = create_test_table("test", "1.0");
 
-        let diff = compute_table_columns_diff(&table1, &table2);
+        let diff = compute_table_columns_diff(&table1, &table2, &[]);
         assert!(diff.is_empty(), "Expected no changes between empty tables");
     }
 
@@ -3347,7 +3374,7 @@ mod diff_tests {
             codec: None,
         });
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(diff.len(), 1, "Expected one change");
         match &diff[0] {
             ColumnChange::Added {
@@ -3379,7 +3406,7 @@ mod diff_tests {
             codec: None,
         });
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(diff.len(), 1, "Expected one change");
         match &diff[0] {
             ColumnChange::Removed(col) => {
@@ -3421,7 +3448,7 @@ mod diff_tests {
             codec: None,
         });
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(diff.len(), 1, "Expected one change");
         match &diff[0] {
             ColumnChange::Updated {
@@ -3521,7 +3548,7 @@ mod diff_tests {
             },
         ]);
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(diff.len(), 3, "Expected three changes");
 
         // Count each type of change
@@ -3678,7 +3705,7 @@ mod diff_tests {
             codec: None,
         });
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(diff.len(), 1, "Expected one change");
         match &diff[0] {
             ColumnChange::Updated {
@@ -3753,7 +3780,7 @@ mod diff_tests {
             },
         ]);
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert!(
             diff.is_empty(),
             "Expected no changes despite reordered columns"
@@ -3788,7 +3815,7 @@ mod diff_tests {
             col.data_type = ColumnType::BigInt;
         }
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(diff.len(), 1, "Expected one change in large table");
     }
 
@@ -3857,7 +3884,7 @@ mod diff_tests {
             });
         }
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
 
         assert_eq!(
             diff.len(),
@@ -3903,7 +3930,7 @@ mod diff_tests {
             codec: None,
         });
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(
             diff.len(),
             1,
@@ -3984,7 +4011,7 @@ mod diff_tests {
             codec: None,
         });
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(diff.len(), 2, "Expected changes for edge case columns");
     }
 
@@ -4009,17 +4036,17 @@ mod diff_tests {
             codec: None,
         };
         let col2 = col1.clone();
-        assert!(columns_are_equivalent(&col1, &col2));
+        assert!(columns_are_equivalent(&col1, &col2, &[]));
 
         // Test 2: Different names should not be equivalent
         let mut col3 = col1.clone();
         col3.name = "different".to_string();
-        assert!(!columns_are_equivalent(&col1, &col3));
+        assert!(!columns_are_equivalent(&col1, &col3, &[]));
 
         // Test 2b: Different comments should not be equivalent
         let mut col_with_comment = col1.clone();
         col_with_comment.comment = Some("User documentation".to_string());
-        assert!(!columns_are_equivalent(&col1, &col_with_comment));
+        assert!(!columns_are_equivalent(&col1, &col_with_comment, &[]));
 
         // Test 3: String enum from TypeScript vs integer enum from ClickHouse
         let typescript_enum_col = Column {
@@ -4075,7 +4102,8 @@ mod diff_tests {
         // These should be equivalent due to the enum semantic comparison
         assert!(columns_are_equivalent(
             &clickhouse_enum_col,
-            &typescript_enum_col
+            &typescript_enum_col,
+            &[]
         ));
 
         // Test 4: Different enum values should not be equivalent
@@ -4100,7 +4128,8 @@ mod diff_tests {
 
         assert!(!columns_are_equivalent(
             &typescript_enum_col,
-            &different_enum_col
+            &different_enum_col,
+            &[]
         ));
 
         // Test 5: Non-enum types should use standard equality
@@ -4130,7 +4159,7 @@ mod diff_tests {
             codec: None,
         };
 
-        assert!(!columns_are_equivalent(&int_col1, &int_col2));
+        assert!(!columns_are_equivalent(&int_col1, &int_col2, &[]));
     }
 
     #[test]
@@ -4186,7 +4215,7 @@ mod diff_tests {
         };
 
         // These should be equivalent - order of typed_paths doesn't matter
-        assert!(columns_are_equivalent(&json_col1, &json_col2));
+        assert!(columns_are_equivalent(&json_col1, &json_col2, &[]));
 
         // Test: Different typed_paths should not be equivalent
         let json_col3 = Column {
@@ -4211,7 +4240,7 @@ mod diff_tests {
             codec: None,
         };
 
-        assert!(!columns_are_equivalent(&json_col1, &json_col3));
+        assert!(!columns_are_equivalent(&json_col1, &json_col3, &[]));
 
         // Test: Different max_dynamic_paths should not be equivalent
         let json_col4 = Column {
@@ -4237,7 +4266,7 @@ mod diff_tests {
             codec: None,
         };
 
-        assert!(!columns_are_equivalent(&json_col1, &json_col4));
+        assert!(!columns_are_equivalent(&json_col1, &json_col4, &[]));
     }
 
     #[test]
@@ -4315,7 +4344,11 @@ mod diff_tests {
         };
 
         // These should be equivalent - order doesn't matter at any level
-        assert!(columns_are_equivalent(&nested_json_col1, &nested_json_col2));
+        assert!(columns_are_equivalent(
+            &nested_json_col1,
+            &nested_json_col2,
+            &[]
+        ));
     }
 
     #[test]
@@ -4418,7 +4451,8 @@ mod diff_tests {
         // These should be equivalent - name difference doesn't matter if structure matches
         assert!(columns_are_equivalent(
             &col_with_generated_name,
-            &col_with_user_name
+            &col_with_user_name,
+            &[]
         ));
 
         // Test: Different column structures should not be equivalent
@@ -4455,7 +4489,8 @@ mod diff_tests {
 
         assert!(!columns_are_equivalent(
             &col_with_user_name,
-            &col_different_structure
+            &col_different_structure,
+            &[]
         ));
     }
 
@@ -4609,7 +4644,7 @@ mod diff_tests {
         };
 
         // These should be equivalent - name differences at all levels don't matter
-        assert!(columns_are_equivalent(&col_generated, &col_user));
+        assert!(columns_are_equivalent(&col_generated, &col_user, &[]));
     }
 
     #[test]
@@ -4638,7 +4673,11 @@ mod diff_tests {
             codec: Some("ZSTD(3)".to_string()),
             ..base_col.clone()
         };
-        assert!(columns_are_equivalent(&col_with_codec1, &col_with_codec2));
+        assert!(columns_are_equivalent(
+            &col_with_codec1,
+            &col_with_codec2,
+            &[]
+        ));
 
         // Test 2: Columns with different codecs should not be equivalent
         let col_with_different_codec = Column {
@@ -4647,11 +4686,12 @@ mod diff_tests {
         };
         assert!(!columns_are_equivalent(
             &col_with_codec1,
-            &col_with_different_codec
+            &col_with_different_codec,
+            &[]
         ));
 
         // Test 3: Column with codec vs column without codec should not be equivalent
-        assert!(!columns_are_equivalent(&col_with_codec1, &base_col));
+        assert!(!columns_are_equivalent(&col_with_codec1, &base_col, &[]));
 
         // Test 4: Columns with codec chains should be detected as different
         let col_with_chain1 = Column {
@@ -4662,7 +4702,11 @@ mod diff_tests {
             codec: Some("Delta, ZSTD".to_string()),
             ..base_col.clone()
         };
-        assert!(!columns_are_equivalent(&col_with_chain1, &col_with_chain2));
+        assert!(!columns_are_equivalent(
+            &col_with_chain1,
+            &col_with_chain2,
+            &[]
+        ));
 
         // Test 5: Codec with different compression levels should be detected as different
         let col_zstd3 = Column {
@@ -4673,7 +4717,7 @@ mod diff_tests {
             codec: Some("ZSTD(9)".to_string()),
             ..base_col.clone()
         };
-        assert!(!columns_are_equivalent(&col_zstd3, &col_zstd9));
+        assert!(!columns_are_equivalent(&col_zstd3, &col_zstd9, &[]));
 
         // Test 6: Normalized codec comparison - user "Delta" vs ClickHouse "Delta(4)"
         let col_user_delta = Column {
@@ -4684,7 +4728,7 @@ mod diff_tests {
             codec: Some("Delta(4)".to_string()),
             ..base_col.clone()
         };
-        assert!(columns_are_equivalent(&col_user_delta, &col_ch_delta));
+        assert!(columns_are_equivalent(&col_user_delta, &col_ch_delta, &[]));
 
         // Test 7: Normalized codec comparison - user "Gorilla" vs ClickHouse "Gorilla(8)"
         let col_user_gorilla = Column {
@@ -4695,7 +4739,11 @@ mod diff_tests {
             codec: Some("Gorilla(8)".to_string()),
             ..base_col.clone()
         };
-        assert!(columns_are_equivalent(&col_user_gorilla, &col_ch_gorilla));
+        assert!(columns_are_equivalent(
+            &col_user_gorilla,
+            &col_ch_gorilla,
+            &[]
+        ));
 
         // Test 8: Normalized chain comparison - "Delta, LZ4" vs "Delta(4), LZ4"
         let col_user_chain = Column {
@@ -4706,7 +4754,7 @@ mod diff_tests {
             codec: Some("Delta(4), LZ4".to_string()),
             ..base_col.clone()
         };
-        assert!(columns_are_equivalent(&col_user_chain, &col_ch_chain));
+        assert!(columns_are_equivalent(&col_user_chain, &col_ch_chain, &[]));
     }
 }
 
@@ -6003,5 +6051,165 @@ mod diff_orchestration_worker_tests {
 
         assert!(removed_found, "Python worker removal not detected");
         assert!(added_found, "Typescript worker addition not detected");
+    }
+
+    #[test]
+    fn test_ignore_string_low_cardinality_differences_integration() {
+        use crate::framework::core::infrastructure::table::{
+            Column, ColumnType, IntType, OrderBy, Table,
+        };
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+        use crate::framework::versions::Version;
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+        use crate::infrastructure::olap::clickhouse::IgnorableOperation;
+
+        // Create two tables that differ only in LowCardinality annotations
+        let table_with_low_cardinality = Table {
+            name: "test_table".to_string(),
+            database: None,
+            cluster_name: None,
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                },
+                Column {
+                    name: "name".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: Some(Version::from_string("1.0.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            primary_key_expression: None,
+        };
+
+        let table_without_low_cardinality = Table {
+            name: "test_table".to_string(),
+            database: None,
+            cluster_name: None,
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![], // No LowCardinality annotation
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                },
+                Column {
+                    name: "name".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: Some(Version::from_string("1.0.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            primary_key_expression: None,
+        };
+
+        // Test 1: Without ignore flag, should detect difference
+        let diff_without_ignore = compute_table_columns_diff(
+            &table_with_low_cardinality,
+            &table_without_low_cardinality,
+            &[],
+        );
+        assert_eq!(
+            diff_without_ignore.len(),
+            1,
+            "Expected one column change without ignore flag"
+        );
+
+        // Test 2: With ignore flag, should detect no difference
+        let ignore_ops = vec![IgnorableOperation::IgnoreStringLowCardinalityDifferences];
+        let diff_with_ignore = compute_table_columns_diff(
+            &table_with_low_cardinality,
+            &table_without_low_cardinality,
+            &ignore_ops,
+        );
+        assert_eq!(
+            diff_with_ignore.len(),
+            0,
+            "Expected no column changes with ignore flag"
+        );
+
+        // Test 3: Test with columns_are_equivalent directly
+        assert!(!columns_are_equivalent(
+            &table_with_low_cardinality.columns[0],
+            &table_without_low_cardinality.columns[0],
+            &[]
+        ));
+        assert!(columns_are_equivalent(
+            &table_with_low_cardinality.columns[0],
+            &table_without_low_cardinality.columns[0],
+            &ignore_ops
+        ));
+
+        // Test 4: Ensure other differences are still detected
+        let mut table_with_different_type = table_without_low_cardinality.clone();
+        table_with_different_type.columns[0].data_type = ColumnType::Int(IntType::Int64);
+
+        let diff_different_type = compute_table_columns_diff(
+            &table_with_low_cardinality,
+            &table_with_different_type,
+            &ignore_ops,
+        );
+        assert_eq!(
+            diff_different_type.len(),
+            1,
+            "Should still detect actual type differences even with ignore flag"
+        );
     }
 }

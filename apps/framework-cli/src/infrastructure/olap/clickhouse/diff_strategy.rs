@@ -170,7 +170,11 @@ pub fn enums_are_equivalent(actual: &DataEnum, target: &DataEnum) -> bool {
 ///
 /// # Returns
 /// `true` if the Nested types are semantically equivalent, `false` otherwise
-pub fn nested_are_equivalent(actual: &Nested, target: &Nested) -> bool {
+pub fn nested_are_equivalent(
+    actual: &Nested,
+    target: &Nested,
+    ignore_low_cardinality: bool,
+) -> bool {
     // First check direct equality (fast path)
     if actual == target {
         return true;
@@ -190,22 +194,32 @@ pub fn nested_are_equivalent(actual: &Nested, target: &Nested) -> bool {
     // Note: We assume columns are in the same order. If ClickHouse reorders nested columns,
     // we may need to add order-independent comparison here as well.
     for (actual_col, target_col) in actual.columns.iter().zip(target.columns.iter()) {
+        // Normalize columns to handle LowCardinality comparison when requested
+        let normalized_actual =
+            normalize_column_for_low_cardinality_ignore(actual_col, ignore_low_cardinality);
+        let normalized_target =
+            normalize_column_for_low_cardinality_ignore(target_col, ignore_low_cardinality);
+
         // Use columns_are_equivalent for full semantic comparison
         // We need to be careful here to avoid infinite recursion
         // So we'll do a simpler comparison for now
-        if actual_col.name != target_col.name
-            || actual_col.required != target_col.required
-            || actual_col.unique != target_col.unique
-            || actual_col.default != target_col.default
-            || actual_col.annotations != target_col.annotations
-            || actual_col.comment != target_col.comment
-            || actual_col.ttl != target_col.ttl
+        if normalized_actual.name != normalized_target.name
+            || normalized_actual.required != normalized_target.required
+            || normalized_actual.unique != normalized_target.unique
+            || normalized_actual.default != normalized_target.default
+            || normalized_actual.annotations != normalized_target.annotations
+            || normalized_actual.comment != normalized_target.comment
+            || normalized_actual.ttl != normalized_target.ttl
         {
             return false;
         }
 
         // Recursively compare data types
-        if !column_types_are_equivalent(&actual_col.data_type, &target_col.data_type) {
+        if !column_types_are_equivalent(
+            &actual_col.data_type,
+            &target_col.data_type,
+            ignore_low_cardinality,
+        ) {
             return false;
         }
     }
@@ -218,23 +232,29 @@ pub fn nested_are_equivalent(actual: &Nested, target: &Nested) -> bool {
 /// This is used for comparing nested types within JsonOptions, handling special cases
 /// like enums, nested JSON types, and Nested column types. Also recursively handles
 /// container types (Array, Nullable, Map, NamedTuple) to ensure nested comparisons work.
+/// When `ignore_low_cardinality` is true, treats String and LowCardinality(String) as equivalent.
 ///
 /// # Arguments
 /// * `a` - The first ColumnType to compare
 /// * `b` - The second ColumnType to compare
+/// * `ignore_low_cardinality` - Whether to consider String and LowCardinality(String) equivalent
 ///
 /// # Returns
 /// `true` if the ColumnTypes are semantically equivalent, `false` otherwise
-pub fn column_types_are_equivalent(a: &ColumnType, b: &ColumnType) -> bool {
+pub fn column_types_are_equivalent(
+    a: &ColumnType,
+    b: &ColumnType,
+    ignore_low_cardinality: bool,
+) -> bool {
     match (a, b) {
         (ColumnType::Enum(a_enum), ColumnType::Enum(b_enum)) => {
             enums_are_equivalent(a_enum, b_enum)
         }
         (ColumnType::Json(a_opts), ColumnType::Json(b_opts)) => {
-            json_options_are_equivalent(a_opts, b_opts)
+            json_options_are_equivalent(a_opts, b_opts, ignore_low_cardinality)
         }
         (ColumnType::Nested(a_nested), ColumnType::Nested(b_nested)) => {
-            nested_are_equivalent(a_nested, b_nested)
+            nested_are_equivalent(a_nested, b_nested, ignore_low_cardinality)
         }
         // Recursively handle Array types
         (
@@ -246,10 +266,13 @@ pub fn column_types_are_equivalent(a: &ColumnType, b: &ColumnType) -> bool {
                 element_type: b_elem,
                 element_nullable: b_nullable,
             },
-        ) => a_nullable == b_nullable && column_types_are_equivalent(a_elem, b_elem),
+        ) => {
+            a_nullable == b_nullable
+                && column_types_are_equivalent(a_elem, b_elem, ignore_low_cardinality)
+        }
         // Recursively handle Nullable types
         (ColumnType::Nullable(a_inner), ColumnType::Nullable(b_inner)) => {
-            column_types_are_equivalent(a_inner, b_inner)
+            column_types_are_equivalent(a_inner, b_inner, ignore_low_cardinality)
         }
         // Recursively handle Map types
         (
@@ -261,7 +284,10 @@ pub fn column_types_are_equivalent(a: &ColumnType, b: &ColumnType) -> bool {
                 key_type: b_key,
                 value_type: b_val,
             },
-        ) => column_types_are_equivalent(a_key, b_key) && column_types_are_equivalent(a_val, b_val),
+        ) => {
+            column_types_are_equivalent(a_key, b_key, ignore_low_cardinality)
+                && column_types_are_equivalent(a_val, b_val, ignore_low_cardinality)
+        }
         // Recursively handle NamedTuple types
         (ColumnType::NamedTuple(a_fields), ColumnType::NamedTuple(b_fields)) => {
             if a_fields.len() != b_fields.len() {
@@ -271,12 +297,40 @@ pub fn column_types_are_equivalent(a: &ColumnType, b: &ColumnType) -> bool {
                 .iter()
                 .zip(b_fields.iter())
                 .all(|((a_name, a_type), (b_name, b_type))| {
-                    a_name == b_name && column_types_are_equivalent(a_type, b_type)
+                    a_name == b_name
+                        && column_types_are_equivalent(a_type, b_type, ignore_low_cardinality)
                 })
         }
         // For all other types, use standard equality
         _ => a == b,
     }
+}
+
+/// Normalizes a column for LowCardinality ignore comparisons.
+///
+/// When `ignore_low_cardinality` is true, this strips LowCardinality annotations
+/// from the column to allow String and LowCardinality(String) to be considered equivalent.
+///
+/// # Arguments
+/// * `column` - The column to normalize
+/// * `ignore_low_cardinality` - Whether to strip LowCardinality annotations
+///
+/// # Returns
+/// A normalized copy of the column with LowCardinality annotations stripped if requested
+pub fn normalize_column_for_low_cardinality_ignore(
+    column: &Column,
+    ignore_low_cardinality: bool,
+) -> Column {
+    if !ignore_low_cardinality {
+        return column.clone();
+    }
+
+    let mut normalized = column.clone();
+    // Strip LowCardinality annotations
+    normalized
+        .annotations
+        .retain(|(key, _)| key != "LowCardinality");
+    normalized
 }
 
 /// Checks if two JsonOptions are semantically equivalent.
@@ -288,10 +342,15 @@ pub fn column_types_are_equivalent(a: &ColumnType, b: &ColumnType) -> bool {
 /// # Arguments
 /// * `a` - The first JsonOptions to compare
 /// * `b` - The second JsonOptions to compare
+/// * `ignore_low_cardinality` - Whether to consider String and LowCardinality(String) equivalent
 ///
 /// # Returns
 /// `true` if the JsonOptions are semantically equivalent, `false` otherwise
-pub fn json_options_are_equivalent(a: &JsonOptions, b: &JsonOptions) -> bool {
+pub fn json_options_are_equivalent(
+    a: &JsonOptions,
+    b: &JsonOptions,
+    ignore_low_cardinality: bool,
+) -> bool {
     // First check direct equality (fast path)
     if a == b {
         return true;
@@ -315,7 +374,7 @@ pub fn json_options_are_equivalent(a: &JsonOptions, b: &JsonOptions) -> bool {
     // We need semantic comparison for the types to handle nested JSON
     for (a_path, a_type) in &a.typed_paths {
         let found = b.typed_paths.iter().any(|(b_path, b_type)| {
-            a_path == b_path && column_types_are_equivalent(a_type, b_type)
+            a_path == b_path && column_types_are_equivalent(a_type, b_type, ignore_low_cardinality)
         });
         if !found {
             return false;
@@ -2219,5 +2278,305 @@ mod tests {
 
         // Should NOT trigger drop+create - both are the same function, just with/without outer parens
         assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_normalize_column_for_low_cardinality_ignore_when_disabled() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        // Create a column with LowCardinality annotation
+        let column_with_low_cardinality = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        // When ignore_low_cardinality is false, column should be unchanged
+        let normalized =
+            normalize_column_for_low_cardinality_ignore(&column_with_low_cardinality, false);
+        assert_eq!(normalized.annotations.len(), 1);
+        assert_eq!(normalized.annotations[0].0, "LowCardinality");
+        assert_eq!(normalized.annotations[0].1, serde_json::json!(true));
+    }
+
+    #[test]
+    fn test_normalize_column_for_low_cardinality_ignore_when_enabled() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        // Create a column with LowCardinality and other annotations
+        let column_with_annotations = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![
+                ("LowCardinality".to_string(), serde_json::json!(true)),
+                ("other_annotation".to_string(), serde_json::json!("value")),
+            ],
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        // When ignore_low_cardinality is true, only LowCardinality annotation should be stripped
+        let normalized =
+            normalize_column_for_low_cardinality_ignore(&column_with_annotations, true);
+        assert_eq!(normalized.annotations.len(), 1);
+        assert_eq!(normalized.annotations[0].0, "other_annotation");
+        assert_eq!(normalized.annotations[0].1, serde_json::json!("value"));
+    }
+
+    #[test]
+    fn test_normalize_column_for_low_cardinality_ignore_no_annotations() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        // Create a column without any annotations
+        let column_without_annotations = Column {
+            name: "test_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        // Should work fine with no annotations
+        let normalized =
+            normalize_column_for_low_cardinality_ignore(&column_without_annotations, true);
+        assert_eq!(normalized.annotations.len(), 0);
+    }
+
+    #[test]
+    fn test_column_types_are_equivalent_with_ignore_low_cardinality_disabled() {
+        use crate::framework::core::infrastructure::table::{ColumnType, IntType};
+
+        let string_type = ColumnType::String;
+        let int_type = ColumnType::Int(IntType::Int32);
+
+        // When ignore_low_cardinality is false, basic types should work as before
+        assert!(column_types_are_equivalent(
+            &string_type,
+            &string_type,
+            false
+        ));
+        assert!(!column_types_are_equivalent(&string_type, &int_type, false));
+    }
+
+    #[test]
+    fn test_column_types_are_equivalent_with_ignore_low_cardinality_enabled() {
+        use crate::framework::core::infrastructure::table::{ColumnType, IntType};
+
+        let string_type = ColumnType::String;
+        let int_type = ColumnType::Int(IntType::Int32);
+
+        // Basic functionality should still work when ignore_low_cardinality is true
+        assert!(column_types_are_equivalent(
+            &string_type,
+            &string_type,
+            true
+        ));
+        assert!(!column_types_are_equivalent(&string_type, &int_type, true));
+    }
+
+    #[test]
+    fn test_column_types_are_equivalent_with_nested_array_types() {
+        use crate::framework::core::infrastructure::table::{ColumnType, IntType};
+
+        let array_string = ColumnType::Array {
+            element_type: Box::new(ColumnType::String),
+            element_nullable: false,
+        };
+        let array_int = ColumnType::Array {
+            element_type: Box::new(ColumnType::Int(IntType::Int32)),
+            element_nullable: false,
+        };
+
+        // Test that nested comparison works correctly with ignore flag
+        assert!(column_types_are_equivalent(
+            &array_string,
+            &array_string,
+            true
+        ));
+        assert!(!column_types_are_equivalent(
+            &array_string,
+            &array_int,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_column_types_are_equivalent_with_nullable_types() {
+        use crate::framework::core::infrastructure::table::{ColumnType, IntType};
+
+        let nullable_string = ColumnType::Nullable(Box::new(ColumnType::String));
+        let nullable_int = ColumnType::Nullable(Box::new(ColumnType::Int(IntType::Int32)));
+
+        // Test that nested comparison works correctly with ignore flag
+        assert!(column_types_are_equivalent(
+            &nullable_string,
+            &nullable_string,
+            true
+        ));
+        assert!(!column_types_are_equivalent(
+            &nullable_string,
+            &nullable_int,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_column_types_are_equivalent_with_map_types() {
+        use crate::framework::core::infrastructure::table::{ColumnType, IntType};
+
+        let map_string_string = ColumnType::Map {
+            key_type: Box::new(ColumnType::String),
+            value_type: Box::new(ColumnType::String),
+        };
+        let map_string_int = ColumnType::Map {
+            key_type: Box::new(ColumnType::String),
+            value_type: Box::new(ColumnType::Int(IntType::Int32)),
+        };
+
+        // Test that nested comparison works correctly with ignore flag
+        assert!(column_types_are_equivalent(
+            &map_string_string,
+            &map_string_string,
+            true
+        ));
+        assert!(!column_types_are_equivalent(
+            &map_string_string,
+            &map_string_int,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_json_options_are_equivalent_with_ignore_low_cardinality() {
+        use crate::framework::core::infrastructure::table::{ColumnType, IntType, JsonOptions};
+
+        let json_opts_1 = JsonOptions {
+            max_dynamic_paths: Some(100),
+            max_dynamic_types: Some(50),
+            skip_paths: vec![],
+            skip_regexps: vec![],
+            typed_paths: vec![
+                ("path1".to_string(), ColumnType::String),
+                ("path2".to_string(), ColumnType::Int(IntType::Int32)),
+            ],
+        };
+
+        let json_opts_2 = JsonOptions {
+            max_dynamic_paths: Some(100),
+            max_dynamic_types: Some(50),
+            skip_paths: vec![],
+            skip_regexps: vec![],
+            typed_paths: vec![
+                ("path2".to_string(), ColumnType::Int(IntType::Int32)),
+                ("path1".to_string(), ColumnType::String), // Different order
+            ],
+        };
+
+        // Should be equivalent regardless of order and ignore flag value
+        assert!(json_options_are_equivalent(
+            &json_opts_1,
+            &json_opts_2,
+            false
+        ));
+        assert!(json_options_are_equivalent(
+            &json_opts_1,
+            &json_opts_2,
+            true
+        ));
+    }
+
+    #[test]
+    fn test_nested_are_equivalent_with_ignore_low_cardinality() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, Nested};
+
+        // Test 1: Identical nested types (existing test case)
+        let nested_1 = Nested {
+            name: "test_nested".to_string(),
+            jwt: false,
+            columns: vec![Column {
+                name: "field1".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+            }],
+        };
+
+        let nested_2 = nested_1.clone();
+
+        // Should be equivalent with any ignore flag value
+        assert!(nested_are_equivalent(&nested_1, &nested_2, false));
+        assert!(nested_are_equivalent(&nested_1, &nested_2, true));
+
+        // Test 2: Edge case - one column has LowCardinality annotation, other doesn't
+        let nested_with_low_card = Nested {
+            name: "test_nested".to_string(),
+            jwt: false,
+            columns: vec![Column {
+                name: "field1".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+                comment: None,
+                ttl: None,
+                codec: None,
+            }],
+        };
+
+        let nested_without_low_card = Nested {
+            name: "test_nested".to_string(),
+            jwt: false,
+            columns: vec![Column {
+                name: "field1".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+            }],
+        };
+
+        // When ignore_low_cardinality=false, they should be different
+        assert!(!nested_are_equivalent(
+            &nested_with_low_card,
+            &nested_without_low_card,
+            false
+        ));
+
+        // When ignore_low_cardinality=true, they should be equivalent (this was the bug)
+        assert!(nested_are_equivalent(
+            &nested_with_low_card,
+            &nested_without_low_card,
+            true
+        ));
     }
 }
