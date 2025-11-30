@@ -240,6 +240,7 @@ pub enum IgnorableOperation {
     ModifyTableTtl,
     ModifyColumnTtl,
     ModifyPartitionBy,
+    IgnoreStringLowCardinalityDifferences,
 }
 
 impl IgnorableOperation {
@@ -286,6 +287,15 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
     if ignore_ops.contains(&IgnorableOperation::ModifyColumnTtl) {
         for column in &mut normalized.columns {
             column.ttl = None;
+        }
+    }
+
+    // Strip LowCardinality annotations if ignored
+    if ignore_ops.contains(&IgnorableOperation::IgnoreStringLowCardinalityDifferences) {
+        for column in &mut normalized.columns {
+            column
+                .annotations
+                .retain(|(key, _)| key != "LowCardinality");
         }
     }
 
@@ -3649,6 +3659,110 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             normalized.columns[0].ttl, table.columns[0].ttl,
             "Column TTL should remain unchanged"
         );
+    }
+
+    #[test]
+    fn test_normalize_table_for_diff_strips_low_cardinality_annotations() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, OrderBy, Table};
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![("LowCardinality".to_string(), serde_json::json!(true))],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "name".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![
+                        ("LowCardinality".to_string(), serde_json::json!(true)),
+                        ("other".to_string(), serde_json::json!("value")),
+                    ],
+                    comment: None,
+                    ttl: None,
+                },
+                Column {
+                    name: "regular_column".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![("other".to_string(), serde_json::json!("value"))],
+                    comment: None,
+                    ttl: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::default_for_deserialization(),
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            cluster_name: None,
+            table_ttl_setting: None,
+            primary_key_expression: None,
+        };
+
+        let ignore_ops = vec![IgnorableOperation::IgnoreStringLowCardinalityDifferences];
+        let normalized = super::normalize_table_for_diff(&table, &ignore_ops);
+
+        // Check that LowCardinality annotations were stripped
+        assert_eq!(
+            normalized.columns[0].annotations.len(),
+            0,
+            "Column 'id' should have no annotations after LowCardinality stripping"
+        );
+
+        assert_eq!(
+            normalized.columns[1].annotations.len(),
+            1,
+            "Column 'name' should have only non-LowCardinality annotations"
+        );
+        assert_eq!(
+            normalized.columns[1].annotations[0].0, "other",
+            "Only the 'other' annotation should remain for 'name' column"
+        );
+
+        assert_eq!(
+            normalized.columns[2].annotations.len(),
+            1,
+            "Regular column should keep its non-LowCardinality annotations"
+        );
+        assert_eq!(
+            normalized.columns[2].annotations[0].0, "other",
+            "Regular column should still have its 'other' annotation"
+        );
+
+        // Check that other fields remain unchanged
+        assert_eq!(normalized.name, table.name);
+        assert_eq!(normalized.columns[0].name, "id");
+        assert_eq!(normalized.columns[1].name, "name");
+        assert_eq!(normalized.columns[2].name, "regular_column");
+        assert_eq!(normalized.order_by, table.order_by);
     }
 
     #[test]
