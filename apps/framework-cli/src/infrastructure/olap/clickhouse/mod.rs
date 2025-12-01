@@ -2363,13 +2363,25 @@ static ORDER_BY_TERMINATOR_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
 pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     debug!("Extracting ORDER BY from query: {}", create_query);
 
+    // Find the main ORDER BY clause (not ones inside projections)
+    // We need to search for ORDER BY that comes after the ENGINE clause
+    let upper = create_query.to_uppercase();
+    let engine_pos = upper.find("ENGINE").unwrap_or_else(|| {
+        debug!("No ENGINE clause found");
+        0
+    });
+
+    // Search for ORDER BY only in the part after ENGINE
+    let after_engine = &create_query[engine_pos..];
+    let upper_after_engine = &upper[engine_pos..];
+
     // Find the ORDER BY clause, being careful not to match PRIMARY KEY
     let mut after_order_by = None;
-    for (idx, _) in create_query.to_uppercase().match_indices("ORDER BY") {
+    for (idx, _) in upper_after_engine.match_indices("ORDER BY") {
         // Check if this is not part of "PRIMARY KEY" by looking at the preceding text
-        let preceding_text = &create_query[..idx].trim_end().to_uppercase();
+        let preceding_text = &upper_after_engine[..idx].trim_end();
         if !preceding_text.ends_with("PRIMARY KEY") {
-            after_order_by = Some(&create_query[idx..]);
+            after_order_by = Some(&after_engine[idx..]);
             break;
         }
     }
@@ -2796,6 +2808,20 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree()";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, Vec::<String>::new());
+
+        // Test with projections that have their own ORDER BY clauses
+        // Should extract the main table ORDER BY, not the projection ORDER BY
+        let query = r#"CREATE TABLE local.ParsedLogsV2_0_0 (`orgId` String, `projectId` String, `branchId` String, `date` DateTime('UTC'), `message` String, `severityNumber` Float64, `severityLevel` String, `source` String, `sessionId` String, `serviceName` String, `machineId` String, PROJECTION severity_level_projection (SELECT severityLevel, date, orgId, projectId, branchId, machineId, source, message ORDER BY severityLevel, date), PROJECTION machine_source_projection (SELECT machineId, source, date, orgId, projectId, branchId, severityLevel, message ORDER BY machineId, source, date)) ENGINE = MergeTree PRIMARY KEY (orgId, projectId, branchId) ORDER BY (orgId, projectId, branchId, date) TTL date + toIntervalDay(90) SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_granularity_bytes = 10485760"#;
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(
+            order_by,
+            vec![
+                "orgId".to_string(),
+                "projectId".to_string(),
+                "branchId".to_string(),
+                "date".to_string()
+            ]
+        );
     }
 
     #[test]
