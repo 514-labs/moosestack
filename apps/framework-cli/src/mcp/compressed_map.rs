@@ -77,24 +77,6 @@ pub enum ComponentType {
     TopicTopicSync,
 }
 
-impl ComponentType {
-    /// Get the URI path segment for this component type
-    pub fn uri_segment(&self) -> &'static str {
-        match self {
-            Self::Topic => "topics",
-            Self::Table => "tables",
-            Self::View => "views",
-            Self::ApiEndpoint => "apis",
-            Self::Function => "functions",
-            Self::SqlResource => "sql_resources",
-            Self::Workflow => "workflows",
-            Self::WebApp => "web_apps",
-            Self::TopicTableSync => "topic_table_syncs",
-            Self::TopicTopicSync => "topic_topic_syncs",
-        }
-    }
-}
-
 /// Type of connection between components
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -468,70 +450,9 @@ pub fn build_compressed_map(infra_map: &InfrastructureMap) -> CompressedInfraMap
     compressed
 }
 
-/// Build a resource URI for a component
-pub fn build_resource_uri(component_type: ComponentType, component_id: &str) -> String {
-    format!(
-        "moose://infra/{}/{}",
-        component_type.uri_segment(),
-        component_id
-    )
-}
-
-/// Parse a resource URI to extract component type and ID
-pub fn parse_resource_uri(uri: &str) -> Option<(ComponentType, String)> {
-    let prefix = "moose://infra/";
-    if !uri.starts_with(prefix) {
-        return None;
-    }
-
-    let path = &uri[prefix.len()..];
-    let parts: Vec<&str> = path.splitn(2, '/').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-
-    let component_type = match parts[0] {
-        "topics" => ComponentType::Topic,
-        "tables" => ComponentType::Table,
-        "views" => ComponentType::View,
-        "apis" => ComponentType::ApiEndpoint,
-        "functions" => ComponentType::Function,
-        "sql_resources" => ComponentType::SqlResource,
-        "workflows" => ComponentType::Workflow,
-        "web_apps" => ComponentType::WebApp,
-        "topic_table_syncs" => ComponentType::TopicTableSync,
-        "topic_topic_syncs" => ComponentType::TopicTopicSync,
-        _ => return None,
-    };
-
-    Some((component_type, parts[1].to_string()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_build_resource_uri() {
-        assert_eq!(
-            build_resource_uri(ComponentType::Topic, "user_events_v1"),
-            "moose://infra/topics/user_events_v1"
-        );
-        assert_eq!(
-            build_resource_uri(ComponentType::Table, "analytics__users"),
-            "moose://infra/tables/analytics__users"
-        );
-    }
-
-    #[test]
-    fn test_parse_resource_uri() {
-        let (comp_type, id) = parse_resource_uri("moose://infra/topics/user_events").unwrap();
-        assert_eq!(comp_type, ComponentType::Topic);
-        assert_eq!(id, "user_events");
-
-        assert!(parse_resource_uri("invalid://uri").is_none());
-        assert!(parse_resource_uri("moose://infra/invalid/id").is_none());
-    }
 
     #[test]
     fn test_compressed_map_add_component() {
@@ -562,13 +483,6 @@ mod tests {
         assert_eq!(map.stats.total_connections, 1);
         assert_eq!(map.get_outgoing_connections("api1").len(), 1);
         assert_eq!(map.get_incoming_connections("topic1").len(), 1);
-    }
-
-    #[test]
-    fn test_component_type_uri_segments() {
-        assert_eq!(ComponentType::Topic.uri_segment(), "topics");
-        assert_eq!(ComponentType::ApiEndpoint.uri_segment(), "apis");
-        assert_eq!(ComponentType::Function.uri_segment(), "functions");
     }
 
     #[test]

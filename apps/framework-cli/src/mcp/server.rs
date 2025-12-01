@@ -1,8 +1,7 @@
 use rmcp::{
     model::{
-        CallToolRequestParam, CallToolResult, ErrorCode, Implementation, ListResourcesResult,
-        ListToolsResult, PaginatedRequestParam, ProtocolVersion, ReadResourceRequestParam,
-        ReadResourceResult, ServerCapabilities, ServerInfo,
+        CallToolRequestParam, CallToolResult, Implementation, ListToolsResult,
+        PaginatedRequestParam, ProtocolVersion, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     transport::streamable_http_server::{
@@ -14,7 +13,6 @@ use std::sync::Arc;
 use tracing::info;
 
 use super::tools::{create_error_result, infra_issues, infra_map, logs, query_olap, sample_stream};
-use super::{embedded_docs, infra_resources};
 use crate::cli::processing_coordinator::ProcessingCoordinator;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -58,7 +56,6 @@ impl ServerHandler for MooseMcpHandler {
             protocol_version: ProtocolVersion::V_2024_11_05,
             capabilities: ServerCapabilities {
                 tools: Some(Default::default()),
-                resources: Some(Default::default()),
                 ..Default::default()
             },
             server_info: Implementation {
@@ -69,7 +66,7 @@ impl ServerHandler for MooseMcpHandler {
                 website_url: None,
             },
             instructions: Some(
-                "Moose MCP Server - Access dev server logs, infrastructure map, diagnose infrastructure issues, query the OLAP database, sample streaming topics, browse code sources, and read embedded Moose documentation"
+                "Moose MCP Server - Access dev server logs, infrastructure map, diagnose infrastructure issues, query the OLAP database, and sample streaming topics"
                     .to_string(),
             ),
         }
@@ -126,47 +123,6 @@ impl ServerHandler for MooseMcpHandler {
             )
             .await),
             _ => Ok(create_error_result(format!("Unknown tool: {}", param.name))),
-        }
-    }
-
-    async fn list_resources(
-        &self,
-        _pagination: Option<PaginatedRequestParam>,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ListResourcesResult, ErrorData> {
-        // Combine documentation resources and infrastructure resources
-        let mut doc_resources = embedded_docs::list_resources();
-        let infra_resources =
-            infra_resources::list_infra_resources(self.redis_client.clone()).await;
-
-        // Append infrastructure resources to documentation resources
-        doc_resources.resources.extend(infra_resources.resources);
-
-        Ok(doc_resources)
-    }
-
-    async fn read_resource(
-        &self,
-        request: ReadResourceRequestParam,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, ErrorData> {
-        // Route based on URI scheme
-        if request.uri.starts_with("moose://infra/") {
-            // Handle infrastructure resources
-            infra_resources::read_infra_resource(&request.uri, self.redis_client.clone())
-                .await
-                .ok_or_else(|| ErrorData {
-                    code: ErrorCode::INVALID_PARAMS,
-                    message: format!("Infrastructure resource not found: {}", request.uri).into(),
-                    data: None,
-                })
-        } else {
-            // Handle documentation resources
-            embedded_docs::read_resource(&request.uri).ok_or_else(|| ErrorData {
-                code: ErrorCode::INVALID_PARAMS,
-                message: format!("Resource not found: {}", request.uri).into(),
-                data: None,
-            })
         }
     }
 }
