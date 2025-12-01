@@ -972,6 +972,15 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Change Data Capture",
         icon: IconBolt,
         languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "guides/data-management/change-data-capture/debezium-dev-to-prod-outline",
+            title: "Debezium",
+            icon: IconDatabase,
+            languages: ["typescript", "python"],
+          },
+        ],
       },
     ],
   },

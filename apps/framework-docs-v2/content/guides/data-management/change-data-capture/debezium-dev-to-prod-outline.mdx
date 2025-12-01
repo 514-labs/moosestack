@@ -3,6 +3,8 @@ title: Stream Data from Postgres with Debezium
 description: Learn how to adapt the Debezium CDC template to stream data from your PostgreSQL database to ClickHouse.
 ---
 
+import { FileTree } from "@/components/mdx";
+
 # Stream Data from Postgres with Debezium
 
 This guide shows you how to use the **Debezium CDC Template** with your own application. You will learn how to connect the pipeline to your PostgreSQL database and send your tables to ClickHouse for real-time analytics.
@@ -30,15 +32,23 @@ This template uses two Kafka topics for each table: one for the raw data and one
 
 Here are the key files in the template you should know about:
 
-```
-cdc-pipeline/
-├── 1-sources/                   # Defines Kafka topics from Debezium
-├── 2-transforms/                # Sanitizes CDC events & maps to destination
-├── 3-destinations/              # Defines ClickHouse tables & streams
-docker-compose.dev.override.yaml # Infrastructure (Kafka Connect, Redpanda)
-setup-cdc.ts                     # Script that registers the connector
-moose.config.toml                # Project config (enables streaming)
-```
+<FileTree>
+  <FileTree.Folder name="cdc-pipeline">
+    <FileTree.Folder name="1-sources" />
+    <FileTree.Folder name="2-transforms" />
+    <FileTree.Folder name="3-destinations" />
+  </FileTree.Folder>
+  <FileTree.File name="docker-compose.dev.override.yaml" />
+  <FileTree.File name="setup-cdc.ts" />
+  <FileTree.File name="moose.config.toml" />
+</FileTree>
+
+*   **`cdc-pipeline/1-sources/`**: Defines Kafka topics from Debezium
+*   **`cdc-pipeline/2-transforms/`**: Sanitizes CDC events and maps them to the destination
+*   **`cdc-pipeline/3-destinations/`**: Defines ClickHouse tables and streams
+*   **`docker-compose.dev.override.yaml`**: Infrastructure configuration (Kafka Connect, Redpanda)
+*   **`setup-cdc.ts`**: Script that registers the Debezium connector
+*   **`moose.config.toml`**: Project configuration (enables streaming)
 
 ## Step 0: Clone the Template
 

@@ -77,14 +77,20 @@ export function ServerFigure({
   // Extract filename from figcaption (title from markdown)
   let figcaptionTitle: string | undefined;
   if (figcaption !== null) {
-    const figcaptionProps = figcaption.props as Record<string, unknown>;
+    const figcaptionProps = (figcaption as React.ReactElement).props as Record<
+      string,
+      unknown
+    >;
     figcaptionTitle = extractTextFromNode(
       figcaptionProps.children as React.ReactNode,
     ).trim();
   }
 
   const preProps =
-    preElement ? (preElement.props as Record<string, unknown>) || {} : {};
+    preElement ?
+      ((preElement as React.ReactElement).props as Record<string, unknown>) ||
+      {}
+    : {};
 
   // Prioritize figcaption title (from markdown title="...") over any existing attributes
   const filename =
