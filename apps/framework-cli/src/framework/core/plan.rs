@@ -510,6 +510,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -716,6 +717,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         });
 
         // Create test project first to get the database name
@@ -1094,6 +1096,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             });
 
         // Create mock OLAP client with the reality table

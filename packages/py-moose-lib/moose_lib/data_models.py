@@ -78,6 +78,41 @@ class ClickHouseCodec:
 
 
 @dataclasses.dataclass(frozen=True)
+class ClickHouseMaterialized:
+    """
+    ClickHouse MATERIALIZED column annotation.
+    The column value is computed at INSERT time and physically stored.
+    Cannot be explicitly inserted by users.
+
+    Args:
+        expression: ClickHouse SQL expression using column names (snake_case)
+
+    Examples:
+        # Extract date component
+        event_date: Annotated[date, ClickHouseMaterialized("toDate(event_time)")]
+
+        # Precompute hash
+        user_hash: Annotated[int, ClickHouseMaterialized("cityHash64(user_id)")]
+
+        # Complex expression with JSON
+        combination_hash: Annotated[
+            list[int],
+            ClickHouseMaterialized(
+                "arrayMap(kv -> cityHash64(kv.1, kv.2), "
+                "JSONExtractKeysAndValuesRaw(toString(log_blob)))"
+            )
+        ]
+
+    Notes:
+        - Expression uses ClickHouse column names, not Python field names
+        - MATERIALIZED and DEFAULT are mutually exclusive
+        - Can be combined with ClickHouseCodec for compression
+        - Changing the expression modifies the column in-place (existing values preserved)
+    """
+    expression: str
+
+
+@dataclasses.dataclass(frozen=True)
 class ClickHouseJson:
     max_dynamic_paths: int | None = None
     max_dynamic_types: int | None = None
@@ -619,6 +654,19 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
             None,
         )
 
+        # Extract MATERIALIZED expression from metadata, if provided
+        materialized_expr = next(
+            (md.expression for md in mds if isinstance(md, ClickHouseMaterialized)),
+            None,
+        )
+
+        # Validate mutual exclusivity of DEFAULT and MATERIALIZED
+        if default_expr and materialized_expr:
+            raise ValueError(
+                f"Column '{column_name}' cannot have both DEFAULT and MATERIALIZED. "
+                f"Use one or the other."
+            )
+
         # Extract TTL expression from metadata, if provided
         ttl_expr = next(
             (md.expression for md in mds if isinstance(md, ClickHouseTTL)),
@@ -639,6 +687,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 unique=False,
                 primary_key=primary_key,
                 default=default_expr,
+                materialized=materialized_expr,
                 annotations=annotations,
                 ttl=ttl_expr,
                 codec=codec_expr,

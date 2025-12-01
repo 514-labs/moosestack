@@ -668,6 +668,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -680,6 +681,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(order_by),
@@ -807,6 +809,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             position_after: Some("timestamp".to_string()),
         }];
@@ -865,6 +868,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             position_after: Some("timestamp".to_string()),
         }];

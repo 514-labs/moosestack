@@ -40,6 +40,7 @@ from .data_models import (
     ClickhouseDefault,
     clickhouse_default,
     ClickHouseTTL,
+    ClickHouseMaterialized,
     ClickHouseCodec,
     # Integer types
     Int8,
