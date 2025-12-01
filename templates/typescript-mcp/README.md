@@ -123,9 +123,10 @@ The MCP server supports optional API key authentication using PBKDF2.
 
 ### Generating Keys
 
-Generate an API key pair using the Moose CLI:
+Generate an API key pair using the Moose CLI from the project root:
 
 ```bash
+cd packages/moosestack-service
 moose generate hash-token
 ```
 
@@ -142,13 +143,11 @@ This outputs:
 export MCP_API_KEY_HASH=<hash_from_generation>
 ```
 
-**Client (web-app):**
+**Client (web-app) from the project root:**
 
 ```bash
 echo "MCP_API_KEY=<bearer_token>" >> packages/web-app/.env.local
 ```
-
-When `MCP_API_KEY_HASH` is not set, authentication is disabled (suitable for local development).
 
 ## Security Features
 
