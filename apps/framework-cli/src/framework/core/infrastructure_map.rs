@@ -2776,6 +2776,7 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
         || before.unique != after.unique
         // primary_key change is handled at the table level
         || before.default != after.default
+        || before.materialized != after.materialized
         || before.annotations != after.annotations
         || before.comment != after.comment
     {
@@ -4773,6 +4774,75 @@ mod diff_tests {
             ..base_col.clone()
         };
         assert!(columns_are_equivalent(&col_user_chain, &col_ch_chain));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_materialized() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let base_col = Column {
+            name: "event_date".to_string(),
+            data_type: ColumnType::Date,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        };
+
+        // Test 1: Columns with same materialized expression should be equivalent
+        let col_with_mat1 = Column {
+            materialized: Some("toDate(timestamp)".to_string()),
+            ..base_col.clone()
+        };
+        let col_with_mat2 = Column {
+            materialized: Some("toDate(timestamp)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_with_mat1, &col_with_mat2));
+
+        // Test 2: Columns with different materialized expressions should not be equivalent
+        let col_with_different_mat = Column {
+            materialized: Some("toStartOfMonth(timestamp)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(
+            &col_with_mat1,
+            &col_with_different_mat
+        ));
+
+        // Test 3: Column with materialized vs column without materialized should not be equivalent
+        assert!(!columns_are_equivalent(&col_with_mat1, &base_col));
+
+        // Test 4: Two columns without materialized (None) should be equivalent
+        let base_col2 = base_col.clone();
+        assert!(columns_are_equivalent(&base_col, &base_col2));
+
+        // Test 5: Adding materialized to a column should be detected as a change
+        let col_before = Column {
+            materialized: None,
+            ..base_col.clone()
+        };
+        let col_after = Column {
+            materialized: Some("cityHash64(user_id)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(&col_before, &col_after));
+
+        // Test 6: Removing materialized from a column should be detected as a change
+        let col_with_mat = Column {
+            materialized: Some("cityHash64(user_id)".to_string()),
+            ..base_col.clone()
+        };
+        let col_without_mat = Column {
+            materialized: None,
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(&col_with_mat, &col_without_mat));
     }
 }
 
