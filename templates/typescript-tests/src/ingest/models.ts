@@ -686,7 +686,6 @@ export const dateTimePrecisionOutputStream =
     destination: DateTimePrecisionOutputTable,
   });
 
-<<<<<<< HEAD
 /** =======Primary Key Expression Tests========= */
 
 /** Test: Primary Key Expression with hash function */
@@ -730,7 +729,7 @@ export const primaryKeyOrderingTable = new OlapTable<PrimaryKeyOrderingTest>(
     orderByFields: ["productId", "category", "brand"],
   },
 );
-=======
+
 // =======Codec Compression Test=======
 export interface CodecTest {
   id: Key<string>;
@@ -749,4 +748,3 @@ export const CodecTestPipeline = new IngestPipeline<CodecTest>("CodecTest", {
   stream: true,
   ingestApi: true,
 });
->>>>>>> e58ab3211 (first pass)
