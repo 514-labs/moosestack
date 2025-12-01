@@ -443,7 +443,11 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "id", type: "String" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
       { name: "userId", type: "String" },
-      { name: "eventDate", type: "Date", materialized: "toDate(timestamp)" },
+      {
+        name: "eventDate",
+        type: /Date(32)?/,
+        materialized: "toDate(timestamp)",
+      },
       { name: "userHash", type: "UInt64", materialized: "cityHash64(userId)" },
       { name: "log_blob", type: "JSON", codec: "ZSTD(3)" },
       {
@@ -861,7 +865,11 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "id", type: "String" },
       { name: "timestamp", type: /DateTime\('UTC'\)/ },
       { name: "user_id", type: "String" },
-      { name: "event_date", type: "Date", materialized: "toDate(timestamp)" },
+      {
+        name: "event_date",
+        type: /Date(32)?/,
+        materialized: "toDate(timestamp)",
+      },
       {
         name: "user_hash",
         type: "UInt64",
