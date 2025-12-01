@@ -768,4 +768,60 @@ You can verify your tables were created correctly using:
 moose ls
 ```
 
-Or by connecting directly to your local ClickHouse instance and running SQL commands. 
+Or by connecting directly to your local ClickHouse instance and running SQL commands.
+
+## Compression Codecs
+
+Specify per-column compression codecs to optimize storage and performance:
+
+```typescript
+import { Codec, DateTime, UInt64 } from '@514labs/moose-lib';
+
+interface Metrics {
+  // Delta for timestamps and monotonically increasing values
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
+
+  // Gorilla for floating point sensor data
+  temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
+
+  // DoubleDelta for counters and metrics
+  request_count: number & ClickHouseCodec<"DoubleDelta, LZ4">;
+
+  // ZSTD for text/JSON with compression level (1-22)
+  log_data: Record<string, any> & ClickHouseCodec<"ZSTD(9)">;
+  user_agent: string & ClickHouseCodec<"ZSTD(3)">;
+
+  // Compress array elements
+  tags: string[] & ClickHouseCodec<"LZ4">;
+  event_ids: UInt64[] & ClickHouseCodec<"ZSTD(1)">;
+}
+
+export const MetricsTable = new OlapTable<Metrics>("Metrics", {
+  orderByFields: ["timestamp"]
+});
+```
+
+### Common Codecs
+- **Delta/DoubleDelta**: For timestamps, counters, monotonic values
+- **Gorilla**: For floating-point sensor data, temperatures, stock prices
+- **ZSTD**: General-purpose with levels 1-22 (higher = better compression, slower)
+- **LZ4**: Fast decompression, lower CPU usage
+
+### Codec Chains
+Combine codecs (processed left-to-right): `Delta, LZ4` or `Gorilla, ZSTD(3)`
+
+### Combining with Other Annotations
+```typescript
+import { ClickHouseDefault, ClickHouseTTL } from "@514labs/moose-lib";
+
+interface Events {
+  // Codec + Default value
+  status: string & ClickHouseDefault<"'pending'"> & ClickHouseCodec<"ZSTD(3)">;
+
+  // Codec + TTL
+  email: string & ClickHouseTTL<"timestamp + INTERVAL 30 DAY"> & ClickHouseCodec<"ZSTD(3)">;
+
+  // Codec + Numeric type
+  event_count: UInt64 & ClickHouseCodec<"DoubleDelta, LZ4">;
+}
+```

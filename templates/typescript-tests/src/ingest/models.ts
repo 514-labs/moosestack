@@ -21,6 +21,7 @@ import {
   ClickHouseByteSize,
   ClickHouseJson,
   Int64,
+  ClickHouseCodec,
 } from "@514labs/moose-lib";
 
 /**
@@ -728,3 +729,22 @@ export const primaryKeyOrderingTable = new OlapTable<PrimaryKeyOrderingTest>(
     orderByFields: ["productId", "category", "brand"],
   },
 );
+
+// =======Codec Compression Test=======
+export interface CodecTest {
+  id: Key<string>;
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
+  log_blob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
+  combination_hash: UInt64[] & ClickHouseCodec<"ZSTD(1)">;
+  temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
+  request_count: number & ClickHouseCodec<"DoubleDelta, LZ4">;
+  user_agent: string & ClickHouseCodec<"ZSTD(3)">;
+  tags: string[] & ClickHouseCodec<"LZ4">;
+  status_code: number;
+}
+
+export const CodecTestPipeline = new IngestPipeline<CodecTest>("CodecTest", {
+  table: true,
+  stream: true,
+  ingestApi: true,
+});

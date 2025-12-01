@@ -667,6 +667,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -678,6 +679,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(order_by),
@@ -804,6 +806,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             position_after: Some("timestamp".to_string()),
         }];
@@ -861,6 +864,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             position_after: Some("timestamp".to_string()),
         }];

@@ -340,6 +340,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         "WithDefault",
         "LifeCycle",
         "ClickHouseTTL",
+        "ClickHouseCodec",
     ];
 
     if uses_simple_aggregate {
@@ -581,6 +582,11 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             if let Some(expr) = &column.ttl {
                 type_str = format!("{type_str} & ClickHouseTTL<\"{}\">", expr);
             }
+            // Wrap with Codec if present
+            let type_str = match column.codec.as_ref() {
+                None => type_str,
+                Some(ref codec) => format!("{type_str} & ClickHouseCodec<{codec:?}>"),
+            };
             let type_str = match column.default {
                 None => type_str,
                 Some(ref default) if type_str == "Date" => {
@@ -934,6 +940,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -945,6 +952,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "zip_code".to_string(),
@@ -956,6 +964,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             jwt: false,
@@ -974,6 +983,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -985,6 +995,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -999,6 +1010,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1060,6 +1072,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "data".to_string(),
@@ -1071,6 +1084,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1128,6 +1142,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1180,6 +1195,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -1191,6 +1207,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -1202,6 +1219,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1249,6 +1267,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1302,6 +1321,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -1313,6 +1333,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -1324,6 +1345,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             sample_by: None,
@@ -1379,6 +1401,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["u64".to_string()]),
             partition_by: None,
@@ -1454,6 +1477,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -1465,6 +1489,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1522,6 +1547,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -1533,6 +1559,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "email".to_string(),
@@ -1544,6 +1571,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: Some("timestamp + INTERVAL 30 DAY".to_string()),
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
@@ -1593,6 +1621,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "payload".to_string(),
@@ -1613,6 +1642,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1662,6 +1692,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,

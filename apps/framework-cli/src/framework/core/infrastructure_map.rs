@@ -52,6 +52,7 @@ use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
+use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
@@ -2769,7 +2770,7 @@ fn ttl_expressions_are_equivalent(before: &Option<String>, after: &Option<String
 /// # Returns
 /// `true` if the columns are semantically equivalent, `false` otherwise
 fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
-    // Check all non-data_type and non-ttl fields first
+    // Check all non-data_type and non-ttl and non-codec fields first
     if before.name != after.name
         || before.required != after.required
         || before.unique != after.unique
@@ -2783,6 +2784,12 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
 
     // Special handling for TTL comparison: normalize both expressions before comparing
     if !ttl_expressions_are_equivalent(&before.ttl, &after.ttl) {
+        return false;
+    }
+
+    // Special handling for codec comparison: normalize both expressions before comparing
+    // This handles cases where ClickHouse adds default parameters (e.g., Delta → Delta(4))
+    if !codec_expressions_are_equivalent(&before.codec, &after.codec) {
         return false;
     }
 
@@ -3025,6 +3032,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -3036,6 +3044,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "to_be_removed".to_string(),
@@ -3047,6 +3056,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -3082,6 +3092,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -3093,6 +3104,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "age".to_string(), // New column
@@ -3104,6 +3116,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "name".to_string()]), // Changed order_by
@@ -3153,6 +3166,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "to_remove".to_string(),
@@ -3164,6 +3178,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -3180,6 +3195,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "new_column".to_string(),
@@ -3191,6 +3207,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -3327,6 +3344,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3358,6 +3376,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3386,6 +3405,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3398,6 +3418,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3432,6 +3453,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "to_remove".to_string(),
@@ -3443,6 +3465,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "to_modify".to_string(),
@@ -3454,6 +3477,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ]);
 
@@ -3469,6 +3493,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "to_modify".to_string(), // modified
@@ -3480,6 +3505,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "new_column".to_string(), // added
@@ -3491,6 +3517,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ]);
 
@@ -3635,6 +3662,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3647,6 +3675,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3680,6 +3709,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "name".to_string(),
@@ -3691,6 +3721,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ]);
 
@@ -3706,6 +3737,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "id".to_string(),
@@ -3717,6 +3749,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ]);
 
@@ -3744,6 +3777,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             };
             before.columns.push(col.clone());
             after.columns.push(col);
@@ -3785,6 +3819,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             });
 
             // Change every other column type in the after table
@@ -3818,6 +3853,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             });
         }
 
@@ -3848,6 +3884,7 @@ mod diff_tests {
             ],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3863,6 +3900,7 @@ mod diff_tests {
             ],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3903,6 +3941,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3915,6 +3954,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         // Test special characters in column name
@@ -3928,6 +3968,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3940,6 +3981,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3964,6 +4006,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
         let col2 = col1.clone();
         assert!(columns_are_equivalent(&col1, &col2));
@@ -4001,6 +4044,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_enum_col = Column {
@@ -4025,6 +4069,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent due to the enum semantic comparison
@@ -4050,6 +4095,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(
@@ -4068,6 +4114,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let int_col2 = Column {
@@ -4080,6 +4127,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(&int_col1, &int_col2));
@@ -4111,6 +4159,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let json_col2 = Column {
@@ -4133,6 +4182,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent - order of typed_paths doesn't matter
@@ -4158,6 +4208,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(&json_col1, &json_col3));
@@ -4183,6 +4234,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(&json_col1, &json_col4));
@@ -4225,6 +4277,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let nested_json_col2 = Column {
@@ -4258,6 +4311,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent - order doesn't matter at any level
@@ -4289,6 +4343,7 @@ mod diff_tests {
                         annotations: vec![],
                         comment: None,
                         ttl: None,
+                        codec: None,
                     },
                     Column {
                         name: "priority".to_string(),
@@ -4300,6 +4355,7 @@ mod diff_tests {
                         annotations: vec![],
                         comment: None,
                         ttl: None,
+                        codec: None,
                     },
                 ],
                 jwt: false,
@@ -4311,6 +4367,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let col_with_user_name = Column {
@@ -4331,6 +4388,7 @@ mod diff_tests {
                         annotations: vec![],
                         comment: None,
                         ttl: None,
+                        codec: None,
                     },
                     Column {
                         name: "priority".to_string(),
@@ -4342,6 +4400,7 @@ mod diff_tests {
                         annotations: vec![],
                         comment: None,
                         ttl: None,
+                        codec: None,
                     },
                 ],
                 jwt: false,
@@ -4353,6 +4412,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent - name difference doesn't matter if structure matches
@@ -4379,6 +4439,7 @@ mod diff_tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 }], // Missing priority column
                 jwt: false,
             }),
@@ -4389,6 +4450,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(
@@ -4425,6 +4487,7 @@ mod diff_tests {
                                         annotations: vec![],
                                         comment: None,
                                         ttl: None,
+                                        codec: None,
                                     },
                                     Column {
                                         name: "notifications".to_string(),
@@ -4436,6 +4499,7 @@ mod diff_tests {
                                         annotations: vec![],
                                         comment: None,
                                         ttl: None,
+                                        codec: None,
                                     },
                                 ],
                                 jwt: false,
@@ -4447,6 +4511,7 @@ mod diff_tests {
                             annotations: vec![],
                             comment: None,
                             ttl: None,
+                            codec: None,
                         }],
                         jwt: false,
                     }),
@@ -4457,6 +4522,7 @@ mod diff_tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 }],
                 jwt: false,
             }),
@@ -4467,6 +4533,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let col_user = Column {
@@ -4492,6 +4559,7 @@ mod diff_tests {
                                         annotations: vec![],
                                         comment: None,
                                         ttl: None,
+                                        codec: None,
                                     },
                                     Column {
                                         name: "notifications".to_string(),
@@ -4503,6 +4571,7 @@ mod diff_tests {
                                         annotations: vec![],
                                         comment: None,
                                         ttl: None,
+                                        codec: None,
                                     },
                                 ],
                                 jwt: false,
@@ -4514,6 +4583,7 @@ mod diff_tests {
                             annotations: vec![],
                             comment: None,
                             ttl: None,
+                            codec: None,
                         }],
                         jwt: false,
                     }),
@@ -4524,6 +4594,7 @@ mod diff_tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 }],
                 jwt: false,
             }),
@@ -4534,10 +4605,108 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent - name differences at all levels don't matter
         assert!(columns_are_equivalent(&col_generated, &col_user));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_codec() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let base_col = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        // Test 1: Columns with same codec should be equivalent
+        let col_with_codec1 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        let col_with_codec2 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_with_codec1, &col_with_codec2));
+
+        // Test 2: Columns with different codecs should not be equivalent
+        let col_with_different_codec = Column {
+            codec: Some("LZ4".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(
+            &col_with_codec1,
+            &col_with_different_codec
+        ));
+
+        // Test 3: Column with codec vs column without codec should not be equivalent
+        assert!(!columns_are_equivalent(&col_with_codec1, &base_col));
+
+        // Test 4: Columns with codec chains should be detected as different
+        let col_with_chain1 = Column {
+            codec: Some("Delta, LZ4".to_string()),
+            ..base_col.clone()
+        };
+        let col_with_chain2 = Column {
+            codec: Some("Delta, ZSTD".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(&col_with_chain1, &col_with_chain2));
+
+        // Test 5: Codec with different compression levels should be detected as different
+        let col_zstd3 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        let col_zstd9 = Column {
+            codec: Some("ZSTD(9)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(&col_zstd3, &col_zstd9));
+
+        // Test 6: Normalized codec comparison - user "Delta" vs ClickHouse "Delta(4)"
+        let col_user_delta = Column {
+            codec: Some("Delta".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_delta = Column {
+            codec: Some("Delta(4)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_delta, &col_ch_delta));
+
+        // Test 7: Normalized codec comparison - user "Gorilla" vs ClickHouse "Gorilla(8)"
+        let col_user_gorilla = Column {
+            codec: Some("Gorilla".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_gorilla = Column {
+            codec: Some("Gorilla(8)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_gorilla, &col_ch_gorilla));
+
+        // Test 8: Normalized chain comparison - "Delta, LZ4" vs "Delta(4), LZ4"
+        let col_user_chain = Column {
+            codec: Some("Delta, LZ4".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_chain = Column {
+            codec: Some("Delta(4), LZ4".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_chain, &col_ch_chain));
     }
 }
 
@@ -4893,6 +5062,7 @@ mod diff_topic_tests {
                 annotations: Vec::new(),
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
@@ -5183,6 +5353,7 @@ mod diff_topic_to_table_sync_process_tests {
                 annotations: Vec::new(),
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             version: Some(version.clone()),
             source_primitive: PrimitiveSignature {
@@ -5306,6 +5477,7 @@ mod diff_topic_to_table_sync_process_tests {
             annotations: vec![("note".to_string(), Value::String("changed".to_string()))],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         assert_eq!(
