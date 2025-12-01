@@ -245,6 +245,16 @@ pub enum ClickhouseEngine {
         // Optional list of columns to sum
         columns: Option<Vec<String>>,
     },
+    CollapsingMergeTree {
+        // Sign column name indicating row type (1 = state, -1 = cancel)
+        sign: String,
+    },
+    VersionedCollapsingMergeTree {
+        // Sign column name indicating row type (1 = state, -1 = cancel)
+        sign: String,
+        // Version column name for object state versioning
+        version: String,
+    },
     ReplicatedMergeTree {
         // Keeper path for replication (ZooKeeper or ClickHouse Keeper)
         // Optional: omit for ClickHouse Cloud which manages replication automatically
@@ -282,6 +292,28 @@ pub enum ClickhouseEngine {
         replica_name: Option<String>,
         // Optional list of columns to sum
         columns: Option<Vec<String>>,
+    },
+    ReplicatedCollapsingMergeTree {
+        // Keeper path for replication (ZooKeeper or ClickHouse Keeper)
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        keeper_path: Option<String>,
+        // Replica name
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Option<String>,
+        // Sign column name indicating row type (1 = state, -1 = cancel)
+        sign: String,
+    },
+    ReplicatedVersionedCollapsingMergeTree {
+        // Keeper path for replication (ZooKeeper or ClickHouse Keeper)
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        keeper_path: Option<String>,
+        // Replica name
+        // Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Option<String>,
+        // Sign column name indicating row type (1 = state, -1 = cancel)
+        sign: String,
+        // Version column name for object state versioning
+        version: String,
     },
     S3Queue {
         // Non-alterable constructor parameters - required for table creation
@@ -350,6 +382,12 @@ impl Into<String> for ClickhouseEngine {
             ClickhouseEngine::SummingMergeTree { columns } => {
                 Self::serialize_summing_merge_tree(&columns)
             }
+            ClickhouseEngine::CollapsingMergeTree { sign } => {
+                Self::serialize_collapsing_merge_tree(&sign)
+            }
+            ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
+                Self::serialize_versioned_collapsing_merge_tree(&sign, &version)
+            }
             ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path,
                 replica_name,
@@ -376,6 +414,24 @@ impl Into<String> for ClickhouseEngine {
             } => {
                 Self::serialize_replicated_summing_merge_tree(&keeper_path, &replica_name, &columns)
             }
+            ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+            } => {
+                Self::serialize_replicated_collapsing_merge_tree(&keeper_path, &replica_name, &sign)
+            }
+            ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+                version,
+            } => Self::serialize_replicated_versioned_collapsing_merge_tree(
+                &keeper_path,
+                &replica_name,
+                &sign,
+                &version,
+            ),
             ClickhouseEngine::S3Queue {
                 s3_path,
                 format,
@@ -485,6 +541,22 @@ impl ClickhouseEngine {
             || value.starts_with("ReplicatedSummingMergeTree(")
         {
             return Some(Self::parse_distributed_summing_merge_tree(value));
+        }
+
+        // Handle SharedCollapsingMergeTree and ReplicatedCollapsingMergeTree
+        if value.starts_with("SharedCollapsingMergeTree(")
+            || value.starts_with("ReplicatedCollapsingMergeTree(")
+        {
+            return Some(Self::parse_distributed_collapsing_merge_tree(value));
+        }
+
+        // Handle SharedVersionedCollapsingMergeTree and ReplicatedVersionedCollapsingMergeTree
+        if value.starts_with("SharedVersionedCollapsingMergeTree(")
+            || value.starts_with("ReplicatedVersionedCollapsingMergeTree(")
+        {
+            return Some(Self::parse_distributed_versioned_collapsing_merge_tree(
+                value,
+            ));
         }
 
         None
@@ -744,6 +816,140 @@ impl ClickhouseEngine {
         }
     }
 
+    /// Parse SharedCollapsingMergeTree or ReplicatedCollapsingMergeTree
+    /// Format: (path, replica, sign) or (sign) for automatic configuration
+    fn parse_distributed_collapsing_merge_tree(value: &str) -> Result<Self, &str> {
+        let content = Self::extract_engine_content(
+            value,
+            &[
+                "SharedCollapsingMergeTree(",
+                "ReplicatedCollapsingMergeTree(",
+            ],
+        )?;
+
+        let params = parse_quoted_csv(content);
+
+        // Check if this is a Replicated variant (not Shared)
+        let is_replicated = value.starts_with("ReplicatedCollapsingMergeTree(");
+
+        if is_replicated {
+            // For Replicated variant, we need either:
+            // - 1 param: sign (cloud mode)
+            // - 3 params: keeper_path, replica_name, sign
+            if params.is_empty() {
+                return Err(value);
+            }
+
+            if params.len() == 1 {
+                // Cloud mode: only sign parameter
+                return Ok(ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    sign: params[0].clone(),
+                });
+            }
+
+            if params.len() != 3 {
+                return Err(value);
+            }
+
+            // Full parameters: keeper_path, replica_name, sign
+            let keeper_path = params.first().cloned();
+            let replica_name = params.get(1).cloned();
+            let sign = params[2].clone();
+
+            // Normalize defaults back to None
+            let (keeper_path, replica_name) =
+                Self::normalize_replication_params(keeper_path, replica_name);
+
+            Ok(ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+            })
+        } else {
+            // For SharedCollapsingMergeTree, we need 3 params: keeper_path, replica_name, sign
+            if params.len() != 3 {
+                return Err(value);
+            }
+
+            // SharedCollapsingMergeTree normalizes to CollapsingMergeTree
+            // Skip the first two params (keeper_path and replica_name)
+            Ok(ClickhouseEngine::CollapsingMergeTree {
+                sign: params[2].clone(),
+            })
+        }
+    }
+
+    /// Parse SharedVersionedCollapsingMergeTree or ReplicatedVersionedCollapsingMergeTree
+    /// Format: (path, replica, sign, version) or (sign, version) for automatic configuration
+    fn parse_distributed_versioned_collapsing_merge_tree(value: &str) -> Result<Self, &str> {
+        let content = Self::extract_engine_content(
+            value,
+            &[
+                "SharedVersionedCollapsingMergeTree(",
+                "ReplicatedVersionedCollapsingMergeTree(",
+            ],
+        )?;
+
+        let params = parse_quoted_csv(content);
+
+        // Check if this is a Replicated variant (not Shared)
+        let is_replicated = value.starts_with("ReplicatedVersionedCollapsingMergeTree(");
+
+        if is_replicated {
+            // For Replicated variant, we need either:
+            // - 2 params: sign, version (cloud mode)
+            // - 4 params: keeper_path, replica_name, sign, version
+            if params.is_empty() {
+                return Err(value);
+            }
+
+            if params.len() == 2 {
+                // Cloud mode: only sign and version parameters
+                return Ok(ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    sign: params[0].clone(),
+                    version: params[1].clone(),
+                });
+            }
+
+            if params.len() != 4 {
+                return Err(value);
+            }
+
+            // Full parameters: keeper_path, replica_name, sign, version
+            let keeper_path = params.first().cloned();
+            let replica_name = params.get(1).cloned();
+            let sign = params[2].clone();
+            let version = params[3].clone();
+
+            // Normalize defaults back to None
+            let (keeper_path, replica_name) =
+                Self::normalize_replication_params(keeper_path, replica_name);
+
+            Ok(ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+                version,
+            })
+        } else {
+            // For SharedVersionedCollapsingMergeTree, we need 4 params: keeper_path, replica_name, sign, version
+            if params.len() != 4 {
+                return Err(value);
+            }
+
+            // SharedVersionedCollapsingMergeTree normalizes to VersionedCollapsingMergeTree
+            // Skip the first two params (keeper_path and replica_name)
+            Ok(ClickhouseEngine::VersionedCollapsingMergeTree {
+                sign: params[2].clone(),
+                version: params[3].clone(),
+            })
+        }
+    }
+
     /// Extract content from engine string with given prefixes
     /// Returns the content within parentheses
     fn extract_engine_content<'a>(value: &'a str, prefixes: &[&str]) -> Result<&'a str, &'a str> {
@@ -812,6 +1018,12 @@ impl ClickhouseEngine {
             "SummingMergeTree" => Ok(ClickhouseEngine::SummingMergeTree { columns: None }),
             s if s.starts_with("SummingMergeTree(") => {
                 Self::parse_regular_summing_merge_tree(s, value)
+            }
+            s if s.starts_with("CollapsingMergeTree(") => {
+                Self::parse_regular_collapsing_merge_tree(s, value)
+            }
+            s if s.starts_with("VersionedCollapsingMergeTree(") => {
+                Self::parse_regular_versioned_collapsing_merge_tree(s, value)
             }
             s if s.starts_with("S3Queue(") => Self::parse_regular_s3queue(s, value),
             s if s.starts_with("S3(") => Self::parse_regular_s3(s, value),
@@ -972,6 +1184,36 @@ impl ClickhouseEngine {
             .and_then(|s| s.strip_suffix(")"))
         {
             Self::parse_summing_merge_tree(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse regular CollapsingMergeTree with parameters
+    fn parse_regular_collapsing_merge_tree<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("CollapsingMergeTree(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_collapsing_merge_tree(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse regular VersionedCollapsingMergeTree with parameters
+    fn parse_regular_versioned_collapsing_merge_tree<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("VersionedCollapsingMergeTree(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_versioned_collapsing_merge_tree(content).map_err(|_| original_value)
         } else {
             Err(original_value)
         }
@@ -1157,10 +1399,14 @@ impl ClickhouseEngine {
                 | ClickhouseEngine::ReplacingMergeTree { .. }
                 | ClickhouseEngine::AggregatingMergeTree
                 | ClickhouseEngine::SummingMergeTree { .. }
+                | ClickhouseEngine::CollapsingMergeTree { .. }
+                | ClickhouseEngine::VersionedCollapsingMergeTree { .. }
                 | ClickhouseEngine::ReplicatedMergeTree { .. }
                 | ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
                 | ClickhouseEngine::ReplicatedAggregatingMergeTree { .. }
                 | ClickhouseEngine::ReplicatedSummingMergeTree { .. }
+                | ClickhouseEngine::ReplicatedCollapsingMergeTree { .. }
+                | ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree { .. }
         )
     }
 
@@ -1181,6 +1427,12 @@ impl ClickhouseEngine {
             ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
             ClickhouseEngine::SummingMergeTree { columns } => {
                 Self::serialize_summing_merge_tree(columns)
+            }
+            ClickhouseEngine::CollapsingMergeTree { sign } => {
+                Self::serialize_collapsing_merge_tree(sign)
+            }
+            ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
+                Self::serialize_versioned_collapsing_merge_tree(sign, version)
             }
             ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path,
@@ -1206,6 +1458,22 @@ impl ClickhouseEngine {
                 replica_name,
                 columns,
             } => Self::serialize_replicated_summing_merge_tree(keeper_path, replica_name, columns),
+            ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+            } => Self::serialize_replicated_collapsing_merge_tree(keeper_path, replica_name, sign),
+            ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+                version,
+            } => Self::serialize_replicated_versioned_collapsing_merge_tree(
+                keeper_path,
+                replica_name,
+                sign,
+                version,
+            ),
             ClickhouseEngine::S3Queue {
                 s3_path,
                 format,
@@ -1615,6 +1883,18 @@ impl ClickhouseEngine {
         "SummingMergeTree".to_string()
     }
 
+    /// Serialize CollapsingMergeTree engine to string format
+    /// Format: CollapsingMergeTree('sign')
+    fn serialize_collapsing_merge_tree(sign: &str) -> String {
+        format!("CollapsingMergeTree('{}')", sign)
+    }
+
+    /// Serialize VersionedCollapsingMergeTree engine to string format
+    /// Format: VersionedCollapsingMergeTree('sign', 'version')
+    fn serialize_versioned_collapsing_merge_tree(sign: &str, version: &str) -> String {
+        format!("VersionedCollapsingMergeTree('{}', '{}')", sign, version)
+    }
+
     /// Serialize ReplicatedMergeTree engine to string format
     /// Format: ReplicatedMergeTree('keeper_path', 'replica_name') or ReplicatedMergeTree() for cloud
     fn serialize_replicated_merge_tree(
@@ -1705,6 +1985,49 @@ impl ClickhouseEngine {
         }
     }
 
+    /// Serialize ReplicatedCollapsingMergeTree engine to string format
+    /// Format: ReplicatedCollapsingMergeTree('keeper_path', 'replica_name', 'sign') or ReplicatedCollapsingMergeTree('sign') for cloud
+    fn serialize_replicated_collapsing_merge_tree(
+        keeper_path: &Option<String>,
+        replica_name: &Option<String>,
+        sign: &str,
+    ) -> String {
+        let mut params = vec![];
+
+        if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+            params.push(format!("'{}'", path));
+            params.push(format!("'{}'", name));
+        }
+
+        params.push(format!("'{}'", sign));
+
+        format!("ReplicatedCollapsingMergeTree({})", params.join(", "))
+    }
+
+    /// Serialize ReplicatedVersionedCollapsingMergeTree engine to string format
+    /// Format: ReplicatedVersionedCollapsingMergeTree('keeper_path', 'replica_name', 'sign', 'version') or ReplicatedVersionedCollapsingMergeTree('sign', 'version') for cloud
+    fn serialize_replicated_versioned_collapsing_merge_tree(
+        keeper_path: &Option<String>,
+        replica_name: &Option<String>,
+        sign: &str,
+        version: &str,
+    ) -> String {
+        let mut params = vec![];
+
+        if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+            params.push(format!("'{}'", path));
+            params.push(format!("'{}'", name));
+        }
+
+        params.push(format!("'{}'", sign));
+        params.push(format!("'{}'", version));
+
+        format!(
+            "ReplicatedVersionedCollapsingMergeTree({})",
+            params.join(", ")
+        )
+    }
+
     /// Parse ReplacingMergeTree engine from serialized string format
     /// Expected format: ReplacingMergeTree('ver'[, 'is_deleted'])
     fn parse_replacing_merge_tree(content: &str) -> Result<ClickhouseEngine, &str> {
@@ -1737,6 +2060,37 @@ impl ClickhouseEngine {
         };
 
         Ok(ClickhouseEngine::SummingMergeTree { columns })
+    }
+
+    /// Parse CollapsingMergeTree engine from serialized string format
+    /// Expected format: CollapsingMergeTree('sign')
+    fn parse_collapsing_merge_tree(content: &str) -> Result<ClickhouseEngine, &str> {
+        let parts = parse_quoted_csv(content);
+
+        if parts.len() != 1 {
+            return Err("CollapsingMergeTree requires exactly one parameter: sign column");
+        }
+
+        Ok(ClickhouseEngine::CollapsingMergeTree {
+            sign: parts[0].clone(),
+        })
+    }
+
+    /// Parse VersionedCollapsingMergeTree engine from serialized string format
+    /// Expected format: VersionedCollapsingMergeTree('sign', 'version')
+    fn parse_versioned_collapsing_merge_tree(content: &str) -> Result<ClickhouseEngine, &str> {
+        let parts = parse_quoted_csv(content);
+
+        if parts.len() != 2 {
+            return Err(
+                "VersionedCollapsingMergeTree requires exactly two parameters: sign and version columns",
+            );
+        }
+
+        Ok(ClickhouseEngine::VersionedCollapsingMergeTree {
+            sign: parts[0].clone(),
+            version: parts[1].clone(),
+        })
     }
 
     /// Parse S3Queue engine from serialized string format
@@ -1958,6 +2312,15 @@ impl ClickhouseEngine {
                     hasher.update("null".as_bytes());
                 }
             }
+            ClickhouseEngine::CollapsingMergeTree { sign } => {
+                hasher.update("CollapsingMergeTree".as_bytes());
+                hasher.update(sign.as_bytes());
+            }
+            ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
+                hasher.update("VersionedCollapsingMergeTree".as_bytes());
+                hasher.update(sign.as_bytes());
+                hasher.update(version.as_bytes());
+            }
             ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path,
                 replica_name,
@@ -2041,6 +2404,44 @@ impl ClickhouseEngine {
                 } else {
                     hasher.update("null".as_bytes());
                 }
+            }
+            ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+            } => {
+                hasher.update("ReplicatedCollapsingMergeTree".as_bytes());
+                if let Some(path) = keeper_path {
+                    hasher.update(path.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(name) = replica_name {
+                    hasher.update(name.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                hasher.update(sign.as_bytes());
+            }
+            ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+                version,
+            } => {
+                hasher.update("ReplicatedVersionedCollapsingMergeTree".as_bytes());
+                if let Some(path) = keeper_path {
+                    hasher.update(path.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                if let Some(name) = replica_name {
+                    hasher.update(name.as_bytes());
+                } else {
+                    hasher.update("null".as_bytes());
+                }
+                hasher.update(sign.as_bytes());
+                hasher.update(version.as_bytes());
             }
             ClickhouseEngine::S3Queue {
                 s3_path,
@@ -2287,6 +2688,16 @@ fn build_summing_merge_tree_ddl(columns: &Option<Vec<String>>) -> String {
     "SummingMergeTree".to_string()
 }
 
+/// Generate DDL for CollapsingMergeTree engine
+fn build_collapsing_merge_tree_ddl(sign: &str) -> String {
+    format!("CollapsingMergeTree(`{}`)", sign)
+}
+
+/// Generate DDL for VersionedCollapsingMergeTree engine
+fn build_versioned_collapsing_merge_tree_ddl(sign: &str, version: &str) -> String {
+    format!("VersionedCollapsingMergeTree(`{}`, `{}`)", sign, version)
+}
+
 /// Build replication parameters for replicated engines
 ///
 /// When keeper_path and replica_name are None:
@@ -2453,6 +2864,60 @@ fn build_replicated_summing_merge_tree_ddl(
     Ok(format!("ReplicatedSummingMergeTree({})", params.join(", ")))
 }
 
+/// Generate DDL for ReplicatedCollapsingMergeTree engine
+fn build_replicated_collapsing_merge_tree_ddl(
+    keeper_path: &Option<String>,
+    replica_name: &Option<String>,
+    cluster_name: &Option<String>,
+    sign: &str,
+    table_name: &str,
+    is_dev: bool,
+) -> Result<String, ClickhouseError> {
+    let mut params = build_replication_params(
+        keeper_path,
+        replica_name,
+        cluster_name,
+        "ReplicatedCollapsingMergeTree",
+        table_name,
+        is_dev,
+    )?;
+
+    params.push(format!("`{}`", sign));
+
+    Ok(format!(
+        "ReplicatedCollapsingMergeTree({})",
+        params.join(", ")
+    ))
+}
+
+/// Generate DDL for ReplicatedVersionedCollapsingMergeTree engine
+fn build_replicated_versioned_collapsing_merge_tree_ddl(
+    keeper_path: &Option<String>,
+    replica_name: &Option<String>,
+    cluster_name: &Option<String>,
+    sign: &str,
+    version: &str,
+    table_name: &str,
+    is_dev: bool,
+) -> Result<String, ClickhouseError> {
+    let mut params = build_replication_params(
+        keeper_path,
+        replica_name,
+        cluster_name,
+        "ReplicatedVersionedCollapsingMergeTree",
+        table_name,
+        is_dev,
+    )?;
+
+    params.push(format!("`{}`", sign));
+    params.push(format!("`{}`", version));
+
+    Ok(format!(
+        "ReplicatedVersionedCollapsingMergeTree({})",
+        params.join(", ")
+    ))
+}
+
 pub fn create_table_query(
     db_name: &str,
     table: ClickHouseTable,
@@ -2470,6 +2935,10 @@ pub fn create_table_query(
         )?,
         ClickhouseEngine::AggregatingMergeTree => "AggregatingMergeTree".to_string(),
         ClickhouseEngine::SummingMergeTree { columns } => build_summing_merge_tree_ddl(columns),
+        ClickhouseEngine::CollapsingMergeTree { sign } => build_collapsing_merge_tree_ddl(sign),
+        ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
+            build_versioned_collapsing_merge_tree_ddl(sign, version)
+        }
         ClickhouseEngine::ReplicatedMergeTree {
             keeper_path,
             replica_name,
@@ -2514,6 +2983,32 @@ pub fn create_table_query(
             replica_name,
             &table.cluster_name,
             columns,
+            &table.name,
+            is_dev,
+        )?,
+        ClickhouseEngine::ReplicatedCollapsingMergeTree {
+            keeper_path,
+            replica_name,
+            sign,
+        } => build_replicated_collapsing_merge_tree_ddl(
+            keeper_path,
+            replica_name,
+            &table.cluster_name,
+            sign,
+            &table.name,
+            is_dev,
+        )?,
+        ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+            keeper_path,
+            replica_name,
+            sign,
+            version,
+        } => build_replicated_versioned_collapsing_merge_tree_ddl(
+            keeper_path,
+            replica_name,
+            &table.cluster_name,
+            sign,
+            version,
             &table.name,
             is_dev,
         )?,
@@ -2768,10 +3263,14 @@ pub fn create_table_query(
             | ClickhouseEngine::ReplacingMergeTree { .. }
             | ClickhouseEngine::AggregatingMergeTree
             | ClickhouseEngine::SummingMergeTree { .. }
+            | ClickhouseEngine::CollapsingMergeTree { .. }
+            | ClickhouseEngine::VersionedCollapsingMergeTree { .. }
             | ClickhouseEngine::ReplicatedMergeTree { .. }
             | ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
             | ClickhouseEngine::ReplicatedAggregatingMergeTree { .. }
             | ClickhouseEngine::ReplicatedSummingMergeTree { .. }
+            | ClickhouseEngine::ReplicatedCollapsingMergeTree { .. }
+            | ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree { .. }
             | ClickhouseEngine::S3 { .. }
     );
 

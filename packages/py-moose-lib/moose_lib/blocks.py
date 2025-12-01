@@ -67,6 +67,36 @@ class SummingMergeTreeEngine(EngineConfig):
     columns: Optional[List[str]] = None
 
 @dataclass
+class CollapsingMergeTreeEngine(EngineConfig):
+    """Configuration for CollapsingMergeTree engine
+    
+    Args:
+        sign: Column name indicating row type (1 = state, -1 = cancel)
+    """
+    sign: str
+    
+    def __post_init__(self):
+        if not self.sign:
+            raise ValueError("sign column is required for CollapsingMergeTree")
+
+@dataclass
+class VersionedCollapsingMergeTreeEngine(EngineConfig):
+    """Configuration for VersionedCollapsingMergeTree engine
+    
+    Args:
+        sign: Column name indicating row type (1 = state, -1 = cancel)
+        version: Column name for object state versioning
+    """
+    sign: str
+    version: str
+    
+    def __post_init__(self):
+        if not self.sign:
+            raise ValueError("sign column is required for VersionedCollapsingMergeTree")
+        if not self.version:
+            raise ValueError("version column is required for VersionedCollapsingMergeTree")
+
+@dataclass
 class ReplicatedMergeTreeEngine(EngineConfig):
     """Configuration for ReplicatedMergeTree engine (replicated version of MergeTree)
     
@@ -153,6 +183,58 @@ class ReplicatedSummingMergeTreeEngine(EngineConfig):
         # Both must be provided or both must be None
         if (self.keeper_path is None) != (self.replica_name is None):
             raise ValueError("keeper_path and replica_name must both be provided or both be None")
+
+@dataclass
+class ReplicatedCollapsingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedCollapsingMergeTree engine (replicated version with collapsing)
+    
+    Args:
+        keeper_path: Keeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name')
+                     Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Replica name (e.g., '{replica}')
+                      Optional: omit for ClickHouse Cloud which manages replication automatically
+        sign: Column name indicating row type (1 = state, -1 = cancel)
+    
+    Note: Both keeper_path and replica_name must be provided together, or both omitted.
+    """
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    sign: str = field(default=None)
+    
+    def __post_init__(self):
+        # Both must be provided or both must be None
+        if (self.keeper_path is None) != (self.replica_name is None):
+            raise ValueError("keeper_path and replica_name must both be provided or both be None")
+        if not self.sign:
+            raise ValueError("sign column is required for ReplicatedCollapsingMergeTree")
+
+@dataclass
+class ReplicatedVersionedCollapsingMergeTreeEngine(EngineConfig):
+    """Configuration for ReplicatedVersionedCollapsingMergeTree engine (replicated version with versioned collapsing)
+    
+    Args:
+        keeper_path: Keeper path for replication (e.g., '/clickhouse/tables/{database}/{shard}/table_name')
+                     Optional: omit for ClickHouse Cloud which manages replication automatically
+        replica_name: Replica name (e.g., '{replica}')
+                      Optional: omit for ClickHouse Cloud which manages replication automatically
+        sign: Column name indicating row type (1 = state, -1 = cancel)
+        version: Column name for object state versioning
+    
+    Note: Both keeper_path and replica_name must be provided together, or both omitted.
+    """
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    sign: str = field(default=None)
+    version: str = field(default=None)
+    
+    def __post_init__(self):
+        # Both must be provided or both must be None
+        if (self.keeper_path is None) != (self.replica_name is None):
+            raise ValueError("keeper_path and replica_name must both be provided or both be None")
+        if not self.sign:
+            raise ValueError("sign column is required for ReplicatedVersionedCollapsingMergeTree")
+        if not self.version:
+            raise ValueError("version column is required for ReplicatedVersionedCollapsingMergeTree")
 
 @dataclass
 class S3QueueEngine(EngineConfig):

@@ -7,10 +7,14 @@ from moose_lib.blocks import (
     ReplacingMergeTreeEngine,
     SummingMergeTreeEngine,
     AggregatingMergeTreeEngine,
+    CollapsingMergeTreeEngine,
+    VersionedCollapsingMergeTreeEngine,
     ReplicatedMergeTreeEngine,
     ReplicatedReplacingMergeTreeEngine,
     ReplicatedAggregatingMergeTreeEngine,
     ReplicatedSummingMergeTreeEngine,
+    ReplicatedCollapsingMergeTreeEngine,
+    ReplicatedVersionedCollapsingMergeTreeEngine,
     BufferEngine,
     # S3QueueEngine - requires S3 configuration, tested separately
 )
@@ -79,6 +83,10 @@ fixedstring_table = OlapTable[FixedStringTestData](
         order_by_fields=["id", "timestamp"],
     ),
 )
+
+class CollapsingTestData(EngineTestData):
+    """Test data model for CollapsingMergeTree and VersionedCollapsingMergeTree testing"""
+    sign: int  # For CollapsingMergeTree (1 = state, -1 = cancel)
 
 class EngineTestDataSample(BaseModel):
     """Test data model for engine testing"""
@@ -150,6 +158,24 @@ aggregating_merge_tree_table = OlapTable[EngineTestData](
     OlapConfig(
         engine=AggregatingMergeTreeEngine(),
         order_by_fields=["id", "category"]
+    )
+)
+
+# Test CollapsingMergeTree engine
+collapsing_merge_tree_table = OlapTable[CollapsingTestData](
+    "CollapsingMergeTreeTest",
+    OlapConfig(
+        engine=CollapsingMergeTreeEngine(sign="sign"),
+        order_by_fields=["id", "timestamp"]
+    )
+)
+
+# Test VersionedCollapsingMergeTree engine
+versioned_collapsing_merge_tree_table = OlapTable[CollapsingTestData](
+    "VersionedCollapsingMergeTreeTest",
+    OlapConfig(
+        engine=VersionedCollapsingMergeTreeEngine(sign="sign", version="version"),
+        order_by_fields=["id", "timestamp"]
     )
 )
 
@@ -228,6 +254,33 @@ replicated_summing_merge_tree_table = OlapTable[EngineTestData](
     )
 )
 
+# Test ReplicatedCollapsingMergeTree engine
+replicated_collapsing_merge_tree_table = OlapTable[CollapsingTestData](
+    "ReplicatedCollapsingMergeTreeTest",
+    OlapConfig(
+        engine=ReplicatedCollapsingMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_collapsing_test",
+            replica_name="{replica}",
+            sign="sign"
+        ),
+        order_by_fields=["id", "timestamp"]
+    )
+)
+
+# Test ReplicatedVersionedCollapsingMergeTree engine
+replicated_versioned_collapsing_merge_tree_table = OlapTable[CollapsingTestData](
+    "ReplicatedVersionedCollapsingMergeTreeTest",
+    OlapConfig(
+        engine=ReplicatedVersionedCollapsingMergeTreeEngine(
+            keeper_path="/clickhouse/tables/{database}/{shard}/replicated_versioned_collapsing_test",
+            replica_name="{replica}",
+            sign="sign",
+            version="version"
+        ),
+        order_by_fields=["id", "timestamp"]
+    )
+)
+
 # Test SAMPLE BY clause for data sampling
 sample_by_table = OlapTable[EngineTestDataSample](
     "SampleByTest",
@@ -280,12 +333,16 @@ all_engine_test_tables = [
     replacing_merge_tree_soft_delete_table,
     summing_merge_tree_table,
     aggregating_merge_tree_table,
+    collapsing_merge_tree_table,
+    versioned_collapsing_merge_tree_table,
     replicated_merge_tree_table,
     replicated_merge_tree_cloud_table,
     replicated_replacing_merge_tree_table,
     replicated_replacing_soft_delete_table,
     replicated_aggregating_merge_tree_table,
     replicated_summing_merge_tree_table,
+    replicated_collapsing_merge_tree_table,
+    replicated_versioned_collapsing_merge_tree_table,
     sample_by_table,
     ttl_table,
     buffer_destination_table,

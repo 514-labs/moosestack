@@ -23,6 +23,12 @@ export interface EngineTestData {
   version: number;
   isDeleted: boolean; // For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 }
+
+// Test data model for CollapsingMergeTree and VersionedCollapsingMergeTree testing
+export interface CollapsingTestData extends EngineTestData {
+  sign: number; // For CollapsingMergeTree (1 = state, -1 = cancel)
+}
+
 export interface EngineTestDataSample {
   id: string;
   timestamp: DateTime;
@@ -121,6 +127,25 @@ export const AggregatingMergeTreeTable = new OlapTable<EngineTestData>(
   },
 );
 
+// Test CollapsingMergeTree engine
+export const CollapsingMergeTreeTable = new OlapTable<CollapsingTestData>(
+  "CollapsingMergeTreeTest",
+  {
+    engine: ClickHouseEngines.CollapsingMergeTree,
+    sign: "sign",
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+// Test VersionedCollapsingMergeTree engine
+export const VersionedCollapsingMergeTreeTable =
+  new OlapTable<CollapsingTestData>("VersionedCollapsingMergeTreeTest", {
+    engine: ClickHouseEngines.VersionedCollapsingMergeTree,
+    sign: "sign",
+    version: "version",
+    orderByFields: ["id", "timestamp"],
+  });
+
 // Test SummingMergeTree engine with columns
 export const SummingMergeTreeWithColumnsTable = new OlapTable<EngineTestData>(
   "SummingMergeTreeWithColumnsTest",
@@ -203,6 +228,32 @@ export const ReplicatedSummingMergeTreeTable = new OlapTable<EngineTestData>(
   },
 );
 
+// Test ReplicatedCollapsingMergeTree engine
+export const ReplicatedCollapsingMergeTreeTable =
+  new OlapTable<CollapsingTestData>("ReplicatedCollapsingMergeTreeTest", {
+    engine: ClickHouseEngines.ReplicatedCollapsingMergeTree,
+    keeperPath:
+      "/clickhouse/tables/{database}/{shard}/replicated_collapsing_test",
+    replicaName: "{replica}",
+    sign: "sign",
+    orderByFields: ["id", "timestamp"],
+  });
+
+// Test ReplicatedVersionedCollapsingMergeTree engine
+export const ReplicatedVersionedCollapsingMergeTreeTable =
+  new OlapTable<CollapsingTestData>(
+    "ReplicatedVersionedCollapsingMergeTreeTest",
+    {
+      engine: ClickHouseEngines.ReplicatedVersionedCollapsingMergeTree,
+      keeperPath:
+        "/clickhouse/tables/{database}/{shard}/replicated_versioned_collapsing_test",
+      replicaName: "{replica}",
+      sign: "sign",
+      version: "version",
+      orderByFields: ["id", "timestamp"],
+    },
+  );
+
 // Test SAMPLE BY clause for data sampling
 export const SampleByTable = new OlapTable<EngineTestDataSample>(
   "SampleByTest",
@@ -254,12 +305,16 @@ export const allEngineTestTables = [
   SummingMergeTreeTable,
   SummingMergeTreeWithColumnsTable,
   AggregatingMergeTreeTable,
+  CollapsingMergeTreeTable,
+  VersionedCollapsingMergeTreeTable,
   ReplicatedMergeTreeTable,
   ReplicatedMergeTreeCloudTable,
   ReplicatedReplacingMergeTreeTable,
   ReplicatedReplacingSoftDeleteTable,
   ReplicatedAggregatingMergeTreeTable,
   ReplicatedSummingMergeTreeTable,
+  ReplicatedCollapsingMergeTreeTable,
+  ReplicatedVersionedCollapsingMergeTreeTable,
   SampleByTable,
   TTLTable,
   BufferDestinationTable,

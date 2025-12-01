@@ -803,6 +803,12 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
                 writeln!(output, "),").unwrap();
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::CollapsingMergeTree { sign } => {
+                writeln!(output, "    engine=CollapsingMergeTreeEngine(sign={:?}),", sign).unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
+                writeln!(output, "    engine=VersionedCollapsingMergeTreeEngine(sign={:?}, version={:?}),", sign, version).unwrap();
+            }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path,
                 replica_name,
@@ -858,6 +864,36 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                         params.push(format!("columns={:?}", cols));
                     }
                 }
+                write!(output, "{}", params.join(", ")).unwrap();
+                writeln!(output, "),").unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+            } => {
+                write!(output, "    engine=ReplicatedCollapsingMergeTreeEngine(").unwrap();
+                let mut params = vec![];
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    params.push(format!("keeper_path={:?}, replica_name={:?}", path, name));
+                }
+                params.push(format!("sign={:?}", sign));
+                write!(output, "{}", params.join(", ")).unwrap();
+                writeln!(output, "),").unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+                version,
+            } => {
+                write!(output, "    engine=ReplicatedVersionedCollapsingMergeTreeEngine(").unwrap();
+                let mut params = vec![];
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    params.push(format!("keeper_path={:?}, replica_name={:?}", path, name));
+                }
+                params.push(format!("sign={:?}", sign));
+                params.push(format!("version={:?}", version));
                 write!(output, "{}", params.join(", ")).unwrap();
                 writeln!(output, "),").unwrap();
             }

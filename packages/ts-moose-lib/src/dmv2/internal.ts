@@ -84,6 +84,17 @@ interface SummingMergeTreeEngineConfig {
   columns?: string[];
 }
 
+interface CollapsingMergeTreeEngineConfig {
+  engine: "CollapsingMergeTree";
+  sign: string;
+}
+
+interface VersionedCollapsingMergeTreeEngineConfig {
+  engine: "VersionedCollapsingMergeTree";
+  sign: string;
+  version: string;
+}
+
 interface ReplicatedMergeTreeEngineConfig {
   engine: "ReplicatedMergeTree";
   keeperPath?: string;
@@ -109,6 +120,21 @@ interface ReplicatedSummingMergeTreeEngineConfig {
   keeperPath?: string;
   replicaName?: string;
   columns?: string[];
+}
+
+interface ReplicatedCollapsingMergeTreeEngineConfig {
+  engine: "ReplicatedCollapsingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+  sign: string;
+}
+
+interface ReplicatedVersionedCollapsingMergeTreeEngineConfig {
+  engine: "ReplicatedVersionedCollapsingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+  sign: string;
+  version: string;
 }
 
 interface S3QueueEngineConfig {
@@ -174,10 +200,14 @@ type EngineConfig =
   | ReplacingMergeTreeEngineConfig
   | AggregatingMergeTreeEngineConfig
   | SummingMergeTreeEngineConfig
+  | CollapsingMergeTreeEngineConfig
+  | VersionedCollapsingMergeTreeEngineConfig
   | ReplicatedMergeTreeEngineConfig
   | ReplicatedReplacingMergeTreeEngineConfig
   | ReplicatedAggregatingMergeTreeEngineConfig
   | ReplicatedSummingMergeTreeEngineConfig
+  | ReplicatedCollapsingMergeTreeEngineConfig
+  | ReplicatedVersionedCollapsingMergeTreeEngineConfig
   | S3QueueEngineConfig
   | S3EngineConfig
   | BufferEngineConfig

@@ -712,6 +712,15 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                     }
                 }
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::CollapsingMergeTree { sign } => {
+                writeln!(output, "    engine: ClickHouseEngines.CollapsingMergeTree,").unwrap();
+                writeln!(output, "    sign: {:?},", sign).unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
+                writeln!(output, "    engine: ClickHouseEngines.VersionedCollapsingMergeTree,").unwrap();
+                writeln!(output, "    sign: {:?},", sign).unwrap();
+                writeln!(output, "    version: {:?},", version).unwrap();
+            }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree { keeper_path, replica_name } => {
                 writeln!(output, "    engine: ClickHouseEngines.ReplicatedMergeTree,").unwrap();
                 if let (Some(path), Some(name)) = (keeper_path, replica_name) {
@@ -751,6 +760,23 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                         writeln!(output, "    columns: [{}],", col_list).unwrap();
                     }
                 }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedCollapsingMergeTree { keeper_path, replica_name, sign } => {
+                writeln!(output, "    engine: ClickHouseEngines.ReplicatedCollapsingMergeTree,").unwrap();
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                    writeln!(output, "    replicaName: {:?},", name).unwrap();
+                }
+                writeln!(output, "    sign: {:?},", sign).unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree { keeper_path, replica_name, sign, version } => {
+                writeln!(output, "    engine: ClickHouseEngines.ReplicatedVersionedCollapsingMergeTree,").unwrap();
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    writeln!(output, "    keeperPath: {:?},", path).unwrap();
+                    writeln!(output, "    replicaName: {:?},", name).unwrap();
+                }
+                writeln!(output, "    sign: {:?},", sign).unwrap();
+                writeln!(output, "    version: {:?},", version).unwrap();
             }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3 {
                 path,
