@@ -56,7 +56,7 @@ const createBlocks = async (chClient: ClickHouseClient, blocks: Blocks) => {
   for (const query of blocks.setup) {
     try {
       console.log(`Creating block using query ${query}`);
-      await chClient.command({ 
+      await chClient.command({
         query,
         clickhouse_settings: {
           wait_end_of_query: 1, // Ensure at least once delivery and DDL acknowledgment
@@ -79,7 +79,7 @@ const deleteBlocks = async (chClient: ClickHouseClient, blocks: Blocks) => {
   for (const query of blocks.teardown) {
     try {
       console.log(`Deleting block using query ${query}`);
-      await chClient.command({ 
+      await chClient.command({
         query,
         clickhouse_settings: {
           wait_end_of_query: 1, // Ensure at least once delivery and DDL acknowledgment

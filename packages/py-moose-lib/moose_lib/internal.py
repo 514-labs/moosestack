@@ -86,6 +86,19 @@ class SummingMergeTreeConfigDict(BaseEngineConfigDict):
     columns: Optional[List[str]] = None
 
 
+class CollapsingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for CollapsingMergeTree engine."""
+    engine: Literal["CollapsingMergeTree"] = "CollapsingMergeTree"
+    sign: str
+
+
+class VersionedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for VersionedCollapsingMergeTree engine."""
+    engine: Literal["VersionedCollapsingMergeTree"] = "VersionedCollapsingMergeTree"
+    sign: str
+    version: str
+
+
 class ReplicatedMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplicatedMergeTree engine."""
     engine: Literal["ReplicatedMergeTree"] = "ReplicatedMergeTree"
@@ -115,6 +128,23 @@ class ReplicatedSummingMergeTreeConfigDict(BaseEngineConfigDict):
     keeper_path: Optional[str] = None
     replica_name: Optional[str] = None
     columns: Optional[List[str]] = None
+
+
+class ReplicatedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedCollapsingMergeTree engine."""
+    engine: Literal["ReplicatedCollapsingMergeTree"] = "ReplicatedCollapsingMergeTree"
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    sign: str
+
+
+class ReplicatedVersionedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
+    """Configuration for ReplicatedVersionedCollapsingMergeTree engine."""
+    engine: Literal["ReplicatedVersionedCollapsingMergeTree"] = "ReplicatedVersionedCollapsingMergeTree"
+    keeper_path: Optional[str] = None
+    replica_name: Optional[str] = None
+    sign: str
+    version: str
 
 
 class S3QueueConfigDict(BaseEngineConfigDict):
@@ -183,10 +213,14 @@ EngineConfigDict = Union[
     ReplacingMergeTreeConfigDict,
     AggregatingMergeTreeConfigDict,
     SummingMergeTreeConfigDict,
+    CollapsingMergeTreeConfigDict,
+    VersionedCollapsingMergeTreeConfigDict,
     ReplicatedMergeTreeConfigDict,
     ReplicatedReplacingMergeTreeConfigDict,
     ReplicatedAggregatingMergeTreeConfigDict,
     ReplicatedSummingMergeTreeConfigDict,
+    ReplicatedCollapsingMergeTreeConfigDict,
+    ReplicatedVersionedCollapsingMergeTreeConfigDict,
     S3QueueConfigDict,
     S3ConfigDict,
     BufferConfigDict,
@@ -455,7 +489,8 @@ def _convert_basic_engine_instance(engine: "EngineConfig") -> Optional[EngineCon
     """
     from moose_lib.blocks import (
         MergeTreeEngine, ReplacingMergeTreeEngine,
-        AggregatingMergeTreeEngine, SummingMergeTreeEngine
+        AggregatingMergeTreeEngine, SummingMergeTreeEngine,
+        CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine
     )
 
     if isinstance(engine, MergeTreeEngine):
@@ -469,6 +504,13 @@ def _convert_basic_engine_instance(engine: "EngineConfig") -> Optional[EngineCon
         return AggregatingMergeTreeConfigDict()
     elif isinstance(engine, SummingMergeTreeEngine):
         return SummingMergeTreeConfigDict(columns=engine.columns)
+    elif isinstance(engine, CollapsingMergeTreeEngine):
+        return CollapsingMergeTreeConfigDict(sign=engine.sign)
+    elif isinstance(engine, VersionedCollapsingMergeTreeEngine):
+        return VersionedCollapsingMergeTreeConfigDict(
+            sign=engine.sign,
+            version=engine.version
+        )
     return None
 
 
@@ -483,7 +525,8 @@ def _convert_replicated_engine_instance(engine: "EngineConfig") -> Optional[Engi
     """
     from moose_lib.blocks import (
         ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine,
-        ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
+        ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine,
+        ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine
     )
 
     if isinstance(engine, ReplicatedMergeTreeEngine):
@@ -508,6 +551,19 @@ def _convert_replicated_engine_instance(engine: "EngineConfig") -> Optional[Engi
             keeper_path=engine.keeper_path,
             replica_name=engine.replica_name,
             columns=engine.columns
+        )
+    elif isinstance(engine, ReplicatedCollapsingMergeTreeEngine):
+        return ReplicatedCollapsingMergeTreeConfigDict(
+            keeper_path=engine.keeper_path,
+            replica_name=engine.replica_name,
+            sign=engine.sign
+        )
+    elif isinstance(engine, ReplicatedVersionedCollapsingMergeTreeEngine):
+        return ReplicatedVersionedCollapsingMergeTreeConfigDict(
+            keeper_path=engine.keeper_path,
+            replica_name=engine.replica_name,
+            sign=engine.sign,
+            version=engine.version
         )
     return None
 

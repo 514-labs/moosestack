@@ -471,6 +471,23 @@ function convertBasicEngineConfig(
       };
     }
 
+    case ClickHouseEngines.CollapsingMergeTree: {
+      const collapsingConfig = config as any; // CollapsingMergeTreeConfig<any>
+      return {
+        engine: "CollapsingMergeTree",
+        sign: collapsingConfig.sign,
+      };
+    }
+
+    case ClickHouseEngines.VersionedCollapsingMergeTree: {
+      const versionedConfig = config as any; // VersionedCollapsingMergeTreeConfig<any>
+      return {
+        engine: "VersionedCollapsingMergeTree",
+        sign: versionedConfig.sign,
+        version: versionedConfig.version,
+      };
+    }
+
     default:
       return undefined;
   }
@@ -527,6 +544,27 @@ function convertReplicatedEngineConfig(
         keeperPath: replicatedConfig.keeperPath,
         replicaName: replicatedConfig.replicaName,
         columns: replicatedConfig.columns,
+      };
+    }
+
+    case ClickHouseEngines.ReplicatedCollapsingMergeTree: {
+      const replicatedConfig = config as any; // ReplicatedCollapsingMergeTreeConfig<any>
+      return {
+        engine: "ReplicatedCollapsingMergeTree",
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+        sign: replicatedConfig.sign,
+      };
+    }
+
+    case ClickHouseEngines.ReplicatedVersionedCollapsingMergeTree: {
+      const replicatedConfig = config as any; // ReplicatedVersionedCollapsingMergeTreeConfig<any>
+      return {
+        engine: "ReplicatedVersionedCollapsingMergeTree",
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+        sign: replicatedConfig.sign,
+        version: replicatedConfig.version,
       };
     }
 
