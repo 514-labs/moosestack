@@ -579,41 +579,42 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             }
 
-            // Apply TTL, Codec, and Materialized BEFORE default handling
-            // This prevents WithDefault<Date> from being used when Date has other annotations
-            // (e.g., "Date & ClickHouseTTL<...>" != "Date", so we use ClickHouseDefault instead)
+            // Apply TTL and Codec first (these can coexist with DEFAULT/MATERIALIZED)
             let type_str = if let Some(expr) = &column.ttl {
                 format!("{type_str} & ClickHouseTTL<\"{}\">", expr)
             } else {
                 type_str
             };
 
-            // Wrap with Codec if present
             let type_str = match column.codec.as_ref() {
                 None => type_str,
                 Some(ref codec) => format!("{type_str} & ClickHouseCodec<{codec:?}>"),
             };
 
-            // Wrap with Materialized if present
-            // Note: Mutual exclusivity with DEFAULT is validated earlier in std_column_to_clickhouse_column
-            let type_str = match column.materialized.as_ref() {
-                None => type_str,
-                Some(materialized) => {
-                    format!("{type_str} & ClickHouseMaterialized<{:?}>", materialized)
-                }
-            };
-
-            // Handle DEFAULT after TTL/Codec/Materialized
-            // WithDefault<Date> only applies to plain Date (not "Date & ClickHouse...")
-            let type_str = match &column.default {
-                Some(default) if type_str == "Date" => {
+            // Handle DEFAULT and MATERIALIZED (mutually exclusive)
+            // Apply these AFTER TTL/Codec to prevent WithDefault<Date> when Date has other annotations
+            let type_str = match (&column.default, &column.materialized) {
+                (Some(default), None) if type_str == "Date" => {
                     // https://github.com/samchon/typia/issues/1658
+                    // WithDefault only for plain Date (not "Date & ClickHouse...")
                     format!("WithDefault<{type_str}, {:?}>", default)
                 }
-                Some(default) => {
+                (Some(default), None) => {
                     format!("{type_str} & ClickHouseDefault<{:?}>", default)
                 }
-                None => type_str,
+                (None, Some(materialized)) => {
+                    format!("{type_str} & ClickHouseMaterialized<{:?}>", materialized)
+                }
+                (None, None) => type_str,
+                (Some(_), Some(_)) => {
+                    // Both DEFAULT and MATERIALIZED are set - this should never happen
+                    // but we need to handle it gracefully rather than silently generating invalid code
+                    panic!(
+                        "Column '{}' has both DEFAULT and MATERIALIZED set. \
+                        These are mutually exclusive in ClickHouse.",
+                        column.name
+                    )
+                }
             };
             let type_str = if can_use_key_wrapping && column.primary_key {
                 format!("Key<{type_str}>")
