@@ -3902,6 +3902,7 @@ ORDER BY (`id`) "#;
                     default: None,
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 ClickHouseColumn {
                     name: "event_id".to_string(),
@@ -3912,6 +3913,7 @@ ORDER BY (`id`) "#;
                     default: None,
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 ClickHouseColumn {
                     name: "timestamp".to_string(),
@@ -3922,6 +3924,7 @@ ORDER BY (`id`) "#;
                     default: None,
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::SingleExpr("(user_id, cityHash64(event_id), timestamp)".to_string()),
@@ -3964,6 +3967,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
                 default: None,
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["product_id".to_string()]),
             partition_by: None,
@@ -6115,6 +6119,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_settings: None,
             indexes: vec![],
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
