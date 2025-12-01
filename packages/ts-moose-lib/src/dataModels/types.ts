@@ -210,17 +210,16 @@ export type ClickHouseTTL<SqlExpression extends string> = {
  *
  * @example
  * interface Events {
- *   eventTime: Date;
+ *   eventTime: DateTime;
  *   // Extract date component - computed and stored at insert time
  *   eventDate: Date & ClickHouseMaterialized<"toDate(event_time)">;
  *
  *   userId: string;
  *   // Precompute hash for fast lookups
- *   userHash: number & ClickHouseInt<"uint64"> & ClickHouseMaterialized<"cityHash64(user_id)">;
+ *   userHash: UInt64 & ClickHouseMaterialized<"cityHash64(userId)">;
  * }
  *
  * @remarks
- * - Expression uses ClickHouse column names (snake_case), not TypeScript field names
  * - MATERIALIZED and DEFAULT are mutually exclusive
  * - Can be combined with ClickHouseCodec for compression
  * - Changing the expression modifies the column in-place (existing values preserved)

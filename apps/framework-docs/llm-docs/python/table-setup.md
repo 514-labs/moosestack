@@ -976,3 +976,32 @@ class Events(BaseModel):
     # Codec + Numeric type
     event_count: Annotated[UInt64, ClickHouseCodec("DoubleDelta, LZ4")]
 ```
+
+## Materialized Columns
+
+Pre-compute and store values at INSERT time for faster queries:
+
+```python
+from typing import Annotated
+from datetime import datetime, date
+from moose_lib import ClickHouseMaterialized, ClickHouseCodec, UInt64
+from pydantic import BaseModel
+
+class UserEvents(BaseModel):
+    timestamp: datetime
+    user_id: str
+
+    # Extract date (use exact field names in expressions)
+    event_date: Annotated[date, ClickHouseMaterialized("toDate(timestamp)")]
+
+    # Precompute hash
+    user_hash: Annotated[UInt64, ClickHouseMaterialized("cityHash64(user_id)")]
+
+    # Combine with CODEC
+    log_data: Annotated[Any, ClickHouseMaterialized("..."), ClickHouseCodec("ZSTD(1)")]
+```
+
+**Notes:**
+- Cannot combine with DEFAULT (mutually exclusive)
+- Cannot be primary keys
+- Use exact field names in expressions
