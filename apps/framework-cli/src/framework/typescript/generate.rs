@@ -579,26 +579,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             }
 
-            // Handle DEFAULT and MATERIALIZED (mutually exclusive)
-            let type_str = match (&column.default, &column.materialized) {
-                (Some(default), None) if type_str == "Date" => {
-                    // https://github.com/samchon/typia/issues/1658
-                    format!("WithDefault<{type_str}, {:?}>", default)
-                }
-                (Some(default), None) => {
-                    format!("{type_str} & ClickHouseDefault<{:?}>", default)
-                }
-                (None, Some(materialized)) => {
-                    format!("{type_str} & ClickHouseMaterialized<{:?}>", materialized)
-                }
-                (None, None) => type_str,
-                (Some(_), Some(_)) => {
-                    // This should never happen due to validation, but handle it gracefully
-                    panic!("Column '{}' has both DEFAULT and MATERIALIZED - this should be caught by validation", column.name)
-                }
-            };
-
-            // Append ClickHouseTTL type tag if present on the column
+            // Apply TTL, Codec, and Materialized BEFORE default handling
+            // This prevents WithDefault<Date> from being used when Date has other annotations
+            // (e.g., "Date & ClickHouseTTL<...>" != "Date", so we use ClickHouseDefault instead)
             let type_str = if let Some(expr) = &column.ttl {
                 format!("{type_str} & ClickHouseTTL<\"{}\">", expr)
             } else {
@@ -609,6 +592,28 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             let type_str = match column.codec.as_ref() {
                 None => type_str,
                 Some(ref codec) => format!("{type_str} & ClickHouseCodec<{codec:?}>"),
+            };
+
+            // Wrap with Materialized if present
+            // Note: Mutual exclusivity with DEFAULT is validated earlier in std_column_to_clickhouse_column
+            let type_str = match column.materialized.as_ref() {
+                None => type_str,
+                Some(materialized) => {
+                    format!("{type_str} & ClickHouseMaterialized<{:?}>", materialized)
+                }
+            };
+
+            // Handle DEFAULT after TTL/Codec/Materialized
+            // WithDefault<Date> only applies to plain Date (not "Date & ClickHouse...")
+            let type_str = match &column.default {
+                Some(default) if type_str == "Date" => {
+                    // https://github.com/samchon/typia/issues/1658
+                    format!("WithDefault<{type_str}, {:?}>", default)
+                }
+                Some(default) => {
+                    format!("{type_str} & ClickHouseDefault<{:?}>", default)
+                }
+                None => type_str,
             };
             let type_str = if can_use_key_wrapping && column.primary_key {
                 format!("Key<{type_str}>")
