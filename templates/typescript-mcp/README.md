@@ -117,6 +117,39 @@ Once connected, you can ask Claude Code questions like:
 
 Claude Code will automatically use the `query_clickhouse` tool to execute the appropriate SQL queries.
 
+## API Key Authentication
+
+The MCP server supports optional API key authentication using PBKDF2.
+
+### Generating Keys
+
+Generate an API key pair using the Moose CLI:
+
+```bash
+moose generate hash-token
+```
+
+This outputs:
+
+- **API Key Hash** - Store server-side in `MCP_API_KEY_HASH`
+- **Bearer Token** - Store client-side in `MCP_API_KEY`
+
+### Configuration
+
+**Server (moosestack-service):**
+
+```bash
+export MCP_API_KEY_HASH=<hash_from_generation>
+```
+
+**Client (web-app):**
+
+```bash
+echo "MCP_API_KEY=<bearer_token>" >> packages/web-app/.env.local
+```
+
+When `MCP_API_KEY_HASH` is not set, authentication is disabled (suitable for local development).
+
 ## Security Features
 
 This template implements several security measures for safe database querying:
@@ -131,7 +164,7 @@ This template implements several security measures for safe database querying:
 
 Before deploying to production, consider adding:
 
-- **Authentication & Authorization**: JWT authentication framework is in place
+- **Authentication & Authorization**: API key authentication is available (see above)
 - **Rate Limiting**: Protect against abuse and DoS attacks
 - **Query Timeouts**: Prevent long-running queries from consuming resources
 - **Audit Logging**: Track who executed which queries and when
