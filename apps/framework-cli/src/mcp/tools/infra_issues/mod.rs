@@ -17,7 +17,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use super::toon_serializer::serialize_to_toon_compressed;
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
@@ -25,6 +24,7 @@ use crate::infrastructure::olap::clickhouse::diagnostics::{
     Component, DiagnosticOptions, DiagnosticOutput, DiagnosticRequest, InfrastructureType, Severity,
 };
 use crate::infrastructure::redis::redis_client::RedisClient;
+use toon_format::{encode, types::KeyFoldingMode, EncodeOptions};
 
 /// Error types for MCP infrastructure diagnostic operations
 #[derive(Debug, thiserror::Error)]
@@ -232,7 +232,10 @@ pub async fn handle_call(
             match serde_json::to_value(&output) {
                 Ok(json_value) => {
                     // Format as TOON
-                    match serialize_to_toon_compressed(&json_value) {
+                    let options = EncodeOptions::new()
+                        .with_key_folding(KeyFoldingMode::Safe)
+                        .with_spaces(2);
+                    match encode(&json_value, &options) {
                         Ok(toon_str) => create_success_result(toon_str),
                         Err(e) => create_error_result(format!("Failed to format as TOON: {}", e)),
                     }

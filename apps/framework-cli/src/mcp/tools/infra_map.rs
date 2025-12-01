@@ -5,8 +5,8 @@
 use rmcp::model::{CallToolResult, Tool};
 use serde_json::{json, Map, Value};
 use std::sync::Arc;
+use toon_format::{encode, types::KeyFoldingMode, EncodeOptions, ToonError};
 
-use super::toon_serializer::serialize_to_toon_compressed;
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -22,7 +22,7 @@ pub enum InfraMapError {
     Serialization(#[from] serde_json::Error),
 
     #[error("Failed to serialize to TOON format: {0}")]
-    ToonSerialization(#[from] super::toon_serializer::ToonSerializationError),
+    ToonSerialization(#[from] ToonError),
 }
 
 /// Fuzzy match using case-insensitive substring matching
@@ -148,8 +148,11 @@ fn format_infrastructure_map(
 
     // Serialize to TOON
     let compressed_json = serde_json::to_value(&filtered_map)?;
+    let toon_options = EncodeOptions::new()
+        .with_key_folding(KeyFoldingMode::Safe)
+        .with_spaces(2);
     output.push_str("```toon\n");
-    output.push_str(&serialize_to_toon_compressed(&compressed_json)?);
+    output.push_str(&encode(&compressed_json, &toon_options)?);
     output.push_str("\n```\n");
 
     // Add search info if filtered

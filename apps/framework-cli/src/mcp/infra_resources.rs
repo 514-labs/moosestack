@@ -11,9 +11,9 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use super::compressed_map::{build_resource_uri, parse_resource_uri, ComponentType};
-use super::tools::toon_serializer::serialize_to_toon_compressed;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::redis::redis_client::RedisClient;
+use toon_format::{encode, types::KeyFoldingMode, EncodeOptions};
 
 /// List all available infrastructure resources
 pub async fn list_infra_resources(redis_client: Arc<RedisClient>) -> ListResourcesResult {
@@ -270,7 +270,10 @@ pub async fn read_infra_resource(
     };
 
     // Serialize to TOON format
-    let toon_text = serialize_to_toon_compressed(&json_value).ok()?;
+    let options = EncodeOptions::new()
+        .with_key_folding(KeyFoldingMode::Safe)
+        .with_spaces(2);
+    let toon_text = encode(&json_value, &options).ok()?;
 
     Some(ReadResourceResult {
         contents: vec![ResourceContents::TextResourceContents {

@@ -13,8 +13,7 @@ use tracing::{debug, info};
 
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
-
-use super::toon_serializer::serialize_to_toon_compressed;
+use toon_format::{encode, types::KeyFoldingMode, EncodeOptions};
 
 // Constants for validation and limits
 const DEFAULT_LIMIT: u32 = 100;
@@ -189,8 +188,14 @@ fn apply_limit_to_query(query: &str, max_rows: u32, analysis: &QueryAnalysis) ->
 fn format_as_toon(result: &str) -> Result<String, QueryError> {
     // Try to parse as JSON and convert to TOON format
     match serde_json::from_str::<Value>(result) {
-        Ok(json_value) => serialize_to_toon_compressed(&json_value)
-            .map_err(|e| QueryError::FormattingError(format!("Failed to format as TOON: {}", e))),
+        Ok(json_value) => {
+            let options = EncodeOptions::new()
+                .with_key_folding(KeyFoldingMode::Safe)
+                .with_spaces(2);
+            encode(&json_value, &options).map_err(|e| {
+                QueryError::FormattingError(format!("Failed to format as TOON: {}", e))
+            })
+        }
         Err(_) => {
             // If not JSON, return as-is (e.g., for SHOW commands)
             Ok(result.to_string())

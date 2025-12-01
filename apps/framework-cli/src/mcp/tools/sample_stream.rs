@@ -13,12 +13,12 @@ use std::time::Duration;
 use tokio_stream::StreamExt;
 use tracing::info;
 
-use super::toon_serializer::serialize_to_toon_compressed;
 use super::{create_error_result, create_success_result};
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::client::create_consumer;
 use crate::infrastructure::stream::kafka::models::KafkaConfig;
+use toon_format::{encode, types::KeyFoldingMode, EncodeOptions, ToonError};
 
 // Constants for validation
 const MIN_LIMIT: u8 = 1;
@@ -44,7 +44,7 @@ pub enum StreamSampleError {
     Serialization(#[from] serde_json::Error),
 
     #[error("Failed to serialize to TOON format: {0}")]
-    ToonSerialization(#[from] super::toon_serializer::ToonSerializationError),
+    ToonSerialization(#[from] ToonError),
 
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
@@ -424,7 +424,10 @@ fn format_output(
             }
 
             // Serialize to TOON format with compression
-            Ok(serialize_to_toon_compressed(&response)?)
+            let options = EncodeOptions::new()
+                .with_key_folding(KeyFoldingMode::Safe)
+                .with_spaces(2);
+            Ok(encode(&response, &options)?)
         }
     }
 }
