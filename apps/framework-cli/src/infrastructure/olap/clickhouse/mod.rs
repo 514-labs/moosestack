@@ -3843,4 +3843,77 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             }
         }
     }
+
+    #[test]
+    fn test_modify_column_with_materialized() {
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseColumn;
+
+        // Test changing a MATERIALIZED expression
+        let ch_col = ClickHouseColumn {
+            name: "event_date".to_string(),
+            column_type: ClickHouseColumnType::Date,
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: None,
+            materialized: Some("toStartOfMonth(event_time)".to_string()),
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &ch_col,
+            false, // removing_default
+            false, // removing_materialized
+            false, // removing_ttl
+            false, // removing_codec
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(sqls.len(), 1);
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN IF EXISTS `event_date` Date MATERIALIZED toStartOfMonth(event_time)"
+        );
+    }
+
+    #[test]
+    fn test_remove_materialized_sql_generation() {
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseColumn;
+
+        let ch_col = ClickHouseColumn {
+            name: "user_hash".to_string(),
+            column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64),
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: None,
+            materialized: None,
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &ch_col,
+            false,
+            true, // removing_materialized
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+
+        assert!(!sqls.is_empty());
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN `user_hash` REMOVE MATERIALIZED"
+        );
+    }
 }

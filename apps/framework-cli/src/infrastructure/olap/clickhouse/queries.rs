@@ -6180,4 +6180,151 @@ ORDER BY (`id`)
 "#;
         assert_eq!(query.trim(), expected.trim());
     }
+
+    #[test]
+    fn test_create_table_with_materialized_column() {
+        use crate::framework::versions::Version;
+
+        let columns = vec![
+            ClickHouseColumn {
+                name: "event_time".to_string(),
+                column_type: ClickHouseColumnType::DateTime64 { precision: 3 },
+                required: true,
+                primary_key: false,
+                unique: false,
+                default: None,
+                materialized: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+            },
+            ClickHouseColumn {
+                name: "event_date".to_string(),
+                column_type: ClickHouseColumnType::Date,
+                required: true,
+                primary_key: false,
+                unique: false,
+                default: None,
+                materialized: Some("toDate(event_time)".to_string()),
+                comment: None,
+                ttl: None,
+                codec: None,
+            },
+        ];
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns,
+            order_by: OrderBy::Fields(vec!["event_time".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        let expected = r#"
+CREATE TABLE IF NOT EXISTS `test_db`.`test_table`
+(
+ `event_time` DateTime64(3) NOT NULL,
+ `event_date` Date NOT NULL MATERIALIZED toDate(event_time)
+)
+ENGINE = MergeTree
+ORDER BY (`event_time`)
+"#;
+        assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_materialized_column_with_codec() {
+        use crate::framework::core::infrastructure::table::JsonOptions;
+        use crate::framework::versions::Version;
+
+        // Test customer's use case: MATERIALIZED column with CODEC
+        let columns = vec![
+            ClickHouseColumn {
+                name: "log_blob".to_string(),
+                column_type: ClickHouseColumnType::Json(JsonOptions::default()),
+                required: true,
+                primary_key: false,
+                unique: false,
+                default: None,
+                materialized: None,
+                comment: None,
+                ttl: None,
+                codec: Some("ZSTD(3)".to_string()),
+            },
+            ClickHouseColumn {
+                name: "combination_hash".to_string(),
+                column_type: ClickHouseColumnType::Array(Box::new(
+                    ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64),
+                )),
+                required: true,
+                primary_key: false,
+                unique: false,
+                default: None,
+                materialized: Some(
+                    "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))".to_string(),
+                ),
+                comment: None,
+                ttl: None,
+                codec: Some("ZSTD(1)".to_string()),
+            },
+        ];
+
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "logs".to_string(),
+            columns,
+            order_by: OrderBy::SingleExpr("tuple()".to_string()),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+
+        // Verify the query contains the MATERIALIZED clause and CODEC
+        assert!(query.contains("MATERIALIZED arrayMap"));
+        assert!(query.contains("CODEC(ZSTD(1))"));
+        assert!(query.contains("CODEC(ZSTD(3))"));
+    }
+
+    #[test]
+    fn test_validation_default_and_materialized_mutually_exclusive() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType};
+        use crate::infrastructure::olap::clickhouse::mapper::std_column_to_clickhouse_column;
+
+        let column = Column {
+            name: "bad_column".to_string(),
+            data_type: ColumnType::Int(IntType::Int32),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: Some("42".to_string()),
+            materialized: Some("id + 1".to_string()), // Invalid: both default and materialized
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        let result = std_column_to_clickhouse_column(column);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("both DEFAULT and MATERIALIZED")
+                || error_msg.contains("mutually exclusive")
+        );
+    }
 }
