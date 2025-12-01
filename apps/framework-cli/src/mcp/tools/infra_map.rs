@@ -16,7 +16,7 @@ use crate::infrastructure::redis::redis_client::RedisClient;
 /// Valid component types for filtering
 /// Note: block_db_processes and consumption_api_web_server are single structs, not collections,
 /// so they are not included in this list yet. They can be added when they become HashMaps.
-const VALID_COMPONENT_TYPES: [&str; 10] = [
+const VALID_COMPONENT_TYPES: [&str; 11] = [
     "topics",
     "api_endpoints",
     "tables",
@@ -27,6 +27,7 @@ const VALID_COMPONENT_TYPES: [&str; 10] = [
     "orchestration_workers",
     "sql_resources",
     "workflows",
+    "web_apps",
 ];
 
 /// Valid format options
@@ -122,7 +123,7 @@ pub fn tool_definition() -> Tool {
     Tool {
         name: "get_infra_map".into(),
         description: Some(
-            "Retrieve and explore the Moose infrastructure map. Access all infrastructure components including tables, topics, API endpoints, sync processes, function processes, orchestration workers, SQL resources, and workflows. Filter by component type and search with regex patterns.".into()
+            "Retrieve and explore the Moose infrastructure map. Access all infrastructure components including tables, topics, API endpoints, sync processes, function processes, orchestration workers, SQL resources, workflows, and web apps. Filter by component type and search with regex patterns.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
@@ -449,6 +450,14 @@ fn format_summary(
             component_type_filter,
             show_all,
         ),
+        process_component_summary(
+            "web_apps",
+            "Web Apps",
+            &infra_map.web_apps,
+            search,
+            component_type_filter,
+            show_all,
+        ),
     ];
 
     // Append all non-empty component sections
@@ -559,6 +568,13 @@ fn format_detailed(
                 component_type_filter,
                 show_all,
             )?,
+            process_component_detailed(
+                "web_apps",
+                &infra_map.web_apps,
+                search,
+                component_type_filter,
+                show_all,
+            )?,
         ];
 
         // Add all non-empty components to the filtered map
@@ -600,6 +616,7 @@ mod tests {
         assert!(is_valid_component_type("tables"));
         assert!(is_valid_component_type("api_endpoints"));
         assert!(is_valid_component_type("workflows"));
+        assert!(is_valid_component_type("web_apps"));
 
         assert!(!is_valid_component_type("invalid"));
         assert!(!is_valid_component_type(""));
