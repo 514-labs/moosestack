@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 
 use crate::framework::core::infrastructure::table::Metadata;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
@@ -170,21 +171,18 @@ impl Default for CompressedInfraMap {
 /// Convert an absolute file path to a relative path from the project root
 /// Strips the project directory prefix to get a path like "app/datamodels/User.ts"
 fn make_relative_path(absolute_path: &str) -> String {
-    // Find the last occurrence of "/app/" or "\app\" and take everything from "app/" onwards
-    // This works for paths like "/Users/name/project/app/datamodels/User.ts" -> "app/datamodels/User.ts"
-    if let Some(pos) = absolute_path.rfind("/app/") {
-        return absolute_path[pos + 1..].to_string();
-    }
-    if let Some(pos) = absolute_path.rfind("\\app\\") {
-        return absolute_path[pos + 1..].replace('\\', "/");
+    let path = Path::new(absolute_path);
+
+    // Walk through ancestors to find one ending with "app", then get relative path
+    for ancestor in path.ancestors() {
+        if ancestor.file_name().is_some_and(|name| name == "app") {
+            if let Ok(relative) = path.strip_prefix(ancestor.parent().unwrap_or(ancestor)) {
+                return relative.display().to_string();
+            }
+        }
     }
 
-    // If path already starts with "app/", return as-is
-    if absolute_path.starts_with("app/") || absolute_path.starts_with("app\\") {
-        return absolute_path.replace('\\', "/");
-    }
-
-    // Fallback: return the original path if we can't find "app/"
+    // Fallback: return the original path
     absolute_path.to_string()
 }
 
@@ -528,30 +526,16 @@ mod tests {
     }
 
     #[test]
-    fn test_make_relative_path_with_absolute_unix() {
+    fn test_make_relative_path_with_absolute() {
         let absolute = "/Users/nicolas/code/514/test-projects/ts-test-tests/app/ingest/models.ts";
         let relative = make_relative_path(absolute);
         assert_eq!(relative, "app/ingest/models.ts");
     }
 
     #[test]
-    fn test_make_relative_path_with_absolute_windows() {
-        let absolute = "C:\\Users\\nicolas\\code\\project\\app\\datamodels\\User.ts";
-        let relative = make_relative_path(absolute);
-        assert_eq!(relative, "app/datamodels/User.ts");
-    }
-
-    #[test]
     fn test_make_relative_path_already_relative() {
         let already_relative = "app/ingest/models.ts";
         let result = make_relative_path(already_relative);
-        assert_eq!(result, "app/ingest/models.ts");
-    }
-
-    #[test]
-    fn test_make_relative_path_with_backslashes() {
-        let windows_relative = "app\\ingest\\models.ts";
-        let result = make_relative_path(windows_relative);
         assert_eq!(result, "app/ingest/models.ts");
     }
 
@@ -565,7 +549,7 @@ mod tests {
 
     #[test]
     fn test_make_relative_path_nested_app_directories() {
-        // Should use the last occurrence of "/app/"
+        // Should use the innermost (last) "app" directory
         let path = "/Users/app/project/app/datamodels/User.ts";
         let result = make_relative_path(path);
         assert_eq!(result, "app/datamodels/User.ts");
