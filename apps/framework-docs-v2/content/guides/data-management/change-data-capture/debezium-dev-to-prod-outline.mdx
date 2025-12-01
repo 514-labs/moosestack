@@ -7,7 +7,7 @@ import { FileTree } from "@/components/mdx";
 
 # Stream Data from Postgres with Debezium
 
-This guide shows you how to use the **Debezium CDC Template** with your own application. You will learn how to connect the pipeline to your PostgreSQL database and send your tables to ClickHouse for real-time analytics.
+This guide shows you how to use the [**Debezium CDC Template**](https://github.com/514-labs/debezium-cdc). You will learn how to set up the Debezium connector with your PostgreSQL database and mirror your data into ClickHouse in real-time.
 
 ## Architecture Overview
 
@@ -52,10 +52,10 @@ Here are the key files in the template you should know about:
 
 ## Step 0: Clone the Template
 
-Make sure you clone the [Debezium CDC Template](https://github.com/514labs/debezium-cdc) and install the dependencies:
+Make sure you clone the [Debezium CDC Template](https://github.com/514-labs/debezium-cdc) and install the dependencies:
 
 ```bash
-git clone https://github.com/514labs/debezium-cdc.git
+git clone https://github.com/514-labs/debezium-cdc.git
 cd debezium-cdc
 pnpm install
 ```
