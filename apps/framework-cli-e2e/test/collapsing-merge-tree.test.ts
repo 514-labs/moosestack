@@ -16,11 +16,17 @@ import { expect } from "chai";
 import * as path from "path";
 
 // Import constants and utilities
-import { TIMEOUTS, TEMPLATE_NAMES, APP_NAMES } from "./constants";
+import {
+  TIMEOUTS,
+  TEMPLATE_NAMES,
+  APP_NAMES,
+  SERVER_CONFIG,
+} from "./constants";
 
 import {
   waitForServerStart,
   waitForInfrastructureReady,
+  waitForStreamingFunctions,
   cleanupTestSuite,
   performGlobalCleanup,
   createTempTestDirectory,
@@ -45,50 +51,61 @@ const TEST_PACKAGE_MANAGER = (process.env.TEST_PACKAGE_MANAGER || "npm") as
   | "pip";
 
 describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", function () {
-  this.timeout(TIMEOUTS.SUITE);
-
   describe("TypeScript Template - CollapsingMergeTree Engines", function () {
     let devProcess: ChildProcess | null = null;
     let testDir: string = "";
     const appName = APP_NAMES.TYPESCRIPT_TESTS;
 
     before(async function () {
-      this.timeout(TIMEOUTS.SETUP);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
       console.log("\n🚀 Setting up TypeScript CollapsingMergeTree test...\n");
 
-      testDir = await createTempTestDirectory();
+      testDir = createTempTestDirectory("ts-collapsing-mt");
       console.log(`Created temporary directory: ${testDir}`);
 
       console.log("Setting up TypeScript project...");
-      devProcess = await setupTypeScriptProject(
-        CLI_PATH,
+      await setupTypeScriptProject(
         testDir,
         TEMPLATE_NAMES.TYPESCRIPT_TESTS,
-        appName,
+        CLI_PATH,
         MOOSE_LIB_PATH,
+        appName,
         TEST_PACKAGE_MANAGER as "npm" | "pnpm",
       );
 
+      console.log("Starting dev server...");
+      devProcess = spawn(CLI_PATH, ["dev"], {
+        stdio: "pipe",
+        cwd: testDir,
+        env: process.env,
+      });
+
       console.log("Waiting for server to start...");
-      await waitForServerStart(devProcess, TIMEOUTS.SERVER_START);
+      await waitForServerStart(
+        devProcess,
+        TIMEOUTS.SERVER_STARTUP_MS,
+        SERVER_CONFIG.startupMessage,
+        SERVER_CONFIG.url,
+      );
+
+      console.log("Waiting for streaming functions...");
+      await waitForStreamingFunctions();
 
       console.log("Waiting for infrastructure to be ready...");
-      await waitForInfrastructureReady(devProcess, TIMEOUTS.INFRASTRUCTURE);
+      await waitForInfrastructureReady();
 
       console.log("✅ TypeScript test setup completed successfully\n");
     });
 
     after(async function () {
-      this.timeout(TIMEOUTS.CLEANUP);
-      await cleanupTestSuite(
-        devProcess,
-        testDir,
-        "TypeScript CollapsingMergeTree test",
-      );
+      this.timeout(TIMEOUTS.CLEANUP_MS);
+      await cleanupTestSuite(devProcess, testDir, appName, {
+        logPrefix: "TypeScript CollapsingMergeTree test",
+      });
     });
 
     it("should create CollapsingMergeTree table with correct engine configuration", async function () {
-      this.timeout(TIMEOUTS.TEST);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL("CollapsingMergeTreeTest", "local");
       console.log("CollapsingMergeTreeTest DDL:", ddl);
@@ -100,7 +117,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
     });
 
     it("should create VersionedCollapsingMergeTree table with correct engine configuration", async function () {
-      this.timeout(TIMEOUTS.TEST);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL(
         "VersionedCollapsingMergeTreeTest",
@@ -116,7 +133,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
     });
 
     it("should create ReplicatedCollapsingMergeTree table with correct engine configuration", async function () {
-      this.timeout(TIMEOUTS.TEST);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL(
         "ReplicatedCollapsingMergeTreeTest",
@@ -137,7 +154,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
     });
 
     it("should create ReplicatedVersionedCollapsingMergeTree table with correct engine configuration", async function () {
-      this.timeout(TIMEOUTS.TEST);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL(
         "ReplicatedVersionedCollapsingMergeTreeTest",
@@ -165,42 +182,58 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
     const appName = APP_NAMES.PYTHON_TESTS;
 
     before(async function () {
-      this.timeout(TIMEOUTS.SETUP);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
       console.log("\n🚀 Setting up Python CollapsingMergeTree test...\n");
 
-      testDir = await createTempTestDirectory();
+      testDir = createTempTestDirectory("py-collapsing-mt");
       console.log(`Created temporary directory: ${testDir}`);
 
       console.log("Setting up Python project...");
-      devProcess = await setupPythonProject(
-        CLI_PATH,
+      await setupPythonProject(
         testDir,
         TEMPLATE_NAMES.PYTHON_TESTS,
-        appName,
+        CLI_PATH,
         MOOSE_PY_LIB_PATH,
-        TEST_PACKAGE_MANAGER as "pip",
+        appName,
       );
 
+      console.log("Starting dev server...");
+      devProcess = spawn(CLI_PATH, ["dev"], {
+        stdio: "pipe",
+        cwd: testDir,
+        env: {
+          ...process.env,
+          VIRTUAL_ENV: path.join(testDir, ".venv"),
+          PATH: `${path.join(testDir, ".venv", "bin")}:${process.env.PATH}`,
+        },
+      });
+
       console.log("Waiting for server to start...");
-      await waitForServerStart(devProcess, TIMEOUTS.SERVER_START);
+      await waitForServerStart(
+        devProcess,
+        TIMEOUTS.SERVER_STARTUP_MS,
+        SERVER_CONFIG.startupMessage,
+        SERVER_CONFIG.url,
+      );
+
+      console.log("Waiting for streaming functions...");
+      await waitForStreamingFunctions();
 
       console.log("Waiting for infrastructure to be ready...");
-      await waitForInfrastructureReady(devProcess, TIMEOUTS.INFRASTRUCTURE);
+      await waitForInfrastructureReady();
 
       console.log("✅ Python test setup completed successfully\n");
     });
 
     after(async function () {
-      this.timeout(TIMEOUTS.CLEANUP);
-      await cleanupTestSuite(
-        devProcess,
-        testDir,
-        "Python CollapsingMergeTree test",
-      );
+      this.timeout(TIMEOUTS.CLEANUP_MS);
+      await cleanupTestSuite(devProcess, testDir, appName, {
+        logPrefix: "Python CollapsingMergeTree test",
+      });
     });
 
     it("should create CollapsingMergeTree table with correct engine configuration", async function () {
-      this.timeout(TIMEOUTS.TEST);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL("CollapsingMergeTreeTest", "local");
       console.log("CollapsingMergeTreeTest DDL:", ddl);
@@ -212,7 +245,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
     });
 
     it("should create VersionedCollapsingMergeTree table with correct engine configuration", async function () {
-      this.timeout(TIMEOUTS.TEST);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL(
         "VersionedCollapsingMergeTreeTest",
@@ -228,7 +261,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
     });
 
     it("should create ReplicatedCollapsingMergeTree table with correct engine configuration", async function () {
-      this.timeout(TIMEOUTS.TEST);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL(
         "ReplicatedCollapsingMergeTreeTest",
@@ -249,7 +282,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
     });
 
     it("should create ReplicatedVersionedCollapsingMergeTree table with correct engine configuration", async function () {
-      this.timeout(TIMEOUTS.TEST);
+      this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL(
         "ReplicatedVersionedCollapsingMergeTreeTest",
@@ -272,9 +305,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
   });
 
   after(async function () {
-    this.timeout(TIMEOUTS.CLEANUP);
-    await performGlobalCleanup(
-      "CollapsingMergeTree and VersionedCollapsingMergeTree engine tests",
-    );
+    this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+    await performGlobalCleanup();
   });
 });
