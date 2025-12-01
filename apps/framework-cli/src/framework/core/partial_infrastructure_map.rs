@@ -39,9 +39,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use log::debug;
 use serde::{Deserialize, Serialize};
 use tokio::process::Child;
+use tracing::debug;
 
 use super::{
     infrastructure::{
@@ -273,6 +273,9 @@ struct PartialTable {
     /// Optional cluster name for ON CLUSTER support
     #[serde(default)]
     pub cluster: Option<String>,
+    /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
+    #[serde(default, alias = "primary_key_expression")]
+    pub primary_key_expression: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -540,7 +543,7 @@ impl PartialInfrastructureMap {
                 .split("end___MOOSE_STUFF___")
                 .next()
                 .ok_or_else(output_format)?;
-            log::info!("load_from_user_code inframap json: {}", json);
+            tracing::info!("load_from_user_code inframap json: {}", json);
 
             Ok(serde_json::from_str(json)
                 .inspect_err(|_| debug!("Invalid JSON from exports: {}", raw_string_stdout))?)
@@ -743,6 +746,7 @@ impl PartialInfrastructureMap {
                     table_ttl_setting,
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),
+                    primary_key_expression: partial_table.primary_key_expression.clone(),
                 };
                 Ok((table.id(default_database), table))
             })
@@ -1131,9 +1135,9 @@ impl PartialInfrastructureMap {
                     TopicToTableSyncProcess::new(source_topic, target_table, default_database);
                 let sync_id = sync_process.id();
                 sync_processes.insert(sync_id.clone(), sync_process);
-                log::info!("<dmv2> Created topic_to_table_sync_processes {}", sync_id);
+                tracing::info!("<dmv2> Created topic_to_table_sync_processes {}", sync_id);
             } else {
-                log::info!(
+                tracing::info!(
                     "<dmv2> Topic {} has no target_table specified, skipping sync process creation",
                     partial_topic.name
                 );

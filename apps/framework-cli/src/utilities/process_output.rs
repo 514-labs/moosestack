@@ -1,8 +1,8 @@
-use log::{error, info, warn};
 use std::io::{BufRead, BufReader as StdBufReader};
 use std::process::{Command, Stdio};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdout};
+use tracing::{error, info, warn};
 
 /// Utility for safely managing subprocess output while preventing terminal corruption.
 ///

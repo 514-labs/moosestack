@@ -1678,6 +1678,7 @@ pub fn convert_ast_to_column_type(
                             // system.columns queries, not from type string parsing.
                             comment: None,
                             ttl: None,
+                            codec: None,
                         });
                     }
                     TupleElement::Unnamed(_) => {

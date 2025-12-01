@@ -31,10 +31,10 @@
 
 use config::{Config, ConfigError, Environment, File};
 use home::home_dir;
-use log::warn;
 use serde::Deserialize;
 use std::path::PathBuf;
 use toml_edit::{table, value, DocumentMut, Entry, Item};
+use tracing::warn;
 
 use super::display::{Message, MessageType};
 use super::logger::LoggerSettings;

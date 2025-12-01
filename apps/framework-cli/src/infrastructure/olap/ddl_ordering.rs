@@ -1238,7 +1238,7 @@ fn order_operations_by_dependencies(
 
                 // Check if adding this edge created a cycle
                 if petgraph::algo::is_cyclic_directed(&graph) {
-                    log::debug!("Cycle detected while adding edge");
+                    tracing::debug!("Cycle detected while adding edge");
                     return Err(PlanOrderingError::CyclicDependency);
                 }
             }
@@ -1247,14 +1247,14 @@ fn order_operations_by_dependencies(
 
     // Also check for cycles after all edges are added
     if petgraph::algo::is_cyclic_directed(&graph) {
-        log::debug!("Cycle detected after adding all edges");
+        tracing::debug!("Cycle detected after adding all edges");
         return Err(PlanOrderingError::CyclicDependency);
     }
 
     // If no edges were added, just return operations in original order
     // This handles cases where signatures were invalid or not found
     if edge_count == 0 && operations.len() > 1 {
-        log::debug!("No edges were added to the graph");
+        tracing::debug!("No edges were added to the graph");
         return Ok(operations.to_vec());
     }
 
@@ -1262,7 +1262,7 @@ fn order_operations_by_dependencies(
     let sorted_indices = match toposort(&graph, None) {
         Ok(indices) => indices,
         Err(err) => {
-            log::debug!(
+            tracing::debug!(
                 "Cycle detected during topological sort: {:?}",
                 err.node_id()
             );
@@ -1322,6 +1322,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create some atomic operations
@@ -1351,6 +1352,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             after_column: None,
             dependency_info: DependencyInfo {
@@ -1397,6 +1399,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create table B - depends on table A
@@ -1420,6 +1423,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create view C - depends on table B
@@ -1515,6 +1519,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create table B - target for materialized view
@@ -1538,6 +1543,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create view C - depends on table B
@@ -1653,6 +1659,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let view = View {
@@ -1673,6 +1680,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // Create operations with correct dependencies
@@ -1810,6 +1818,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_b = Table {
@@ -1832,6 +1841,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_c = Table {
@@ -1854,6 +1864,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Test operations
@@ -1945,6 +1956,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_b = Table {
@@ -1967,6 +1979,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_c = Table {
@@ -1989,6 +2002,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_d = Table {
@@ -2011,6 +2025,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_e = Table {
@@ -2033,6 +2048,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -2187,6 +2203,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create table B - target for materialized view
@@ -2210,6 +2227,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2333,6 +2351,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create table B - target for materialized view
@@ -2356,6 +2375,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2484,6 +2504,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let table_b = Table {
@@ -2506,6 +2527,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create SQL resource for materialized view
@@ -2714,6 +2736,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create a column
@@ -2727,6 +2750,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2824,6 +2848,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2914,6 +2939,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "old_column".to_string(),
@@ -2925,6 +2951,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2944,6 +2971,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let after_table = Table {
@@ -2959,6 +2987,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "new_column".to_string(),
@@ -2970,6 +2999,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2989,6 +3019,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Create column changes (remove old_column, add new_column)
@@ -3003,6 +3034,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }),
             ColumnChange::Added {
                 column: Column {
@@ -3015,6 +3047,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 position_after: Some("id".to_string()),
             },

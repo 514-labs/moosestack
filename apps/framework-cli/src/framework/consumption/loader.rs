@@ -35,7 +35,7 @@ pub async fn load_consumption(project: &Project) -> Result<Consumption, Analytic
     {
         if f.file_type().is_file() && f.path().ext_is_supported_lang() {
             let result = build_endpoint_file(project, f.path()).await;
-            log::debug!("build_endpoint_file result: {:?}", result);
+            tracing::debug!("build_endpoint_file result: {:?}", result);
             if let Some(file) = result.ok().flatten() {
                 endpoint_files.push(file);
             }

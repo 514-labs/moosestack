@@ -1,8 +1,8 @@
-use log::warn;
 use std::{
     collections::{HashMap, HashSet},
     path::Path,
 };
+use tracing::warn;
 use walkdir::WalkDir;
 
 use crate::framework::data_model::config::DataModelConfig;
@@ -135,7 +135,7 @@ impl PrimitiveMap {
         let mut primitive_map = PrimitiveMap::default();
 
         for version in project.versions() {
-            log::debug!("Loading Versioned primitive map for version: {}", version);
+            tracing::debug!("Loading Versioned primitive map for version: {}", version);
             PrimitiveMap::load_versioned(project, &version, &mut primitive_map).await?;
         }
 
@@ -150,7 +150,7 @@ impl PrimitiveMap {
 
         primitive_map.consumption = load_consumption(project).await?;
 
-        log::debug!("Loaded Versioned primitive map: {:?}", primitive_map);
+        tracing::debug!("Loaded Versioned primitive map: {:?}", primitive_map);
 
         primitive_map.validate()?;
 
@@ -167,7 +167,7 @@ impl PrimitiveMap {
         primitive_map: &mut PrimitiveMap,
     ) -> Result<(), PrimitiveMapLoadingError> {
         let data_models_root = project.versioned_data_model_dir(version)?;
-        log::debug!("Loading data models from: {:?}", data_models_root);
+        tracing::debug!("Loading data models from: {:?}", data_models_root);
 
         for res_entry in WalkDir::new(data_models_root) {
             let entry = res_entry?;
@@ -199,7 +199,7 @@ impl PrimitiveMap {
     ) -> Result<Vec<DataModel>, DataModelError> {
         let file_objects =
             data_model::parser::parse_data_model_file(file_path, version, project).await?;
-        log::debug!(
+        tracing::debug!(
             "Found the following data models: {:?} in path {:?}",
             file_objects.models,
             file_path
@@ -232,7 +232,7 @@ impl PrimitiveMap {
             }
         }
 
-        log::debug!(
+        tracing::debug!(
             "Data Models matched with configuration: {:?} from file: {:?}",
             indexed_models,
             file_path

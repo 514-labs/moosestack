@@ -20,7 +20,7 @@ use crate::metrics_inserter::MetricsInserter;
 use crate::utilities::constants::{CLI_VERSION, CONTEXT, CTX_SESSION_ID};
 use crate::utilities::decode_object;
 use chrono::{DateTime, Utc};
-use log::{trace, warn};
+use tracing::{trace, warn};
 
 const DEFAULT_ANONYMOUS_METRICS_URL: &str =
     "https://moosefood.514.dev/ingest/MooseSessionTelemetry/0.6";

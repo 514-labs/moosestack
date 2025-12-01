@@ -24,12 +24,12 @@ use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
-use log::{debug, error, info};
 use rdkafka::error::KafkaError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::mem;
 use std::path::Path;
+use tracing::{debug, error, info};
 
 /// Errors that can occur during the planning process.
 #[derive(Debug, thiserror::Error)]
@@ -302,7 +302,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                 reconciled_map.sql_resources.insert(name.clone(), *before);
             }
             _ => {
-                log::warn!(
+                tracing::warn!(
                     "Unexpected change type in mismatched_sql_resources: {:?}",
                     change
                 );
@@ -509,6 +509,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -527,6 +528,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }
     }
 
@@ -713,6 +715,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         // Create test project first to get the database name
@@ -1090,6 +1093,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             });
 
         // Create mock OLAP client with the reality table

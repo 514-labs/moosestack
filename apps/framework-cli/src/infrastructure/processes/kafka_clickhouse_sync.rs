@@ -9,9 +9,6 @@
 //! batching, back pressure, and error handling mechanisms.
 
 use futures::TryFutureExt;
-use log::error;
-use log::info;
-use log::{debug, warn};
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use rdkafka::producer::{DeliveryFuture, Producer};
 use rdkafka::Message;
@@ -19,6 +16,9 @@ use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, LazyLock};
 use tokio::task::JoinHandle;
+use tracing::error;
+use tracing::info;
+use tracing::{debug, warn};
 
 use crate::framework::core::infrastructure::table::Column;
 use crate::framework::core::infrastructure::table::ColumnType;
@@ -485,7 +485,7 @@ async fn sync_kafka_to_kafka(
             Ok(message) => match message.payload() {
                 Some(payload) => match std::str::from_utf8(payload) {
                     Ok(payload_str) => {
-                        log::trace!(
+                        tracing::trace!(
                             "Received message from {}: {}",
                             source_topic_name,
                             payload_str
@@ -631,7 +631,7 @@ async fn sync_kafka_to_clickhouse(
                             let payload = if payload.len() >= 5 && payload[0] == 0x00 { &payload[5..] } else { payload };
                             match std::str::from_utf8(payload) {
                                 Ok(payload_str) => {
-                                    log::trace!(
+                                    tracing::trace!(
                                         "Received message from {}: {}",
                                         source_topic_name, payload_str
                                     );
@@ -699,17 +699,17 @@ fn mapper_json_to_clickhouse_record(
                 let key = column.name.clone();
                 let value = map.get(&key);
 
-                log::trace!(
+                tracing::trace!(
                     "Looking to map column {:?} to values in map: {:?}",
                     column,
                     map
                 );
-                log::trace!("Value found for key {}: {:?}", key, value);
+                tracing::trace!("Value found for key {}: {:?}", key, value);
 
                 match value {
                     Some(Value::Null) => {
                         if column.required {
-                            log::error!("Required column {} has a null value", key);
+                            tracing::error!("Required column {} has a null value", key);
                         } else {
                             record.insert(key, ClickHouseValue::new_null());
                         }
@@ -722,7 +722,7 @@ fn mapper_json_to_clickhouse_record(
                             Err(e) => {
                                 // Promote mapping failures to `warn!` so we don't silently skip
                                 // individual records when their schema/value deviates.
-                                log::warn!("For column {} with type {}, Error mapping JSON value to ClickHouse value: {}", column.name, &column.data_type, e)
+                                tracing::warn!("For column {} with type {}, Error mapping JSON value to ClickHouse value: {}", column.name, &column.data_type, e)
                             }
                         };
                     }
@@ -878,7 +878,7 @@ fn map_json_value_to_clickhouse_value(
                 for value in arr.iter() {
                     if *value == Value::Null {
                         if !element_nullable {
-                            log::error!("Array of non nullable elements has a null value");
+                            tracing::error!("Array of non nullable elements has a null value");
                         }
                         // We are adding the value anyway to match the number of arguments that clickhouse expects
                         array_values.push(ClickHouseValue::new_null());
@@ -925,7 +925,7 @@ fn map_json_value_to_clickhouse_value(
                     match val {
                         Some(Value::Null) => {
                             if col.required {
-                                log::error!("Required column {} has a null value", col_name);
+                                tracing::error!("Required column {} has a null value", col_name);
                             }
                             // We are adding the value anyway to match the number of arguments that clickhouse expects
                             values.push(ClickHouseValue::new_null());
@@ -1214,6 +1214,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "B".to_string(),
@@ -1225,6 +1226,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "C".to_string(),
@@ -1242,6 +1244,7 @@ mod tests {
                                 annotations: vec![],
                                 comment: None,
                                 ttl: None,
+                                codec: None,
                             },
                             Column {
                                 name: "b".to_string(),
@@ -1259,6 +1262,7 @@ mod tests {
                                             annotations: vec![],
                                             comment: None,
                                             ttl: None,
+                                            codec: None,
                                         },
                                         Column {
                                             name: "e".to_string(),
@@ -1270,6 +1274,7 @@ mod tests {
                                             annotations: vec![],
                                             comment: None,
                                             ttl: None,
+                                            codec: None,
                                         },
                                         Column {
                                             name: "f".to_string(),
@@ -1281,6 +1286,7 @@ mod tests {
                                             annotations: vec![],
                                             comment: None,
                                             ttl: None,
+                                            codec: None,
                                         },
                                     ],
                                 }),
@@ -1291,6 +1297,7 @@ mod tests {
                                 annotations: vec![],
                                 comment: None,
                                 ttl: None,
+                                codec: None,
                             },
                             Column {
                                 name: "c".to_string(),
@@ -1302,6 +1309,7 @@ mod tests {
                                 annotations: vec![],
                                 comment: None,
                                 ttl: None,
+                                codec: None,
                             },
                         ],
                     }),
@@ -1312,6 +1320,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "D".to_string(),
@@ -1323,6 +1332,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
         };

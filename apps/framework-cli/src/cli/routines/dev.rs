@@ -17,7 +17,7 @@ pub fn run_local_infrastructure(
     docker_client: &DockerClient,
 ) -> anyhow::Result<()> {
     // Debug log to check load_infra value at runtime
-    log::info!(
+    tracing::info!(
         "[moose] DEBUG: load_infra from config: {:?}, should_load_infra(): {}",
         project.load_infra,
         project.should_load_infra()

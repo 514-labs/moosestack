@@ -23,10 +23,10 @@ use crate::{
     infrastructure::olap::{OlapChangesError, OlapOperations},
     project::Project,
 };
-use log::debug;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
+use tracing::debug;
 
 /// Represents errors that can occur during infrastructure reality checking.
 #[derive(Debug, Error)]
@@ -515,6 +515,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -533,6 +534,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }
     }
 
@@ -610,6 +612,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let mock_client = MockOlapClient {
@@ -679,6 +682,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
         actual_table.columns.push(timestamp_col.clone());
         infra_table.columns.push(timestamp_col);

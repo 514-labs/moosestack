@@ -340,6 +340,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         "WithDefault",
         "LifeCycle",
         "ClickHouseTTL",
+        "ClickHouseCodec",
     ];
 
     if uses_simple_aggregate {
@@ -549,18 +550,8 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
 
     // Generate model interfaces
     for table in tables {
-        let primary_key = table
-            .columns
-            .iter()
-            .filter_map(|column| {
-                if column.primary_key {
-                    Some(column.name.to_string())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        let can_use_key_wrapping = table.order_by.starts_with_fields(&primary_key);
+        // list_tables sets primary_key_expression to Some if Key wrapping is insufficient to represent the PK
+        let can_use_key_wrapping = table.primary_key_expression.is_none();
 
         writeln!(output, "export interface {} {{", table.name).unwrap();
 
@@ -591,6 +582,11 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             if let Some(expr) = &column.ttl {
                 type_str = format!("{type_str} & ClickHouseTTL<\"{}\">", expr);
             }
+            // Wrap with Codec if present
+            let type_str = match column.codec.as_ref() {
+                None => type_str,
+                Some(ref codec) => format!("{type_str} & ClickHouseCodec<{codec:?}>"),
+            };
             let type_str = match column.default {
                 None => type_str,
                 Some(ref default) if type_str == "Date" => {
@@ -630,6 +626,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             OrderBy::SingleExpr(expr) => format!("orderByExpression: {:?}", expr),
         };
+
         let var_name = sanitize_typescript_identifier(&table.name);
 
         let (base_name, version) = extract_version_from_table_name(&table.name);
@@ -645,6 +642,11 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         )
         .unwrap();
         writeln!(output, "    {order_by_spec},").unwrap();
+
+        if let Some(ref pk_expr) = table.primary_key_expression {
+            // Use the explicit primary_key_expression directly
+            writeln!(output, "    primaryKeyExpression: {:?},", pk_expr).unwrap();
+        }
         if let Some(partition_by) = &table.partition_by {
             writeln!(output, "    partitionBy: {:?},", partition_by).unwrap();
         }
@@ -938,6 +940,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -949,6 +952,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "zip_code".to_string(),
@@ -960,6 +964,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             jwt: false,
@@ -978,6 +983,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -989,6 +995,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -1003,6 +1010,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1022,6 +1030,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1063,6 +1072,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "data".to_string(),
@@ -1074,6 +1084,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1104,6 +1115,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1130,6 +1142,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1155,6 +1168,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1181,6 +1195,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -1192,6 +1207,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -1203,6 +1219,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1225,6 +1242,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1249,6 +1267,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1270,6 +1289,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1301,6 +1321,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -1312,6 +1333,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -1323,6 +1345,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             sample_by: None,
@@ -1347,6 +1370,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1377,6 +1401,7 @@ export const UserTable = new OlapTable<User>("User", {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["u64".to_string()]),
             partition_by: None,
@@ -1410,6 +1435,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1451,6 +1477,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -1462,6 +1489,7 @@ export const UserTable = new OlapTable<User>("User", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1481,6 +1509,7 @@ export const UserTable = new OlapTable<User>("User", {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1518,6 +1547,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -1529,6 +1559,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "email".to_string(),
@@ -1540,6 +1571,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: Some("timestamp + INTERVAL 30 DAY".to_string()),
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
@@ -1559,6 +1591,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1588,6 +1621,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "payload".to_string(),
@@ -1608,6 +1642,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1626,6 +1661,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             indexes: vec![],
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);
@@ -1656,6 +1692,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1674,6 +1711,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }];
 
         let result = tables_to_typescript(&tables, None);

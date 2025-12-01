@@ -14,9 +14,9 @@ use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::framework::core::infrastructure::table::Table;
-use log::{debug, info, warn};
 use std::cmp::min;
 use std::collections::HashSet;
+use tracing::{debug, info, warn};
 
 /// Validates that a database name is not empty
 fn validate_database_name(db_name: &str) -> Result<(), RoutineFailure> {
@@ -614,6 +614,7 @@ mod tests {
             table_settings: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }
     }
 

@@ -52,6 +52,7 @@ use crate::framework::core::infrastructure_map::Change::Added;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
+use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
@@ -684,18 +685,18 @@ impl InfrastructureMap {
                     }
                 }
                 None => {
-                    log::error!(
+                    tracing::error!(
                         "Could not find previous version with no change for data model: {} {}",
                         data_model.name,
                         data_model.version
                     );
-                    log::debug!("Data Models Dump: {:?}", primitive_map.datamodels);
+                    tracing::debug!("Data Models Dump: {:?}", primitive_map.datamodels);
                 }
             }
         }
 
         if !project.features.streaming_engine && !primitive_map.functions.is_empty() {
-            log::error!("Streaming disabled. Functions are disabled.");
+            tracing::error!("Streaming disabled. Functions are disabled.");
             show_message_wrapper(
                 MessageType::Error,
                 Message {
@@ -723,7 +724,7 @@ impl InfrastructureMap {
         // consumption api endpoints
         let consumption_api_web_server = ConsumptionApiWebServer {};
         if !project.features.apis && !primitive_map.consumption.endpoint_files.is_empty() {
-            log::error!("Analytics APIs disabled. API endpoints will not be available.");
+            tracing::error!("Analytics APIs disabled. API endpoints will not be available.");
             show_message_wrapper(
                 MessageType::Error,
                 Message {
@@ -969,7 +970,7 @@ impl InfrastructureMap {
         );
 
         // Tables (using custom strategy)
-        log::info!("Analyzing changes in Tables...");
+        tracing::info!("Analyzing changes in Tables...");
         let olap_changes_len_before = changes.olap_changes.len();
         Self::diff_tables_with_strategy(
             &self.tables,
@@ -981,13 +982,13 @@ impl InfrastructureMap {
             ignore_ops,
         );
         let table_changes = changes.olap_changes.len() - olap_changes_len_before;
-        log::info!("Table changes detected: {}", table_changes);
+        tracing::info!("Table changes detected: {}", table_changes);
 
         // Views
         Self::diff_views(&self.views, &target_map.views, &mut changes.olap_changes);
 
         // SQL Resources (needs tables context for MV population detection)
-        log::info!("Analyzing changes in SQL Resources...");
+        tracing::info!("Analyzing changes in SQL Resources...");
         let olap_changes_len_before = changes.olap_changes.len();
         Self::diff_sql_resources(
             &self.sql_resources,
@@ -997,13 +998,13 @@ impl InfrastructureMap {
             &mut changes.olap_changes,
         );
         let sql_resource_changes = changes.olap_changes.len() - olap_changes_len_before;
-        log::info!("SQL Resource changes detected: {}", sql_resource_changes);
+        tracing::info!("SQL Resource changes detected: {}", sql_resource_changes);
 
         // All process types
         self.diff_all_processes(target_map, &mut changes.processes_changes);
 
         // Summary
-        log::info!(
+        tracing::info!(
             "Total changes detected - OLAP: {}, Processes: {}, API: {}, WebApps: {}, Streaming: {}",
             changes.olap_changes.len(),
             changes.processes_changes.len(),
@@ -1033,7 +1034,7 @@ impl InfrastructureMap {
         streaming_changes: &mut Vec<StreamingChange>,
         respect_life_cycle: bool,
     ) -> (usize, usize, usize) {
-        log::info!("Analyzing changes in Topics...");
+        tracing::info!("Analyzing changes in Topics...");
         let mut topic_updates = 0;
         let mut topic_removals = 0;
         let mut topic_additions = 0;
@@ -1044,12 +1045,12 @@ impl InfrastructureMap {
                     // Respect lifecycle: ExternallyManaged topics are never modified
                     if target_topic.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
-                        log::debug!(
+                        tracing::debug!(
                             "Topic '{}' has changes but is externally managed - skipping update",
                             topic.name
                         );
                     } else {
-                        log::debug!("Topic updated: {} ({})", topic.name, id);
+                        tracing::debug!("Topic updated: {} ({})", topic.name, id);
                         topic_updates += 1;
                         streaming_changes.push(StreamingChange::Topic(Change::<Topic>::Updated {
                             before: Box::new(topic.clone()),
@@ -1061,20 +1062,20 @@ impl InfrastructureMap {
                 // Respect lifecycle: DeletionProtected and ExternallyManaged topics are never removed
                 match (topic.life_cycle, respect_life_cycle) {
                     (LifeCycle::FullyManaged, _) | (_, false) => {
-                        log::debug!("Topic removed: {} ({})", topic.name, id);
+                        tracing::debug!("Topic removed: {} ({})", topic.name, id);
                         topic_removals += 1;
                         streaming_changes.push(StreamingChange::Topic(Change::<Topic>::Removed(
                             Box::new(topic.clone()),
                         )));
                     }
                     (LifeCycle::DeletionProtected, true) => {
-                        log::debug!(
+                        tracing::debug!(
                             "Topic '{}' marked for removal but is deletion-protected - skipping removal",
                             topic.name
                         );
                     }
                     (LifeCycle::ExternallyManaged, true) => {
-                        log::debug!(
+                        tracing::debug!(
                             "Topic '{}' marked for removal but is externally managed - skipping removal",
                             topic.name
                         );
@@ -1087,12 +1088,12 @@ impl InfrastructureMap {
             if !self_topics.contains_key(id) {
                 // Respect lifecycle: ExternallyManaged topics are never added automatically
                 if topic.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
-                    log::debug!(
+                    tracing::debug!(
                         "Topic '{}' marked for addition but is externally managed - skipping addition",
                         topic.name
                     );
                 } else {
-                    log::debug!("Topic added: {} ({})", topic.name, id);
+                    tracing::debug!("Topic added: {} ({})", topic.name, id);
                     topic_additions += 1;
                     streaming_changes.push(StreamingChange::Topic(Change::<Topic>::Added(
                         Box::new(topic.clone()),
@@ -1101,7 +1102,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "Topic changes: {} added, {} removed, {} updated",
             topic_additions,
             topic_removals,
@@ -1128,7 +1129,7 @@ impl InfrastructureMap {
         target_endpoints: &HashMap<String, ApiEndpoint>,
         api_changes: &mut Vec<ApiChange>,
     ) -> (usize, usize, usize) {
-        log::info!("Analyzing changes in API Endpoints...");
+        tracing::info!("Analyzing changes in API Endpoints...");
         let mut endpoint_updates = 0;
         let mut endpoint_removals = 0;
         let mut endpoint_additions = 0;
@@ -1136,7 +1137,7 @@ impl InfrastructureMap {
         for (id, endpoint) in self_endpoints {
             if let Some(target_endpoint) = target_endpoints.get(id) {
                 if !api_endpoints_equal_ignore_metadata(endpoint, target_endpoint) {
-                    log::debug!("API Endpoint updated: {}", id);
+                    tracing::debug!("API Endpoint updated: {}", id);
                     endpoint_updates += 1;
                     api_changes.push(ApiChange::ApiEndpoint(Change::<ApiEndpoint>::Updated {
                         before: Box::new(endpoint.clone()),
@@ -1144,7 +1145,7 @@ impl InfrastructureMap {
                     }));
                 }
             } else {
-                log::debug!("API Endpoint removed: {}", id);
+                tracing::debug!("API Endpoint removed: {}", id);
                 endpoint_removals += 1;
                 api_changes.push(ApiChange::ApiEndpoint(Change::<ApiEndpoint>::Removed(
                     Box::new(endpoint.clone()),
@@ -1154,7 +1155,7 @@ impl InfrastructureMap {
 
         for (id, endpoint) in target_endpoints {
             if !self_endpoints.contains_key(id) {
-                log::debug!("API Endpoint added: {}", id);
+                tracing::debug!("API Endpoint added: {}", id);
                 endpoint_additions += 1;
                 api_changes.push(ApiChange::ApiEndpoint(Change::<ApiEndpoint>::Added(
                     Box::new(endpoint.clone()),
@@ -1162,7 +1163,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "API Endpoint changes: {} added, {} removed, {} updated",
             endpoint_additions,
             endpoint_removals,
@@ -1189,7 +1190,7 @@ impl InfrastructureMap {
         target_web_apps: &HashMap<String, super::infrastructure::web_app::WebApp>,
         web_app_changes: &mut Vec<WebAppChange>,
     ) -> (usize, usize, usize) {
-        log::info!("Analyzing changes in WebApps...");
+        tracing::info!("Analyzing changes in WebApps...");
         let mut webapp_updates = 0;
         let mut webapp_removals = 0;
         let mut webapp_additions = 0;
@@ -1197,7 +1198,7 @@ impl InfrastructureMap {
         for (id, webapp) in self_web_apps {
             if let Some(target_webapp) = target_web_apps.get(id) {
                 if webapp != target_webapp {
-                    log::debug!("WebApp updated: {}", id);
+                    tracing::debug!("WebApp updated: {}", id);
                     webapp_updates += 1;
                     web_app_changes.push(WebAppChange::WebApp(Change::Updated {
                         before: Box::new(webapp.clone()),
@@ -1205,7 +1206,7 @@ impl InfrastructureMap {
                     }));
                 }
             } else {
-                log::debug!("WebApp removed: {}", id);
+                tracing::debug!("WebApp removed: {}", id);
                 webapp_removals += 1;
                 web_app_changes.push(WebAppChange::WebApp(Change::Removed(Box::new(
                     webapp.clone(),
@@ -1215,7 +1216,7 @@ impl InfrastructureMap {
 
         for (id, webapp) in target_web_apps {
             if !self_web_apps.contains_key(id) {
-                log::debug!("WebApp added: {}", id);
+                tracing::debug!("WebApp added: {}", id);
                 webapp_additions += 1;
                 web_app_changes.push(WebAppChange::WebApp(Change::Added(Box::new(
                     webapp.clone(),
@@ -1223,7 +1224,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "WebApp changes: {} added, {} removed, {} updated",
             webapp_additions,
             webapp_removals,
@@ -1250,7 +1251,7 @@ impl InfrastructureMap {
         target_views: &HashMap<String, View>,
         olap_changes: &mut Vec<OlapChange>,
     ) -> (usize, usize, usize) {
-        log::info!("Analyzing changes in Views...");
+        tracing::info!("Analyzing changes in Views...");
         let mut view_updates = 0;
         let mut view_removals = 0;
         let mut view_additions = 0;
@@ -1259,7 +1260,7 @@ impl InfrastructureMap {
         for (id, view) in self_views {
             if let Some(target_view) = target_views.get(id) {
                 if view != target_view {
-                    log::debug!("View updated: {} ({})", view.name, id);
+                    tracing::debug!("View updated: {} ({})", view.name, id);
                     view_updates += 1;
                     olap_changes.push(OlapChange::View(Change::Updated {
                         before: Box::new(view.clone()),
@@ -1267,7 +1268,7 @@ impl InfrastructureMap {
                     }));
                 }
             } else {
-                log::debug!("View removed: {} ({})", view.name, id);
+                tracing::debug!("View removed: {} ({})", view.name, id);
                 view_removals += 1;
                 olap_changes.push(OlapChange::View(Change::Removed(Box::new(view.clone()))));
             }
@@ -1276,13 +1277,13 @@ impl InfrastructureMap {
         // Check for additions
         for (id, view) in target_views {
             if !self_views.contains_key(id) {
-                log::debug!("View added: {} ({})", view.name, id);
+                tracing::debug!("View added: {} ({})", view.name, id);
                 view_additions += 1;
                 olap_changes.push(OlapChange::View(Change::Added(Box::new(view.clone()))));
             }
         }
 
-        log::info!(
+        tracing::info!(
             "View changes: {} added, {} removed, {} updated",
             view_additions,
             view_removals,
@@ -1343,7 +1344,7 @@ impl InfrastructureMap {
         target_processes: &HashMap<String, TopicToTableSyncProcess>,
         process_changes: &mut Vec<ProcessChange>,
     ) -> (usize, usize, usize) {
-        log::info!("Analyzing changes in Topic-to-Table Sync Processes...");
+        tracing::info!("Analyzing changes in Topic-to-Table Sync Processes...");
         let mut process_updates = 0;
         let mut process_removals = 0;
         let mut process_additions = 0;
@@ -1351,7 +1352,7 @@ impl InfrastructureMap {
         for (id, process) in self_processes {
             if let Some(target_process) = target_processes.get(id) {
                 if process != target_process {
-                    log::debug!("TopicToTableSyncProcess updated: {}", id);
+                    tracing::debug!("TopicToTableSyncProcess updated: {}", id);
                     process_updates += 1;
                     process_changes.push(ProcessChange::TopicToTableSyncProcess(Change::<
                         TopicToTableSyncProcess,
@@ -1361,7 +1362,7 @@ impl InfrastructureMap {
                     }));
                 }
             } else {
-                log::debug!("TopicToTableSyncProcess removed: {}", id);
+                tracing::debug!("TopicToTableSyncProcess removed: {}", id);
                 process_removals += 1;
                 process_changes.push(ProcessChange::TopicToTableSyncProcess(Change::<
                     TopicToTableSyncProcess,
@@ -1373,7 +1374,7 @@ impl InfrastructureMap {
 
         for (id, process) in target_processes {
             if !self_processes.contains_key(id) {
-                log::debug!("TopicToTableSyncProcess added: {}", id);
+                tracing::debug!("TopicToTableSyncProcess added: {}", id);
                 process_additions += 1;
                 process_changes.push(ProcessChange::TopicToTableSyncProcess(Change::<
                     TopicToTableSyncProcess,
@@ -1383,7 +1384,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "Topic-to-Table Sync Process changes: {} added, {} removed, {} updated",
             process_additions,
             process_removals,
@@ -1399,7 +1400,7 @@ impl InfrastructureMap {
         target_processes: &HashMap<String, TopicToTopicSyncProcess>,
         process_changes: &mut Vec<ProcessChange>,
     ) -> (usize, usize, usize) {
-        log::info!("Analyzing changes in Topic-to-Topic Sync Processes...");
+        tracing::info!("Analyzing changes in Topic-to-Topic Sync Processes...");
         let mut process_updates = 0;
         let mut process_removals = 0;
         let mut process_additions = 0;
@@ -1407,7 +1408,7 @@ impl InfrastructureMap {
         for (id, process) in self_processes {
             if let Some(target_process) = target_processes.get(id) {
                 if process != target_process {
-                    log::debug!("TopicToTopicSyncProcess updated: {}", id);
+                    tracing::debug!("TopicToTopicSyncProcess updated: {}", id);
                     process_updates += 1;
                     process_changes.push(ProcessChange::TopicToTopicSyncProcess(Change::<
                         TopicToTopicSyncProcess,
@@ -1417,7 +1418,7 @@ impl InfrastructureMap {
                     }));
                 }
             } else {
-                log::debug!("TopicToTopicSyncProcess removed: {}", id);
+                tracing::debug!("TopicToTopicSyncProcess removed: {}", id);
                 process_removals += 1;
                 process_changes.push(ProcessChange::TopicToTopicSyncProcess(Change::<
                     TopicToTopicSyncProcess,
@@ -1429,7 +1430,7 @@ impl InfrastructureMap {
 
         for (id, process) in target_processes {
             if !self_processes.contains_key(id) {
-                log::debug!("TopicToTopicSyncProcess added: {}", id);
+                tracing::debug!("TopicToTopicSyncProcess added: {}", id);
                 process_additions += 1;
                 process_changes.push(ProcessChange::TopicToTopicSyncProcess(Change::<
                     TopicToTopicSyncProcess,
@@ -1439,7 +1440,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "Topic-to-Topic Sync Process changes: {} added, {} removed, {} updated",
             process_additions,
             process_removals,
@@ -1455,7 +1456,7 @@ impl InfrastructureMap {
         target_processes: &HashMap<String, FunctionProcess>,
         process_changes: &mut Vec<ProcessChange>,
     ) -> (usize, usize, usize) {
-        log::info!("Analyzing changes in Function Processes...");
+        tracing::info!("Analyzing changes in Function Processes...");
         let mut process_updates = 0;
         let mut process_removals = 0;
         let mut process_additions = 0;
@@ -1464,7 +1465,7 @@ impl InfrastructureMap {
             if let Some(target_process) = target_processes.get(id) {
                 // Always treat function processes as updated if they exist in both maps
                 // This ensures function code changes are always redeployed
-                log::debug!("FunctionProcess updated (forced): {}", id);
+                tracing::debug!("FunctionProcess updated (forced): {}", id);
                 process_updates += 1;
                 process_changes.push(ProcessChange::FunctionProcess(
                     Change::<FunctionProcess>::Updated {
@@ -1473,7 +1474,7 @@ impl InfrastructureMap {
                     },
                 ));
             } else {
-                log::debug!("FunctionProcess removed: {}", id);
+                tracing::debug!("FunctionProcess removed: {}", id);
                 process_removals += 1;
                 process_changes.push(ProcessChange::FunctionProcess(
                     Change::<FunctionProcess>::Removed(Box::new(process.clone())),
@@ -1483,7 +1484,7 @@ impl InfrastructureMap {
 
         for (id, process) in target_processes {
             if !self_processes.contains_key(id) {
-                log::debug!("FunctionProcess added: {}", id);
+                tracing::debug!("FunctionProcess added: {}", id);
                 process_additions += 1;
                 process_changes.push(ProcessChange::FunctionProcess(
                     Change::<FunctionProcess>::Added(Box::new(process.clone())),
@@ -1491,7 +1492,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "Function Process changes: {} added, {} removed, {} updated",
             process_additions,
             process_removals,
@@ -1507,11 +1508,11 @@ impl InfrastructureMap {
         target_process: &OlapProcess,
         process_changes: &mut Vec<ProcessChange>,
     ) {
-        log::info!("Analyzing changes in OLAP processes...");
+        tracing::info!("Analyzing changes in OLAP processes...");
 
         // Currently we assume there is always a change and restart the processes
         // TODO: Once we refactor to have multiple processes, we should compare actual changes
-        log::debug!("OLAP Process updated (assumed for now)");
+        tracing::debug!("OLAP Process updated (assumed for now)");
         process_changes.push(ProcessChange::OlapProcess(Change::<OlapProcess>::Updated {
             before: Box::new(self_process.clone()),
             after: Box::new(target_process.clone()),
@@ -1524,11 +1525,11 @@ impl InfrastructureMap {
         target_process: &ConsumptionApiWebServer,
         process_changes: &mut Vec<ProcessChange>,
     ) {
-        log::info!("Analyzing changes in Analytics API processes...");
+        tracing::info!("Analyzing changes in Analytics API processes...");
 
         // We are currently not tracking individual consumption endpoints, so we will just restart
         // the consumption web server when something changed
-        log::debug!("Analytics API Web Server updated (assumed for now)");
+        tracing::debug!("Analytics API Web Server updated (assumed for now)");
         process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
             ConsumptionApiWebServer,
         >::Updated {
@@ -1543,7 +1544,7 @@ impl InfrastructureMap {
         target_workers: &HashMap<String, OrchestrationWorker>,
         process_changes: &mut Vec<ProcessChange>,
     ) -> (usize, usize, usize) {
-        log::info!("Analyzing changes in Orchestration Workers...");
+        tracing::info!("Analyzing changes in Orchestration Workers...");
         let mut worker_updates = 0;
         let mut worker_removals = 0;
         let mut worker_additions = 0;
@@ -1551,7 +1552,7 @@ impl InfrastructureMap {
         for (id, worker) in self_workers {
             if let Some(target_worker) = target_workers.get(id) {
                 // Always treat workers as updated to ensure redeployment
-                log::debug!(
+                tracing::debug!(
                     "OrchestrationWorker updated (forced): {} ({})",
                     id,
                     worker.supported_language
@@ -1564,7 +1565,7 @@ impl InfrastructureMap {
                     after: Box::new(target_worker.clone()),
                 }));
             } else {
-                log::debug!(
+                tracing::debug!(
                     "OrchestrationWorker removed: {} ({})",
                     id,
                     worker.supported_language
@@ -1580,7 +1581,7 @@ impl InfrastructureMap {
 
         for (id, worker) in target_workers {
             if !self_workers.contains_key(id) {
-                log::debug!(
+                tracing::debug!(
                     "OrchestrationWorker added: {} ({})",
                     id,
                     worker.supported_language
@@ -1594,7 +1595,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "Orchestration Worker changes: {} added, {} removed, {} updated",
             worker_additions,
             worker_removals,
@@ -1625,7 +1626,7 @@ impl InfrastructureMap {
         is_production: bool,
         olap_changes: &mut Vec<OlapChange>,
     ) {
-        log::info!(
+        tracing::info!(
             "Analyzing SQL resource differences between {} source resources and {} target resources",
             self_sql_resources.len(),
             target_sql_resources.len()
@@ -1639,7 +1640,7 @@ impl InfrastructureMap {
             if let Some(target_sql_resource) = target_sql_resources.get(id) {
                 if sql_resource != target_sql_resource {
                     // TODO: if only the teardown code changed, we should not need to execute any changes
-                    log::debug!("SQL resource '{}' has differences", id);
+                    tracing::debug!("SQL resource '{}' has differences", id);
                     sql_resource_updates += 1;
                     olap_changes.push(OlapChange::SqlResource(Change::Updated {
                         before: Box::new(sql_resource.clone()),
@@ -1657,7 +1658,7 @@ impl InfrastructureMap {
                     );
                 }
             } else {
-                log::debug!("SQL resource '{}' removed", id);
+                tracing::debug!("SQL resource '{}' removed", id);
                 sql_resource_removals += 1;
                 olap_changes.push(OlapChange::SqlResource(Change::Removed(Box::new(
                     sql_resource.clone(),
@@ -1667,7 +1668,7 @@ impl InfrastructureMap {
 
         for (id, sql_resource) in target_sql_resources {
             if !self_sql_resources.contains_key(id) {
-                log::debug!("SQL resource '{}' added", id);
+                tracing::debug!("SQL resource '{}' added", id);
                 sql_resource_additions += 1;
                 olap_changes.push(OlapChange::SqlResource(Change::Added(Box::new(
                     sql_resource.clone(),
@@ -1685,7 +1686,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "SQL resource changes: {} added, {} removed, {} updated",
             sql_resource_additions,
             sql_resource_removals,
@@ -1719,7 +1720,7 @@ impl InfrastructureMap {
         default_database: &str,
         ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
     ) {
-        log::info!(
+        tracing::info!(
             "Analyzing table differences between {} source tables and {} target tables",
             self_tables.len(),
             target_tables.len()
@@ -1727,7 +1728,7 @@ impl InfrastructureMap {
 
         // Normalize tables for comparison if ignore_ops is provided
         let (normalized_self, normalized_target) = if !ignore_ops.is_empty() {
-            log::info!(
+            tracing::info!(
                 "Normalizing tables before comparison. Ignore list: {:?}",
                 ignore_ops
             );
@@ -1783,7 +1784,7 @@ impl InfrastructureMap {
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
-                        log::debug!(
+                        tracing::debug!(
                             "Table '{}' has changes but is externally managed - skipping update",
                             table.name
                         );
@@ -1798,7 +1799,7 @@ impl InfrastructureMap {
                             let original_len = column_changes.len();
                             column_changes.retain(|change| match change {
                                 ColumnChange::Removed(_) => {
-                                    log::debug!(
+                                    tracing::debug!(
                                         "Filtering out column removal for deletion-protected table '{}'",
                                         table.name
                                     );
@@ -1809,7 +1810,7 @@ impl InfrastructureMap {
                             });
 
                             if original_len != column_changes.len() {
-                                log::info!(
+                                tracing::info!(
                                     "Filtered {} destructive column changes for deletion-protected table '{}'",
                                     original_len - column_changes.len(),
                                     table.name
@@ -1857,7 +1858,7 @@ impl InfrastructureMap {
                             &table.table_ttl_setting,
                             &target_table.table_ttl_setting,
                         ) {
-                            log::debug!(
+                            tracing::debug!(
                                 "Table '{}' has table-level TTL change: {:?} -> {:?}",
                                 table.name,
                                 table.table_ttl_setting,
@@ -1910,18 +1911,18 @@ impl InfrastructureMap {
                 // Respect lifecycle: DeletionProtected and ExternallyManaged tables are never removed
                 match (table.life_cycle, respect_life_cycle) {
                     (LifeCycle::FullyManaged, _) | (_, false) => {
-                        log::debug!("Table '{}' removed", table.name);
+                        tracing::debug!("Table '{}' removed", table.name);
                         table_removals += 1;
                         olap_changes.push(OlapChange::Table(TableChange::Removed(table.clone())));
                     }
                     (LifeCycle::DeletionProtected, true) => {
-                        log::debug!(
+                        tracing::debug!(
                             "Table '{}' marked for removal but is deletion-protected - skipping removal",
                             table.name
                         );
                     }
                     (LifeCycle::ExternallyManaged, true) => {
-                        log::debug!(
+                        tracing::debug!(
                             "Table '{}' marked for removal but is externally managed - skipping removal",
                             table.name
                         );
@@ -1935,18 +1936,18 @@ impl InfrastructureMap {
             if find_table_from_infra_map(table, &normalized_self, default_database).is_none() {
                 // Respect lifecycle: ExternallyManaged tables are never added automatically
                 if table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
-                    log::debug!(
+                    tracing::debug!(
                         "Table '{}' marked for addition but is externally managed - skipping addition",
                         table.name
                     );
                 } else {
-                    log::debug!(
+                    tracing::debug!(
                         "Table '{}' added with {} columns",
                         table.name,
                         table.columns.len()
                     );
                     for col in &table.columns {
-                        log::trace!("  - Column: {} ({})", col.name, col.data_type);
+                        tracing::trace!("  - Column: {} ({})", col.name, col.data_type);
                     }
                     table_additions += 1;
                     olap_changes.push(OlapChange::Table(TableChange::Added(table.clone())));
@@ -1954,7 +1955,7 @@ impl InfrastructureMap {
             }
         }
 
-        log::info!(
+        tracing::info!(
             "Table changes: {} added, {} removed, {} updated",
             table_additions,
             table_removals,
@@ -2084,7 +2085,7 @@ impl InfrastructureMap {
             let original_len = column_changes.len();
             column_changes.retain(|change| match change {
                 ColumnChange::Removed(_) => {
-                    log::debug!(
+                    tracing::debug!(
                         "Filtering out column removal for deletion-protected table '{}'",
                         table.name
                     );
@@ -2095,7 +2096,7 @@ impl InfrastructureMap {
             });
 
             if original_len != column_changes.len() {
-                log::info!(
+                tracing::info!(
                     "Filtered {} destructive column changes for deletion-protected table '{}'",
                     original_len - column_changes.len(),
                     table.name
@@ -2221,7 +2222,7 @@ impl InfrastructureMap {
                 *access_key = resolved_access_key;
                 *secret_key = resolved_secret_key;
 
-                log::debug!(
+                tracing::debug!(
                     "Resolved {} credentials for table '{}' at runtime",
                     engine_name,
                     table.name
@@ -2263,7 +2264,7 @@ impl InfrastructureMap {
             // Recalculate engine_params_hash after resolving credentials
             if should_recalc_hash {
                 table.engine_params_hash = Some(table.engine.non_alterable_params_hash());
-                log::debug!(
+                tracing::debug!(
                     "Recalculated engine_params_hash for table '{}' after credential resolution",
                     table.name
                 );
@@ -2324,7 +2325,7 @@ impl InfrastructureMap {
     pub async fn load_from_last_redis_prefix(redis_client: &RedisClient) -> Result<Option<Self>> {
         let last_prefix = &redis_client.config.last_key_prefix;
 
-        log::info!(
+        tracing::info!(
             "Loading InfrastructureMap from last Redis prefix: {}",
             last_prefix
         );
@@ -2335,7 +2336,7 @@ impl InfrastructureMap {
             .context("Failed to get InfrastructureMap from Redis using LAST_KEY_PREFIX");
 
         if let Err(e) = encoded {
-            log::error!("{}", e);
+            tracing::error!("{}", e);
             return Ok(None);
         }
 
@@ -2769,7 +2770,7 @@ fn ttl_expressions_are_equivalent(before: &Option<String>, after: &Option<String
 /// # Returns
 /// `true` if the columns are semantically equivalent, `false` otherwise
 fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
-    // Check all non-data_type and non-ttl fields first
+    // Check all non-data_type and non-ttl and non-codec fields first
     if before.name != after.name
         || before.required != after.required
         || before.unique != after.unique
@@ -2783,6 +2784,12 @@ fn columns_are_equivalent(before: &Column, after: &Column) -> bool {
 
     // Special handling for TTL comparison: normalize both expressions before comparing
     if !ttl_expressions_are_equivalent(&before.ttl, &after.ttl) {
+        return false;
+    }
+
+    // Special handling for codec comparison: normalize both expressions before comparing
+    // This handles cases where ClickHouse adds default parameters (e.g., Delta → Delta(4))
+    if !codec_expressions_are_equivalent(&before.codec, &after.codec) {
         return false;
     }
 
@@ -2873,7 +2880,7 @@ pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnCh
     for (i, after_col) in after.columns.iter().enumerate() {
         if let Some(&before_col) = before_columns.get(&after_col.name) {
             if !columns_are_equivalent(before_col, after_col) {
-                log::debug!(
+                tracing::debug!(
                     "Column '{}' modified from {:?} to {:?}",
                     after_col.name,
                     before_col,
@@ -2884,7 +2891,7 @@ pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnCh
                     after: after_col.clone(),
                 });
             } else {
-                log::debug!("Column '{}' unchanged", after_col.name);
+                tracing::debug!("Column '{}' unchanged", after_col.name);
             }
         } else {
             diff.push(ColumnChange::Added {
@@ -2901,7 +2908,7 @@ pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnCh
     // Process removals: O(n)
     for before_col in &before.columns {
         if !after_columns.contains_key(&before_col.name) {
-            log::debug!("Column '{}' has been removed", before_col.name);
+            tracing::debug!("Column '{}' has been removed", before_col.name);
             diff.push(ColumnChange::Removed(before_col.clone()));
         }
     }
@@ -3025,6 +3032,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -3036,6 +3044,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "to_be_removed".to_string(),
@@ -3047,6 +3056,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -3065,6 +3075,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let after = Table {
@@ -3081,6 +3092,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "name".to_string(),
@@ -3092,6 +3104,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
                 Column {
                     name: "age".to_string(), // New column
@@ -3103,6 +3116,7 @@ mod tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "name".to_string()]), // Changed order_by
@@ -3121,6 +3135,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3151,6 +3166,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "to_remove".to_string(),
@@ -3162,6 +3178,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -3178,6 +3195,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "new_column".to_string(),
@@ -3189,6 +3207,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -3297,6 +3316,7 @@ mod diff_tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         }
     }
 
@@ -3324,6 +3344,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3355,6 +3376,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3383,6 +3405,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3395,6 +3418,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3429,6 +3453,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "to_remove".to_string(),
@@ -3440,6 +3465,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "to_modify".to_string(),
@@ -3451,6 +3477,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ]);
 
@@ -3466,6 +3493,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "to_modify".to_string(), // modified
@@ -3477,6 +3505,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "new_column".to_string(), // added
@@ -3488,6 +3517,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ]);
 
@@ -3632,6 +3662,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3644,6 +3675,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3677,6 +3709,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "name".to_string(),
@@ -3688,6 +3721,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ]);
 
@@ -3703,6 +3737,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "id".to_string(),
@@ -3714,6 +3749,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ]);
 
@@ -3741,6 +3777,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             };
             before.columns.push(col.clone());
             after.columns.push(col);
@@ -3782,6 +3819,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             });
 
             // Change every other column type in the after table
@@ -3815,6 +3853,7 @@ mod diff_tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             });
         }
 
@@ -3845,6 +3884,7 @@ mod diff_tests {
             ],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3860,6 +3900,7 @@ mod diff_tests {
             ],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3900,6 +3941,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3912,6 +3954,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         // Test special characters in column name
@@ -3925,6 +3968,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         after.columns.push(Column {
@@ -3937,6 +3981,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         });
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -3961,6 +4006,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
         let col2 = col1.clone();
         assert!(columns_are_equivalent(&col1, &col2));
@@ -3998,6 +4044,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_enum_col = Column {
@@ -4022,6 +4069,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent due to the enum semantic comparison
@@ -4047,6 +4095,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(
@@ -4065,6 +4114,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let int_col2 = Column {
@@ -4077,6 +4127,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(&int_col1, &int_col2));
@@ -4108,6 +4159,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let json_col2 = Column {
@@ -4130,6 +4182,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent - order of typed_paths doesn't matter
@@ -4155,6 +4208,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(&json_col1, &json_col3));
@@ -4180,6 +4234,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(&json_col1, &json_col4));
@@ -4222,6 +4277,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let nested_json_col2 = Column {
@@ -4255,6 +4311,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent - order doesn't matter at any level
@@ -4286,6 +4343,7 @@ mod diff_tests {
                         annotations: vec![],
                         comment: None,
                         ttl: None,
+                        codec: None,
                     },
                     Column {
                         name: "priority".to_string(),
@@ -4297,6 +4355,7 @@ mod diff_tests {
                         annotations: vec![],
                         comment: None,
                         ttl: None,
+                        codec: None,
                     },
                 ],
                 jwt: false,
@@ -4308,6 +4367,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let col_with_user_name = Column {
@@ -4328,6 +4388,7 @@ mod diff_tests {
                         annotations: vec![],
                         comment: None,
                         ttl: None,
+                        codec: None,
                     },
                     Column {
                         name: "priority".to_string(),
@@ -4339,6 +4400,7 @@ mod diff_tests {
                         annotations: vec![],
                         comment: None,
                         ttl: None,
+                        codec: None,
                     },
                 ],
                 jwt: false,
@@ -4350,6 +4412,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent - name difference doesn't matter if structure matches
@@ -4376,6 +4439,7 @@ mod diff_tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 }], // Missing priority column
                 jwt: false,
             }),
@@ -4386,6 +4450,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         assert!(!columns_are_equivalent(
@@ -4422,6 +4487,7 @@ mod diff_tests {
                                         annotations: vec![],
                                         comment: None,
                                         ttl: None,
+                                        codec: None,
                                     },
                                     Column {
                                         name: "notifications".to_string(),
@@ -4433,6 +4499,7 @@ mod diff_tests {
                                         annotations: vec![],
                                         comment: None,
                                         ttl: None,
+                                        codec: None,
                                     },
                                 ],
                                 jwt: false,
@@ -4444,6 +4511,7 @@ mod diff_tests {
                             annotations: vec![],
                             comment: None,
                             ttl: None,
+                            codec: None,
                         }],
                         jwt: false,
                     }),
@@ -4454,6 +4522,7 @@ mod diff_tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 }],
                 jwt: false,
             }),
@@ -4464,6 +4533,7 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let col_user = Column {
@@ -4489,6 +4559,7 @@ mod diff_tests {
                                         annotations: vec![],
                                         comment: None,
                                         ttl: None,
+                                        codec: None,
                                     },
                                     Column {
                                         name: "notifications".to_string(),
@@ -4500,6 +4571,7 @@ mod diff_tests {
                                         annotations: vec![],
                                         comment: None,
                                         ttl: None,
+                                        codec: None,
                                     },
                                 ],
                                 jwt: false,
@@ -4511,6 +4583,7 @@ mod diff_tests {
                             annotations: vec![],
                             comment: None,
                             ttl: None,
+                            codec: None,
                         }],
                         jwt: false,
                     }),
@@ -4521,6 +4594,7 @@ mod diff_tests {
                     annotations: vec![],
                     comment: None,
                     ttl: None,
+                    codec: None,
                 }],
                 jwt: false,
             }),
@@ -4531,10 +4605,108 @@ mod diff_tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         // These should be equivalent - name differences at all levels don't matter
         assert!(columns_are_equivalent(&col_generated, &col_user));
+    }
+
+    #[test]
+    fn test_columns_are_equivalent_with_codec() {
+        use crate::framework::core::infrastructure::table::{Column, ColumnType};
+
+        let base_col = Column {
+            name: "data".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        // Test 1: Columns with same codec should be equivalent
+        let col_with_codec1 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        let col_with_codec2 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_with_codec1, &col_with_codec2));
+
+        // Test 2: Columns with different codecs should not be equivalent
+        let col_with_different_codec = Column {
+            codec: Some("LZ4".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(
+            &col_with_codec1,
+            &col_with_different_codec
+        ));
+
+        // Test 3: Column with codec vs column without codec should not be equivalent
+        assert!(!columns_are_equivalent(&col_with_codec1, &base_col));
+
+        // Test 4: Columns with codec chains should be detected as different
+        let col_with_chain1 = Column {
+            codec: Some("Delta, LZ4".to_string()),
+            ..base_col.clone()
+        };
+        let col_with_chain2 = Column {
+            codec: Some("Delta, ZSTD".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(&col_with_chain1, &col_with_chain2));
+
+        // Test 5: Codec with different compression levels should be detected as different
+        let col_zstd3 = Column {
+            codec: Some("ZSTD(3)".to_string()),
+            ..base_col.clone()
+        };
+        let col_zstd9 = Column {
+            codec: Some("ZSTD(9)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(!columns_are_equivalent(&col_zstd3, &col_zstd9));
+
+        // Test 6: Normalized codec comparison - user "Delta" vs ClickHouse "Delta(4)"
+        let col_user_delta = Column {
+            codec: Some("Delta".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_delta = Column {
+            codec: Some("Delta(4)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_delta, &col_ch_delta));
+
+        // Test 7: Normalized codec comparison - user "Gorilla" vs ClickHouse "Gorilla(8)"
+        let col_user_gorilla = Column {
+            codec: Some("Gorilla".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_gorilla = Column {
+            codec: Some("Gorilla(8)".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_gorilla, &col_ch_gorilla));
+
+        // Test 8: Normalized chain comparison - "Delta, LZ4" vs "Delta(4), LZ4"
+        let col_user_chain = Column {
+            codec: Some("Delta, LZ4".to_string()),
+            ..base_col.clone()
+        };
+        let col_ch_chain = Column {
+            codec: Some("Delta(4), LZ4".to_string()),
+            ..base_col.clone()
+        };
+        assert!(columns_are_equivalent(&col_user_chain, &col_ch_chain));
     }
 }
 
@@ -4890,6 +5062,7 @@ mod diff_topic_tests {
                 annotations: Vec::new(),
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
@@ -5180,6 +5353,7 @@ mod diff_topic_to_table_sync_process_tests {
                 annotations: Vec::new(),
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             version: Some(version.clone()),
             source_primitive: PrimitiveSignature {
@@ -5303,6 +5477,7 @@ mod diff_topic_to_table_sync_process_tests {
             annotations: vec![("note".to_string(), Value::String("changed".to_string()))],
             comment: None,
             ttl: None,
+            codec: None,
         }];
 
         assert_eq!(
