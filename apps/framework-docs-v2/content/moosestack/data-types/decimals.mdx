@@ -1,0 +1,82 @@
+---
+title: Decimal Types
+description: Fixed-point decimal column types for precise numeric values in Moose
+order: 5
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Decimal Types
+
+Decimals provide fixed-point precision, ideal for financial calculations where floating-point errors are unacceptable.
+
+## Decimal(P, S)
+
+A decimal number with `P` total digits (precision) and `S` digits after the decimal point (scale).
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { Decimal } from "@514labs/moose-lib";
+
+interface FinancialData {
+  amount: Decimal<10, 2>;     // Decimal(10,2) — up to 99999999.99
+  rate: Decimal<5, 4>;        // Decimal(5,4) — up to 9.9999
+  fee: Decimal<8, 3>;         // Decimal(8,3) — up to 99999.999
+}
+```
+
+You can also use the verbose syntax:
+
+```typescript
+import { ClickHouseDecimal } from "@514labs/moose-lib";
+
+interface FinancialDataVerbose {
+  amount: string & ClickHouseDecimal<10, 2>;
+  rate: string & ClickHouseDecimal<5, 4>;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import clickhouse_decimal
+
+class FinancialData(BaseModel):
+    amount: clickhouse_decimal(10, 2)   # Decimal(10,2)
+    rate: clickhouse_decimal(5, 4)      # Decimal(5,4)
+    fee: clickhouse_decimal(8, 3)       # Decimal(8,3)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Common Precision Patterns
+
+| Use Case | Precision | Scale | Example Type |
+|----------|-----------|-------|--------------|
+| Currency (cents) | 10 | 2 | `Decimal<10, 2>` |
+| Currency (4 decimals) | 12 | 4 | `Decimal<12, 4>` |
+| Interest rates | 5 | 4 | `Decimal<5, 4>` |
+| Percentages | 5 | 2 | `Decimal<5, 2>` |
+| Scientific | 18 | 9 | `Decimal<18, 9>` |
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript Helper | TypeScript Verbose | Python |
+|-----------------|-------------------|-------------------|--------|
+| `Decimal(P,S)` | `Decimal<P, S>` | `string & ClickHouseDecimal<P, S>` | `clickhouse_decimal(P, S)` |
+
+<Callout type="info" title="When to use Decimal">
+Use `Decimal` for monetary values, rates, and any calculation where exact decimal representation matters. Floating-point types (`Float32`/`Float64`) can introduce rounding errors in these scenarios.
+</Callout>
+
+<Callout type="warning" title="Storage size">
+ClickHouse stores Decimals based on precision:
+- P ≤ 9: 4 bytes (Decimal32)
+- P ≤ 18: 8 bytes (Decimal64)
+- P ≤ 38: 16 bytes (Decimal128)
+- P ≤ 76: 32 bytes (Decimal256)
+
+Choose the smallest precision that fits your needs.
+</Callout>
+

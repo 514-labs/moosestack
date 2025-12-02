@@ -1,0 +1,211 @@
+---
+title: AggregatingMergeTree
+description: ClickHouse table engine for pre-aggregated rollups
+order: 4
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# AggregatingMergeTree
+
+`AggregatingMergeTree` stores pre-aggregated states that are automatically merged during background compaction. Use with `SimpleAggregateFunction` columns for real-time rollups.
+
+## When to Use
+
+- Real-time dashboards with high-cardinality dimensions
+- Pre-computed metrics (daily totals, running counts)
+- Reducing query-time computation on large datasets
+- Time-series aggregations at multiple granularities
+
+## Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { 
+  OlapTable, 
+  ClickHouseEngines, 
+  SimpleAggregated,
+  DateTime
+} from "@514labs/moose-lib";
+
+interface DailyStats {
+  date: DateTime;
+  user_id: string;
+  total_views: number & SimpleAggregated<"sum", number>;
+  max_score: number & SimpleAggregated<"max", number>;
+  last_activity: DateTime & SimpleAggregated<"anyLast", DateTime>;
+}
+
+const dailyStats = new OlapTable<DailyStats>("daily_stats", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["date", "user_id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, OlapConfig, simple_aggregated
+from moose_lib.blocks import AggregatingMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class DailyStats(BaseModel):
+    date: datetime
+    user_id: str
+    total_views: simple_aggregated('sum', int)
+    max_score: simple_aggregated('max', float)
+    last_activity: simple_aggregated('anyLast', datetime)
+
+daily_stats = OlapTable[DailyStats]("daily_stats", OlapConfig(
+    engine=AggregatingMergeTreeEngine(),
+    order_by_fields=["date", "user_id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## How It Works
+
+1. **Insert**: Rows are written with initial aggregate values
+2. **Background Merge**: Rows with the same ORDER BY key are combined using their aggregate functions
+3. **Query**: Read pre-computed aggregates directly—no GROUP BY needed for simple queries
+
+```
+// Two inserts with same (date, user_id):
+{ date: "2025-01-01", user_id: "u1", total_views: 10, max_score: 85 }
+{ date: "2025-01-01", user_id: "u1", total_views: 15, max_score: 92 }
+
+// After merge:
+{ date: "2025-01-01", user_id: "u1", total_views: 25, max_score: 92 }
+```
+
+## Supported Aggregate Functions
+
+| Function | Description | Use Case |
+|----------|-------------|----------|
+| `sum` | Sum of values | Totals, counts |
+| `max` | Maximum value | Peak metrics, high scores |
+| `min` | Minimum value | Minimum thresholds |
+| `any` | Any single value | Non-deterministic pick |
+| `anyLast` | Last inserted value | Latest timestamp, status |
+
+## Example: Materialized View Rollup
+
+A common pattern is populating an `AggregatingMergeTree` table from a materialized view:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { 
+  OlapTable, 
+  MaterializedView,
+  ClickHouseEngines, 
+  SimpleAggregated,
+  DateTime
+} from "@514labs/moose-lib";
+
+// Source: raw events
+interface PageView {
+  timestamp: DateTime;
+  user_id: string;
+  page: string;
+  duration_ms: number;
+}
+
+// Target: daily aggregates
+interface DailyPageStats {
+  date: DateTime;
+  user_id: string;
+  view_count: number & SimpleAggregated<"sum", number>;
+  total_duration: number & SimpleAggregated<"sum", number>;
+  max_duration: number & SimpleAggregated<"max", number>;
+}
+
+const pageViews = new OlapTable<PageView>("page_views", {
+  orderByFields: ["timestamp", "user_id"]
+});
+
+const dailyStats = new OlapTable<DailyPageStats>("daily_page_stats", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["date", "user_id"]
+});
+
+const rollupView = new MaterializedView<PageView, DailyPageStats>({
+  selectExpression: `
+    toDate(timestamp) as date,
+    user_id,
+    count() as view_count,
+    sum(duration_ms) as total_duration,
+    max(duration_ms) as max_duration
+  `,
+  groupByExpression: "date, user_id",
+  sourceTable: pageViews,
+  destinationTable: dailyStats
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import (
+    OlapTable, 
+    OlapConfig, 
+    MaterializedView,
+    MaterializedViewConfig,
+    simple_aggregated
+)
+from moose_lib.blocks import AggregatingMergeTreeEngine
+
+# Source: raw events
+class PageView(BaseModel):
+    timestamp: datetime
+    user_id: str
+    page: str
+    duration_ms: int
+
+# Target: daily aggregates
+class DailyPageStats(BaseModel):
+    date: datetime
+    user_id: str
+    view_count: simple_aggregated('sum', int)
+    total_duration: simple_aggregated('sum', int)
+    max_duration: simple_aggregated('max', int)
+
+page_views = OlapTable[PageView]("page_views", OlapConfig(
+    order_by_fields=["timestamp", "user_id"]
+))
+
+daily_stats = OlapTable[DailyPageStats]("daily_page_stats", OlapConfig(
+    engine=AggregatingMergeTreeEngine(),
+    order_by_fields=["date", "user_id"]
+))
+
+rollup_view = MaterializedView[PageView, DailyPageStats](
+    MaterializedViewConfig(
+        select_expression="""
+            toDate(timestamp) as date,
+            user_id,
+            count() as view_count,
+            sum(duration_ms) as total_duration,
+            max(duration_ms) as max_duration
+        """,
+        group_by_expression="date, user_id",
+        source_table=page_views,
+        destination_table=daily_stats
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="Performance benefit">
+Pre-aggregating with AggregatingMergeTree can reduce query latency by orders of magnitude for dashboard queries, since aggregation happens at insert time rather than query time.
+</Callout>
+
+## See Also
+
+- [Aggregate Types](/moosestack/data-types/aggregates) — `SimpleAggregateFunction` column types
+- [Materialized Views](/moosestack/olap/model-materialized-view) — Populating aggregate tables
+- [SummingMergeTree](/moosestack/engines/summing-merge-tree) — Simpler option for sum-only aggregations
+

@@ -1,0 +1,172 @@
+---
+title: Geometry Types
+description: Point, Ring, Polygon, and other geometry column types in Moose
+order: 9
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Geometry Types
+
+ClickHouse provides geometry types for spatial data. Moose exposes type-safe helpers that map to the correct ClickHouse representations.
+
+## Point
+
+A single coordinate pair `[x, y]`.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHousePoint } from "@514labs/moose-lib";
+
+interface Location {
+  coordinates: ClickHousePoint;    // Point → [number, number]
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import Point
+
+class Location(BaseModel):
+    coordinates: Point    # tuple[float, float]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Ring
+
+A closed sequence of points forming a boundary (first and last points are the same).
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseRing } from "@514labs/moose-lib";
+
+interface Boundary {
+  outline: ClickHouseRing;    // Ring → Array<[number, number]>
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import Ring
+
+class Boundary(BaseModel):
+    outline: Ring    # list[tuple[float, float]]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## LineString
+
+A sequence of connected points forming a line.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseLineString } from "@514labs/moose-lib";
+
+interface Route {
+  path: ClickHouseLineString;    // LineString → Array<[number, number]>
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import LineString
+
+class Route(BaseModel):
+    path: LineString    # list[tuple[float, float]]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## MultiLineString
+
+Multiple line strings.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseMultiLineString } from "@514labs/moose-lib";
+
+interface Network {
+  roads: ClickHouseMultiLineString;    // Array<Array<[number, number]>>
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import MultiLineString
+
+class Network(BaseModel):
+    roads: MultiLineString    # list[list[tuple[float, float]]]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Polygon
+
+A shape defined by an outer ring and optional inner rings (holes).
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHousePolygon } from "@514labs/moose-lib";
+
+interface Zone {
+  area: ClickHousePolygon;    // Polygon → Array<Array<[number, number]>>
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import Polygon
+
+class Zone(BaseModel):
+    area: Polygon    # list[list[tuple[float, float]]]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## MultiPolygon
+
+Multiple polygons.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseMultiPolygon } from "@514labs/moose-lib";
+
+interface Region {
+  territories: ClickHouseMultiPolygon;    // Array<Array<Array<[number, number]>>>
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import MultiPolygon
+
+class Region(BaseModel):
+    territories: MultiPolygon    # list[list[list[tuple[float, float]]]]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript | Python |
+|-----------------|------------|--------|
+| `Point` | `ClickHousePoint` | `Point` (tuple[float, float]) |
+| `Ring` | `ClickHouseRing` | `Ring` (list[tuple[float, float]]) |
+| `LineString` | `ClickHouseLineString` | `LineString` (list[tuple[float, float]]) |
+| `MultiLineString` | `ClickHouseMultiLineString` | `MultiLineString` (list[list[...]]) |
+| `Polygon` | `ClickHousePolygon` | `Polygon` (list[list[...]]) |
+| `MultiPolygon` | `ClickHouseMultiPolygon` | `MultiPolygon` (list[list[list[...]]]) |
+
+<Callout type="info" title="Coordinate order">
+Coordinates are represented as `[x, y]` pairs. For geographic data, this typically means `[longitude, latitude]`.
+</Callout>
+

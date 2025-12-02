@@ -1,0 +1,41 @@
+---
+title: Boolean Type
+description: Boolean column type in Moose
+order: 6
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Boolean Type
+
+Booleans represent true/false values. In ClickHouse, they're stored as `UInt8` (0 or 1) but typed as `Boolean` for clarity.
+
+## Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  is_active: boolean;
+  verified: boolean;
+  has_subscription: boolean;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+class User(BaseModel):
+    is_active: bool
+    verified: bool
+    has_subscription: bool
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript | Python |
+|-----------------|------------|--------|
+| `Boolean` | `boolean` | `bool` |
+

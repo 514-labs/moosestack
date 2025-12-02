@@ -1,0 +1,96 @@
+---
+title: Nested Types
+description: Nested object types for embedded structures in Moose
+order: 12
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Nested Types
+
+Nested types allow embedding complex objects within table rows.
+
+## Usage
+
+Define a separate model and use it as a field type.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface Address {
+  street: string;
+  city: string;
+  zip: string;
+  country: string;
+}
+
+interface User {
+  name: string;
+  email: string;
+  address: Address;    // Nested type
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+class Address(BaseModel):
+    street: str
+    city: str
+    zip: str
+    country: str
+
+class User(BaseModel):
+    name: str
+    email: str
+    address: Address    # Nested type
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Multiple Levels
+
+Nested types can contain other nested types.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface Coordinates {
+  lat: number;
+  lng: number;
+}
+
+interface Address {
+  street: string;
+  city: string;
+  location: Coordinates;    // Nested within nested
+}
+
+interface User {
+  name: string;
+  address: Address;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+class Coordinates(BaseModel):
+    lat: float
+    lng: float
+
+class Address(BaseModel):
+    street: str
+    city: str
+    location: Coordinates    # Nested within nested
+
+class User(BaseModel):
+    name: str
+    address: Address
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="Nested vs JSON">
+Use nested types when the structure is known and fixed. Use [JSON](/moosestack/data-types/json) for dynamic or variable structures.
+</Callout>
+

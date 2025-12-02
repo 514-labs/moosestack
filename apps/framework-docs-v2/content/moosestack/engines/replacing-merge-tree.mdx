@@ -1,0 +1,183 @@
+---
+title: ReplacingMergeTree
+description: ClickHouse table engine with automatic deduplication
+order: 3
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# ReplacingMergeTree
+
+`ReplacingMergeTree` extends MergeTree with automatic deduplication. During background merges, it keeps only one row per unique ORDER BY key—useful for mutable data that receives updates.
+
+## When to Use
+
+- Data with updates (user profiles, product catalogs, entity state)
+- Upsert patterns where you want the latest version
+- CDC (Change Data Capture) pipelines
+- Any data that needs deduplication by a unique key
+
+## Basic Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  updated_at: Date;
+}
+
+const users = new OlapTable<User>("users", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class User(BaseModel):
+    id: str
+    name: str
+    email: str
+    updated_at: datetime
+
+users = OlapTable[User]("users", OlapConfig(
+    engine=ReplacingMergeTreeEngine(),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Version Column
+
+Use the `ver` parameter to control which row survives during deduplication. The row with the highest version value is kept:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+const users = new OlapTable<User>("users", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "updated_at"  // Keep row with latest updated_at
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+users = OlapTable[User]("users", OlapConfig(
+    engine=ReplacingMergeTreeEngine(ver="updated_at"),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Soft Deletes
+
+Use `isDeleted` (requires `ver`) to mark rows for deletion. Rows with `isDeleted=1` are removed during merges:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  id: string;
+  name: string;
+  updated_at: Date;
+  deleted: number;  // UInt8: 0 = active, 1 = deleted
+}
+
+const users = new OlapTable<User>("users", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "updated_at",
+  isDeleted: "deleted"
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+class User(BaseModel):
+    id: str
+    name: str
+    updated_at: datetime
+    deleted: int = 0  # 0 = active, 1 = deleted
+
+users = OlapTable[User]("users", OlapConfig(
+    engine=ReplacingMergeTreeEngine(
+        ver="updated_at",
+        is_deleted="deleted"
+    ),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## How It Works
+
+1. **Insert**: All rows (including duplicates) are written immediately
+2. **Background Merge**: ClickHouse periodically merges parts, keeping only the latest row per ORDER BY key
+3. **Query**: Before merges complete, queries may see duplicates
+
+<Callout type="warning" title="Eventual deduplication">
+Deduplication happens during background merges, not at insert time. To get deduplicated results immediately, use `FINAL` in queries or the `final=true` option in Moose reads.
+</Callout>
+
+## Querying with FINAL
+
+To force deduplication at query time:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+// In raw SQL
+const result = await client.query("SELECT * FROM users FINAL WHERE id = '123'");
+
+// Or use aggregation to get latest
+const latest = await client.query(`
+  SELECT argMax(name, updated_at) as name
+  FROM users
+  WHERE id = '123'
+`);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+# In raw SQL
+result = client.query("SELECT * FROM users FINAL WHERE id = '123'")
+
+# Or use aggregation to get latest
+latest = client.query("""
+    SELECT argMax(name, updated_at) as name
+    FROM users
+    WHERE id = '123'
+""")
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `orderByFields` | `string[]` | Columns that define uniqueness (required) |
+| `ver` | `string` | Version column—keeps row with highest value |
+| `isDeleted` | `string` | Soft delete column (UInt8)—removes rows where value is 1 |
+
+## See Also
+
+- [MergeTree](/moosestack/engines/merge-tree) — For append-only data without deduplication
+- [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) — For pre-aggregated rollups
+- [Replicated Engines](/moosestack/engines/replicated) — For high availability
+

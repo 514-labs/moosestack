@@ -1,0 +1,82 @@
+---
+title: Array Types
+description: Array column types in Moose
+order: 10
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Array Types
+
+Arrays store ordered collections of elements of the same type.
+
+## Basic Arrays
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  tags: string[];           // Array(String)
+  scores: number[];         // Array(Float64)
+  ids: Int32[];             // Array(Int32)
+  flags: boolean[];         // Array(Boolean)
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import List
+
+class User(BaseModel):
+    tags: List[str]         # Array(String)
+    scores: List[float]     # Array(Float64)
+    ids: List[int]          # Array(Int64)
+    flags: List[bool]       # Array(Boolean)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Arrays of Complex Types
+
+Arrays can contain complex types like JSON or tuples.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseNamedTuple } from "@514labs/moose-lib";
+
+interface Event {
+  metadata: Record<string, any>[];    // Array(Json)
+  points: {
+    x: number;
+    y: number;
+  }[];                                 // Array of nested objects
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import List, Dict, Any, Tuple
+
+class Event(BaseModel):
+    metadata: List[Dict[str, Any]]     # Array(Json)
+    points: List[Tuple[float, float]]  # Array(Tuple)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript | Python |
+|-----------------|------------|--------|
+| `Array(String)` | `string[]` | `List[str]` |
+| `Array(Float64)` | `number[]` | `List[float]` |
+| `Array(Int32)` | `Int32[]` | `List[int]` |
+| `Array(Boolean)` | `boolean[]` | `List[bool]` |
+| `Array(Json)` | `Record<string, any>[]` | `List[Dict[str, Any]]` |
+
+<Callout type="info" title="Nested arrays">
+You can nest arrays to create multi-dimensional structures: `number[][]` maps to `Array(Array(Float64))`.
+</Callout>
+

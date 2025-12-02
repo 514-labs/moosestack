@@ -1,0 +1,98 @@
+---
+title: Nullable Types
+description: Optional and nullable column types in Moose
+order: 16
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Nullable Types
+
+All types support nullable variants using optional syntax. Nullable columns can store `NULL` values.
+
+## Basic Optional Fields
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  name: string;           // Required - NOT NULL
+  email?: string;         // Nullable(String)
+  age?: number;           // Nullable(Float64)
+  verified?: boolean;     // Nullable(Boolean)
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Optional
+
+class User(BaseModel):
+    name: str                        # Required - NOT NULL
+    email: Optional[str] = None      # Nullable(String)
+    age: Optional[int] = None        # Nullable(Int64)
+    verified: Optional[bool] = None  # Nullable(Boolean)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Optional with ClickHouse Defaults
+
+If a field is optional but you provide a ClickHouse default, Moose creates a non-nullable column with a `DEFAULT` clause instead of a `Nullable` column.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseDefault, WithDefault } from "@514labs/moose-lib";
+
+interface User {
+  name: string;
+  
+  // Optional without default → Nullable(Int64)
+  age?: number;
+  
+  // Optional with default → Int64 DEFAULT 18 (non-nullable)
+  minAge?: number & ClickHouseDefault<"18">;
+  
+  // Alternative helper syntax
+  status?: WithDefault<string, "'active'">;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Optional, Annotated
+from moose_lib import clickhouse_default
+
+class User(BaseModel):
+    name: str
+    
+    # Optional without default → Nullable(Int64)
+    age: Optional[int] = None
+    
+    # Optional with default → Int64 DEFAULT 18 (non-nullable)
+    min_age: Annotated[Optional[int], clickhouse_default("18")] = None
+    
+    # String with default
+    status: Annotated[Optional[str], clickhouse_default("'active'")] = None
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| Pattern | TypeScript | Python | ClickHouse Result |
+|---------|------------|--------|-------------------|
+| Required | `field: T` | `field: T` | `T NOT NULL` |
+| Optional | `field?: T` | `Optional[T] = None` | `Nullable(T)` |
+| Optional + Default | `field?: T & ClickHouseDefault<"val">` | `Annotated[Optional[T], clickhouse_default("val")]` | `T DEFAULT val` |
+
+<Callout type="info" title="Nullable performance">
+Nullable columns have a small storage overhead (1 extra byte per row for the null bitmap). When possible, use defaults instead of nulls for frequently-queried columns.
+</Callout>
+
+<Callout type="warning" title="Default value syntax">
+ClickHouse defaults are SQL expressions. String defaults must include quotes: `"'active'"` not `"active"`. Numeric defaults are bare: `"18"` not `"'18'"`.
+</Callout>
+

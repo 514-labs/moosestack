@@ -1,0 +1,114 @@
+---
+title: Aggregate Types
+description: SimpleAggregateFunction for pre-aggregated data in Moose
+order: 17
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Aggregate Types
+
+`SimpleAggregateFunction` stores pre-aggregated values that ClickHouse automatically merges when combining rows with the same primary key. Use with `AggregatingMergeTree` tables.
+
+## SimpleAggregateFunction
+
+Define columns that automatically aggregate during merges:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { 
+  SimpleAggregated, 
+  OlapTable, 
+  ClickHouseEngines, 
+  Key, 
+  DateTime 
+} from "@514labs/moose-lib";
+
+interface DailyStats {
+  date: DateTime;
+  userId: string;
+  totalViews: number & SimpleAggregated<"sum", number>;
+  maxScore: number & SimpleAggregated<"max", number>;
+  minLatency: number & SimpleAggregated<"min", number>;
+  lastSeen: DateTime & SimpleAggregated<"anyLast", DateTime>;
+}
+
+const statsTable = new OlapTable<DailyStats>("daily_stats", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["date", "userId"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import (
+    simple_aggregated, 
+    Key, 
+    OlapTable, 
+    OlapConfig, 
+    AggregatingMergeTreeEngine
+)
+from pydantic import BaseModel
+from datetime import datetime
+
+class DailyStats(BaseModel):
+    date: datetime
+    user_id: str
+    total_views: simple_aggregated('sum', int)
+    max_score: simple_aggregated('max', float)
+    min_latency: simple_aggregated('min', float)
+    last_seen: simple_aggregated('anyLast', datetime)
+
+stats_table = OlapTable[DailyStats](
+    "daily_stats",
+    OlapConfig(
+        engine=AggregatingMergeTreeEngine(),
+        order_by_fields=["date", "user_id"]
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Supported Aggregate Functions
+
+| Function | Description | Typical Use |
+|----------|-------------|-------------|
+| `sum` | Sum of values | Totals, counts |
+| `max` | Maximum value | Peak metrics |
+| `min` | Minimum value | Minimum thresholds |
+| `any` | Any single value | Non-deterministic pick |
+| `anyLast` | Last inserted value | Latest timestamp, status |
+| `argMax` | Value at max of another column | Value when metric was highest |
+| `argMin` | Value at min of another column | Value when metric was lowest |
+
+## How It Works
+
+1. **Insert**: Data is written with initial aggregate values
+2. **Background Merge**: ClickHouse periodically merges rows with the same ORDER BY key
+3. **Automatic Aggregation**: `SimpleAggregateFunction` columns are combined using their specified function
+
+```
+// Two rows with same (date, userId):
+{ date: "2025-01-01", userId: "u1", totalViews: 10 }
+{ date: "2025-01-01", userId: "u1", totalViews: 15 }
+
+// After merge:
+{ date: "2025-01-01", userId: "u1", totalViews: 25 }  // sum
+```
+
+<Callout type="info" title="When to use SimpleAggregateFunction">
+Use when you need real-time aggregations on high-volume data. Instead of storing every event and aggregating at query time, pre-aggregate during ingestion for faster queries.
+</Callout>
+
+<Callout type="warning" title="Requires AggregatingMergeTree">
+`SimpleAggregateFunction` only works with `AggregatingMergeTree` or `ReplicatedAggregatingMergeTree` table engines. The table's ORDER BY clause defines which rows get merged.
+</Callout>
+
+## See Also
+
+- [ClickHouse SimpleAggregateFunction docs](https://clickhouse.com/docs/en/sql-reference/data-types/simpleaggregatefunction)
+- [Table Engines](/moosestack/engines) for configuring `AggregatingMergeTree`
+

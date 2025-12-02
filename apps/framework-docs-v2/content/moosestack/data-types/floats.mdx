@@ -1,0 +1,80 @@
+---
+title: Floating Point Types
+description: Float32 and Float64 column types in Moose
+order: 4
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Floating Point Types
+
+ClickHouse supports IEEE 754 floating-point numbers in 32-bit and 64-bit precision.
+
+## Float64 (Default)
+
+64-bit double-precision floating point. This is the default for `number` in TypeScript and `float` in Python.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { Float64 } from "@514labs/moose-lib";
+
+interface SensorData {
+  temperature: Float64;     // Float64 (explicit)
+  humidity: number;         // Float64 (default for number)
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+class SensorData(BaseModel):
+    temperature: float      # Float64
+    humidity: float         # Float64
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Float32
+
+32-bit single-precision floating point. Use when storage is critical and reduced precision is acceptable.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { Float32 } from "@514labs/moose-lib";
+import { tags } from "typia";
+
+interface Coordinates {
+  latitude: Float32;                      // Float32 (helper)
+  longitude: number & tags.Type<"float">; // Float32 (typia tag)
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+from moose_lib import ClickhouseSize
+
+class Coordinates(BaseModel):
+    latitude: Annotated[float, ClickhouseSize(4)]    # Float32
+    longitude: Annotated[float, ClickhouseSize(4)]   # Float32
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript Helper | TypeScript Verbose | Python |
+|-----------------|-------------------|-------------------|--------|
+| `Float32` | `Float32` | `number & tags.Type<"float">` | `Annotated[float, ClickhouseSize(4)]` |
+| `Float64` | `Float64` or `number` | `number` | `float` |
+
+<Callout type="info" title="Float64 vs Float32">
+Prefer `Float64` for most calculations—it's the default and provides better precision. Only use `Float32` when storage savings are critical and you can tolerate ~7 digits of precision instead of ~15.
+</Callout>
+
+<Callout type="warning" title="Precision considerations">
+Floating-point numbers have inherent precision limitations. For financial calculations or when exact decimal representation is required, use [Decimal types](/moosestack/data-types/decimals) instead.
+</Callout>
+

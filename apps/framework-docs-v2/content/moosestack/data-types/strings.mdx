@@ -1,0 +1,97 @@
+---
+title: String Types
+description: String, LowCardinality, and UUID column types in Moose
+order: 2
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# String Types
+
+ClickHouse provides several string-based types optimized for different use cases.
+
+## String
+
+Variable-length strings for general text data.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  name: string;        // String
+  email: string;       // String
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+class User(BaseModel):
+    name: str          # String
+    email: str         # String
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## LowCardinality(String)
+
+Optimized storage for strings with many repeated values. Use when you have fewer than ~10,000 unique values.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { LowCardinality } from "@514labs/moose-lib";
+
+interface Event {
+  status: string & LowCardinality;     // LowCardinality(String)
+  country: string & LowCardinality;    // LowCardinality(String)
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+
+class Event(BaseModel):
+    status: Annotated[str, "LowCardinality"]     # LowCardinality(String)
+    country: Annotated[str, "LowCardinality"]    # LowCardinality(String)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="When to use LowCardinality">
+Use `LowCardinality` for columns like status codes, country codes, categories, or any string field with a limited set of repeated values. It significantly reduces storage and improves query performance.
+</Callout>
+
+## UUID
+
+Universally unique identifiers stored in native UUID format.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { tags } from "typia";
+
+interface User {
+  id: string & tags.Format<"uuid">;    // UUID
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from uuid import UUID
+
+class User(BaseModel):
+    id: UUID    # UUID
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript | Python |
+|-----------------|------------|--------|
+| `String` | `string` | `str` |
+| `LowCardinality(String)` | `string & LowCardinality` | `Annotated[str, "LowCardinality"]` |
+| `UUID` | `string & tags.Format<"uuid">` | `UUID` |
+

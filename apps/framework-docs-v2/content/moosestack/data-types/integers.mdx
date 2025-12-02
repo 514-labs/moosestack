@@ -1,0 +1,97 @@
+---
+title: Integer Types
+description: Signed and unsigned integer column types in Moose
+order: 3
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Integer Types
+
+ClickHouse provides signed (`Int`) and unsigned (`UInt`) integers in various sizes. Choose the smallest type that fits your data range for optimal storage efficiency.
+
+## Signed Integers
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { Int8, Int16, Int32, Int64 } from "@514labs/moose-lib";
+
+interface Metrics {
+  small_value: Int8;      // Int8: -128 to 127
+  medium_value: Int16;    // Int16: -32,768 to 32,767
+  user_id: Int32;         // Int32: -2.1B to 2.1B
+  big_value: Int64;       // Int64: -9.2E18 to 9.2E18
+}
+```
+
+You can also use the verbose syntax:
+
+```typescript
+import { ClickHouseInt } from "@514labs/moose-lib";
+
+interface MetricsVerbose {
+  user_id: number & ClickHouseInt<"int32">;
+  big_value: number & ClickHouseInt<"int64">;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+
+class Metrics(BaseModel):
+    small_value: Annotated[int, "int8"]     # Int8
+    medium_value: Annotated[int, "int16"]   # Int16
+    user_id: Annotated[int, "int32"]        # Int32
+    big_value: Annotated[int, "int64"]      # Int64
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Unsigned Integers
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { UInt8, UInt16, UInt32, UInt64 } from "@514labs/moose-lib";
+
+interface Counters {
+  flags: UInt8;           // UInt8: 0 to 255
+  port: UInt16;           // UInt16: 0 to 65,535
+  count: UInt32;          // UInt32: 0 to 4.2B
+  total: UInt64;          // UInt64: 0 to 18.4E18
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+
+class Counters(BaseModel):
+    flags: Annotated[int, "uint8"]      # UInt8
+    port: Annotated[int, "uint16"]      # UInt16
+    count: Annotated[int, "uint32"]     # UInt32
+    total: Annotated[int, "uint64"]     # UInt64
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript Helper | TypeScript Verbose | Python | Range |
+|-----------------|-------------------|-------------------|--------|-------|
+| `Int8` | `Int8` | `number & ClickHouseInt<"int8">` | `Annotated[int, "int8"]` | -128 to 127 |
+| `Int16` | `Int16` | `number & ClickHouseInt<"int16">` | `Annotated[int, "int16"]` | -32,768 to 32,767 |
+| `Int32` | `Int32` | `number & ClickHouseInt<"int32">` | `Annotated[int, "int32"]` | -2.1B to 2.1B |
+| `Int64` | `Int64` | `number & ClickHouseInt<"int64">` | `Annotated[int, "int64"]` | ±9.2×10¹⁸ |
+| `UInt8` | `UInt8` | `number & ClickHouseInt<"uint8">` | `Annotated[int, "uint8"]` | 0 to 255 |
+| `UInt16` | `UInt16` | `number & ClickHouseInt<"uint16">` | `Annotated[int, "uint16"]` | 0 to 65,535 |
+| `UInt32` | `UInt32` | `number & ClickHouseInt<"uint32">` | `Annotated[int, "uint32"]` | 0 to 4.2B |
+| `UInt64` | `UInt64` | `number & ClickHouseInt<"uint64">` | `Annotated[int, "uint64"]` | 0 to 18.4×10¹⁸ |
+
+<Callout type="info" title="Choosing the right size">
+Use the smallest integer type that fits your data. For example, use `UInt8` for values 0-255 (like status codes), `UInt16` for ports, and `Int32` for most IDs. This reduces storage and improves cache efficiency.
+</Callout>
+

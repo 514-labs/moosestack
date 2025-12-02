@@ -1,0 +1,208 @@
+---
+title: Replicated Engines
+description: High-availability table engines with multi-node replication
+order: 6
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Replicated Engines
+
+Replicated engines provide high availability and data replication across multiple ClickHouse nodes. Moose supports replicated variants of all MergeTree family engines.
+
+## Available Replicated Engines
+
+| Engine | Base Engine | Use Case |
+|--------|-------------|----------|
+| `ReplicatedMergeTree` | MergeTree | General analytics with HA |
+| `ReplicatedReplacingMergeTree` | ReplacingMergeTree | Mutable data with HA |
+| `ReplicatedAggregatingMergeTree` | AggregatingMergeTree | Pre-aggregation with HA |
+| `ReplicatedSummingMergeTree` | SummingMergeTree | Counters with HA |
+
+## Basic Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface Event {
+  id: string;
+  timestamp: Date;
+  data: string;
+}
+
+// For ClickHouse Cloud—no extra config needed
+const events = new OlapTable<Event>("events", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["timestamp", "id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplicatedMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class Event(BaseModel):
+    id: str
+    timestamp: datetime
+    data: str
+
+# For ClickHouse Cloud—no extra config needed
+events = OlapTable[Event]("events", OlapConfig(
+    engine=ReplicatedMergeTreeEngine(),
+    order_by_fields=["timestamp", "id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Configuration Approaches
+
+### Default (Recommended)
+
+Omit replication parameters. Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+const table = new OlapTable<Event>("events", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  orderByFields: ["id"]
+  // No keeperPath or replicaName needed
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+table = OlapTable[Event]("events", OlapConfig(
+    engine=ReplicatedMergeTreeEngine(),  # No parameters
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+Moose auto-injects: `/clickhouse/tables/{database}/{shard}/{table_name}` and `{replica}` in local development. ClickHouse Cloud uses its own patterns automatically.
+
+### Explicit Paths (Self-Managed)
+
+For self-managed ClickHouse with custom ZooKeeper/Keeper paths:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+const table = new OlapTable<Event>("events", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  keeperPath: "/clickhouse/tables/{database}/{shard}/events",
+  replicaName: "{replica}",
+  orderByFields: ["id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+table = OlapTable[Event]("events", OlapConfig(
+    engine=ReplicatedMergeTreeEngine(
+        keeper_path="/clickhouse/tables/{database}/{shard}/events",
+        replica_name="{replica}"
+    ),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Cluster Mode
+
+For multi-node deployments with `ON CLUSTER` DDL:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+const table = new OlapTable<Event>("events", {
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  cluster: "my_cluster",
+  orderByFields: ["id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+table = OlapTable[Event]("events", OlapConfig(
+    engine=ReplicatedMergeTreeEngine(),
+    cluster="my_cluster",
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Replicated ReplacingMergeTree
+
+Combines deduplication with replication:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  id: string;
+  name: string;
+  updated_at: Date;
+  deleted: number;
+}
+
+const users = new OlapTable<User>("users", {
+  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "updated_at",
+  isDeleted: "deleted"
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib.blocks import ReplicatedReplacingMergeTreeEngine
+
+class User(BaseModel):
+    id: str
+    name: str
+    updated_at: datetime
+    deleted: int = 0
+
+users = OlapTable[User]("users", OlapConfig(
+    engine=ReplicatedReplacingMergeTreeEngine(
+        ver="updated_at",
+        is_deleted="deleted"
+    ),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `keeperPath` | `string` | ZooKeeper/Keeper path for coordination (optional) |
+| `replicaName` | `string` | Unique replica identifier (optional) |
+| `cluster` | `string` | Cluster name for ON CLUSTER DDL |
+| `ver` | `string` | Version column (ReplicatedReplacingMergeTree only) |
+| `isDeleted` | `string` | Soft delete column (ReplicatedReplacingMergeTree only) |
+| `columns` | `string[]` | Columns to sum (ReplicatedSummingMergeTree only) |
+
+<Callout type="info" title="ClickHouse Cloud">
+When using ClickHouse Cloud, replication is handled automatically. Just use the replicated engine variant without any extra configuration.
+</Callout>
+
+## See Also
+
+- [MergeTree](/moosestack/engines/merge-tree) — Non-replicated base engine
+- [ReplacingMergeTree](/moosestack/engines/replacing-merge-tree) — Deduplication details
+- [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) — Pre-aggregation details
+

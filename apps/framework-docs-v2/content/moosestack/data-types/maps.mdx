@@ -1,0 +1,54 @@
+---
+title: Map Types
+description: Map column types for key-value pairs in Moose
+order: 11
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Map Types
+
+Maps store key-value pairs with specified key and value types.
+
+## Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  preferences: Record<string, string>;     // Map(String, String)
+  metrics: Record<string, number>;         // Map(String, Float64)
+  settings: Record<string, boolean>;       // Map(String, Boolean)
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Dict
+
+class User(BaseModel):
+    preferences: Dict[str, str]       # Map(String, String)
+    metrics: Dict[str, float]         # Map(String, Float64)
+    settings: Dict[str, bool]         # Map(String, Boolean)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript | Python |
+|-----------------|------------|--------|
+| `Map(String, String)` | `Record<string, string>` | `Dict[str, str]` |
+| `Map(String, Float64)` | `Record<string, number>` | `Dict[str, float]` |
+| `Map(String, Int64)` | `Record<string, Int64>` | `Dict[str, int]` |
+| `Map(String, Boolean)` | `Record<string, boolean>` | `Dict[str, bool]` |
+
+<Callout type="info" title="Key types">
+Map keys must be `String`, `Int*`, or `UInt*` types. String keys are most common.
+</Callout>
+
+<Callout type="warning" title="When to use Map vs JSON">
+Use `Map` when all values have the same type and you need efficient key lookups. Use [JSON](/moosestack/data-types/json) when values have mixed types or the structure is highly dynamic.
+</Callout>
+
