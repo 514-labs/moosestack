@@ -57,6 +57,18 @@ pub enum InfrastructureSignature {
 }
 
 impl InfrastructureSignature {
+    /// Get the ID string for any signature variant
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Table { id }
+            | Self::Topic { id }
+            | Self::ApiEndpoint { id }
+            | Self::TopicToTableSyncProcess { id }
+            | Self::View { id }
+            | Self::SqlResource { id } => id,
+        }
+    }
+
     pub fn to_proto(&self) -> ProtoInfrastructureSignature {
         match self {
             InfrastructureSignature::Table { id } => {

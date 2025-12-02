@@ -267,6 +267,8 @@ interface Target {
   version?: string;
   /** Optional metadata for the target (e.g., description for function processes). */
   metadata?: { description?: string };
+  /** Optional source file path where this transform was declared. */
+  sourceFile?: string;
 }
 
 /**
@@ -275,6 +277,8 @@ interface Target {
 interface Consumer {
   /** Optional version string for the consumer configuration. */
   version?: string;
+  /** Optional source file path where this consumer was declared. */
+  sourceFile?: string;
 }
 
 /**
@@ -391,6 +395,8 @@ interface SqlResourceJson {
   pullsDataFrom: InfrastructureSignatureJson[];
   /** List of infrastructure components (by signature) that this resource writes to. */
   pushesDataTo: InfrastructureSignatureJson[];
+  /** Optional source file path where this resource is defined. */
+  sourceFile?: string;
 }
 
 /**
@@ -857,6 +863,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
           name: destinationName,
           version: config.version,
           metadata: config.metadata,
+          sourceFile: config.sourceFile,
         });
       });
     });
@@ -864,6 +871,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     stream._consumers.forEach((consumer) => {
       consumers.push({
         version: consumer.config.version,
+        sourceFile: consumer.config.sourceFile,
       });
     });
 
@@ -923,6 +931,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       name: sqlResource.name,
       setup: sqlResource.setup,
       teardown: sqlResource.teardown,
+      sourceFile: sqlResource.sourceFile,
 
       pullsDataFrom: sqlResource.pullsDataFrom.map((r) => {
         if (r.kind === "OlapTable") {

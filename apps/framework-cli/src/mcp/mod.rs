@@ -1,8 +1,11 @@
-mod embedded_docs;
+mod compressed_map;
 mod server;
 mod tools;
 
-pub use embedded_docs::{list_resources, read_resource};
+pub use compressed_map::{
+    build_compressed_map, ComponentNode, ComponentType, CompressedInfraMap, Connection,
+    ConnectionType, MapStats,
+};
 pub use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpService,
 };
