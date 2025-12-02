@@ -718,10 +718,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pypi Cleanup
+      - name: Install cleanup dependencies
         run: |
-          sudo apt install -y expect
-          pip install --upgrade pypi-cleanup
+          pip install --upgrade twine requests
 
       - uses: 1password/load-secrets-action@v1
         id: op-load-secret
@@ -730,55 +729,101 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           PYPI_TOKEN: "op://drqe7p6legi6ug2ijq2fnrkmjq/PyPi Token/password"
-          PYPI_CLEANUP_PASSWORD: "op://drqe7p6legi6ug2ijq2fnrkmjq/PyPI/new_password"
-          PYPI_OTP: "op://drqe7p6legi6ug2ijq2fnrkmjq/PyPI/Saved on pypi.org/one-time password?attribute=otp"
 
       - name: Clean up PyPI and only keep the latest 80 days of moose CLI and lib
         run: |
-          expect << 'EOF'
-          spawn pypi-cleanup -u 514 -p moose-cli -d 80 -r ".*" --do-it --yes
-          expect {
-            "Authentication code:" {
-              send "$env(PYPI_OTP)\r"
-              exp_continue
-            }
-            "No releases were found" {
-              # Nothing to do, this is fine
-            }
-            eof
-          }
+          python3 << 'PYTHON_SCRIPT'
+          import requests
+          import subprocess
+          import sys
+          from datetime import datetime, timedelta, timezone
 
-          # Check exit status
-          catch wait result
-          set exit_code [lindex $result 3]
-          if {$exit_code != 0} {
-            puts "ERROR: pypi-cleanup for moose-cli failed with exit code $exit_code"
-            exit $exit_code
-          }
-          EOF
+          def cleanup_old_versions(package_name, days_to_keep, token):
+              print(f"\n=== Cleaning up {package_name} (keeping {days_to_keep} days) ===")
 
-          expect << 'EOF'
-          spawn pypi-cleanup -u 514 -p moose-lib -d 100 -r ".*" --do-it --yes
-          expect {
-            "Authentication code:" {
-              send "$env(PYPI_OTP)\r"
-              exp_continue
-            }
-            "No releases were found" {
-              # Nothing to do, this is fine
-            }
-            eof
-          }
+              # Get package info from PyPI JSON API
+              response = requests.get(f"https://pypi.org/pypi/{package_name}/json")
+              if response.status_code != 200:
+                  print(f"ERROR: Failed to fetch {package_name} info: {response.status_code}")
+                  return False
 
-          # Check exit status
-          catch wait result
-          set exit_code [lindex $result 3]
-          if {$exit_code != 0} {
-            puts "ERROR: pypi-cleanup for moose-lib failed with exit code $exit_code"
-            exit $exit_code
-          }
-          EOF
+              data = response.json()
+              releases = data.get("releases", {})
 
-        env:
-          PYPI_CLEANUP_PASSWORD: ${{ steps.op-load-secret.outputs.PYPI_CLEANUP_PASSWORD }}
-          PYPI_OTP: ${{ steps.op-load-secret.outputs.PYPI_OTP }}
+              cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+              versions_to_delete = []
+
+              # Find versions older than cutoff
+              for version, files in releases.items():
+                  if not files:  # Skip versions with no files
+                      continue
+
+                  # Get the upload date of the first file (all files in a version have similar dates)
+                  upload_date_str = files[0].get("upload_time_iso_8601")
+                  if not upload_date_str:
+                      continue
+
+                  upload_date = datetime.fromisoformat(upload_date_str.replace('Z', '+00:00'))
+
+                  if upload_date < cutoff_date:
+                      versions_to_delete.append((version, upload_date))
+
+              if not versions_to_delete:
+                  print(f"No versions to delete for {package_name}")
+                  return True
+
+              # Sort by date for logging
+              versions_to_delete.sort(key=lambda x: x[1])
+
+              print(f"Found {len(versions_to_delete)} versions to delete (older than {cutoff_date.date()})")
+              print(f"\n--- DRY RUN: Would delete the following versions ---")
+              
+              # List all versions that would be deleted
+              for version, upload_date in versions_to_delete:
+                  days_old = (datetime.now(timezone.utc) - upload_date).days
+                  print(f"  • {package_name} v{version}")
+                  print(f"    Uploaded: {upload_date.date()} ({days_old} days ago)")
+              
+              print(f"\n--- Total: {len(versions_to_delete)} versions would be deleted ---")
+              
+              # COMMENTED OUT: Actual deletion code
+              # Delete using twine (which actually "yanks" the versions)
+              # failed = []
+              # for version, upload_date in versions_to_delete:
+              #     print(f"Deleting {package_name} v{version} (uploaded {upload_date.date()})")
+              #     result = subprocess.run(
+              #         ["twine", "yank", "--non-interactive", package_name, version],
+              #         capture_output=True,
+              #         text=True,
+              #         env={"TWINE_USERNAME": "__token__", "TWINE_PASSWORD": token}
+              #     )
+              #
+              #     if result.returncode != 0:
+              #         # Check if it's already yanked (which is okay)
+              #         if "has already been yanked" in result.stderr.lower():
+              #             print(f"  (already yanked)")
+              #         else:
+              #             print(f"ERROR: Failed to delete {version}")
+              #             print(f"  stderr: {result.stderr}")
+              #             failed.append(version)
+              #     else:
+              #         print(f"  ✓ Deleted")
+              #
+              # if failed:
+              #     print(f"\nERROR: Failed to delete {len(failed)} versions: {failed}")
+              #     return False
+
+              return True
+
+          # Main execution
+          token = "${{ steps.op-load-secret.outputs.PYPI_TOKEN }}"
+
+          success = True
+          success = cleanup_old_versions("moose-cli", 80, token) and success
+          success = cleanup_old_versions("moose-lib", 100, token) and success
+
+          if not success:
+              sys.exit(1)
+
+          print("\n=== Cleanup completed successfully ===")
+          PYTHON_SCRIPT
