@@ -487,6 +487,119 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         console.log("✅ Buffer engine table created successfully");
       });
 
+      it("should create Kafka engine table and consume data via MV", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Wait for infrastructure to stabilize
+        console.log("Waiting for Kafka table infrastructure to be ready...");
+        await waitForStreamingFunctions(180_000);
+
+        // Verify the Kafka table was created with correct engine
+        const kafkaSourceDDL = await withRetries(
+          async () => {
+            return await getTableDDL(
+              config.language === "typescript" ?
+                "KafkaTestSource"
+              : "kafka_test_source",
+              "local",
+            );
+          },
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
+        );
+        console.log(`Kafka source table DDL: ${kafkaSourceDDL}`);
+
+        if (!kafkaSourceDDL.includes("ENGINE = Kafka")) {
+          throw new Error(
+            `KafkaTestSource should use Kafka engine. DDL: ${kafkaSourceDDL}`,
+          );
+        }
+
+        // Verify broker and topic configuration
+        if (!kafkaSourceDDL.includes("redpanda:9092")) {
+          throw new Error(
+            `Kafka table should have broker 'redpanda:9092'. DDL: ${kafkaSourceDDL}`,
+          );
+        }
+
+        // Verify the MergeTree destination table exists
+        const destTableName =
+          config.language === "typescript" ?
+            "KafkaTestDest"
+          : "kafka_test_dest";
+        const kafkaDestDDL = await withRetries(
+          async () => {
+            return await getTableDDL(destTableName, "local");
+          },
+          { attempts: 10, delayMs: 1000, backoffFactor: 1 },
+        );
+
+        if (!kafkaDestDDL.includes("ENGINE = MergeTree")) {
+          throw new Error(
+            `${destTableName} should use MergeTree engine. DDL: ${kafkaDestDDL}`,
+          );
+        }
+
+        // Send data via the ingest API (goes to Stream → Redpanda → Kafka table → MV → MergeTree)
+        // Note: timestamp must be Unix seconds (not ISO string) for ClickHouse Kafka engine JSONEachRow
+        const testEventId = randomUUID();
+        const unixTimestamp = Math.floor(Date.now() / 1000);
+        const testPayload = {
+          eventId: testEventId,
+          userId: "user-123",
+          eventType: "purchase",
+          amount: 99.99,
+          timestamp: unixTimestamp,
+        };
+
+        // Python uses snake_case
+        const pythonPayload = {
+          event_id: testEventId,
+          user_id: "user-123",
+          event_type: "purchase",
+          amount: 99.99,
+          timestamp: unixTimestamp,
+        };
+
+        await withRetries(
+          async () => {
+            const response = await fetch(
+              `${SERVER_CONFIG.url}/ingest/kafka-test`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(
+                  config.language === "typescript" ?
+                    testPayload
+                  : pythonPayload,
+                ),
+              },
+            );
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(`${response.status}: ${text}`);
+            }
+          },
+          { attempts: 5, delayMs: 500 },
+        );
+
+        // Wait for data to flow: Stream → Redpanda → Kafka table → MV → MergeTree
+        await waitForDBWrite(devProcess!, destTableName, 1, 120_000, "local");
+
+        // Verify the data landed in the destination table
+        const idColumn =
+          config.language === "typescript" ? "eventId" : "event_id";
+        await verifyClickhouseData(
+          destTableName,
+          testEventId,
+          idColumn,
+          "local",
+        );
+
+        console.log(
+          "✅ Kafka engine table created and data flow verified successfully",
+        );
+      });
+
       it("should plan/apply TTL modifications on existing tables", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
