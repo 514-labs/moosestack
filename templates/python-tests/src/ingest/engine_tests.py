@@ -1,7 +1,7 @@
 # Test all supported ClickHouse engines to ensure proper configuration
 # These tables verify that all engine types can be created and configured correctly
 
-from moose_lib import OlapTable, OlapConfig, Key, ClickHouseTTL, clickhouse_default, FixedString
+from moose_lib import OlapTable, OlapConfig, Key, Int8, ClickHouseTTL, clickhouse_default, FixedString
 from moose_lib.blocks import (
     MergeTreeEngine,
     ReplacingMergeTreeEngine,
@@ -86,7 +86,7 @@ fixedstring_table = OlapTable[FixedStringTestData](
 
 class CollapsingTestData(EngineTestData):
     """Test data model for CollapsingMergeTree and VersionedCollapsingMergeTree testing"""
-    sign: int  # For CollapsingMergeTree (1 = state, -1 = cancel)
+    sign: Int8  # For CollapsingMergeTree (1 = state, -1 = cancel)
 
 class EngineTestDataSample(BaseModel):
     """Test data model for engine testing"""

@@ -3,6 +3,7 @@ import {
   ClickHouseEngines,
   Key,
   DateTime,
+  Int8,
   ClickHouseTTL,
   ClickHouseDefault,
   UInt32,
@@ -26,7 +27,7 @@ export interface EngineTestData {
 
 // Test data model for CollapsingMergeTree and VersionedCollapsingMergeTree testing
 export interface CollapsingTestData extends EngineTestData {
-  sign: number; // For CollapsingMergeTree (1 = state, -1 = cancel)
+  sign: Int8; // For CollapsingMergeTree (1 = state, -1 = cancel)
 }
 
 export interface EngineTestDataSample {
