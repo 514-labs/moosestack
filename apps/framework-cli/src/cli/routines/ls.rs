@@ -286,6 +286,7 @@ impl ResourceInfo for Vec<WebAppInfo> {
                 .collect(),
         )
     }
+
     fn to_json_string(&self) -> Result<String, Error> {
         serde_json::to_string_pretty(&self)
     }
