@@ -2526,28 +2526,22 @@ impl InfrastructureMap {
     pub fn normalize(mut self) -> Self {
         use crate::framework::core::infrastructure::table::ColumnType;
 
-        self.tables = self
-            .tables
-            .into_iter()
-            .map(|(id, mut table)| {
-                // Fall back to primary key columns if order_by is empty for MergeTree engines
-                // This ensures backward compatibility when order_by isn't explicitly set
-                // We only do this for MergeTree family to avoid breaking S3 tables
-                if table.order_by.is_empty() {
-                    table.order_by = table.order_by_with_fallback();
-                }
+        self.tables.iter_mut().for_each(|(id, table)| {
+            // Fall back to primary key columns if order_by is empty for MergeTree engines
+            // This ensures backward compatibility when order_by isn't explicitly set
+            // We only do this for MergeTree family to avoid breaking S3 tables
+            if table.order_by.is_empty() {
+                table.order_by = table.order_by_with_fallback();
+            }
 
-                // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
-                // Arrays must always be NOT NULL (required=true)
-                for col in &mut table.columns {
-                    if matches!(col.data_type, ColumnType::Array { .. }) {
-                        col.required = true;
-                    }
+            // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
+            // Arrays must always be NOT NULL (required=true)
+            for col in &mut table.columns {
+                if matches!(col.data_type, ColumnType::Array { .. }) {
+                    col.required = true;
                 }
-
-                (id, table)
-            })
-            .collect();
+            }
+        });
 
         self
     }
