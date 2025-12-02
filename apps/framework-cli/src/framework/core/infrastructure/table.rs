@@ -302,6 +302,10 @@ pub struct Table {
     /// Optional cluster name for ON CLUSTER support in ClickHouse
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cluster_name: Option<String>,
+    /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
+    /// Allows for complex primary keys using functions or different column ordering
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub primary_key_expression: Option<String>,
 }
 
 impl Table {
@@ -402,6 +406,75 @@ impl Table {
             .collect()
     }
 
+    /// Returns a normalized representation of the primary key for comparison purposes.
+    ///
+    /// This handles both:
+    /// - `primary_key_expression`: Uses the expression directly
+    /// - Column-level `primary_key` flags: Builds an expression from column names
+    ///
+    /// The result is normalized (trimmed, spaces removed, backticks removed, and outer
+    /// parentheses stripped for single-element tuples) to enable semantic comparison.
+    /// For example:
+    /// - `primary_key_expression: Some("(foo, bar)")` returns "(foo,bar)"
+    /// - Columns foo, bar with `primary_key: true` returns "(foo,bar)"
+    /// - `primary_key_expression: Some("foo")` returns "foo"
+    /// - `primary_key_expression: Some("(foo)")` returns "foo" (outer parens stripped)
+    /// - Single column foo with `primary_key: true` returns "foo"
+    pub fn normalized_primary_key_expr(&self) -> String {
+        let expr = if let Some(ref pk_expr) = self.primary_key_expression {
+            // Use the explicit primary_key_expression
+            pk_expr.clone()
+        } else {
+            // Build from column-level primary_key flags
+            let pk_cols = self.primary_key_columns();
+            if pk_cols.is_empty() {
+                String::new()
+            } else if pk_cols.len() == 1 {
+                pk_cols[0].to_string()
+            } else {
+                format!("({})", pk_cols.join(", "))
+            }
+        };
+
+        // Normalize: trim, remove backticks, remove spaces
+        let mut normalized = expr
+            .trim()
+            .trim_matches('`')
+            .replace('`', "")
+            .replace(" ", "");
+
+        // Strip outer parentheses if this is a single-element tuple
+        // E.g., "(col)" -> "col", "(cityHash64(col))" -> "cityHash64(col)"
+        // But keep "(col1,col2)" as-is
+        if normalized.starts_with('(') && normalized.ends_with(')') {
+            // Check if there are any top-level commas (not inside nested parentheses)
+            let inner = &normalized[1..normalized.len() - 1];
+            let has_top_level_comma = {
+                let mut depth = 0;
+                let mut found_comma = false;
+                for ch in inner.chars() {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        ',' if depth == 0 => {
+                            found_comma = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                found_comma
+            };
+
+            // If no top-level comma, it's a single-element tuple - strip outer parens
+            if !has_top_level_comma {
+                normalized = inner.to_string();
+            }
+        }
+
+        normalized
+    }
+
     pub fn order_by_with_fallback(&self) -> OrderBy {
         // table (in infra map created by older version of moose) may leave order_by unspecified,
         // but the implicit order_by from primary keys can be the same
@@ -473,6 +546,7 @@ impl Table {
             table_settings: self.table_settings.clone().unwrap_or_default(),
             table_ttl_setting: self.table_ttl_setting.clone(),
             cluster_name: self.cluster_name.clone(),
+            primary_key_expression: self.primary_key_expression.clone(),
             metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
                 infrastructure_map::Metadata {
                     description: m.description.clone().unwrap_or_default(),
@@ -581,6 +655,7 @@ impl Table {
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
             cluster_name: proto.cluster_name,
+            primary_key_expression: proto.primary_key_expression,
         }
     }
 }
@@ -600,6 +675,8 @@ pub struct Column {
     pub comment: Option<String>, // Column comment for metadata storage
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub ttl: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -1114,6 +1191,7 @@ impl Column {
                 .collect(),
             comment: self.comment.clone(),
             ttl: self.ttl.clone(),
+            codec: self.codec.clone(),
             special_fields: Default::default(),
         }
     }
@@ -1136,6 +1214,7 @@ impl Column {
             annotations,
             comment: proto.comment,
             ttl: proto.ttl,
+            codec: proto.codec,
         }
     }
 }
@@ -1515,6 +1594,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let json = serde_json::to_string(&nested_column).unwrap();
@@ -1535,6 +1615,7 @@ mod tests {
             annotations: vec![],
             comment: Some("[MOOSE_METADATA:DO_NOT_MODIFY] {\"version\":1,\"enum\":{\"name\":\"TestEnum\",\"members\":[]}}".to_string()),
             ttl: None,
+            codec: None,
         };
 
         // Convert to proto and back
@@ -1558,6 +1639,7 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let proto = column_without_comment.to_proto();
@@ -1647,6 +1729,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
         assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
 
@@ -1741,6 +1824,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
             Column {
                 name: "name".to_string(),
@@ -1752,6 +1836,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             },
         ];
 
@@ -1776,6 +1861,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // Target table from code: explicit order_by that matches primary key
@@ -1799,6 +1885,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
+            primary_key_expression: None,
         };
 
         // These should be equal because:
