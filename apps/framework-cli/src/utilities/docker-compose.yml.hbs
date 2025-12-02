@@ -45,6 +45,9 @@ services:
       - "{{redpanda_broker_port}}:19092"
     volumes:
       - redpanda-0:/var/lib/redpanda/data
+    networks:
+      # Must be on clickhouse-network so ClickHouse Kafka engine tables can reach Redpanda
+      - clickhouse-network
     command:
       - redpanda
       - start
