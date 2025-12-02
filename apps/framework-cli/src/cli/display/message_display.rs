@@ -178,35 +178,35 @@ mod tests {
     #[test]
     fn test_show_message_impl_info() {
         let message = Message::new("Test".to_string(), "Test message".to_string());
-        let result = show_message_impl(MessageType::Info, message, false);
+        let result = show_message_impl(MessageType::Info, message, false, false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_show_message_impl_success() {
         let message = Message::new("Success".to_string(), "Operation completed".to_string());
-        let result = show_message_impl(MessageType::Success, message, false);
+        let result = show_message_impl(MessageType::Success, message, false, false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_show_message_impl_error() {
         let message = Message::new("Error".to_string(), "Something went wrong".to_string());
-        let result = show_message_impl(MessageType::Error, message, false);
+        let result = show_message_impl(MessageType::Error, message, false, false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_show_message_impl_highlight() {
         let message = Message::new("Important".to_string(), "Pay attention to this".to_string());
-        let result = show_message_impl(MessageType::Highlight, message, false);
+        let result = show_message_impl(MessageType::Highlight, message, false, false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_show_message_impl_with_logging() {
         let message = Message::new("Log".to_string(), "This should be logged".to_string());
-        let result = show_message_impl(MessageType::Info, message, true);
+        let result = show_message_impl(MessageType::Info, message, true, false);
         assert!(result.is_ok());
     }
 
@@ -216,7 +216,7 @@ mod tests {
             "Multi\nLine".to_string(),
             "Details\nwith\nnewlines".to_string(),
         );
-        let result = show_message_impl(MessageType::Info, message, false);
+        let result = show_message_impl(MessageType::Info, message, false, false);
         assert!(result.is_ok());
     }
 
@@ -226,14 +226,14 @@ mod tests {
             "🚀 Deploy".to_string(),
             "Successfully deployed 🎉".to_string(),
         );
-        let result = show_message_impl(MessageType::Success, message, false);
+        let result = show_message_impl(MessageType::Success, message, false, false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_show_message_impl_empty() {
         let message = Message::new("".to_string(), "".to_string());
-        let result = show_message_impl(MessageType::Info, message, false);
+        let result = show_message_impl(MessageType::Info, message, false, false);
         assert!(result.is_ok());
     }
 

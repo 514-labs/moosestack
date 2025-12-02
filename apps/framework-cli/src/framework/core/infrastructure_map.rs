@@ -2526,28 +2526,22 @@ impl InfrastructureMap {
     pub fn normalize(mut self) -> Self {
         use crate::framework::core::infrastructure::table::ColumnType;
 
-        self.tables = self
-            .tables
-            .into_iter()
-            .map(|(id, mut table)| {
-                // Fall back to primary key columns if order_by is empty for MergeTree engines
-                // This ensures backward compatibility when order_by isn't explicitly set
-                // We only do this for MergeTree family to avoid breaking S3 tables
-                if table.order_by.is_empty() {
-                    table.order_by = table.order_by_with_fallback();
-                }
+        self.tables.values_mut().for_each(|table| {
+            // Fall back to primary key columns if order_by is empty for MergeTree engines
+            // This ensures backward compatibility when order_by isn't explicitly set
+            // We only do this for MergeTree family to avoid breaking S3 tables
+            if table.order_by.is_empty() {
+                table.order_by = table.order_by_with_fallback();
+            }
 
-                // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
-                // Arrays must always be NOT NULL (required=true)
-                for col in &mut table.columns {
-                    if matches!(col.data_type, ColumnType::Array { .. }) {
-                        col.required = true;
-                    }
+            // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
+            // Arrays must always be NOT NULL (required=true)
+            for col in &mut table.columns {
+                if matches!(col.data_type, ColumnType::Array { .. }) {
+                    col.required = true;
                 }
-
-                (id, table)
-            })
-            .collect();
+            }
+        });
 
         self
     }
@@ -4720,6 +4714,7 @@ mod diff_sql_resources_tests {
         SqlResource {
             name: name.to_string(),
             database: None,
+            source_file: None,
             setup: setup.iter().map(|s| s.to_string()).collect(),
             teardown: teardown.iter().map(|s| s.to_string()).collect(),
             pulls_data_from: vec![],
@@ -4956,6 +4951,7 @@ mod diff_sql_resources_tests {
         let mv_before = SqlResource {
             name: "events_summary_mv".to_string(),
             database: None,
+            source_file: None,
             setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name FROM events".to_string()],
             teardown: vec!["DROP VIEW events_summary_mv".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
@@ -4969,6 +4965,7 @@ mod diff_sql_resources_tests {
         let mv_after = SqlResource {
             name: "events_summary_mv".to_string(),
             database: None,
+            source_file: None,
             setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name, timestamp FROM events".to_string()],
             teardown: vec!["DROP VIEW events_summary_mv".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
