@@ -197,29 +197,43 @@ DateTimePrecisionInputPipeline.stream!.addTransform(
   },
 );
 
-// Test transform for index signature types (ENG-1617)
-// This demonstrates that IngestApi accepts payloads with extra fields (index signature)
-// Note: Currently only known fields are passed through to streaming functions
+// ============================================================================
+// Index Signature Transform (ENG-1617)
+// Demonstrates how streaming functions receive extra fields from index signatures
+// ============================================================================
+
+/**
+ * Transform for index signature types.
+ *
+ * KEY POINT: The streaming function receives ALL fields from the input,
+ * including extra fields allowed by the index signature `[key: string]: any`.
+ *
+ * Since OlapTable requires a fixed schema, we extract known fields and store
+ * extra fields in a JSON column (`properties`).
+ */
 userEventInputStream.addTransform(
   userEventOutputStream,
   (input: UserEventInput): UserEventOutput => {
-    // Log what we received - only known fields are passed through
-    console.log("Index signature transform - received input:", {
-      timestamp: input.timestamp,
-      eventName: input.eventName,
-      userId: input.userId,
-      orgId: input.orgId,
-      projectId: input.projectId,
+    // Destructure to separate known fields from extra fields
+    // The spread operator (...extraFields) captures all additional properties
+    // that were allowed through the index signature
+    const { timestamp, eventName, userId, orgId, projectId, ...extraFields } =
+      input;
+
+    // Log to demonstrate that extra fields ARE received by the streaming function
+    console.log("Index signature transform received:", {
+      knownFields: { timestamp, eventName, userId, orgId, projectId },
+      extraFields: extraFields, // These came through the index signature!
     });
 
     return {
-      timestamp: input.timestamp,
-      eventName: input.eventName,
-      userId: input.userId,
-      orgId: input.orgId,
-      projectId: input.projectId,
-      // Properties will be empty since extra fields aren't passed through yet
-      properties: {},
+      timestamp,
+      eventName,
+      userId,
+      orgId,
+      projectId,
+      // Store extra fields in JSON column for persistence to ClickHouse
+      properties: extraFields,
     };
   },
 );

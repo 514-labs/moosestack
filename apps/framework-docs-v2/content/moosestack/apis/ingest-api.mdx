@@ -130,10 +130,17 @@ const ingestApi = new IngestApi<UserEventInput>("user-events", {
 **How it works:**
 - Known fields (`timestamp`, `eventName`, etc.) are validated against their declared types
 - Additional fields matching the index signature are accepted by the API (no validation error returned)
-- Known fields are passed through to streaming functions for processing
+- **All fields (known and extra) are passed through to streaming functions** for processing
+- Extra fields can be extracted in your streaming function and stored in a JSON column
 
-<Callout type="info" title="Current Behavior">
-Index signatures allow the API to accept extra fields gracefully. However, only the known (declared) fields are currently passed through to streaming functions. If you need to capture and process arbitrary fields, consider using a `ClickHouseJson` field type which stores the entire payload as JSON.
+<Callout type="info" title="Extracting Extra Fields">
+In your streaming function, use destructuring to separate known fields from extra fields:
+```typescript
+userEventInputStream.addTransform(outputStream, (input) => {
+  const { timestamp, eventName, userId, ...extraFields } = input;
+  return { timestamp, eventName, userId, properties: extraFields };
+});
+```
 </Callout>
   </LanguageTabContent>
   <LanguageTabContent value="python">
