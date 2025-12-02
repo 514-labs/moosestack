@@ -130,6 +130,11 @@ class OlapConfig(BaseModel):
         partition_by: Optional PARTITION BY expression (single ClickHouse SQL expression).
         sample_by_expression: Optional SAMPLE BY expression for data sampling (single ClickHouse SQL expression).
                               Used to enable efficient approximate query processing with SAMPLE clause.
+        primary_key_expression: Optional PRIMARY KEY expression. When specified, this overrides the primary key
+                               inferred from Key[T] column annotations. This allows for complex primary keys using
+                               functions (e.g., "cityHash64(id)") or different column ordering in primary key vs
+                               schema definition. Note: When this is set, any Key[T] annotations on columns are
+                               ignored for PRIMARY KEY generation.
         engine: The ClickHouse table engine to use. Can be either a ClickHouseEngines enum value
                 (for backward compatibility) or an EngineConfig instance (recommended).
         version: Optional version string for tracking configuration changes.
@@ -146,6 +151,7 @@ class OlapConfig(BaseModel):
     order_by_expression: Optional[str] = None
     partition_by: Optional[str] = None
     sample_by_expression: Optional[str] = None
+    primary_key_expression: Optional[str] = None
     engine: Optional[Union[ClickHouseEngines, EngineConfig]] = None
     version: Optional[str] = None
     metadata: Optional[dict] = None

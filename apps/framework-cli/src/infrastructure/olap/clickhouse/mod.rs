@@ -43,9 +43,9 @@ use queries::{
 use serde::{Deserialize, Serialize};
 use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
-    extract_sample_by_from_create_table, extract_source_tables_from_query,
-    extract_source_tables_from_query_regex, extract_table_settings_from_create_table,
-    normalize_sql_for_comparison, split_qualified_name,
+    extract_primary_key_from_create_table, extract_sample_by_from_create_table,
+    extract_source_tables_from_query, extract_source_tables_from_query_regex,
+    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -812,6 +812,10 @@ async fn execute_add_table_column(
     let clickhouse_column = std_column_to_clickhouse_column(column.clone())?;
     let column_type_string = basic_field_type_to_string(&clickhouse_column.column_type)?;
 
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
+
     // Include DEFAULT clause if column has a default value
     let default_clause = clickhouse_column
         .default
@@ -819,22 +823,34 @@ async fn execute_add_table_column(
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
-    let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+    let codec_clause = clickhouse_column
+        .codec
+        .as_ref()
+        .map(|c| format!(" CODEC({})", c))
         .unwrap_or_default();
 
+    let ttl_clause = clickhouse_column
+        .ttl
+        .as_ref()
+        .map(|t| format!(" TTL {}", t))
+        .unwrap_or_default();
+
+    let position_clause = match after_column {
+        None => "FIRST".to_string(),
+        Some(after_col) => format!("AFTER `{after_col}`"),
+    };
+
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{} {}",
+        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}  {}",
         db_name,
         table_name,
         cluster_clause,
         clickhouse_column.name,
         column_type_string,
         default_clause,
-        match after_column {
-            None => "FIRST".to_string(),
-            Some(after_col) => format!("AFTER `{after_col}`"),
-        }
+        codec_clause,
+        ttl_clause,
+        position_clause
     );
     tracing::debug!("Adding column: {}", add_column_query);
     run_query(&add_column_query, client).await.map_err(|e| {
@@ -895,6 +911,7 @@ async fn execute_modify_table_column(
     let required_changed = before_column.required != after_column.required;
     let comment_changed = before_column.comment != after_column.comment;
     let ttl_changed = before_column.ttl != after_column.ttl;
+    let codec_changed = before_column.codec != after_column.codec;
 
     // If only the comment changed, use a simpler ALTER TABLE ... MODIFY COLUMN ... COMMENT
     // This is more efficient and avoids unnecessary table rebuilds
@@ -902,6 +919,7 @@ async fn execute_modify_table_column(
         && !required_changed
         && !default_changed
         && !ttl_changed
+        && !codec_changed
         && comment_changed
     {
         tracing::info!(
@@ -940,7 +958,7 @@ async fn execute_modify_table_column(
 
     tracing::info!(
         "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
-data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}",
+data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}, codec_changed: {codec_changed}",
         table_name,
         after_column.name,
         before_column.data_type,
@@ -953,12 +971,14 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, requ
     // Build all the SQL statements needed (main modify + optional removes)
     let removing_default = before_column.default.is_some() && after_column.default.is_none();
     let removing_ttl = before_column.ttl.is_some() && after_column.ttl.is_none();
+    let removing_codec = before_column.codec.is_some() && after_column.codec.is_none();
     let queries = build_modify_column_sql(
         db_name,
         table_name,
         &clickhouse_column,
         removing_default,
         removing_ttl,
+        removing_codec,
         cluster_name,
     )?;
 
@@ -1013,6 +1033,7 @@ fn build_modify_column_sql(
     ch_col: &ClickHouseColumn,
     removing_default: bool,
     removing_ttl: bool,
+    removing_codec: bool,
     cluster_name: Option<&str>,
 ) -> Result<Vec<String>, ClickhouseChangesError> {
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
@@ -1040,6 +1061,14 @@ fn build_modify_column_sql(
         ));
     }
 
+    // Add REMOVE CODEC statement if needed
+    if removing_codec {
+        statements.push(format!(
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE CODEC",
+            db_name, table_name, cluster_clause, ch_col.name
+        ));
+    }
+
     // DEFAULT clause: If omitted, ClickHouse KEEPS any existing DEFAULT
     // Therefore, DEFAULT removal requires a separate REMOVE DEFAULT statement
     // Default values from ClickHouse/Python are already properly formatted
@@ -1061,29 +1090,39 @@ fn build_modify_column_sql(
         .map(|t| format!(" TTL {}", t))
         .unwrap_or_default();
 
+    // CODEC clause: If omitted, ClickHouse KEEPS any existing CODEC
+    // Therefore, CODEC removal requires a separate REMOVE CODEC statement
+    let codec_clause = ch_col
+        .codec
+        .as_ref()
+        .map(|c| format!(" CODEC({})", c))
+        .unwrap_or_default();
+
     // Build the main MODIFY COLUMN statement
     let main_sql = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\'', "''");
         format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{} COMMENT '{}'",
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{} COMMENT '{}'",
             db_name,
             table_name,
             cluster_clause,
             ch_col.name,
             column_type_string,
             default_clause,
+            codec_clause,
             ttl_clause,
             escaped_comment
         )
     } else {
         format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}",
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}",
             db_name,
             table_name,
             cluster_clause,
             ch_col.name,
             column_type_string,
             default_clause,
+            codec_clause,
             ttl_clause
         )
     };
@@ -1630,8 +1669,12 @@ impl OlapOperations for ConfiguredDBClient {
             let order_by_cols = extract_order_by_from_create_query(&create_query);
             debug!("Extracted ORDER BY columns: {:?}", order_by_cols);
 
+            // Extract PRIMARY KEY expression if present
+            let primary_key_expr = extract_primary_key_from_create_table(&create_query);
+            debug!("Extracted PRIMARY KEY expression: {:?}", primary_key_expr);
+
             // Check if the CREATE TABLE statement has an explicit PRIMARY KEY clause
-            let has_explicit_primary_key = create_query.to_uppercase().contains("PRIMARY KEY");
+            let has_explicit_primary_key = primary_key_expr.is_some();
             debug!(
                 "Table {} has explicit PRIMARY KEY: {}",
                 table_name, has_explicit_primary_key
@@ -1647,7 +1690,8 @@ impl OlapOperations for ConfiguredDBClient {
                     is_in_primary_key,
                     is_in_sorting_key,
                     default_kind,
-                    default_expression
+                    default_expression,
+                    compression_codec
                 FROM system.columns
                 WHERE database = '{db_name}'
                 AND table = '{table_name}'
@@ -1662,7 +1706,7 @@ impl OlapOperations for ConfiguredDBClient {
             let mut columns_cursor = self
                 .client
                 .query(&columns_query)
-                .fetch::<(String, String, String, u8, u8, String, String)>()
+                .fetch::<(String, String, String, u8, u8, String, String, String)>()
                 .map_err(|e| {
                     debug!("Error fetching columns for table {}: {}", table_name, e);
                     OlapChangesError::DatabaseError(e.to_string())
@@ -1680,6 +1724,7 @@ impl OlapOperations for ConfiguredDBClient {
                 is_sorting,
                 default_kind,
                 default_expression,
+                compression_codec,
             )) = columns_cursor
                 .next()
                 .await
@@ -1806,6 +1851,19 @@ impl OlapOperations for ConfiguredDBClient {
                     .get(&col_name)
                     .map(|ttl| normalize_ttl_expression(ttl));
 
+                // Parse codec if present
+                // Strip CODEC(...) wrapper from compression_codec (e.g., "CODEC(ZSTD(3))" -> "ZSTD(3)")
+                let codec = if !compression_codec.is_empty() {
+                    let trimmed = compression_codec.trim();
+                    if trimmed.starts_with("CODEC(") && trimmed.ends_with(')') {
+                        Some(trimmed[6..trimmed.len() - 1].to_string())
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                } else {
+                    None
+                };
+
                 let column = Column {
                     name: col_name.clone(),
                     data_type,
@@ -1816,12 +1874,107 @@ impl OlapOperations for ConfiguredDBClient {
                     annotations,
                     comment: column_comment,
                     ttl: normalized_ttl,
+                    codec,
                 };
 
                 columns.push(column);
             }
 
             debug!("Found {} columns for table {}", columns.len(), table_name);
+
+            // Determine if we should use primary_key_expression or column-level primary_key flags
+            // Strategy: Build the expected PRIMARY KEY from columns, then compare with extracted PRIMARY KEY
+            // If they match, use column-level flags; otherwise use primary_key_expression
+            let (final_columns, final_primary_key_expression) =
+                if let Some(pk_expr) = &primary_key_expr {
+                    // Build expected PRIMARY KEY expression from columns marked as primary_key=true
+                    let primary_key_columns: Vec<String> = columns
+                        .iter()
+                        .filter(|c| c.primary_key)
+                        .map(|c| c.name.clone())
+                        .collect();
+
+                    debug!("Columns marked as primary key: {:?}", primary_key_columns);
+
+                    // Build expected expression: single column = "col", multiple = "(col1, col2)"
+                    let expected_pk_expr = if primary_key_columns.is_empty() {
+                        String::new()
+                    } else if primary_key_columns.len() == 1 {
+                        primary_key_columns[0].clone()
+                    } else {
+                        format!("({})", primary_key_columns.join(", "))
+                    };
+
+                    debug!("Expected PRIMARY KEY expression: '{}'", expected_pk_expr);
+                    debug!("Extracted PRIMARY KEY expression: '{}'", pk_expr);
+
+                    // Normalize both expressions for comparison (same logic as Table::normalized_primary_key_expr)
+                    let normalize = |s: &str| -> String {
+                        // Step 1: trim, remove backticks, remove spaces
+                        let mut normalized =
+                            s.trim().trim_matches('`').replace('`', "").replace(" ", "");
+
+                        // Step 2: Strip outer parentheses if this is a single-element tuple
+                        // E.g., "(col)" -> "col", "(cityHash64(col))" -> "cityHash64(col)"
+                        // But keep "(col1,col2)" as-is
+                        if normalized.starts_with('(') && normalized.ends_with(')') {
+                            // Check if there are any top-level commas (not inside nested parentheses)
+                            let inner = &normalized[1..normalized.len() - 1];
+                            let has_top_level_comma = {
+                                let mut depth = 0;
+                                let mut found_comma = false;
+                                for ch in inner.chars() {
+                                    match ch {
+                                        '(' => depth += 1,
+                                        ')' => depth -= 1,
+                                        ',' if depth == 0 => {
+                                            found_comma = true;
+                                            break;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                found_comma
+                            };
+
+                            // If no top-level comma, it's a single-element tuple - strip outer parens
+                            if !has_top_level_comma {
+                                normalized = inner.to_string();
+                            }
+                        }
+
+                        normalized
+                    };
+
+                    let normalized_expected = normalize(&expected_pk_expr);
+                    let normalized_extracted = normalize(pk_expr);
+
+                    debug!(
+                        "Normalized expected: '{}', normalized extracted: '{}'",
+                        normalized_expected, normalized_extracted
+                    );
+
+                    if normalized_expected == normalized_extracted {
+                        // PRIMARY KEY matches what columns indicate, use column-level flags
+                        debug!("PRIMARY KEY matches columns, using column-level primary_key flags");
+                        (columns, None)
+                    } else {
+                        // PRIMARY KEY differs (different order, expressions, etc.), use primary_key_expression
+                        debug!("PRIMARY KEY differs from columns, using primary_key_expression");
+                        let updated_columns: Vec<Column> = columns
+                            .into_iter()
+                            .map(|mut c| {
+                                c.primary_key = false;
+                                c
+                            })
+                            .collect();
+                        (updated_columns, Some(pk_expr.clone()))
+                    }
+                } else {
+                    // No PRIMARY KEY clause, use column-level flags as-is
+                    debug!("No PRIMARY KEY clause, using column-level primary_key flags");
+                    (columns, None)
+                };
 
             // Extract base name and version for source primitive
             let (base_name, version) = extract_version_from_table_name(&table_name);
@@ -1889,7 +2042,7 @@ impl OlapOperations for ConfiguredDBClient {
             let table = Table {
                 // keep the name with version suffix, following PartialInfrastructureMap.convert_tables
                 name: table_name,
-                columns,
+                columns: final_columns,
                 order_by: OrderBy::Fields(order_by_cols), // Use the extracted ORDER BY columns
                 partition_by: {
                     let p = partition_key.trim();
@@ -1911,6 +2064,7 @@ impl OlapOperations for ConfiguredDBClient {
                 // the ON CLUSTER clause - it's only used during DDL execution and isn't persisted
                 // in system tables. Users must manually specify cluster in their table configs.
                 cluster_name: None,
+                primary_key_expression: final_primary_key_expression,
             };
             debug!("Created table object: {:?}", table);
 
@@ -2209,13 +2363,25 @@ static ORDER_BY_TERMINATOR_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
 pub fn extract_order_by_from_create_query(create_query: &str) -> Vec<String> {
     debug!("Extracting ORDER BY from query: {}", create_query);
 
+    // Find the main ORDER BY clause (not ones inside projections)
+    // We need to search for ORDER BY that comes after the ENGINE clause
+    let upper = create_query.to_uppercase();
+    let engine_pos = upper.find("ENGINE").unwrap_or_else(|| {
+        debug!("No ENGINE clause found");
+        0
+    });
+
+    // Search for ORDER BY only in the part after ENGINE
+    let after_engine = &create_query[engine_pos..];
+    let upper_after_engine = &upper[engine_pos..];
+
     // Find the ORDER BY clause, being careful not to match PRIMARY KEY
     let mut after_order_by = None;
-    for (idx, _) in create_query.to_uppercase().match_indices("ORDER BY") {
+    for (idx, _) in upper_after_engine.match_indices("ORDER BY") {
         // Check if this is not part of "PRIMARY KEY" by looking at the preceding text
-        let preceding_text = &create_query[..idx].trim_end().to_uppercase();
+        let preceding_text = &upper_after_engine[..idx].trim_end();
         if !preceding_text.ends_with("PRIMARY KEY") {
-            after_order_by = Some(&create_query[idx..]);
+            after_order_by = Some(&after_engine[idx..]);
             break;
         }
     }
@@ -2303,6 +2469,34 @@ pub fn extract_table_ttl_from_create_query(create_query: &str) -> Option<String>
 /// - "timestamp + INTERVAL 1 MONTH" → "timestamp + toIntervalMonth(1)"
 /// - "timestamp + INTERVAL 90 DAY DELETE" → "timestamp + toIntervalDay(90)"
 /// - "timestamp + toIntervalDay(90) DELETE" → "timestamp + toIntervalDay(90)"
+pub fn normalize_codec_expression(expr: &str) -> String {
+    expr.split(',')
+        .map(|codec| {
+            let trimmed = codec.trim();
+            match trimmed {
+                "Delta" => "Delta(4)",
+                "Gorilla" => "Gorilla(8)",
+                "ZSTD" => "ZSTD(1)",
+                // DoubleDelta, LZ4, NONE, and any codec with params stay as-is
+                _ => trimmed,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Checks if two codec expressions are semantically equivalent after normalization.
+///
+/// This handles cases where ClickHouse normalizes codecs by adding default parameters.
+/// For example, "Delta, LZ4" from user code is equivalent to "Delta(4), LZ4" from ClickHouse.
+pub fn codec_expressions_are_equivalent(before: &Option<String>, after: &Option<String>) -> bool {
+    match (before, after) {
+        (None, None) => true,
+        (Some(b), Some(a)) => normalize_codec_expression(b) == normalize_codec_expression(a),
+        _ => false,
+    }
+}
+
 pub fn normalize_ttl_expression(expr: &str) -> String {
     use regex::Regex;
 
@@ -2614,6 +2808,20 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         let query = "CREATE TABLE test (id Int64) ENGINE = MergeTree()";
         let order_by = extract_order_by_from_create_query(query);
         assert_eq!(order_by, Vec::<String>::new());
+
+        // Test with projections that have their own ORDER BY clauses
+        // Should extract the main table ORDER BY, not the projection ORDER BY
+        let query = r#"CREATE TABLE local.ParsedLogsV2_0_0 (`orgId` String, `projectId` String, `branchId` String, `date` DateTime('UTC'), `message` String, `severityNumber` Float64, `severityLevel` String, `source` String, `sessionId` String, `serviceName` String, `machineId` String, PROJECTION severity_level_projection (SELECT severityLevel, date, orgId, projectId, branchId, machineId, source, message ORDER BY severityLevel, date), PROJECTION machine_source_projection (SELECT machineId, source, date, orgId, projectId, branchId, severityLevel, message ORDER BY machineId, source, date)) ENGINE = MergeTree PRIMARY KEY (orgId, projectId, branchId) ORDER BY (orgId, projectId, branchId, date) TTL date + toIntervalDay(90) SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_granularity_bytes = 10485760"#;
+        let order_by = extract_order_by_from_create_query(query);
+        assert_eq!(
+            order_by,
+            vec![
+                "orgId".to_string(),
+                "projectId".to_string(),
+                "branchId".to_string(),
+                "date".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -2640,6 +2848,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("Old user comment".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let after_column = Column {
@@ -2658,6 +2867,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("New user comment".to_string()),
             ttl: None,
+            codec: None,
         };
 
         // The execute_modify_table_column function should detect this as comment-only change
@@ -2683,6 +2893,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("Number of things".to_string()),
             ttl: None,
+            codec: None,
         };
         let after_column = Column {
             default: Some("42".to_string()),
@@ -2690,7 +2901,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         };
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
-        let sqls = build_modify_column_sql("db", "table", &ch_after, false, false, None).unwrap();
+        let sqls =
+            build_modify_column_sql("db", "table", &ch_after, false, false, false, None).unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2714,6 +2926,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("old".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let after_column = Column {
@@ -2746,13 +2959,21 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("Updated description field".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
 
-        let sqls =
-            build_modify_column_sql("test_db", "users", &clickhouse_column, false, false, None)
-                .unwrap();
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "users",
+            &clickhouse_column,
+            false,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2776,12 +2997,14 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             default: Some("xxHash64(_id)".to_string()), // SQL function - no quotes
             comment: Some("Hash of the ID".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let sqls = build_modify_column_sql(
             "test_db",
             "test_table",
             &sample_hash_col,
+            false,
             false,
             false,
             None,
@@ -2805,11 +3028,19 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             default: Some("now()".to_string()), // SQL function - no quotes
             comment: None,
             ttl: None,
+            codec: None,
         };
 
-        let sqls =
-            build_modify_column_sql("test_db", "test_table", &created_at_col, false, false, None)
-                .unwrap();
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &created_at_col,
+            false,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // The fix ensures now() is NOT quoted
@@ -2828,11 +3059,19 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             default: Some("'active'".to_string()), // String literal - quotes preserved
             comment: None,
             ttl: None,
+            codec: None,
         };
 
-        let sqls =
-            build_modify_column_sql("test_db", "test_table", &status_col, false, false, None)
-                .unwrap();
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &status_col,
+            false,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
 
         assert_eq!(sqls.len(), 1);
         // String literals should preserve their quotes
@@ -2902,6 +3141,164 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             order_by,
             vec!["cityHash64(id)".to_string(), "lower(name)".to_string()]
         );
+    }
+
+    #[test]
+    fn test_primary_key_normalization_single_element_tuple() {
+        // Test that "(id)" and "id" normalize to the same value
+        // This is the bug fix: single-element tuples should have outer parens stripped
+        let normalize = |s: &str| -> String {
+            let mut normalized = s.trim().trim_matches('`').replace('`', "").replace(" ", "");
+
+            if normalized.starts_with('(') && normalized.ends_with(')') {
+                let inner = &normalized[1..normalized.len() - 1];
+                let has_top_level_comma = {
+                    let mut depth = 0;
+                    let mut found_comma = false;
+                    for ch in inner.chars() {
+                        match ch {
+                            '(' => depth += 1,
+                            ')' => depth -= 1,
+                            ',' if depth == 0 => {
+                                found_comma = true;
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    found_comma
+                };
+
+                if !has_top_level_comma {
+                    normalized = inner.to_string();
+                }
+            }
+
+            normalized
+        };
+
+        // Single element: "(id)" should normalize to "id"
+        assert_eq!(normalize("(id)"), "id");
+        assert_eq!(normalize("id"), "id");
+        assert_eq!(normalize("(id)"), normalize("id"));
+
+        // Single element with function: "(cityHash64(id))" should normalize to "cityHash64(id)"
+        assert_eq!(normalize("(cityHash64(id))"), "cityHash64(id)");
+        assert_eq!(normalize("cityHash64(id)"), "cityHash64(id)");
+        assert_eq!(normalize("(cityHash64(id))"), normalize("cityHash64(id)"));
+
+        // Multiple elements: "(id, ts)" should stay as "(id,ts)" (with spaces removed)
+        assert_eq!(normalize("(id, ts)"), "(id,ts)");
+        assert_eq!(normalize("(id,ts)"), "(id,ts)");
+
+        // Multiple elements with functions: should keep parens
+        assert_eq!(normalize("(id, cityHash64(ts))"), "(id,cityHash64(ts))");
+
+        // Backticks should be removed
+        assert_eq!(normalize("(`id`)"), "id");
+        assert_eq!(normalize("(` id `)"), "id");
+    }
+
+    #[test]
+    fn test_normalize_codec_expression() {
+        // Test single codec without params - should add defaults
+        assert_eq!(normalize_codec_expression("Delta"), "Delta(4)");
+        assert_eq!(normalize_codec_expression("Gorilla"), "Gorilla(8)");
+        assert_eq!(normalize_codec_expression("ZSTD"), "ZSTD(1)");
+
+        // Test codecs with params - should stay as-is
+        assert_eq!(normalize_codec_expression("Delta(4)"), "Delta(4)");
+        assert_eq!(normalize_codec_expression("Gorilla(8)"), "Gorilla(8)");
+        assert_eq!(normalize_codec_expression("ZSTD(3)"), "ZSTD(3)");
+        assert_eq!(normalize_codec_expression("ZSTD(9)"), "ZSTD(9)");
+
+        // Test codecs that don't have default params
+        assert_eq!(normalize_codec_expression("DoubleDelta"), "DoubleDelta");
+        assert_eq!(normalize_codec_expression("LZ4"), "LZ4");
+        assert_eq!(normalize_codec_expression("NONE"), "NONE");
+
+        // Test codec chains
+        assert_eq!(normalize_codec_expression("Delta, LZ4"), "Delta(4), LZ4");
+        assert_eq!(
+            normalize_codec_expression("Gorilla, ZSTD"),
+            "Gorilla(8), ZSTD(1)"
+        );
+        assert_eq!(
+            normalize_codec_expression("Delta, ZSTD(3)"),
+            "Delta(4), ZSTD(3)"
+        );
+        assert_eq!(
+            normalize_codec_expression("DoubleDelta, LZ4"),
+            "DoubleDelta, LZ4"
+        );
+
+        // Test whitespace handling
+        assert_eq!(normalize_codec_expression("Delta,LZ4"), "Delta(4), LZ4");
+        assert_eq!(
+            normalize_codec_expression("  Delta  ,  LZ4  "),
+            "Delta(4), LZ4"
+        );
+
+        // Test already normalized expressions
+        assert_eq!(normalize_codec_expression("Delta(4), LZ4"), "Delta(4), LZ4");
+        assert_eq!(
+            normalize_codec_expression("Gorilla(8), ZSTD(3)"),
+            "Gorilla(8), ZSTD(3)"
+        );
+    }
+
+    #[test]
+    fn test_codec_expressions_are_equivalent() {
+        // Test None vs None
+        assert!(codec_expressions_are_equivalent(&None, &None));
+
+        // Test Some vs None
+        assert!(!codec_expressions_are_equivalent(
+            &Some("ZSTD(3)".to_string()),
+            &None
+        ));
+
+        // Test same codec
+        assert!(codec_expressions_are_equivalent(
+            &Some("ZSTD(3)".to_string()),
+            &Some("ZSTD(3)".to_string())
+        ));
+
+        // Test normalization: user writes "Delta", ClickHouse returns "Delta(4)"
+        assert!(codec_expressions_are_equivalent(
+            &Some("Delta".to_string()),
+            &Some("Delta(4)".to_string())
+        ));
+
+        // Test normalization: user writes "Gorilla", ClickHouse returns "Gorilla(8)"
+        assert!(codec_expressions_are_equivalent(
+            &Some("Gorilla".to_string()),
+            &Some("Gorilla(8)".to_string())
+        ));
+
+        // Test normalization: user writes "ZSTD", ClickHouse returns "ZSTD(1)"
+        assert!(codec_expressions_are_equivalent(
+            &Some("ZSTD".to_string()),
+            &Some("ZSTD(1)".to_string())
+        ));
+
+        // Test chain normalization
+        assert!(codec_expressions_are_equivalent(
+            &Some("Delta, LZ4".to_string()),
+            &Some("Delta(4), LZ4".to_string())
+        ));
+
+        // Test different codecs
+        assert!(!codec_expressions_are_equivalent(
+            &Some("ZSTD(3)".to_string()),
+            &Some("ZSTD(9)".to_string())
+        ));
+
+        // Test different chains
+        assert!(!codec_expressions_are_equivalent(
+            &Some("Delta, LZ4".to_string()),
+            &Some("Delta, ZSTD".to_string())
+        ));
     }
 
     #[test]
@@ -3045,6 +3442,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: Some("Number of items".to_string()),
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3058,19 +3456,34 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             .map(|d| format!(" DEFAULT {}", d))
             .unwrap_or_default();
 
+        let ttl_clause = clickhouse_column
+            .ttl
+            .as_ref()
+            .map(|t| format!(" TTL {}", t))
+            .unwrap_or_default();
+
+        let codec_clause = clickhouse_column
+            .codec
+            .as_ref()
+            .map(|c| format!(" CODEC({})", c))
+            .unwrap_or_default();
+
         let add_column_query = format!(
-            "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
+            "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}  {}",
             "test_db",
             "test_table",
+            "",
             clickhouse_column.name,
             column_type_string,
             default_clause,
+            codec_clause,
+            ttl_clause,
             "FIRST"
         );
 
         assert_eq!(
             add_column_query,
-            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `count` Int32 DEFAULT 42 FIRST"
+            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `count` Int32 DEFAULT 42  FIRST"
         );
     }
 
@@ -3091,6 +3504,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3105,19 +3519,34 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             .map(|d| format!(" DEFAULT {}", d))
             .unwrap_or_default();
 
+        let ttl_clause = clickhouse_column
+            .ttl
+            .as_ref()
+            .map(|t| format!(" TTL {}", t))
+            .unwrap_or_default();
+
+        let codec_clause = clickhouse_column
+            .codec
+            .as_ref()
+            .map(|c| format!(" CODEC({})", c))
+            .unwrap_or_default();
+
         let add_column_query = format!(
-            "ALTER TABLE `{}`.`{}` ADD COLUMN `{}` {}{} {}",
+            "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}  {}",
             "test_db",
             "test_table",
+            "",
             clickhouse_column.name,
             column_type_string,
             default_clause,
+            codec_clause,
+            ttl_clause,
             "AFTER `id`"
         );
 
         assert_eq!(
             add_column_query,
-            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `description` Nullable(String) DEFAULT 'default text' AFTER `id`"
+            "ALTER TABLE `test_db`.`test_table` ADD COLUMN `description` Nullable(String) DEFAULT 'default text'  AFTER `id`"
         );
     }
 
@@ -3140,6 +3569,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 annotations: vec![],
                 comment: None,
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -3158,6 +3588,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+            primary_key_expression: None,
         };
 
         let ignore_ops = vec![
@@ -3206,6 +3637,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 annotations: vec![],
                 comment: None,
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -3224,6 +3656,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
+            primary_key_expression: None,
         };
 
         let ignore_ops = vec![];
@@ -3348,6 +3781,41 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         match &result.pushes_data_to[0] {
             InfrastructureSignature::Table { id } => assert_eq!(id, "my_target"),
             _ => panic!("Expected Table signature"),
+        }
+    }
+
+    #[test]
+    fn test_codec_wrapper_stripping() {
+        let test_cases = vec![
+            ("CODEC(ZSTD(3))", "ZSTD(3)"),
+            ("CODEC(Delta, LZ4)", "Delta, LZ4"),
+            ("CODEC(Gorilla, ZSTD(3))", "Gorilla, ZSTD(3)"),
+            ("CODEC(DoubleDelta)", "DoubleDelta"),
+            ("", ""),
+        ];
+
+        for (input, expected) in test_cases {
+            let result = if !input.is_empty() {
+                let trimmed = input.trim();
+                if trimmed.starts_with("CODEC(") && trimmed.ends_with(')') {
+                    Some(trimmed[6..trimmed.len() - 1].to_string())
+                } else {
+                    Some(input.to_string())
+                }
+            } else {
+                None
+            };
+
+            if expected.is_empty() {
+                assert_eq!(result, None, "Failed for input: {}", input);
+            } else {
+                assert_eq!(
+                    result,
+                    Some(expected.to_string()),
+                    "Failed for input: {}",
+                    input
+                );
+            }
         }
     }
 }

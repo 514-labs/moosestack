@@ -432,6 +432,7 @@ pub struct ClickHouseColumn {
     pub default: Option<String>,
     pub comment: Option<String>, // Column comment for metadata storage
     pub ttl: Option<String>,
+    pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
 }
 
 impl ClickHouseColumn {
@@ -659,6 +660,8 @@ pub struct ClickHouseTable {
     pub table_ttl_setting: Option<String>,
     /// Optional cluster name for ON CLUSTER support
     pub cluster_name: Option<String>,
+    /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
+    pub primary_key_expression: Option<String>,
 }
 
 impl ClickHouseTable {

@@ -514,6 +514,131 @@ unsorted = OlapTable[Events]("events_unsorted", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
+### Primary Key Expression
+
+Use a ClickHouse SQL expression to define the primary key explicitly. This is useful when:
+- You need functions in the primary key (e.g., `cityHash64(id)`)
+- The primary key column ordering should differ from the schema definition
+- The primary key should differ from the ORDER BY
+
+**Important:** When `primaryKeyExpression` is specified, any `Key<T>` annotations on columns are ignored for PRIMARY KEY generation.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="PrimaryKeyExpression.ts" copy
+import { OlapTable, Key } from "@514labs/moose-lib";
+
+// Example 1: Primary key with function
+interface UserEvents {
+  userId: string;
+  eventId: string;
+  timestamp: Date;
+}
+
+const eventsTable = new OlapTable<UserEvents>("user_events", {
+  // Use hash function in primary key for better distribution
+  primaryKeyExpression: "(userId, cityHash64(eventId))",
+  orderByExpression: "(userId, timestamp)",
+});
+
+// Example 2: Different ordering in primary key vs columns
+interface Product {
+  category: string;
+  brand: string;
+  productId: string;
+  name: string;
+}
+
+const productsTable = new OlapTable<Product>("products", {
+  // Primary key order optimized for uniqueness
+  primaryKeyExpression: "productId",
+  // Order by optimized for common queries
+  orderByFields: ["category", "brand", "productId"],
+});
+
+// Example 3: Override Key<T> annotation
+interface Record {
+  id: Key<string>;  // This Key<T> annotation will be IGNORED
+  otherId: string;
+}
+
+const recordTable = new OlapTable<Record>("records", {
+  // This expression overrides the Key<T> annotation
+  primaryKeyExpression: "(otherId, id)",
+  orderByExpression: "(otherId, id)",
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="PrimaryKeyExpression.py" copy
+from moose_lib import OlapTable, OlapConfig, Key
+from pydantic import BaseModel
+from datetime import datetime
+
+# Example 1: Primary key with function
+class UserEvents(BaseModel):
+    user_id: str
+    event_id: str
+    timestamp: datetime
+
+events_table = OlapTable[UserEvents]("user_events", OlapConfig(
+    # Use hash function in primary key for better distribution
+    primary_key_expression="(user_id, cityHash64(event_id))",
+    order_by_expression="(user_id, timestamp)",
+))
+
+# Example 2: Different ordering in primary key vs columns
+class Product(BaseModel):
+    category: str
+    brand: str
+    product_id: str
+    name: str
+
+products_table = OlapTable[Product]("products", OlapConfig(
+    # Primary key order optimized for uniqueness
+    primary_key_expression="(product_id)",
+    # Order by optimized for common queries
+    order_by_fields=["category", "brand", "product_id"],
+))
+
+# Example 3: Override Key[T] annotation
+class Record(BaseModel):
+    id: Key[str]  # This Key[T] annotation will be IGNORED
+    other_id: str
+
+record_table = OlapTable[Record]("records", OlapConfig(
+    # This expression overrides the Key[T] annotation
+    primary_key_expression="(other_id, id)",
+    order_by_expression="(other_id, id)",
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+**Rationale for Primary Key Expression:**
+
+1. **Function Support**: Primary keys can use ClickHouse functions like `cityHash64()` for better data distribution, which cannot be expressed through column-level annotations.
+
+2. **Flexible Ordering**: The ordering of columns in the primary key can be different from the ordering in the schema definition, allowing optimization for both data uniqueness and query patterns.
+
+3. **Separation of Concerns**: PRIMARY KEY and ORDER BY serve different purposes in ClickHouse:
+   - PRIMARY KEY defines uniqueness and deduplication
+   - ORDER BY defines physical data layout and query optimization
+   
+   Sometimes these need different column orderings for optimal performance.
+
+**Important Constraint:**
+
+⚠️ **PRIMARY KEY must be a prefix of ORDER BY in ClickHouse.** This means ORDER BY must start with all PRIMARY KEY columns in the same order.
+
+Valid:
+- PRIMARY KEY `(userId)` with ORDER BY `(userId, timestamp)` ✅
+- PRIMARY KEY `(userId, cityHash64(eventId))` with ORDER BY `(userId, cityHash64(eventId), timestamp)` ✅
+
+Invalid:
+- PRIMARY KEY `(userId, eventId)` with ORDER BY `(userId, timestamp)` ❌ (missing eventId)
+- PRIMARY KEY `(userId, eventId)` with ORDER BY `(eventId, userId)` ❌ (wrong order)
+
 ### Using Both Primary Key and Order By Fields
 
 <LanguageTabs>

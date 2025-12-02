@@ -209,6 +209,20 @@ export type BaseOlapConfig<T> = (
    * - If using hash functions, the same expression must appear in orderByExpression
    */
   sampleByExpression?: string;
+  /**
+   * Optional PRIMARY KEY expression.
+   * When specified, this overrides the primary key inferred from Key<T> column annotations.
+   *
+   * This allows for:
+   * - Complex primary keys using functions (e.g., "cityHash64(id)")
+   * - Different column ordering in primary key vs schema definition
+   * - Primary keys that differ from ORDER BY
+   *
+   * Example: primaryKeyExpression: "(userId, cityHash64(eventId))"
+   *
+   * Note: When this is set, any Key<T> annotations on columns are ignored for PRIMARY KEY generation.
+   */
+  primaryKeyExpression?: string;
   version?: string;
   lifeCycle?: LifeCycle;
   settings?: { [key: string]: string };

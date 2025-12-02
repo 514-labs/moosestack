@@ -17,6 +17,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import { WebApp, getMooseUtils, ApiUtil } from "@514labs/moose-lib";
+import { createAuthMiddleware } from "@514labs/express-pbkdf2-api-key-auth";
 
 function clickhouseReadonlyQuery(
   client: ApiUtil["client"],
@@ -238,6 +239,14 @@ interface DataCatalogResponse {
 // Create Express application
 const app = express();
 app.use(express.json());
+
+// API Key authentication middleware
+// When MCP_API_KEY_HASH is set, requests must include valid Authorization header
+// When not set, all requests are allowed (development mode)
+const authMiddleware = createAuthMiddleware(() => {
+  return process.env.MCP_API_KEY_HASH || null;
+});
+app.use(authMiddleware);
 
 /**
  * Server factory function that creates a fresh McpServer instance for each request.
@@ -480,7 +489,7 @@ app.all("/", async (req, res) => {
     //
     // Why per-request instantiation?
     // - MCP transports and servers are completely decoupled
-    // - Tools need access to request-specific mooseUtils (ClickHouse client, JWT, etc.)
+    // - Tools need access to request-specific mooseUtils (ClickHouse client, etc.)
     // - The only way to pass mooseUtils to tool handlers is via closure in serverFactory()
     // - Creating the server per-request ensures each request has isolated utilities
     //
