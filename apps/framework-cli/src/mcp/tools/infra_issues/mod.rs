@@ -24,6 +24,7 @@ use crate::infrastructure::olap::clickhouse::diagnostics::{
     Component, DiagnosticOptions, DiagnosticOutput, DiagnosticRequest, InfrastructureType, Severity,
 };
 use crate::infrastructure::redis::redis_client::RedisClient;
+use toon_format::{encode, types::KeyFoldingMode, EncodeOptions};
 
 /// Error types for MCP infrastructure diagnostic operations
 #[derive(Debug, thiserror::Error)]
@@ -136,15 +137,15 @@ pub fn tool_definition() -> Tool {
     });
 
     Tool {
-        name: "diagnose_infrastructure".into(),
+        name: "get_issues".into(),
         description: Some(
-            "Proactively diagnose infrastructure issues by intelligently checking relevant diagnostic sources based on infrastructure type. For ClickHouse, automatically checks: stuck mutations, S3Queue ingestion errors (for S3Queue tables), replication health (for replicated tables), data parts issues, background merge problems, system errors, and stopped operations. Returns structured, actionable information about errors and warnings with suggested remediation steps.".into()
+            "Proactively scan for health issues (stuck mutations, replication errors, S3Queue failures, merge problems). Auto-checks relevant diagnostics based on infrastructure type. Use when investigating errors or performance issues. Returns actionable problems with remediation suggestions.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
         icons: None,
         output_schema: None,
-        title: Some("Diagnose Infrastructure Issues".into()),
+        title: Some("Get Project Issues".into()),
     }
 }
 
@@ -227,10 +228,19 @@ pub async fn handle_call(
 
     match execute_diagnose_infrastructure(params, redis_client, clickhouse_config).await {
         Ok(output) => {
-            // Format as pretty JSON
-            match serde_json::to_string_pretty(&output) {
-                Ok(json_str) => create_success_result(json_str),
-                Err(e) => create_error_result(format!("Failed to format output: {}", e)),
+            // Convert output to JSON Value first
+            match serde_json::to_value(&output) {
+                Ok(json_value) => {
+                    // Format as TOON
+                    let options = EncodeOptions::new()
+                        .with_key_folding(KeyFoldingMode::Safe)
+                        .with_spaces(2);
+                    match encode(&json_value, &options) {
+                        Ok(toon_str) => create_success_result(toon_str),
+                        Err(e) => create_error_result(format!("Failed to format as TOON: {}", e)),
+                    }
+                }
+                Err(e) => create_error_result(format!("Failed to convert output to JSON: {}", e)),
             }
         }
         Err(e) => create_error_result(format!("Infrastructure diagnostics error: {}", e)),
