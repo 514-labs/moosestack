@@ -1245,7 +1245,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               `Expected properties.pageUrl to be '/dashboard', got '${properties.pageUrl}'`,
             );
           }
-          if (properties.sessionDuration !== 120) {
+          // Note: ClickHouse JSON may return numbers as strings
+          if (Number(properties.sessionDuration) !== 120) {
             throw new Error(
               `Expected properties.sessionDuration to be 120, got '${properties.sessionDuration}'`,
             );
