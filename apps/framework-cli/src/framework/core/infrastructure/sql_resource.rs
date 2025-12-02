@@ -21,6 +21,10 @@ pub struct SqlResource {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub database: Option<String>,
 
+    /// Optional source file path where this SQL resource is defined
+    #[serde(skip_serializing_if = "Option::is_none", default, alias = "sourceFile")]
+    pub source_file: Option<String>,
+
     /// A list of SQL commands or script paths executed during the setup phase.
     pub setup: Vec<String>,
     /// A list of SQL commands or script paths executed during the teardown phase.
@@ -55,6 +59,7 @@ impl SqlResource {
         ProtoSqlResource {
             name: self.name.clone(),
             database: self.database.clone(),
+            source_file: self.source_file.clone().unwrap_or_default(),
             setup: self.setup.clone(),
             teardown: self.teardown.clone(),
             special_fields: Default::default(),
@@ -68,6 +73,11 @@ impl SqlResource {
         Self {
             name: proto.name,
             database: proto.database,
+            source_file: if proto.source_file.is_empty() {
+                None
+            } else {
+                Some(proto.source_file)
+            },
             setup: proto.setup,
             teardown: proto.teardown,
             pulls_data_from: proto
@@ -158,6 +168,7 @@ mod tests {
         SqlResource {
             name: name.to_string(),
             database: None,
+            source_file: None,
             setup: setup.into_iter().map(String::from).collect(),
             teardown: teardown.into_iter().map(String::from).collect(),
             pulls_data_from: vec![],
@@ -303,6 +314,7 @@ mod tests {
         let resource_with_db = SqlResource {
             name: "MyView".to_string(),
             database: Some("custom".to_string()),
+            source_file: None,
             setup: vec![],
             teardown: vec![],
             pulls_data_from: vec![],
@@ -314,6 +326,7 @@ mod tests {
         let resource_no_db = SqlResource {
             name: "MyView".to_string(),
             database: None,
+            source_file: None,
             setup: vec![],
             teardown: vec![],
             pulls_data_from: vec![],
@@ -330,6 +343,7 @@ mod tests {
         let resource_no_db = SqlResource {
             name: "MyView".to_string(),
             database: None,
+            source_file: None,
             setup: vec!["CREATE VIEW MyView AS SELECT * FROM table1".to_string()],
             teardown: vec!["DROP VIEW IF EXISTS MyView".to_string()],
             pulls_data_from: vec![],
@@ -339,6 +353,7 @@ mod tests {
         let resource_with_db = SqlResource {
             name: "MyView".to_string(),
             database: Some("local".to_string()),
+            source_file: None,
             setup: vec!["CREATE VIEW MyView AS SELECT * FROM table1".to_string()],
             teardown: vec!["DROP VIEW IF EXISTS MyView".to_string()],
             pulls_data_from: vec![],
@@ -355,6 +370,7 @@ mod tests {
         let resource_formatted = SqlResource {
             name: "TestView".to_string(),
             database: None,
+            source_file: None,
             setup: vec![
                 "CREATE VIEW IF NOT EXISTS TestView \n          AS SELECT\n    `primaryKey`,\n    `utcTimestamp`,\n    `textLength`\n  FROM `Bar`\n  WHERE `hasText` = true".to_string()
             ],
@@ -366,6 +382,7 @@ mod tests {
         let resource_compact = SqlResource {
             name: "TestView".to_string(),
             database: None,
+            source_file: None,
             setup: vec![
                 "CREATE VIEW IF NOT EXISTS TestView AS SELECT primaryKey, utcTimestamp, textLength FROM Bar WHERE hasText = true".to_string()
             ],

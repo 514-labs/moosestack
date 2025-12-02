@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@514labs/moose-lib": "latest",
+    "@514labs/express-pbkdf2-api-key-auth": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.20.2",
     "express": "^5.1.0",
     "ts-patch": "^3.3.0",

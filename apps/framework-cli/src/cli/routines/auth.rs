@@ -28,11 +28,8 @@ pub fn generate_hash_token() {
         show_message!(
             MessageType::Info,
             Message {
-                action: "ENV API Keys".to_string(),
-                details: format!(
-                    "{} \n MOOSE_INGEST_API_KEY / MOOSE_CONSUMPTION_API_KEY",
-                    hex::encode(key1)
-                ),
+                action: "ENV API Key".to_string(),
+                details: hex::encode(key1),
             }
         );
     }
@@ -42,7 +39,7 @@ pub fn generate_hash_token() {
             MessageType::Info,
             Message {
                 action: "Bearer Token".to_string(),
-                details: format!("{concatenated} \n Authentication bearer token"),
+                details: concatenated,
             }
         );
     }

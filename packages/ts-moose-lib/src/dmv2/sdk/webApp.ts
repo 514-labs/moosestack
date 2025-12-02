@@ -13,7 +13,7 @@ export interface FrameworkApp {
     next?: (err?: any) => void,
   ) => void;
   callback?: () => WebAppHandler;
-  routing?: any;
+  routing?: (req: http.IncomingMessage, res: http.ServerResponse) => void;
 }
 
 export interface WebAppConfig {
@@ -127,19 +127,10 @@ export class WebApp {
       return app.callback();
     }
 
-    if (app.routing && typeof app.routing === "object") {
-      return async (req, res) => {
-        const fastifyApp = app as any;
-        if (
-          fastifyApp.routing &&
-          typeof fastifyApp.routing.handle === "function"
-        ) {
-          fastifyApp.routing.handle(req, res);
-        } else {
-          throw new Error(
-            "Fastify app detected but not properly initialized. Ensure .ready() is called before passing to WebApp.",
-          );
-        }
+    // Fastify: routing is a function that handles requests directly
+    if (typeof app.routing === "function") {
+      return (req, res) => {
+        app.routing!(req, res);
       };
     }
 
@@ -148,11 +139,12 @@ export class WebApp {
       - A function (raw Node.js handler)
       - An object with .handle() method (Express, Connect)
       - An object with .callback() method (Koa)
-      - An object with .routing property (Fastify after .ready())
+      - An object with .routing function (Fastify)
       
 Examples:
   Express: new WebApp("name", expressApp)
   Koa:     new WebApp("name", koaApp)
+  Fastify: new WebApp("name", fastifyApp)
   Raw:     new WebApp("name", (req, res) => { ... })
       `,
     );
