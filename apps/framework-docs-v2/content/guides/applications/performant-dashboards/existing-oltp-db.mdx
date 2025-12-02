@@ -1,0 +1,36 @@
+---
+title: From Existing OLTP DB
+description: Build performant dashboards by connecting to your existing OLTP database
+---
+
+# From Existing OLTP DB
+
+This guide walks you through building performant dashboards by connecting to your existing OLTP (Online Transaction Processing) database and creating optimized materialized views for analytics.
+
+## Overview
+
+When you have an existing OLTP database (like PostgreSQL, MySQL, or SQL Server), you can leverage MooseStack to create high-performance dashboards without disrupting your production database. This approach involves:
+
+1. **Connecting** to your existing database
+2. **Creating materialized views** that aggregate and pre-compute data
+3. **Querying** the materialized views for fast dashboard responses
+
+## Benefits
+
+- **No disruption** to your production OLTP database
+- **Fast queries** through pre-aggregated materialized views
+- **Real-time updates** as data changes in your source database
+- **Scalable** architecture that separates transactional and analytical workloads
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+- Access to your existing OLTP database
+- Database connection credentials
+- A MooseStack project initialized
+
+## Implementation Steps
+
+Follow the steps below to implement performant dashboards from your existing OLTP database. Each step builds on the previous one, guiding you through the complete setup process.
+

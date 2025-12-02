@@ -8,6 +8,7 @@ export {
 } from "./staggered-card";
 export { Callout } from "./callout";
 export { LanguageTabs, LanguageTabContent } from "./language-tabs";
+export { CommandSnippet } from "./command-snippet";
 export { CodeSnippet } from "./code-snippet";
 export { CodeEditorWrapper } from "./code-editor-wrapper";
 export { ToggleBlock } from "./toggle-block";
