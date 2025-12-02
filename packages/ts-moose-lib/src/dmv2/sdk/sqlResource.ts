@@ -1,4 +1,4 @@
-import { getMooseInternal } from "../internal";
+import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { OlapTable } from "./olapTable";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 
@@ -43,7 +43,9 @@ export class SqlResource {
     },
   ) {
     const sqlResources = getMooseInternal().sqlResources;
-    if (sqlResources.has(name)) {
+    // In client-only mode (MOOSE_CLIENT_ONLY=true), allow duplicate registrations
+    // to support Next.js HMR which re-executes modules without clearing the registry
+    if (!isClientOnlyMode() && sqlResources.has(name)) {
       throw new Error(`SqlResource with name ${name} already exists`);
     }
     sqlResources.set(name, this);
