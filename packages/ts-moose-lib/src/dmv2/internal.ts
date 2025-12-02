@@ -44,6 +44,16 @@ function getSourceDir(): string {
 }
 
 /**
+ * Client-only mode flag. When true, OlapTable registration is permissive
+ * (duplicates overwrite silently instead of throwing).
+ * Set via MOOSE_CLIENT_ONLY=true environment variable.
+ *
+ * This enables Next.js apps to import OlapTable definitions for type-safe
+ * queries without the Moose runtime, avoiding "already exists" errors on HMR.
+ */
+export const isClientOnlyMode = process.env.MOOSE_CLIENT_ONLY === "true";
+
+/**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
