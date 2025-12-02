@@ -91,7 +91,8 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID};
+use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
+use std::sync::atomic::Ordering;
 
 use super::settings::user_directory;
 
@@ -144,6 +145,9 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_use_tracing_format")]
     pub use_tracing_format: bool,
+
+    #[serde(default = "default_no_ansi")]
+    pub no_ansi: bool,
 }
 
 fn default_log_file() -> String {
@@ -173,6 +177,10 @@ fn default_use_tracing_format() -> bool {
         .unwrap_or(false)
 }
 
+fn default_no_ansi() -> bool {
+    false // ANSI colors enabled by default
+}
+
 impl Default for LoggerSettings {
     fn default() -> Self {
         LoggerSettings {
@@ -182,6 +190,7 @@ impl Default for LoggerSettings {
             format: default_log_format(),
             include_session_id: default_include_session_id(),
             use_tracing_format: default_use_tracing_format(),
+            no_ansi: default_no_ansi(),
         }
     }
 }
@@ -453,6 +462,9 @@ fn create_rolling_file_appender(date_format: &str) -> DateBasedWriter {
 pub fn setup_logging(settings: &LoggerSettings) {
     clean_old_logs();
 
+    // Set global NO_ANSI flag for terminal display functions
+    NO_ANSI.store(settings.no_ansi, Ordering::Relaxed);
+
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 
     // Setup logging based on format type
@@ -469,11 +481,16 @@ fn setup_modern_format(settings: &LoggerSettings) {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
+    // When no_ansi is false, ANSI is enabled (true)
+    // When no_ansi is true, ANSI is disabled (false)
+    let ansi_enabled = !settings.no_ansi;
+
     if settings.stdout {
         let format_layer = tracing_subscriber::fmt::layer()
             .with_writer(std::io::stdout)
             .with_target(true)
-            .with_level(true);
+            .with_level(true)
+            .with_ansi(ansi_enabled);
 
         if settings.format == LogFormat::Json {
             tracing_subscriber::registry()
@@ -487,11 +504,15 @@ fn setup_modern_format(settings: &LoggerSettings) {
                 .init();
         }
     } else {
+        // For file output, explicitly disable ANSI codes regardless of no_ansi setting.
+        // Files are not terminals and don't render colors. tracing-subscriber defaults
+        // to ANSI=true, so we must explicitly set it to false for file writers.
         let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
         let format_layer = tracing_subscriber::fmt::layer()
             .with_writer(file_appender)
             .with_target(true)
-            .with_level(true);
+            .with_level(true)
+            .with_ansi(false);
 
         if settings.format == LogFormat::Json {
             tracing_subscriber::registry()
