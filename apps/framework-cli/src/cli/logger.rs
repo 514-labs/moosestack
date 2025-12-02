@@ -504,12 +504,15 @@ fn setup_modern_format(settings: &LoggerSettings) {
                 .init();
         }
     } else {
+        // For file output, explicitly disable ANSI codes regardless of no_ansi setting.
+        // Files are not terminals and don't render colors. tracing-subscriber defaults
+        // to ANSI=true, so we must explicitly set it to false for file writers.
         let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
         let format_layer = tracing_subscriber::fmt::layer()
             .with_writer(file_appender)
             .with_target(true)
             .with_level(true)
-            .with_ansi(ansi_enabled);
+            .with_ansi(false);
 
         if settings.format == LogFormat::Json {
             tracing_subscriber::registry()
