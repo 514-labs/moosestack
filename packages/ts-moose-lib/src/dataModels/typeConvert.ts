@@ -306,6 +306,27 @@ const handleDefault = (t: ts.Type, checker: TypeChecker): string | null => {
   return defaultType.value;
 };
 
+/** Detect ClickHouse materialized annotation on a type and return raw sql */
+const handleMaterialized = (
+  t: ts.Type,
+  checker: TypeChecker,
+): string | null => {
+  const materializedType = getTaggedType(
+    t,
+    checker,
+    "_clickhouse_materialized",
+  );
+  if (materializedType === null) {
+    return null;
+  }
+  if (!materializedType.isStringLiteral()) {
+    throw new UnsupportedFeature(
+      'ClickHouseMaterialized must use a string literal, e.g. ClickHouseMaterialized<"toDate(timestamp)">',
+    );
+  }
+  return materializedType.value;
+};
+
 /** Detect ClickHouse TTL annotation on a type and return raw sql */
 const handleTtl = (t: ts.Type, checker: TypeChecker): string | null => {
   const ttlType = getTaggedType(t, checker, "_clickhouse_ttl");
@@ -970,13 +991,24 @@ export const toColumns = (t: ts.Type, checker: TypeChecker): Column[] => {
       node?.type,
     );
 
+    const defaultValue = defaultExpression ?? handleDefault(type, checker);
+    const materializedValue = handleMaterialized(type, checker);
+
+    // Validate mutual exclusivity of DEFAULT and MATERIALIZED
+    if (defaultValue && materializedValue) {
+      throw new UnsupportedFeature(
+        `Column '${prop.name}' cannot have both ClickHouseDefault and ClickHouseMaterialized. Use one or the other.`,
+      );
+    }
+
     return {
       name: prop.name,
       data_type: dataType,
       primary_key: isKey,
       required: !nullable,
       unique: false,
-      default: defaultExpression ?? handleDefault(type, checker),
+      default: defaultValue,
+      materialized: materializedValue,
       ttl: handleTtl(type, checker),
       codec: handleCodec(type, checker),
       annotations,

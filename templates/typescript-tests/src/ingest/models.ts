@@ -12,6 +12,7 @@ import {
   ClickHousePoint,
   ClickHouseRing,
   ClickHouseLineString,
+  ClickHouseMaterialized,
   ClickHouseMultiLineString,
   ClickHousePolygon,
   ClickHouseMultiPolygon,
@@ -748,3 +749,27 @@ export const CodecTestPipeline = new IngestPipeline<CodecTest>("CodecTest", {
   stream: true,
   ingestApi: true,
 });
+
+// =======Materialized Columns Test=======
+export interface MaterializedTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  userId: string;
+  eventDate: string &
+    typia.tags.Format<"date"> &
+    ClickHouseMaterialized<"toDate(timestamp)">;
+  userHash: UInt64 & ClickHouseMaterialized<"cityHash64(userId)">;
+  log_blob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
+  combinationHash: UInt64[] &
+    ClickHouseMaterialized<"arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))"> &
+    ClickHouseCodec<"ZSTD(1)">;
+}
+
+export const MaterializedTestPipeline = new IngestPipeline<MaterializedTest>(
+  "MaterializedTest",
+  {
+    table: true,
+    stream: true,
+    ingestApi: true,
+  },
+);
