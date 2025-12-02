@@ -49,6 +49,7 @@ use super::primitive_map::PrimitiveMap;
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
 use crate::framework::core::infra_reality_checker::find_table_from_infra_map;
 use crate::framework::core::infrastructure_map::Change::Added;
+use crate::framework::core::validation::{format_diagnostics_for_cli, validate_infrastructure_sql};
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
@@ -2583,6 +2584,16 @@ impl InfrastructureMap {
             &project.main_file(),
             &project.clickhouse_config.db_name,
         )?;
+
+        // Validate all SQL in sql_resources
+        let diagnostics = validate_infrastructure_sql(&infra_map.sql_resources);
+        if !diagnostics.is_empty() {
+            let error_output = format_diagnostics_for_cli(&diagnostics);
+            return Err(anyhow::anyhow!(
+                "SQL validation failed:\n\n{}",
+                error_output
+            ));
+        }
 
         // Resolve S3 credentials at runtime if requested
         if resolve_credentials {
