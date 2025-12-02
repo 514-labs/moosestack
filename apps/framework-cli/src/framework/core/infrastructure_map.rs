@@ -1781,6 +1781,7 @@ impl InfrastructureMap {
                     let target_table = target_tables
                         .get(&normalized_target.id(default_database))
                         .expect("normalized_target exists, so target_table should too");
+
                     // Respect lifecycle: ExternallyManaged tables are never modified
                     if target_table.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle
                     {
@@ -1876,14 +1877,17 @@ impl InfrastructureMap {
                         // Column-level TTL changes are handled as regular column modifications
                         // since ClickHouse requires the full column definition when modifying TTL
 
+                        let table_settings_changed =
+                            table.table_settings != target_table.table_settings;
+
                         // Only process changes if there are actual differences to report
                         // Note: cluster_name changes are intentionally excluded - they don't trigger operations
-                        // TODO: table_settings is not checked in the if condition, but checked by ClickHouseTableDiffStrategy
                         if !column_changes.is_empty()
                             || order_by_changed
                             || partition_by_changed
                             || engine_changed
                             || indexes_changed
+                            || table_settings_changed
                         {
                             // Use the strategy to determine the appropriate changes
                             let strategy_changes = strategy.diff_table_update(
@@ -2178,18 +2182,19 @@ impl InfrastructureMap {
         Ok(infra_map)
     }
 
-    /// Resolves S3 credentials from environment variables at runtime.
+    /// Resolves runtime environment variables for engine credentials and table settings.
     ///
     /// This method iterates through all tables in the infrastructure map and resolves
-    /// any environment variable markers (like `MOOSE_ENV::AWS_ACCESS_KEY_ID`) in S3 and S3Queue
-    /// engine configurations to their actual values from the environment.
+    /// any environment variable markers (like `{{MOOSE_RUNTIME_ENV::VAR_NAME}}`) in:
+    /// - Engine credentials: S3/S3Queue/IcebergS3 AWS keys
+    /// - Table settings: Kafka SASL credentials and any other settings using mooseRuntimeEnv.get()
     ///
     /// This MUST be called at runtime (dev/prod mode start) rather than at build time
     /// to avoid baking credentials into Docker images.
     ///
     /// # Returns
     /// A Result indicating success or containing an error message if credential resolution fails
-    pub fn resolve_s3_credentials_from_env(&mut self) -> Result<(), String> {
+    pub fn resolve_runtime_credentials_from_env(&mut self) -> Result<(), String> {
         use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
         use crate::utilities::secrets::resolve_optional_runtime_env;
 
@@ -2258,6 +2263,7 @@ impl InfrastructureMap {
                 }
                 _ => {
                     // No credentials to resolve for other engine types
+                    // Kafka credentials are now in table_settings, not engine config
                 }
             }
 
@@ -2268,6 +2274,30 @@ impl InfrastructureMap {
                     "Recalculated engine_params_hash for table '{}' after credential resolution",
                     table.name
                 );
+            }
+
+            // Resolve runtime environment variables in table_settings (e.g., Kafka security settings)
+            if let Some(ref mut settings) = table.table_settings {
+                for (key, value) in settings.iter_mut() {
+                    let resolved_value = resolve_optional_runtime_env(&Some(value.clone()))
+                        .map_err(|e| {
+                            format!(
+                                "Failed to resolve runtime environment variable for table '{}' setting '{}': {}",
+                                table.name, key, e
+                            )
+                        })?;
+
+                    if let Some(new_value) = resolved_value {
+                        if new_value != *value {
+                            *value = new_value;
+                            tracing::debug!(
+                                "Resolved setting '{}' for table '{}' from runtime environment",
+                                key,
+                                table.name
+                            );
+                        }
+                    }
+                }
             }
         }
 
@@ -2584,11 +2614,12 @@ impl InfrastructureMap {
             &project.clickhouse_config.db_name,
         )?;
 
-        // Resolve S3 credentials at runtime if requested
+        // Resolve runtime credentials at runtime if requested
+        // This includes S3 credentials, Kafka SASL credentials, and any other table settings
         if resolve_credentials {
             infra_map
-                .resolve_s3_credentials_from_env()
-                .map_err(|e| anyhow::anyhow!("Failed to resolve S3 credentials: {}", e))?;
+                .resolve_runtime_credentials_from_env()
+                .map_err(|e| anyhow::anyhow!("Failed to resolve runtime credentials: {}", e))?;
         }
 
         // Provide explicit feedback when streams are defined but streaming engine is disabled

@@ -334,6 +334,13 @@ pub enum ClickhouseEngine {
         // Compression type (optional: gzip, zstd, etc.)
         compression: Option<String>,
     },
+    Kafka {
+        // Constructor parameters: Kafka('broker', 'topic', 'group', 'format')
+        broker_list: String,
+        topic_list: String,
+        group_name: String,
+        format: String,
+    },
 }
 
 // The implementation is not symetric between TryFrom and Into so we
@@ -436,6 +443,12 @@ impl Into<String> for ClickhouseEngine {
                 &aws_secret_access_key,
                 &compression,
             ),
+            ClickhouseEngine::Kafka {
+                broker_list,
+                topic_list,
+                group_name,
+                format,
+            } => Self::serialize_kafka_for_display(&broker_list, &topic_list, &group_name, &format),
             // this might sound obvious, but when you edit this function
             // please check if you have changed the parsing side (try_from) as well
             // especially if you're an LLM
@@ -818,6 +831,7 @@ impl ClickhouseEngine {
             s if s.starts_with("Buffer(") => Self::parse_regular_buffer(s, value),
             s if s.starts_with("Distributed(") => Self::parse_regular_distributed(s, value),
             s if s.starts_with("Iceberg(") => Self::parse_regular_icebergs3(s, value),
+            s if s.starts_with("Kafka(") => Self::parse_regular_kafka(s, value),
             _ => Err(value),
         }
     }
@@ -859,6 +873,21 @@ impl ClickhouseEngine {
             .and_then(|s| s.strip_suffix(")"))
         {
             Self::parse_s3(content).map_err(|_| original_value)
+        } else {
+            Err(original_value)
+        }
+    }
+
+    /// Parse regular Kafka with parameters
+    fn parse_regular_kafka<'a>(
+        engine_name: &str,
+        original_value: &'a str,
+    ) -> Result<Self, &'a str> {
+        if let Some(content) = engine_name
+            .strip_prefix("Kafka(")
+            .and_then(|s| s.strip_suffix(")"))
+        {
+            Self::parse_kafka(content).map_err(|_| original_value)
         } else {
             Err(original_value)
         }
@@ -1166,7 +1195,7 @@ impl ClickhouseEngine {
 
     /// Returns true if this engine supports ORDER BY clause
     /// MergeTree family and S3 support ORDER BY
-    /// Buffer, S3Queue, and Distributed do NOT support ORDER BY
+    /// Buffer, S3Queue, Distributed, Kafka, and IcebergS3 do NOT support ORDER BY
     pub fn supports_order_by(&self) -> bool {
         self.is_merge_tree_family() || matches!(self, ClickhouseEngine::S3 { .. })
     }
@@ -1250,6 +1279,17 @@ impl ClickhouseEngine {
                 path,
                 format,
                 compression,
+            ),
+            ClickhouseEngine::Kafka {
+                broker_list,
+                topic_list,
+                group_name,
+                format,
+            } => Self::serialize_kafka(
+                broker_list,
+                topic_list,
+                group_name,
+                format,
             ),
         }
     }
@@ -1560,6 +1600,52 @@ impl ClickhouseEngine {
 
         result.push(')');
         result
+    }
+
+    /// Serialize Kafka engine for display
+    /// Format: Kafka('broker1,broker2', 'topic1,topic2', 'group', 'format')
+    fn serialize_kafka_for_display(
+        broker_list: &str,
+        topic_list: &str,
+        group_name: &str,
+        format: &str,
+    ) -> String {
+        format!(
+            "Kafka('{}', '{}', '{}', '{}')",
+            broker_list, topic_list, group_name, format
+        )
+    }
+
+    /// Serialize Kafka engine to string format for proto storage
+    /// Format: Kafka('broker1,broker2', 'topic1,topic2', 'group', 'format')
+    fn serialize_kafka(
+        broker_list: &str,
+        topic_list: &str,
+        group_name: &str,
+        format: &str,
+    ) -> String {
+        format!(
+            "Kafka('{}', '{}', '{}', '{}')",
+            broker_list, topic_list, group_name, format
+        )
+    }
+
+    /// Parse Kafka engine from string
+    /// Format: Kafka('broker_list', 'topic_list', 'group_name', 'format')
+    fn parse_kafka(content: &str) -> Result<ClickhouseEngine, &str> {
+        let params = parse_quoted_csv(content);
+
+        // Kafka requires exactly 4 parameters
+        if params.len() != 4 {
+            return Err(content);
+        }
+
+        Ok(ClickhouseEngine::Kafka {
+            broker_list: params[0].clone(),
+            topic_list: params[1].clone(),
+            group_name: params[2].clone(),
+            format: params[3].clone(),
+        })
     }
 
     /// Serialize Iceberg engine to string format for proto storage (without credentials)
@@ -2232,6 +2318,19 @@ impl ClickhouseEngine {
                     hasher.update("null".as_bytes());
                 }
             }
+            ClickhouseEngine::Kafka {
+                broker_list,
+                topic_list,
+                group_name,
+                format,
+            } => {
+                hasher.update("Kafka".as_bytes());
+                // Hash constructor parameters only (4 params)
+                hasher.update(broker_list.as_bytes());
+                hasher.update(topic_list.as_bytes());
+                hasher.update(group_name.as_bytes());
+                hasher.update(format.as_bytes());
+            }
         }
 
         format!("{:x}", hasher.finalize())
@@ -2687,6 +2786,19 @@ pub fn create_table_query(
             }
 
             format!("Iceberg({})", engine_parts.join(", "))
+        }
+        ClickhouseEngine::Kafka {
+            broker_list,
+            topic_list,
+            group_name,
+            format,
+        } => {
+            // Kafka constructor: Kafka('broker', 'topic', 'group', 'format')
+            // All other params (schema, num_consumers, security) go in SETTINGS
+            format!(
+                "Kafka('{}', '{}', '{}', '{}')",
+                broker_list, topic_list, group_name, format
+            )
         }
     };
 
@@ -6325,6 +6437,121 @@ ORDER BY (`event_time`)
         assert!(
             error_msg.contains("both DEFAULT and MATERIALIZED")
                 || error_msg.contains("mutually exclusive")
+        );
+    }
+
+    #[test]
+    fn test_kafka_parsing_roundtrip() {
+        // Test parsing Kafka engine from ClickHouse's format and back
+        let engine_str =
+            "Kafka('broker1:9092,broker2:9092', 'events', 'moose_consumer', 'JSONEachRow')";
+        let engine = ClickhouseEngine::try_from(engine_str).unwrap();
+
+        match &engine {
+            ClickhouseEngine::Kafka {
+                broker_list,
+                topic_list,
+                group_name,
+                format,
+            } => {
+                assert_eq!(broker_list, "broker1:9092,broker2:9092");
+                assert_eq!(topic_list, "events");
+                assert_eq!(group_name, "moose_consumer");
+                assert_eq!(format, "JSONEachRow");
+            }
+            _ => panic!("Expected Kafka engine, got {:?}", engine),
+        }
+
+        // Test round-trip: parse -> serialize -> parse
+        let serialized: String = engine.clone().into();
+        assert!(serialized.contains("Kafka("));
+        assert!(serialized.contains("broker1:9092,broker2:9092"));
+
+        let reparsed = ClickhouseEngine::try_from(serialized.as_str()).unwrap();
+        match reparsed {
+            ClickhouseEngine::Kafka {
+                broker_list,
+                topic_list,
+                ..
+            } => {
+                assert_eq!(broker_list, "broker1:9092,broker2:9092");
+                assert_eq!(topic_list, "events");
+            }
+            _ => panic!("Round-trip failed"),
+        }
+    }
+
+    #[test]
+    fn test_kafka_supports_order_by_returns_false() {
+        // Critical: Kafka engine does NOT support ORDER BY
+        // This is used by code generation to skip orderByExpression for Kafka tables
+        let kafka_engine = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+
+        assert!(
+            !kafka_engine.supports_order_by(),
+            "Kafka engine should NOT support ORDER BY"
+        );
+
+        // Verify MergeTree family does support it (for contrast)
+        assert!(ClickhouseEngine::MergeTree.supports_order_by());
+        assert!(ClickhouseEngine::ReplacingMergeTree {
+            ver: None,
+            is_deleted: None
+        }
+        .supports_order_by());
+    }
+
+    #[test]
+    fn test_kafka_hash_consistency() {
+        // Test that identical Kafka engines produce identical hashes
+        let engine1 = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+
+        let engine2 = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+
+        let hash1 = engine1.non_alterable_params_hash();
+        let hash2 = engine2.non_alterable_params_hash();
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash1.len(), 64); // SHA256 hex string
+
+        // Test that different broker_list produces different hash
+        let engine_diff_broker = ClickhouseEngine::Kafka {
+            broker_list: "different:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+        assert_ne!(
+            hash1,
+            engine_diff_broker.non_alterable_params_hash(),
+            "Different broker should produce different hash"
+        );
+
+        // Test that different topic produces different hash
+        let engine_diff_topic = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "different_topic".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+        assert_ne!(
+            hash1,
+            engine_diff_topic.non_alterable_params_hash(),
+            "Different topic should produce different hash"
         );
     }
 }

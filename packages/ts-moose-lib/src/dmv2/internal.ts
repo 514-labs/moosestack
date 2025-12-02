@@ -166,6 +166,14 @@ interface IcebergS3EngineConfig {
   compression?: string;
 }
 
+interface KafkaEngineConfig {
+  engine: "Kafka";
+  brokerList: string;
+  topicList: string;
+  groupName: string;
+  format: string;
+}
+
 /**
  * Union type for all supported engine configurations
  */
@@ -182,7 +190,8 @@ type EngineConfig =
   | S3EngineConfig
   | BufferEngineConfig
   | DistributedEngineConfig
-  | IcebergS3EngineConfig;
+  | IcebergS3EngineConfig
+  | KafkaEngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -626,6 +635,25 @@ function convertIcebergS3EngineConfig(
 }
 
 /**
+ * Convert Kafka engine configuration
+ */
+function convertKafkaEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.Kafka) {
+    return undefined;
+  }
+
+  return {
+    engine: "Kafka",
+    brokerList: config.brokerList,
+    topicList: config.topicList,
+    groupName: config.groupName,
+    format: config.format,
+  };
+}
+
+/**
  * Convert table configuration to engine config
  */
 function convertTableConfigToEngineConfig(
@@ -668,6 +696,11 @@ function convertTableConfigToEngineConfig(
   // Handle IcebergS3
   if (engine === ClickHouseEngines.IcebergS3) {
     return convertIcebergS3EngineConfig(config);
+  }
+
+  // Handle Kafka
+  if (engine === ClickHouseEngines.Kafka) {
+    return convertKafkaEngineConfig(config);
   }
 
   return undefined;
