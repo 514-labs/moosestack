@@ -12,45 +12,30 @@
 // TECHNOLOGY CONTEXT
 // =============================================================================
 
-export type TechDimension = string;
+export type TechChoice = Record<string, string>;
 
-export const CommonDimensions = {
-  language: "language",
-  framework: "framework",
-  scope: "scope",
-  oltp: "oltp",
-  olap: "olap",
-  streaming: "streaming",
-  deployment: "deployment",
-  cloud: "cloud",
-  orm: "orm",
-  packageManager: "packageManager",
-} as const;
-
-export type TechContext = Record<TechDimension, string>;
-
-export type TechPredicate =
-  | { dimension: TechDimension; equals: string }
-  | { dimension: TechDimension; oneOf: string[] }
-  | { and: TechPredicate[] }
-  | { or: TechPredicate[] }
-  | { not: TechPredicate };
+export type TechChoiceCondition =
+  | { choice: string; equals: string }
+  | { choice: string; oneOf: string[] }
+  | { and: TechChoiceCondition[] }
+  | { or: TechChoiceCondition[] }
+  | { not: TechChoiceCondition };
 
 // =============================================================================
 // FRONTMATTER CONFIG
 // =============================================================================
 
 export type TechSelectorConfig = {
-  dimensions: TechSelectorDimension[];
+  choices: TechSelectorChoice[];
 };
 
-export type TechSelectorDimension = {
-  dimension: TechDimension;
+export type TechSelectorChoice = {
+  choice: string;
   label: string;
-  options: TechSelectorOption[];
+  options: TechSelectorChoiceOption[];
 };
 
-export type TechSelectorOption = {
+export type TechSelectorChoiceOption = {
   value: string;
   label: string;
   default?: boolean;
@@ -59,7 +44,7 @@ export type TechSelectorOption = {
 export type GuideFrontmatter = {
   title: string;
   description?: string;
-  techSelector?: TechSelectorDimension[];
+  techSelector?: TechSelectorChoice[];
   /** Linear project metadata for export */
   project?: ProjectMeta;
   [key: string]: unknown;
@@ -80,6 +65,21 @@ export type ProjectMeta = {
   priority?: 0 | 1 | 2 | 3 | 4;
   /** Labels to apply to all issues */
   labels?: string[];
+  /** Milestones for grouping steps into phases */
+  milestones?: MilestoneMeta[];
+};
+
+export type MilestoneMeta = {
+  /** Unique identifier for referencing from steps */
+  id: string;
+  /** Milestone title */
+  title: string;
+  /** Milestone description */
+  description?: string;
+  /** Target completion date (ISO string) */
+  targetDate?: string;
+  /** Sort order within the project */
+  order?: number;
 };
 
 export type TaskMeta = {
@@ -143,7 +143,30 @@ export type StepMeta = {
   /** Agent prompt metadata for coding assistant export */
   agent?: AgentPromptMeta;
   /** Condition for showing this step */
-  when?: TechPredicate;
+  when?: TechChoiceCondition;
+  /** Milestone this step belongs to (references MilestoneMeta.id) - auto-set when inside <Milestone> */
+  milestone?: string;
+};
+
+// =============================================================================
+// MILESTONE BLOCK (wrapper component for grouping steps)
+// =============================================================================
+
+/**
+ * Milestone block props for the <Milestone> MDX component.
+ * All child <Step> components automatically inherit this milestone.
+ */
+export type MilestoneBlockMeta = {
+  /** Unique identifier (required) */
+  id: string;
+  /** Milestone title */
+  title: string;
+  /** Milestone description (shown in UI, used in Linear export) */
+  description?: string;
+  /** Target completion date (ISO string) */
+  targetDate?: string;
+  /** Condition for showing this milestone and all its steps */
+  when?: TechChoiceCondition;
 };
 
 // =============================================================================
@@ -204,7 +227,15 @@ export type DerivedStepContent = {
 export type LinearProject = {
   name: string;
   description?: string;
+  milestones: LinearMilestone[];
   issues: LinearIssue[];
+};
+
+export type LinearMilestone = {
+  id: string;
+  name: string;
+  description?: string;
+  targetDate?: string;
 };
 
 export type LinearIssue = {
@@ -215,6 +246,8 @@ export type LinearIssue = {
   labels?: string[];
   /** Markdown body */
   body: string;
+  /** Milestone this issue belongs to */
+  milestoneId?: string;
 };
 
 /**
