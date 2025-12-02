@@ -39,7 +39,7 @@ pub fn generate_hash_token() {
             MessageType::Info,
             Message {
                 action: "Bearer Token".to_string(),
-                details: concatenated.clone(),
+                details: concatenated,
             }
         );
     }

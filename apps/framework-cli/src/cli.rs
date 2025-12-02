@@ -681,7 +681,10 @@ pub async fn top_command_handler(
 
                 wait_for_usage_capture(capture_handle).await;
 
-                Ok(RoutineSuccess::silent())
+                Ok(RoutineSuccess::success(Message::new(
+                    "Token".to_string(),
+                    "Success".to_string(),
+                )))
             }
             Some(GenerateCommand::Migration {
                 url,
