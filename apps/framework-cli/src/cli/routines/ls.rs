@@ -389,7 +389,7 @@ pub async fn ls_dmv2(
             .web_apps
             .into_values()
             .filter(|app| name.is_none_or(|n| app.name.contains(n)))
-            .map(|w| w.into())
+            .map(Into::into)
             .collect(),
     };
     let listing: &dyn ResourceInfo = match _type {
