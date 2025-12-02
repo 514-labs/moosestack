@@ -18,14 +18,39 @@ use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::client::create_consumer;
 use crate::infrastructure::stream::kafka::models::KafkaConfig;
+use toon_format::{encode, types::KeyFoldingMode, EncodeOptions, ToonError};
 
 // Constants for validation
 const MIN_LIMIT: u8 = 1;
 const MAX_LIMIT: u8 = 100;
 const DEFAULT_LIMIT: u8 = 10;
-const VALID_FORMATS: [&str; 2] = ["json", "pretty"];
-const DEFAULT_FORMAT: &str = "json";
 const SAMPLE_TIMEOUT_SECS: u64 = 2;
+
+/// Output format for stream sample results
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OutputFormat {
+    /// TOON format - compact, token-optimized for LLMs (default)
+    #[default]
+    Toon,
+    /// JSON format - prettified JSON output
+    Json,
+}
+
+impl OutputFormat {
+    /// Parse format from string, case-insensitive
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "toon" => Some(Self::Toon),
+            "json" => Some(Self::Json),
+            _ => None,
+        }
+    }
+
+    /// Get all valid format names for schema/validation
+    pub const fn valid_formats() -> &'static [&'static str] {
+        &["toon", "json"]
+    }
+}
 
 /// Error types for stream sampling operations
 #[derive(Debug, thiserror::Error)]
@@ -42,6 +67,9 @@ pub enum StreamSampleError {
     #[error("Failed to serialize messages: {0}")]
     Serialization(#[from] serde_json::Error),
 
+    #[error("Failed to serialize to TOON format: {0}")]
+    ToonSerialization(#[from] ToonError),
+
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 }
@@ -53,13 +81,8 @@ struct GetStreamSampleParams {
     stream_name: String,
     /// Number of messages to retrieve (default: 10, max: 100)
     limit: u8,
-    /// Output format: "json" or "pretty" (default: "json")
-    format: String,
-}
-
-/// Helper to check if a format string is valid
-fn is_valid_format(format: &str) -> bool {
-    VALID_FORMATS.contains(&format.to_lowercase().as_str())
+    /// Output format: toon or json
+    format: OutputFormat,
 }
 
 /// Returns the tool definition for the MCP server
@@ -79,8 +102,8 @@ pub fn tool_definition() -> Tool {
             },
             "format": {
                 "type": "string",
-                "description": format!("Output format: 'json' (default) or 'pretty'. Default: {}", DEFAULT_FORMAT),
-                "enum": VALID_FORMATS
+                "description": "Output format: 'toon' (compact, token-optimized, default) or 'json' (prettified JSON)",
+                "enum": OutputFormat::valid_formats()
             }
         },
         "required": ["stream_name"]
@@ -89,13 +112,13 @@ pub fn tool_definition() -> Tool {
     Tool {
         name: "get_stream_sample".into(),
         description: Some(
-            "Retrieve sample messages from a Redpanda/Kafka streaming topic. Get the last N messages from any topic/stream for debugging and exploration. Returns messages as JSON arrays with message payloads.".into()
+            "Sample recent messages from streaming topics to verify data flow, debug transformations, or inspect payloads. Get last N messages from any topic. Use after get_infra_map to see available topics.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
         icons: None,
         output_schema: None,
-        title: Some("Get Stream Sample".into()),
+        title: Some("Sample Stream Messages".into()),
     }
 }
 
@@ -136,20 +159,18 @@ fn parse_params(
         DEFAULT_LIMIT
     };
 
-    let format = arguments
+    let format_str = arguments
         .and_then(|v| v.get("format"))
         .and_then(|v| v.as_str())
-        .unwrap_or(DEFAULT_FORMAT)
-        .to_string();
+        .unwrap_or("toon");
 
-    // Validate format
-    if !is_valid_format(&format) {
-        return Err(StreamSampleError::InvalidParameter(format!(
-            "format must be one of {}; got {}",
-            VALID_FORMATS.join(", "),
-            format
-        )));
-    }
+    let format = OutputFormat::from_str(format_str).ok_or_else(|| {
+        StreamSampleError::InvalidParameter(format!(
+            "format must be one of {}; got '{}'",
+            OutputFormat::valid_formats().join(", "),
+            format_str
+        ))
+    })?;
 
     Ok(GetStreamSampleParams {
         stream_name,
@@ -364,62 +385,38 @@ fn format_output(
         return Ok(msg);
     }
 
-    match params.format.as_str() {
-        "pretty" => {
-            let mut output = format!("# Stream Sample: {}\n\n", params.stream_name);
-            output.push_str(&format!(
-                "Retrieved {} message(s) from {} partition(s)\n",
-                messages.len(),
-                partition_count
-            ));
+    // Build the response structure (shared between formats)
+    let mut response = json!({
+        "stream_name": params.stream_name,
+        "message_count": messages.len(),
+        "partition_count": partition_count,
+        "messages": messages
+    });
 
-            // Add timeout/error information if relevant
-            if result.timed_out {
-                output.push_str(&format!(
-                    "⚠️  Collection timed out after {} seconds (requested {} messages)\n",
-                    SAMPLE_TIMEOUT_SECS, params.limit
-                ));
-            }
-            if result.error_count > 0 {
-                output.push_str(&format!(
-                    "⚠️  {} message(s) failed to deserialize\n",
-                    result.error_count
-                ));
-            }
-            output.push('\n');
+    // Add metadata about the collection if there were issues
+    if result.timed_out || result.error_count > 0 {
+        let metadata = json!({
+            "timed_out": result.timed_out,
+            "error_count": result.error_count,
+            "requested_limit": params.limit,
+        });
+        response
+            .as_object_mut()
+            .unwrap()
+            .insert("metadata".to_string(), metadata);
+    }
 
-            for (i, msg) in messages.iter().enumerate() {
-                output.push_str(&format!("## Message {}\n", i + 1));
-                output.push_str("```json\n");
-                output.push_str(&serde_json::to_string_pretty(msg)?);
-                output.push_str("\n```\n\n");
-            }
-
-            Ok(output)
-        }
-        _ => {
-            // Default to JSON format
-            let mut response = json!({
-                "stream_name": params.stream_name,
-                "message_count": messages.len(),
-                "partition_count": partition_count,
-                "messages": messages
-            });
-
-            // Add metadata about the collection
-            if result.timed_out || result.error_count > 0 {
-                let metadata = json!({
-                    "timed_out": result.timed_out,
-                    "error_count": result.error_count,
-                    "requested_limit": params.limit,
-                });
-                response
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("metadata".to_string(), metadata);
-            }
-
+    match params.format {
+        OutputFormat::Json => {
+            // Prettified JSON output
             Ok(serde_json::to_string_pretty(&response)?)
+        }
+        OutputFormat::Toon => {
+            // TOON format with compression for token efficiency
+            let options = EncodeOptions::new()
+                .with_key_folding(KeyFoldingMode::Safe)
+                .with_spaces(2);
+            Ok(encode(&response, &options)?)
         }
     }
 }
@@ -429,15 +426,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_is_valid_format() {
-        assert!(is_valid_format("json"));
-        assert!(is_valid_format("JSON"));
-        assert!(is_valid_format("pretty"));
-        assert!(is_valid_format("PRETTY"));
+    fn test_output_format_from_str() {
+        assert_eq!(OutputFormat::from_str("toon"), Some(OutputFormat::Toon));
+        assert_eq!(OutputFormat::from_str("TOON"), Some(OutputFormat::Toon));
+        assert_eq!(OutputFormat::from_str("json"), Some(OutputFormat::Json));
+        assert_eq!(OutputFormat::from_str("JSON"), Some(OutputFormat::Json));
 
-        assert!(!is_valid_format("invalid"));
-        assert!(!is_valid_format(""));
-        assert!(!is_valid_format("xml"));
+        assert_eq!(OutputFormat::from_str("invalid"), None);
+        assert_eq!(OutputFormat::from_str(""), None);
+        assert_eq!(OutputFormat::from_str("xml"), None);
+        assert_eq!(OutputFormat::from_str("pretty"), None); // pretty is no longer valid
     }
 
     #[test]
@@ -446,7 +444,7 @@ mod tests {
         let args = json!({
             "stream_name": "user_events",
             "limit": 20,
-            "format": "pretty"
+            "format": "json"
         });
         let map = args.as_object().unwrap();
         let result = parse_params(Some(map));
@@ -454,9 +452,9 @@ mod tests {
         let params = result.unwrap();
         assert_eq!(params.stream_name, "user_events");
         assert_eq!(params.limit, 20);
-        assert_eq!(params.format, "pretty");
+        assert_eq!(params.format, OutputFormat::Json);
 
-        // Test with only required parameter
+        // Test with only required parameter (defaults to toon)
         let args = json!({"stream_name": "test_topic"});
         let map = args.as_object().unwrap();
         let result = parse_params(Some(map));
@@ -464,7 +462,7 @@ mod tests {
         let params = result.unwrap();
         assert_eq!(params.stream_name, "test_topic");
         assert_eq!(params.limit, DEFAULT_LIMIT);
-        assert_eq!(params.format, DEFAULT_FORMAT);
+        assert_eq!(params.format, OutputFormat::Toon);
     }
 
     #[test]
@@ -583,7 +581,7 @@ mod tests {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "json".to_string(),
+            format: OutputFormat::Json,
         };
         let collection_result = MessageCollectionResult {
             messages: vec![],
@@ -602,7 +600,7 @@ mod tests {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "json".to_string(),
+            format: OutputFormat::Json,
         };
         let collection_result = MessageCollectionResult {
             messages: vec![],
@@ -617,11 +615,11 @@ mod tests {
     }
 
     #[test]
-    fn test_format_output_json() {
+    fn test_format_output_toon_basic() {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "json".to_string(),
+            format: OutputFormat::Toon,
         };
         let collection_result = MessageCollectionResult {
             messages: vec![
@@ -641,11 +639,11 @@ mod tests {
     }
 
     #[test]
-    fn test_format_output_json_with_timeout() {
+    fn test_format_output_toon_with_timeout() {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "json".to_string(),
+            format: OutputFormat::Toon,
         };
         let collection_result = MessageCollectionResult {
             messages: vec![json!({"id": 1, "name": "test1"})],
@@ -661,11 +659,11 @@ mod tests {
     }
 
     #[test]
-    fn test_format_output_json_with_errors() {
+    fn test_format_output_toon_with_errors() {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "json".to_string(),
+            format: OutputFormat::Toon,
         };
         let collection_result = MessageCollectionResult {
             messages: vec![json!({"id": 1, "name": "test1"})],
@@ -675,17 +673,18 @@ mod tests {
         let result = format_output(&params, &collection_result, 2);
         assert!(result.is_ok());
         let output = result.unwrap();
+        // TOON format should still contain these field names
         assert!(output.contains("metadata"));
         assert!(output.contains("error_count"));
-        assert!(output.contains("\"error_count\": 3"));
+        assert!(output.contains("3")); // Check for the error count value
     }
 
     #[test]
-    fn test_format_output_pretty() {
+    fn test_format_output_json() {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "pretty".to_string(),
+            format: OutputFormat::Json,
         };
         let collection_result = MessageCollectionResult {
             messages: vec![json!({"id": 1, "name": "test"})],
@@ -695,18 +694,19 @@ mod tests {
         let result = format_output(&params, &collection_result, 1);
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(output.contains("# Stream Sample"));
-        assert!(output.contains("Message 1"));
-        assert!(output.contains("```json"));
-        assert!(!output.contains("⚠️")); // No warnings when no timeout/errors
+        // JSON format should be valid JSON with pretty printing
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(parsed["stream_name"], "test_topic");
+        assert_eq!(parsed["message_count"], 1);
+        assert!(parsed.get("metadata").is_none()); // No metadata when no errors
     }
 
     #[test]
-    fn test_format_output_pretty_with_timeout() {
+    fn test_format_output_json_with_timeout() {
         let params = GetStreamSampleParams {
             stream_name: "test_topic".to_string(),
             limit: 10,
-            format: "pretty".to_string(),
+            format: OutputFormat::Json,
         };
         let collection_result = MessageCollectionResult {
             messages: vec![json!({"id": 1, "name": "test"})],
@@ -716,8 +716,10 @@ mod tests {
         let result = format_output(&params, &collection_result, 1);
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(output.contains("⚠️"));
-        assert!(output.contains("timed out"));
+        // JSON format should include metadata when there are issues
+        let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert!(parsed.get("metadata").is_some());
+        assert_eq!(parsed["metadata"]["timed_out"], true);
     }
 
     #[test]
@@ -727,7 +729,7 @@ mod tests {
         const _: () = assert!(MAX_LIMIT > MIN_LIMIT);
         const _: () = assert!(DEFAULT_LIMIT >= MIN_LIMIT);
         const _: () = assert!(DEFAULT_LIMIT <= MAX_LIMIT);
-        assert_eq!(VALID_FORMATS.len(), 2);
+        assert_eq!(OutputFormat::valid_formats().len(), 2);
         // SAMPLE_TIMEOUT_SECS is a constant, so we don't need to assert on it
     }
 

@@ -28,6 +28,7 @@ const createMockColumns = (fields: string[]): Column[] =>
     default: null,
     ttl: null,
     codec: null,
+    materialized: null,
     annotations: [],
   }));
 

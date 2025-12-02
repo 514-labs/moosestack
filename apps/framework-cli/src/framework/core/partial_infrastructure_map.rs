@@ -371,11 +371,15 @@ pub struct WriteTo {
 ///
 /// Used to define where transformed data should be written and optionally specify a version.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransformationTarget {
     pub kind: WriteToKind,
     pub name: String,
     pub version: Option<String>,
     pub metadata: Option<Metadata>,
+    /// Source file path where this transform was declared
+    #[serde(default)]
+    pub source_file: Option<String>,
 }
 
 /// Configuration for a topic consumer.
@@ -383,8 +387,12 @@ pub struct TransformationTarget {
 /// Currently only contains version information but could be extended with additional
 /// consumer-specific configuration in the future.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Consumer {
     pub version: Option<String>,
+    /// Source file path where this consumer was declared
+    #[serde(default)]
+    pub source_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1190,6 +1198,27 @@ impl PartialInfrastructureMap {
                     .find(|topic| topic.name == transformation_target.name)
                     .expect(not_found);
 
+                // Build metadata with source file if available
+                let metadata = match (
+                    &transformation_target.metadata,
+                    &transformation_target.source_file,
+                ) {
+                    (Some(meta), Some(source_file)) => Some(Metadata {
+                        description: meta.description.clone(),
+                        source: Some(super::infrastructure::table::SourceLocation {
+                            file: source_file.clone(),
+                        }),
+                    }),
+                    (Some(meta), None) => Some(meta.clone()),
+                    (None, Some(source_file)) => Some(Metadata {
+                        description: None,
+                        source: Some(super::infrastructure::table::SourceLocation {
+                            file: source_file.clone(),
+                        }),
+                    }),
+                    (None, None) => None,
+                };
+
                 let function_process = FunctionProcess {
                     name: process_name.clone(),
                     source_topic_id: source_topic.id(),
@@ -1205,13 +1234,21 @@ impl PartialInfrastructureMap {
                         name: process_name.clone(),
                         primitive_type: PrimitiveTypes::Function,
                     },
-                    metadata: transformation_target.metadata.clone(),
+                    metadata,
                 };
 
                 function_processes.insert(function_process.id(), function_process);
             }
 
             for consumer in &source_partial_topic.consumers {
+                // Build metadata with source file if available
+                let metadata = consumer.source_file.as_ref().map(|source_file| Metadata {
+                    description: None,
+                    source: Some(super::infrastructure::table::SourceLocation {
+                        file: source_file.clone(),
+                    }),
+                });
+
                 let function_process = FunctionProcess {
                     // In dmv1, consumer process has the id format!("{}_{}_{}", self.name, self.source_topic_id, self.version)
                     name: topic_name.clone(),
@@ -1225,7 +1262,7 @@ impl PartialInfrastructureMap {
                         name: topic_name.clone(),
                         primitive_type: PrimitiveTypes::DataModel,
                     },
-                    metadata: None,
+                    metadata,
                 };
 
                 function_processes.insert(function_process.id(), function_process);

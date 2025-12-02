@@ -1,6 +1,7 @@
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { OlapTable } from "./olapTable";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
+import { getSourceFileFromStack } from "../utils/stackTrace";
 
 type SqlObject = OlapTable<any> | SqlResource;
 
@@ -23,6 +24,9 @@ export class SqlResource {
   pullsDataFrom: SqlObject[];
   /** List of OlapTables or Views that this resource writes data to. */
   pushesDataTo: SqlObject[];
+
+  /** @internal Source file path where this resource was defined */
+  sourceFile?: string;
 
   /**
    * Creates a new SqlResource instance.
@@ -59,5 +63,9 @@ export class SqlResource {
     );
     this.pullsDataFrom = options?.pullsDataFrom ?? [];
     this.pushesDataTo = options?.pushesDataTo ?? [];
+
+    // Capture source file from stack trace
+    const stack = new Error().stack;
+    this.sourceFile = getSourceFileFromStack(stack);
   }
 }

@@ -35,7 +35,7 @@ convert_case = "0.6.0"
 humantime = "2.1.0"
 uuid = { version = "1.6", features = ["v4", "serde"] }
 serde_json = { version = "1.0.133", features = ["preserve_order"] }
-serde_urlencoded = "0.7" 
+serde_urlencoded = "0.7"
 semver = "1.0"
 base64 = "0.22.0"
 async-recursion = "1.1.0"
@@ -84,23 +84,6 @@ logos = "0.15.0"
 # Monitoring
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-opentelemetry_sdk = { version = "0.29.0", features = [
-    "logs",
-    "metrics",
-    "trace",
-    "rt-tokio",
-] }
-opentelemetry-semantic-conventions = "0.29"
-opentelemetry = "0.29"
-opentelemetry-appender-tracing = "0.29.0"
-opentelemetry-otlp = { version = "0.29.0", default-features = false, features = [
-    "logs",
-    "metrics",
-    "trace",
-    "http-json",
-    "tokio",
-] }
-opentelemetry-http = { version = "0.29.0", features = ["reqwest"] }
 prometheus-client = "0.23"
 serde_yaml = "0.9.34"
 temporal-sdk-core = { git = "https://github.com/temporalio/sdk-core.git", rev = "b94b2fc172c2740705b3454a0e04b856fe426233" }
@@ -116,6 +99,7 @@ keyring = { version = "3.6", features = ["apple-native", "linux-native"] }
 rmcp = { version = "0.8.1", features = ["server", "transport-streamable-http-server"] }
 percent-encoding = "2.3.2"
 dotenvy = "0.15"
+toon-format = "0.4.0"
 
 [dev-dependencies]
 clickhouse = { version = "0.14.0", features = ["uuid", "test-util"] }
@@ -136,4 +120,4 @@ walkdir = "2"
 used_linker = []
 
 [package.metadata.cargo-machete]
-ignored = ["opentelemetry-http", "prost-types", "rustpython-ast"]
+ignored = ["prost-types", "rustpython-ast"]

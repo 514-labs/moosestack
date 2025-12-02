@@ -823,6 +823,13 @@ async fn execute_add_table_column(
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
+    // Include MATERIALIZED clause if column has a materialized expression
+    let materialized_clause = clickhouse_column
+        .materialized
+        .as_ref()
+        .map(|m| format!(" MATERIALIZED {}", m))
+        .unwrap_or_default();
+
     let codec_clause = clickhouse_column
         .codec
         .as_ref()
@@ -841,13 +848,14 @@ async fn execute_add_table_column(
     };
 
     let add_column_query = format!(
-        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}  {}",
+        "ALTER TABLE `{}`.`{}`{} ADD COLUMN `{}` {}{}{}{}{}  {}",
         db_name,
         table_name,
         cluster_clause,
         clickhouse_column.name,
         column_type_string,
         default_clause,
+        materialized_clause,
         codec_clause,
         ttl_clause,
         position_clause
@@ -908,6 +916,7 @@ async fn execute_modify_table_column(
     // Check if only the comment has changed
     let data_type_changed = before_column.data_type != after_column.data_type;
     let default_changed = before_column.default != after_column.default;
+    let materialized_changed = before_column.materialized != after_column.materialized;
     let required_changed = before_column.required != after_column.required;
     let comment_changed = before_column.comment != after_column.comment;
     let ttl_changed = before_column.ttl != after_column.ttl;
@@ -918,6 +927,7 @@ async fn execute_modify_table_column(
     if !data_type_changed
         && !required_changed
         && !default_changed
+        && !materialized_changed
         && !ttl_changed
         && !codec_changed
         && comment_changed
@@ -958,7 +968,7 @@ async fn execute_modify_table_column(
 
     tracing::info!(
         "Executing ModifyTableColumn for table: {}, column: {} ({}→{})\
-data_type_changed: {data_type_changed}, default_changed: {default_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}, codec_changed: {codec_changed}",
+data_type_changed: {data_type_changed}, default_changed: {default_changed}, materialized_changed: {materialized_changed}, required_changed: {required_changed}, comment_changed: {comment_changed}, ttl_changed: {ttl_changed}, codec_changed: {codec_changed}",
         table_name,
         after_column.name,
         before_column.data_type,
@@ -970,6 +980,8 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, requ
 
     // Build all the SQL statements needed (main modify + optional removes)
     let removing_default = before_column.default.is_some() && after_column.default.is_none();
+    let removing_materialized =
+        before_column.materialized.is_some() && after_column.materialized.is_none();
     let removing_ttl = before_column.ttl.is_some() && after_column.ttl.is_none();
     let removing_codec = before_column.codec.is_some() && after_column.codec.is_none();
     let queries = build_modify_column_sql(
@@ -977,6 +989,7 @@ data_type_changed: {data_type_changed}, default_changed: {default_changed}, requ
         table_name,
         &clickhouse_column,
         removing_default,
+        removing_materialized,
         removing_ttl,
         removing_codec,
         cluster_name,
@@ -1027,11 +1040,13 @@ async fn execute_modify_column_comment(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_modify_column_sql(
     db_name: &str,
     table_name: &str,
     ch_col: &ClickHouseColumn,
     removing_default: bool,
+    removing_materialized: bool,
     removing_ttl: bool,
     removing_codec: bool,
     cluster_name: Option<&str>,
@@ -1049,6 +1064,14 @@ fn build_modify_column_sql(
     if removing_default {
         statements.push(format!(
             "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE DEFAULT",
+            db_name, table_name, cluster_clause, ch_col.name
+        ));
+    }
+
+    // Add REMOVE MATERIALIZED statement if needed
+    if removing_materialized {
+        statements.push(format!(
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` REMOVE MATERIALIZED",
             db_name, table_name, cluster_clause, ch_col.name
         ));
     }
@@ -1082,6 +1105,13 @@ fn build_modify_column_sql(
         .map(|d| format!(" DEFAULT {}", d))
         .unwrap_or_default();
 
+    // MATERIALIZED clause: If omitted, ClickHouse KEEPS any existing MATERIALIZED
+    let materialized_clause = ch_col
+        .materialized
+        .as_ref()
+        .map(|m| format!(" MATERIALIZED {}", m))
+        .unwrap_or_default();
+
     // TTL clause: If omitted, ClickHouse KEEPS any existing TTL
     // Therefore, TTL removal requires a separate REMOVE TTL statement
     let ttl_clause = ch_col
@@ -1102,26 +1132,28 @@ fn build_modify_column_sql(
     let main_sql = if let Some(ref comment) = ch_col.comment {
         let escaped_comment = comment.replace('\'', "''");
         format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{} COMMENT '{}'",
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{} COMMENT '{}'",
             db_name,
             table_name,
             cluster_clause,
             ch_col.name,
             column_type_string,
             default_clause,
+            materialized_clause,
             codec_clause,
             ttl_clause,
             escaped_comment
         )
     } else {
         format!(
-            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}",
+            "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{}",
             db_name,
             table_name,
             cluster_clause,
             ch_col.name,
             column_type_string,
             default_clause,
+            materialized_clause,
             codec_clause,
             ttl_clause
         )
@@ -1809,16 +1841,17 @@ impl OlapOperations for ConfiguredDBClient {
                     None
                 };
 
-                let default = match default_kind.deref() {
-                    "" => None,
-                    "DEFAULT" => Some(default_expression),
-                    "MATERIALIZED" | "ALIAS" => {
-                        debug!("MATERIALIZED and ALIAS not yet handled.");
-                        None
+                let (default, materialized) = match default_kind.deref() {
+                    "" => (None, None),
+                    "DEFAULT" => (Some(default_expression.clone()), None),
+                    "MATERIALIZED" => (None, Some(default_expression.clone())),
+                    "ALIAS" => {
+                        debug!("ALIAS columns not yet handled.");
+                        (None, None)
                     }
                     _ => {
                         debug!("Unknown default kind: {default_kind} for column {col_name}");
-                        None
+                        (None, None)
                     }
                 };
 
@@ -1875,6 +1908,7 @@ impl OlapOperations for ConfiguredDBClient {
                     comment: column_comment,
                     ttl: normalized_ttl,
                     codec,
+                    materialized,
                 };
 
                 columns.push(column);
@@ -2333,6 +2367,7 @@ fn reconstruct_sql_resource_common(
     Ok(SqlResource {
         name,
         database: Some(database),
+        source_file: None, // Introspected from database, not from user code
         setup: vec![setup],
         teardown: vec![teardown],
         pulls_data_from,
@@ -2849,6 +2884,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Old user comment".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let after_column = Column {
@@ -2868,6 +2904,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("New user comment".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         // The execute_modify_table_column function should detect this as comment-only change
@@ -2894,6 +2931,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Number of things".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
         let after_column = Column {
             default: Some("42".to_string()),
@@ -2902,7 +2940,8 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
 
         let ch_after = std_column_to_clickhouse_column(after_column).unwrap();
         let sqls =
-            build_modify_column_sql("db", "table", &ch_after, false, false, false, None).unwrap();
+            build_modify_column_sql("db", "table", &ch_after, false, false, false, false, None)
+                .unwrap();
 
         assert_eq!(sqls.len(), 1);
         assert_eq!(
@@ -2927,6 +2966,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("old".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let after_column = Column {
@@ -2960,6 +3000,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Updated description field".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -2968,6 +3009,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             "test_db",
             "users",
             &clickhouse_column,
+            false,
             false,
             false,
             false,
@@ -2998,12 +3040,14 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Hash of the ID".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let sqls = build_modify_column_sql(
             "test_db",
             "test_table",
             &sample_hash_col,
+            false,
             false,
             false,
             false,
@@ -3029,12 +3073,14 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let sqls = build_modify_column_sql(
             "test_db",
             "test_table",
             &created_at_col,
+            false,
             false,
             false,
             false,
@@ -3060,12 +3106,14 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let sqls = build_modify_column_sql(
             "test_db",
             "test_table",
             &status_col,
+            false,
             false,
             false,
             false,
@@ -3443,6 +3491,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: Some("Number of items".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3505,6 +3554,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
@@ -3570,6 +3620,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 comment: None,
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -3638,6 +3689,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 comment: None,
                 ttl: Some("created_at + INTERVAL 7 DAY".to_string()),
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: Some("toYYYYMM(created_at)".to_string()),
@@ -3817,5 +3869,78 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_modify_column_with_materialized() {
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseColumn;
+
+        // Test changing a MATERIALIZED expression
+        let ch_col = ClickHouseColumn {
+            name: "event_date".to_string(),
+            column_type: ClickHouseColumnType::Date,
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: None,
+            materialized: Some("toStartOfMonth(event_time)".to_string()),
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &ch_col,
+            false, // removing_default
+            false, // removing_materialized
+            false, // removing_ttl
+            false, // removing_codec
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(sqls.len(), 1);
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN IF EXISTS `event_date` Date MATERIALIZED toStartOfMonth(event_time)"
+        );
+    }
+
+    #[test]
+    fn test_remove_materialized_sql_generation() {
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseColumn;
+
+        let ch_col = ClickHouseColumn {
+            name: "user_hash".to_string(),
+            column_type: ClickHouseColumnType::ClickhouseInt(ClickHouseInt::UInt64),
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: None,
+            materialized: None,
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &ch_col,
+            false,
+            true, // removing_materialized
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+
+        assert!(!sqls.is_empty());
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN `user_hash` REMOVE MATERIALIZED"
+        );
     }
 }

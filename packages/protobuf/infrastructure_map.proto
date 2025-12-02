@@ -247,6 +247,8 @@ message Column {
   optional string ttl = 10;
   // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
   optional string codec = 11;
+  // Materialized expression
+  optional string materialized = 12;
 }
 
 enum SimpleColumnType {
@@ -421,6 +423,8 @@ message SqlResource {
   // Optional database name for multi-database support
   // When not specified, uses the global ClickHouse config database
   optional string database = 7;
+  // Optional source file path where this SQL resource is defined
+  string source_file = 8;
 }
 
 message InfrastructureSignature {
