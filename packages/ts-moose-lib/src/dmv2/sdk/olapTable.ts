@@ -6,7 +6,7 @@ import {
   isNestedType,
 } from "../../dataModels/dataModelTypes";
 import { ClickHouseEngines } from "../../blocks/helpers";
-import { getMooseInternal } from "../internal";
+import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import type {
@@ -610,7 +610,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     const tables = getMooseInternal().tables;
     const registryKey =
       this.config.version ? `${name}_${this.config.version}` : name;
-    if (tables.has(registryKey)) {
+    // In client-only mode (MOOSE_CLIENT_ONLY=true), allow duplicate registrations
+    // to support Next.js HMR which re-executes modules without clearing the registry
+    if (!isClientOnlyMode() && tables.has(registryKey)) {
       throw new Error(
         `OlapTable with name ${name} and version ${config?.version ?? "unversioned"} already exists`,
       );
