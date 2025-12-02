@@ -721,7 +721,7 @@ jobs:
       - name: Install pypi Cleanup
         run: |
           sudo apt install -y expect
-          pip install pypi-cleanup
+          pip install --upgrade pypi-cleanup
 
       - uses: 1password/load-secrets-action@v1
         id: op-load-secret
