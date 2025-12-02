@@ -13,6 +13,7 @@ use tracing::{debug, info};
 
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
+use toon_format::{encode, types::KeyFoldingMode, EncodeOptions};
 
 // Constants for validation and limits
 const DEFAULT_LIMIT: u32 = 100;
@@ -59,7 +60,7 @@ struct QueryOlapParams {
     query: String,
     /// Maximum number of rows to return
     limit: u32,
-    /// Output format (json or table)
+    /// Output format (toon or table)
     format: String,
 }
 
@@ -183,12 +184,18 @@ fn apply_limit_to_query(query: &str, max_rows: u32, analysis: &QueryAnalysis) ->
     }
 }
 
-/// Formats the query result as JSON
-fn format_as_json(result: &str) -> Result<String, QueryError> {
-    // Try to parse as JSON and pretty-print
+/// Formats the query result as TOON
+fn format_as_toon(result: &str) -> Result<String, QueryError> {
+    // Try to parse as JSON and convert to TOON format
     match serde_json::from_str::<Value>(result) {
-        Ok(json_value) => serde_json::to_string_pretty(&json_value)
-            .map_err(|e| QueryError::FormattingError(format!("Failed to format JSON: {}", e))),
+        Ok(json_value) => {
+            let options = EncodeOptions::new()
+                .with_key_folding(KeyFoldingMode::Safe)
+                .with_spaces(2);
+            encode(&json_value, &options).map_err(|e| {
+                QueryError::FormattingError(format!("Failed to format as TOON: {}", e))
+            })
+        }
         Err(_) => {
             // If not JSON, return as-is (e.g., for SHOW commands)
             Ok(result.to_string())
@@ -279,8 +286,8 @@ pub fn tool_definition() -> Tool {
             "format": {
                 "type": "string",
                 "description": "Output format for results",
-                "enum": ["json", "table"],
-                "default": "json"
+                "enum": ["toon", "table"],
+                "default": "toon"
             }
         },
         "required": ["query"]
@@ -289,7 +296,7 @@ pub fn tool_definition() -> Tool {
     Tool {
         name: "query_olap".into(),
         description: Some(
-            "Execute read-only SQL queries against the ClickHouse OLAP database. Queries automatically use the configured database as the default context, so you can query tables without fully-qualifying them. Use this tool to explore data, check table schemas, and analyze stored information. Supports SELECT queries, system table queries (e.g., system.tables, system.columns), and metadata commands (SHOW, DESCRIBE, EXPLAIN).".into()
+            "Query ClickHouse to explore data, verify ingestion, check schemas. Use SELECT to analyze stored data, SHOW/DESCRIBE for table info, system.tables/system.columns for metadata. Read-only, safe for production. Tables auto-scoped to project database.".into()
         ),
         input_schema: Arc::new(schema.as_object().unwrap().clone()),
         annotations: None,
@@ -335,12 +342,12 @@ fn parse_params(arguments: Option<&Map<String, Value>>) -> Result<QueryOlapParam
     let format = args
         .get("format")
         .and_then(|v| v.as_str())
-        .unwrap_or("json")
+        .unwrap_or("toon")
         .to_string();
 
-    if format != "json" && format != "table" {
+    if format != "toon" && format != "table" {
         return Err(QueryError::InvalidParameter(format!(
-            "format must be 'json' or 'table', got '{}'",
+            "format must be 'toon' or 'table', got '{}'",
             format
         )));
     }
@@ -419,7 +426,7 @@ async fn execute_query_olap(
 
     // Format based on requested format
     let formatted_result = match params.format.as_str() {
-        "json" => format_as_json(&data_str)?,
+        "toon" => format_as_toon(&data_str)?,
         "table" => format_as_table(&data_str)?,
         _ => data_str, // Should not happen due to validation
     };
@@ -775,9 +782,9 @@ mod tests {
     }
 
     #[test]
-    fn test_format_as_json_array() {
+    fn test_format_as_toon_array() {
         let input = r#"[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}]"#;
-        let result = format_as_json(input).unwrap();
+        let result = format_as_toon(input).unwrap();
         assert!(result.contains("Alice"));
         assert!(result.contains("Bob"));
     }
@@ -803,7 +810,7 @@ mod tests {
         let args = json!({
             "query": "SELECT * FROM users",
             "limit": 50,
-            "format": "json"
+            "format": "toon"
         });
         let map = args.as_object().unwrap();
         let result = parse_params(Some(map));
@@ -811,7 +818,7 @@ mod tests {
         let params = result.unwrap();
         assert_eq!(params.query, "SELECT * FROM users");
         assert_eq!(params.limit, 50);
-        assert_eq!(params.format, "json");
+        assert_eq!(params.format, "toon");
     }
 
     #[test]
@@ -824,7 +831,7 @@ mod tests {
         assert!(result.is_ok());
         let params = result.unwrap();
         assert_eq!(params.limit, DEFAULT_LIMIT);
-        assert_eq!(params.format, "json");
+        assert_eq!(params.format, "toon");
     }
 
     #[test]
