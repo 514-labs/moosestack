@@ -369,6 +369,11 @@ impl ClickHouseTableDiffStrategy {
         matches!(&table.engine, ClickhouseEngine::S3Queue { .. })
     }
 
+    /// Check if a table uses the Kafka engine
+    pub fn is_kafka_table(table: &Table) -> bool {
+        matches!(&table.engine, ClickhouseEngine::Kafka { .. })
+    }
+
     /// Check if a SQL resource is a materialized view that needs population
     /// This is ClickHouse-specific logic for handling materialized view initialization
     pub fn check_materialized_view_population(
@@ -383,16 +388,42 @@ impl ClickHouseTableDiffStrategy {
         // Check if this is a CREATE MATERIALIZED VIEW statement
         for sql in &sql_resource.setup {
             if let Ok(mv_stmt) = parse_create_materialized_view(sql) {
-                // Check if any source is an S3Queue table
-                let has_s3queue_source = mv_stmt.source_tables.iter().any(|source| {
-                    tables
-                        .get(&source.qualified_name())
-                        .is_some_and(Self::is_s3queue_table)
+                // Use the pulls_data_from dependency info (from selectTables) instead of parsing SQL
+                // This gives us the correct database-prefixed table IDs
+                use crate::framework::core::infrastructure::InfrastructureSignature;
+                let has_unpopulatable_source = sql_resource.pulls_data_from.iter().any(|source| {
+                    // Only check Table sources, not Stream sources
+                    if let InfrastructureSignature::Table { id } = source {
+                        // First try direct lookup with plain table name
+                        if let Some(table) = tables.get(id) {
+                            let is_s3queue = Self::is_s3queue_table(table);
+                            let is_kafka = Self::is_kafka_table(table);
+                            return is_s3queue || is_kafka;
+                        }
+
+                        // Try finding by searching for keys ending with the table name
+                        // Keys are in format: "{database}_{table_name}"
+                        // We look for a key that ends with "_{table_name}"
+                        let table_suffix = format!("_{}", id);
+
+                        if let Some((_key, table)) =
+                            tables.iter().find(|(key, _)| key.ends_with(&table_suffix))
+                        {
+                            let is_s3queue = Self::is_s3queue_table(table);
+                            let is_kafka = Self::is_kafka_table(table);
+                            is_s3queue || is_kafka
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
                 });
 
                 // Skip population in production (user must handle manually)
-                // Only populate in dev for new MVs with non-S3Queue sources
-                if is_new && !has_s3queue_source && !is_production {
+                // Skip population if source is S3Queue or Kafka (they don't support direct SELECT)
+                // Only populate in dev for new MVs with supported source tables
+                if is_new && !has_unpopulatable_source && !is_production {
                     tracing::info!(
                         "Adding population operation for materialized view '{}'",
                         sql_resource.name
@@ -545,8 +576,46 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
         let mut changes = Vec::new();
+
+        // Helper function to compare table_settings treating [HIDDEN] as a wildcard
+        // [HIDDEN] appears when:
+        // 1. ClickHouse returns it for credential values in SHOW CREATE TABLE
+        // 2. Generated code contains literal "[HIDDEN]" when we don't know the real value
+        // In both cases, we should treat [HIDDEN] as matching any value to avoid false positives
+        let settings_changed = |before_settings: &Option<HashMap<String, String>>,
+                                after_settings: &Option<HashMap<String, String>>|
+         -> bool {
+            match (before_settings, after_settings) {
+                (None, None) => false,
+                (None, Some(map)) | (Some(map), None) => !map.is_empty(),
+                (Some(before_map), Some(after_map)) => {
+                    // Check if keys differ
+                    if before_map.keys().collect::<std::collections::HashSet<_>>()
+                        != after_map.keys().collect::<std::collections::HashSet<_>>()
+                    {
+                        return true;
+                    }
+
+                    // Check if any non-[HIDDEN] values differ
+                    for (key, before_value) in before_map {
+                        if let Some(after_value) = after_map.get(key) {
+                            // If either side is [HIDDEN], treat as matching (wildcard)
+                            if before_value != "[HIDDEN]" && after_value != "[HIDDEN]" {
+                                // Both are real values, compare them
+                                if before_value != after_value {
+                                    return true;
+                                }
+                            }
+                            // If either is [HIDDEN], skip comparison (treat as matching)
+                        }
+                    }
+                    false
+                }
+            }
+        };
+
         // Check if only table settings have changed
-        if before.table_settings != after.table_settings {
+        if settings_changed(&before.table_settings, &after.table_settings) {
             // List of readonly settings that cannot be modified after table creation
             // Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
             const READONLY_SETTINGS: &[(&str, &str)] = &[
@@ -584,6 +653,19 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                         OlapChange::Table(TableChange::Added(after.clone())),
                     ];
                 }
+            }
+
+            // Kafka engine doesn't support ALTER TABLE MODIFY SETTING
+            // It requires drop+create for any settings changes
+            if matches!(&before.engine, ClickhouseEngine::Kafka { .. }) {
+                tracing::warn!(
+                    "ClickHouse: Settings changed for Kafka table '{}', requiring drop+create (Kafka engine doesn't support ALTER TABLE MODIFY SETTING)",
+                    before.name
+                );
+                return vec![
+                    OlapChange::Table(TableChange::Removed(before.clone())),
+                    OlapChange::Table(TableChange::Added(after.clone())),
+                ];
             }
 
             tracing::debug!(
@@ -2223,5 +2305,180 @@ mod tests {
 
         // Should NOT trigger drop+create - both are the same function, just with/without outer parens
         assert_eq!(changes.len(), 0);
+    }
+
+    #[test]
+    fn test_is_kafka_table() {
+        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+        use crate::framework::core::partial_infrastructure_map::LifeCycle;
+
+        let kafka_table = Table {
+            name: "test_kafka".to_string(),
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::Kafka {
+                broker_list: "kafka:9092".to_string(),
+                topic_list: "events".to_string(),
+                group_name: "consumer".to_string(),
+                format: "JSONEachRow".to_string(),
+            },
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test_kafka".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        assert!(ClickHouseTableDiffStrategy::is_kafka_table(&kafka_table));
+
+        let regular_table = create_test_table("regular", vec![], false);
+        assert!(!ClickHouseTableDiffStrategy::is_kafka_table(&regular_table));
+    }
+
+    #[test]
+    fn test_settings_changed_hidden_wildcard() {
+        // This tests the core fix for [HIDDEN] false positives
+        // ClickHouse returns [HIDDEN] for sensitive values in SHOW CREATE TABLE
+        // We should treat [HIDDEN] as a wildcard that matches any value
+
+        use std::collections::HashMap;
+
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Scenario: ClickHouse returns [HIDDEN] for password, code has actual value
+        // This should NOT trigger a change (no false positive)
+        let mut before_settings = HashMap::new();
+        before_settings.insert("kafka_sasl_password".to_string(), "[HIDDEN]".to_string());
+        before_settings.insert("kafka_num_consumers".to_string(), "2".to_string());
+        before.table_settings = Some(before_settings);
+        before.engine = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+
+        let mut after_settings = HashMap::new();
+        after_settings.insert(
+            "kafka_sasl_password".to_string(),
+            "actual_password".to_string(),
+        );
+        after_settings.insert("kafka_num_consumers".to_string(), "2".to_string());
+        after.table_settings = Some(after_settings);
+        after.engine = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Should NOT trigger any changes - [HIDDEN] matches any value
+        assert_eq!(
+            changes.len(),
+            0,
+            "[HIDDEN] should match any value (no false positive)"
+        );
+    }
+
+    #[test]
+    fn test_kafka_settings_change_requires_drop_create() {
+        // Kafka engine does NOT support ALTER TABLE MODIFY SETTING
+        // Any settings change requires drop+create
+        use std::collections::HashMap;
+
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Set up Kafka engine on both
+        before.engine = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+        after.engine = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+
+        // Change only kafka_num_consumers (a non-[HIDDEN] value)
+        let mut before_settings = HashMap::new();
+        before_settings.insert("kafka_num_consumers".to_string(), "1".to_string());
+        before.table_settings = Some(before_settings);
+
+        let mut after_settings = HashMap::new();
+        after_settings.insert("kafka_num_consumers".to_string(), "3".to_string());
+        after.table_settings = Some(after_settings);
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            vec![],
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Kafka should require drop+create (2 changes: Removed + Added)
+        assert_eq!(
+            changes.len(),
+            2,
+            "Kafka settings change should trigger drop+create"
+        );
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::Removed(_))
+        ));
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
     }
 }

@@ -460,6 +460,115 @@ export type DistributedConfig<T> = Omit<
 };
 
 /**
+ * Kafka engine table settings (alterable properties via ALTER TABLE MODIFY SETTING)
+ *
+ * These settings control the behavior of the Kafka consumer and can be modified
+ * after table creation without recreating the table.
+ *
+ * Reference: https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka
+ */
+/**
+ * Kafka engine table settings (alterable properties via ALTER TABLE MODIFY SETTING)
+ *
+ * Reference: https://clickhouse.com/docs/engines/table-engines/integrations/kafka
+ */
+export interface KafkaTableSettings {
+  /** Security protocol for Kafka connection */
+  kafka_security_protocol?: "PLAINTEXT" | "SSL" | "SASL_PLAINTEXT" | "SASL_SSL";
+  /** SASL mechanism for authentication */
+  kafka_sasl_mechanism?:
+    | "GSSAPI"
+    | "PLAIN"
+    | "SCRAM-SHA-256"
+    | "SCRAM-SHA-512"
+    | "OAUTHBEARER";
+  /** SASL username */
+  kafka_sasl_username?: string;
+  /** SASL password */
+  kafka_sasl_password?: string;
+  /** Schema definition (required for formats like Avro, Cap'n Proto) */
+  kafka_schema?: string;
+  /** Number of parallel consumers (default: 1, max: number of topic partitions) */
+  kafka_num_consumers?: string;
+  /** Maximum batch size (in messages) for poll. Default: max_insert_block_size */
+  kafka_max_block_size?: string;
+  /** Number of broken messages to skip per block before throwing an exception. Default: 0 */
+  kafka_skip_broken_messages?: string;
+  /** Commit offsets after each inserted batch: "0" (manual) or "1" (auto-commit per batch). Default: "0" */
+  kafka_commit_every_batch?: string;
+  /** Client identifier passed to Kafka broker */
+  kafka_client_id?: string;
+  /** Timeout for polling Kafka in milliseconds. Default: 0 */
+  kafka_poll_timeout_ms?: string;
+  /** Maximum batch size for poll. Default: 0 */
+  kafka_poll_max_batch_size?: string;
+  /** Interval between flushes in milliseconds. Default: 0 */
+  kafka_flush_interval_ms?: string;
+  /** Consumer reschedule interval in milliseconds. Default: 0 */
+  kafka_consumer_reschedule_ms?: string;
+  /** Use dedicated thread per consumer: "0" (shared) or "1" (dedicated). Default: "0" */
+  kafka_thread_per_consumer?: string;
+  /** Error handling mode: 'default' (stop on error) or 'stream' (write errors to separate stream). Default: 'default' */
+  kafka_handle_error_mode?: "default" | "stream";
+  /** Commit on SELECT queries: "0" (false) or "1" (true). Default: "0" */
+  kafka_commit_on_select?: string;
+  /** Maximum rows per message for row-based formats. Default: 1 */
+  kafka_max_rows_per_message?: string;
+  /** Compression codec for producing messages (e.g., 'gzip', 'snappy', 'lz4', 'zstd') */
+  kafka_compression_codec?: string;
+  /** Compression level. Default: -1 (use codec default) */
+  kafka_compression_level?: string;
+}
+
+/**
+ * Configuration for Kafka engine - streaming data ingestion from Kafka topics
+ *
+ * The Kafka engine creates an internal consumer that reads messages from topics.
+ * Typically used with materialized views to persist data into MergeTree tables.
+ *
+ * @template T The data type of the records stored in the table.
+ *
+ * @example
+ * ```typescript
+ * import { mooseRuntimeEnv } from "@514labs/moose-lib";
+ *
+ * const eventStream = new OlapTable<Event>("event_stream", {
+ *   engine: ClickHouseEngines.Kafka,
+ *   brokerList: "kafka-1:9092,kafka-2:9092",
+ *   topicList: "events",
+ *   groupName: "moose_consumer",
+ *   format: "JSONEachRow",
+ *   settings: {
+ *     kafka_num_consumers: "3",
+ *     kafka_sasl_mechanism: "SCRAM-SHA-256",
+ *     kafka_security_protocol: "SASL_PLAINTEXT",
+ *     kafka_sasl_username: mooseRuntimeEnv.get("KAFKA_USERNAME"),
+ *     kafka_sasl_password: mooseRuntimeEnv.get("KAFKA_PASSWORD"),
+ *   },
+ * });
+ * ```
+ */
+export type KafkaConfig<T> = Omit<
+  BaseOlapConfig<T>,
+  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+> & {
+  engine: ClickHouseEngines.Kafka;
+  /** Kafka broker addresses (comma-separated, e.g., 'kafka-1:9092,kafka-2:9092') */
+  brokerList: string;
+  /** Kafka topics to consume from (comma-separated) */
+  topicList: string;
+  /** Consumer group identifier */
+  groupName: string;
+  /** Message format (e.g., 'JSONEachRow', 'CSV', 'Avro') */
+  format: string;
+  /**
+   * Kafka settings (kafka_schema, kafka_num_consumers, security, tuning params)
+   * All other Kafka parameters must be specified here.
+   */
+  settings?: KafkaTableSettings;
+};
+
+/**
  * Configuration for IcebergS3 engine - read-only Iceberg table access
  *
  * Provides direct querying of Apache Iceberg tables stored on S3.
@@ -519,7 +628,8 @@ type EngineConfig<T> =
   | S3Config<T>
   | BufferConfig<T>
   | DistributedConfig<T>
-  | IcebergS3Config<T>;
+  | IcebergS3Config<T>
+  | KafkaConfig<T>;
 
 /**
  * Union of all engine-specific configurations (new API)

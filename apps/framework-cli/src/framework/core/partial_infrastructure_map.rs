@@ -167,6 +167,15 @@ struct IcebergS3Config {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KafkaConfig {
+    broker_list: String,
+    topic_list: String,
+    group_name: String,
+    format: String,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(tag = "engine", rename_all = "camelCase")]
 enum EngineConfig {
     #[serde(rename = "MergeTree")]
@@ -241,6 +250,9 @@ enum EngineConfig {
 
     #[serde(rename = "IcebergS3")]
     IcebergS3(Box<IcebergS3Config>),
+
+    #[serde(rename = "Kafka")]
+    Kafka(Box<KafkaConfig>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -888,6 +900,13 @@ impl PartialInfrastructureMap {
                     compression: config.compression.clone(),
                 })
             }
+
+            Some(EngineConfig::Kafka(config)) => Ok(ClickhouseEngine::Kafka {
+                broker_list: config.broker_list.clone(),
+                topic_list: config.topic_list.clone(),
+                group_name: config.group_name.clone(),
+                format: config.format.clone(),
+            }),
 
             None => Ok(ClickhouseEngine::MergeTree),
         }
