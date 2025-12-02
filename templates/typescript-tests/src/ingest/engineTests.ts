@@ -142,7 +142,7 @@ export const VersionedCollapsingMergeTreeTable =
   new OlapTable<CollapsingTestData>("VersionedCollapsingMergeTreeTest", {
     engine: ClickHouseEngines.VersionedCollapsingMergeTree,
     sign: "sign",
-    version: "version",
+    ver: "version",
     orderByFields: ["id", "timestamp"],
   });
 
@@ -249,7 +249,7 @@ export const ReplicatedVersionedCollapsingMergeTreeTable =
         "/clickhouse/tables/{database}/{shard}/replicated_versioned_collapsing_test",
       replicaName: "{replica}",
       sign: "sign",
-      version: "version",
+      ver: "version",
       orderByFields: ["id", "timestamp"],
     },
   );

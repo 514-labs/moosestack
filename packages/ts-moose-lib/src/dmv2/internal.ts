@@ -92,7 +92,7 @@ interface CollapsingMergeTreeEngineConfig {
 interface VersionedCollapsingMergeTreeEngineConfig {
   engine: "VersionedCollapsingMergeTree";
   sign: string;
-  version: string;
+  version: string; // Note: This is the version column name, not table version
 }
 
 interface ReplicatedMergeTreeEngineConfig {
@@ -134,7 +134,7 @@ interface ReplicatedVersionedCollapsingMergeTreeEngineConfig {
   keeperPath?: string;
   replicaName?: string;
   sign: string;
-  version: string;
+  version: string; // Note: This is the version column name, not table version
 }
 
 interface S3QueueEngineConfig {
@@ -484,7 +484,7 @@ function convertBasicEngineConfig(
       return {
         engine: "VersionedCollapsingMergeTree",
         sign: versionedConfig.sign,
-        version: versionedConfig.version,
+        version: versionedConfig.ver,
       };
     }
 
@@ -564,7 +564,7 @@ function convertReplicatedEngineConfig(
         keeperPath: replicatedConfig.keeperPath,
         replicaName: replicatedConfig.replicaName,
         sign: replicatedConfig.sign,
-        version: replicatedConfig.version,
+        version: replicatedConfig.ver,
       };
     }
 
