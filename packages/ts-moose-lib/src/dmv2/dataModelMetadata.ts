@@ -86,6 +86,12 @@ export const transformNewMooseResource = (
   // These resources accept arbitrary payload fields that pass through to streaming functions
   const allowIndexSignatures = ["IngestApi", "Stream"].includes(typeName);
 
+  // Check if the type actually has an index signature
+  const typeAtLocation = checker.getTypeAtLocation(typeNode);
+  const hasIndexSignature =
+    allowIndexSignatures &&
+    checker.getIndexInfosOfType(typeAtLocation).length > 0;
+
   const internalArguments =
     typeName === "DeadLetterQueue" ?
       [typiaTypeGuard(node)]
@@ -93,7 +99,7 @@ export const transformNewMooseResource = (
         typiaJsonSchemas(typeNode),
         parseAsAny(
           JSON.stringify(
-            toColumns(checker.getTypeAtLocation(typeNode), checker, {
+            toColumns(typeAtLocation, checker, {
               allowIndexSignatures,
             }),
           ),
@@ -134,6 +140,24 @@ export const transformNewMooseResource = (
     );
 
     updatedArgs = [...updatedArgs, validatorsObject];
+
+    // For IngestPipeline, also pass allowExtraFields so it can propagate to internal Stream/IngestApi
+    if (resourceName === "IngestPipeline") {
+      updatedArgs = [
+        ...updatedArgs,
+        hasIndexSignature ? factory.createTrue() : factory.createFalse(),
+      ];
+    }
+  }
+
+  // For IngestApi and Stream, add the allowExtraFields flag after undefined validators
+  // This enables passing extra fields through to streaming functions when the type has an index signature
+  if (resourceName === "IngestApi" || resourceName === "Stream") {
+    updatedArgs = [
+      ...updatedArgs,
+      factory.createIdentifier("undefined"), // validators (not used for these types)
+      hasIndexSignature ? factory.createTrue() : factory.createFalse(),
+    ];
   }
 
   return ts.factory.updateNewExpression(

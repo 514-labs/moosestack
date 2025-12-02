@@ -620,6 +620,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     &fields.columns,
                     Some(&self.context),
                     self.jwt_claims,
+                    false, // Nested types don't allow extra fields
                 );
                 let serializer = MapAccessSerializer {
                     inner: RefCell::new(inner),
@@ -652,8 +653,12 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                         }
                     })
                     .collect();
-                let inner =
-                    DataModelVisitor::with_context(&columns, Some(&self.context), self.jwt_claims);
+                let inner = DataModelVisitor::with_context(
+                    &columns,
+                    Some(&self.context),
+                    self.jwt_claims,
+                    false, // NamedTuples don't allow extra fields
+                );
                 let serializer = MapAccessSerializer {
                     inner: RefCell::new(inner),
                     map: RefCell::new(map),
@@ -1006,16 +1011,25 @@ pub struct DataModelVisitor<'a> {
     columns: HashMap<String, (Column, State)>,
     parent_context: Option<&'a ParentContext<'a>>,
     jwt_claims: Option<&'a Value>,
+    /// When true, extra fields (not defined in columns) are passed through to the output.
+    /// This is used for types with index signatures to allow arbitrary payload fields.
+    allow_extra_fields: bool,
 }
 impl<'a> DataModelVisitor<'a> {
     pub fn new(columns: &[Column], jwt_claims: Option<&'a Value>) -> Self {
-        Self::with_context(columns, None, jwt_claims)
+        Self::with_context(columns, None, jwt_claims, false)
+    }
+
+    /// Create a new visitor that allows extra fields to pass through.
+    pub fn new_with_extra_fields(columns: &[Column], jwt_claims: Option<&'a Value>) -> Self {
+        Self::with_context(columns, None, jwt_claims, true)
     }
 
     fn with_context(
         columns: &[Column],
         parent_context: Option<&'a ParentContext<'a>>,
         jwt_claims: Option<&'a Value>,
+        allow_extra_fields: bool,
     ) -> Self {
         DataModelVisitor {
             columns: columns
@@ -1024,6 +1038,7 @@ impl<'a> DataModelVisitor<'a> {
                 .collect(),
             parent_context,
             jwt_claims,
+            allow_extra_fields,
         }
     }
 
@@ -1051,6 +1066,15 @@ impl<'a> DataModelVisitor<'a> {
                     jwt_claims: self.jwt_claims,
                 };
                 map.next_value_seed(&mut visitor)?;
+            } else if self.allow_extra_fields {
+                // Pass through extra fields when allowed (e.g., for types with index signatures)
+                let value: Value = map.next_value()?;
+                map_serializer
+                    .serialize_key(&key)
+                    .map_err(A::Error::custom)?;
+                map_serializer
+                    .serialize_value(&value)
+                    .map_err(A::Error::custom)?;
             } else {
                 map.next_value::<serde::de::IgnoredAny>()?;
             }

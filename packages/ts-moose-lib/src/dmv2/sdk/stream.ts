@@ -221,6 +221,8 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     config: StreamConfig<T>,
     schema: IJsonSchemaCollection.IV3_1,
     columns: Column[],
+    validators: undefined,
+    allowExtraFields: boolean,
   );
 
   constructor(
@@ -228,8 +230,10 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
     config?: StreamConfig<T>,
     schema?: IJsonSchemaCollection.IV3_1,
     columns?: Column[],
+    validators?: undefined,
+    allowExtraFields?: boolean,
   ) {
-    super(name, config ?? {}, schema, columns);
+    super(name, config ?? {}, schema, columns, undefined, allowExtraFields);
     const streams = getMooseInternal().streams;
     if (streams.has(name)) {
       throw new Error(`Stream with name ${name} already exists`);
@@ -627,7 +631,7 @@ export class DeadLetterQueue<T> extends Stream<DeadLetterModel> {
       );
     }
 
-    super(name, config ?? {}, dlqSchema, dlqColumns);
+    super(name, config ?? {}, dlqSchema, dlqColumns, undefined, false);
     this.typeGuard = typeGuard;
     getMooseInternal().streams.set(name, this);
   }

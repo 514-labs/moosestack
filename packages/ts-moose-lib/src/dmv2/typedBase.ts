@@ -75,6 +75,13 @@ export class TypedBase<T, C> {
   metadata!: { [key: string]: any };
 
   /**
+   * Whether this resource allows extra fields beyond the defined columns.
+   * When true, extra fields in payloads are passed through to streaming functions.
+   * Injected by the compiler plugin when the type has an index signature.
+   */
+  allowExtraFields: boolean;
+
+  /**
    * @internal Constructor intended for internal use by subclasses and the compiler plugin.
    * It expects the schema and columns to be provided, typically injected by the compiler.
    *
@@ -82,6 +89,7 @@ export class TypedBase<T, C> {
    * @param config The configuration object for the resource.
    * @param schema The JSON schema for the resource's data type T (injected).
    * @param columns The array of Column definitions for T (injected).
+   * @param allowExtraFields Whether extra fields are allowed (injected when type has index signature).
    */
   constructor(
     name: string,
@@ -89,6 +97,7 @@ export class TypedBase<T, C> {
     schema?: IJsonSchemaCollection.IV3_1,
     columns?: Column[],
     validators?: TypiaValidators<T>,
+    allowExtraFields?: boolean,
   ) {
     if (schema === undefined || columns === undefined) {
       throw new Error(
@@ -107,6 +116,7 @@ export class TypedBase<T, C> {
     this.name = name;
     this.config = config;
     this.validators = validators;
+    this.allowExtraFields = allowExtraFields ?? false;
 
     // Always ensure metadata is an object and attach stackTrace (last 10 lines only)
     this.metadata =

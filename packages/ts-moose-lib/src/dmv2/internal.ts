@@ -299,6 +299,11 @@ interface IngestApiJson {
   metadata?: { description?: string };
   /** JSON schema */
   schema: IJsonSchemaCollection.IV3_1;
+  /**
+   * Whether this API allows extra fields beyond the defined columns.
+   * When true, extra fields in payloads are passed through to streaming functions.
+   */
+  allowExtraFields?: boolean;
 }
 
 /**
@@ -834,6 +839,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       deadLetterQueue: api.config.deadLetterQueue?.name,
       metadata,
       schema: api.schema,
+      allowExtraFields: api.allowExtraFields,
     };
   });
 

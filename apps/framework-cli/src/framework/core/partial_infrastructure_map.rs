@@ -331,6 +331,10 @@ struct PartialIngestApi {
     pub path: Option<String>,
     #[serde(default)]
     pub schema: serde_json::Map<String, serde_json::Value>,
+    /// Whether this API allows extra fields beyond the defined columns.
+    /// When true, extra fields in payloads are passed through to streaming functions.
+    #[serde(default)]
+    pub allow_extra_fields: bool,
 }
 
 /// Represents an egress API endpoint definition before conversion to a complete [`ApiEndpoint`].
@@ -968,6 +972,7 @@ impl PartialInfrastructureMap {
                 // If this is the app directory, we should use the project reference so that
                 // if we rename the app folder we don't have to fish for references
                 abs_file_path: main_file.to_path_buf(),
+                allow_extra_fields: partial_api.allow_extra_fields,
             };
 
             let api_endpoint = ApiEndpoint {

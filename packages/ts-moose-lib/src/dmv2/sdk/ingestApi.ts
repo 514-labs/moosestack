@@ -45,6 +45,8 @@ export class IngestApi<T> extends TypedBase<T, IngestConfig<T>> {
     config: IngestConfig<T>,
     schema: IJsonSchemaCollection.IV3_1,
     columns: Column[],
+    validators: undefined,
+    allowExtraFields: boolean,
   );
 
   constructor(
@@ -52,8 +54,10 @@ export class IngestApi<T> extends TypedBase<T, IngestConfig<T>> {
     config: IngestConfig<T>,
     schema?: IJsonSchemaCollection.IV3_1,
     columns?: Column[],
+    validators?: undefined,
+    allowExtraFields?: boolean,
   ) {
-    super(name, config, schema, columns);
+    super(name, config, schema, columns, undefined, allowExtraFields);
     const ingestApis = getMooseInternal().ingestApis;
     if (ingestApis.has(name)) {
       throw new Error(`Ingest API with name ${name} already exists`);

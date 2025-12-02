@@ -1129,16 +1129,20 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Index signature test for TypeScript (ENG-1617)
         // Tests that IngestApi accepts payloads with extra fields when the type has an index signature.
-        // Currently, only known fields are passed through to streaming functions.
-        // Extra fields are accepted by the API (no validation error) but dropped at the Rust level.
-        it("should accept payloads with extra fields via index signature", async function () {
+        // Extra fields are passed through to streaming functions and stored in a JSON column.
+        //
+        // KEY CONCEPTS:
+        // - IngestApi/Stream: CAN have index signatures (accept variable fields)
+        // - OlapTable: CANNOT have index signatures (ClickHouse requires fixed schema)
+        // - Transform: Receives ALL fields, outputs to fixed schema with JSON column for extras
+
+        it("should pass extra fields to streaming function via index signature", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
           const userId = randomUUID();
           const timestamp = new Date().toISOString();
 
           // Send data with known fields plus arbitrary extra fields
-          // The API should accept this without validation errors
           await withRetries(
             async () => {
               const response = await fetch(
@@ -1152,8 +1156,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                     eventName: "page_view",
                     userId: userId,
                     orgId: "org-123",
-                    // Arbitrary extra fields (index signature allows these)
-                    // Note: These are accepted by the API but not passed to streaming functions
+                    // Extra fields - allowed by index signature, passed to streaming function
                     customProperty: "custom-value",
                     pageUrl: "/dashboard",
                     sessionDuration: 120,
@@ -1220,16 +1223,46 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          // Verify properties column exists (even if empty)
-          // Note: Extra fields from index signature are currently not passed through
-          // to streaming functions. This is a known limitation - the Rust backend
-          // validates known columns and drops unknown fields.
+          // Verify extra fields are stored in the properties JSON column
           if (row.properties === undefined) {
             throw new Error("Expected properties JSON column to exist");
           }
 
+          // Parse properties if it's a string (ClickHouse may return JSON as string)
+          const properties =
+            typeof row.properties === "string" ?
+              JSON.parse(row.properties)
+            : row.properties;
+
+          // Verify extra fields were received by streaming function and stored in properties
+          if (properties.customProperty !== "custom-value") {
+            throw new Error(
+              `Expected properties.customProperty to be 'custom-value', got '${properties.customProperty}'. Properties: ${JSON.stringify(properties)}`,
+            );
+          }
+          if (properties.pageUrl !== "/dashboard") {
+            throw new Error(
+              `Expected properties.pageUrl to be '/dashboard', got '${properties.pageUrl}'`,
+            );
+          }
+          if (properties.sessionDuration !== 120) {
+            throw new Error(
+              `Expected properties.sessionDuration to be 120, got '${properties.sessionDuration}'`,
+            );
+          }
+          if (
+            !properties.nested ||
+            properties.nested.level1 !== "value1" ||
+            !properties.nested.level2 ||
+            properties.nested.level2.deep !== "nested"
+          ) {
+            throw new Error(
+              `Expected nested object to be preserved, got '${JSON.stringify(properties.nested)}'`,
+            );
+          }
+
           console.log(
-            "✅ Index signature test passed - API accepted payload with extra fields, known fields validated",
+            "✅ Index signature test passed - extra fields received by streaming function and stored in properties column",
           );
         });
 

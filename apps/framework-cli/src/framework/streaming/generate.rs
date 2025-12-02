@@ -332,6 +332,7 @@ export default function run(source: Foo): Bar | null {
                 config: Default::default(),
                 abs_file_path: project.data_models_dir().join("models.ts"),
                 version: Version::from_string("0.0".to_string()),
+                allow_extra_fields: false,
             }),
             Either::Left(&DataModel {
                 columns: to_columns(vec![
@@ -344,6 +345,7 @@ export default function run(source: Foo): Bar | null {
                 config: Default::default(),
                 abs_file_path: project.data_models_dir().join("models.ts"),
                 version: Version::from_string("0.0".to_string()),
+                allow_extra_fields: false,
             }),
         );
 
@@ -396,6 +398,7 @@ export default function run(source: UserActivity): ParsedActivity | null {
                     .unwrap()
                     .join("models.ts"),
                 version: Version::from_string("0.0".to_string()),
+                allow_extra_fields: false,
             }),
             Either::Left(&DataModel {
                 columns: to_columns(vec![
@@ -409,6 +412,7 @@ export default function run(source: UserActivity): ParsedActivity | null {
                 config: Default::default(),
                 abs_file_path: project.data_models_dir().join("models.ts"),
                 version: Version::from_string("0.1".to_string()),
+                allow_extra_fields: false,
             }),
         );
 
@@ -456,6 +460,7 @@ export default function run(source: UserActivityOld): UserActivity | null {
                     .unwrap()
                     .join("models.ts"),
                 version: Version::from_string("0.0".to_string()),
+                allow_extra_fields: false,
             }),
             Either::Left(&DataModel {
                 columns: to_columns(vec![
@@ -469,6 +474,7 @@ export default function run(source: UserActivityOld): UserActivity | null {
                 config: Default::default(),
                 abs_file_path: project.data_models_dir().join("models.ts"),
                 version: Version::from_string("0.1".to_string()),
+                allow_extra_fields: false,
             }),
         );
 

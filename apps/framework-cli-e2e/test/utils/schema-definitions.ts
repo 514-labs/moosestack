@@ -422,6 +422,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
     ],
   },
   // Index signature test table (ENG-1617)
+  // Extra fields from index signature are stored in properties JSON column
   {
     tableName: "UserEventOutput",
     columns: [
