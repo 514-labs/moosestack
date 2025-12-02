@@ -82,9 +82,38 @@ export const transformNewMooseResource = (
 
   const typeNode = node.typeArguments![0];
 
-  // Allow index signatures for IngestApi and Stream types
+  // For IngestPipeline, check if table is configured in the config object
+  // Index signatures are only allowed when table is false/not configured
+  // (because OlapTable requires a fixed schema)
+  let ingestPipelineHasTable = true; // Default to true (safe: disallows index signatures)
+  if (
+    typeName === "IngestPipeline" &&
+    node.arguments &&
+    node.arguments.length >= 2
+  ) {
+    const configArg = node.arguments[1];
+    if (ts.isObjectLiteralExpression(configArg)) {
+      const tableProperty = configArg.properties.find(
+        (prop): prop is ts.PropertyAssignment =>
+          ts.isPropertyAssignment(prop) &&
+          ts.isIdentifier(prop.name) &&
+          prop.name.text === "table",
+      );
+      if (tableProperty) {
+        const tableValue = tableProperty.initializer;
+        // Check if table value is explicitly false
+        ingestPipelineHasTable = tableValue.kind !== ts.SyntaxKind.FalseKeyword;
+      }
+      // If table property is not found, keep default (true = has table)
+      // This is the safe default since 'table' is a required property
+    }
+  }
+
+  // Allow index signatures for IngestApi, Stream, and IngestPipeline (when table is not configured)
   // These resources accept arbitrary payload fields that pass through to streaming functions
-  const allowIndexSignatures = ["IngestApi", "Stream"].includes(typeName);
+  const allowIndexSignatures =
+    ["IngestApi", "Stream"].includes(typeName) ||
+    (typeName === "IngestPipeline" && !ingestPipelineHasTable);
 
   // Check if the type actually has an index signature
   const typeAtLocation = checker.getTypeAtLocation(typeNode);
