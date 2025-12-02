@@ -116,6 +116,41 @@ pub fn validate_infrastructure_sql(
     diagnostics
 }
 
+/// Formats SQL diagnostics for CLI display.
+///
+/// Output format:
+/// ```text
+/// Error: Invalid SQL in 'ResourceName'
+///   --> path/to/source.ts
+///
+///   Error message from sqlparser
+///
+///   SQL:
+///     CREATE MATERIALIZED VIEW ...
+/// ```
+pub fn format_diagnostics_for_cli(diagnostics: &[SqlDiagnostic]) -> String {
+    let mut output = String::new();
+
+    for diag in diagnostics {
+        output.push_str(&format!("Error: Invalid SQL in '{}'\n", diag.resource_name));
+
+        if let Some(ref source) = diag.source_file {
+            output.push_str(&format!("  --> {}\n", source));
+        }
+
+        output.push_str(&format!("\n  {}\n", diag.message));
+
+        output.push_str("\n  SQL:\n");
+        for line in diag.sql.lines() {
+            output.push_str(&format!("    {}\n", line));
+        }
+
+        output.push('\n');
+    }
+
+    output
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +269,23 @@ mod tests {
         let diagnostics = validate_infrastructure_sql(&sql_resources);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].resource_name, "BadMV");
+    }
+
+    #[test]
+    fn test_format_diagnostics_for_cli() {
+        let diagnostics = vec![SqlDiagnostic {
+            severity: DiagnosticSeverity::Error,
+            message: "Expected SELECT, found: SELCT".to_string(),
+            source_file: Some("app/views/test.ts".to_string()),
+            resource_name: "TestMV".to_string(),
+            sql: "CREATE VIEW TestMV AS SELCT * FROM Source".to_string(),
+        }];
+
+        let output = format_diagnostics_for_cli(&diagnostics);
+
+        assert!(output.contains("Error: Invalid SQL in 'TestMV'"));
+        assert!(output.contains("--> app/views/test.ts"));
+        assert!(output.contains("Expected SELECT, found: SELCT"));
+        assert!(output.contains("CREATE VIEW TestMV AS SELCT * FROM Source"));
     }
 }
