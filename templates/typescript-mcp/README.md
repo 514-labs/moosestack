@@ -31,13 +31,7 @@ Initiate your project:
 
 ```bash
 moose init <project-name> typescript-mcp
-```
-
-Set the ANTHROPIC_API_KEY environment variable:
-
-```bash
 cd <project-name>
-echo "ANTHROPIC_API_KEY=your_api_key_here" >> packages/web-app/.env.local
 ```
 
 Install dependencies for both applications:
@@ -45,6 +39,26 @@ Install dependencies for both applications:
 ```bash
 pnpm install
 ```
+
+Copy example environment variables
+
+```bash
+cp packages/moosestack-service/.env.{example,local}
+cp packages/web-app/.env.{example,local}
+```
+
+Create API Key authentication tokens
+
+```bash
+$ cd packages/moosestack-service
+moose generate hash-token # use output for the API Key & Token below
+```
+
+Set environment variables
+
+1. Set your API Key in packages/moosestack-service/.env.local
+2. Set your API Token in packages/web-app/.env.local
+3. Set your Anthropic API key in packages/web-app/.env.local
 
 Start both services:
 
@@ -116,38 +130,6 @@ Once connected, you can ask Claude Code questions like:
 - "How many events are in the DataEvent table?"
 
 Claude Code will automatically use the `query_clickhouse` tool to execute the appropriate SQL queries.
-
-## API Key Authentication
-
-The MCP server supports optional API key authentication using PBKDF2.
-
-### Generating Keys
-
-Generate an API key pair using the Moose CLI from the project root:
-
-```bash
-cd packages/moosestack-service
-moose generate hash-token
-```
-
-This outputs:
-
-- **API Key Hash** - Store server-side in `MCP_API_KEY_HASH`
-- **Bearer Token** - Store client-side in `MCP_API_KEY`
-
-### Configuration
-
-**Server (moosestack-service):**
-
-```bash
-export MCP_API_KEY_HASH=<hash_from_generation>
-```
-
-**Client (web-app) from the project root:**
-
-```bash
-echo "MCP_API_KEY=<bearer_token>" >> packages/web-app/.env.local
-```
 
 ## Security Features
 
