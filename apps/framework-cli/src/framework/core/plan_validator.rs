@@ -149,6 +149,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -167,6 +168,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name,
+            primary_key_expression: None,
         }
     }
 
@@ -324,6 +326,7 @@ mod tests {
                 annotations: vec![],
                 comment: None,
                 ttl: None,
+                codec: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -342,6 +345,7 @@ mod tests {
             database: None,
             table_ttl_setting: None,
             cluster_name,
+            primary_key_expression: None,
         }
     }
 

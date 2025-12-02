@@ -472,3 +472,41 @@ bad_user_events_table = OlapTable[UserEvent]("user_events", {
 })
 ```
 </Python>
+
+## Compression Codecs
+
+ClickHouse supports per-column compression codecs to optimize storage and query performance. Different codecs work better for different data types.
+
+**Quick examples:**
+- Time series: Use `Delta` or `DoubleDelta` for timestamps and counters
+- Floating point: Use `Gorilla` codec for sensor data and metrics
+- Text/JSON: Use `ZSTD` with compression levels for large strings
+- Combine codecs: Chain specialized compression with general-purpose (e.g., `Delta, LZ4`)
+
+<TypeScript>
+```typescript
+import { Codec, DateTime, UInt64 } from "@514labs/moose-lib";
+
+interface Metrics {
+  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;          // Timestamps
+  temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;    // Float metrics
+  log_data: Record<string, any> & ClickHouseCodec<"ZSTD(9)">;   // JSON with heavy compression
+  event_ids: UInt64[] & ClickHouseCodec<"ZSTD(1)">;             // Arrays
+}
+```
+</TypeScript>
+
+<Python>
+```python
+from moose_lib import ClickHouseCodec, UInt64
+from typing import Annotated, Any
+
+class Metrics(BaseModel):
+    timestamp: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]         # Timestamps
+    temperature: Annotated[float, ClickHouseCodec("Gorilla, ZSTD(3)")]    # Float metrics
+    log_data: Annotated[Any, ClickHouseCodec("ZSTD(9)")]                  # JSON with heavy compression
+    event_ids: Annotated[list[UInt64], ClickHouseCodec("ZSTD(1)")]        # Arrays
+```
+</Python>
+
+**See the [Compression Codecs](/moose/olap/compression) guide for detailed codec documentation and use cases.**
