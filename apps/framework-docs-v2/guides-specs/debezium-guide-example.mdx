@@ -1,0 +1,384 @@
+---
+title: Stream Data from Your Database with Debezium
+description: Learn how to use the Debezium CDC template to stream data from your database to ClickHouse in real-time.
+
+techSelector:
+  - dimension: oltp
+    label: Source Database
+    options:
+      - { value: postgresql, label: PostgreSQL, default: true }
+      - { value: mysql, label: MySQL }
+  - dimension: orm
+    label: Schema Source
+    options:
+      - { value: none, label: Generate from DB, default: true }
+      - { value: drizzle, label: Drizzle ORM }
+      - { value: prisma, label: Prisma }
+
+project:
+  name: CDC Pipeline Setup
+  description: Set up real-time data streaming from OLTP database to ClickHouse
+  team: "{{ linear.issueAssignedTeam }}" ## THE USER MUST SET THIS WHEN THEY EXPORT TO LINEAR, THE SELECTION IS INJECTED HERE
+  priority: "{{ linear.issuePriority }}" ## THE USER MUST SET THIS WHEN THEY EXPORT TO LINEAR, THE SELECTION IS INJECTED HERE
+  labels: "{{ linear.issueLabels }}" ## THE USER MUST SET THIS WHEN THEY EXPORT TO LINEAR, THE SELECTION IS INJECTED HERE
+---
+
+import { FileTree } from "@/components/mdx";
+import {
+  TechContextProvider,
+  TechSelector,
+  Steps,
+  Step,
+  When,
+  NotWhen,
+  TechSwitch,
+  TechCase,
+  TechRef,
+} from "@514labs/design-system-components/guides";
+
+<TechContextProvider frontmatter={frontmatter} storageKey="cdc-guide-prefs">
+
+# Stream Data from Your Database with Debezium
+
+<TechSelector className="my-6 p-4 bg-muted/50 rounded-lg" />
+
+This guide shows you how to use the [**Debezium CDC Template**](https://github.com/514-labs/debezium-cdc). You will learn how to set up the Debezium connector with your <TechRef dimension="oltp" /> database and mirror your data into ClickHouse in real-time.
+
+## Architecture Overview
+
+At a high level, the pipeline works like this:
+
+```txt
+[Your Database] -> Kafka -> ClickHouse
+```
+
+- **Debezium** acts as the bridge between your <TechRef dimension="oltp" /> database and Kafka. It watches for changes and publishes them to Kafka topics.
+- **MooseStack** acts as the bridge between Kafka and ClickHouse. It serves as your "pipeline-as-code" layer where you define your ClickHouse tables, Kafka streams, and transformation logic.
+
+<Steps>
+
+<Step
+  id="clone-template"
+  title="Clone the Template"
+  task={{
+    estimate: "xs",
+    acceptanceCriteria: [
+      "Repository is cloned locally",
+      "Dependencies are installed"
+    ]
+  }}
+>
+
+Clone the [Debezium CDC Template](https://github.com/514-labs/debezium-cdc) and install dependencies:
+
+```bash
+git clone https://github.com/514-labs/debezium-cdc.git
+cd debezium-cdc
+pnpm install
+```
+
+</Step>
+
+<Step
+  id="configure-env"
+  title="Configure Your Environment"
+  task={{
+    estimate: "s",
+    dependsOn: ["clone-template"],
+    acceptanceCriteria: [
+      ".env.dev file exists",
+      "Database credentials are set",
+      "CDC_TABLE_INCLUDE_LIST is configured"
+    ]
+  }}
+  agent={{
+    avoid: ["Don't commit .env.dev to git"]
+  }}
+>
+
+The template uses environment variables for database passwords and connector settings.
+
+Copy the environment file:
+
+```bash
+cp .env.example .env.dev
+```
+
+Open `.env.dev` and configure your database connection:
+
+```properties filename=".env.dev"
+DB_HOST=your_database_host
+DB_PORT=your_database_port
+DB_NAME=your_database_name
+DB_USER=your_database_user
+DB_PASSWORD=your_database_password
+```
+
+Configure CDC settings:
+
+<TechSwitch dimension="oltp">
+  <TechCase value="postgresql">
+
+```properties filename=".env.dev"
+CDC_TABLE_INCLUDE_LIST=public.*
+CDC_TOPIC_PREFIX=pg-cdc
+```
+
+  </TechCase>
+  <TechCase value="mysql">
+
+```properties filename=".env.dev"
+CDC_TABLE_INCLUDE_LIST=mydb.*
+CDC_TOPIC_PREFIX=mysql-cdc
+```
+
+  </TechCase>
+</TechSwitch>
+
+</Step>
+
+<Step
+  id="prepare-database"
+  title="Prepare Your Database"
+  task={{
+    estimate: "m",
+    dependsOn: ["configure-env"],
+    acceptanceCriteria: [
+      "Replication/binary logging is enabled",
+      "CDC user exists with correct permissions"
+    ],
+    assignee: "DBA"
+  }}
+  agent={{
+    expectedOutcome: "Database is configured for CDC with a dedicated replication user",
+    avoid: ["Don't use the root/admin user for CDC"]
+  }}
+>
+
+<When dimension="oltp" equals="postgresql">
+
+Debezium needs PostgreSQL's logical replication.
+
+Check `wal_level`:
+
+```sql
+SHOW wal_level;
+```
+
+It must be `logical`. If not, update `postgresql.conf` and restart Postgres.
+
+Create a replication user:
+
+```sql
+CREATE USER cdc_user WITH PASSWORD 'secure_password';
+ALTER USER cdc_user WITH REPLICATION;
+GRANT USAGE ON SCHEMA public TO cdc_user;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO cdc_user;
+```
+
+</When>
+
+<When dimension="oltp" equals="mysql">
+
+Debezium needs MySQL's binary logging.
+
+Check binary logging:
+
+```sql
+SHOW VARIABLES LIKE 'log_bin';
+```
+
+It must be `ON`. If not, update `my.cnf`:
+
+```properties filename="my.cnf"
+[mysqld]
+server-id=1
+log_bin=mysql-bin
+binlog_format=ROW
+binlog_row_image=FULL
+```
+
+Create a CDC user:
+
+```sql
+CREATE USER 'cdc_user'@'%' IDENTIFIED BY 'secure_password';
+GRANT SELECT, RELOAD, SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'cdc_user'@'%';
+```
+
+</When>
+
+</Step>
+
+<Step
+  id="start-pipeline"
+  title="Start the Pipeline"
+  task={{
+    estimate: "s",
+    dependsOn: ["prepare-database"],
+    acceptanceCriteria: [
+      "moose dev starts without errors",
+      "Connector is registered successfully"
+    ]
+  }}
+  agent={{
+    expectedOutcome: "Logs show 'Connector registered!' and all services are healthy"
+  }}
+>
+
+Start the development environment:
+
+```bash
+moose dev
+```
+
+Check the logs for:
+- Infrastructure starting (Redpanda, Kafka Connect, ClickHouse)
+- `setup-cdc.ts` running
+- `✅ Connector registered!`
+
+</Step>
+
+<Step
+  id="customize-pipelines"
+  title="Customize the Pipelines"
+  task={{
+    estimate: "l",
+    dependsOn: ["start-pipeline"],
+    acceptanceCriteria: [
+      "External topics are imported",
+      "Source schemas are defined",
+      "OLAP tables are configured",
+      "Transforms connect source to destination"
+    ]
+  }}
+  agent={{
+    expectedOutcome: "Changes in source database appear in ClickHouse within seconds",
+    avoid: ["Don't modify externalTopics.ts manually"]
+  }}
+>
+
+Import Kafka topic definitions:
+
+```bash
+moose-cli kafka pull localhost:19092 --path cdc-pipeline/1-sources
+```
+
+<NotWhen dimension="orm" equals="none">
+
+Export types from your <TechRef dimension="orm" /> schema:
+
+<TechSwitch dimension="orm">
+  <TechCase value="drizzle">
+
+```typescript filename="cdc-pipeline/oltp/schema.ts"
+import { customerAddresses } from "../../postgres/src/schema";
+
+export type CustomerAddress = typeof customerAddresses.$inferSelect;
+```
+
+  </TechCase>
+  <TechCase value="prisma">
+
+```typescript filename="cdc-pipeline/oltp/schema.ts"
+import type { CustomerAddress as PrismaCustomerAddress } from "@prisma/client";
+
+export type CustomerAddress = PrismaCustomerAddress;
+```
+
+  </TechCase>
+</TechSwitch>
+
+</NotWhen>
+
+<When dimension="orm" equals="none">
+
+Generate TypeScript types from your database:
+
+<TechSwitch dimension="oltp">
+  <TechCase value="postgresql">
+
+```bash
+npx kanel --connectionString $DATABASE_URL --output ./cdc-pipeline/generated-models
+```
+
+  </TechCase>
+  <TechCase value="mysql">
+
+```bash
+npx mysql-schema-ts mysql://user:pass@localhost/db --output ./cdc-pipeline/generated-models
+```
+
+  </TechCase>
+</TechSwitch>
+
+</When>
+
+Create typed topics in `cdc-pipeline/1-sources/typed-topics.ts`:
+
+```typescript filename="cdc-pipeline/1-sources/typed-topics.ts"
+import { Stream } from "@514labs/moose-lib";
+import { PgCdcPublicCustomerAddressesStream } from "./externalTopics";
+import { GenericCDCEvent } from "../models";
+import { CustomerAddress } from "../../oltp/schema";
+
+export const cdcCustomerAddresses = PgCdcPublicCustomerAddressesStream as Stream<
+  GenericCDCEvent<CustomerAddress>
+>;
+```
+
+Define the OLAP table:
+
+```typescript filename="cdc-pipeline/3-destinations/olap-tables.ts"
+import { OlapTable, ClickHouseEngines, UInt64, UInt8 } from "@514labs/moose-lib";
+import { CustomerAddress } from "../../oltp/schema";
+
+export type CdcFields = {
+  _is_deleted: UInt8;
+  ts_ms: UInt64;
+  lsn: UInt64;
+};
+
+export type OlapCustomerAddress = CustomerAddress & CdcFields;
+
+export const olapCustomerAddresses = new OlapTable<OlapCustomerAddress>(
+  "customer_addresses",
+  {
+    engine: ClickHouseEngines.ReplacingMergeTree,
+    ver: "lsn",
+    isDeleted: "_is_deleted",
+    orderByFields: ["id"],
+  }
+);
+```
+
+Create the transform:
+
+```typescript filename="cdc-pipeline/2-transforms/customer-addresses.ts"
+import { cdcCustomerAddresses } from "../1-sources/typed-topics";
+import { processedCustomerAddresses } from "../3-destinations/sink-topics";
+import { handleCDCPayload } from "./payload-handler";
+import { GenericCDCEvent, OlapCustomerAddress } from "../models";
+import { CustomerAddress } from "../../oltp/schema";
+
+cdcCustomerAddresses.addTransform(
+  processedCustomerAddresses,
+  (message: GenericCDCEvent<CustomerAddress>) => {
+    const result = handleCDCPayload<CustomerAddress>(message);
+    return result as unknown as OlapCustomerAddress;
+  }
+);
+```
+
+</Step>
+
+</Steps>
+
+## Verification
+
+Any change in your <TechRef dimension="oltp" /> table will now appear in ClickHouse:
+
+```bash
+moose query "SELECT * FROM customer_addresses"
+```
+
+</TechContextProvider>
