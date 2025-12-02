@@ -914,4 +914,65 @@ class DistributedEngine:
 3. **Load distribution**: Balance write and read load across multiple servers
 4. **Geographic distribution**: Place data closer to users in different regions
 
-For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed). 
+For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed).
+
+## Compression Codecs
+
+Specify per-column compression codecs to optimize storage and performance:
+
+```python
+from typing import Annotated, Any
+from moose_lib import OlapTable, OlapConfig, ClickHouseCodec, UInt64
+from pydantic import BaseModel
+from datetime import datetime
+
+class Metrics(BaseModel):
+    # Delta for timestamps and monotonically increasing values
+    timestamp: Annotated[datetime, ClickHouseCodec("Delta, LZ4")]
+
+    # Gorilla for floating point sensor data
+    temperature: Annotated[float, ClickHouseCodec("Gorilla, ZSTD(3)")]
+
+    # DoubleDelta for counters and metrics
+    request_count: Annotated[float, ClickHouseCodec("DoubleDelta, LZ4")]
+
+    # ZSTD for text/JSON with compression level (1-22)
+    log_data: Annotated[Any, ClickHouseCodec("ZSTD(9)")]
+    user_agent: Annotated[str, ClickHouseCodec("ZSTD(3)")]
+
+    # Compress array elements
+    tags: Annotated[list[str], ClickHouseCodec("LZ4")]
+    event_ids: Annotated[list[UInt64], ClickHouseCodec("ZSTD(1)")]
+
+    # No codec (uses ClickHouse default)
+    status_code: int
+
+metrics_table = OlapTable[Metrics](
+    "Metrics",
+    OlapConfig(order_by_fields=["timestamp"])
+)
+```
+
+### Common Codecs
+- **Delta/DoubleDelta**: For timestamps, counters, monotonic values
+- **Gorilla**: For floating-point sensor data, temperatures, stock prices
+- **ZSTD**: General-purpose with levels 1-22 (higher = better compression, slower)
+- **LZ4**: Fast decompression, lower CPU usage
+
+### Codec Chains
+Combine codecs (processed left-to-right): `"Delta, LZ4"` or `"Gorilla, ZSTD(3)"`
+
+### Combining with Other Annotations
+```python
+from moose_lib import clickhouse_default, ClickHouseTTL, UInt64
+
+class Events(BaseModel):
+    # Codec + Default value
+    status: Annotated[str, clickhouse_default("'pending'"), ClickHouseCodec("ZSTD(3)")]
+
+    # Codec + TTL
+    email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY"), ClickHouseCodec("ZSTD(3)")]
+
+    # Codec + Numeric type
+    event_count: Annotated[UInt64, ClickHouseCodec("DoubleDelta, LZ4")]
+```

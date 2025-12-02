@@ -198,6 +198,8 @@ interface TableJson {
   partitionBy?: string;
   /** SAMPLE BY expression for approximate query processing. */
   sampleByExpression?: string;
+  /** PRIMARY KEY expression (overrides column-level primary_key flags when specified). */
+  primaryKeyExpression?: string;
   /** Engine configuration with type-safe, engine-specific parameters */
   engineConfig?: EngineConfig;
   /** Optional version string for the table configuration. */
@@ -746,6 +748,10 @@ export const toInfraMap = (registry: typeof moose_internal) => {
         "sampleByExpression" in table.config ?
           table.config.sampleByExpression
         : undefined,
+      primaryKeyExpression:
+        "primaryKeyExpression" in table.config ?
+          table.config.primaryKeyExpression
+        : undefined,
       engineConfig,
       version: table.config.version,
       metadata,
@@ -1162,6 +1168,7 @@ export const dlqColumns: Column[] = [
     default: null,
     annotations: [],
     ttl: null,
+    codec: null,
   },
   {
     name: "errorMessage",
@@ -1172,6 +1179,7 @@ export const dlqColumns: Column[] = [
     default: null,
     annotations: [],
     ttl: null,
+    codec: null,
   },
   {
     name: "errorType",
@@ -1182,6 +1190,7 @@ export const dlqColumns: Column[] = [
     default: null,
     annotations: [],
     ttl: null,
+    codec: null,
   },
   {
     name: "failedAt",
@@ -1192,6 +1201,7 @@ export const dlqColumns: Column[] = [
     default: null,
     annotations: [],
     ttl: null,
+    codec: null,
   },
   {
     name: "source",
@@ -1202,6 +1212,7 @@ export const dlqColumns: Column[] = [
     default: null,
     annotations: [],
     ttl: null,
+    codec: null,
   },
 ];
 

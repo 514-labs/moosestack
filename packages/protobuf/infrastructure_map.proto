@@ -154,6 +154,10 @@ message Table {
 
   // Optional cluster name for ON CLUSTER support in ClickHouse
   optional string cluster_name = 18;
+
+  // Optional PRIMARY KEY expression
+  // When specified, overrides primary_key boolean flags on columns
+  optional string primary_key_expression = 19;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
@@ -241,6 +245,8 @@ message Column {
   optional string comment = 8; // Column comment for metadata storage
   // Optional column-level TTL expression (without leading 'TTL')
   optional string ttl = 10;
+  // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
+  optional string codec = 11;
 }
 
 enum SimpleColumnType {
