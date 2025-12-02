@@ -18,6 +18,7 @@ class ClickHouseEngines(Enum):
     Buffer = "Buffer"
     Distributed = "Distributed"
     IcebergS3 = "IcebergS3"
+    Kafka = "Kafka"
     ReplicatedMergeTree = "ReplicatedMergeTree"
     ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
     ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
@@ -338,6 +339,69 @@ class IcebergS3Engine(EngineConfig):
             raise ValueError("IcebergS3 engine requires 'format'")
         if self.format not in ['Parquet', 'ORC']:
             raise ValueError(f"IcebergS3 format must be 'Parquet' or 'ORC', got '{self.format}'")
+
+@dataclass
+class KafkaEngine(EngineConfig):
+    """Configuration for Kafka engine - streaming data ingestion from Kafka topics.
+
+    The Kafka engine creates an internal consumer that reads messages from topics.
+    Typically used with materialized views to persist data into MergeTree tables.
+
+    Constructor parameters (ENGINE = Kafka('broker', 'topic', 'group', 'format')):
+        broker_list: Kafka broker addresses (comma-separated, e.g., 'kafka-1:9092,kafka-2:9092')
+        topic_list: Kafka topics to consume from (comma-separated)
+        group_name: Consumer group identifier
+        format: Message format (e.g., 'JSONEachRow', 'CSV', 'Avro')
+
+    Additional settings (kafka_schema, kafka_num_consumers, security) must be
+    specified in OlapConfig.settings, not here.
+
+    Example:
+        >>> from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+        >>> from moose_lib.blocks import KafkaEngine
+        >>>
+        >>> event_stream = OlapTable[Event](
+        ...     "event_stream",
+        ...     OlapConfig(
+        ...         engine=KafkaEngine(
+        ...             broker_list="kafka-1:9092,kafka-2:9092",
+        ...             topic_list="events",
+        ...             group_name="moose_consumer",
+        ...             format="JSONEachRow"
+        ...         ),
+        ...         settings={
+        ...             "kafka_num_consumers": "3",
+        ...             "kafka_sasl_mechanism": "SCRAM-SHA-256",
+        ...             "kafka_security_protocol": "SASL_PLAINTEXT",
+        ...             "kafka_sasl_username": moose_runtime_env.get("KAFKA_USERNAME"),
+        ...             "kafka_sasl_password": moose_runtime_env.get("KAFKA_PASSWORD")
+        ...         }
+        ...     )
+        ... )
+
+    Note:
+        - Kafka engine does NOT support ORDER BY, PARTITION BY, or SAMPLE BY
+        - Changes to engine parameters require table recreation (drop/create)
+        - Typically used with materialized views for continuous consumption
+        - Use moose_runtime_env.get() for credentials to avoid baking into Docker images
+    """
+
+    # Constructor parameters
+    broker_list: str
+    topic_list: str
+    group_name: str
+    format: str
+
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.broker_list:
+            raise ValueError("Kafka engine requires 'broker_list'")
+        if not self.topic_list:
+            raise ValueError("Kafka engine requires 'topic_list'")
+        if not self.group_name:
+            raise ValueError("Kafka engine requires 'group_name'")
+        if not self.format:
+            raise ValueError("Kafka engine requires 'format'")
 
 # ==========================
 # New Table Configuration (Recommended API)
