@@ -2526,7 +2526,7 @@ impl InfrastructureMap {
     pub fn normalize(mut self) -> Self {
         use crate::framework::core::infrastructure::table::ColumnType;
 
-        self.tables.iter_mut().for_each(|(id, table)| {
+        self.tables.values_mut().for_each(|table| {
             // Fall back to primary key columns if order_by is empty for MergeTree engines
             // This ensures backward compatibility when order_by isn't explicitly set
             // We only do this for MergeTree family to avoid breaking S3 tables
