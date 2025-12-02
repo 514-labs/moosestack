@@ -409,6 +409,10 @@ pub async fn plan_changes(
             .unwrap_or("Could not serialize reconciled infrastructure map".to_string())
     );
 
+    // Normalize both infra maps, same as remote_plan
+    let reconciled_map = reconciled_map.normalize();
+    let target_infra_map = target_infra_map.normalize();
+
     // Use the reconciled map for diffing with ClickHouse-specific strategy
     // Pass ignore_ops so the diff can normalize tables internally for comparison
     // while using original tables for the actual change operations
