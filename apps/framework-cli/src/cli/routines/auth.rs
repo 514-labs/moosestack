@@ -28,7 +28,7 @@ pub fn generate_hash_token() {
         show_message!(
             MessageType::Info,
             Message {
-                action: "ENV API Keys".to_string(),
+                action: "ENV API Key".to_string(),
                 details: hex::encode(key1),
             }
         );
