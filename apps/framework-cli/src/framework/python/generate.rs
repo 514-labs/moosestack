@@ -562,7 +562,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine"
+        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine"
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -716,7 +716,10 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             var_name, table.name, table_name
         )
         .unwrap();
-        writeln!(output, "    {order_by_spec},").unwrap();
+
+        if table.engine.supports_order_by() {
+            writeln!(output, "    {order_by_spec},").unwrap();
+        }
 
         if let Some(ref pk_expr) = table.primary_key_expression {
             // Use the explicit primary_key_expression directly
@@ -965,6 +968,19 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
                 writeln!(output, "    ),").unwrap();
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Kafka {
+                broker_list,
+                topic_list,
+                group_name,
+                format,
+            } => {
+                writeln!(output, "    engine=KafkaEngine(").unwrap();
+                writeln!(output, "        broker_list={:?},", broker_list).unwrap();
+                writeln!(output, "        topic_list={:?},", topic_list).unwrap();
+                writeln!(output, "        group_name={:?},", group_name).unwrap();
+                writeln!(output, "        format={:?}",format).unwrap();
+                writeln!(output, "    ),").unwrap();
+            }
         }
         if let Some(version) = &table.version {
             writeln!(output, "    version={:?},", version).unwrap();
@@ -1102,7 +1118,7 @@ from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, Olap
 from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
 from moose_lib import clickhouse_default, ClickHouseCodec, LifeCycle, ClickHouseTTL
-from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
+from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
 
 class Foo(BaseModel):
     primary_key: Key[str]

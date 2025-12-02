@@ -177,6 +177,21 @@ class IcebergS3ConfigDict(BaseEngineConfigDict):
     compression: Optional[str] = None
 
 
+class KafkaConfigDict(BaseEngineConfigDict):
+    """Configuration for Kafka engine.
+
+    Constructor: ENGINE = Kafka('broker', 'topic', 'group', 'format')
+    Settings (kafka_schema, kafka_num_consumers, security, etc.) go in table settings.
+
+    Reference: https://clickhouse.com/docs/engines/table-engines/integrations/kafka
+    """
+    engine: Literal["Kafka"] = "Kafka"
+    broker_list: str
+    topic_list: str
+    group_name: str
+    format: str
+
+
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
     MergeTreeConfigDict,
@@ -191,7 +206,8 @@ EngineConfigDict = Union[
     S3ConfigDict,
     BufferConfigDict,
     DistributedConfigDict,
-    IcebergS3ConfigDict
+    IcebergS3ConfigDict,
+    KafkaConfigDict
 ]
 
 
@@ -521,7 +537,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     Returns:
         EngineConfigDict with engine-specific configuration
     """
-    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine, IcebergS3Engine
+    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine, IcebergS3Engine, KafkaEngine
 
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):
@@ -581,6 +597,15 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             aws_access_key_id=engine.aws_access_key_id,
             aws_secret_access_key=engine.aws_secret_access_key,
             compression=engine.compression
+        )
+
+    # Try Kafka
+    if isinstance(engine, KafkaEngine):
+        return KafkaConfigDict(
+            broker_list=engine.broker_list,
+            topic_list=engine.topic_list,
+            group_name=engine.group_name,
+            format=engine.format
         )
 
     # Try basic engines

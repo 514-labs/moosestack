@@ -641,7 +641,10 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             var_name, table.name, table_name
         )
         .unwrap();
-        writeln!(output, "    {order_by_spec},").unwrap();
+
+        if table.engine.supports_order_by() {
+            writeln!(output, "    {order_by_spec},").unwrap();
+        }
 
         if let Some(ref pk_expr) = table.primary_key_expression {
             // Use the explicit primary_key_expression directly
@@ -851,6 +854,18 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 if let Some(comp) = compression {
                     writeln!(output, "    compression: {:?},", comp).unwrap();
                 }
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Kafka {
+                broker_list,
+                topic_list,
+                group_name,
+                format,
+            } => {
+                writeln!(output, "    engine: ClickHouseEngines.Kafka,").unwrap();
+                writeln!(output, "    brokerList: {:?},", broker_list).unwrap();
+                writeln!(output, "    topicList: {:?},", topic_list).unwrap();
+                writeln!(output, "    groupName: {:?},", group_name).unwrap();
+                writeln!(output, "    format: {:?},", format).unwrap();
             }
         }
         if let Some(version) = &table.version {
