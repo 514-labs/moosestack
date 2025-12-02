@@ -215,7 +215,12 @@ export class Stream<T> extends TypedBase<T, StreamConfig<T>> {
    */
   constructor(name: string, config?: StreamConfig<T>);
 
-  /** @internal **/
+  /**
+   * @internal
+   * Note: `validators` parameter is a positional placeholder (always undefined for Stream).
+   * It exists because TypedBase has validators as the 5th param, and we need to pass
+   * allowExtraFields as the 6th param. Stream doesn't use validators.
+   */
   constructor(
     name: string,
     config: StreamConfig<T>,

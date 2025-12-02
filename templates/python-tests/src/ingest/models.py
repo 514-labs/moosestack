@@ -3,7 +3,8 @@
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon
 from moose_lib import Key, IngestPipeline, IngestPipelineConfig, StringToEnumMixin, clickhouse_default, ClickHouseCodec, OlapTable, \
     OlapConfig, MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, simple_aggregated, \
-    ClickhouseSize, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, ClickhousePrecision
+    ClickhouseSize, UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64, ClickhousePrecision, \
+    IngestApi, IngestConfigWithDestination
 from datetime import datetime, date
 from typing import Optional, Annotated, Any
 from pydantic import BaseModel, BeforeValidator, ConfigDict
@@ -748,3 +749,78 @@ codec_test_model = IngestPipeline[CodecTest]("CodecTest", IngestPipelineConfig(
     table=True,
     dead_letter_queue=True
 ))
+
+
+# =======Extra Fields Test (ENG-1617)=========
+# Tests the ability to accept arbitrary payload fields using Pydantic's extra='allow'
+# This is the Python equivalent of TypeScript's index signatures
+#
+# KEY CONCEPTS:
+# - IngestApi and Stream: CAN allow extra fields (accept variable payloads)
+# - OlapTable: Requires fixed schema (ClickHouse needs to know the columns)
+# - Transform functions: Receive ALL fields (including extras)
+#   and must output to a fixed schema for OlapTable storage
+#
+# DATA FLOW:
+#   IngestApi (variable) → Stream (variable) → Transform → Stream (fixed) → OlapTable (fixed)
+
+class UserEventInput(BaseModel):
+    """Input type that allows arbitrary additional fields.
+    
+    Known fields (timestamp, event_name, user_id) are validated.
+    Unknown fields are passed through to streaming functions via extra='allow'.
+    """
+    model_config = ConfigDict(extra='allow')  # Allow arbitrary extra fields
+    
+    timestamp: datetime
+    event_name: str
+    user_id: Key[str]
+    # Optional known fields
+    org_id: Optional[str] = None
+    project_id: Optional[str] = None
+
+
+class UserEventOutput(BaseModel):
+    """Output type with a FIXED schema for OlapTable storage.
+    
+    Extra fields from the input are stored in a JSON column.
+    OlapTable requires fixed columns - ClickHouse needs to know the schema.
+    """
+    timestamp: datetime
+    event_name: str
+    user_id: Key[str]
+    org_id: Optional[str] = None
+    project_id: Optional[str] = None
+    # JSON column for extra properties
+    # This is how you persist variable fields to ClickHouse
+    properties: dict[str, Any]
+
+
+# Input stream for raw events (accepts variable fields via extra='allow')
+user_event_input_stream = Stream[UserEventInput](
+    "UserEventInput",
+    StreamConfig(destination=None)
+)
+
+# IngestApi accepting arbitrary payload fields
+user_event_ingest_api = IngestApi[UserEventInput](
+    "userEventIngestApi",
+    IngestConfigWithDestination(
+        destination=user_event_input_stream,
+        version="0.1"
+    )
+)
+
+# Output table with fixed schema (JSON column stores variable data)
+user_event_output_table = OlapTable[UserEventOutput](
+    "UserEventOutput",
+    OlapConfig(
+        order_by_fields=["user_id", "timestamp"]
+    )
+)
+
+# Stream for processed events (fixed schema)
+user_event_output_stream = Stream[UserEventOutput](
+    "UserEventOutput",
+    StreamConfig(destination=user_event_output_table)
+)

@@ -1631,6 +1631,145 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           expect(apiData).to.be.an("array");
         });
 
+        // Extra fields test for Python (ENG-1617)
+        // Tests that IngestApi accepts payloads with extra fields when the model has extra='allow'.
+        // Extra fields are passed through to streaming functions and stored in a JSON column.
+        //
+        // KEY CONCEPTS:
+        // - IngestApi/Stream with extra='allow': CAN accept variable fields
+        // - OlapTable: Requires fixed schema (ClickHouse needs to know columns)
+        // - Transform: Receives ALL fields via model_extra, outputs to fixed schema with JSON column
+        it("should pass extra fields to streaming function via Pydantic extra='allow' (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const userId = randomUUID();
+          const timestamp = new Date().toISOString();
+
+          // Send data with known fields plus arbitrary extra fields
+          await withRetries(
+            async () => {
+              const response = await fetch(
+                `${SERVER_CONFIG.url}/ingest/userEventIngestApi`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    // Known fields defined in the model (snake_case for Python)
+                    timestamp: timestamp,
+                    event_name: "page_view",
+                    user_id: userId,
+                    org_id: "org-123",
+                    // Extra fields - allowed by extra='allow', passed to streaming function
+                    customProperty: "custom-value",
+                    pageUrl: "/dashboard",
+                    sessionDuration: 120,
+                    nested: {
+                      level1: "value1",
+                      level2: { deep: "nested" },
+                    },
+                  }),
+                },
+              );
+              if (!response.ok) {
+                const text = await response.text();
+                throw new Error(`${response.status}: ${text}`);
+              }
+            },
+            { attempts: 5, delayMs: 500 },
+          );
+
+          // Wait for the transform to process and write to output table
+          await waitForDBWrite(
+            devProcess!,
+            "UserEventOutput",
+            1,
+            60_000,
+            "local",
+            `user_id = '${userId}'`,
+          );
+
+          // Verify the data was written correctly
+          const client = createClient(CLICKHOUSE_CONFIG);
+          const result = await client.query({
+            query: `
+              SELECT 
+                user_id,
+                event_name,
+                org_id,
+                properties
+              FROM local.UserEventOutput 
+              WHERE user_id = '${userId}'
+            `,
+            format: "JSONEachRow",
+          });
+
+          const rows: any[] = await result.json();
+          await client.close();
+
+          if (rows.length === 0) {
+            throw new Error(
+              `No data found in UserEventOutput for user_id ${userId}`,
+            );
+          }
+
+          const row = rows[0];
+
+          // Verify known fields are correctly passed through (snake_case for Python)
+          if (row.event_name !== "page_view") {
+            throw new Error(
+              `Expected event_name to be 'page_view', got '${row.event_name}'`,
+            );
+          }
+          if (row.org_id !== "org-123") {
+            throw new Error(
+              `Expected org_id to be 'org-123', got '${row.org_id}'`,
+            );
+          }
+
+          // Verify extra fields are stored in the properties JSON column
+          if (row.properties === undefined) {
+            throw new Error("Expected properties JSON column to exist");
+          }
+
+          // Parse properties if it's a string (ClickHouse may return JSON as string)
+          const properties =
+            typeof row.properties === "string" ?
+              JSON.parse(row.properties)
+            : row.properties;
+
+          // Verify extra fields were received by streaming function via model_extra
+          if (properties.customProperty !== "custom-value") {
+            throw new Error(
+              `Expected properties.customProperty to be 'custom-value', got '${properties.customProperty}'. Properties: ${JSON.stringify(properties)}`,
+            );
+          }
+          if (properties.pageUrl !== "/dashboard") {
+            throw new Error(
+              `Expected properties.pageUrl to be '/dashboard', got '${properties.pageUrl}'`,
+            );
+          }
+          // Note: ClickHouse JSON may return numbers as strings
+          if (Number(properties.sessionDuration) !== 120) {
+            throw new Error(
+              `Expected properties.sessionDuration to be 120, got '${properties.sessionDuration}'`,
+            );
+          }
+          if (
+            !properties.nested ||
+            properties.nested.level1 !== "value1" ||
+            !properties.nested.level2 ||
+            properties.nested.level2.deep !== "nested"
+          ) {
+            throw new Error(
+              `Expected nested object to be preserved, got '${JSON.stringify(properties.nested)}'`,
+            );
+          }
+
+          console.log(
+            "✅ Extra fields test passed (Python) - extra fields received by streaming function via model_extra and stored in properties column",
+          );
+        });
+
         // DateTime precision test for Python
         it("should preserve microsecond precision with clickhouse_datetime64 annotations via streaming transform (PY)", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);

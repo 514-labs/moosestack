@@ -886,6 +886,19 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "status_code", type: "Float64" },
     ],
   },
+  // Extra fields test table (ENG-1617)
+  // Extra fields from Pydantic's extra='allow' are stored in properties JSON column
+  {
+    tableName: "UserEventOutput",
+    columns: [
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "event_name", type: "String" },
+      { name: "user_id", type: "String" },
+      { name: "org_id", type: "Nullable(String)" },
+      { name: "project_id", type: "Nullable(String)" },
+      { name: "properties", type: "JSON" },
+    ],
+  },
 ];
 
 // ============ HELPER FUNCTIONS ============
