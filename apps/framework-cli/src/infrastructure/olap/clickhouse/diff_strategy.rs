@@ -695,6 +695,19 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
+        // Check if this is a Kafka table with column changes
+        // Kafka engine doesn't support ALTER TABLE for columns
+        if !column_changes.is_empty() && matches!(&before.engine, ClickhouseEngine::Kafka { .. }) {
+            tracing::warn!(
+                "ClickHouse: Kafka table '{}' has column changes, requiring drop+create (Kafka doesn't support ALTER TABLE for columns)",
+                before.name
+            );
+            return vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ];
+        }
+
         // Filter out no-op changes for ClickHouse semantics:
         // Arrays are always NOT NULL in ClickHouse, so a change to `required`
         // on array columns does not reflect an actual DDL change.
@@ -2411,6 +2424,96 @@ mod tests {
             0,
             "[HIDDEN] should match any value (no false positive)"
         );
+    }
+
+    #[test]
+    fn test_kafka_column_change_requires_drop_create() {
+        // Kafka engine does NOT support ALTER TABLE MODIFY COLUMN
+        // Any column change requires drop+create
+        let strategy = ClickHouseTableDiffStrategy;
+
+        let mut before = create_test_table("test", vec!["id".to_string()], false);
+        let mut after = create_test_table("test", vec!["id".to_string()], false);
+
+        // Set up Kafka engine on both
+        before.engine = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+        after.engine = ClickhouseEngine::Kafka {
+            broker_list: "kafka:9092".to_string(),
+            topic_list: "events".to_string(),
+            group_name: "consumer".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+
+        // Simulate a column type change (Float64 -> DateTime)
+        let column_changes = vec![ColumnChange::Updated {
+            before: Column {
+                name: "timestamp".to_string(),
+                data_type: ColumnType::Float(
+                    crate::framework::core::infrastructure::table::FloatType::Float64,
+                ),
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            },
+            after: Column {
+                name: "timestamp".to_string(),
+                data_type: ColumnType::DateTime { precision: None },
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            },
+        }];
+
+        let order_by_change = OrderByChange {
+            before: before.order_by.clone(),
+            after: after.order_by.clone(),
+        };
+
+        let partition_by_change = PartitionByChange {
+            before: before.partition_by.clone(),
+            after: after.partition_by.clone(),
+        };
+
+        let changes = strategy.diff_table_update(
+            &before,
+            &after,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            "local",
+        );
+
+        // Kafka should require drop+create for column changes (2 changes: Removed + Added)
+        assert_eq!(
+            changes.len(),
+            2,
+            "Kafka column change should trigger drop+create"
+        );
+        assert!(matches!(
+            changes[0],
+            OlapChange::Table(TableChange::Removed(_))
+        ));
+        assert!(matches!(
+            changes[1],
+            OlapChange::Table(TableChange::Added(_))
+        ));
     }
 
     #[test]
