@@ -5,6 +5,7 @@
 
 use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
+use crate::framework::core::validation::validate_sql_statement;
 use sqlparser::ast::Statement;
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
@@ -56,8 +57,12 @@ fn parse_sql(sql: &str) -> Result<Vec<Statement>, RoutineFailure> {
 ///
 /// * `Result<(), RoutineFailure>` - Ok if valid, error with helpful message if invalid
 pub fn validate_sql(sql: &str) -> Result<(), RoutineFailure> {
-    parse_sql(sql)?;
-    Ok(())
+    validate_sql_statement(sql).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "SQL Parsing".to_string(),
+            format!("Invalid SQL syntax: {}", e),
+        ))
+    })
 }
 
 /// Prettify SQL query using sqlparser's pretty printing.
