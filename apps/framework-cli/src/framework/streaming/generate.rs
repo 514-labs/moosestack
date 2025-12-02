@@ -515,6 +515,7 @@ my_function = StreamingFunction(
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             })
             .collect()
     }

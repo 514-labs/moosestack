@@ -1,0 +1,137 @@
+---
+title: Materialized Columns
+description: Pre-compute and store column values at insert time for faster queries
+order: 16
+category: olap
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Materialized Columns
+
+MATERIALIZED columns compute and store values at INSERT time, making queries faster at the cost of disk space and insert overhead.
+
+## When to use
+
+- Pre-compute expensive operations: hash functions, JSON parsing, complex calculations
+- Index computed values for faster lookups
+- Partition or order by derived values (dates from timestamps, hashes from IDs)
+
+<Callout type="info" title="Computed at Insert">
+MATERIALIZED columns are automatically calculated at insert time and cannot be set by users.
+</Callout>
+
+## Basic Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="MaterializedExample.ts" copy
+import { OlapTable, Key, DateTime, ClickHouseMaterialized, ClickHouseCodec, UInt64 } from "@514labs/moose-lib";
+
+interface UserEvents {
+  id: Key<string>;
+  timestamp: DateTime;
+  userId: string;
+  logBlob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
+
+  // Extract date for partitioning
+  eventDate: Date & ClickHouseMaterialized<"toDate(timestamp)">;
+
+  // Precompute hash for fast lookups
+  userHash: UInt64 & ClickHouseMaterialized<"cityHash64(userId)">;
+
+  // Parse JSON once at insert (expensive)
+  combinationHash: UInt64[] &
+    ClickHouseMaterialized<"arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(logBlob)))"> &
+    ClickHouseCodec<"ZSTD(1)">;
+}
+
+export const UserEventsTable = new OlapTable<UserEvents>("UserEvents", {
+  orderByFields: ["userHash", "eventDate"],
+  partitionBy: "toYYYYMM(eventDate)"
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="materialized_example.py" copy
+from typing import Annotated, Any
+from datetime import datetime, date
+from moose_lib import OlapTable, OlapConfig, Key, ClickHouseMaterialized, ClickHouseCodec, UInt64
+from pydantic import BaseModel
+
+class UserEvents(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    user_id: str
+    log_blob: Annotated[Any, ClickHouseCodec("ZSTD(3)")]
+
+    # Extract date for partitioning
+    event_date: Annotated[date, ClickHouseMaterialized("toDate(timestamp)")]
+
+    # Precompute hash for fast lookups
+    user_hash: Annotated[UInt64, ClickHouseMaterialized("cityHash64(user_id)")]
+
+    # Parse JSON once at insert (expensive)
+    combination_hash: Annotated[
+        list[UInt64],
+        ClickHouseMaterialized("arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))"),
+        ClickHouseCodec("ZSTD(1)")
+    ]
+
+user_events_table = OlapTable[UserEvents](
+    "UserEvents",
+    OlapConfig(
+        order_by_fields=["user_hash", "event_date"],
+        partition_by="toYYYYMM(event_date)"
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Common Patterns
+
+**Date/Time Extraction:**
+- `toDate(timestamp)` - Extract date for partitioning
+- `toHour(timestamp)` - Extract hour for time-series analysis
+- `toStartOfMonth(timestamp)` - Monthly aggregation key
+
+**Hash Functions:**
+- `cityHash64(user_id)` - Fast user lookups
+- `cityHash64(user_id, session_id)` - Combined hash for deduplication
+
+**JSON Processing:**
+- `JSONExtractString(log_blob, 'level')` - Extract specific field
+- `arrayMap(kv -> cityHash64(...), JSONExtractKeysAndValuesRaw(...))` - Hash all key-value pairs
+
+## Important Notes
+
+<Callout type="info" title="Column Names in Expressions">
+Use the exact field names from your data model. Moose preserves your naming convention (camelCase in TypeScript, snake_case in Python) in ClickHouse columns.
+</Callout>
+
+**Restrictions:**
+- Cannot combine MATERIALIZED with DEFAULT (mutually exclusive)
+- Cannot be primary keys
+- Can combine with ClickHouseCodec and ClickHouseTTL
+
+**Schema Changes:**
+- **Add:** `ALTER TABLE ADD COLUMN ... MATERIALIZED expr`
+- **Modify:** `ALTER TABLE MODIFY COLUMN ... MATERIALIZED new_expr` (preserves existing values)
+- **Remove:** `ALTER TABLE MODIFY COLUMN ... REMOVE MATERIALIZED`
+
+## Syncing from Remote
+
+When using `moose init --from-remote`, MATERIALIZED column definitions are automatically preserved:
+
+```bash filename="Terminal" copy
+moose init my-app --from-remote --language typescript
+# Generated models include ClickHouseMaterialized annotations
+```
+
+## Related
+
+- [Supported Types](/moosestack/olap/supported-types) - All column types
+- [Schema Optimization](/moosestack/olap/schema-optimization) - Optimize storage
+- [TTL (Time-to-Live)](/moosestack/olap/ttl) - Auto-expire data
+- [ClickHouse Docs](https://clickhouse.com/docs/en/sql-reference/statements/create/table#materialized) - Detailed reference

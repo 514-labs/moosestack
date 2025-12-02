@@ -1353,6 +1353,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             after_column: None,
             dependency_info: DependencyInfo {
@@ -1681,6 +1682,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         // Create operations with correct dependencies
@@ -2754,6 +2756,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -2943,6 +2946,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "old_column".to_string(),
@@ -2955,6 +2959,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -2991,6 +2996,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "new_column".to_string(),
@@ -3003,6 +3009,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -3038,6 +3045,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             }),
             ColumnChange::Added {
                 column: Column {
@@ -3051,6 +3059,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 position_after: Some("id".to_string()),
             },
