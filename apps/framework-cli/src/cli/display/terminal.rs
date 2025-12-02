@@ -206,9 +206,14 @@ impl StyledText {
 /// write_styled_line(&styled, "Operation completed successfully", false)?;
 /// # Ok::<(), std::io::Error>(())
 /// ```
-pub fn write_styled_line(styled_text: &StyledText, message: &str, no_ansi: bool) -> IoResult<()> {
-    let mut stdout = stdout();
-
+/// Internal helper that writes a styled action line to any writer.
+/// This allows for testing by capturing output to a buffer.
+fn write_styled_line_to<W: std::io::Write>(
+    writer: &mut W,
+    styled_text: &StyledText,
+    message: &str,
+    no_ansi: bool,
+) -> IoResult<()> {
     // Ensure action is exactly ACTION_WIDTH characters, right-aligned
     // Use character-aware truncation to avoid panics on multi-byte UTF-8 characters
     let truncated_action = if styled_text.text.chars().count() > ACTION_WIDTH {
@@ -226,35 +231,40 @@ pub fn write_styled_line(styled_text: &StyledText, message: &str, no_ansi: bool)
     if !no_ansi {
         // Apply foreground color
         if let Some(color) = styled_text.foreground {
-            execute!(stdout, SetForegroundColor(color))?;
+            execute!(writer, SetForegroundColor(color))?;
         }
 
         // Apply background color
         if let Some(color) = styled_text.background {
-            execute!(stdout, SetBackgroundColor(color))?;
+            execute!(writer, SetBackgroundColor(color))?;
         }
 
         // Apply bold
         if styled_text.bold {
-            execute!(stdout, SetAttribute(Attribute::Bold))?;
+            execute!(writer, SetAttribute(Attribute::Bold))?;
         }
     }
 
     // Write the styled, right-aligned action text
-    execute!(stdout, Print(&padded_action))?;
+    execute!(writer, Print(&padded_action))?;
 
     // Reset styling before writing the message (only if ANSI was applied)
     if !no_ansi {
-        execute!(stdout, ResetColor)?;
+        execute!(writer, ResetColor)?;
         if styled_text.bold {
-            execute!(stdout, SetAttribute(Attribute::Reset))?;
+            execute!(writer, SetAttribute(Attribute::Reset))?;
         }
     }
 
     // Write separator and message
-    execute!(stdout, Print(" "), Print(message), Print("\n"))?;
+    execute!(writer, Print(" "), Print(message), Print("\n"))?;
 
     Ok(())
+}
+
+pub fn write_styled_line(styled_text: &StyledText, message: &str, no_ansi: bool) -> IoResult<()> {
+    let mut stdout = stdout();
+    write_styled_line_to(&mut stdout, styled_text, message, no_ansi)
 }
 
 #[cfg(test)]
@@ -330,13 +340,109 @@ mod tests {
         let _styled = StyledText::from_str("");
         // Just test that empty text doesn't panic
     }
-    // Note: write_styled_line is difficult to test without mocking stdout,
-    // but we can test that it doesn't panic with various inputs
+    // Tests that actually verify ANSI codes are present/absent in output
+    // by using write_styled_line_to with a buffer
+
     #[test]
-    fn test_write_styled_line_doesnt_panic() {
+    fn test_write_styled_line_with_ansi_contains_escape_codes() {
+        let mut buffer = Vec::new();
         let styled = StyledText::from_str("Test").green().bold();
-        // This test mainly ensures the function signature is correct
-        // and doesn't panic during compilation
-        let _ = write_styled_line(&styled, "test message", false);
+
+        // no_ansi = false means ANSI codes SHOULD be present
+        write_styled_line_to(&mut buffer, &styled, "test message", false).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+
+        // Check for ANSI escape code prefix (\x1b[ or ESC[)
+        assert!(
+            output.contains("\x1b["),
+            "Output with no_ansi=false should contain ANSI escape codes. Got: {:?}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_write_styled_line_without_ansi_no_escape_codes() {
+        let mut buffer = Vec::new();
+        let styled = StyledText::from_str("Test").green().bold();
+
+        // no_ansi = true means ANSI codes should NOT be present
+        write_styled_line_to(&mut buffer, &styled, "test message", true).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+
+        // Verify no ANSI escape codes
+        assert!(
+            !output.contains("\x1b["),
+            "Output with no_ansi=true should NOT contain ANSI escape codes. Got: {:?}",
+            output
+        );
+
+        // Verify the actual text content is still there
+        assert!(output.contains("Test"), "Should contain the action text");
+        assert!(
+            output.contains("test message"),
+            "Should contain the message"
+        );
+    }
+
+    #[test]
+    fn test_write_styled_line_bold_ansi_code() {
+        let mut buffer = Vec::new();
+        let styled = StyledText::from_str("Bold").bold();
+
+        write_styled_line_to(&mut buffer, &styled, "message", false).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+
+        // Bold is attribute 1, should see \x1b[1m
+        assert!(output.contains("\x1b[1m"), "Should contain bold ANSI code");
+    }
+
+    #[test]
+    fn test_write_styled_line_all_styles_no_ansi_verified() {
+        // Verify that ALL color/style combinations produce NO ANSI codes with no_ansi=true
+        let test_cases = vec![
+            ("Cyan", StyledText::from_str("Cyan").cyan()),
+            ("Green", StyledText::from_str("Green").green()),
+            ("Yellow", StyledText::from_str("Yellow").yellow()),
+            ("Red", StyledText::from_str("Red").red()),
+            ("OnGreen", StyledText::from_str("OnGreen").on_green()),
+            ("Bold", StyledText::from_str("Bold").bold()),
+            ("Combined", StyledText::from_str("Combined").green().bold()),
+        ];
+
+        for (name, styled) in test_cases {
+            let mut buffer = Vec::new();
+            write_styled_line_to(&mut buffer, &styled, "message", true).unwrap();
+            let output = String::from_utf8(buffer).unwrap();
+
+            assert!(
+                !output.contains("\x1b["),
+                "Style '{}' should not produce ANSI codes with no_ansi=true. Got: {:?}",
+                name,
+                output
+            );
+        }
+    }
+
+    #[test]
+    fn test_write_styled_line_all_styles_with_ansi_verified() {
+        // Verify that color/style combinations DO produce ANSI codes with no_ansi=false
+        let test_cases = vec![
+            ("Cyan", StyledText::from_str("Cyan").cyan()),
+            ("Green", StyledText::from_str("Green").green()),
+            ("Bold", StyledText::from_str("Bold").bold()),
+        ];
+
+        for (name, styled) in test_cases {
+            let mut buffer = Vec::new();
+            write_styled_line_to(&mut buffer, &styled, "message", false).unwrap();
+            let output = String::from_utf8(buffer).unwrap();
+
+            assert!(
+                output.contains("\x1b["),
+                "Style '{}' should produce ANSI codes with no_ansi=false. Got: {:?}",
+                name,
+                output
+            );
+        }
     }
 }
