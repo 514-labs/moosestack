@@ -53,7 +53,11 @@ If you’re new to Moose OLAP, choose one of these paths:
 
 ### Import your schema from an existing ClickHouse database
 ```bash filename="Terminal" copy
-moose init your-project-name --from-remote
+# First initialize your project
+moose init your-project-name <typescript|python>
+
+# Then import from your database
+moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
 ```
 <Callout type="info" title="Review the full guide" href="/moose/getting-started/from-clickhouse" ctaLabel="Get started" compact={true}>
 Review the full guide to learn more about how to bootstrap a new Moose OLAP project from an existing ClickHouse DB.
@@ -62,7 +66,7 @@ Review the full guide to learn more about how to bootstrap a new Moose OLAP proj
 ### Start from scratch
 Create a blank project, then model your first table:
   ```bash filename="Terminal" copy
-  moose init your-project-name --language <typescript|python>
+  moose init your-project-name <typescript|python>
   cd your-project-name
   ```
   <Callout type="info" title="Next steps: Model a table" href="/moose/olap/model-table" ctaLabel="Model a table" compact={true}>
