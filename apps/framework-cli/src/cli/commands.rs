@@ -13,11 +13,9 @@ pub enum Commands {
         /// Name of your app or service
         name: String,
 
-        /// Template to use for the project
-        #[arg(
-            conflicts_with = "from_remote",
-            required_unless_present = "from_remote"
-        )]
+        /// Template or language to use for the project
+        /// Can be a template name (e.g., "python-empty", "typescript-empty") or a language name (e.g., "python", "typescript")
+        #[arg(conflicts_with = "from_remote", value_name = "TEMPLATE|LANGUAGE")]
         template: Option<String>,
 
         /// Location of your app or service
@@ -31,14 +29,15 @@ pub enum Commands {
         /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
         #[arg(
             long,
-            required_unless_present = "template",
+            conflicts_with = "template",
             value_name = "CONNECTION_STRING",
             num_args = 0..=1
         )]
         from_remote: Option<Option<String>>,
 
-        /// Programming language to use for the project
-        #[arg(long, conflicts_with = "template")]
+        /// Programming language to use for the project (e.g., "python" or "typescript")
+        /// If provided without a template, uses the default empty template for that language
+        #[arg(long)]
         language: Option<String>,
     },
     /// Builds your moose project
