@@ -410,7 +410,7 @@ fn add_cors_headers(builder: hyper::http::response::Builder) -> hyper::http::res
         )
 }
 
-#[tracing::instrument(skip(http_client, req, consumption_apis), fields(request_id))]
+#[tracing::instrument(skip(http_client, req, consumption_apis))]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
@@ -418,19 +418,9 @@ async fn get_consumption_api_res(
     consumption_apis: &RwLock<HashSet<String>>,
     is_prod: bool,
     proxy_port: u16,
+    request_id: String,
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
     let start = Instant::now();
-
-    // Extract or generate request ID
-    let request_id = req
-        .headers()
-        .get("x-moose-request-id")
-        .and_then(|v| v.to_str().ok())
-        .map(String::from)
-        .unwrap_or_else(|| ulid::Ulid::new().to_string());
-
-    // Record request_id in the span
-    tracing::Span::current().record("request_id", &request_id);
 
     info!(
         method = %req.method(),
@@ -582,26 +572,16 @@ fn classify_proxy_error(error: &reqwest::Error) -> (StatusCode, &'static str) {
     }
 }
 
-#[tracing::instrument(skip(http_client, req), fields(request_id))]
+#[tracing::instrument(skip(http_client, req))]
 async fn get_webapp_proxy_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
     host: String,
     proxy_port: u16,
     max_body_size: usize,
+    request_id: String,
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
     let start = Instant::now();
-
-    // Extract or generate request ID
-    let request_id = req
-        .headers()
-        .get("x-moose-request-id")
-        .and_then(|v| v.to_str().ok())
-        .map(String::from)
-        .unwrap_or_else(|| ulid::Ulid::new().to_string());
-
-    // Record request_id in the span
-    tracing::Span::current().record("request_id", &request_id);
 
     info!(
         method = %req.method(),
@@ -1944,6 +1924,14 @@ async fn router(
             if route_segments.len() >= 2
                 && (route_segments[0] == "api" || route_segments[0] == "consumption") =>
         {
+            // Extract or generate request ID
+            let request_id = req
+                .headers()
+                .get("x-moose-request-id")
+                .and_then(|v| v.to_str().ok())
+                .map(String::from)
+                .unwrap_or_else(|| ulid::Ulid::new().to_string());
+
             match get_consumption_api_res(
                 http_client,
                 req,
@@ -1951,6 +1939,7 @@ async fn router(
                 consumption_apis,
                 is_prod,
                 project.http_server_config.proxy_port,
+                request_id,
             )
             .await
             {
@@ -2003,12 +1992,21 @@ async fn router(
             drop(web_apps_read);
 
             if is_web_app_route {
+                // Extract or generate request ID
+                let request_id = req
+                    .headers()
+                    .get("x-moose-request-id")
+                    .and_then(|v| v.to_str().ok())
+                    .map(String::from)
+                    .unwrap_or_else(|| ulid::Ulid::new().to_string());
+
                 match get_webapp_proxy_res(
                     http_client,
                     req,
                     host,
                     project.http_server_config.proxy_port,
                     project.http_server_config.max_request_body_size,
+                    request_id,
                 )
                 .await
                 {
