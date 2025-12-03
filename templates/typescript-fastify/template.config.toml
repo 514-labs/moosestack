@@ -1,10 +1,12 @@
 language = "typescript" # Must be typescript or python
 description = "TypeScript project using Fastify for high-performance analytical APIs with WebApp integration."
 post_install_print = """
-Moose + Fastify Template
+Deploy on Boreal
 
-This template demonstrates using Fastify with MooseStack's WebApp class
-to build high-performance analytical APIs.
+The easiest way to deploy your MooseStack Applications is to use Boreal
+from the creators of MooseStack.
+
+https://boreal.cloud
 
 ---------------------------------------------------------
 
@@ -12,22 +14,9 @@ to build high-performance analytical APIs.
     $ cd {project_dir}
 
 📦 Install Dependencies:
-    $ npm install
+    $ pnpm install
 
 🛠️ Start dev server:
-    $ npx moose dev
-
-🧪 Test the Fastify endpoints:
-    $ curl http://localhost:4000/fastify/health
-    $ curl http://localhost:4000/fastify/query?limit=5
-
----------------------------------------------------------
-
-Deploy on Boreal
-
-The easiest way to deploy your MooseStack Applications is to use Boreal
-from the creators of MooseStack.
-
-https://boreal.cloud
+    $ moose dev
 """
 default_sloan_telemetry = "standard"

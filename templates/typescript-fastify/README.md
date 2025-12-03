@@ -1,6 +1,4 @@
-# Moose Fastify Template
-
-This is a [Moose](https://docs.fiveonefour.com/moose) project using [Fastify](https://fastify.dev/) for serving analytical APIs, bootstrapped with [`moose init`](https://docs.fiveonefour.com/moose/reference/moose-cli#init).
+This is a [Moose](https://docs.fiveonefour.com/moose) project bootstrapped with [`moose init`](https://docs.fiveonefour.com/moose/reference/moose-cli#init) or [`sloan init`](https://docs.fiveonefour.com/sloan/cli-reference#init)
 
 <a href="https://docs.fiveonefour.com/moose/"><img src="https://raw.githubusercontent.com/514-labs/moose/main/logo-m-light.png" alt="moose logo" height="100px"></a>
 
@@ -9,113 +7,30 @@ This is a [Moose](https://docs.fiveonefour.com/moose) project using [Fastify](ht
 [![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
 [![MIT license](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-## About This Template
+[Moose](https://docs.fiveonefour.com/moose) is an open-source data engineering framework designed to drastically accelerate AI-enabled software developers, as you prototype and scale data-intensive features and applications.
 
-This template demonstrates how to use **Fastify** with MooseStack's `WebApp` class to build high-performance analytical APIs. It showcases:
+# Get started with Moose
 
-- **Fastify WebApp Integration**: Using the `WebApp` class to mount a Fastify application
-- **ClickHouse Queries**: Querying materialized views with the Moose SQL client
-- **Caching**: Using `MooseCache` for Redis-based response caching
-- **Type-safe APIs**: Using the `Api` class with TypeScript types
+Get up and running with your own Moose project in minutes by using our [Quick Start Tutorial](https://docs.fiveonefour.com/moose/getting-started/quickstart). We also have our [Docs](https://docs.fiveonefour.com/moose) where you can pick your path, learn more about Moose, and learn what types of applications can be built with Moose.
 
-## Project Structure
+# Beta release
 
-```
-app/
-  apis/
-    bar.ts          # Fastify WebApp + Api definitions
-  ingest/
-    models.ts       # Data models for ingestion
-    transforms.ts   # Data transformation functions
-  views/
-    barAggregated.ts # Materialized view definition
-  workflows/
-    generator.ts    # Sample data generator workflow
-  index.ts          # Main exports
-```
+Moose is beta software and is in active development. Multiple public companies across the globe are using Moose in production. We'd love for you to [get your hands on it and try it out](https://docs.fiveonefour.com/moose/getting-started/quickstart). If you're interested in using Moose in production, or if you just want to chat, you can reach us at [hello@moosejs.dev](mailto:hello@moosejs.dev) or in the Moose developer community below.
 
-## Key Features
+## Community
 
-### Fastify WebApp
+You can join the Moose community [on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg). Check out the [MooseStack repo on GitHub](https://github.com/514-labs/moosestack).
 
-The `bar.ts` file demonstrates mounting a Fastify app at `/fastify`:
-
-```typescript
-import Fastify from "fastify";
-import { WebApp, getMooseClients, sql } from "@514labs/moose-lib";
-
-const app = Fastify({ logger: true });
-
-app.get("/health", async () => {
-  return { status: "ok" };
-});
-
-app.get("/query", async (request, reply) => {
-  const { client } = await getMooseClients();
-  // Query ClickHouse...
-});
-
-export const barFastifyApi = new WebApp("barFastify", app, {
-  mountPath: "/fastify",
-});
-```
-
-### Available Endpoints
-
-Once running, the following endpoints are available:
-
-- `GET /fastify/health` - Health check
-- `GET /fastify/query?limit=10` - Query aggregated data
-- `POST /fastify/data` - Query with filters (JSON body)
-- `GET /api/bar` - Type-safe Api endpoint with caching
-
-## Getting Started
-
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Start the dev server:**
-   ```bash
-   npx moose dev
-   ```
-
-3. **Test the endpoints:**
-   ```bash
-   # Health check
-   curl http://localhost:4000/fastify/health
-
-   # Query data
-   curl http://localhost:4000/fastify/query?limit=5
-
-   # POST with filters
-   curl -X POST http://localhost:4000/fastify/data \
-     -H "Content-Type: application/json" \
-     -d '{"orderBy": "totalRows", "limit": 5}'
-   ```
-
-## Learn More
-
-- [Moose Documentation](https://docs.fiveonefour.com/moose)
-- [WebApp Reference](https://docs.fiveonefour.com/moose/building/consumption-apis/web-apps)
-- [Fastify Documentation](https://fastify.dev/docs/latest/)
-- [Quick Start Tutorial](https://docs.fiveonefour.com/moose/getting-started/quickstart)
-
-## Deploy on Boreal
+# Deploy on Boreal
 
 The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose.
 
 Check out our [Moose deployment documentation](https://docs.fiveonefour.com/moose/deploying) for more details.
 
-## Community
-
-Join the Moose community [on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg). Check out the [MooseStack repo on GitHub](https://github.com/514-labs/moosestack).
-
-## Contributing
+# Contributing
 
 We welcome contributions to Moose! Please check out the [contribution guidelines](https://github.com/514-labs/moose/blob/main/CONTRIBUTING.md).
 
-## Made by 514
+# Made by 514
 
-Our mission at [fiveonefour](https://www.fiveonefour.com/) is to bring incredible developer experiences to the data stack. If you're interested in enterprise solutions, commercial support, or design partnerships, we'd love to chat: [hello@moosejs.dev](mailto:hello@moosejs.dev)
+Our mission at [fiveonefour](https://www.fiveonefour.com/) is to bring incredible developer experiences to the data stack. If you’re interested in enterprise solutions, commercial support, or design partnerships, then we’d love to chat with you: [hello@moosejs.dev](mailto:hello@moosejs.dev)
