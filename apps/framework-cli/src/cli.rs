@@ -125,7 +125,34 @@ pub fn prompt_user(
 }
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
+#[command(
+    author,
+    version,
+    about,
+    long_about = "Moose is a framework for building data-intensive applications.
+
+Get started:
+  moose init <name> <template|language>         Initialize a new Moose project
+                                       (template can be 'python', 'typescript', or template name)
+  moose init --language python <name>  Initialize with language flag
+  moose template list                   List available templates
+  moose dev                             Start development environment
+
+Common commands:
+  moose build                           Build your project
+  moose check                           Validate project configuration
+  moose plan                            Preview infrastructure changes
+  moose migrate                         Apply infrastructure changes
+  moose logs                            View application logs
+  moose ls                              List infrastructure components
+  moose peek <name>                     View data from tables or streams
+  moose query '<sql>'                   Execute SQL queries
+
+For more information, visit: https://docs.moosejs.com
+",
+    arg_required_else_help(true),
+    next_display_order = None
+)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
