@@ -15,7 +15,7 @@ pub enum Commands {
 
         /// Template or language to use for the project
         /// Can be a template name (e.g., "python-empty", "typescript-empty") or a language name (e.g., "python", "typescript")
-        #[arg(conflicts_with = "from_remote", value_name = "TEMPLATE|LANGUAGE")]
+        #[arg(value_name = "TEMPLATE|LANGUAGE")]
         template: Option<String>,
 
         /// Location of your app or service
@@ -25,20 +25,6 @@ pub enum Commands {
         /// By default, the init command fails if the location directory exists, to prevent accidental reruns. This flag disables the check.
         #[arg(long)]
         no_fail_already_exists: bool,
-
-        /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
-        #[arg(
-            long,
-            conflicts_with = "template",
-            value_name = "CONNECTION_STRING",
-            num_args = 0..=1
-        )]
-        from_remote: Option<Option<String>>,
-
-        /// Programming language to use for the project (e.g., "python" or "typescript")
-        /// If provided without a template, uses the default empty template for that language
-        #[arg(long)]
-        language: Option<String>,
     },
     /// Builds your moose project
     Build {

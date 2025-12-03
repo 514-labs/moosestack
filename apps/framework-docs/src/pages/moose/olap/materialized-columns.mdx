@@ -117,10 +117,14 @@ user_events_table = OlapTable[UserEvents](
 
 ## Syncing from Remote
 
-When using `moose init --from-remote`, MATERIALIZED column definitions are automatically preserved:
+When using `moose db pull`, MATERIALIZED column definitions are automatically preserved:
 
 ```bash
-moose init my-app --from-remote --language typescript
+# First initialize your project
+moose init my-app typescript
+
+# Then import from your database
+moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
 # Generated models include ClickHouseMaterialized annotations
 ```
 

@@ -80,9 +80,9 @@ fn main() -> ExitCode {
                             "\n💡 Note: The project name must come before flags that take values."
                         );
                         eprintln!("   If using --location (-l), put the project name first:");
-                        eprintln!("   moose init <NAME> --language python -l <directory>");
+                        eprintln!("   moose init <NAME> python -l <directory>");
                         eprintln!("\n   Or use the full flag name to avoid confusion:");
-                        eprintln!("   moose init <NAME> --language python --location <directory>");
+                        eprintln!("   moose init <NAME> python --location <directory>");
                     }
 
                     eprintln!("\n💡 Quick start examples:");
@@ -90,10 +90,7 @@ fn main() -> ExitCode {
                     eprintln!(
                         "  moose init MyProject typescript       # Initialize with TypeScript"
                     );
-                    eprintln!("  moose init --language python MyProject  # Use --language flag");
-                    eprintln!(
-                        "  moose init MyProject --language python -l ./my-dir  # With location"
-                    );
+                    eprintln!("  moose init MyProject python -l ./my-dir  # With custom location");
                     eprintln!("\nTo view all available templates, run:");
                     eprintln!("  moose template list");
                     std::process::exit(1)

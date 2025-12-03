@@ -120,9 +120,13 @@ moose db pull --clickhouse-url <URL> [--file-path <OUTPUT_PATH>]
   This runs once when the dev server first starts. To run after code reloads, use `on_reload_complete_script`. If you run this frequently, prefer HTTP(S) URLs and cache credentials via env/secrets to avoid friction.
 
 ### New project from an existing DB
-  If you’re starting with an existing ClickHouse database, bootstrap code with `init --from-remote`, then use `db pull` over time to keep external models fresh:
+  If you're starting with an existing ClickHouse database, first initialize your project, then use `db pull` to import your database schema:
   ```bash filename="Terminal" copy
-  moose init my-project --from-remote $REMOTE_CLICKHOUSE_URL --language <typescript|python>
+  # Initialize your project
+  moose init my-project <typescript|python>
+  
+  # Import from your existing database
+  moose db pull --clickhouse-url $REMOTE_CLICKHOUSE_URL
   ```
 
   <Callout type="info" title="See the full guide" ctaLink="/moose/getting-started/from-clickhouse" ctaLabel="Get started">

@@ -64,7 +64,7 @@ use crate::utilities::constants::{
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::cli::commands::DbArgs;
-use crate::cli::routines::code_generation::{db_pull, db_to_dmv2, prompt_user_for_remote_ch_http};
+use crate::cli::routines::code_generation::db_pull;
 use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
@@ -134,9 +134,8 @@ pub fn prompt_user(
 Get started:
   moose init <name> <template|language>    Initialize a new Moose project
                                            (template can be 'python', 'typescript', or template name)
-  moose init --language python <name>      Initialize with language flag
-  moose template list                   List available templates
-  moose dev                             Start development environment
+  moose template list                      List available templates
+  moose dev                                 Start development environment
 
 Common commands:
   moose build                           Build your project
@@ -347,47 +346,32 @@ pub async fn top_command_handler(
             location,
             template,
             no_fail_already_exists,
-            from_remote,
-            language,
         } => {
             info!(
-                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}",
-                name, location, template, language
+                "Running init command with name: {}, location: {:?}, template: {:?}",
+                name, location, template
             );
 
-            // Determine template, prompting for language if needed (especially for --from-remote)
+            // Determine template, prompting for language if needed
             let template = match template {
                 Some(t) => t.to_lowercase(),
-                None => match language.as_deref().map(|l| l.to_lowercase()).as_deref() {
-                    Some("typescript") => "typescript-empty".to_string(),
-                    Some("python") => "python-empty".to_string(),
-                    Some(lang) => {
-                        return Err(RoutineFailure::error(Message::new(
-                            "Unknown".to_string(),
-                            format!("language {lang}"),
-                        )))
-                    }
-                    None => {
-                        display::show_message_wrapper(
-                            MessageType::Info,
-                            Message::new(
-                                "Init".to_string(),
-                                "Setting up your new Moose project".to_string(),
-                            ),
-                        );
-                        let input = prompt_user(
-                            "Select language [1] TypeScript [2] Python",
-                            Some("1"),
-                            None,
-                        )?
-                        .to_lowercase();
+                None => {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message::new(
+                            "Init".to_string(),
+                            "Setting up your new Moose project".to_string(),
+                        ),
+                    );
+                    let input =
+                        prompt_user("Select language [1] TypeScript [2] Python", Some("1"), None)?
+                            .to_lowercase();
 
-                        match input.as_str() {
-                            "2" | "Python" | "py" => "python-empty".to_string(),
-                            _ => "typescript-empty".to_string(),
-                        }
+                    match input.as_str() {
+                        "2" | "Python" | "py" => "python-empty".to_string(),
+                        _ => "typescript-empty".to_string(),
                     }
-                },
+                }
             };
 
             let dir_path = Path::new(location.as_deref().unwrap_or(name));
@@ -406,67 +390,11 @@ pub async fn top_command_handler(
                 create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
                     .await?;
 
-            let normalized_url = match from_remote {
-                None => {
-                    // No --from-remote flag provided
-                    None
-                }
-                Some(None) => {
-                    // --from-remote flag provided, but no URL given - use interactive prompts
-                    let url = prompt_user_for_remote_ch_http()?;
-                    db_to_dmv2(&url, dir_path).await?;
-                    Some(url)
-                }
-                Some(Some(url_str)) => {
-                    db_to_dmv2(url_str, dir_path).await?;
-                    Some(url_str.to_string())
-                }
-            };
-
-            // Offer to store the connection string for future db pull convenience
-            if let Some(ref connection_string) = normalized_url {
-                let save_choice = prompt_user(
-                    "\n  Would you like to save this connection string to your system keychain for easy `moose db pull` later? [Y/n]",
-                    Some("Y"),
-                    Some("You can always pass --clickhouse-url explicitly to override."),
-                )?;
-
-                let save = save_choice.trim().is_empty()
-                    || matches!(save_choice.trim().to_lowercase().as_str(), "y" | "yes");
-                if save {
-                    let repo = KeyringSecretRepository;
-                    match repo.store(name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
-                        Ok(()) => display::show_message_wrapper(
-                            MessageType::Success,
-                            Message::new(
-                                "Keychain".to_string(),
-                                format!(
-                                    "Saved ClickHouse connection string for project '{}'.",
-                                    name
-                                ),
-                            ),
-                        ),
-                        Err(e) => warn!("Failed to store connection string: {e:?}"),
-                    }
-                }
-            }
-
             wait_for_usage_capture(capture_handle).await;
-
-            let success_message = if let Some(connection_string) = normalized_url {
-                format!(
-                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse --clickhouse-url \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
-                    connection_string,
-                    connection_string,
-                    connection_string
-                )
-            } else {
-                format!("\n\n{post_install_message}")
-            };
 
             Ok(RoutineSuccess::highlight(Message::new(
                 "Get Started".to_string(),
-                success_message,
+                format!("\n\n{post_install_message}"),
             )))
         }
         // This command is used to check the project for errors that are not related to runtime
@@ -1312,7 +1240,7 @@ pub async fn top_command_handler(
                         Ok(Some(s)) => s,
                         Ok(None) => return Err(RoutineFailure::error(Message {
                             action: "DB Pull".to_string(),
-                            details: "No ClickHouse URL provided and none saved. Pass --clickhouse-url or save one during `moose init --from-remote`.".to_string(),
+                            details: "No ClickHouse URL provided and none saved. Pass --clickhouse-url or use `moose db pull` to import from a remote database.".to_string(),
                         })),
                         Err(e) => {
                             return Err(RoutineFailure::error(Message {
