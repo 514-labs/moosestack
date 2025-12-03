@@ -17,7 +17,23 @@ Templates are pre-configured Moose applications that help you get started with y
 To get started with a template, run:
 
 ```bash copy
-moose init <your-project-name> <template-name>
+moose init <your-project-name> [template-name|language]
+```
+
+The template name can be:
+- A specific template (e.g., `typescript-empty`, `python-fastapi`)
+- A language name (e.g., `python`, `typescript`) which uses the default empty template for that language
+- Omitted entirely (you'll be prompted to select a language)
+
+**Examples:**
+```bash
+# Using a language name (recommended for getting started)
+moose init my-app python
+moose init my-app typescript
+
+# Using a specific template
+moose init my-app typescript-empty
+moose init my-app python-fastapi
 ```
 
 ### View List of Templates
