@@ -984,11 +984,47 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         });
 
+        it("should serve WebApp at custom mountPath with Fastify framework", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test Fastify WebApp health endpoint
+          await verifyWebAppHealth("/fastify", "bar-fastify-api");
+
+          // Test Fastify WebApp query endpoint (GET)
+          await verifyWebAppQuery("/fastify/query", { limit: "5" });
+
+          // Test Fastify WebApp data endpoint (POST)
+          await verifyWebAppPostEndpoint(
+            "/fastify/data",
+            {
+              orderBy: "totalRows",
+              limit: 5,
+              startDay: 1,
+              endDay: 31,
+            },
+            200,
+            (json) => {
+              if (!json.success) {
+                throw new Error("Expected success to be true");
+              }
+              if (!Array.isArray(json.data)) {
+                throw new Error("Expected data to be an array");
+              }
+              if (json.params.orderBy !== "totalRows") {
+                throw new Error("Expected orderBy to be totalRows");
+              }
+            },
+          );
+        });
+
         it("should handle multiple WebApp endpoints independently", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
           // Verify Express WebApp is accessible
           await verifyWebAppEndpoint("/express/health", 200);
+
+          // Verify Fastify WebApp is accessible
+          await verifyWebAppEndpoint("/fastify/health", 200);
 
           // Verify regular Api endpoint still works alongside WebApp
           const apiResponse = await fetch(

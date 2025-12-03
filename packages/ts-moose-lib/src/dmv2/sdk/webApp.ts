@@ -14,6 +14,7 @@ export interface FrameworkApp {
   ) => void;
   callback?: () => WebAppHandler;
   routing?: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+  ready?: () => PromiseLike<unknown>; // Fastify's ready method (returns FastifyInstance)
 }
 
 export interface WebAppConfig {
@@ -128,9 +129,27 @@ export class WebApp {
     }
 
     // Fastify: routing is a function that handles requests directly
+    // Fastify requires .ready() to be called before routes are available
     if (typeof app.routing === "function") {
-      return (req, res) => {
-        app.routing!(req, res);
+      // Capture references to avoid TypeScript narrowing issues in closure
+      const routing = app.routing;
+      const appWithReady = app;
+
+      // Use lazy initialization - don't call ready() during module loading
+      // This prevents blocking the event loop when streaming functions import the app module
+      // The ready() call is deferred to the first actual HTTP request
+      let readyPromise: PromiseLike<unknown> | null = null;
+
+      return async (req, res) => {
+        // Lazy init - only call ready() when first request comes in
+        if (readyPromise === null) {
+          readyPromise =
+            typeof appWithReady.ready === "function" ?
+              appWithReady.ready()
+            : Promise.resolve();
+        }
+        await readyPromise;
+        routing(req, res);
       };
     }
 
