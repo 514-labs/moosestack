@@ -55,9 +55,6 @@ app.get("/data", async (request, reply) => {
   }
 });
 
-// Must call ready() before passing to WebApp
-await app.ready();
-
 export const fastifyApp = new WebApp("fastifyApp", app, {
   mountPath: "/fastify",
   metadata: { description: "Fastify API" }
@@ -65,12 +62,9 @@ export const fastifyApp = new WebApp("fastifyApp", app, {
 ```
 
 **Access your API:**
+
 - `GET http://localhost:4000/fastify/health`
 - `GET http://localhost:4000/fastify/data?limit=20`
-
-<Callout type="warning">
-Fastify apps must call `.ready()` before passing to WebApp.
-</Callout>
 
 ## Complete Example with Schema Validation
 
@@ -337,6 +331,7 @@ new WebApp(name, app, config)
 ```
 
 **WebAppConfig:**
+
 ```ts
 interface WebAppConfig {
   mountPath: string;
@@ -360,6 +355,7 @@ interface WebAppConfig {
 ### "Moose utilities not available"
 
 **Solution:** Use `request.raw` to access the underlying request:
+
 ```ts
 const moose = getMooseUtils(request.raw); // Not request!
 ```
@@ -367,6 +363,7 @@ const moose = getMooseUtils(request.raw); // Not request!
 ### App not responding after mounting
 
 **Solution:** Ensure you called `.ready()`:
+
 ```ts
 await app.ready(); // Must call before WebApp
 export const fastifyApp = new WebApp("name", app, config);
@@ -375,6 +372,7 @@ export const fastifyApp = new WebApp("name", app, config);
 ### Schema validation errors
 
 **Solution:** Match your TypeScript types with JSON schemas:
+
 ```ts
 // JSON Schema
 { querystring: { type: "object", properties: { limit: { type: "integer" } } } }
