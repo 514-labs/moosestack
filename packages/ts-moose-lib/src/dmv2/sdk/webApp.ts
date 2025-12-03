@@ -131,24 +131,17 @@ export class WebApp {
     // Fastify: routing is a function that handles requests directly
     // Fastify requires .ready() to be called before routes are available
     if (typeof app.routing === "function") {
-      let isReady = false;
-      let readyPromise: PromiseLike<unknown> | null = null;
-
-      // If app has a ready() method (Fastify), we need to call it
-      if (typeof app.ready === "function") {
-        readyPromise = app.ready().then(() => {
-          isReady = true;
-        });
-      } else {
-        isReady = true;
-      }
+      // Capture the routing function reference to avoid TypeScript narrowing issues in closure
+      const routing = app.routing;
+      // If app has a ready() method (Fastify), call it once and cache the promise
+      // All requests will await this same promise until it resolves
+      const readyPromise =
+        typeof app.ready === "function" ? app.ready() : Promise.resolve();
 
       return async (req, res) => {
-        // Wait for ready if not yet ready
-        if (!isReady && readyPromise) {
-          await readyPromise;
-        }
-        app.routing!(req, res);
+        // Always await ready - Promise.resolve() is instant if already resolved
+        await readyPromise;
+        routing(req, res);
       };
     }
 

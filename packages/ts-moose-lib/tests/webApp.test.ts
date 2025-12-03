@@ -1,6 +1,6 @@
 import { expect } from "chai";
-import { getMooseInternal } from "../internal";
-import { WebApp, FrameworkApp, WebAppHandler } from "./webApp";
+import { getMooseInternal } from "../src/dmv2/internal";
+import { WebApp, FrameworkApp, WebAppHandler } from "../src/dmv2/sdk/webApp";
 import http from "http";
 
 describe("WebApp", () => {
@@ -374,6 +374,14 @@ describe("WebApp", () => {
       let routingCalled = false;
       let readyResolve: () => void;
 
+      // Create a promise that we control externally
+      const readyPromise = new Promise<void>((resolve) => {
+        readyResolve = () => {
+          readyCalled = true;
+          resolve();
+        };
+      });
+
       const fastifyApp: FrameworkApp = {
         routing: (req: any, res: any) => {
           // Verify ready was called before routing
@@ -382,16 +390,7 @@ describe("WebApp", () => {
           res.writeHead(200);
           res.end("Fastify");
         },
-        ready: () => {
-          return new Promise<void>((resolve) => {
-            readyResolve = () => {
-              readyCalled = true;
-              resolve();
-            };
-            // Simulate async ready - resolve after a short delay
-            setTimeout(readyResolve, 10);
-          });
-        },
+        ready: () => readyPromise,
       };
 
       const webApp = new WebApp("fastifyReadyApp", fastifyApp, {
@@ -404,8 +403,18 @@ describe("WebApp", () => {
         end: () => {},
       } as any;
 
-      // Handler should wait for ready() to complete
-      await webApp.handler(req, res);
+      // Start the handler - it should wait for ready
+      const handlerPromise = webApp.handler(req, res);
+
+      // Verify routing hasn't been called yet (ready not resolved)
+      expect(routingCalled).to.be.false;
+
+      // Now resolve ready
+      readyResolve!();
+
+      // Wait for handler to complete
+      await handlerPromise;
+
       expect(readyCalled).to.be.true;
       expect(routingCalled).to.be.true;
     });
@@ -433,6 +442,43 @@ describe("WebApp", () => {
 
       await webApp.handler(req, res);
       expect(routingCalled).to.be.true;
+    });
+
+    it("should call ready() only once and reuse for subsequent requests", async () => {
+      let readyCallCount = 0;
+      let routingCallCount = 0;
+
+      const fastifyApp: FrameworkApp = {
+        routing: (req: any, res: any) => {
+          routingCallCount++;
+          res.writeHead(200);
+          res.end("Fastify");
+        },
+        ready: () => {
+          readyCallCount++;
+          return Promise.resolve();
+        },
+      };
+
+      const webApp = new WebApp("fastifyMultiRequestApp", fastifyApp, {
+        mountPath: "/fastify-multi-request-test",
+      });
+
+      const req = {} as http.IncomingMessage;
+      const res = {
+        writeHead: () => {},
+        end: () => {},
+      } as any;
+
+      // Call handler multiple times
+      await webApp.handler(req, res);
+      await webApp.handler(req, res);
+      await webApp.handler(req, res);
+
+      // ready() should only be called once during WebApp construction
+      expect(readyCallCount).to.equal(1);
+      // routing() should be called for each request
+      expect(routingCallCount).to.equal(3);
     });
 
     it("should convert raw handler correctly", () => {
