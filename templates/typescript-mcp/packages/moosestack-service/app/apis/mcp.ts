@@ -55,7 +55,8 @@ async function getTableColumns(
 
   // High limit for catalog queries - metadata tables are typically small
   const result = await clickhouseReadonlyQuery(client, query, 10000);
-  const data = (await result.json()) as ColumnQueryResult[];
+  const rawData = await result.json();
+  const data = z.array(ColumnQueryResultSchema).parse(rawData);
 
   return data.map((row) => ({
     name: row.name,
@@ -65,18 +66,22 @@ async function getTableColumns(
   }));
 }
 
-interface ColumnQueryResult {
-  name: string;
-  type: string;
-  nullable: number;
-  comment: string;
-}
+// Zod schemas for runtime validation of ClickHouse query results
+const ColumnQueryResultSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  nullable: z.number(),
+  comment: z.string(),
+});
 
-interface TableQueryResult {
-  name: string;
-  engine: string;
-  component_type: string;
-}
+const TableQueryResultSchema = z.object({
+  name: z.string(),
+  engine: z.string(),
+  component_type: z.string(),
+});
+
+type ColumnQueryResult = z.infer<typeof ColumnQueryResultSchema>;
+type TableQueryResult = z.infer<typeof TableQueryResultSchema>;
 
 /**
  * Query ClickHouse to get list of tables and materialized views in the configured database.
@@ -105,7 +110,8 @@ async function getTablesAndMaterializedViews(
 
   // High limit for catalog queries - metadata tables are typically small
   const result = await clickhouseReadonlyQuery(client, query, 10000);
-  const data = (await result.json()) as TableQueryResult[];
+  const rawData = await result.json();
+  const data = z.array(TableQueryResultSchema).parse(rawData);
 
   let filteredData = data;
 
