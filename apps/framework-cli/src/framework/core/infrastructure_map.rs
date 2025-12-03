@@ -1794,33 +1794,7 @@ impl InfrastructureMap {
                         );
                     } else {
                         // Compute the basic diff components
-                        let mut column_changes = compute_table_columns_diff(table, target_table);
-
-                        // For DeletionProtected tables, filter out destructive column changes
-                        if target_table.life_cycle == LifeCycle::DeletionProtected
-                            && respect_life_cycle
-                        {
-                            let original_len = column_changes.len();
-                            column_changes.retain(|change| match change {
-                                ColumnChange::Removed(_) => {
-                                    tracing::debug!(
-                                        "Filtering out column removal for deletion-protected table '{}'",
-                                        table.name
-                                    );
-                                    false // Remove destructive column removals
-                                }
-                                ColumnChange::Added { .. } => true, // Allow additive changes
-                                ColumnChange::Updated { .. } => true, // Allow column updates
-                            });
-
-                            if original_len != column_changes.len() {
-                                tracing::info!(
-                                    "Filtered {} destructive column changes for deletion-protected table '{}'",
-                                    original_len - column_changes.len(),
-                                    table.name
-                                );
-                            }
-                        }
+                        let column_changes = compute_table_columns_diff(table, target_table);
 
                         // Compute PARTITION BY changes from normalized tables to respect ignore_ops
                         // Using normalized tables ensures that ignored operations don't incorrectly
@@ -1903,33 +1877,79 @@ impl InfrastructureMap {
                             );
 
                             // Filter strategy changes to respect lifecycle constraints
-                            // The strategy may convert an Update into drop+create (Removed + Added),
-                            // which must be blocked for DeletionProtected/ExternallyManaged tables
+                            // This handles both:
+                            // 1. Strategies that convert updates to drop+create (blocks Removed for protected tables)
+                            // 2. Strategies that return Updated (filters out column removals for DeletionProtected tables)
                             let filtered_changes: Vec<OlapChange> = if respect_life_cycle {
                                 strategy_changes
                                     .into_iter()
-                                    .filter(|change| {
+                                    .filter_map(|change| {
                                         match change {
                                             OlapChange::Table(TableChange::Removed(removed_table)) => {
                                                 match removed_table.life_cycle {
                                                     LifeCycle::DeletionProtected => {
-                                                        log::warn!(
+                                                        tracing::warn!(
                                                             "Strategy attempted to drop deletion-protected table '{}' - blocking operation",
                                                             removed_table.name
                                                         );
-                                                        false
+                                                        None
                                                     }
                                                     LifeCycle::ExternallyManaged => {
-                                                        log::warn!(
+                                                        tracing::warn!(
                                                             "Strategy attempted to drop externally-managed table '{}' - blocking operation",
                                                             removed_table.name
                                                         );
-                                                        false
+                                                        None
                                                     }
-                                                    LifeCycle::FullyManaged => true,
+                                                    LifeCycle::FullyManaged => {
+                                                        Some(OlapChange::Table(TableChange::Removed(removed_table)))
+                                                    }
                                                 }
                                             }
-                                            _ => true,
+                                            OlapChange::Table(TableChange::Updated {
+                                                name,
+                                                column_changes,
+                                                order_by_change,
+                                                partition_by_change,
+                                                before,
+                                                after,
+                                            }) => {
+                                                // For DeletionProtected tables, filter out column removals
+                                                if after.life_cycle == LifeCycle::DeletionProtected {
+                                                    let original_len = column_changes.len();
+                                                    let filtered_column_changes: Vec<_> = column_changes
+                                                        .into_iter()
+                                                        .filter(|c| !matches!(c, ColumnChange::Removed(_)))
+                                                        .collect();
+
+                                                    if original_len != filtered_column_changes.len() {
+                                                        tracing::debug!(
+                                                            "Filtered {} column removals for deletion-protected table '{}'",
+                                                            original_len - filtered_column_changes.len(),
+                                                            name
+                                                        );
+                                                    }
+
+                                                    Some(OlapChange::Table(TableChange::Updated {
+                                                        name,
+                                                        column_changes: filtered_column_changes,
+                                                        order_by_change,
+                                                        partition_by_change,
+                                                        before,
+                                                        after,
+                                                    }))
+                                                } else {
+                                                    Some(OlapChange::Table(TableChange::Updated {
+                                                        name,
+                                                        column_changes,
+                                                        order_by_change,
+                                                        partition_by_change,
+                                                        before,
+                                                        after,
+                                                    }))
+                                                }
+                                            }
+                                            _ => Some(change),
                                         }
                                     })
                                     .collect()
@@ -3451,6 +3471,8 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
+            materialized: None,
         }];
 
         let mut after_table = before_table.clone();
@@ -3465,6 +3487,8 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
+            materialized: None,
         });
 
         map1.tables
@@ -3523,6 +3547,8 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
+            materialized: None,
         }];
 
         let mut after_table = before_table.clone();
@@ -3572,6 +3598,8 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
+            materialized: None,
         }];
 
         let mut after_table = before_table.clone();
@@ -3628,6 +3656,8 @@ mod tests {
             annotations: vec![],
             comment: None,
             ttl: None,
+            codec: None,
+            materialized: None,
         }];
 
         let mut after_table = before_table.clone();
