@@ -1871,20 +1871,25 @@ impl InfrastructureMap {
 
                             // Filter strategy changes to respect lifecycle constraints
                             // This handles both:
-                            // 1. Strategies that convert updates to drop+create (blocks Removed for protected tables)
+                            // 1. Strategies that convert updates to drop+create (blocks both Removed AND Added for protected tables)
                             // 2. Strategies that return Updated (filters out column removals for DeletionProtected tables)
                             let filtered_changes: Vec<OlapChange> = if respect_life_cycle {
+                                let mut blocked_tables = std::collections::HashSet::new();
+
                                 strategy_changes
                                     .into_iter()
                                     .filter_map(|change| {
                                         match change {
                                             OlapChange::Table(TableChange::Removed(removed_table)) => {
-                                                match removed_table.life_cycle {
+                                                // CRITICAL: Use target_table lifecycle (AFTER state), not removed_table lifecycle (BEFORE state)
+                                                // This handles transitions TO protected lifecycles (e.g., FullyManaged -> DeletionProtected)
+                                                match target_table.life_cycle {
                                                     LifeCycle::DeletionProtected => {
                                                         tracing::warn!(
                                                             "Strategy attempted to drop deletion-protected table '{}' - blocking operation",
                                                             removed_table.name
                                                         );
+                                                        blocked_tables.insert(removed_table.name.clone());
                                                         None
                                                     }
                                                     LifeCycle::ExternallyManaged => {
@@ -1892,11 +1897,25 @@ impl InfrastructureMap {
                                                             "Strategy attempted to drop externally-managed table '{}' - blocking operation",
                                                             removed_table.name
                                                         );
+                                                        blocked_tables.insert(removed_table.name.clone());
                                                         None
                                                     }
                                                     LifeCycle::FullyManaged => {
                                                         Some(OlapChange::Table(TableChange::Removed(removed_table)))
                                                     }
+                                                }
+                                            }
+                                            OlapChange::Table(TableChange::Added(added_table)) => {
+                                                // If we blocked the corresponding drop, also block the create
+                                                // to avoid "table already exists" errors
+                                                if blocked_tables.contains(&added_table.name) {
+                                                    tracing::debug!(
+                                                        "Blocking orphan CREATE for table '{}' after blocking DROP",
+                                                        added_table.name
+                                                    );
+                                                    None
+                                                } else {
+                                                    Some(OlapChange::Table(TableChange::Added(added_table)))
                                                 }
                                             }
                                             OlapChange::Table(TableChange::Updated {
@@ -3432,15 +3451,15 @@ mod tests {
             "DeletionProtected table should block strategy-generated drop operation"
         );
 
-        // But the addition should still be present
+        // The orphan addition should also be blocked to avoid "table already exists" errors
         let table_additions = changes
             .olap_changes
             .iter()
             .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
             .count();
         assert_eq!(
-            table_additions, 1,
-            "Table addition should not be blocked for DeletionProtected tables"
+            table_additions, 0,
+            "Orphan CREATE should be blocked when DROP is blocked for DeletionProtected tables"
         );
     }
 
@@ -3551,6 +3570,71 @@ mod tests {
             .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
             .count();
         assert_eq!(table_additions, 1, "Table addition should be present");
+    }
+
+    #[test]
+    fn test_lifecycle_transition_to_protected() {
+        // Test that lifecycle protection works when transitioning FROM FullyManaged TO DeletionProtected
+        // This is a critical edge case: the table starts as FullyManaged but should be protected
+        // because the TARGET state is DeletionProtected
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("table", "1.0");
+        before_table.life_cycle = LifeCycle::FullyManaged; // START as FullyManaged
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.life_cycle = LifeCycle::DeletionProtected; // TRANSITION to DeletionProtected
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // The drop should be blocked because TARGET lifecycle is DeletionProtected
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 0,
+            "DROP should be blocked when transitioning TO DeletionProtected lifecycle"
+        );
+
+        // The orphan CREATE should also be blocked
+        let table_additions = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
+            .count();
+        assert_eq!(
+            table_additions, 0,
+            "Orphan CREATE should be blocked when DROP is blocked during lifecycle transition"
+        );
     }
 
     #[test]
