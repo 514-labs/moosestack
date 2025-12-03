@@ -241,10 +241,10 @@ const app = express();
 app.use(express.json());
 
 // API Key authentication middleware
-// When MCP_API_KEY_HASH is set, requests must include valid Authorization header
+// When MCP_API_KEY is set, requests must include valid Authorization header
 // When not set, all requests are allowed (development mode)
 const authMiddleware = createAuthMiddleware(() => {
-  return process.env.MCP_API_KEY_HASH || null;
+  return process.env.MCP_API_KEY || null;
 });
 app.use(authMiddleware);
 

@@ -825,3 +825,31 @@ interface Events {
   event_count: UInt64 & ClickHouseCodec<"DoubleDelta, LZ4">;
 }
 ```
+
+## Materialized Columns
+
+Pre-compute and store values at INSERT time for faster queries:
+
+```typescript
+import { ClickHouseMaterialized, UInt64 } from '@514labs/moose-lib';
+import typia from 'typia';
+
+interface UserEvents {
+  timestamp: DateTime;
+  userId: string;
+
+  // Extract date (use exact field names in expressions)
+  eventDate: Date & ClickHouseMaterialized<"toDate(timestamp)">;
+
+  // Precompute hash
+  userHash: UInt64 & ClickHouseMaterialized<"cityHash64(userId)">;
+
+  // Combine with CODEC
+  logData: Record<string, any> & ClickHouseMaterialized<"..."> & ClickHouseCodec<"ZSTD(1)">;
+}
+```
+
+**Notes:**
+- Cannot combine with DEFAULT (mutually exclusive)
+- Cannot be primary keys
+- Use exact field names in expressions

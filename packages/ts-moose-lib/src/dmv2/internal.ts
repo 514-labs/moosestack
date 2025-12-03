@@ -44,6 +44,19 @@ function getSourceDir(): string {
 }
 
 /**
+ * Client-only mode check. When true, resource registration is permissive
+ * (duplicates overwrite silently instead of throwing).
+ * Set via MOOSE_CLIENT_ONLY=true environment variable.
+ *
+ * This enables Next.js apps to import OlapTable definitions for type-safe
+ * queries without the Moose runtime, avoiding "already exists" errors on HMR.
+ *
+ * @returns true if MOOSE_CLIENT_ONLY environment variable is set to "true"
+ */
+export const isClientOnlyMode = (): boolean =>
+  process.env.MOOSE_CLIENT_ONLY === "true";
+
+/**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
@@ -1246,6 +1259,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "errorMessage",
@@ -1257,6 +1271,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "errorType",
@@ -1268,6 +1283,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "failedAt",
@@ -1279,6 +1295,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "source",
@@ -1290,6 +1307,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
 ];
 

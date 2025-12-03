@@ -204,6 +204,31 @@ export type ClickHouseTTL<SqlExpression extends string> = {
 };
 
 /**
+ * ClickHouse MATERIALIZED column annotation.
+ * The column value is computed at INSERT time and physically stored.
+ * Cannot be explicitly inserted by users.
+ *
+ * @example
+ * interface Events {
+ *   eventTime: DateTime;
+ *   // Extract date component - computed and stored at insert time
+ *   eventDate: Date & ClickHouseMaterialized<"toDate(event_time)">;
+ *
+ *   userId: string;
+ *   // Precompute hash for fast lookups
+ *   userHash: UInt64 & ClickHouseMaterialized<"cityHash64(userId)">;
+ * }
+ *
+ * @remarks
+ * - MATERIALIZED and DEFAULT are mutually exclusive
+ * - Can be combined with ClickHouseCodec for compression
+ * - Changing the expression modifies the column in-place (existing values preserved)
+ */
+export type ClickHouseMaterialized<SqlExpression extends string> = {
+  _clickhouse_materialized?: SqlExpression;
+};
+
+/**
  * See also {@link ClickHouseDefault}
  *
  * @example{ updated_at: WithDefault<Date, "now()"> }

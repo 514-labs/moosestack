@@ -735,11 +735,11 @@ jobs:
 
       - name: Clean up PyPI and only keep the latest 80 days of moose CLI and lib
         run: |
-          expect << EOF
+          expect << 'EOF'
           spawn pypi-cleanup -u 514 -p moose-cli -d 80 -r ".*" --do-it --yes
           expect {
             "Authentication code:" {
-              send "$PYPI_OTP\r"
+              send "$env(PYPI_OTP)\r"
               exp_continue
             }
             "No releases were found" {
@@ -747,19 +747,35 @@ jobs:
             }
             eof
           }
+
+          # Check exit status
+          catch wait result
+          set exit_code [lindex $result 3]
+          if {$exit_code != 0} {
+            puts "ERROR: pypi-cleanup for moose-cli failed with exit code $exit_code"
+            exit $exit_code
+          }
           EOF
 
-          expect << EOF
+          expect << 'EOF'
           spawn pypi-cleanup -u 514 -p moose-lib -d 100 -r ".*" --do-it --yes
           expect {
             "Authentication code:" {
-              send "$PYPI_OTP\r"
+              send "$env(PYPI_OTP)\r"
               exp_continue
             }
             "No releases were found" {
               # Nothing to do, this is fine
             }
             eof
+          }
+
+          # Check exit status
+          catch wait result
+          set exit_code [lindex $result 3]
+          if {$exit_code != 0} {
+            puts "ERROR: pypi-cleanup for moose-lib failed with exit code $exit_code"
+            exit $exit_code
           }
           EOF
 

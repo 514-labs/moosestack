@@ -341,6 +341,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         "LifeCycle",
         "ClickHouseTTL",
         "ClickHouseCodec",
+        "ClickHouseMaterialized",
     ];
 
     if uses_simple_aggregate {
@@ -578,23 +579,41 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 }
             }
 
-            // Append ClickHouseTTL type tag if present on the column
-            if let Some(expr) = &column.ttl {
-                type_str = format!("{type_str} & ClickHouseTTL<\"{}\">", expr);
-            }
-            // Wrap with Codec if present
+            // Apply TTL and Codec first (these can coexist with DEFAULT/MATERIALIZED)
+            let type_str = if let Some(expr) = &column.ttl {
+                format!("{type_str} & ClickHouseTTL<\"{}\">", expr)
+            } else {
+                type_str
+            };
+
             let type_str = match column.codec.as_ref() {
                 None => type_str,
                 Some(ref codec) => format!("{type_str} & ClickHouseCodec<{codec:?}>"),
             };
-            let type_str = match column.default {
-                None => type_str,
-                Some(ref default) if type_str == "Date" => {
+
+            // Handle DEFAULT and MATERIALIZED (mutually exclusive)
+            // Apply these AFTER TTL/Codec to prevent WithDefault<Date> when Date has other annotations
+            let type_str = match (&column.default, &column.materialized) {
+                (Some(default), None) if type_str == "Date" => {
                     // https://github.com/samchon/typia/issues/1658
+                    // WithDefault only for plain Date (not "Date & ClickHouse...")
                     format!("WithDefault<{type_str}, {:?}>", default)
                 }
-                Some(ref default) => {
+                (Some(default), None) => {
                     format!("{type_str} & ClickHouseDefault<{:?}>", default)
+                }
+                (None, Some(materialized)) => {
+                    format!("{type_str} & ClickHouseMaterialized<{:?}>", materialized)
+                }
+                (None, None) => type_str,
+                (Some(_), Some(_)) => {
+                    // Both DEFAULT and MATERIALIZED are set - this should never happen
+                    // but we need to handle it gracefully rather than silently generating invalid code
+                    panic!(
+                        "Column '{}' has both DEFAULT and MATERIALIZED set. \
+                        These are mutually exclusive in ClickHouse.",
+                        column.name
+                    )
                 }
             };
             let type_str = if can_use_key_wrapping && column.primary_key {
@@ -967,6 +986,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "city".to_string(),
@@ -979,6 +999,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "zip_code".to_string(),
@@ -991,6 +1012,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             jwt: false,
@@ -1010,6 +1032,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "address".to_string(),
@@ -1022,6 +1045,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "addresses".to_string(),
@@ -1037,6 +1061,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1099,6 +1124,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "data".to_string(),
@@ -1111,6 +1137,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1169,6 +1196,7 @@ export const UserTable = new OlapTable<User>("User", {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -1222,6 +1250,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -1234,6 +1263,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -1246,6 +1276,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1294,6 +1325,7 @@ export const UserTable = new OlapTable<User>("User", {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             }],
             sample_by: None,
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1348,6 +1380,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "version".to_string(),
@@ -1360,6 +1393,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "is_deleted".to_string(),
@@ -1372,6 +1406,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             sample_by: None,
@@ -1428,6 +1463,7 @@ export const UserTable = new OlapTable<User>("User", {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["u64".to_string()]),
             partition_by: None,
@@ -1504,6 +1540,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -1516,6 +1553,7 @@ export const UserTable = new OlapTable<User>("User", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1574,6 +1612,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "timestamp".to_string(),
@@ -1586,6 +1625,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "email".to_string(),
@@ -1598,6 +1638,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     comment: None,
                     ttl: Some("timestamp + INTERVAL 30 DAY".to_string()),
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
@@ -1648,6 +1689,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "payload".to_string(),
@@ -1669,6 +1711,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
@@ -1719,6 +1762,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,

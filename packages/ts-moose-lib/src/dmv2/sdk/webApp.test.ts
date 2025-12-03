@@ -55,13 +55,11 @@ describe("WebApp", () => {
       expect(webApp.getRawApp()).to.equal(koaApp);
     });
 
-    it("should create WebApp with Fastify-like app (routing property)", () => {
+    it("should create WebApp with Fastify-like app (routing function)", () => {
       const fastifyApp: FrameworkApp = {
-        routing: {
-          handle: (req: any, res: any) => {
-            res.writeHead(200);
-            res.end("Fastify");
-          },
+        routing: (req: any, res: any) => {
+          res.writeHead(200);
+          res.end("Fastify");
         },
       };
 
@@ -349,12 +347,10 @@ describe("WebApp", () => {
     it("should convert Fastify app to handler correctly", () => {
       let routingCalled = false;
       const fastifyApp: FrameworkApp = {
-        routing: {
-          handle: (req: any, res: any) => {
-            routingCalled = true;
-            res.writeHead(200);
-            res.end("Fastify");
-          },
+        routing: (req: any, res: any) => {
+          routingCalled = true;
+          res.writeHead(200);
+          res.end("Fastify");
         },
       };
 
@@ -403,31 +399,20 @@ describe("WebApp", () => {
       }).to.throw("Unable to convert app to handler");
     });
 
-    it("should throw error for Fastify app without routing.handle", async () => {
-      const invalidFastifyApp = {
+    it("should throw error for app with non-function routing property", () => {
+      const invalidApp = {
         routing: {
-          // Missing handle method
-          someOtherProperty: "value",
+          // routing should be a function, not an object
+          someProperty: "value",
         },
       } as any;
 
-      const webApp = new WebApp("invalidFastify", invalidFastifyApp, {
-        mountPath: "/invalid-fastify",
-      });
-
-      const req = {} as http.IncomingMessage;
-      const res = {} as any;
-
-      // The handler should be created, but calling it should throw
-      try {
-        await webApp.handler(req, res);
-        expect.fail("Should have thrown an error");
-      } catch (error) {
-        expect(error).to.be.an("error");
-        expect((error as Error).message).to.include(
-          "Fastify app detected but not properly initialized",
-        );
-      }
+      // Should throw because routing is not a function
+      expect(() => {
+        new WebApp("invalidApp", invalidApp, {
+          mountPath: "/invalid-routing",
+        });
+      }).to.throw("Unable to convert app to handler");
     });
   });
 
