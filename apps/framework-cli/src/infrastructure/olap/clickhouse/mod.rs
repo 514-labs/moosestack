@@ -100,6 +100,18 @@ pub enum ClickhouseChangesError {
         resource: Option<String>,
     },
 
+    /// Error executing raw SQL (views, materialized views, etc.)
+    /// This error provides additional context about the SQL that failed.
+    #[error("SQL syntax error in '{resource_name}'\n\n{message}\n\nSQL:\n{sql}")]
+    SqlExecutionFailed {
+        /// Name of the resource (view, materialized view, etc.)
+        resource_name: String,
+        /// Human-readable error message
+        message: String,
+        /// The SQL statement that failed
+        sql: String,
+    },
+
     /// Error for unsupported operations
     #[error("Not Supported {0}")]
     NotSupported(String),
@@ -1288,6 +1300,10 @@ async fn execute_rename_table_column(
 }
 
 /// Execute raw SQL statements
+///
+/// This function executes SQL statements against ClickHouse and provides
+/// clear error messages when SQL is rejected, including the resource name
+/// and the full SQL statement that failed.
 async fn execute_raw_sql(
     sql_statements: &[String],
     description: &str,
@@ -1298,15 +1314,40 @@ async fn execute_raw_sql(
         sql_statements.len(),
         description
     );
+
+    // Extract resource name from description for error reporting
+    let resource_name = description
+        .strip_prefix("Running setup SQL for resource ")
+        .or_else(|| description.strip_prefix("Running teardown SQL for resource "))
+        .or_else(|| description.strip_prefix("Creating view "))
+        .unwrap_or(description)
+        .to_string();
+
     for (i, sql) in sql_statements.iter().enumerate() {
         if !sql.trim().is_empty() {
             tracing::debug!("Executing SQL statement {}: {}", i + 1, sql);
-            run_query(sql, client)
-                .await
-                .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            if let Err(e) = run_query(sql, client).await {
+                let error_string = e.to_string();
+
+                // Check if this is a SQL syntax error
+                let is_syntax_error = error_string.contains("Syntax error")
+                    || error_string.contains("SYNTAX_ERROR")
+                    || error_string.contains("Code: 62");
+
+                if is_syntax_error {
+                    return Err(ClickhouseChangesError::SqlExecutionFailed {
+                        resource_name,
+                        message: error_string,
+                        sql: sql.clone(),
+                    });
+                }
+
+                // For non-syntax errors, include resource context
+                return Err(ClickhouseChangesError::ClickhouseClient {
                     error: e,
-                    resource: None,
-                })?;
+                    resource: Some(resource_name),
+                });
+            }
         }
     }
     Ok(())
@@ -3941,6 +3982,35 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
         assert_eq!(
             sqls[0],
             "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN `user_hash` REMOVE MATERIALIZED"
+        );
+    }
+
+    #[test]
+    fn test_sql_execution_failed_error_format() {
+        let error = ClickhouseChangesError::SqlExecutionFailed {
+            resource_name: "BarAggregated_MV".to_string(),
+            message: "Code: 62. DB::Exception: Syntax error at position 97 (SLCT)".to_string(),
+            sql: "CREATE MATERIALIZED VIEW IF NOT EXISTS BarAggregated_MV TO BarAggregated AS SLCT * FROM Foo".to_string(),
+        };
+
+        let error_string = error.to_string();
+
+        // Verify the error message contains all the important parts
+        assert!(
+            error_string.contains("BarAggregated_MV"),
+            "Error should contain resource name"
+        );
+        assert!(
+            error_string.contains("Syntax error"),
+            "Error should contain the syntax error message"
+        );
+        assert!(
+            error_string.contains("CREATE MATERIALIZED VIEW"),
+            "Error should contain the SQL"
+        );
+        assert!(
+            error_string.contains("SQL syntax error"),
+            "Error should indicate it's a SQL syntax error"
         );
     }
 }
