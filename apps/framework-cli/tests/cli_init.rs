@@ -1,7 +1,16 @@
 use assert_cmd::prelude::*; // Add methods on commands
 use assert_fs::prelude::*;
 use predicates::prelude::*; // Used for writing assertions
+use std::path::Path;
 use std::process::Command;
+
+/// Helper function to ensure a directory doesn't exist before testing
+fn ensure_directory_cleanup(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if dir.exists() {
+        std::fs::remove_dir_all(dir)?;
+    }
+    Ok(())
+}
 
 #[test]
 #[serial_test::serial(init)]
@@ -58,9 +67,7 @@ fn init_with_positional_template_creates_directory() -> Result<(), Box<dyn std::
     let project_dir = temp_path.join("MyProject1");
 
     // Ensure the directory doesn't exist initially
-    if project_dir.exists() {
-        std::fs::remove_dir_all(&project_dir)?;
-    }
+    ensure_directory_cleanup(&project_dir)?;
 
     let mut cmd = Command::cargo_bin("moose-cli")?;
 
@@ -90,9 +97,7 @@ fn init_with_location_flag_uses_name_in_setup_py() -> Result<(), Box<dyn std::er
     let project_dir = temp_path.join("MyProject1");
 
     // Ensure the directory doesn't exist initially
-    if project_dir.exists() {
-        std::fs::remove_dir_all(&project_dir)?;
-    }
+    ensure_directory_cleanup(&project_dir)?;
 
     let mut cmd = Command::cargo_bin("moose-cli")?;
 

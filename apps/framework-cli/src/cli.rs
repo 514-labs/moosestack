@@ -132,9 +132,9 @@ pub fn prompt_user(
     long_about = "Moose is a framework for building data-intensive applications.
 
 Get started:
-  moose init <name> <template|language>         Initialize a new Moose project
-                                       (template can be 'python', 'typescript', or template name)
-  moose init --language python <name>  Initialize with language flag
+  moose init <name> <template|language>    Initialize a new Moose project
+                                           (template can be 'python', 'typescript', or template name)
+  moose init --language python <name>      Initialize with language flag
   moose template list                   List available templates
   moose dev                             Start development environment
 
