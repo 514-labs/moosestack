@@ -482,18 +482,20 @@ const sendMessages = async (
 ): Promise<void> => {
   if (messages.length === 0) return;
 
-  // Track metrics
-  for (const msg of messages) {
-    metrics.bytes += Buffer.byteLength(msg.value, "utf8");
-  }
-  metrics.count_out += messages.length;
-
   try {
     // Library handles batching and retries internally
     await producer.send({
       topic: targetTopic.name,
       messages: messages,
     });
+
+    // Track metrics only after successful send to target topic
+    // Messages routed to DLQ should NOT be counted as successful sends
+    for (const msg of messages) {
+      metrics.bytes += Buffer.byteLength(msg.value, "utf8");
+    }
+    metrics.count_out += messages.length;
+
     logger.log(`Sent ${messages.length} messages to ${targetTopic.name}`);
   } catch (e) {
     // Library already retried - this is a permanent failure
