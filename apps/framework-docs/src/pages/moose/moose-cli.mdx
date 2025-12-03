@@ -16,12 +16,31 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ### Init
 Initializes a new Moose project.
 ```bash
-moose init <name> --template <template> [--location <location>] [--no-fail-already-exists]
+moose init <name> [TEMPLATE|LANGUAGE] [--location <location>] [--language <language>] [--no-fail-already-exists]
 ```
 - `<name>`: Name of your app or service
-- `<template>`: Template to use for the project
-- `--location`: Optional location for your app or service
+- `[TEMPLATE|LANGUAGE]`: Optional template or language name (e.g., "python", "typescript", "python-empty", "typescript-empty"). If omitted, you'll be prompted to select a language.
+- `--location` / `-l`: Optional location for your app or service (defaults to the project name)
+- `--language`: Programming language to use (e.g., "python" or "typescript"). If provided without a template, uses the default empty template for that language.
 - `--no-fail-already-exists`: Skip the directory existence check
+
+**Examples:**
+```bash
+# Initialize with Python (using language name as positional argument)
+moose init MyProject python
+
+# Initialize with TypeScript
+moose init MyProject typescript
+
+# Use --language flag instead
+moose init --language python MyProject
+
+# Specify a custom location
+moose init MyProject python --location ./my-custom-path
+
+# Initialize from a remote database
+moose init MyProject --from-remote <CONNECTION_STRING>
+```
 
 #### List Templates
 Lists available templates for project initialization.
