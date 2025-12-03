@@ -25,10 +25,7 @@ import * as http from "node:http";
 import {
   cliLog,
   getKafkaClient,
-  RETRY_FACTOR_PRODUCER,
-  MAX_RETRIES_PRODUCER,
-  MAX_RETRY_TIME_MS,
-  ACKs,
+  createProducerConfig,
   Logger,
   logError,
 } from "../commons";
@@ -49,232 +46,6 @@ const MAX_RETRIES_CONSUMER = 150;
 const SESSION_TIMEOUT_CONSUMER = 30000;
 const HEARTBEAT_INTERVAL_CONSUMER = 3000;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
-// https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/record/AbstractRecords.java#L124
-// According to the above, the overhead should be 12 + 22 bytes - 34 bytes.
-// We put 500 to be safe.
-const KAFKAJS_BYTE_MESSAGE_OVERHEAD = 500;
-
-/**
- * Checks if an error is a MESSAGE_TOO_LARGE error from Kafka
- */
-const isMessageTooLargeError = (error: unknown): boolean => {
-  // Check if it's a KafkaJS error first
-  if (
-    KafkaJS.isKafkaJSError &&
-    error instanceof Error &&
-    KafkaJS.isKafkaJSError(error)
-  ) {
-    return (
-      (error as any).type === "ERR_MSG_SIZE_TOO_LARGE" ||
-      (error as any).code === 10 ||
-      ((error as any).cause !== undefined &&
-        isMessageTooLargeError((error as any).cause))
-    );
-  }
-
-  // Fallback for other error types that might have these properties
-  if (error && typeof error === "object") {
-    const err = error as any;
-    return (
-      err.type === "ERR_MSG_SIZE_TOO_LARGE" ||
-      err.code === 10 ||
-      (err.cause !== undefined && isMessageTooLargeError(err.cause))
-    );
-  }
-
-  return false;
-};
-
-/**
- * Splits a batch of messages into smaller chunks when MESSAGE_TOO_LARGE error occurs
- */
-const splitBatch = (
-  messages: KafkaMessageWithLineage[],
-  maxChunkSize: number,
-): KafkaMessageWithLineage[][] => {
-  if (messages.length <= 1) {
-    return [messages];
-  }
-
-  // If we have more than one message, split into smaller batches
-  const chunks: KafkaMessageWithLineage[][] = [];
-  let currentChunk: KafkaMessageWithLineage[] = [];
-  let currentSize = 0;
-
-  for (const message of messages) {
-    const messageSize =
-      Buffer.byteLength(message.value, "utf8") + KAFKAJS_BYTE_MESSAGE_OVERHEAD;
-
-    // If adding this message would exceed the limit, start a new chunk
-    if (currentSize + messageSize > maxChunkSize && currentChunk.length > 0) {
-      chunks.push(currentChunk);
-      currentChunk = [message];
-      currentSize = messageSize;
-    } else {
-      currentChunk.push(message);
-      currentSize += messageSize;
-    }
-  }
-
-  // Add the last chunk if it has messages
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk);
-  }
-
-  return chunks;
-};
-
-/**
- * Sends a single chunk of messages with MESSAGE_TOO_LARGE error recovery
- */
-const sendChunkWithRetry = async (
-  logger: Logger,
-  targetTopic: TopicConfig,
-  producer: Producer,
-  messages: KafkaMessageWithLineage[],
-  currentMaxSize: number,
-  maxRetries: number = 3,
-): Promise<void> => {
-  const currentMessages = messages;
-  let attempts = 0;
-
-  while (attempts < maxRetries) {
-    try {
-      await producer.send({
-        topic: targetTopic.name,
-        messages: currentMessages,
-      });
-      logger.log(
-        `Successfully sent ${currentMessages.length} messages to ${targetTopic.name}`,
-      );
-      return;
-    } catch (error) {
-      if (isMessageTooLargeError(error) && currentMessages.length > 1) {
-        logger.warn(
-          `Got MESSAGE_TOO_LARGE error, splitting batch of ${currentMessages.length} messages and retrying (${maxRetries - attempts} attempts left)`,
-        );
-
-        // Split the batch into smaller chunks (use half the current max size)
-        const newMaxSize = Math.floor(currentMaxSize / 2);
-        const splitChunks = splitBatch(currentMessages, newMaxSize);
-
-        // Send each split chunk recursively
-        for (const chunk of splitChunks) {
-          await sendChunkWithRetry(
-            logger,
-            targetTopic,
-            producer,
-            chunk,
-            newMaxSize,
-            // this error does not count as one failed attempt
-            maxRetries - attempts,
-          );
-        }
-        return;
-      } else {
-        attempts++;
-        // If it's not MESSAGE_TOO_LARGE or we can't split further, re-throw
-        if (attempts >= maxRetries) {
-          // Before throwing, try to send all messages to DLQ if configured
-          // We can only avoid throwing if ALL messages are successfully sent to their DLQs
-          let messagesHandledByDLQ = 0;
-          let messagesWithoutDLQ = 0;
-          const dlqErrors: string[] = [];
-
-          for (const failedMessage of currentMessages) {
-            const dlqTopic = failedMessage.dlq;
-
-            // Use the original input message, not the transformed output
-            // to avoid making the DLQ message even larger
-            if (dlqTopic && failedMessage.originalValue) {
-              const dlqTopicName = dlqTopic.name;
-              const deadLetterRecord = {
-                originalRecord: {
-                  ...failedMessage.originalValue,
-                  // Include original Kafka message metadata
-                  __sourcePartition: failedMessage.originalMessage.partition,
-                  __sourceOffset: failedMessage.originalMessage.offset,
-                  __sourceTimestamp: failedMessage.originalMessage.timestamp,
-                },
-                errorMessage:
-                  error instanceof Error ? error.message : String(error),
-                errorType:
-                  error instanceof Error ? error.constructor.name : "Unknown",
-                failedAt: new Date(),
-                source: "transform",
-              };
-
-              cliLog({
-                action: "DeadLetter",
-                message: `Sending failed message to DLQ ${dlqTopicName}: ${error instanceof Error ? error.message : String(error)}`,
-                message_type: "Error",
-              });
-
-              try {
-                await producer.send({
-                  topic: dlqTopicName,
-                  messages: [{ value: JSON.stringify(deadLetterRecord) }],
-                });
-                logger.log(`Sent failed message to DLQ ${dlqTopicName}`);
-                messagesHandledByDLQ++;
-              } catch (dlqError) {
-                const errorMsg = `Failed to send message to DLQ: ${dlqError}`;
-                logger.error(errorMsg);
-                dlqErrors.push(errorMsg);
-              }
-            } else if (!dlqTopic) {
-              messagesWithoutDLQ++;
-              logger.warn(
-                `Cannot send to DLQ: no DLQ configured for message (batch has mixed DLQ configurations)`,
-              );
-            } else {
-              messagesWithoutDLQ++;
-              logger.warn(
-                `Cannot send to DLQ: original message value not available`,
-              );
-            }
-          }
-
-          // Only suppress the error if ALL messages were successfully sent to their DLQs
-          const allMessagesHandled =
-            messagesHandledByDLQ === currentMessages.length &&
-            messagesWithoutDLQ === 0 &&
-            dlqErrors.length === 0;
-
-          if (allMessagesHandled) {
-            logger.log(
-              `All ${messagesHandledByDLQ} failed message(s) sent to DLQ, not throwing original error`,
-            );
-            return;
-          }
-
-          // Otherwise, throw the original error because we couldn't handle all messages
-          if (messagesWithoutDLQ > 0) {
-            logger.error(
-              `Cannot handle batch failure: ${messagesWithoutDLQ} message(s) have no DLQ configured`,
-            );
-          }
-          if (dlqErrors.length > 0) {
-            logger.error(
-              `Some messages failed to send to DLQ: ${dlqErrors.join(", ")}`,
-            );
-          }
-          if (messagesHandledByDLQ > 0) {
-            logger.warn(
-              `Partial DLQ success: ${messagesHandledByDLQ}/${currentMessages.length} message(s) sent to DLQ, but throwing due to incomplete batch handling`,
-            );
-          }
-          throw error;
-        }
-        logger.warn(
-          `Send ${currentMessages.length} messages failed (attempt ${attempts}/${maxRetries}), retrying: ${error}`,
-        );
-        // Wait briefly before retrying
-        await new Promise((resolve) => setTimeout(resolve, 100 * attempts));
-      }
-    }
-  }
-};
 
 /**
  * Data structure for metrics logging containing counts and metadata
@@ -600,21 +371,84 @@ const handleMessage = async (
 };
 
 /**
- * Sends processed messages to a target Kafka topic in chunks to respect max message size limits
+ * Handles sending failed messages to their configured Dead Letter Queues
+ *
+ * @param logger - Logger instance for outputting DLQ status
+ * @param producer - Kafka producer for sending to DLQ topics
+ * @param messages - Array of failed messages with DLQ configuration
+ * @param error - The error that caused the failure
+ */
+const handleDLQForFailedMessages = async (
+  logger: Logger,
+  producer: Producer,
+  messages: KafkaMessageWithLineage[],
+  error: unknown,
+): Promise<void> => {
+  let messagesHandledByDLQ = 0;
+  let messagesWithoutDLQ = 0;
+
+  for (const msg of messages) {
+    if (msg.dlq && msg.originalValue) {
+      const deadLetterRecord = {
+        originalRecord: {
+          ...msg.originalValue,
+          // Include original Kafka message metadata
+          __sourcePartition: msg.originalMessage.partition,
+          __sourceOffset: msg.originalMessage.offset,
+          __sourceTimestamp: msg.originalMessage.timestamp,
+        },
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : "Unknown",
+        failedAt: new Date(),
+        source: "transform",
+      };
+
+      cliLog({
+        action: "DeadLetter",
+        message: `Sending failed message to DLQ ${msg.dlq.name}: ${error instanceof Error ? error.message : String(error)}`,
+        message_type: "Error",
+      });
+
+      try {
+        await producer.send({
+          topic: msg.dlq.name,
+          messages: [{ value: JSON.stringify(deadLetterRecord) }],
+        });
+        logger.log(`Sent failed message to DLQ ${msg.dlq.name}`);
+        messagesHandledByDLQ++;
+      } catch (dlqError) {
+        logger.error(`Failed to send to DLQ: ${dlqError}`);
+      }
+    } else if (!msg.dlq) {
+      messagesWithoutDLQ++;
+      logger.warn(`Cannot send to DLQ: no DLQ configured for message`);
+    } else {
+      messagesWithoutDLQ++;
+      logger.warn(`Cannot send to DLQ: original message value not available`);
+    }
+  }
+
+  // Log summary of DLQ handling
+  if (messagesHandledByDLQ > 0 && messagesWithoutDLQ > 0) {
+    logger.warn(
+      `Partial DLQ success: ${messagesHandledByDLQ}/${messages.length} message(s) sent to DLQ`,
+    );
+  }
+};
+
+/**
+ * Sends processed messages to a target Kafka topic
  *
  * @param logger - Logger instance for outputting send status and errors
  * @param metrics - Metrics object for tracking message counts and bytes sent
  * @param targetTopic - Target topic configuration
- * @param producer - KafkaJS Producer instance for sending messages
+ * @param producer - Kafka producer instance for sending messages
  * @param messages - Array of processed messages to send (messages carry their own DLQ config)
  * @returns Promise that resolves when all messages are sent
  *
- * The function will:
- * 1. Split messages into chunks that fit within maxMessageSize
- * 2. Send each chunk to the target topic
- * 3. Track metrics for bytes sent and message counts
- * 4. Log success/failure of sends
- * 5. Send failed messages to DLQ if configured in message lineage
+ * The Confluent Kafka library handles batching internally via message.max.bytes
+ * and retries transient failures automatically. This function simply sends all
+ * messages and handles permanent failures by routing to DLQ.
  */
 const sendMessages = async (
   logger: Logger,
@@ -623,68 +457,30 @@ const sendMessages = async (
   producer: Producer,
   messages: KafkaMessageWithLineage[],
 ): Promise<void> => {
+  if (messages.length === 0) return;
+
+  // Track metrics
+  for (const msg of messages) {
+    metrics.bytes += Buffer.byteLength(msg.value, "utf8");
+  }
+  metrics.count_out += messages.length;
+
   try {
-    let chunk: KafkaMessageWithLineage[] = [];
-    let chunkSize = 0;
-
-    const maxMessageSize = targetTopic.max_message_bytes || 1024 * 1024;
-
-    for (const message of messages) {
-      const messageSize =
-        Buffer.byteLength(message.value, "utf8") +
-        KAFKAJS_BYTE_MESSAGE_OVERHEAD;
-
-      if (chunkSize + messageSize > maxMessageSize) {
-        logger.log(
-          `Sending ${chunkSize} bytes of a transformed record batch to ${targetTopic.name}`,
-        );
-        // Send the current chunk before adding the new message
-        await sendChunkWithRetry(
-          logger,
-          targetTopic,
-          producer,
-          chunk,
-          maxMessageSize,
-        );
-        logger.log(
-          `Sent ${chunk.length} transformed records to ${targetTopic.name}`,
-        );
-
-        // Start a new chunk
-        chunk = [message];
-        chunkSize = messageSize;
-      } else {
-        // Add the new message to the current chunk
-        chunk.push(message);
-        metrics.bytes += Buffer.byteLength(message.value, "utf8");
-        chunkSize += messageSize;
-      }
-    }
-
-    metrics.count_out += chunk.length;
-
-    // Send the last chunk
-    if (chunk.length > 0) {
-      logger.log(
-        `Sending ${chunkSize} bytes of a transformed record batch to ${targetTopic.name}`,
-      );
-      await sendChunkWithRetry(
-        logger,
-        targetTopic,
-        producer,
-        chunk,
-        maxMessageSize,
-      );
-      logger.log(
-        `Sent final ${chunk.length} transformed data to ${targetTopic.name}`,
-      );
-    }
+    // Library handles batching and retries internally
+    await producer.send({
+      topic: targetTopic.name,
+      messages: messages,
+    });
+    logger.log(`Sent ${messages.length} messages to ${targetTopic.name}`);
   } catch (e) {
+    // Library already retried - this is a permanent failure
     logger.error(`Failed to send transformed data`);
     if (e instanceof Error) {
       logError(logger, e);
     }
-    // This is needed for retries
+
+    // Handle DLQ for failed messages
+    await handleDLQForFailedMessages(logger, producer, messages, e);
     throw e;
   }
 };
@@ -1108,16 +904,13 @@ export const runStreamingFunctions = async (
         },
       });
 
-      const producer: Producer = kafka.producer({
-        kafkaJS: {
-          idempotent: true,
-          acks: ACKs,
-          retry: {
-            retries: MAX_RETRIES_PRODUCER,
-            maxRetryTime: MAX_RETRY_TIME_MS,
-          },
-        },
-      });
+      // Sync producer message.max.bytes with topic config
+      const maxMessageBytes =
+        args.targetTopic?.max_message_bytes || 1024 * 1024;
+
+      const producer: Producer = kafka.producer(
+        createProducerConfig(maxMessageBytes),
+      );
 
       try {
         logger.log("Starting producer...");
