@@ -342,51 +342,17 @@ class IcebergS3Engine(EngineConfig):
 
 @dataclass
 class KafkaEngine(EngineConfig):
-    """Configuration for Kafka engine - streaming data ingestion from Kafka topics.
+    """Kafka engine for streaming data from Kafka topics.
 
-    The Kafka engine creates an internal consumer that reads messages from topics.
-    Typically used with materialized views to persist data into MergeTree tables.
-
-    Constructor parameters (ENGINE = Kafka('broker', 'topic', 'group', 'format')):
-        broker_list: Kafka broker addresses (comma-separated, e.g., 'kafka-1:9092,kafka-2:9092')
-        topic_list: Kafka topics to consume from (comma-separated)
+    Args:
+        broker_list: Kafka broker addresses (e.g., 'kafka:9092')
+        topic_list: Topics to consume from
         group_name: Consumer group identifier
-        format: Message format (e.g., 'JSONEachRow', 'CSV', 'Avro')
+        format: Message format (e.g., 'JSONEachRow')
 
-    Additional settings (kafka_schema, kafka_num_consumers, security) must be
-    specified in OlapConfig.settings, not here.
-
-    Example:
-        >>> from moose_lib import OlapTable, OlapConfig, moose_runtime_env
-        >>> from moose_lib.blocks import KafkaEngine
-        >>>
-        >>> event_stream = OlapTable[Event](
-        ...     "event_stream",
-        ...     OlapConfig(
-        ...         engine=KafkaEngine(
-        ...             broker_list="kafka-1:9092,kafka-2:9092",
-        ...             topic_list="events",
-        ...             group_name="moose_consumer",
-        ...             format="JSONEachRow"
-        ...         ),
-        ...         settings={
-        ...             "kafka_num_consumers": "3",
-        ...             "kafka_sasl_mechanism": "SCRAM-SHA-256",
-        ...             "kafka_security_protocol": "SASL_PLAINTEXT",
-        ...             "kafka_sasl_username": moose_runtime_env.get("KAFKA_USERNAME"),
-        ...             "kafka_sasl_password": moose_runtime_env.get("KAFKA_PASSWORD")
-        ...         }
-        ...     )
-        ... )
-
-    Note:
-        - Kafka engine does NOT support ORDER BY, PARTITION BY, or SAMPLE BY
-        - Changes to engine parameters require table recreation (drop/create)
-        - Typically used with materialized views for continuous consumption
-        - Use moose_runtime_env.get() for credentials to avoid baking into Docker images
+    Additional settings (kafka_num_consumers, security) go in OlapConfig.settings.
     """
 
-    # Constructor parameters
     broker_list: str
     topic_list: str
     group_name: str

@@ -2321,45 +2321,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_kafka_table() {
-        use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
-        use crate::framework::core::partial_infrastructure_map::LifeCycle;
-
-        let kafka_table = Table {
-            name: "test_kafka".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::Kafka {
-                broker_list: "kafka:9092".to_string(),
-                topic_list: "events".to_string(),
-                group_name: "consumer".to_string(),
-                format: "JSONEachRow".to_string(),
-            },
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test_kafka".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        assert!(ClickHouseTableDiffStrategy::is_kafka_table(&kafka_table));
-
-        let regular_table = create_test_table("regular", vec![], false);
-        assert!(!ClickHouseTableDiffStrategy::is_kafka_table(&regular_table));
-    }
-
-    #[test]
     fn test_settings_changed_hidden_wildcard() {
         // This tests the core fix for [HIDDEN] false positives
         // ClickHouse returns [HIDDEN] for sensitive values in SHOW CREATE TABLE
