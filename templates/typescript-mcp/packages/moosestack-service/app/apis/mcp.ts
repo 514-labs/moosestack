@@ -296,7 +296,8 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
         rowCount: z.number().describe("Number of rows returned"),
       },
     } as any,
-    async ({ query, limit = 100 }) => {
+    (async (args: unknown, _extra: unknown) => {
+      const { query, limit = 100 } = args as { query: string; limit?: number };
       try {
         // Check if MooseStack utilities are available
         if (!mooseUtils) {
@@ -350,7 +351,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
           isError: true,
         };
       }
-    },
+    }) as any,
   );
 
   /**
@@ -388,7 +389,16 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
         catalog: z.string().describe("Formatted catalog information"),
       },
     } as any,
-    async ({ component_type, search, format = "summary" }) => {
+    (async (args: unknown, _extra: unknown) => {
+      const {
+        component_type,
+        search,
+        format = "summary",
+      } = args as {
+        component_type?: string;
+        search?: string;
+        format?: string;
+      };
       try {
         // Check if MooseStack utilities are available
         if (!mooseUtils) {
@@ -447,7 +457,7 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
           isError: true,
         };
       }
-    },
+    }) as any,
   );
 
   return server;
