@@ -70,14 +70,19 @@ fn main() -> ExitCode {
 
                     // Check if --location is used but <NAME> is missing
                     // This usually means the user put the name in the wrong position
-                    if error_str.contains("<NAME>") && error_str.contains("--location") {
+                    // Use both string matching and check for the specific argument name
+                    let missing_name = error_str.contains("<NAME>");
+                    let has_location_flag =
+                        error_str.contains("--location") || error_str.contains("-l");
+
+                    if missing_name && has_location_flag {
                         eprintln!(
                             "\n💡 Note: The project name must come before flags that take values."
                         );
                         eprintln!("   If using --location (-l), put the project name first:");
-                        eprintln!("   moose init <NAME> --language python -l <location>");
+                        eprintln!("   moose init <NAME> --language python -l <directory>");
                         eprintln!("\n   Or use the full flag name to avoid confusion:");
-                        eprintln!("   moose init <NAME> --language python --location <location>");
+                        eprintln!("   moose init <NAME> --language python --location <directory>");
                     }
 
                     eprintln!("\n💡 Quick start examples:");
