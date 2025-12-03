@@ -744,7 +744,7 @@ jobs:
           spawn pypi-cleanup -u 514 -p ${package_name} -d ${days} -r ".*" --do-it --yes
           expect {
             "Authentication code:" {
-              send "$env(PYPI_OTP)\r"
+              send "\$env(PYPI_OTP)\r"
               exp_continue
             }
             "No releases were found" {
@@ -755,9 +755,9 @@ jobs:
 
           # Check exit status
           catch wait result
-          set exit_code [lindex $result 3]
-          if {$exit_code != 0} {
-            puts "ERROR: pypi-cleanup for ${package_name} failed with exit code $exit_code"
+          set exit_code [lindex \$result 3]
+          if {\$exit_code != 0} {
+            puts "ERROR: pypi-cleanup for ${package_name} failed with exit code \$exit_code"
             puts ""
             puts "This is most likely due to PyPI device authentication."
             puts "Please check your email for a message from noreply@pypi.org"
