@@ -470,12 +470,15 @@ describe("WebApp", () => {
         end: () => {},
       } as any;
 
+      // ready() should NOT be called during construction (lazy initialization)
+      expect(readyCallCount).to.equal(0);
+
       // Call handler multiple times
       await webApp.handler(req, res);
       await webApp.handler(req, res);
       await webApp.handler(req, res);
 
-      // ready() should only be called once during WebApp construction
+      // ready() should only be called once on first request (lazy initialization)
       expect(readyCallCount).to.equal(1);
       // routing() should be called for each request
       expect(routingCallCount).to.equal(3);

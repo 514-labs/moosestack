@@ -131,15 +131,23 @@ export class WebApp {
     // Fastify: routing is a function that handles requests directly
     // Fastify requires .ready() to be called before routes are available
     if (typeof app.routing === "function") {
-      // Capture the routing function reference to avoid TypeScript narrowing issues in closure
+      // Capture references to avoid TypeScript narrowing issues in closure
       const routing = app.routing;
-      // If app has a ready() method (Fastify), call it once and cache the promise
-      // All requests will await this same promise until it resolves
-      const readyPromise =
-        typeof app.ready === "function" ? app.ready() : Promise.resolve();
+      const appWithReady = app;
+
+      // Use lazy initialization - don't call ready() during module loading
+      // This prevents blocking the event loop when streaming functions import the app module
+      // The ready() call is deferred to the first actual HTTP request
+      let readyPromise: PromiseLike<unknown> | null = null;
 
       return async (req, res) => {
-        // Always await ready - Promise.resolve() is instant if already resolved
+        // Lazy init - only call ready() when first request comes in
+        if (readyPromise === null) {
+          readyPromise =
+            typeof appWithReady.ready === "function" ?
+              appWithReady.ready()
+            : Promise.resolve();
+        }
         await readyPromise;
         routing(req, res);
       };
