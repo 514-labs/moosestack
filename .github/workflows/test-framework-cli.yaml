@@ -358,7 +358,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22-8-core
     # Add explicit read-only permissions
     permissions:
       contents: read
