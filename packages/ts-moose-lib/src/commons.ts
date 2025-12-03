@@ -119,6 +119,28 @@ export const RETRY_FACTOR_PRODUCER = 0.2;
 export const ACKs = -1;
 
 /**
+ * Creates the base producer configuration for Kafka.
+ * Used by both the SDK stream publishing and streaming function workers.
+ *
+ * @param maxMessageBytes - Optional max message size in bytes (synced with topic config)
+ * @returns Producer configuration object for the Confluent Kafka client
+ */
+export function createProducerConfig(maxMessageBytes?: number) {
+  return {
+    kafkaJS: {
+      idempotent: false, // Not needed for at-least-once delivery
+      acks: ACKs,
+      retry: {
+        retries: MAX_RETRIES_PRODUCER,
+        maxRetryTime: MAX_RETRY_TIME_MS,
+      },
+    },
+    "linger.ms": 0, // Send immediately - batching happens at application level
+    ...(maxMessageBytes && { "message.max.bytes": maxMessageBytes }),
+  };
+}
+
+/**
  * Parses a comma-separated broker string into an array of valid broker addresses.
  * Handles whitespace trimming and filters out empty elements.
  *
@@ -143,23 +165,19 @@ export type KafkaClientConfig = {
 /**
  * Dynamically creates and connects a KafkaJS producer using the provided configuration.
  * Returns a connected producer instance.
+ *
+ * @param cfg - Kafka client configuration
+ * @param logger - Logger instance
+ * @param maxMessageBytes - Optional max message size in bytes (synced with topic config)
  */
 export async function getKafkaProducer(
   cfg: KafkaClientConfig,
   logger: Logger,
+  maxMessageBytes?: number,
 ): Promise<Producer> {
   const kafka = await getKafkaClient(cfg, logger);
 
-  const producer = kafka.producer({
-    kafkaJS: {
-      idempotent: true,
-      acks: ACKs,
-      retry: {
-        retries: MAX_RETRIES_PRODUCER,
-        maxRetryTime: MAX_RETRY_TIME_MS,
-      },
-    },
-  });
+  const producer = kafka.producer(createProducerConfig(maxMessageBytes));
   await producer.connect();
   return producer;
 }
