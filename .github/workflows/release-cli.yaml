@@ -735,11 +735,16 @@ jobs:
 
       - name: Clean up PyPI and only keep the latest 80 days of moose CLI and lib
         run: |
-          expect << 'EOF'
-          spawn pypi-cleanup -u 514 -p moose-cli -d 80 -r ".*" --do-it --yes
+          # Function to run pypi-cleanup with error handling
+          cleanup_package() {
+            local package_name=$1
+            local days=$2
+
+            expect << EOF
+          spawn pypi-cleanup -u 514 -p ${package_name} -d ${days} -r ".*" --do-it --yes
           expect {
             "Authentication code:" {
-              send "$env(PYPI_OTP)\r"
+              send "\$env(PYPI_OTP)\r"
               exp_continue
             }
             "No releases were found" {
@@ -750,34 +755,24 @@ jobs:
 
           # Check exit status
           catch wait result
-          set exit_code [lindex $result 3]
-          if {$exit_code != 0} {
-            puts "ERROR: pypi-cleanup for moose-cli failed with exit code $exit_code"
-            exit $exit_code
+          set exit_code [lindex \$result 3]
+          if {\$exit_code != 0} {
+            puts "ERROR: pypi-cleanup for ${package_name} failed with exit code \$exit_code"
+            puts ""
+            puts "This is most likely due to PyPI device authentication."
+            puts "Please check your email for a message from noreply@pypi.org"
+            puts "with the subject line 'Unrecognized login to your PyPI account'."
+            puts "Click the confirmation link in that email to authorize this device."
+            puts ""
+            puts "For more details, see: https://pypi.org/help/#utfkey"
+            exit \$exit_code
           }
           EOF
-
-          expect << 'EOF'
-          spawn pypi-cleanup -u 514 -p moose-lib -d 100 -r ".*" --do-it --yes
-          expect {
-            "Authentication code:" {
-              send "$env(PYPI_OTP)\r"
-              exp_continue
-            }
-            "No releases were found" {
-              # Nothing to do, this is fine
-            }
-            eof
           }
 
-          # Check exit status
-          catch wait result
-          set exit_code [lindex $result 3]
-          if {$exit_code != 0} {
-            puts "ERROR: pypi-cleanup for moose-lib failed with exit code $exit_code"
-            exit $exit_code
-          }
-          EOF
+          # Clean up both packages
+          cleanup_package "moose-cli" 80
+          cleanup_package "moose-lib" 100
 
         env:
           PYPI_CLEANUP_PASSWORD: ${{ steps.op-load-secret.outputs.PYPI_CLEANUP_PASSWORD }}
