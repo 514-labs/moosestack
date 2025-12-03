@@ -377,15 +377,17 @@ const handleMessage = async (
  * @param producer - Kafka producer for sending to DLQ topics
  * @param messages - Array of failed messages with DLQ configuration
  * @param error - The error that caused the failure
+ * @returns true if ALL messages were successfully sent to their DLQs, false otherwise
  */
 const handleDLQForFailedMessages = async (
   logger: Logger,
   producer: Producer,
   messages: KafkaMessageWithLineage[],
   error: unknown,
-): Promise<void> => {
+): Promise<boolean> => {
   let messagesHandledByDLQ = 0;
   let messagesWithoutDLQ = 0;
+  let dlqErrors = 0;
 
   for (const msg of messages) {
     if (msg.dlq && msg.originalValue) {
@@ -418,6 +420,7 @@ const handleDLQForFailedMessages = async (
         messagesHandledByDLQ++;
       } catch (dlqError) {
         logger.error(`Failed to send to DLQ: ${dlqError}`);
+        dlqErrors++;
       }
     } else if (!msg.dlq) {
       messagesWithoutDLQ++;
@@ -428,12 +431,32 @@ const handleDLQForFailedMessages = async (
     }
   }
 
-  // Log summary of DLQ handling
-  if (messagesHandledByDLQ > 0 && messagesWithoutDLQ > 0) {
+  // Check if ALL messages were successfully handled by DLQ
+  const allMessagesHandled =
+    messagesHandledByDLQ === messages.length &&
+    messagesWithoutDLQ === 0 &&
+    dlqErrors === 0;
+
+  if (allMessagesHandled) {
+    logger.log(
+      `All ${messagesHandledByDLQ} failed message(s) sent to DLQ, suppressing original error`,
+    );
+  } else if (messagesHandledByDLQ > 0) {
+    // Log summary of partial DLQ handling
     logger.warn(
       `Partial DLQ success: ${messagesHandledByDLQ}/${messages.length} message(s) sent to DLQ`,
     );
+    if (messagesWithoutDLQ > 0) {
+      logger.error(
+        `Cannot handle batch failure: ${messagesWithoutDLQ} message(s) have no DLQ configured or missing original value`,
+      );
+    }
+    if (dlqErrors > 0) {
+      logger.error(`${dlqErrors} message(s) failed to send to DLQ`);
+    }
   }
+
+  return allMessagesHandled;
 };
 
 /**
@@ -480,8 +503,16 @@ const sendMessages = async (
     }
 
     // Handle DLQ for failed messages
-    await handleDLQForFailedMessages(logger, producer, messages, e);
-    throw e;
+    // Only throw if not all messages were successfully routed to DLQ
+    const allHandledByDLQ = await handleDLQForFailedMessages(
+      logger,
+      producer,
+      messages,
+      e,
+    );
+    if (!allHandledByDLQ) {
+      throw e;
+    }
   }
 };
 
