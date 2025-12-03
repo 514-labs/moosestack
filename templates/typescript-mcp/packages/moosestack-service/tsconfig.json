@@ -2,7 +2,9 @@
   "compilerOptions": {
     "outDir": "dist",
     "esModuleInterop": true,
-    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2022",
     "plugins": [
       {
         "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js",
