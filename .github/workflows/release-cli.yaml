@@ -707,7 +707,7 @@ jobs:
     name: Cleanup PyPI
     runs-on: ubuntu-latest
     # Only run for release builds (main branch), not CI builds
-    if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
+    # if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
     needs:
       - version
     # Add explicit permissions
@@ -743,6 +743,10 @@ jobs:
             expect << EOF
           spawn pypi-cleanup -u 514 -p ${package_name} -d ${days} -r ".*" --do-it --yes
           expect {
+            "Password:" {
+              send "\$env(PYPI_CLEANUP_PASSWORD)\r"
+              exp_continue
+            }
             "Authentication code:" {
               send "\$env(PYPI_OTP)\r"
               exp_continue
