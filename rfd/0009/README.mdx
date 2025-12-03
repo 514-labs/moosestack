@@ -1,0 +1,656 @@
+---
+authors: Lucio <lucio@fiveonefour.com>
+title: Improved Error Handling with Contextual Metadata
+state: prediscussion
+---
+
+# Improved Error Handling with Contextual Metadata
+
+## Summary
+
+This RFD proposes adopting `color-eyre` and `tracing` as the foundation for error handling in Moose CLI. This approach provides rich contextual error messages with span traces, suggestions, and structured metadata without requiring custom error infrastructure.
+
+## Problem Statement
+
+The current error handling in Moose CLI has several limitations:
+
+1. **Limited metadata capture**: Only a few errors (like `ClickhouseClient`) include resource context
+2. **Information loss**: Error conversions via `.map_err()` often discard source details
+3. **anyhow catch-alls**: Several errors use `Other(#[from] anyhow::Error)` which loses type information
+4. **Flat display**: `RoutineFailure` flattens everything to strings before showing users
+5. **No error chains**: Context isn't preserved as errors propagate up the stack
+
+When errors occur, users see messages like:
+
+```
+Error: Infrastructure - Failed to create table
+Code: 516, DB::Exception: Table `default`.`user_events` doesn't exist
+```
+
+This lacks:
+- What operation was being attempted
+- What SQL was executed
+- What the user could try to fix it
+- The call stack that led to the error
+
+## Proposed Solution
+
+Adopt a two-layer approach using existing, well-maintained crates:
+
+1. **`tracing` with `#[instrument]`** - Captures span context (operation, resource identifiers) that becomes part of the error's SpanTrace
+2. **`color-eyre` with Section trait** - Provides `.wrap_err()`, `.section()`, `.suggestion()`, and `.warning()` for rich error context
+
+### Dependencies
+
+```toml
+[dependencies]
+eyre = "0.6"
+color-eyre = "0.6"
+tracing = "0.1"
+tracing-error = "0.2"
+```
+
+### Initialization
+
+```rust
+// src/main.rs
+fn main() -> eyre::Result<()> {
+    color_eyre::install()?;  // Sets up SpanTrace + Backtrace capture
+    
+    // Initialize tracing subscriber with ErrorLayer
+    let subscriber = tracing_subscriber::Registry::default()
+        .with(tracing_error::ErrorLayer::default())
+        .with(/* other layers */);
+    tracing::subscriber::set_global_default(subscriber)?;
+    
+    // ... rest of app
+}
+```
+
+## Design
+
+### Two-Layer Error Context Model
+
+#### Layer 1: Span Context via `#[instrument]`
+
+Use tracing's `#[instrument]` macro to capture operational context. This context is automatically included in the SpanTrace when an error occurs.
+
+```rust
+use tracing::instrument;
+
+#[instrument(skip(self), fields(table_name = %table.name, operation = "migrate"))]
+async fn migrate_table(&self, table: &Table) -> eyre::Result<()> {
+    // Errors here automatically capture the span context
+}
+```
+
+**Best practices:**
+- Use `skip(self)` to avoid verbose output
+- Add `fields()` for key identifiers (table names, topic names, file paths)
+- Operation names are captured automatically from function names
+
+#### Layer 2: Error-Site Context via Section Trait
+
+Use color-eyre's Section trait to add context when wrapping errors. This is where expensive-to-capture data (like SQL statements) should be added.
+
+```rust
+use color_eyre::{eyre::WrapErr, Section};
+
+async fn migrate_table(&self, table: &Table) -> eyre::Result<()> {
+    let sql = build_ddl(table);
+    
+    self.clickhouse
+        .execute(&sql)
+        .await
+        .wrap_err("Failed to create table")
+        .section(format!("SQL: {}", sql))
+        .suggestion("Verify ClickHouse is running and accessible")?;
+    
+    Ok(())
+}
+```
+
+**Available methods:**
+- `.wrap_err("message")` - Add context message to error chain
+- `.section(content)` - Add a labeled section (displayed after error chain)
+- `.suggestion(text)` - Add a "Suggestion:" section with actionable advice
+- `.warning(text)` - Add a "Warning:" section for important notices
+- `.note(text)` - Add a "Note:" section for additional information
+
+### Error Output Format
+
+With this approach, errors display as:
+
+```
+Error: Failed to create table
+
+Caused by:
+    Connection refused (os error 111)
+
+SQL: CREATE TABLE users (id UUID, name String) ENGINE = MergeTree() ORDER BY id
+
+Suggestion: Verify ClickHouse is running and accessible
+
+━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━
+ 0: moose::infrastructure::clickhouse::migrate_table
+      with table_name="users" operation="migrate"
+    at src/infrastructure/clickhouse/mod.rs:142
+ 1: moose::framework::core::execute::execute_initial_infra_change
+      with project="my-app"
+    at src/framework/core/execute.rs:87
+ 2: moose::cli::routines::migrate::execute_migration
+    at src/cli/routines/migrate.rs:543
+```
+
+### Pattern: Context at Wrapping Sites
+
+The key insight is that context should be added where you have the most information - typically at the call site, not deep in the implementation:
+
+```rust
+// High level - knows the business context
+async fn execute_migration(&self, project: &Project) -> eyre::Result<()> {
+    for table in &project.tables {
+        let sql = build_ddl(table);
+        
+        self.clickhouse
+            .execute(&sql)
+            .await
+            .wrap_err_with(|| format!("Failed to migrate table '{}'", table.name))
+            .section(format!("SQL: {}", sql))
+            .suggestion("Check ClickHouse logs for more details")?;
+    }
+    Ok(())
+}
+
+// Low level - just does the work, errors bubble up
+impl ClickhouseClient {
+    async fn execute(&self, sql: &str) -> eyre::Result<()> {
+        self.client.query(sql).await?;  // Errors propagate naturally
+        Ok(())
+    }
+}
+```
+
+This pattern:
+- Keeps low-level code simple (just propagate with `?`)
+- Adds rich context at the layer that has the most information
+- Avoids logging expensive data (like SQL) on every successful call
+
+## Migration Path
+
+### Phase 1: Add Dependencies and Initialize
+
+1. Add `eyre`, `color-eyre`, and `tracing-error` to `Cargo.toml`
+2. Call `color_eyre::install()` in main
+3. Add `ErrorLayer` to the tracing subscriber
+
+### Phase 2: Convert RoutineFailure to eyre::Result
+
+Replace the current `RoutineFailure` pattern:
+
+```rust
+// Before
+pub async fn execute_migration(...) -> Result<RoutineSuccess, RoutineFailure> {
+    state_storage.acquire_migration_lock().await.map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Lock".to_string(), "Failed to acquire migration lock".to_string()),
+            e,
+        )
+    })?;
+}
+
+// After
+pub async fn execute_migration(...) -> eyre::Result<RoutineSuccess> {
+    state_storage
+        .acquire_migration_lock()
+        .await
+        .wrap_err("Failed to acquire migration lock")
+        .suggestion("Check Redis connection and ensure no other migration is running")?;
+}
+```
+
+### Phase 3: Add `#[instrument]` to Key Functions
+
+Identify functions that form important context boundaries:
+
+```rust
+// CLI command handlers
+#[instrument(skip(self), fields(command = "migrate"))]
+async fn handle_migrate(&self, args: MigrateArgs) -> eyre::Result<()>
+
+// Infrastructure operations
+#[instrument(skip(self), fields(table = %table.name))]
+async fn create_table(&self, table: &Table) -> eyre::Result<()>
+
+// Core execution
+#[instrument(skip(ctx), fields(project = %ctx.project.name))]
+async fn execute_initial_infra_change(ctx: ExecutionContext<'_>) -> eyre::Result<()>
+```
+
+### Phase 4: Add Sections and Suggestions
+
+At error wrapping sites, add contextual information:
+
+```rust
+// For ClickHouse operations
+.section(format!("SQL: {}", sql))
+.section(format!("Table: {}", table_name))
+.suggestion("Check ClickHouse connection and permissions")
+
+// For Kafka operations
+.section(format!("Topic: {}", topic_name))
+.section(format!("Partitions: {}", partitions))
+.suggestion("Verify Kafka broker is accessible")
+
+// For parsing errors
+.section(format!("File: {}", file_path.display()))
+.suggestion("Check the syntax of your data model definition")
+```
+
+## Examples
+
+These examples are based on real issues from the Moose issue tracker and codebase.
+
+### Example 1: Kafka Ingest API Failure (ENG-1530)
+
+**Current behavior** - User sees only "Error" with HTTP 500:
+
+```rust
+// Current code in local_webserver.rs:1439-1444
+if res_arr.iter().any(|res| res.is_err()) {
+    error!(
+        "Internal server error sending to topic {}. Body: {:?}",
+        topic_name, body
+    );
+    return internal_server_error_response();  // Returns just "Error"
+}
+```
+
+**What the user sees:**
+```
+HTTP 500: Error
+```
+
+**With improved error handling:**
+
+```rust
+#[instrument(skip(body), fields(topic = %topic_name, records = body.len()))]
+async fn ingest_to_topic(
+    topic_name: &str,
+    body: Vec<Value>,
+    producer: &FutureProducer,
+) -> eyre::Result<Response<Full<Bytes>>> {
+    let res_arr = send_to_kafka(producer, topic_name, body.iter()).await;
+    
+    let errors: Vec<_> = res_arr.iter().filter_map(|r| r.as_ref().err()).collect();
+    if !errors.is_empty() {
+        return Err(eyre::eyre!("Failed to send {} records to Kafka", errors.len()))
+            .section(format!("Topic: {}", topic_name))
+            .section(format!("Failed records: {}/{}", errors.len(), body.len()))
+            .suggestion("Check Kafka broker connectivity and topic configuration")
+            .suggestion("If under high load, consider increasing producer buffer size");
+    }
+    
+    Ok(success_response())
+}
+```
+
+**What the user now sees:**
+```
+Error: Failed to send 4 records to Kafka
+
+Topic: clickhouseSystemQueryLogInputStream
+Failed records: 4/4
+
+Suggestion: Check Kafka broker connectivity and topic configuration
+Suggestion: If under high load, consider increasing producer buffer size
+
+━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━
+ 0: moose::cli::local_webserver::ingest_to_topic
+      with topic="clickhouseSystemQueryLogInputStream" records=500
+    at src/cli/local_webserver.rs:1432
+```
+
+---
+
+### Example 2: OTEL Logging Setup Panic (ENG-1612)
+
+**Current behavior** - Panic with no actionable context:
+
+```rust
+// Current code in main.rs
+cli::logger::setup_logging(&config.logger, &machine_id)
+    .expect("Failed to setup logging");
+```
+
+**What the user sees:**
+```
+thread 'main' panicked at apps/framework-cli/src/main.rs:57:61:
+Failed to setup logging: OtelSetup("Failed to build OTLP exporter: no http client specified")
+```
+
+**With improved error handling:**
+
+```rust
+fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
+    
+    cli::settings::init_config_file()
+        .wrap_err("Failed to initialize config file")?;
+    
+    let config = cli::settings::read_settings()
+        .wrap_err("Failed to read settings")?;
+    
+    cli::logger::setup_logging(&config.logger, &machine_id)
+        .wrap_err("Failed to setup logging")
+        .section(format!("Config file: ~/.moose/config.toml"))
+        .with_section(|| format!("Logger config: {:?}", config.logger).header("Configuration:"))
+        .suggestion("Check your [logger] configuration in ~/.moose/config.toml")
+        .suggestion("To disable OTEL export, remove or comment out 'export_to'")?;
+    
+    // ...
+}
+```
+
+**What the user now sees:**
+```
+Error: Failed to setup logging
+
+Caused by:
+    Failed to build OTLP exporter: no http client specified
+
+Config file: ~/.moose/config.toml
+
+Configuration:
+    LoggerConfig { export_to: Some("https://moosefood.514.dev/ingest/Logs"), ... }
+
+Suggestion: Check your [logger] configuration in ~/.moose/config.toml
+Suggestion: To disable OTEL export, remove or comment out 'export_to'
+```
+
+---
+
+### Example 3: TypeScript Parser Unsupported Type
+
+**Current behavior** - Missing file and line context:
+
+```rust
+// Current error in typescript/parser.rs
+#[error("Typescript Parser - Unsupported data type in {field_name}: {type_name}")]
+UnsupportedDataTypeError {
+    type_name: String,
+    field_name: String,
+},
+```
+
+**What the user sees:**
+```
+Typescript Parser - Unsupported data type in metadata: CustomType
+```
+
+**With improved error handling:**
+
+```rust
+#[instrument(fields(file = %path.display()))]
+fn parse_data_model(path: &Path) -> eyre::Result<DataModel> {
+    let content = std::fs::read_to_string(path)
+        .wrap_err("Failed to read data model file")
+        .suggestion("Check that the file exists and is readable")?;
+    
+    parse_typescript(&content)
+        .wrap_err("Failed to parse data model")
+        .section(format!("File: {}", path.display()))
+        .suggestion("Supported types: String, Int, Float, Boolean, DateTime, Array<T>, Key<T>")
+        .suggestion("For complex types, consider using nested models or JSON columns")
+}
+```
+
+**What the user now sees:**
+```
+Error: Failed to parse data model
+
+Caused by:
+    Unsupported data type in field 'metadata': CustomType
+
+File: /app/moose/datamodels/UserEvent.ts
+
+Suggestion: Supported types: String, Int, Float, Boolean, DateTime, Array<T>, Key<T>
+Suggestion: For complex types, consider using nested models or JSON columns
+
+━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━
+ 0: moose::framework::data_model::parse_data_model
+      with file="/app/moose/datamodels/UserEvent.ts"
+    at src/framework/data_model/parser.rs:42
+```
+
+---
+
+### Example 4: ClickHouse Table Creation with SQL Context
+
+**Current behavior** - SQL query not included in error:
+
+```rust
+// Errors bubble up without the SQL that caused them
+self.client.execute(&sql).await?;
+```
+
+**With improved error handling:**
+
+```rust
+#[instrument(skip(self), fields(table = %table.name))]
+async fn create_table(&self, table: &Table) -> eyre::Result<()> {
+    let sql = self.build_create_table_sql(table);
+    
+    self.client
+        .execute(&sql)
+        .await
+        .wrap_err_with(|| format!("Failed to create table '{}'", table.name))
+        .section(format!("SQL:\n{}", sql))
+        .suggestion("Verify the table schema is valid for ClickHouse")
+        .suggestion("Check ClickHouse server logs for more details")?;
+    
+    Ok(())
+}
+```
+
+**What the user now sees:**
+```
+Error: Failed to create table 'user_events'
+
+Caused by:
+    Code: 62. DB::Exception: Syntax error: failed at position 47
+
+SQL:
+CREATE TABLE user_events (
+    id UUID,
+    timestamp DateTime,
+    event_type LowCardinality(String)
+) ENGINE = MergeTree()
+ORDER BY (timestamp, id)
+
+Suggestion: Verify the table schema is valid for ClickHouse
+Suggestion: Check ClickHouse server logs for more details
+
+━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━
+ 0: moose::infrastructure::clickhouse::create_table
+      with table="user_events"
+    at src/infrastructure/clickhouse/mod.rs:89
+ 1: moose::framework::core::execute::execute_olap_changes
+    at src/framework/core/execute.rs:156
+```
+
+## Error Output Configuration
+
+Users need control over how much detail is shown in error output. This is configurable via CLI flags and environment variables.
+
+### Verbosity Levels
+
+| Level | Shows | Use Case |
+|-------|-------|----------|
+| (default) | Error + cause chain + sections + suggestions | Normal usage |
+| `--verbose` | All above + SpanTrace | Debugging |
+| `--verbose --verbose` | All above + Backtrace | Bug reports |
+
+### CLI Flag
+
+```bash
+# Standard output (default)
+moose dev
+
+# Verbose output with SpanTrace
+moose dev --verbose
+moose dev -v
+
+# Extra verbose with Backtrace
+moose dev --verbose --verbose
+moose dev -vv
+```
+
+### Environment Variables
+
+```bash
+# Enable verbose errors
+export MOOSE_VERBOSE=1         # Equivalent to --verbose
+export MOOSE_VERBOSE=2         # Equivalent to -vv
+
+# Control individual components (color-eyre respects these)
+export RUST_BACKTRACE=1        # Enable backtrace capture
+export RUST_SPANTRACE=1        # Enable spantrace capture (default: on)
+export RUST_LIB_BACKTRACE=0    # Disable backtrace in libraries
+```
+
+### Implementation
+
+```rust
+use color_eyre::config::HookBuilder;
+
+fn install_error_handler(verbose: u8) -> eyre::Result<()> {
+    let mut builder = HookBuilder::default();
+    
+    match verbose {
+        0 => {
+            // Default: no traces
+            builder = builder
+                .display_env_section(false)
+                .capture_span_trace_by_default(false);
+        }
+        1 => {
+            // -v: include SpanTrace
+            builder = builder
+                .display_env_section(false)
+                .capture_span_trace_by_default(true);
+        }
+        _ => {
+            // -vv: include SpanTrace + Backtrace
+            std::env::set_var("RUST_BACKTRACE", "1");
+            builder = builder
+                .display_env_section(true)
+                .capture_span_trace_by_default(true);
+        }
+    }
+    
+    let (panic_hook, eyre_hook) = builder.into_hooks();
+    eyre_hook.install()?;
+    std::panic::set_hook(Box::new(move |info| {
+        panic_hook.panic_report(info).print().unwrap();
+    }));
+    
+    Ok(())
+}
+```
+
+### Output Examples
+
+**Default:**
+```
+Error: Failed to create table 'user_events'
+
+Caused by:
+    Connection refused (os error 111)
+
+SQL: CREATE TABLE user_events (...)
+
+Suggestion: Verify ClickHouse is running and accessible
+```
+
+**Verbose (`-v`):**
+```
+Error: Failed to create table 'user_events'
+
+Caused by:
+    Connection refused (os error 111)
+
+SQL: CREATE TABLE user_events (...)
+
+Suggestion: Verify ClickHouse is running and accessible
+
+━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━
+ 0: moose::infrastructure::clickhouse::create_table
+      with table="user_events"
+    at src/infrastructure/clickhouse/mod.rs:89
+ 1: moose::cli::routines::migrate::execute_migration
+    at src/cli/routines/migrate.rs:543
+```
+
+**Extra Verbose (`-vv`):**
+```
+Error: Failed to create table 'user_events'
+
+Caused by:
+    Connection refused (os error 111)
+
+SQL: CREATE TABLE user_events (...)
+
+Suggestion: Verify ClickHouse is running and accessible
+
+━━━━━━━━━━━━━━━━━━━━━ SPANTRACE ━━━━━━━━━━━━━━━━━━━━━
+ 0: moose::infrastructure::clickhouse::create_table
+      with table="user_events"
+    at src/infrastructure/clickhouse/mod.rs:89
+ 1: moose::cli::routines::migrate::execute_migration
+    at src/cli/routines/migrate.rs:543
+
+━━━━━━━━━━━━━━━━━━━━━ BACKTRACE ━━━━━━━━━━━━━━━━━━━━━
+   0: std::backtrace_rs::backtrace::capture
+   1: moose::infrastructure::clickhouse::create_table
+   ...
+```
+
+## Considerations
+
+### Performance
+
+- SpanTrace capture is cheap (significantly cheaper than Backtrace)
+- Section content is only evaluated on the error path via `.wrap_err_with()` and lazy variants
+- `#[instrument]` has minimal overhead when spans are not being recorded
+
+### Compatibility
+
+- `eyre::Result<T>` is compatible with `?` operator
+- Existing error types can be wrapped automatically via `From` implementations
+- Gradual migration is possible - both patterns can coexist
+
+### What This Replaces
+
+| Current | New |
+|---------|-----|
+| `RoutineFailure` | `eyre::Result<T>` with `.wrap_err()` |
+| `Message { action, details }` | `.wrap_err()` message + SpanTrace |
+| Manual context strings | `.section()`, `.suggestion()` |
+| Lost error chains | Automatic via `eyre` |
+
+### What We Don't Need to Build
+
+By adopting this approach, we avoid building:
+- Custom error wrapper types
+- Custom proc macros for error context
+- Task-local context storage
+- Custom error display formatting
+
+## References
+
+- [color-eyre documentation](https://docs.rs/color-eyre)
+- [eyre documentation](https://docs.rs/eyre)
+- [tracing-error documentation](https://docs.rs/tracing-error)
+- [tracing #[instrument] macro](https://docs.rs/tracing/latest/tracing/attr.instrument.html)
+- [color-eyre Section trait](https://docs.rs/color-eyre/latest/color_eyre/section/trait.Section.html)
