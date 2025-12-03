@@ -344,7 +344,7 @@ describe("WebApp", () => {
       expect(callbackCalled).to.be.true;
     });
 
-    it("should convert Fastify app to handler correctly", () => {
+    it("should convert Fastify app to handler correctly", async () => {
       let routingCalled = false;
       const fastifyApp: FrameworkApp = {
         routing: (req: any, res: any) => {
@@ -365,7 +365,73 @@ describe("WebApp", () => {
         end: () => {},
       } as any;
 
-      webApp.handler(req, res);
+      await webApp.handler(req, res);
+      expect(routingCalled).to.be.true;
+    });
+
+    it("should wait for Fastify ready() before calling routing()", async () => {
+      let readyCalled = false;
+      let routingCalled = false;
+      let readyResolve: () => void;
+
+      const fastifyApp: FrameworkApp = {
+        routing: (req: any, res: any) => {
+          // Verify ready was called before routing
+          expect(readyCalled).to.be.true;
+          routingCalled = true;
+          res.writeHead(200);
+          res.end("Fastify");
+        },
+        ready: () => {
+          return new Promise<void>((resolve) => {
+            readyResolve = () => {
+              readyCalled = true;
+              resolve();
+            };
+            // Simulate async ready - resolve after a short delay
+            setTimeout(readyResolve, 10);
+          });
+        },
+      };
+
+      const webApp = new WebApp("fastifyReadyApp", fastifyApp, {
+        mountPath: "/fastify-ready-test",
+      });
+
+      const req = {} as http.IncomingMessage;
+      const res = {
+        writeHead: () => {},
+        end: () => {},
+      } as any;
+
+      // Handler should wait for ready() to complete
+      await webApp.handler(req, res);
+      expect(readyCalled).to.be.true;
+      expect(routingCalled).to.be.true;
+    });
+
+    it("should handle Fastify app without ready() method", async () => {
+      let routingCalled = false;
+      const fastifyApp: FrameworkApp = {
+        routing: (req: any, res: any) => {
+          routingCalled = true;
+          res.writeHead(200);
+          res.end("Fastify");
+        },
+        // No ready() method
+      };
+
+      const webApp = new WebApp("fastifyNoReadyApp", fastifyApp, {
+        mountPath: "/fastify-no-ready-test",
+      });
+
+      const req = {} as http.IncomingMessage;
+      const res = {
+        writeHead: () => {},
+        end: () => {},
+      } as any;
+
+      await webApp.handler(req, res);
       expect(routingCalled).to.be.true;
     });
 
