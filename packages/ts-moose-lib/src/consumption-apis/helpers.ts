@@ -226,7 +226,15 @@ export async function getTemporalClient(
 
     let connectionOptions: ConnectionOptions = {
       address: temporalUrl,
-      connectTimeout: "3s",
+      connectTimeout: "30s", // Increased from 3s to handle high load
+      // Add gRPC keepalive to prevent connection drops
+      channelArgs: {
+        "grpc.keepalive_time_ms": 30000, // Send keepalive every 30s
+        "grpc.keepalive_timeout_ms": 15000, // Wait 15s for keepalive response
+        "grpc.keepalive_permit_without_calls": 1, // Allow keepalive without active calls
+        "grpc.http2.max_pings_without_data": 0, // No limit on pings without data
+        "grpc.http2.min_time_between_pings_ms": 10000, // Min 10s between pings
+      },
     };
 
     if (clientCert && clientKey) {
