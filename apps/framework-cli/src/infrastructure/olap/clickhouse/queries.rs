@@ -592,12 +592,7 @@ impl ClickhouseEngine {
             }
 
             // First two params are keeper_path and replica_name
-            let keeper_path = params.first().cloned();
-            let replica_name = params.get(1).cloned();
-
-            // Normalize defaults back to None
-            let (keeper_path, replica_name) =
-                Self::normalize_replication_params(keeper_path, replica_name);
+            let (keeper_path, replica_name) = Self::extract_replication_params(&params);
 
             // Optional 3rd param is ver, optional 4th is is_deleted
             let ver = params.get(2).cloned();
@@ -646,6 +641,14 @@ impl ClickhouseEngine {
         }
     }
 
+    /// Extract and normalize replication params from parsed CSV parameters
+    /// Returns normalized (keeper_path, replica_name) tuple
+    fn extract_replication_params(params: &[String]) -> (Option<String>, Option<String>) {
+        let keeper_path = params.first().cloned();
+        let replica_name = params.get(1).cloned();
+        Self::normalize_replication_params(keeper_path, replica_name)
+    }
+
     /// Parse SharedMergeTree or ReplicatedMergeTree
     /// Format: (path, replica) or () for automatic configuration
     fn parse_distributed_merge_tree(value: &str) -> Result<Self, &str> {
@@ -672,12 +675,7 @@ impl ClickhouseEngine {
             }
 
             // First two params are keeper_path and replica_name
-            let keeper_path = params.first().cloned();
-            let replica_name = params.get(1).cloned();
-
-            // Normalize defaults back to None
-            let (keeper_path, replica_name) =
-                Self::normalize_replication_params(keeper_path, replica_name);
+            let (keeper_path, replica_name) = Self::extract_replication_params(&params);
 
             Ok(ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path,
@@ -725,12 +723,7 @@ impl ClickhouseEngine {
             }
 
             // First two params are keeper_path and replica_name
-            let keeper_path = params.first().cloned();
-            let replica_name = params.get(1).cloned();
-
-            // Normalize defaults back to None
-            let (keeper_path, replica_name) =
-                Self::normalize_replication_params(keeper_path, replica_name);
+            let (keeper_path, replica_name) = Self::extract_replication_params(&params);
 
             Ok(ClickhouseEngine::ReplicatedAggregatingMergeTree {
                 keeper_path,
@@ -776,12 +769,7 @@ impl ClickhouseEngine {
             }
 
             // First two params are keeper_path and replica_name
-            let keeper_path = params.first().cloned();
-            let replica_name = params.get(1).cloned();
-
-            // Normalize defaults back to None
-            let (keeper_path, replica_name) =
-                Self::normalize_replication_params(keeper_path, replica_name);
+            let (keeper_path, replica_name) = Self::extract_replication_params(&params);
 
             // Additional params are column names (if any)
             let columns = if params.len() > 2 {
@@ -854,13 +842,8 @@ impl ClickhouseEngine {
             }
 
             // Full parameters: keeper_path, replica_name, sign
-            let keeper_path = params.first().cloned();
-            let replica_name = params.get(1).cloned();
+            let (keeper_path, replica_name) = Self::extract_replication_params(&params);
             let sign = params[2].clone();
-
-            // Normalize defaults back to None
-            let (keeper_path, replica_name) =
-                Self::normalize_replication_params(keeper_path, replica_name);
 
             Ok(ClickhouseEngine::ReplicatedCollapsingMergeTree {
                 keeper_path,
@@ -920,14 +903,9 @@ impl ClickhouseEngine {
             }
 
             // Full parameters: keeper_path, replica_name, sign, version
-            let keeper_path = params.first().cloned();
-            let replica_name = params.get(1).cloned();
+            let (keeper_path, replica_name) = Self::extract_replication_params(&params);
             let sign = params[2].clone();
             let version = params[3].clone();
-
-            // Normalize defaults back to None
-            let (keeper_path, replica_name) =
-                Self::normalize_replication_params(keeper_path, replica_name);
 
             Ok(ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
                 keeper_path,
