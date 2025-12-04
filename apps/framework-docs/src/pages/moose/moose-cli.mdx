@@ -17,11 +17,14 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 Initializes a new Moose project.
 ```bash
 moose init <name> [TEMPLATE|LANGUAGE] [--location <location>] [--no-fail-already-exists]
+moose init <name> --from-remote [<CONNECTION_STRING>] --language <python|typescript> [--location <location>] [--no-fail-already-exists]
 ```
 - `<name>`: Name of your app or service
 - `[TEMPLATE|LANGUAGE]`: Optional template or language name (e.g., "python", "typescript", "python-empty", "typescript-empty"). If omitted, you'll be prompted to select a language.
 - `--location` / `-l`: Optional location for your app or service (defaults to the project name)
 - `--no-fail-already-exists`: Skip the directory existence check
+- `--from-remote [<CONNECTION_STRING>]`: Initialize from an existing ClickHouse database. If connection string is omitted, you'll be prompted interactively.
+- `--language <python|typescript>`: Programming language to use. **Required when using `--from-remote`**. If provided without a template, uses the default empty template for that language.
 
 **Examples:**
 ```bash
@@ -33,9 +36,15 @@ moose init MyProject typescript
 
 # Specify a custom location
 moose init MyProject python --location ./my-custom-path
+
+# Initialize from an existing ClickHouse database
+moose init MyProject --from-remote <CONNECTION_STRING> --language python
+
+# Initialize from database with interactive connection setup
+moose init MyProject --from-remote --language typescript
 ```
 
-**To import from an existing ClickHouse database:**
+**Alternative: Import from database after initialization**
 ```bash
 # First initialize your project
 moose init MyProject python
