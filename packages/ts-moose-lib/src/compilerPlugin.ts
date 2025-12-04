@@ -1,6 +1,6 @@
 import ts, { factory } from "typescript";
 import { avoidTypiaNameClash, replaceProgram } from "./compilerPluginHelper";
-import { compilerLog } from "./commons";
+import { compilerLog, LogLevel } from "./commons";
 import {
   isNewMooseResourceWithTypeParam,
   transformNewMooseResource,
@@ -36,7 +36,10 @@ const applyTransformation = (
   typeChecker: ts.TypeChecker,
 ): { transformed: ts.Node; wasTransformed: boolean } => {
   if (isCreateApi(node, typeChecker)) {
-    compilerLog("[CompilerPlugin] Found legacy API, transforming...");
+    compilerLog(
+      "[CompilerPlugin] Found legacy API, transforming...",
+      LogLevel.Debug,
+    );
     return {
       transformed: transformLegacyApi(node, typeChecker),
       wasTransformed: true,
@@ -44,7 +47,10 @@ const applyTransformation = (
   }
 
   if (isCreateApiV2(node, typeChecker)) {
-    compilerLog("[CompilerPlugin] Found API v2, transforming...");
+    compilerLog(
+      "[CompilerPlugin] Found API v2, transforming...",
+      LogLevel.Debug,
+    );
     return {
       transformed: transformCreateApi(node, typeChecker),
       wasTransformed: true,
@@ -54,6 +60,7 @@ const applyTransformation = (
   if (isNewMooseResourceWithTypeParam(node, typeChecker)) {
     compilerLog(
       "[CompilerPlugin] Found Moose resource with type param, transforming...",
+      LogLevel.Debug,
     );
     return {
       transformed: transformNewMooseResource(node, typeChecker),
@@ -94,6 +101,7 @@ const hasExistingTypiaImport = (sourceFile: ts.SourceFile): boolean => {
   });
   compilerLog(
     `[CompilerPlugin] Checking for existing typia import (${avoidTypiaNameClash}) in ${sourceFile.fileName}: ${hasImport}`,
+    LogLevel.Debug,
   );
   return hasImport;
 };
@@ -105,11 +113,15 @@ const addTypiaImport = (sourceFile: ts.SourceFile): ts.SourceFile => {
   if (hasExistingTypiaImport(sourceFile)) {
     compilerLog(
       `[CompilerPlugin] Typia import already exists in ${sourceFile.fileName}, skipping...`,
+      LogLevel.Debug,
     );
     return sourceFile;
   }
 
-  compilerLog(`[CompilerPlugin] Adding typia import to ${sourceFile.fileName}`);
+  compilerLog(
+    `[CompilerPlugin] Adding typia import to ${sourceFile.fileName}`,
+    LogLevel.Debug,
+  );
   const statementsWithImport = factory.createNodeArray([
     createTypiaImport(),
     ...sourceFile.statements,
@@ -127,6 +139,7 @@ const transform =
   (sourceFile: ts.SourceFile): ts.SourceFile => {
     compilerLog(
       `\n[CompilerPlugin] ========== Processing file: ${sourceFile.fileName} ==========`,
+      LogLevel.Debug,
     );
 
     let transformationCount = 0;
@@ -144,6 +157,7 @@ const transform =
         hasTypiaTransformations = true;
         compilerLog(
           `[CompilerPlugin] Transformation #${transformationCount} applied at position ${node.pos}`,
+          LogLevel.Debug,
         );
       }
 
@@ -158,22 +172,26 @@ const transform =
 
     compilerLog(
       `[CompilerPlugin] Total transformations applied: ${transformationCount}`,
+      LogLevel.Debug,
     );
 
     // Use transformation tracking instead of scanning for typia references
     compilerLog(
       `[CompilerPlugin] Needs typia import: ${hasTypiaTransformations}`,
+      LogLevel.Debug,
     );
 
     if (hasTypiaTransformations) {
       const result = addTypiaImport(transformedSourceFile);
       compilerLog(
         `[CompilerPlugin] ========== Completed processing ${sourceFile.fileName} (with import) ==========\n`,
+        LogLevel.Debug,
       );
       return result;
     } else {
       compilerLog(
         `[CompilerPlugin] ========== Completed processing ${sourceFile.fileName} (no import needed) ==========\n`,
+        LogLevel.Debug,
       );
       return transformedSourceFile;
     }
