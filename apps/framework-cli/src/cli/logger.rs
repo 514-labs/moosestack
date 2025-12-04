@@ -78,6 +78,7 @@
 //! via environment variable once downstream consumers are ready.
 
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::io::Write;
@@ -148,6 +149,9 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_no_ansi")]
     pub no_ansi: bool,
+
+    #[serde(default = "default_include_span_fields")]
+    pub include_span_fields: bool,
 }
 
 fn default_log_file() -> String {
@@ -181,6 +185,13 @@ fn default_no_ansi() -> bool {
     false // ANSI colors enabled by default
 }
 
+fn default_include_span_fields() -> bool {
+    env::var("MOOSE_LOGGER__INCLUDE_SPAN_FIELDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(false)
+}
+
 impl Default for LoggerSettings {
     fn default() -> Self {
         LoggerSettings {
@@ -191,6 +202,7 @@ impl Default for LoggerSettings {
             include_session_id: default_include_session_id(),
             use_tracing_format: default_use_tracing_format(),
             no_ansi: default_no_ansi(),
+            include_span_fields: default_include_span_fields(),
         }
     }
 }
@@ -252,6 +264,7 @@ trait LegacyFormatter {
         level: &Level,
         target: &str,
         event: &Event<'_>,
+        span_fields: &HashMap<String, String>,
     ) -> std::io::Result<()>;
 }
 
@@ -260,13 +273,15 @@ trait LegacyFormatter {
 struct TextFormatter {
     include_session_id: bool,
     session_id: String,
+    include_span_fields: bool,
 }
 
 impl TextFormatter {
-    fn new(include_session_id: bool, session_id: String) -> Self {
+    fn new(include_session_id: bool, session_id: String, include_span_fields: bool) -> Self {
         Self {
             include_session_id,
             session_id,
+            include_span_fields,
         }
     }
 }
@@ -279,6 +294,7 @@ impl LegacyFormatter for TextFormatter {
         level: &Level,
         target: &str,
         event: &Event<'_>,
+        span_fields: &HashMap<String, String>,
     ) -> std::io::Result<()> {
         // Write prefix: [timestamp LEVEL - target]
         write!(
@@ -294,6 +310,20 @@ impl LegacyFormatter for TextFormatter {
 
         write!(writer, " - {}] ", target)?;
 
+        // Write span fields if enabled
+        if self.include_span_fields && !span_fields.is_empty() {
+            write!(writer, "[")?;
+            let mut first = true;
+            for (key, value) in span_fields {
+                if !first {
+                    write!(writer, " ")?;
+                }
+                write!(writer, "{}={}", key, value)?;
+                first = false;
+            }
+            write!(writer, "] ")?;
+        }
+
         // Write message directly without intermediate String
         let mut visitor = DirectWriteVisitor { writer };
         event.record(&mut visitor);
@@ -307,13 +337,15 @@ impl LegacyFormatter for TextFormatter {
 struct JsonFormatter {
     include_session_id: bool,
     session_id: String,
+    include_span_fields: bool,
 }
 
 impl JsonFormatter {
-    fn new(include_session_id: bool, session_id: String) -> Self {
+    fn new(include_session_id: bool, session_id: String, include_span_fields: bool) -> Self {
         Self {
             include_session_id,
             session_id,
+            include_span_fields,
         }
     }
 }
@@ -326,6 +358,7 @@ impl LegacyFormatter for JsonFormatter {
         level: &Level,
         target: &str,
         event: &Event<'_>,
+        span_fields: &HashMap<String, String>,
     ) -> std::io::Result<()> {
         // Extract message first since it appears in the middle of the JSON object
         let mut message_visitor = MessageVisitor::default();
@@ -341,6 +374,13 @@ impl LegacyFormatter for JsonFormatter {
 
         if self.include_session_id {
             log_entry["session_id"] = serde_json::Value::String(self.session_id.clone());
+        }
+
+        // Add span fields if enabled
+        if self.include_span_fields {
+            for (key, value) in span_fields {
+                log_entry[key] = serde_json::Value::String(value.clone());
+            }
         }
 
         serde_json::to_writer(&mut *writer, &log_entry).map_err(std::io::Error::other)?;
@@ -369,14 +409,60 @@ where
     W: for<'writer> MakeWriter<'writer> + 'static,
     F: LegacyFormatter + 'static,
 {
-    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+    fn on_new_span(
+        &self,
+        attrs: &tracing::span::Attributes<'_>,
+        id: &tracing::span::Id,
+        ctx: Context<'_, S>,
+    ) {
+        // Capture span fields at creation time and store in extensions
+        let span = ctx.span(id).expect("Span not found in on_new_span");
+        let mut fields = HashMap::new();
+        let mut visitor = SpanFieldsVisitor(&mut fields);
+        attrs.record(&mut visitor);
+
+        span.extensions_mut().insert(SpanFieldStorage(fields));
+    }
+
+    fn on_record(
+        &self,
+        id: &tracing::span::Id,
+        values: &tracing::span::Record<'_>,
+        ctx: Context<'_, S>,
+    ) {
+        // Handle additional field values recorded after span creation
+        let span = ctx.span(id).expect("Span not found in on_record");
+        let mut extensions = span.extensions_mut();
+
+        if let Some(storage) = extensions.get_mut::<SpanFieldStorage>() {
+            let mut visitor = SpanFieldsVisitor(&mut storage.0);
+            values.record(&mut visitor);
+        }
+    }
+
+    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let metadata = event.metadata();
         let mut writer = self.writer.make_writer();
 
+        // Collect span fields from all spans in the context
+        let mut span_fields = HashMap::new();
+        if let Some(scope) = ctx.event_scope(event) {
+            for span in scope.from_root() {
+                let extensions = span.extensions();
+                if let Some(storage) = extensions.get::<SpanFieldStorage>() {
+                    span_fields.extend(storage.0.clone());
+                }
+            }
+        }
+
         // Write directly to output, avoiding intermediate allocations
-        let _ = self
-            .formatter
-            .write_event(&mut writer, metadata.level(), metadata.target(), event);
+        let _ = self.formatter.write_event(
+            &mut writer,
+            metadata.level(),
+            metadata.target(),
+            event,
+            &span_fields,
+        );
     }
 }
 
@@ -418,6 +504,52 @@ impl Visit for MessageVisitor {
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             self.message = value.to_string();
+        }
+    }
+}
+
+/// Storage for span fields in the span's extensions.
+/// This is stored once per span and accessed during event logging.
+#[derive(Debug, Clone)]
+struct SpanFieldStorage(HashMap<String, String>);
+
+/// Visitor that collects span fields (excluding "message") into a HashMap.
+struct SpanFieldsVisitor<'a>(&'a mut HashMap<String, String>);
+
+impl<'a> Visit for SpanFieldsVisitor<'a> {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0
+                .insert(field_name.to_string(), format!("{:?}", value));
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0.insert(field_name.to_string(), value.to_string());
+        }
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0.insert(field_name.to_string(), value.to_string());
+        }
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0.insert(field_name.to_string(), value.to_string());
+        }
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0.insert(field_name.to_string(), value.to_string());
         }
     }
 }
@@ -537,7 +669,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
     // the format logic directly into on_event.
     match (&settings.format, settings.stdout) {
         (LogFormat::Text, true) => {
-            let formatter = TextFormatter::new(settings.include_session_id, session_id.to_string());
+            let formatter = TextFormatter::new(
+                settings.include_session_id,
+                session_id.to_string(),
+                settings.include_span_fields,
+            );
             let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
@@ -545,7 +681,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .init();
         }
         (LogFormat::Text, false) => {
-            let formatter = TextFormatter::new(settings.include_session_id, session_id.to_string());
+            let formatter = TextFormatter::new(
+                settings.include_session_id,
+                session_id.to_string(),
+                settings.include_span_fields,
+            );
             let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
             let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
             tracing_subscriber::registry()
@@ -554,7 +694,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .init();
         }
         (LogFormat::Json, true) => {
-            let formatter = JsonFormatter::new(settings.include_session_id, session_id.to_string());
+            let formatter = JsonFormatter::new(
+                settings.include_session_id,
+                session_id.to_string(),
+                settings.include_span_fields,
+            );
             let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
@@ -562,7 +706,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .init();
         }
         (LogFormat::Json, false) => {
-            let formatter = JsonFormatter::new(settings.include_session_id, session_id.to_string());
+            let formatter = JsonFormatter::new(
+                settings.include_session_id,
+                session_id.to_string(),
+                settings.include_span_fields,
+            );
             let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
             let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
             tracing_subscriber::registry()
