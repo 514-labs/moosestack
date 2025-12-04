@@ -384,9 +384,9 @@ impl AtomicOlapOperation {
                 SerializableOlapOperation::CreateMaterializedView {
                     name: mv.name.clone(),
                     database: mv.database.clone(),
-                    target_table: mv.target_table.table.clone(),
-                    target_database: mv.target_table.database.clone(),
-                    select_sql: mv.select_query.sql.clone(),
+                    target_table: mv.target_table.clone(),
+                    target_database: mv.target_database.clone(),
+                    select_sql: mv.select_sql.clone(),
                 }
             }
             AtomicOlapOperation::DropMaterializedView { mv, .. } => {
@@ -399,7 +399,7 @@ impl AtomicOlapOperation {
                 SerializableOlapOperation::CreateCustomView {
                     name: view.name.clone(),
                     database: view.database.clone(),
-                    select_sql: view.select_query.sql.clone(),
+                    select_sql: view.select_sql.clone(),
                 }
             }
             AtomicOlapOperation::DropCustomView { view, .. } => {

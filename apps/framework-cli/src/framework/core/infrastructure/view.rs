@@ -5,10 +5,11 @@ use crate::framework::data_model::model::DataModel;
 use crate::framework::versions::Version;
 use crate::proto::infrastructure_map::view::View_type as ProtoViewType;
 use crate::proto::infrastructure_map::CustomView as ProtoCustomView;
+use crate::proto::infrastructure_map::SelectQuery as ProtoSelectQuery;
 use crate::proto::infrastructure_map::TableAlias as ProtoTableAlias;
+use crate::proto::infrastructure_map::TableReference as ProtoTableReference;
 use crate::proto::infrastructure_map::View as ProtoView;
 
-use super::materialized_view::{SelectQuery, TableReference};
 use super::DataLineage;
 use super::InfrastructureSignature;
 
@@ -35,7 +36,10 @@ pub struct View {
 /// that compute their results on-demand from the SELECT query.
 ///
 /// This is distinct from `MaterializedView` which persists its results to a table.
+///
+/// The structure is flat to match JSON output from TypeScript/Python moose-lib.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CustomView {
     /// Name of the view
     pub name: String,
@@ -44,8 +48,11 @@ pub struct CustomView {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub database: Option<String>,
 
-    /// The SELECT query that defines the view
-    pub select_query: SelectQuery,
+    /// The raw SELECT SQL statement
+    pub select_sql: String,
+
+    /// Names of source tables/views referenced in the SELECT
+    pub source_tables: Vec<String>,
 
     /// Optional source file path where this view is defined
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -54,11 +61,16 @@ pub struct CustomView {
 
 impl CustomView {
     /// Creates a new CustomView
-    pub fn new(name: impl Into<String>, select_query: SelectQuery) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        select_sql: impl Into<String>,
+        source_tables: Vec<String>,
+    ) -> Self {
         Self {
             name: name.into(),
             database: None,
-            select_query,
+            select_sql: select_sql.into(),
+            source_tables,
             source_file: None,
         }
     }
@@ -84,7 +96,7 @@ impl CustomView {
         format!(
             "CREATE VIEW IF NOT EXISTS {} AS {}",
             self.quoted_name(),
-            self.select_query.sql
+            self.select_sql
         )
     }
 
@@ -100,37 +112,29 @@ impl CustomView {
 
     /// Expanded display string with more details
     pub fn expanded_display(&self) -> String {
-        format!(
-            "View: {} (sources: {:?})",
-            self.name,
-            self.select_query
-                .source_tables
-                .iter()
-                .map(|t| t.qualified_name())
-                .collect::<Vec<_>>()
-        )
-    }
-
-    /// Convert from source tables (for creating from library types)
-    pub fn from_source_tables(
-        name: impl Into<String>,
-        select_sql: impl Into<String>,
-        source_tables: Vec<TableReference>,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            database: None,
-            select_query: SelectQuery::new(select_sql, source_tables),
-            source_file: None,
-        }
+        format!("View: {} (sources: {:?})", self.name, self.source_tables)
     }
 
     /// Convert to proto representation
     pub fn to_proto(&self) -> ProtoCustomView {
+        let select_query = ProtoSelectQuery {
+            sql: self.select_sql.clone(),
+            source_tables: self
+                .source_tables
+                .iter()
+                .map(|t| ProtoTableReference {
+                    database: None,
+                    table: t.clone(),
+                    special_fields: Default::default(),
+                })
+                .collect(),
+            special_fields: Default::default(),
+        };
+
         ProtoCustomView {
             name: self.name.clone(),
             database: self.database.clone(),
-            select_query: MessageField::some(self.select_query.to_proto()),
+            select_query: MessageField::some(select_query),
             source_file: self.source_file.clone(),
             special_fields: Default::default(),
         }
@@ -138,13 +142,21 @@ impl CustomView {
 
     /// Create from proto representation
     pub fn from_proto(proto: ProtoCustomView) -> Self {
+        let (select_sql, source_tables) = proto
+            .select_query
+            .map(|sq| {
+                (
+                    sq.sql,
+                    sq.source_tables.into_iter().map(|t| t.table).collect(),
+                )
+            })
+            .unwrap_or_default();
+
         Self {
             name: proto.name,
             database: proto.database,
-            select_query: proto
-                .select_query
-                .map(SelectQuery::from_proto)
-                .unwrap_or_else(|| SelectQuery::from_sql("")),
+            select_sql,
+            source_tables,
             source_file: proto.source_file,
         }
     }
@@ -152,12 +164,9 @@ impl CustomView {
 
 impl DataLineage for CustomView {
     fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
-        self.select_query
-            .source_tables
+        self.source_tables
             .iter()
-            .map(|t| InfrastructureSignature::Table {
-                id: t.qualified_name(),
-            })
+            .map(|t| InfrastructureSignature::Table { id: t.clone() })
             .collect()
     }
 

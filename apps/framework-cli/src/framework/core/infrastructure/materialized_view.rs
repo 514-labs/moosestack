@@ -23,7 +23,8 @@ use crate::proto::infrastructure_map::{
 
 use super::{DataLineage, InfrastructureSignature};
 
-/// Reference to a table, optionally qualified with database
+/// Reference to a table, optionally qualified with database.
+/// Used internally for proto conversion and dependency tracking.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TableReference {
     /// Database name (None means use default database)
@@ -83,57 +84,6 @@ impl TableReference {
     }
 }
 
-/// Represents a SELECT query in a structured format
-///
-/// While the raw SQL is preserved for flexibility, we also extract
-/// semantic information like source tables for dependency tracking.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SelectQuery {
-    /// The raw SELECT SQL statement
-    pub sql: String,
-    /// Tables/views referenced in the FROM clause(s)
-    pub source_tables: Vec<TableReference>,
-}
-
-impl SelectQuery {
-    /// Create a new SelectQuery from raw SQL and extracted source tables
-    pub fn new(sql: impl Into<String>, source_tables: Vec<TableReference>) -> Self {
-        Self {
-            sql: sql.into(),
-            source_tables,
-        }
-    }
-
-    /// Create a SelectQuery with just the SQL (source tables empty)
-    pub fn from_sql(sql: impl Into<String>) -> Self {
-        Self {
-            sql: sql.into(),
-            source_tables: Vec::new(),
-        }
-    }
-
-    /// Convert to proto representation
-    pub fn to_proto(&self) -> ProtoSelectQuery {
-        ProtoSelectQuery {
-            sql: self.sql.clone(),
-            source_tables: self.source_tables.iter().map(|t| t.to_proto()).collect(),
-            special_fields: Default::default(),
-        }
-    }
-
-    /// Create from proto representation
-    pub fn from_proto(proto: ProtoSelectQuery) -> Self {
-        Self {
-            sql: proto.sql,
-            source_tables: proto
-                .source_tables
-                .into_iter()
-                .map(TableReference::from_proto)
-                .collect(),
-        }
-    }
-}
-
 /// Represents a ClickHouse Materialized View.
 ///
 /// A MaterializedView is a special view that:
@@ -142,7 +92,10 @@ impl SelectQuery {
 ///
 /// Unlike regular views, MVs persist data and can significantly speed up
 /// queries at the cost of storage and insert-time computation.
+///
+/// The structure is flat to match JSON output from TypeScript/Python moose-lib.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MaterializedView {
     /// Name of the materialized view
     pub name: String,
@@ -151,11 +104,18 @@ pub struct MaterializedView {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub database: Option<String>,
 
-    /// The SELECT query that defines the transformation
-    pub select_query: SelectQuery,
+    /// The raw SELECT SQL statement
+    pub select_sql: String,
 
-    /// Target table where transformed data is written (the TO clause)
-    pub target_table: TableReference,
+    /// Names of source tables/views referenced in the SELECT
+    pub source_tables: Vec<String>,
+
+    /// Name of the target table where transformed data is written
+    pub target_table: String,
+
+    /// Database of the target table (None = same as MV database)
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub target_database: Option<String>,
 
     /// Optional source file path where this MV is defined
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -166,14 +126,17 @@ impl MaterializedView {
     /// Creates a new MaterializedView
     pub fn new(
         name: impl Into<String>,
-        select_query: SelectQuery,
-        target_table: TableReference,
+        select_sql: impl Into<String>,
+        source_tables: Vec<String>,
+        target_table: impl Into<String>,
     ) -> Self {
         Self {
             name: name.into(),
             database: None,
-            select_query,
-            target_table,
+            select_sql: select_sql.into(),
+            source_tables,
+            target_table: target_table.into(),
+            target_database: None,
             source_file: None,
         }
     }
@@ -194,13 +157,21 @@ impl MaterializedView {
         }
     }
 
+    /// Returns the quoted target table name for SQL
+    pub fn quoted_target_table(&self) -> String {
+        match &self.target_database {
+            Some(db) => format!("`{}`.`{}`", db, self.target_table),
+            None => format!("`{}`", self.target_table),
+        }
+    }
+
     /// Generates the CREATE MATERIALIZED VIEW SQL statement
     pub fn to_create_sql(&self) -> String {
         format!(
             "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
             self.quoted_name(),
-            self.target_table.quoted(),
-            self.select_query.sql
+            self.quoted_target_table(),
+            self.select_sql
         )
     }
 
@@ -211,34 +182,44 @@ impl MaterializedView {
 
     /// Short display string for logging/UI
     pub fn short_display(&self) -> String {
-        format!(
-            "MaterializedView: {} -> {}",
-            self.name,
-            self.target_table.qualified_name()
-        )
+        format!("MaterializedView: {} -> {}", self.name, self.target_table)
     }
 
     /// Expanded display string with more details
     pub fn expanded_display(&self) -> String {
         format!(
             "MaterializedView: {} (sources: {:?}) -> {}",
-            self.name,
-            self.select_query
-                .source_tables
-                .iter()
-                .map(|t| t.qualified_name())
-                .collect::<Vec<_>>(),
-            self.target_table.qualified_name()
+            self.name, self.source_tables, self.target_table
         )
     }
 
     /// Convert to proto representation
     pub fn to_proto(&self) -> ProtoMaterializedView {
+        let select_query = ProtoSelectQuery {
+            sql: self.select_sql.clone(),
+            source_tables: self
+                .source_tables
+                .iter()
+                .map(|t| ProtoTableReference {
+                    database: None,
+                    table: t.clone(),
+                    special_fields: Default::default(),
+                })
+                .collect(),
+            special_fields: Default::default(),
+        };
+
+        let target_table = ProtoTableReference {
+            database: self.target_database.clone(),
+            table: self.target_table.clone(),
+            special_fields: Default::default(),
+        };
+
         ProtoMaterializedView {
             name: self.name.clone(),
             database: self.database.clone(),
-            select_query: MessageField::some(self.select_query.to_proto()),
-            target_table: MessageField::some(self.target_table.to_proto()),
+            select_query: MessageField::some(select_query),
+            target_table: MessageField::some(target_table),
             source_file: self.source_file.clone(),
             special_fields: Default::default(),
         }
@@ -246,17 +227,28 @@ impl MaterializedView {
 
     /// Create from proto representation
     pub fn from_proto(proto: ProtoMaterializedView) -> Self {
+        let (select_sql, source_tables) = proto
+            .select_query
+            .map(|sq| {
+                (
+                    sq.sql,
+                    sq.source_tables.into_iter().map(|t| t.table).collect(),
+                )
+            })
+            .unwrap_or_default();
+
+        let (target_table, target_database) = proto
+            .target_table
+            .map(|t| (t.table, t.database))
+            .unwrap_or_default();
+
         Self {
             name: proto.name,
             database: proto.database,
-            select_query: proto
-                .select_query
-                .map(SelectQuery::from_proto)
-                .unwrap_or_else(|| SelectQuery::from_sql("")),
-            target_table: proto
-                .target_table
-                .map(TableReference::from_proto)
-                .unwrap_or_else(|| TableReference::new("")),
+            select_sql,
+            source_tables,
+            target_table,
+            target_database,
             source_file: proto.source_file,
         }
     }
@@ -264,18 +256,15 @@ impl MaterializedView {
 
 impl DataLineage for MaterializedView {
     fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
-        self.select_query
-            .source_tables
+        self.source_tables
             .iter()
-            .map(|t| InfrastructureSignature::Table {
-                id: t.qualified_name(),
-            })
+            .map(|t| InfrastructureSignature::Table { id: t.clone() })
             .collect()
     }
 
     fn pushes_data_to(&self) -> Vec<InfrastructureSignature> {
         vec![InfrastructureSignature::Table {
-            id: self.target_table.qualified_name(),
+            id: self.target_table.clone(),
         }]
     }
 }
@@ -306,11 +295,9 @@ mod tests {
     fn test_materialized_view_create_sql() {
         let mv = MaterializedView::new(
             "user_stats_mv",
-            SelectQuery::new(
-                "SELECT user_id, count(*) as cnt FROM events GROUP BY user_id",
-                vec![TableReference::new("events")],
-            ),
-            TableReference::new("user_stats"),
+            "SELECT user_id, count(*) as cnt FROM events GROUP BY user_id",
+            vec!["events".to_string()],
+            "user_stats",
         );
 
         let sql = mv.to_create_sql();
@@ -324,11 +311,9 @@ mod tests {
     fn test_materialized_view_data_lineage() {
         let mv = MaterializedView::new(
             "mv",
-            SelectQuery::new(
-                "SELECT * FROM a JOIN b ON a.id = b.id",
-                vec![TableReference::new("a"), TableReference::new("b")],
-            ),
-            TableReference::new("target"),
+            "SELECT * FROM a JOIN b ON a.id = b.id",
+            vec!["a".to_string(), "b".to_string()],
+            "target",
         );
 
         let pulls = mv.pulls_data_from();
@@ -340,12 +325,7 @@ mod tests {
 
     #[test]
     fn test_materialized_view_id() {
-        let mv = MaterializedView::new(
-            "my_mv",
-            SelectQuery::from_sql("SELECT 1"),
-            TableReference::new("target"),
-        );
-
+        let mv = MaterializedView::new("my_mv", "SELECT 1", vec![], "target");
         assert_eq!(mv.id("default_db"), "default_db_my_mv");
 
         let mv_with_db = MaterializedView {
@@ -353,5 +333,23 @@ mod tests {
             ..mv
         };
         assert_eq!(mv_with_db.id("default_db"), "other_db_my_mv");
+    }
+
+    #[test]
+    fn test_materialized_view_serde_camel_case() {
+        let mv = MaterializedView::new(
+            "test_mv",
+            "SELECT * FROM source",
+            vec!["source".to_string()],
+            "target",
+        );
+
+        let json = serde_json::to_string(&mv).unwrap();
+        assert!(json.contains("selectSql"));
+        assert!(json.contains("sourceTables"));
+        assert!(json.contains("targetTable"));
+        assert!(!json.contains("select_sql"));
+        assert!(!json.contains("source_tables"));
+        assert!(!json.contains("target_table"));
     }
 }

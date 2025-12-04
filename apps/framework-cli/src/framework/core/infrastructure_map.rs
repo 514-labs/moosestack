@@ -2604,9 +2604,7 @@ impl InfrastructureMap {
     /// This is needed because older CLI versions didn't persist order_by when it was
     /// derived from primary key columns, and older moose-lib versions emitted MVs/Views as SqlResources.
     pub fn normalize(mut self) -> Self {
-        use crate::framework::core::infrastructure::materialized_view::{
-            MaterializedView, SelectQuery, TableReference,
-        };
+        use crate::framework::core::infrastructure::materialized_view::MaterializedView;
         use crate::framework::core::infrastructure::table::ColumnType;
         use crate::framework::core::infrastructure::view::CustomView;
         use crate::infrastructure::olap::clickhouse::sql_parser::{
@@ -2660,27 +2658,17 @@ impl InfrastructureMap {
                 && setup_sql.contains(" TO ")
             {
                 if let Ok(mv_stmt) = parse_create_materialized_view(setup_sql) {
-                    // Convert source tables to TableReference
-                    let source_tables: Vec<TableReference> = mv_stmt
-                        .source_tables
-                        .into_iter()
-                        .map(|t| TableReference {
-                            database: t.database,
-                            table: t.table,
-                        })
-                        .collect();
-
-                    // Create the target table reference
-                    let target_table = TableReference {
-                        database: mv_stmt.target_database,
-                        table: mv_stmt.target_table,
-                    };
+                    // Extract source table names as strings
+                    let source_tables: Vec<String> =
+                        mv_stmt.source_tables.into_iter().map(|t| t.table).collect();
 
                     let mv = MaterializedView {
                         name: sql_resource.name.clone(),
                         database: sql_resource.database.clone(),
-                        select_query: SelectQuery::new(mv_stmt.select_statement, source_tables),
-                        target_table,
+                        select_sql: mv_stmt.select_statement,
+                        source_tables,
+                        target_table: mv_stmt.target_table,
+                        target_database: mv_stmt.target_database,
                         source_file: sql_resource.source_file.clone(),
                     };
 
@@ -2700,20 +2688,18 @@ impl InfrastructureMap {
                 if let Some(as_pos) = setup_sql.find(" AS ") {
                     let select_sql = setup_sql[as_pos + 4..].trim().to_string();
 
-                    // Extract source tables from the SELECT using the parser
-                    let source_tables = extract_source_tables_from_query(&select_sql)
+                    // Extract source table names as strings
+                    let source_tables: Vec<String> = extract_source_tables_from_query(&select_sql)
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|t| TableReference {
-                            database: t.database,
-                            table: t.table,
-                        })
+                        .map(|t| t.table)
                         .collect();
 
                     let view = CustomView {
                         name: sql_resource.name.clone(),
                         database: sql_resource.database.clone(),
-                        select_query: SelectQuery::new(select_sql, source_tables),
+                        select_sql,
+                        source_tables,
                         source_file: sql_resource.source_file.clone(),
                     };
 
@@ -6526,8 +6512,8 @@ mod normalize_tests {
             .next()
             .expect("Should have a materialized view");
         assert_eq!(mv.name, "events_summary_mv");
-        assert_eq!(mv.target_table.table, "events_summary");
-        assert!(mv.select_query.sql.contains("SELECT user_id"));
+        assert_eq!(mv.target_table, "events_summary");
+        assert!(mv.select_sql.contains("SELECT user_id"));
         assert_eq!(mv.source_file, Some("app/sql/events.ts".to_string()));
     }
 
@@ -6576,7 +6562,7 @@ mod normalize_tests {
             .next()
             .expect("Should have a custom view");
         assert_eq!(view.name, "active_users");
-        assert!(view.select_query.sql.contains("SELECT * FROM users"));
+        assert!(view.select_sql.contains("SELECT * FROM users"));
         assert_eq!(view.source_file, Some("app/sql/views.ts".to_string()));
     }
 
