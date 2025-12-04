@@ -611,6 +611,7 @@ mod tests {
             indexes: vec![],
             database,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             table_ttl_setting: None,
             cluster_name: None,

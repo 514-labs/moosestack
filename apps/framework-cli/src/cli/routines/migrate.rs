@@ -786,6 +786,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             table_ttl_setting: None,
             cluster_name: None,
