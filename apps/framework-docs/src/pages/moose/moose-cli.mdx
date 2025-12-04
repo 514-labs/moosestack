@@ -16,23 +16,26 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ### Init
 Initializes a new Moose project.
 ```bash
-moose init <name> [TEMPLATE|LANGUAGE] [--location <location>] [--no-fail-already-exists]
+moose init <name> [TEMPLATE] [--location <location>] [--no-fail-already-exists]
 moose init <name> --from-remote [<CONNECTION_STRING>] --language <python|typescript> [--location <location>] [--no-fail-already-exists]
 ```
 - `<name>`: Name of your app or service
-- `[TEMPLATE|LANGUAGE]`: Optional template or language name (e.g., "python", "typescript", "python-empty", "typescript-empty"). If omitted, you'll be prompted to select a language.
+- `[TEMPLATE]`: Optional template name (e.g., "python", "typescript", "python-empty", "typescript-empty", "python-fastapi"). Use `moose template list` to see all available templates. If omitted, you'll be prompted to select a language (which uses the empty template for that language).
 - `--location` / `-l`: Optional location for your app or service (defaults to the project name)
 - `--no-fail-already-exists`: Skip the directory existence check
 - `--from-remote [<CONNECTION_STRING>]`: Initialize from an existing ClickHouse database. If connection string is omitted, you'll be prompted interactively.
-- `--language <python|typescript>`: Programming language to use. **Required when using `--from-remote`**. If provided without a template, uses the default empty template for that language.
+- `--language <python|typescript>`: Programming language to use. **Required when using `--from-remote`**. Maps to the empty template for that language (e.g., `--language python` uses `python-empty`).
 
 **Examples:**
 ```bash
-# Initialize with Python (using language name as positional argument)
+# Initialize with Python template (bootstrapped with example components)
 moose init MyProject python
 
-# Initialize with TypeScript
+# Initialize with TypeScript template (bootstrapped with example components)
 moose init MyProject typescript
+
+# Initialize with empty Python template
+moose init MyProject python-empty
 
 # Specify a custom location
 moose init MyProject python --location ./my-custom-path
