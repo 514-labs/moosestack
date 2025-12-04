@@ -150,7 +150,9 @@ class UserEvents(BaseModel):
 
 ## Syncing from Remote Tables
 
-When using `moose db pull` to introspect existing ClickHouse tables, Moose automatically captures codec definitions and generates the appropriate annotations in your data models.
+When using `moose init --from-remote` to introspect existing ClickHouse tables, Moose automatically captures codec definitions and generates the appropriate annotations in your data models.
+
+**Alternative:** You can also use `moose db pull` after initializing your project to import from an existing database.
 
 ## Notes
 

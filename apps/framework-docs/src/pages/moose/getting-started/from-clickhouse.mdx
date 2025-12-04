@@ -129,33 +129,51 @@ Use the ClickHouse Playground tab to try it out!
 <Tabs items={["Your own ClickHouse", "ClickHouse Playground"]}>
 <Tabs.Tab>
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```bash filename="Initialize new project" copy
-# First, initialize your project
-moose init my-project typescript
+# Option 1: Provide connection string directly
+moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
 
-# Then, import from your existing ClickHouse database
-moose db pull --clickhouse-url <YOUR_CLICKHOUSE_CONNECTION_STRING>
+# Option 2: Run without connection string for interactive setup
+moose init my-project --from-remote --language typescript
 ```
-</TypeScript>
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```bash filename="Initialize new project" copy
-# First, initialize your project
-moose init my-project python
+# Option 1: Provide connection string directly
+moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language python
 
-# Then, import from your existing ClickHouse database
-moose db pull --clickhouse-url <YOUR_CLICKHOUSE_CONNECTION_STRING>
+# Option 2: Run without connection string for interactive setup
+moose init my-project --from-remote --language python
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
-
-<Callout type="info" title="Connection String Format">
-The connection string should be in the format:
+**Connection String Format:**
 ```
 https://username:password@host:port/?database=database_name
 ```
 
-For example: `https://default:password@your-host.clickhouse.cloud:8443/?database=default`
+<Callout type="info" title="Interactive Setup">
+If you don't provide a connection string, Moose will guide you through an interactive setup process where you'll be prompted to enter:
+- **Host and port** (e.g., `https://your-service-id.region.clickhouse.cloud:8443`)
+- **Username** (usually `default`)
+- **Password** (your ClickHouse password)
+- **Database name** (optional, defaults to `default`)
+
+This is perfect if you're not sure about your connection details or prefer a guided experience.
+</Callout>
+
+<Callout type="info" title="Alternative: Two-step process" compact={true}>
+You can also initialize your project first, then import from your database:
+```bash
+# Step 1: Initialize your project
+moose init my-project typescript  # or python
+
+# Step 2: Import from your database
+moose db pull --clickhouse-url <YOUR_CLICKHOUSE_CONNECTION_STRING>
+```
 </Callout>
 
 <Callout type="info" title="What gets generated" compact={true}>
@@ -179,25 +197,19 @@ See the section: <a href="#connect-to-your-remote-clickhouse" className="text-bl
 </Tabs.Tab>
 <Tabs.Tab>
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```bash filename="Try using the ClickHouse Playground!" copy
-# First, initialize your project
-moose init my-project typescript
-
-# Then, import from ClickHouse Playground
-moose db pull --clickhouse-url https://explorer:@play.clickhouse.com:443/?database=default
+moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?database=default --language typescript
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```bash filename="Initialize new project" copy
-# First, initialize your project
-moose init my-project python
-
-# Then, import from ClickHouse Playground
-moose db pull --clickhouse-url https://explorer:@play.clickhouse.com:443/?database=default
+# Generate code models from your existing ClickHouse tables
+moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?database=default --language python
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 </Tabs.Tab>
 </Tabs>
 
@@ -252,7 +264,7 @@ Check what Moose created from your tables in the `app/index.ts` file:
 
 ### If your database includes ClickPipes/PeerDB (CDC) tables
 
-When you use `moose db pull`, Moose introspects your database. If it detects CDC‑managed tables (e.g., PeerDB/ClickPipes with fields like `_peerdb_synced_at`, `_peerdb_is_deleted`, `_peerdb_version`), it marks those as `EXTERNALLY_MANAGED` and writes them into a dedicated external models file. Your root file is updated to load these models automatically.
+As noted above, when you use `moose init --from-remote`, Moose introspects your database. If it detects CDC‑managed tables (e.g., PeerDB/ClickPipes with fields like `_peerdb_synced_at`, `_peerdb_is_deleted`, `_peerdb_version`), it marks those as `EXTERNALLY_MANAGED` and writes them into a dedicated external models file. Your root file is updated to load these models automatically.
 
 <TypeScript>
 <FileTree>
