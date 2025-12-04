@@ -28,8 +28,85 @@ function isTruthy(value: string | undefined): boolean {
   }
 }
 
-export const compilerLog = (message: string) => {
-  if (!isTruthy(process.env.MOOSE_DISABLE_COMPILER_LOGS)) {
+/**
+ * Log levels matching Rust CLI logger levels
+ */
+export enum LogLevel {
+  Debug = "Debug",
+  Info = "Info",
+  Warn = "Warn",
+  Error = "Error",
+}
+
+/**
+ * Parses MOOSE_LOGGER__LEVEL environment variable to LogLevel enum.
+ * Defaults to Info if not set or invalid.
+ */
+function parseLogLevel(value: string | undefined): LogLevel {
+  if (!value) return LogLevel.Info;
+
+  const normalized = value.trim();
+  switch (normalized) {
+    case "Debug":
+    case "debug":
+    case "DEBUG":
+      return LogLevel.Debug;
+    case "Info":
+    case "info":
+    case "INFO":
+      return LogLevel.Info;
+    case "Warn":
+    case "warn":
+    case "WARN":
+      return LogLevel.Warn;
+    case "Error":
+    case "error":
+    case "ERROR":
+      return LogLevel.Error;
+    default:
+      return LogLevel.Info;
+  }
+}
+
+/**
+ * Gets the current log level from environment variable.
+ * Cached for performance since it doesn't change during runtime.
+ */
+let cachedLogLevel: LogLevel | null = null;
+function getLogLevel(): LogLevel {
+  if (cachedLogLevel === null) {
+    cachedLogLevel = parseLogLevel(process.env.MOOSE_LOGGER__LEVEL);
+  }
+  return cachedLogLevel;
+}
+
+/**
+ * Compiler logging with level support.
+ * Respects both MOOSE_DISABLE_COMPILER_LOGS (legacy) and MOOSE_LOGGER__LEVEL.
+ *
+ * @param message - Log message to output
+ * @param level - Log level (defaults to Debug for backward compatibility)
+ */
+export const compilerLog = (
+  message: string,
+  level: LogLevel = LogLevel.Debug,
+) => {
+  // Legacy disable flag takes precedence
+  if (isTruthy(process.env.MOOSE_DISABLE_COMPILER_LOGS)) {
+    return;
+  }
+
+  const currentLevel = getLogLevel();
+
+  // Simple level filtering: only log if message level >= current level
+  const levelPriority = {
+    [LogLevel.Debug]: 0,
+    [LogLevel.Info]: 1,
+    [LogLevel.Warn]: 2,
+    [LogLevel.Error]: 3,
+  };
+
+  if (levelPriority[level] >= levelPriority[currentLevel]) {
     console.log(message);
   }
 };
@@ -72,6 +149,13 @@ export const getClickhouseClient = ({
     password: password,
     database: database,
     application: "moose",
+    // Connection pool configuration for high load (100+ concurrent users)
+    max_open_connections: 50, // Increased from default 10 to handle 100 concurrent users
+    request_timeout: 60000, // 60s timeout for HTTP requests (queries and inserts)
+    keep_alive: {
+      enabled: true,
+      idle_socket_ttl: 2000, // 2s idle time (lower than default to prevent socket hang-ups)
+    },
     // Note: wait_end_of_query is configured per operation type, not globally
     // to preserve SELECT query performance while ensuring INSERT/DDL reliability
   });
