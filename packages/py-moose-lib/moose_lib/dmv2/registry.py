@@ -4,7 +4,7 @@ Global registries for Moose Data Model v2 (dmv2) resources.
 This module provides functions to access the registered resources.
 The actual registry dictionaries are maintained in _registry.py to avoid circular dependencies.
 """
-from typing import Optional, Dict
+from typing import Optional, Dict, TYPE_CHECKING
 from .olap_table import OlapTable
 from .stream import Stream
 from .ingest_api import IngestApi
@@ -22,7 +22,13 @@ from ._registry import (
     _api_name_aliases,
     _api_path_map,
     _web_apps,
+    _materialized_views,
+    _custom_views,
 )
+
+if TYPE_CHECKING:
+    from .materialized_view import MaterializedView
+    from .view import View
 
 def get_tables() -> Dict[str, OlapTable]:
     """Get all registered OLAP tables."""
@@ -96,6 +102,23 @@ def get_web_apps() -> Dict[str, WebApp]:
 def get_web_app(name: str) -> Optional[WebApp]:
     """Get a registered WebApp by name."""
     return _web_apps.get(name)
+
+
+def get_materialized_views() -> Dict[str, "MaterializedView"]:
+    """Get all registered materialized views."""
+    return _materialized_views
+
+def get_materialized_view(name: str) -> Optional["MaterializedView"]:
+    """Get a registered materialized view by name."""
+    return _materialized_views.get(name)
+
+def get_custom_views() -> Dict[str, "View"]:
+    """Get all registered custom views."""
+    return _custom_views
+
+def get_custom_view(name: str) -> Optional["View"]:
+    """Get a registered custom view by name."""
+    return _custom_views.get(name)
 
 
 # Backward compatibility aliases (deprecated)

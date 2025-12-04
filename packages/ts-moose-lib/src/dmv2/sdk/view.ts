@@ -1,13 +1,28 @@
-import { dropView } from "../../blocks/helpers";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { OlapTable } from "./olapTable";
-import { SqlResource } from "./sqlResource";
+import { getMooseInternal, isClientOnlyMode } from "../internal";
+import { getSourceFileFromStack } from "../utils/stackTrace";
 
 /**
  * Represents a database View, defined by a SQL SELECT statement based on one or more base tables or other views.
- * Inherits from SqlResource, providing setup (CREATE VIEW) and teardown (DROP VIEW) commands.
+ * Emits structured data for the Moose infrastructure system.
  */
-export class View extends SqlResource {
+export class View {
+  /** @internal */
+  public readonly kind = "CustomView";
+
+  /** The name of the view */
+  name: string;
+
+  /** The SELECT SQL statement that defines the view */
+  selectSql: string;
+
+  /** Names of source tables/views that the SELECT reads from */
+  sourceTables: string[];
+
+  /** @internal Source file path where this view was defined */
+  sourceFile?: string;
+
   /**
    * Creates a new View instance.
    * @param name The name of the view to be created.
@@ -23,16 +38,19 @@ export class View extends SqlResource {
       selectStatement = toStaticQuery(selectStatement);
     }
 
-    super(
-      name,
-      [
-        `CREATE VIEW IF NOT EXISTS ${name} 
-          AS ${selectStatement}`.trim(),
-      ],
-      [dropView(name)],
-      {
-        pullsDataFrom: baseTables,
-      },
-    );
+    this.name = name;
+    this.selectSql = selectStatement;
+    this.sourceTables = baseTables.map((t) => t.name);
+
+    // Capture source file from stack trace
+    const stack = new Error().stack;
+    this.sourceFile = getSourceFileFromStack(stack);
+
+    // Register in the customViews registry
+    const customViews = getMooseInternal().customViews;
+    if (!isClientOnlyMode() && customViews.has(this.name)) {
+      throw new Error(`View with name ${this.name} already exists`);
+    }
+    customViews.set(this.name, this);
   }
 }

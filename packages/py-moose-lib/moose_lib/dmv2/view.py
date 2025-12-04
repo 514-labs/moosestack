@@ -5,13 +5,16 @@ This module provides classes for defining standard SQL Views,
 including their SQL statements and dependencies.
 """
 from typing import Union, List, Optional
-from pydantic import BaseModel
 
 from .sql_resource import SqlResource
 from .olap_table import OlapTable
+from ._registry import _custom_views
 
-class View(SqlResource):
+
+class View:
     """Represents a standard SQL database View.
+
+    Emits structured data for the Moose infrastructure system.
 
     Args:
         name: The name of the view to be created.
@@ -22,15 +25,40 @@ class View(SqlResource):
 
     Attributes:
         name (str): The name of the view.
-        setup (list[str]): SQL command to create the view.
-        teardown (list[str]): SQL command to drop the view.
-        pulls_data_from (list[SqlObject]): Source tables/views.
+        select_sql (str): The SELECT SQL statement.
+        source_tables (List[str]): Names of source tables the SELECT reads from.
+        source_file (Optional[str]): Path to source file where defined.
     """
+    kind: str = "CustomView"
+    name: str
+    select_sql: str
+    source_tables: List[str]
+    source_file: Optional[str] = None
+    metadata: Optional[dict] = None
 
-    def __init__(self, name: str, select_statement: str, base_tables: list[Union[OlapTable, SqlResource]],
-                 metadata: dict = None):
-        setup = [
-            f"CREATE VIEW IF NOT EXISTS {name} AS {select_statement}".strip()
-        ]
-        teardown = [f"DROP VIEW IF EXISTS {name}"]
-        super().__init__(name, setup, teardown, pulls_data_from=base_tables, metadata=metadata)
+    def __init__(
+        self,
+        name: str,
+        select_statement: str,
+        base_tables: list[Union[OlapTable, SqlResource, "View"]],
+        metadata: dict = None
+    ):
+        self.name = name
+        self.select_sql = select_statement
+        self.source_tables = [t.name for t in base_tables]
+        self.metadata = metadata
+
+        # Try to capture source file
+        import traceback
+        try:
+            for frame in traceback.extract_stack():
+                if '/app/' in frame.filename or '\\app\\' in frame.filename:
+                    self.source_file = frame.filename
+                    break
+        except Exception:
+            pass
+
+        # Register in the custom_views registry
+        if self.name in _custom_views:
+            raise ValueError(f"View with name {self.name} already exists")
+        _custom_views[self.name] = self

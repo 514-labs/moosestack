@@ -4,14 +4,14 @@ Materialized View definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining Materialized Views,
 including their SQL statements, target tables, and dependencies.
 """
-from typing import Any, Optional, Union, Generic, TypeVar
-from pydantic import BaseModel, ConfigDict, model_validator
+from typing import Any, Optional, Union, Generic, List
+from pydantic import BaseModel, ConfigDict
 
 from ..blocks import ClickHouseEngines
-from ..utilities.sql import quote_identifier
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
 from .sql_resource import SqlResource
+from ._registry import _materialized_views
 
 
 class MaterializedViewOptions(BaseModel):
@@ -41,11 +41,11 @@ class MaterializedViewOptions(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class MaterializedView(SqlResource, BaseTypedResource, Generic[T]):
+class MaterializedView(BaseTypedResource, Generic[T]):
     """Represents a ClickHouse Materialized View.
 
     Encapsulates the MATERIALIZED VIEW definition and the underlying target `OlapTable`
-    that stores the data.
+    that stores the data. Emits structured data for the Moose infrastructure system.
 
     Args:
         options: Configuration defining the select statement, names, and dependencies.
@@ -57,13 +57,16 @@ class MaterializedView(SqlResource, BaseTypedResource, Generic[T]):
         config (MaterializedViewOptions): The configuration options used to create the view.
         name (str): The name of the MATERIALIZED VIEW object.
         model_type (type[T]): The Pydantic model associated with the target table.
-        setup (list[str]): SQL commands to create the view and populate the target table.
-        teardown (list[str]): SQL command to drop the view.
-        pulls_data_from (list[SqlObject]): Source tables/views.
-        pushes_data_to (list[SqlObject]): The target table.
+        select_sql (str): The SELECT SQL statement.
+        source_tables (List[str]): Names of source tables the SELECT reads from.
     """
+    kind: str = "MaterializedView"
     target_table: OlapTable[T]
     config: MaterializedViewOptions
+    name: str
+    select_sql: str
+    source_tables: List[str]
+    source_file: Optional[str] = None
 
     def __init__(
             self,
@@ -94,19 +97,23 @@ class MaterializedView(SqlResource, BaseTypedResource, Generic[T]):
         if target_table.name == options.materialized_view_name:
             raise ValueError("Target table name cannot be the same as the materialized view name")
 
-        setup = [
-            f"CREATE MATERIALIZED VIEW IF NOT EXISTS {quote_identifier(options.materialized_view_name)} TO {quote_identifier(target_table.name)} AS {options.select_statement}",
-        ]
-        teardown = [f"DROP VIEW IF EXISTS {quote_identifier(options.materialized_view_name)}"]
-
-        super().__init__(
-            options.materialized_view_name,
-            setup,
-            teardown,
-            pulls_data_from=options.select_tables,
-            pushes_data_to=[target_table],
-            metadata=options.metadata
-        )
-
+        self.name = options.materialized_view_name
         self.target_table = target_table
         self.config = options
+        self.select_sql = options.select_statement
+        self.source_tables = [t.name for t in options.select_tables]
+
+        # Try to capture source file
+        import traceback
+        try:
+            for frame in traceback.extract_stack():
+                if '/app/' in frame.filename or '\\app\\' in frame.filename:
+                    self.source_file = frame.filename
+                    break
+        except Exception:
+            pass
+
+        # Register in the materialized_views registry
+        if self.name in _materialized_views:
+            raise ValueError(f"MaterializedView with name {self.name} already exists")
+        _materialized_views[self.name] = self
