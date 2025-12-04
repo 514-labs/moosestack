@@ -207,15 +207,15 @@ You should see output like:
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-```bash filename="Terminal" copy
-moose init my-analytics-app python
-```
-
-You should see output like:
-```txt
-✓ Created my-analytics-app
-✓ Initialized Python project
-```
+  ```bash filename="Terminal" copy
+  moose init my-analytics-app python
+  ```
+  
+  You should see output like:
+  ```txt
+  ✓ Created my-analytics-app
+  ✓ Initialized Python project
+  ```
   </LanguageTabContent>
 </LanguageTabs>
 
@@ -225,32 +225,7 @@ You should see output like:
 cd my-analytics-app
 ```
 
-<LanguageTabs>
-  <LanguageTabContent value="python">
-<Callout type="info" title="Recommended: Create a virtual environment" icon="Check" compact={true}>
-A virtual environment isolates your project's dependencies. We recommend creating one for your project.
-</Callout>
-
-**Create a virtual environment (Recommended)**
-
-```bash filename="Terminal" copy
-python3 -m venv .venv
-```
-
-**activate your virtual environment(Recommended)**
-```bash filename="Terminal" copy
-source .venv/bin/activate
-```
-
-This creates a `.venv` folder and activates it. Your terminal prompt should now look something like this:
-
-```txt
-(.venv) username@computer my-analytics-app %
-```
-  </LanguageTabContent>
-</LanguageTabs>
 ### Install dependencies
-
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -265,6 +240,14 @@ Dependencies installed successfully with no errors.
 </Callout>
   </LanguageTabContent>
   <LanguageTabContent value="python">
+
+<Callout type="info" title="Recommended: Create a virtual environment" compact={true}>
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+```
+</Callout>
+
+
 ```bash filename="Terminal" copy
 pip install -r requirements.txt
 ```
@@ -330,26 +313,6 @@ Keep this terminal running. This is your Moose development server. You'll open a
 Your project includes a complete example pipeline:
 
 <LanguageTabs>
-  <LanguageTabContent value="python">
-<FileTree>
-    <FileTree.Folder name="app" defaultOpen>
-        <FileTree.Folder name="apis">
-            <FileTree.File name="bar.py" />
-        </FileTree.Folder>
-        <FileTree.Folder name="ingest" defaultOpen>
-            <FileTree.File name="models.py" />
-            <FileTree.File name="transform.py" />
-        </FileTree.Folder>
-        <FileTree.Folder name="views">
-            <FileTree.File name="bar_aggregated.py" />
-        </FileTree.Folder>
-        <FileTree.Folder name="workflows">
-            <FileTree.File name="generator.py" />
-        </FileTree.Folder>
-        <FileTree.File name="main.py" />
-    </FileTree.Folder>
-</FileTree>
-  </LanguageTabContent>
   <LanguageTabContent value="typescript">
 <FileTree>
     <FileTree.Folder name="app" defaultOpen>
@@ -367,6 +330,26 @@ Your project includes a complete example pipeline:
             <FileTree.File name="generator.ts" />
         </FileTree.Folder>
         <FileTree.File name="index.ts" />
+    </FileTree.Folder>
+</FileTree>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+<FileTree>
+    <FileTree.Folder name="app" defaultOpen>
+        <FileTree.Folder name="apis">
+            <FileTree.File name="bar.py" />
+        </FileTree.Folder>
+        <FileTree.Folder name="ingest" defaultOpen>
+            <FileTree.File name="models.py" />
+            <FileTree.File name="transform.py" />
+        </FileTree.Folder>
+        <FileTree.Folder name="views">
+            <FileTree.File name="bar_aggregated.py" />
+        </FileTree.Folder>
+        <FileTree.Folder name="workflows">
+            <FileTree.File name="generator.py" />
+        </FileTree.Folder>
+        <FileTree.File name="main.py" />
     </FileTree.Folder>
 </FileTree>
   </LanguageTabContent>
@@ -401,22 +384,6 @@ from app.workflows.generator import *  # Background workflows
 <Callout type="info" title="Important: Open a second terminal window" compact={true}>
 **Keep your `moose dev` terminal running.** You need a second terminal for the next commands.
 </Callout>
-<ToggleBlock openText="How to open a new terminal window" closeText="Hide instructions">
-
-**macOS Terminal:**
-- Press `Cmd+N` for a new window, or
-- Right-click Terminal icon in dock → New Window
-
-**VSCode:**
-- Click the `+` button in the terminal panel, or
-- Press `Ctrl+Shift+` ` (backtick)
-
-**Linux Terminal:**
-- Press `Ctrl+Shift+N`, or
-- Use your terminal's File → New Window menu
-
-</ToggleBlock>
-
 
 
 ### Navigate to your project in the new terminal
@@ -426,16 +393,6 @@ In your **new terminal window** (not the one running `moose dev`):
 ```bash filename="Terminal 2 (New Window)" copy
 cd my-analytics-app
 ```
-
-<LanguageTabs>
-  <LanguageTabContent value="python">
-If not automatically activated, activate the virtual environment:
-```bash filename="Terminal 2 (New Window)" copy
-source .venv/bin/activate
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
 
 ### Run the data generator workflow
 
@@ -449,6 +406,10 @@ You should see:
 ```txt
 Workflow 'generator' triggered successfully
 ```
+<Callout type="info" title="View Temporal Dashboard" compact={true}>
+The workflow runs in the background, powered by [Temporal](https://temporal.io). You can see workflow status at `http://localhost:8080`.
+</Callout>
+
 
 <ToggleBlock openText="Understanding the generator workflow" closeText="Hide details">
 
@@ -478,14 +439,13 @@ Received Foo_0_0 -> Bar_0_0 1 message(s)
 These logs show your pipeline working: Workflow generates data → Ingestion API receives it → Data transforms → Writes to ClickHouse
 </Callout>
 
+<ToggleBlock openText="Troubleshooting: Don't see logs?" closeText="Hide troubleshooting">
 **If you don't see logs after 30 seconds:**
 - Verify `moose dev` is still running in Terminal 1
 - Check Terminal 2 for error messages from the workflow command
 - Run `docker ps` to verify containers are running
+</ToggleBlock>
 
-<Callout type="info" title="View Temporal Dashboard" compact={true}>
-The workflow runs in the background, powered by [Temporal](https://temporal.io). You can see workflow status at `http://localhost:8080`.
-</Callout>
 
 <ToggleBlock openText="(Bonus) Peek at your data" closeText="Hide details">
 
@@ -598,11 +558,12 @@ curl "http://localhost:4000/api/bar?limit=5&orderBy=totalRows"
 
 ## Step 5: Hot Reload Schema Changes (1 minute)
 
-1. Open `app/ingest/models.ts` (TypeScript) or `app/ingest/models.py` (Python)
-2. Add a new field to your data model:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
+
+1. Open `app/ingest/models.ts`
+2. Add a new field to your data model:
 ```ts filename="app/ingest/models.ts" {5} copy
 /** Analyzed text metrics derived from Foo */
 export interface Bar {
@@ -613,8 +574,19 @@ export interface Bar {
   newField?: string; // Add this new optional field
 }
 ```
+3. Save the file and watch your terminal (in Terminal 1 where `moose dev` is running). You should see:
+
+```txt
+⠋ Processing Infrastructure changes from file watcher
+             +  Table Bar:
+                  Column changes:
+                    + newField: String
+```
   </LanguageTabContent>
   <LanguageTabContent value="python">
+
+1. Open `app/ingest/models.py`
+2. Add a new field to your data model:
 ```python filename="app/ingest/models.py" {16} copy
 from moose_lib import Key, StringToEnumMixin
 from typing import Optional, Annotated
@@ -634,23 +606,9 @@ class Bar(BaseModel):
     text_length: int
     new_field: Optional[str] = None # New field
 ```
-  </LanguageTabContent>
-</LanguageTabs>
 
-3. Save the file and watch your terminal
+3. Save the file and watch your terminal (in Terminal 1 where `moose dev` is running). You should see:
 
-**Switch to Terminal 1** (where `moose dev` is running). You should see Moose automatically update your infrastructure:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```txt
-⠋ Processing Infrastructure changes from file watcher
-             ~  Table Bar:
-                  Column changes:
-                    + newField: String
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
 ```txt
 ⠋ Processing Infrastructure changes from file watcher
              ~  Table Bar:
@@ -683,16 +641,8 @@ You've built a complete analytical backend with:
 
 ## Need Help?
 
-<ToggleBlock openText="Common Issues & Solutions" closeText="Hide troubleshooting">
-<Tabs defaultValue="docker">
-<TabsList>
-<TabsTrigger value="docker">Docker Issues</TabsTrigger>
-<TabsTrigger value="version">Version Issues</TabsTrigger>
-<TabsTrigger value="port">Port Conflicts</TabsTrigger>
-<TabsTrigger value="permission">Permission Issues</TabsTrigger>
-</TabsList>
-<TabsContent value="docker">
-**Docker not running:**
+<ToggleBlock openText="Docker Not Running" closeText="Docker Not Running">
+Make sure Docker is running:
 ```bash filename="Terminal" copy
 # macOS
 open -a Docker
@@ -704,16 +654,16 @@ sudo systemctl start docker
 docker ps
 ```
 
-**Docker out of space:**
+If Docker is running, but you're still having issues, try clearing your Docker cache:
 ```bash filename="Terminal" copy
 docker system prune -a
 ```
-</TabsContent>
+</ToggleBlock>
 
-<TabsContent value="version">
+<ToggleBlock openText="Outdated Language Version" closeText="Outdated Language Version">
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-**Node.js version too old:**
+If you're using Node.js, make sure you're using a version >= 20. Use nvm to install and switch to the latest version:
 ```bash filename="Terminal" copy
 # Check version
 node -v
@@ -725,7 +675,7 @@ nvm use 20
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
-**Python version too old:**
+Make sure you're using a version >= 3.12. Use pyenv to install and switch to the latest version:
 ```bash filename="Terminal" copy
 # Check version
 python3 --version
@@ -737,35 +687,33 @@ pyenv local 3.12
 ```
   </LanguageTabContent>
 </LanguageTabs>
-</TabsContent>
+</ToggleBlock>
 
-<TabsContent value="port">
-**Port 4000 already in use:**
+<ToggleBlock openText="Port Conflicts" closeText="Port Conflicts">
+Use one of the following options to resolve a "Port 4000 already in use" error (or any other port conflict):
+
+**Option 1: Kill the process**
 ```bash filename="Terminal" copy
 # Find what's using port 4000
 lsof -i :4000
 
 # Kill the process (replace PID)
 kill -9 <PID>
-
-# Or use a different port
-moose dev --port 4001
 ```
-</TabsContent>
 
-<TabsContent value="permission">
-**Permission denied:**
-```bash filename="Terminal" copy
-# Fix Docker permissions (Linux)
-sudo usermod -aG docker $USER
-newgrp docker
-
-# Fix file permissions
-chmod +x ~/.moose/bin/moose
+**Option 2: Use a different port**
+You can also use a different port and set this in your `moose.config.toml` file (located in your project root):
+```toml filename="moose.config.toml" copy
+[http_server_config]
+port = 4001 # Change to your desired port
 ```
-</TabsContent>
 
-</Tabs>
+Restart `moose dev` and you should be able to use the new port.
+
+<Callout type="info" title="Customizing Ports for Local Infrastructure" compact={true}>
+You can also customize ClickHouse, Redpanda, and Temporal ports. See the [Configuration Reference](/moosestack/configuration#mooseconfigtoml-reference).
+</Callout>
+</ToggleBlock>
+
 
 **Still stuck?** Join our [Slack community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) or [open an issue](https://github.com/514-labs/moose/issues).
-</ToggleBlock>
