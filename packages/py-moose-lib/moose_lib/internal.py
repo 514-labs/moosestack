@@ -96,7 +96,7 @@ class VersionedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for VersionedCollapsingMergeTree engine."""
     engine: Literal["VersionedCollapsingMergeTree"] = "VersionedCollapsingMergeTree"
     sign: str
-    version: str
+    ver: str
 
 
 class ReplicatedMergeTreeConfigDict(BaseEngineConfigDict):
@@ -144,7 +144,7 @@ class ReplicatedVersionedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
     keeper_path: Optional[str] = None
     replica_name: Optional[str] = None
     sign: str
-    version: str
+    ver: str
 
 
 class S3QueueConfigDict(BaseEngineConfigDict):
@@ -511,7 +511,7 @@ def _convert_basic_engine_instance(engine: "EngineConfig") -> Optional[EngineCon
     elif isinstance(engine, VersionedCollapsingMergeTreeEngine):
         return VersionedCollapsingMergeTreeConfigDict(
             sign=engine.sign,
-            version=engine.version
+            ver=engine.ver
         )
     return None
 
@@ -565,7 +565,7 @@ def _convert_replicated_engine_instance(engine: "EngineConfig") -> Optional[Engi
             keeper_path=engine.keeper_path,
             replica_name=engine.replica_name,
             sign=engine.sign,
-            version=engine.version
+            ver=engine.ver
         )
     return None
 

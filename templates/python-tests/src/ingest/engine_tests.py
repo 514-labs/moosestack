@@ -174,7 +174,7 @@ collapsing_merge_tree_table = OlapTable[CollapsingTestData](
 versioned_collapsing_merge_tree_table = OlapTable[CollapsingTestData](
     "VersionedCollapsingMergeTreeTest",
     OlapConfig(
-        engine=VersionedCollapsingMergeTreeEngine(sign="sign", version="version"),
+        engine=VersionedCollapsingMergeTreeEngine(sign="sign", ver="version"),
         order_by_fields=["id", "timestamp"]
     )
 )
@@ -275,7 +275,7 @@ replicated_versioned_collapsing_merge_tree_table = OlapTable[CollapsingTestData]
             keeper_path="/clickhouse/tables/{database}/{shard}/replicated_versioned_collapsing_test",
             replica_name="{replica}",
             sign="sign",
-            version="version"
+            ver="version"
         ),
         order_by_fields=["id", "timestamp"]
     )

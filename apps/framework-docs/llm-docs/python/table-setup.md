@@ -89,10 +89,14 @@ from moose_lib.blocks import (
     ReplacingMergeTreeEngine,
     AggregatingMergeTreeEngine,
     SummingMergeTreeEngine,
+    CollapsingMergeTreeEngine,
+    VersionedCollapsingMergeTreeEngine,
     ReplicatedMergeTreeEngine,
     ReplicatedReplacingMergeTreeEngine,
     ReplicatedAggregatingMergeTreeEngine,
     ReplicatedSummingMergeTreeEngine,
+    ReplicatedCollapsingMergeTreeEngine,
+    ReplicatedVersionedCollapsingMergeTreeEngine,
     S3QueueEngine
 )
 from pydantic import BaseModel
@@ -403,6 +407,8 @@ Available replicated engines:
 - `ReplicatedReplacingMergeTreeEngine` - Replicated with deduplication
 - `ReplicatedAggregatingMergeTreeEngine` - Replicated with aggregation
 - `ReplicatedSummingMergeTreeEngine` - Replicated with summation
+- `ReplicatedCollapsingMergeTreeEngine` - Replicated with state collapsing
+- `ReplicatedVersionedCollapsingMergeTreeEngine` - Replicated with versioned collapsing
 
 ### Cluster-Aware Replicated Tables
 

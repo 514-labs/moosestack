@@ -738,7 +738,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
                 writeln!(output, "    engine: ClickHouseEngines.VersionedCollapsingMergeTree,").unwrap();
                 writeln!(output, "    sign: {:?},", sign).unwrap();
-                writeln!(output, "    version: {:?},", version).unwrap();
+                writeln!(output, "    ver: {:?},", version).unwrap();
             }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree { keeper_path, replica_name } => {
                 writeln!(output, "    engine: ClickHouseEngines.ReplicatedMergeTree,").unwrap();
@@ -795,7 +795,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                     writeln!(output, "    replicaName: {:?},", name).unwrap();
                 }
                 writeln!(output, "    sign: {:?},", sign).unwrap();
-                writeln!(output, "    version: {:?},", version).unwrap();
+                writeln!(output, "    ver: {:?},", version).unwrap();
             }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::S3 {
                 path,

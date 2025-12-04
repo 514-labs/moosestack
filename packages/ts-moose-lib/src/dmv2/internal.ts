@@ -25,6 +25,8 @@ import {
   ReplicatedReplacingMergeTreeConfig,
   ReplicatedAggregatingMergeTreeConfig,
   ReplicatedSummingMergeTreeConfig,
+  ReplicatedCollapsingMergeTreeConfig,
+  ReplicatedVersionedCollapsingMergeTreeConfig,
   S3QueueConfig,
 } from "./sdk/olapTable";
 import {
@@ -105,7 +107,7 @@ interface CollapsingMergeTreeEngineConfig {
 interface VersionedCollapsingMergeTreeEngineConfig {
   engine: "VersionedCollapsingMergeTree";
   sign: string;
-  version: string; // Note: This is the version column name, not table version
+  ver: string;
 }
 
 interface ReplicatedMergeTreeEngineConfig {
@@ -147,7 +149,7 @@ interface ReplicatedVersionedCollapsingMergeTreeEngineConfig {
   keeperPath?: string;
   replicaName?: string;
   sign: string;
-  version: string; // Note: This is the version column name, not table version
+  ver: string;
 }
 
 interface S3QueueEngineConfig {
@@ -431,7 +433,9 @@ function hasReplicatedEngine(
   | ReplicatedMergeTreeConfig<any>
   | ReplicatedReplacingMergeTreeConfig<any>
   | ReplicatedAggregatingMergeTreeConfig<any>
-  | ReplicatedSummingMergeTreeConfig<any> {
+  | ReplicatedSummingMergeTreeConfig<any>
+  | ReplicatedCollapsingMergeTreeConfig<any>
+  | ReplicatedVersionedCollapsingMergeTreeConfig<any> {
   if (!("engine" in config)) {
     return false;
   }
@@ -442,7 +446,9 @@ function hasReplicatedEngine(
     engine === ClickHouseEngines.ReplicatedMergeTree ||
     engine === ClickHouseEngines.ReplicatedReplacingMergeTree ||
     engine === ClickHouseEngines.ReplicatedAggregatingMergeTree ||
-    engine === ClickHouseEngines.ReplicatedSummingMergeTree
+    engine === ClickHouseEngines.ReplicatedSummingMergeTree ||
+    engine === ClickHouseEngines.ReplicatedCollapsingMergeTree ||
+    engine === ClickHouseEngines.ReplicatedVersionedCollapsingMergeTree
   );
 }
 
@@ -503,7 +509,7 @@ function convertBasicEngineConfig(
       return {
         engine: "VersionedCollapsingMergeTree",
         sign: versionedConfig.sign,
-        version: versionedConfig.ver,
+        ver: versionedConfig.ver,
       };
     }
 
@@ -583,7 +589,7 @@ function convertReplicatedEngineConfig(
         keeperPath: replicatedConfig.keeperPath,
         replicaName: replicatedConfig.replicaName,
         sign: replicatedConfig.sign,
-        version: replicatedConfig.ver,
+        ver: replicatedConfig.ver,
       };
     }
 

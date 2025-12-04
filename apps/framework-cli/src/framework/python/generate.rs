@@ -823,7 +823,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 writeln!(output, "    engine=CollapsingMergeTreeEngine(sign={:?}),", sign).unwrap();
             }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
-                writeln!(output, "    engine=VersionedCollapsingMergeTreeEngine(sign={:?}, version={:?}),", sign, version).unwrap();
+                writeln!(output, "    engine=VersionedCollapsingMergeTreeEngine(sign={:?}, ver={:?}),", sign, version).unwrap();
             }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path,
@@ -909,7 +909,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                     params.push(format!("keeper_path={:?}, replica_name={:?}", path, name));
                 }
                 params.push(format!("sign={:?}", sign));
-                params.push(format!("version={:?}", version));
+                params.push(format!("ver={:?}", version));
                 write!(output, "{}", params.join(", ")).unwrap();
                 writeln!(output, "),").unwrap();
             }

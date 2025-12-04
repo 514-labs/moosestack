@@ -193,7 +193,7 @@ enum EngineConfig {
     CollapsingMergeTree { sign: String },
 
     #[serde(rename = "VersionedCollapsingMergeTree")]
-    VersionedCollapsingMergeTree { sign: String, version: String },
+    VersionedCollapsingMergeTree { sign: String, ver: String },
 
     #[serde(rename = "ReplicatedMergeTree")]
     ReplicatedMergeTree {
@@ -249,7 +249,7 @@ enum EngineConfig {
         #[serde(alias = "replicaName", default)]
         replica_name: Option<String>,
         sign: String,
-        version: String,
+        ver: String,
     },
 
     #[serde(rename = "S3Queue")]
@@ -820,10 +820,10 @@ impl PartialInfrastructureMap {
                 Ok(ClickhouseEngine::CollapsingMergeTree { sign: sign.clone() })
             }
 
-            Some(EngineConfig::VersionedCollapsingMergeTree { sign, version }) => {
+            Some(EngineConfig::VersionedCollapsingMergeTree { sign, ver }) => {
                 Ok(ClickhouseEngine::VersionedCollapsingMergeTree {
                     sign: sign.clone(),
-                    version: version.clone(),
+                    version: ver.clone(),
                 })
             }
 
@@ -879,12 +879,12 @@ impl PartialInfrastructureMap {
                 keeper_path,
                 replica_name,
                 sign,
-                version,
+                ver,
             }) => Ok(ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
                 sign: sign.clone(),
-                version: version.clone(),
+                version: ver.clone(),
             }),
 
             Some(EngineConfig::S3Queue(config)) => {
