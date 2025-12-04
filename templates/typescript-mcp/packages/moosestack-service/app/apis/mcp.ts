@@ -15,7 +15,7 @@
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { WebApp, getMooseUtils, ApiUtil } from "@514labs/moose-lib";
 import { createAuthMiddleware } from "@514labs/express-pbkdf2-api-key-auth";
 
@@ -39,7 +39,7 @@ function clickhouseReadonlyQuery(
  * Uses currentDatabase() to automatically query the active database context.
  */
 async function getTableColumns(
-  client: any,
+  client: ApiUtil["client"],
   tableName: string,
 ): Promise<ColumnInfo[]> {
   const query = `
@@ -55,9 +55,10 @@ async function getTableColumns(
 
   // High limit for catalog queries - metadata tables are typically small
   const result = await clickhouseReadonlyQuery(client, query, 10000);
-  const data = (await result.json()) as any[];
+  const rawData = await result.json();
+  const data = z.array(ColumnQueryResultSchema).parse(rawData);
 
-  return data.map((row: any) => ({
+  return data.map((row) => ({
     name: row.name,
     type: row.type,
     nullable: row.nullable === 1,
@@ -65,12 +66,29 @@ async function getTableColumns(
   }));
 }
 
+// Zod schemas for runtime validation of ClickHouse query results
+const ColumnQueryResultSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  nullable: z.number(),
+  comment: z.string(),
+});
+
+const TableQueryResultSchema = z.object({
+  name: z.string(),
+  engine: z.string(),
+  component_type: z.string(),
+});
+
+type ColumnQueryResult = z.infer<typeof ColumnQueryResultSchema>;
+type TableQueryResult = z.infer<typeof TableQueryResultSchema>;
+
 /**
  * Query ClickHouse to get list of tables and materialized views in the configured database.
  * Uses currentDatabase() to automatically query the active database context.
  */
 async function getTablesAndMaterializedViews(
-  client: any,
+  client: ApiUtil["client"],
   componentType?: string,
   searchPattern?: string,
 ): Promise<{
@@ -92,13 +110,14 @@ async function getTablesAndMaterializedViews(
 
   // High limit for catalog queries - metadata tables are typically small
   const result = await clickhouseReadonlyQuery(client, query, 10000);
-  const data = (await result.json()) as any[];
+  const rawData = await result.json();
+  const data = z.array(TableQueryResultSchema).parse(rawData);
 
   let filteredData = data;
 
   // Apply component type filter
   if (componentType) {
-    filteredData = filteredData.filter((row: any) => {
+    filteredData = filteredData.filter((row) => {
       if (componentType === "tables") return row.component_type === "table";
       if (componentType === "materialized_views")
         return row.component_type === "materialized_view";
@@ -110,23 +129,22 @@ async function getTablesAndMaterializedViews(
   if (searchPattern) {
     try {
       const regex = new RegExp(searchPattern, "i");
-      filteredData = filteredData.filter((row: any) => regex.test(row.name));
-    } catch (error) {
-      console.error(`[MCP] Invalid regex pattern: ${searchPattern}`, error);
+      filteredData = filteredData.filter((row) => regex.test(row.name));
+    } catch {
       // If regex is invalid, fall back to simple substring match
-      filteredData = filteredData.filter((row: any) =>
+      filteredData = filteredData.filter((row) =>
         row.name.toLowerCase().includes(searchPattern.toLowerCase()),
       );
     }
   }
 
   const tables = filteredData
-    .filter((row: any) => row.component_type === "table")
-    .map((row: any) => ({ name: row.name, engine: row.engine }));
+    .filter((row) => row.component_type === "table")
+    .map((row) => ({ name: row.name, engine: row.engine }));
 
   const materializedViews = filteredData
-    .filter((row: any) => row.component_type === "materialized_view")
-    .map((row: any) => ({ name: row.name, engine: row.engine }));
+    .filter((row) => row.component_type === "materialized_view")
+    .map((row) => ({ name: row.name, engine: row.engine }));
 
   return { tables, materializedViews };
 }
@@ -135,7 +153,7 @@ async function getTablesAndMaterializedViews(
  * Format catalog as summary (just names and column counts)
  */
 async function formatCatalogSummary(
-  client: any,
+  client: ApiUtil["client"],
   tables: Array<{ name: string; engine: string }>,
   materializedViews: Array<{ name: string; engine: string }>,
 ): Promise<string> {
@@ -172,7 +190,7 @@ async function formatCatalogSummary(
  * Format catalog as detailed JSON with full schema information
  */
 async function formatCatalogDetailed(
-  client: any,
+  client: ApiUtil["client"],
   tables: Array<{ name: string; engine: string }>,
   materializedViews: Array<{ name: string; engine: string }>,
 ): Promise<string> {
@@ -266,36 +284,22 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
    * Results are limited to max 1000 rows to prevent excessive data transfer.
    * Security is enforced at the database level using ClickHouse readonly mode.
    */
-  server.registerTool(
+  server.tool(
     "query_clickhouse",
-    /**
-     * Type assertion needed here due to MCP SDK type limitations.
-     * The SDK expects Record<string, ZodTypeAny> but our schema structure
-     * doesn't match that exact type. Runtime validation still works correctly.
-     */
+    "Execute a read-only query against the ClickHouse OLAP database and return results as JSON. Use SELECT, SHOW, DESCRIBE, or EXPLAIN queries only. Data modification queries (INSERT, UPDATE, DELETE, ALTER, CREATE, etc.) are prohibited.",
+    {
+      query: z.string().describe("SQL query to execute against ClickHouse"),
+      limit: z
+        .number()
+        .min(1)
+        .max(1000)
+        .default(100)
+        .optional()
+        .describe("Maximum number of rows to return (default: 100, max: 1000)"),
+    },
     {
       title: "Query ClickHouse Database",
-      description:
-        "Execute a read-only query against the ClickHouse OLAP database and return results as JSON. Use SELECT, SHOW, DESCRIBE, or EXPLAIN queries only. Data modification queries (INSERT, UPDATE, DELETE, ALTER, CREATE, etc.) are prohibited.",
-      inputSchema: {
-        query: z.string().describe("SQL query to execute against ClickHouse"),
-        limit: z
-          .number()
-          .min(1)
-          .max(1000)
-          .default(100)
-          .optional()
-          .describe(
-            "Maximum number of rows to return (default: 100, max: 1000)",
-          ),
-      },
-      outputSchema: {
-        rows: z
-          .array(z.record(z.any()))
-          .describe("Query results as array of row objects"),
-        rowCount: z.number().describe("Number of rows returned"),
-      },
-    } as any,
+    },
     async ({ query, limit = 100 }) => {
       try {
         // Check if MooseStack utilities are available
@@ -335,7 +339,6 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
               text: JSON.stringify(output, null, 2),
             },
           ],
-          structuredContent: output,
         };
       } catch (error) {
         const errorMessage =
@@ -359,35 +362,31 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
    * Allows AI to discover available tables, views, and materialized views
    * with their schema information.
    */
-  server.registerTool(
+  server.tool(
     "get_data_catalog",
+    "Discover available tables and materialized views in the ClickHouse database with their schema information. Use this to learn what data exists before writing queries.",
+    {
+      component_type: z
+        .enum(["tables", "materialized_views"])
+        .optional()
+        .describe(
+          "Filter by component type: 'tables' for regular tables, 'materialized_views' for pre-aggregated views",
+        ),
+      search: z
+        .string()
+        .optional()
+        .describe("Regex pattern to search for in component names"),
+      format: z
+        .enum(["summary", "detailed"])
+        .default("summary")
+        .optional()
+        .describe(
+          "Output format: 'summary' shows names and column counts, 'detailed' shows full schemas",
+        ),
+    },
     {
       title: "Get Data Catalog",
-      description:
-        "Discover available tables and materialized views in the ClickHouse database with their schema information. Use this to learn what data exists before writing queries.",
-      inputSchema: {
-        component_type: z
-          .enum(["tables", "materialized_views"])
-          .optional()
-          .describe(
-            "Filter by component type: 'tables' for regular tables, 'materialized_views' for pre-aggregated views",
-          ),
-        search: z
-          .string()
-          .optional()
-          .describe("Regex pattern to search for in component names"),
-        format: z
-          .enum(["summary", "detailed"])
-          .default("summary")
-          .optional()
-          .describe(
-            "Output format: 'summary' shows names and column counts, 'detailed' shows full schemas",
-          ),
-      },
-      outputSchema: {
-        catalog: z.string().describe("Formatted catalog information"),
-      },
-    } as any,
+    },
     async ({ component_type, search, format = "summary" }) => {
       try {
         // Check if MooseStack utilities are available
@@ -432,7 +431,6 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
               text: output,
             },
           ],
-          structuredContent: { catalog: output },
         };
       } catch (error) {
         const errorMessage =
