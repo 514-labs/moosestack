@@ -1,0 +1,283 @@
+version: 2
+updates:
+  # NPM/pnpm - Root workspace
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    commit-message:
+      prefix: "npm"
+      prefix-development: "npm(dev)"
+      include: "scope"
+    groups:
+      # Group development dependencies together
+      dev-dependencies:
+        dependency-type: "development"
+        patterns:
+          - "eslint*"
+          - "prettier*"
+          - "@typescript-eslint/*"
+          - "turbo"
+          - "husky"
+          - "lint-staged"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group production dependencies
+      production-dependencies:
+        dependency-type: "production"
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "eslint*"
+          - "prettier*"
+          - "@typescript-eslint/*"
+          - "turbo"
+          - "husky"
+          - "lint-staged"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "javascript"
+
+  # Framework CLI app
+  - package-ecosystem: "npm"
+    directory: "/apps/framework-cli"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: "npm(cli)"
+      include: "scope"
+    groups:
+      framework-cli-deps:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "framework-cli"
+
+  # Framework CLI E2E tests
+  - package-ecosystem: "npm"
+    directory: "/apps/framework-cli-e2e"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: "npm(e2e)"
+      include: "scope"
+    groups:
+      e2e-test-deps:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "testing"
+
+  # Framework docs
+  - package-ecosystem: "npm"
+    directory: "/apps/framework-docs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: "npm(docs)"
+      include: "scope"
+    groups:
+      docs-deps:
+        patterns:
+          - "next"
+          - "next*"
+          - "react"
+          - "react-dom"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "documentation"
+
+  # Framework docs v2
+  - package-ecosystem: "npm"
+    directory: "/apps/framework-docs-v2"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: "npm(docs-v2)"
+      include: "scope"
+    groups:
+      docs-v2-deps:
+        patterns:
+          - "next"
+          - "next*"
+          - "react"
+          - "react-dom"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "documentation"
+
+  # Moose CLI NPM wrapper
+  - package-ecosystem: "npm"
+    directory: "/apps/moose-cli-npm"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    versioning-strategy: increase
+    commit-message:
+      prefix: "npm(moose-cli)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "moose-cli"
+
+  # Create Moose App
+  - package-ecosystem: "npm"
+    directory: "/apps/create-moose-app"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    versioning-strategy: increase
+    commit-message:
+      prefix: "npm(create-app)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "create-app"
+
+  # TypeScript Moose Lib
+  - package-ecosystem: "npm"
+    directory: "/packages/ts-moose-lib"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: "npm(ts-lib)"
+      include: "scope"
+    groups:
+      ts-moose-lib-deps:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "typescript"
+      - "library"
+
+  # Cargo - Rust workspace
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "cargo"
+      include: "scope"
+    groups:
+      # Group async runtime dependencies
+      tokio-deps:
+        patterns:
+          - "tokio*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group serialization dependencies
+      serde-deps:
+        patterns:
+          - "serde*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group HTTP/web dependencies
+      web-deps:
+        patterns:
+          - "axum*"
+          - "hyper*"
+          - "reqwest*"
+          - "tower*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group CLI dependencies
+      cli-deps:
+        patterns:
+          - "clap*"
+          - "console*"
+          - "dialoguer*"
+          - "indicatif*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group other dependencies
+      rust-minor-patches:
+        update-types:
+          - "patch"
+    labels:
+      - "dependencies"
+      - "rust"
+
+  # Python - Framework CLI
+  - package-ecosystem: "pip"
+    directory: "/apps/framework-cli"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: "pip"
+      include: "scope"
+    groups:
+      python-deps:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      github-actions:
+        patterns:
+          - "actions/*"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci"
+
