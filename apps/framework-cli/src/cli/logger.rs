@@ -33,6 +33,14 @@
 //! - **Modern Format** (opt-in): Uses tracing-subscriber's native formatting
 //!   - Enable via `MOOSE_LOGGER__USE_TRACING_FORMAT=true`
 //!
+//! ### Log Message Sanitization
+//! All log messages are automatically sanitized before output:
+//! - **Newlines removed**: Multi-line messages become single-line (newlines → spaces)
+//! - **Whitespace normalized**: Multiple consecutive spaces collapsed to one
+//!
+//! This minimal sanitization ensures logs are parseable by CSV exporters and log analysis tools,
+//! while preserving all structured field data (span fields, key=value pairs) and message content.
+//!
 //! ### Additional Features
 //! - **Date-based file rotation**: Daily log files in `~/.moose/YYYY-MM-DD-cli.log`
 //! - **Automatic cleanup**: Deletes logs older than 7 days
@@ -96,6 +104,22 @@ use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
 
 use super::settings::user_directory;
+use regex::Regex;
+
+/// Sanitizes log messages by:
+/// 1. Replacing newlines (\\n, \\r\\n) with single spaces
+/// 2. Collapsing multiple consecutive spaces into one
+///
+/// This ensures all log messages are single-line and parseable by CSV exporters
+/// and log analysis tools, while preserving all structured field data.
+fn sanitize_message(message: &str) -> String {
+    // Replace all newlines with spaces
+    let without_newlines = message.replace("\r\n", " ").replace('\n', " ");
+
+    // Collapse multiple spaces
+    let re = Regex::new(r"\s+").unwrap();
+    re.replace_all(&without_newlines, " ").trim().to_string()
+}
 
 /// Default date format for log file names: YYYY-MM-DD-cli.log
 pub const DEFAULT_LOG_FILE_FORMAT: &str = "%Y-%m-%d-cli.log";
@@ -324,9 +348,11 @@ impl LegacyFormatter for TextFormatter {
             write!(writer, "] ")?;
         }
 
-        // Write message directly without intermediate String
-        let mut visitor = DirectWriteVisitor { writer };
-        event.record(&mut visitor);
+        // Extract and sanitize message
+        let mut message_visitor = MessageVisitor::default();
+        event.record(&mut message_visitor);
+        let sanitized = sanitize_message(&message_visitor.message);
+        let _ = writer.write_all(sanitized.as_bytes());
 
         writeln!(writer)
     }
@@ -360,16 +386,17 @@ impl LegacyFormatter for JsonFormatter {
         event: &Event<'_>,
         span_fields: &HashMap<String, String>,
     ) -> std::io::Result<()> {
-        // Extract message first since it appears in the middle of the JSON object
+        // Extract and sanitize message
         let mut message_visitor = MessageVisitor::default();
         event.record(&mut message_visitor);
+        let sanitized_message = sanitize_message(&message_visitor.message);
 
         // Build JSON object - serde_json handles escaping correctly
         let mut log_entry = serde_json::json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "severity": level.to_string(),
             "target": target,
-            "message": message_visitor.message,
+            "message": sanitized_message,
         });
 
         if self.include_session_id {
@@ -463,28 +490,6 @@ where
             event,
             &span_fields,
         );
-    }
-}
-
-/// Visitor that writes the message field directly to a writer, avoiding intermediate allocation.
-///
-/// For string messages (the common case), writes directly without any allocation.
-/// For debug-formatted messages, uses a small stack buffer to strip surrounding quotes.
-struct DirectWriteVisitor<'a, W> {
-    writer: &'a mut W,
-}
-
-impl<W: Write> Visit for DirectWriteVisitor<'_, W> {
-    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        if field.name() == "message" {
-            let _ = write!(self.writer, "{:?}", value);
-        }
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "message" {
-            let _ = self.writer.write_all(value.as_bytes());
-        }
     }
 }
 
@@ -718,5 +723,74 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .with(legacy_layer)
                 .init();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_newlines() {
+        // Single newline
+        assert_eq!(sanitize_message("line1\nline2"), "line1 line2");
+
+        // CRLF
+        assert_eq!(sanitize_message("line1\r\nline2"), "line1 line2");
+
+        // Multiple consecutive newlines
+        assert_eq!(sanitize_message("line1\n\n\nline2"), "line1 line2");
+
+        // Multiple spaces after newline replacement
+        assert_eq!(sanitize_message("line1\n \nline2"), "line1 line2");
+
+        // Already single-line
+        assert_eq!(sanitize_message("single line"), "single line");
+    }
+
+    #[test]
+    fn test_sanitize_whitespace() {
+        // Multiple spaces
+        assert_eq!(sanitize_message("word1   word2"), "word1 word2");
+
+        // Tabs and spaces
+        assert_eq!(sanitize_message("word1\t\tword2"), "word1 word2");
+
+        // Leading/trailing whitespace
+        assert_eq!(sanitize_message("  trimmed  "), "trimmed");
+
+        // Mixed whitespace
+        assert_eq!(sanitize_message("  a\t\nb  "), "a b");
+    }
+
+    #[test]
+    fn test_preserves_content() {
+        // Emojis are preserved (no longer removed)
+        assert_eq!(sanitize_message("🔔 Notification"), "🔔 Notification");
+
+        // JSON structure is preserved (no longer compacted)
+        let multiline_json = r#"{
+  "message": "test"
+}"#;
+        let result = sanitize_message(multiline_json);
+        assert!(!result.contains('\n'));
+        assert!(result.contains("message"));
+        assert!(result.contains("test"));
+        // Preserves original formatting (spaces after colons)
+        assert!(result.contains(": "));
+    }
+
+    #[test]
+    fn test_preserves_normal_messages() {
+        let input = "Normal log message without special characters";
+        let result = sanitize_message(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_empty_and_whitespace() {
+        assert_eq!(sanitize_message(""), "");
+        assert_eq!(sanitize_message("   "), "");
+        assert_eq!(sanitize_message("\n\n\n"), "");
     }
 }

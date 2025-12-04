@@ -2515,21 +2515,21 @@ impl Webserver {
 
         tokio::spawn(async move {
             while let Some(webapp_change) = rx.recv().await {
-                tracing::info!("🔔 Received WebApp change: {:?}", webapp_change);
+                tracing::info!("Received WebApp change: {:?}", webapp_change);
                 match webapp_change {
                     crate::framework::core::infrastructure_map::WebAppChange::WebApp(
                         crate::framework::core::infrastructure_map::Change::Added(webapp),
                     ) => {
                         tracing::info!("Adding WebApp mount path: {:?}", webapp.mount_path);
                         web_apps.write().await.insert(webapp.mount_path.clone());
-                        tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                        tracing::info!("Current web_apps: {:?}", *web_apps.read().await);
                     }
                     crate::framework::core::infrastructure_map::WebAppChange::WebApp(
                         crate::framework::core::infrastructure_map::Change::Removed(webapp),
                     ) => {
                         tracing::info!("Removing WebApp mount path: {:?}", webapp.mount_path);
                         web_apps.write().await.remove(&webapp.mount_path);
-                        tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                        tracing::info!("Current web_apps: {:?}", *web_apps.read().await);
                     }
                     crate::framework::core::infrastructure_map::WebAppChange::WebApp(
                         crate::framework::core::infrastructure_map::Change::Updated {
@@ -2546,7 +2546,7 @@ impl Webserver {
                         web_apps_guard.remove(&before.mount_path);
                         web_apps_guard.insert(after.mount_path.clone());
                         drop(web_apps_guard);
-                        tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                        tracing::info!("Current web_apps: {:?}", *web_apps.read().await);
                     }
                 }
             }
@@ -2977,11 +2977,11 @@ async fn shutdown(
 
         match result {
             Ok(0) => {
-                info!("✅ All Kafka clients destroyed successfully");
+                info!("All Kafka clients destroyed successfully");
             }
             Ok(n) => {
                 warn!(
-                    "⚠️ {} Kafka client(s) still not fully destroyed after {}ms timeout",
+                    "{} Kafka client(s) still not fully destroyed after {}ms timeout",
                     n, KAFKA_CLIENT_DESTROY_TIMEOUT_MS
                 );
             }
