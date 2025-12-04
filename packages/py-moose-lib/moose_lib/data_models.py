@@ -533,10 +533,15 @@ def py_type_to_column_type(t: type, mds: list[Any]) -> Tuple[bool, list[Any], Da
     elif get_origin(t) is dict:
         args = get_args(t)
         if len(args) == 2:
-            key_optional, _, key_type = py_type_to_column_type(args[0], [])
-            value_optional, _, value_type = py_type_to_column_type(args[1], [])
-            # For dict types, we assume keys are required and values match their type
-            data_type = MapType(key_type=key_type, value_type=value_type)
+            # Special case: dict[str, Any] should be JSON type (matches TypeScript's Record<string, any>)
+            # This is useful for storing arbitrary extra fields in a JSON column
+            if args[0] is str and args[1] is Any:
+                data_type = "Json"
+            else:
+                key_optional, _, key_type = py_type_to_column_type(args[0], [])
+                value_optional, _, value_type = py_type_to_column_type(args[1], [])
+                # For dict types, we assume keys are required and values match their type
+                data_type = MapType(key_type=key_type, value_type=value_type)
         else:
             raise ValueError(
                 f"Dict type must have exactly 2 type arguments, got {len(args)}"
