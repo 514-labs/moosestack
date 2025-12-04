@@ -22,6 +22,8 @@ class ClickHouseEngines(Enum):
     ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
     ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
     ReplicatedSummingMergeTree = "ReplicatedSummingMergeTree"
+    ReplicatedCollapsingMergeTree = "ReplicatedCollapsingMergeTree"
+    ReplicatedVersionedCollapsingMergeTree = "ReplicatedVersionedCollapsingMergeTree"
 
 # ==========================
 # New Engine Configuration Classes
