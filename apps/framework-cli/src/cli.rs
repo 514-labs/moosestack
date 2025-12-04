@@ -132,8 +132,9 @@ pub fn prompt_user(
     long_about = "Moose is a framework for building data-intensive applications.
 
 Get started:
-  moose init <name> <template|language>    Initialize a new Moose project
-                                           (template can be 'python', 'typescript', or template name)
+  moose init <name> [template]            Initialize a new Moose project
+                                           (template: 'python', 'typescript', 'python-empty', etc.)
+                                           Use 'moose template list' to see all templates
   moose init <name> --from-remote <url>    Initialize from existing ClickHouse database
                                            --language <python|typescript> (required with --from-remote)
   moose template list                      List available templates

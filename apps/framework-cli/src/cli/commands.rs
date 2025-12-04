@@ -13,9 +13,10 @@ pub enum Commands {
         /// Name of your app or service
         name: String,
 
-        /// Template or language to use for the project
-        /// Can be a template name (e.g., "python-empty", "typescript-empty") or a language name (e.g., "python", "typescript")
-        #[arg(conflicts_with = "from_remote", value_name = "TEMPLATE|LANGUAGE")]
+        /// Template to use for the project
+        /// Can be a template name (e.g., "python", "typescript", "python-empty", "typescript-empty", "python-fastapi")
+        /// Use "moose template list" to see all available templates
+        #[arg(conflicts_with = "from_remote", value_name = "TEMPLATE")]
         template: Option<String>,
 
         /// Location of your app or service

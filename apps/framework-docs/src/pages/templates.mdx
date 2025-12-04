@@ -17,27 +17,35 @@ Templates are pre-configured Moose applications that help you get started with y
 To get started with a template, run:
 
 ```bash copy
-moose init <your-project-name> [template-name|language]
+moose init <your-project-name> [template-name]
 ```
 
 The template name can be:
-- A specific template (e.g., `typescript-empty`, `python-fastapi`)
-- A language name (e.g., `python`, `typescript`) which uses the default empty template for that language
-- Omitted entirely (you'll be prompted to select a language)
+- A specific template name (e.g., `python`, `typescript`, `python-empty`, `typescript-empty`, `python-fastapi`)
+- Omitted entirely (you'll be prompted to select a language, which will use the empty template for that language)
+
+**Understanding Templates:**
+- **`python`** and **`typescript`** are bootstrapped templates with example components (recommended for getting started)
+- **`python-empty`** and **`typescript-empty`** are minimal templates with no example code
+- Other templates like **`python-fastapi`**, **`typescript-express`** include specific framework integrations
 
 **Examples:**
 ```bash
-# Using a language name (recommended for getting started)
-moose init my-app python
-moose init my-app typescript
+# Using bootstrapped templates (recommended for getting started)
+moose init my-app python          # Python with example components
+moose init my-app typescript      # TypeScript with example components
 
-# Using a specific template
-moose init my-app typescript-empty
+# Using empty templates
+moose init my-app python-empty    # Minimal Python project
+moose init my-app typescript-empty # Minimal TypeScript project
+
+# Using framework-specific templates
 moose init my-app python-fastapi
+moose init my-app typescript-express
 ```
 
 ### View List of Templates
-Run this command to see a list of available templates (and supported languages):
+Run this command to see all available templates:
 ```bash copy
 moose template list
 ```
