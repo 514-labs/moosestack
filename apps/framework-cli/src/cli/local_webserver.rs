@@ -3561,6 +3561,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,

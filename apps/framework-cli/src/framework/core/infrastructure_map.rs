@@ -54,9 +54,11 @@ use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
 use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
+use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
+use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
 use anyhow::{Context, Result};
 use protobuf::{EnumOrUnknown, Message as ProtoMessage};
 use serde::{Deserialize, Serialize};
@@ -2277,6 +2279,7 @@ impl InfrastructureMap {
             }
 
             // Resolve runtime environment variables in table_settings (e.g., Kafka security settings)
+            let mut settings_changed = false;
             if let Some(ref mut settings) = table.table_settings {
                 for (key, value) in settings.iter_mut() {
                     let resolved_value = resolve_optional_runtime_env(&Some(value.clone()))
@@ -2290,6 +2293,7 @@ impl InfrastructureMap {
                     if let Some(new_value) = resolved_value {
                         if new_value != *value {
                             *value = new_value;
+                            settings_changed = true;
                             tracing::debug!(
                                 "Resolved setting '{}' for table '{}' from runtime environment",
                                 key,
@@ -2298,6 +2302,15 @@ impl InfrastructureMap {
                         }
                     }
                 }
+            }
+
+            // Recalculate table_settings_hash after resolving credentials (same as engine_params_hash)
+            if settings_changed {
+                table.table_settings_hash = table.compute_table_settings_hash();
+                tracing::debug!(
+                    "Recalculated table_settings_hash for table '{}' after credential resolution",
+                    table.name
+                );
             }
         }
 
@@ -2576,6 +2589,50 @@ impl InfrastructureMap {
         self
     }
 
+    /// Masks sensitive credentials before exporting to JSON migration files.
+    /// Omits engine credentials (S3, S3Queue, IcebergS3) and table setting credentials (Kafka).
+    /// This ensures migration files are safe to commit to version control.
+    pub fn mask_credentials_for_json_export(mut self) -> Self {
+        for table in self.tables.values_mut() {
+            match &mut table.engine {
+                ClickhouseEngine::S3Queue {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                }
+                | ClickhouseEngine::S3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                }
+                | ClickhouseEngine::IcebergS3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    if aws_access_key_id.is_some() {
+                        *aws_access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                    }
+                    if aws_secret_access_key.is_some() {
+                        *aws_secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                    }
+                }
+                _ => {}
+            }
+
+            // Mask engine-specific sensitive settings (e.g., Kafka credentials)
+            if let Some(ref mut settings) = table.table_settings {
+                for key in table.engine.sensitive_settings() {
+                    if let Some(value) = settings.get_mut(*key) {
+                        *value = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
+                }
+            }
+        }
+
+        self
+    }
+
     /// Adds a topic to the infrastructure map
     ///
     /// # Arguments
@@ -2588,7 +2645,7 @@ impl InfrastructureMap {
     ///
     /// # Arguments
     /// * `project` - The project to load the infrastructure map from
-    /// * `resolve_credentials` - Whether to resolve S3 credentials from environment variables.
+    /// * `resolve_credentials` - Whether to resolve credentials from environment variables.
     ///   Set to `false` for build-time operations like `moose check` to avoid baking credentials
     ///   into Docker images. Set to `true` for runtime operations that need to interact with infrastructure.
     ///
@@ -3000,21 +3057,25 @@ impl serde::Serialize for InfrastructureMap {
             web_apps: &'a HashMap<String, super::infrastructure::web_app::WebApp>,
         }
 
+        // Mask credentials before serialization (for JSON migration files)
+        // This is done automatically in the Serialize impl so all JSON exports are safe
+        let masked_inframap = self.clone().mask_credentials_for_json_export();
+
         let shadow_map = InfrastructureMapForSerialization {
-            default_database: Some(&self.default_database),
-            topics: &self.topics,
-            api_endpoints: &self.api_endpoints,
-            tables: &self.tables,
-            views: &self.views,
-            topic_to_table_sync_processes: &self.topic_to_table_sync_processes,
-            topic_to_topic_sync_processes: &self.topic_to_topic_sync_processes,
-            function_processes: &self.function_processes,
-            block_db_processes: &self.block_db_processes,
-            consumption_api_web_server: &self.consumption_api_web_server,
-            orchestration_workers: &self.orchestration_workers,
-            sql_resources: &self.sql_resources,
-            workflows: &self.workflows,
-            web_apps: &self.web_apps,
+            default_database: Some(&masked_inframap.default_database),
+            topics: &masked_inframap.topics,
+            api_endpoints: &masked_inframap.api_endpoints,
+            tables: &masked_inframap.tables,
+            views: &masked_inframap.views,
+            topic_to_table_sync_processes: &masked_inframap.topic_to_table_sync_processes,
+            topic_to_topic_sync_processes: &masked_inframap.topic_to_topic_sync_processes,
+            function_processes: &masked_inframap.function_processes,
+            block_db_processes: &masked_inframap.block_db_processes,
+            consumption_api_web_server: &masked_inframap.consumption_api_web_server,
+            orchestration_workers: &masked_inframap.orchestration_workers,
+            sql_resources: &masked_inframap.sql_resources,
+            workflows: &masked_inframap.workflows,
+            web_apps: &masked_inframap.web_apps,
         };
 
         // Serialize to JSON value, sort keys, then serialize that
@@ -3099,6 +3160,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -3162,6 +3224,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -3347,6 +3410,7 @@ mod diff_tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -6170,5 +6234,100 @@ mod diff_orchestration_worker_tests {
 
         assert!(removed_found, "Python worker removal not detected");
         assert!(added_found, "Typescript worker addition not detected");
+    }
+
+    #[test]
+    fn test_mask_credentials_for_json_export() {
+        let mut map = InfrastructureMap::default();
+
+        // Add S3Queue table with credentials
+        let s3queue_table = Table {
+            name: "s3queue_test".to_string(),
+            engine: ClickhouseEngine::S3Queue {
+                s3_path: "s3://bucket/path".to_string(),
+                format: "JSONEachRow".to_string(),
+                compression: None,
+                headers: None,
+                aws_access_key_id: Some("AKIAIOSFODNN7EXAMPLE".to_string()),
+                aws_secret_access_key: Some("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string()),
+            },
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            version: None,
+            table_settings: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            indexes: vec![],
+            metadata: None,
+            source_primitive: PrimitiveSignature {
+                name: "s3queue_test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            life_cycle: LifeCycle::FullyManaged,
+            database: None,
+        };
+
+        let mut kafka_settings = std::collections::HashMap::new();
+        kafka_settings.insert("kafka_sasl_password".to_string(), "secret123".to_string());
+        kafka_settings.insert("kafka_sasl_username".to_string(), "user".to_string());
+        kafka_settings.insert("kafka_num_consumers".to_string(), "2".to_string());
+
+        let kafka_table = Table {
+            name: "kafka_test".to_string(),
+            engine: ClickhouseEngine::Kafka {
+                broker_list: "kafka:9092".to_string(),
+                topic_list: "events".to_string(),
+                group_name: "consumer".to_string(),
+                format: "JSONEachRow".to_string(),
+            },
+            columns: vec![],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            version: None,
+            table_settings: Some(kafka_settings),
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            indexes: vec![],
+            metadata: None,
+            source_primitive: PrimitiveSignature {
+                name: "kafka_test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            life_cycle: LifeCycle::FullyManaged,
+            database: None,
+        };
+
+        map.tables.insert("s3queue_test".to_string(), s3queue_table);
+        map.tables.insert("kafka_test".to_string(), kafka_table);
+
+        let masked_map = map.mask_credentials_for_json_export();
+
+        let s3queue = masked_map.tables.get("s3queue_test").unwrap();
+        if let ClickhouseEngine::S3Queue {
+            aws_access_key_id,
+            aws_secret_access_key,
+            ..
+        } = &s3queue.engine
+        {
+            assert_eq!(aws_access_key_id.as_deref(), Some("[HIDDEN]"));
+            assert_eq!(aws_secret_access_key.as_deref(), Some("[HIDDEN]"));
+        } else {
+            panic!("Expected S3Queue engine");
+        }
+
+        let kafka = masked_map.tables.get("kafka_test").unwrap();
+        let settings = kafka.table_settings.as_ref().unwrap();
+        assert_eq!(settings.get("kafka_sasl_password").unwrap(), "[HIDDEN]");
+        assert_eq!(settings.get("kafka_sasl_username").unwrap(), "[HIDDEN]");
+        assert_eq!(settings.get("kafka_num_consumers").unwrap(), "2");
     }
 }

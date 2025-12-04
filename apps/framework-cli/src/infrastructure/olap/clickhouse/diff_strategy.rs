@@ -577,45 +577,24 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
         let mut changes = Vec::new();
 
-        // Helper function to compare table_settings treating [HIDDEN] as a wildcard
-        // [HIDDEN] appears when:
-        // 1. ClickHouse returns it for credential values in SHOW CREATE TABLE
-        // 2. Generated code contains literal "[HIDDEN]" when we don't know the real value
-        // In both cases, we should treat [HIDDEN] as matching any value to avoid false positives
-        let settings_changed = |before_settings: &Option<HashMap<String, String>>,
-                                after_settings: &Option<HashMap<String, String>>|
-         -> bool {
-            match (before_settings, after_settings) {
+        // Compare table_settings using hashes when available (for tables with sensitive settings).
+        // This allows detecting actual changes without comparing masked credential values.
+        let settings_changed = || -> bool {
+            if let (Some(before_hash), Some(after_hash)) =
+                (&before.table_settings_hash, &after.table_settings_hash)
+            {
+                return before_hash != after_hash;
+            }
+
+            match (&before.table_settings, &after.table_settings) {
                 (None, None) => false,
                 (None, Some(map)) | (Some(map), None) => !map.is_empty(),
-                (Some(before_map), Some(after_map)) => {
-                    // Check if keys differ
-                    if before_map.keys().collect::<std::collections::HashSet<_>>()
-                        != after_map.keys().collect::<std::collections::HashSet<_>>()
-                    {
-                        return true;
-                    }
-
-                    // Check if any non-[HIDDEN] values differ
-                    for (key, before_value) in before_map {
-                        if let Some(after_value) = after_map.get(key) {
-                            // If either side is [HIDDEN], treat as matching (wildcard)
-                            if before_value != "[HIDDEN]" && after_value != "[HIDDEN]" {
-                                // Both are real values, compare them
-                                if before_value != after_value {
-                                    return true;
-                                }
-                            }
-                            // If either is [HIDDEN], skip comparison (treat as matching)
-                        }
-                    }
-                    false
-                }
+                (Some(before_map), Some(after_map)) => before_map != after_map,
             }
         };
 
         // Check if only table settings have changed
-        if settings_changed(&before.table_settings, &after.table_settings) {
+        if settings_changed() {
             // List of readonly settings that cannot be modified after table creation
             // Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
             const READONLY_SETTINGS: &[(&str, &str)] = &[
@@ -798,6 +777,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1610,6 +1590,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: Some(table_settings),
             indexes: vec![],
             database: None,
@@ -2321,22 +2302,18 @@ mod tests {
     }
 
     #[test]
-    fn test_settings_changed_hidden_wildcard() {
-        // This tests the core fix for [HIDDEN] false positives
-        // ClickHouse returns [HIDDEN] for sensitive values in SHOW CREATE TABLE
-        // We should treat [HIDDEN] as a wildcard that matches any value
-
-        use std::collections::HashMap;
-
+    fn test_settings_change_detected() {
         let strategy = ClickHouseTableDiffStrategy;
 
         let mut before = create_test_table("test", vec!["id".to_string()], false);
         let mut after = create_test_table("test", vec!["id".to_string()], false);
 
-        // Scenario: ClickHouse returns [HIDDEN] for password, code has actual value
-        // This should NOT trigger a change (no false positive)
+        // Scenario: password changed
         let mut before_settings = HashMap::new();
-        before_settings.insert("kafka_sasl_password".to_string(), "[HIDDEN]".to_string());
+        before_settings.insert(
+            "kafka_sasl_password".to_string(),
+            "old_password".to_string(),
+        );
         before_settings.insert("kafka_num_consumers".to_string(), "2".to_string());
         before.table_settings = Some(before_settings);
         before.engine = ClickhouseEngine::Kafka {
@@ -2349,7 +2326,7 @@ mod tests {
         let mut after_settings = HashMap::new();
         after_settings.insert(
             "kafka_sasl_password".to_string(),
-            "actual_password".to_string(),
+            "new_password".to_string(),
         );
         after_settings.insert("kafka_num_consumers".to_string(), "2".to_string());
         after.table_settings = Some(after_settings);
@@ -2379,11 +2356,11 @@ mod tests {
             "local",
         );
 
-        // Should NOT trigger any changes - [HIDDEN] matches any value
+        // Kafka doesn't support ALTER TABLE MODIFY SETTING, so settings change = drop+create
         assert_eq!(
             changes.len(),
-            0,
-            "[HIDDEN] should match any value (no false positive)"
+            2,
+            "Settings change should trigger drop+create for Kafka"
         );
     }
 

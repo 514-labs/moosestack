@@ -170,6 +170,10 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // that might have authentication parameters.
                         table.engine_params_hash = infra_map_table.engine_params_hash.clone();
 
+                        // Keep the table_settings_hash from the infra map for engines with sensitive settings
+                        // (e.g., Kafka). ClickHouse returns [HIDDEN] for credentials in table_settings.
+                        table.table_settings_hash = infra_map_table.table_settings_hash.clone();
+
                         // Keep the cluster_name from the infra map because it cannot be reliably detected
                         // from ClickHouse's system tables. The ON CLUSTER clause is only used during
                         // DDL execution and is not stored in the table schema. While it appears in
@@ -532,6 +536,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,

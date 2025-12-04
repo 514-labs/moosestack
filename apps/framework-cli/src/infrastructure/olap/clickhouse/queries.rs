@@ -1200,6 +1200,15 @@ impl ClickhouseEngine {
         self.is_merge_tree_family() || matches!(self, ClickhouseEngine::S3 { .. })
     }
 
+    /// Returns table setting keys that contain sensitive credentials for this engine.
+    /// Used for masking credentials in stored state and migration files.
+    pub fn sensitive_settings(&self) -> &'static [&'static str] {
+        match self {
+            ClickhouseEngine::Kafka { .. } => &["kafka_sasl_password", "kafka_sasl_username"],
+            _ => &[],
+        }
+    }
+
     /// Convert engine to string for proto storage (no sensitive data)
     pub fn to_proto_string(&self) -> String {
         match self {

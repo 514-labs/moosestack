@@ -760,14 +760,20 @@ impl PartialInfrastructureMap {
                     table_settings: if table_settings.is_empty() {
                         None
                     } else {
-                        Some(table_settings)
+                        Some(table_settings.clone())
                     },
+                    table_settings_hash: None, // Will be computed below
                     indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),
                     primary_key_expression: partial_table.primary_key_expression.clone(),
                 };
+
+                // Compute table_settings_hash for change detection
+                let mut table = table;
+                table.table_settings_hash = table.compute_table_settings_hash();
+
                 Ok((table.id(default_database), table))
             })
             .collect()

@@ -1116,6 +1116,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1217,6 +1218,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1349,6 +1351,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1429,6 +1432,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: Some(
                 vec![("mode".to_string(), "unordered".to_string())]
                     .into_iter()
@@ -1484,6 +1488,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: Some(
                 vec![
                     ("index_granularity".to_string(), "4096".to_string()),
@@ -1570,6 +1575,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1649,6 +1655,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1739,6 +1746,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1787,6 +1795,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![
                 crate::framework::core::infrastructure::table::TableIndex {
@@ -1878,6 +1887,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
@@ -1934,6 +1944,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: Some("analytics_db".to_string()),

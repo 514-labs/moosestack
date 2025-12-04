@@ -2090,6 +2090,7 @@ impl OlapOperations for ConfiguredDBClient {
                 // this does not matter as we refer to the lifecycle in infra map
                 life_cycle: LifeCycle::ExternallyManaged,
                 engine_params_hash,
+                table_settings_hash: None,
                 table_settings,
                 indexes,
                 database: Some(database),
@@ -3634,6 +3635,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             metadata: None,
             life_cycle: LifeCycle::default_for_deserialization(),
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -3703,6 +3705,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             metadata: None,
             life_cycle: LifeCycle::default_for_deserialization(),
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
