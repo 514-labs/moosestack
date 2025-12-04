@@ -33,6 +33,14 @@
 //! - **Modern Format** (opt-in): Uses tracing-subscriber's native formatting
 //!   - Enable via `MOOSE_LOGGER__USE_TRACING_FORMAT=true`
 //!
+//! ### Log Message Sanitization
+//! All log messages are automatically sanitized before output:
+//! - **Newlines removed**: Multi-line messages become single-line (newlines → spaces)
+//! - **Whitespace normalized**: Multiple consecutive spaces collapsed to one
+//!
+//! This minimal sanitization ensures logs are parseable by CSV exporters and log analysis tools,
+//! while preserving all structured field data (span fields, key=value pairs) and message content.
+//!
 //! ### Additional Features
 //! - **Date-based file rotation**: Daily log files in `~/.moose/YYYY-MM-DD-cli.log`
 //! - **Automatic cleanup**: Deletes logs older than 7 days
@@ -78,6 +86,7 @@
 //! via environment variable once downstream consumers are ready.
 
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::io::Write;
@@ -95,6 +104,22 @@ use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
 
 use super::settings::user_directory;
+use regex::Regex;
+
+/// Sanitizes log messages by:
+/// 1. Replacing newlines (\\n, \\r\\n) with single spaces
+/// 2. Collapsing multiple consecutive spaces into one
+///
+/// This ensures all log messages are single-line and parseable by CSV exporters
+/// and log analysis tools, while preserving all structured field data.
+fn sanitize_message(message: &str) -> String {
+    // Replace all newlines with spaces
+    let without_newlines = message.replace("\r\n", " ").replace('\n', " ");
+
+    // Collapse multiple spaces
+    let re = Regex::new(r"\s+").unwrap();
+    re.replace_all(&without_newlines, " ").trim().to_string()
+}
 
 /// Default date format for log file names: YYYY-MM-DD-cli.log
 pub const DEFAULT_LOG_FILE_FORMAT: &str = "%Y-%m-%d-cli.log";
@@ -148,6 +173,9 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_no_ansi")]
     pub no_ansi: bool,
+
+    #[serde(default = "default_include_span_fields")]
+    pub include_span_fields: bool,
 }
 
 fn default_log_file() -> String {
@@ -181,6 +209,13 @@ fn default_no_ansi() -> bool {
     false // ANSI colors enabled by default
 }
 
+fn default_include_span_fields() -> bool {
+    env::var("MOOSE_LOGGER__INCLUDE_SPAN_FIELDS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(false)
+}
+
 impl Default for LoggerSettings {
     fn default() -> Self {
         LoggerSettings {
@@ -191,6 +226,7 @@ impl Default for LoggerSettings {
             include_session_id: default_include_session_id(),
             use_tracing_format: default_use_tracing_format(),
             no_ansi: default_no_ansi(),
+            include_span_fields: default_include_span_fields(),
         }
     }
 }
@@ -252,6 +288,7 @@ trait LegacyFormatter {
         level: &Level,
         target: &str,
         event: &Event<'_>,
+        span_fields: &HashMap<String, String>,
     ) -> std::io::Result<()>;
 }
 
@@ -260,13 +297,15 @@ trait LegacyFormatter {
 struct TextFormatter {
     include_session_id: bool,
     session_id: String,
+    include_span_fields: bool,
 }
 
 impl TextFormatter {
-    fn new(include_session_id: bool, session_id: String) -> Self {
+    fn new(include_session_id: bool, session_id: String, include_span_fields: bool) -> Self {
         Self {
             include_session_id,
             session_id,
+            include_span_fields,
         }
     }
 }
@@ -279,6 +318,7 @@ impl LegacyFormatter for TextFormatter {
         level: &Level,
         target: &str,
         event: &Event<'_>,
+        span_fields: &HashMap<String, String>,
     ) -> std::io::Result<()> {
         // Write prefix: [timestamp LEVEL - target]
         write!(
@@ -294,9 +334,25 @@ impl LegacyFormatter for TextFormatter {
 
         write!(writer, " - {}] ", target)?;
 
-        // Write message directly without intermediate String
-        let mut visitor = DirectWriteVisitor { writer };
-        event.record(&mut visitor);
+        // Write span fields if enabled
+        if self.include_span_fields && !span_fields.is_empty() {
+            write!(writer, "[")?;
+            let mut first = true;
+            for (key, value) in span_fields {
+                if !first {
+                    write!(writer, " ")?;
+                }
+                write!(writer, "{}={}", key, value)?;
+                first = false;
+            }
+            write!(writer, "] ")?;
+        }
+
+        // Extract and sanitize message
+        let mut message_visitor = MessageVisitor::default();
+        event.record(&mut message_visitor);
+        let sanitized = sanitize_message(&message_visitor.message);
+        let _ = writer.write_all(sanitized.as_bytes());
 
         writeln!(writer)
     }
@@ -307,13 +363,15 @@ impl LegacyFormatter for TextFormatter {
 struct JsonFormatter {
     include_session_id: bool,
     session_id: String,
+    include_span_fields: bool,
 }
 
 impl JsonFormatter {
-    fn new(include_session_id: bool, session_id: String) -> Self {
+    fn new(include_session_id: bool, session_id: String, include_span_fields: bool) -> Self {
         Self {
             include_session_id,
             session_id,
+            include_span_fields,
         }
     }
 }
@@ -326,21 +384,30 @@ impl LegacyFormatter for JsonFormatter {
         level: &Level,
         target: &str,
         event: &Event<'_>,
+        span_fields: &HashMap<String, String>,
     ) -> std::io::Result<()> {
-        // Extract message first since it appears in the middle of the JSON object
+        // Extract and sanitize message
         let mut message_visitor = MessageVisitor::default();
         event.record(&mut message_visitor);
+        let sanitized_message = sanitize_message(&message_visitor.message);
 
         // Build JSON object - serde_json handles escaping correctly
         let mut log_entry = serde_json::json!({
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "severity": level.to_string(),
             "target": target,
-            "message": message_visitor.message,
+            "message": sanitized_message,
         });
 
         if self.include_session_id {
             log_entry["session_id"] = serde_json::Value::String(self.session_id.clone());
+        }
+
+        // Add span fields if enabled
+        if self.include_span_fields {
+            for (key, value) in span_fields {
+                log_entry[key] = serde_json::Value::String(value.clone());
+            }
         }
 
         serde_json::to_writer(&mut *writer, &log_entry).map_err(std::io::Error::other)?;
@@ -369,36 +436,60 @@ where
     W: for<'writer> MakeWriter<'writer> + 'static,
     F: LegacyFormatter + 'static,
 {
-    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+    fn on_new_span(
+        &self,
+        attrs: &tracing::span::Attributes<'_>,
+        id: &tracing::span::Id,
+        ctx: Context<'_, S>,
+    ) {
+        // Capture span fields at creation time and store in extensions
+        let span = ctx.span(id).expect("Span not found in on_new_span");
+        let mut fields = HashMap::new();
+        let mut visitor = SpanFieldsVisitor(&mut fields);
+        attrs.record(&mut visitor);
+
+        span.extensions_mut().insert(SpanFieldStorage(fields));
+    }
+
+    fn on_record(
+        &self,
+        id: &tracing::span::Id,
+        values: &tracing::span::Record<'_>,
+        ctx: Context<'_, S>,
+    ) {
+        // Handle additional field values recorded after span creation
+        let span = ctx.span(id).expect("Span not found in on_record");
+        let mut extensions = span.extensions_mut();
+
+        if let Some(storage) = extensions.get_mut::<SpanFieldStorage>() {
+            let mut visitor = SpanFieldsVisitor(&mut storage.0);
+            values.record(&mut visitor);
+        }
+    }
+
+    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let metadata = event.metadata();
         let mut writer = self.writer.make_writer();
 
+        // Collect span fields from all spans in the context
+        let mut span_fields = HashMap::new();
+        if let Some(scope) = ctx.event_scope(event) {
+            for span in scope.from_root() {
+                let extensions = span.extensions();
+                if let Some(storage) = extensions.get::<SpanFieldStorage>() {
+                    span_fields.extend(storage.0.clone());
+                }
+            }
+        }
+
         // Write directly to output, avoiding intermediate allocations
-        let _ = self
-            .formatter
-            .write_event(&mut writer, metadata.level(), metadata.target(), event);
-    }
-}
-
-/// Visitor that writes the message field directly to a writer, avoiding intermediate allocation.
-///
-/// For string messages (the common case), writes directly without any allocation.
-/// For debug-formatted messages, uses a small stack buffer to strip surrounding quotes.
-struct DirectWriteVisitor<'a, W> {
-    writer: &'a mut W,
-}
-
-impl<W: Write> Visit for DirectWriteVisitor<'_, W> {
-    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        if field.name() == "message" {
-            let _ = write!(self.writer, "{:?}", value);
-        }
-    }
-
-    fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "message" {
-            let _ = self.writer.write_all(value.as_bytes());
-        }
+        let _ = self.formatter.write_event(
+            &mut writer,
+            metadata.level(),
+            metadata.target(),
+            event,
+            &span_fields,
+        );
     }
 }
 
@@ -418,6 +509,52 @@ impl Visit for MessageVisitor {
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             self.message = value.to_string();
+        }
+    }
+}
+
+/// Storage for span fields in the span's extensions.
+/// This is stored once per span and accessed during event logging.
+#[derive(Debug, Clone)]
+struct SpanFieldStorage(HashMap<String, String>);
+
+/// Visitor that collects span fields (excluding "message") into a HashMap.
+struct SpanFieldsVisitor<'a>(&'a mut HashMap<String, String>);
+
+impl<'a> Visit for SpanFieldsVisitor<'a> {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0
+                .insert(field_name.to_string(), format!("{:?}", value));
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0.insert(field_name.to_string(), value.to_string());
+        }
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0.insert(field_name.to_string(), value.to_string());
+        }
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0.insert(field_name.to_string(), value.to_string());
+        }
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        let field_name = field.name();
+        if field_name != "message" {
+            self.0.insert(field_name.to_string(), value.to_string());
         }
     }
 }
@@ -537,7 +674,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
     // the format logic directly into on_event.
     match (&settings.format, settings.stdout) {
         (LogFormat::Text, true) => {
-            let formatter = TextFormatter::new(settings.include_session_id, session_id.to_string());
+            let formatter = TextFormatter::new(
+                settings.include_session_id,
+                session_id.to_string(),
+                settings.include_span_fields,
+            );
             let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
@@ -545,7 +686,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .init();
         }
         (LogFormat::Text, false) => {
-            let formatter = TextFormatter::new(settings.include_session_id, session_id.to_string());
+            let formatter = TextFormatter::new(
+                settings.include_session_id,
+                session_id.to_string(),
+                settings.include_span_fields,
+            );
             let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
             let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
             tracing_subscriber::registry()
@@ -554,7 +699,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .init();
         }
         (LogFormat::Json, true) => {
-            let formatter = JsonFormatter::new(settings.include_session_id, session_id.to_string());
+            let formatter = JsonFormatter::new(
+                settings.include_session_id,
+                session_id.to_string(),
+                settings.include_span_fields,
+            );
             let legacy_layer = LegacyFormatLayer::new(std::io::stdout, formatter);
             tracing_subscriber::registry()
                 .with(env_filter)
@@ -562,7 +711,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .init();
         }
         (LogFormat::Json, false) => {
-            let formatter = JsonFormatter::new(settings.include_session_id, session_id.to_string());
+            let formatter = JsonFormatter::new(
+                settings.include_session_id,
+                session_id.to_string(),
+                settings.include_span_fields,
+            );
             let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
             let legacy_layer = LegacyFormatLayer::new(file_appender, formatter);
             tracing_subscriber::registry()
@@ -570,5 +723,74 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .with(legacy_layer)
                 .init();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_newlines() {
+        // Single newline
+        assert_eq!(sanitize_message("line1\nline2"), "line1 line2");
+
+        // CRLF
+        assert_eq!(sanitize_message("line1\r\nline2"), "line1 line2");
+
+        // Multiple consecutive newlines
+        assert_eq!(sanitize_message("line1\n\n\nline2"), "line1 line2");
+
+        // Multiple spaces after newline replacement
+        assert_eq!(sanitize_message("line1\n \nline2"), "line1 line2");
+
+        // Already single-line
+        assert_eq!(sanitize_message("single line"), "single line");
+    }
+
+    #[test]
+    fn test_sanitize_whitespace() {
+        // Multiple spaces
+        assert_eq!(sanitize_message("word1   word2"), "word1 word2");
+
+        // Tabs and spaces
+        assert_eq!(sanitize_message("word1\t\tword2"), "word1 word2");
+
+        // Leading/trailing whitespace
+        assert_eq!(sanitize_message("  trimmed  "), "trimmed");
+
+        // Mixed whitespace
+        assert_eq!(sanitize_message("  a\t\nb  "), "a b");
+    }
+
+    #[test]
+    fn test_preserves_content() {
+        // Emojis are preserved (no longer removed)
+        assert_eq!(sanitize_message("🔔 Notification"), "🔔 Notification");
+
+        // JSON structure is preserved (no longer compacted)
+        let multiline_json = r#"{
+  "message": "test"
+}"#;
+        let result = sanitize_message(multiline_json);
+        assert!(!result.contains('\n'));
+        assert!(result.contains("message"));
+        assert!(result.contains("test"));
+        // Preserves original formatting (spaces after colons)
+        assert!(result.contains(": "));
+    }
+
+    #[test]
+    fn test_preserves_normal_messages() {
+        let input = "Normal log message without special characters";
+        let result = sanitize_message(input);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_empty_and_whitespace() {
+        assert_eq!(sanitize_message(""), "");
+        assert_eq!(sanitize_message("   "), "");
+        assert_eq!(sanitize_message("\n\n\n"), "");
     }
 }

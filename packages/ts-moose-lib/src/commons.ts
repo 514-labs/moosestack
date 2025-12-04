@@ -72,6 +72,14 @@ export const getClickhouseClient = ({
     password: password,
     database: database,
     application: "moose",
+    // Connection pool configuration for high load (100+ concurrent users)
+    max_open_connections: 50, // Increased from default 10 to handle 100 concurrent users
+    request_timeout: 60000, // 60s timeout for complex queries
+    connect_timeout: 10000, // 10s connection timeout
+    keep_alive: {
+      enabled: true,
+      idle_socket_ttl: 2000, // 2s idle time (lower than default to prevent socket hang-ups)
+    },
     // Note: wait_end_of_query is configured per operation type, not globally
     // to preserve SELECT query performance while ensuring INSERT/DDL reliability
   });
