@@ -46,6 +46,8 @@ const MAX_RETRIES_CONSUMER = 150;
 const SESSION_TIMEOUT_CONSUMER = 30000;
 const HEARTBEAT_INTERVAL_CONSUMER = 3000;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
+// Max messages per eachBatch call - Confluent client defaults to 32, increase for throughput
+const CONSUMER_MAX_BATCH_SIZE = 1000;
 
 /**
  * Data structure for metrics logging containing counts and metadata
@@ -923,6 +925,7 @@ export const runStreamingFunctions = async (
         logger,
       );
 
+      // Note: "js.consumer.max.batch.size" is a librdkafka native config not in TS types
       const consumer: Consumer = kafka.consumer({
         kafkaJS: {
           groupId: streamingFuncId,
@@ -935,6 +938,7 @@ export const runStreamingFunctions = async (
           autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
           fromBeginning: true,
         },
+        "js.consumer.max.batch.size": CONSUMER_MAX_BATCH_SIZE,
       });
 
       // Sync producer message.max.bytes with topic config

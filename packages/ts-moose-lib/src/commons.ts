@@ -135,7 +135,7 @@ export function createProducerConfig(maxMessageBytes?: number) {
         maxRetryTime: MAX_RETRY_TIME_MS,
       },
     },
-    "linger.ms": 0, // Send immediately - batching happens at application level
+    "linger.ms": 0, // This is to make sure at least once delivery with immediate feedback on the send
     ...(maxMessageBytes && { "message.max.bytes": maxMessageBytes }),
   };
 }
