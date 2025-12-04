@@ -420,9 +420,8 @@ impl ClickHouseTableDiffStrategy {
                     }
                 });
 
-                // Skip population in production (user must handle manually)
-                // Skip population if source is S3Queue or Kafka (they don't support direct SELECT)
                 // Only populate in dev for new MVs with supported source tables
+                // (S3Queue/Kafka don't support SELECT)
                 if is_new && !has_unpopulatable_source && !is_production {
                     tracing::info!(
                         "Adding population operation for materialized view '{}'",
@@ -635,7 +634,6 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             }
 
             // Kafka engine doesn't support ALTER TABLE MODIFY SETTING
-            // It requires drop+create for any settings changes
             if matches!(&before.engine, ClickhouseEngine::Kafka { .. }) {
                 tracing::warn!(
                     "ClickHouse: Settings changed for Kafka table '{}', requiring drop+create (Kafka engine doesn't support ALTER TABLE MODIFY SETTING)",
@@ -674,7 +672,6 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             ];
         }
 
-        // Check if this is a Kafka table with column changes
         // Kafka engine doesn't support ALTER TABLE for columns
         if !column_changes.is_empty() && matches!(&before.engine, ClickhouseEngine::Kafka { .. }) {
             tracing::warn!(

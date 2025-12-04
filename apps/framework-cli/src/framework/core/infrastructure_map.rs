@@ -2186,16 +2186,8 @@ impl InfrastructureMap {
 
     /// Resolves runtime environment variables for engine credentials and table settings.
     ///
-    /// This method iterates through all tables in the infrastructure map and resolves
-    /// any environment variable markers (like `{{MOOSE_RUNTIME_ENV::VAR_NAME}}`) in:
-    /// - Engine credentials: S3/S3Queue/IcebergS3 AWS keys
-    /// - Table settings: Kafka SASL credentials and any other settings using mooseRuntimeEnv.get()
-    ///
-    /// This MUST be called at runtime (dev/prod mode start) rather than at build time
-    /// to avoid baking credentials into Docker images.
-    ///
-    /// # Returns
-    /// A Result indicating success or containing an error message if credential resolution fails
+    /// Must be called at runtime (dev/prod mode) rather than build time to avoid
+    /// baking credentials into Docker images.
     pub fn resolve_runtime_credentials_from_env(&mut self) -> Result<(), String> {
         use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
         use crate::utilities::secrets::resolve_optional_runtime_env;
@@ -2590,8 +2582,6 @@ impl InfrastructureMap {
     }
 
     /// Masks sensitive credentials before exporting to JSON migration files.
-    /// Omits engine credentials (S3, S3Queue, IcebergS3) and table setting credentials (Kafka).
-    /// This ensures migration files are safe to commit to version control.
     pub fn mask_credentials_for_json_export(mut self) -> Self {
         for table in self.tables.values_mut() {
             match &mut table.engine {
@@ -2672,7 +2662,6 @@ impl InfrastructureMap {
         )?;
 
         // Resolve runtime credentials at runtime if requested
-        // This includes S3 credentials, Kafka SASL credentials, and any other table settings
         if resolve_credentials {
             infra_map
                 .resolve_runtime_credentials_from_env()

@@ -219,6 +219,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             .get_mut(&table.id(&reconciled_map.default_database))
                         {
                             existing_table.table_settings = reality_settings.clone();
+                            existing_table.table_settings_hash = table.table_settings_hash.clone();
                         }
                     }
 
