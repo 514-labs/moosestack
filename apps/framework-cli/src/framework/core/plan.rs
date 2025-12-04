@@ -170,6 +170,10 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                         // that might have authentication parameters.
                         table.engine_params_hash = infra_map_table.engine_params_hash.clone();
 
+                        // Keep the table_settings_hash from the infra map for engines with sensitive settings
+                        // (e.g., Kafka). ClickHouse returns [HIDDEN] for credentials in table_settings.
+                        table.table_settings_hash = infra_map_table.table_settings_hash.clone();
+
                         // Keep the cluster_name from the infra map because it cannot be reliably detected
                         // from ClickHouse's system tables. The ON CLUSTER clause is only used during
                         // DDL execution and is not stored in the table schema. While it appears in
@@ -215,6 +219,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             .get_mut(&table.id(&reconciled_map.default_database))
                         {
                             existing_table.table_settings = reality_settings.clone();
+                            existing_table.table_settings_hash = table.table_settings_hash.clone();
                         }
                     }
 
@@ -362,12 +367,16 @@ pub async fn plan_changes(
         }
     };
 
-    // ALWAYS resolve S3 credentials at runtime in prod mode
+    // ALWAYS resolve runtime credentials at runtime in prod mode
     // The JSON was created by moose check without credentials to avoid baking them into Docker
+    // This resolves S3 credentials, Kafka SASL credentials, and any other table settings using mooseRuntimeEnv
     target_infra_map
-        .resolve_s3_credentials_from_env()
+        .resolve_runtime_credentials_from_env()
         .map_err(|e| {
-            PlanningError::Other(anyhow::anyhow!("Failed to resolve S3 credentials: {}", e))
+            PlanningError::Other(anyhow::anyhow!(
+                "Failed to resolve runtime credentials: {}",
+                e
+            ))
         })?;
 
     let current_infra_map = state_storage.load_infrastructure_map().await?;
@@ -528,6 +537,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,

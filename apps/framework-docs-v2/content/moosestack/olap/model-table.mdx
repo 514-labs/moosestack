@@ -1343,6 +1343,87 @@ table = OlapTable[Record]("my_table", OlapConfig(
 
 For more details, see the [ClickHouse documentation on data replication](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication).
 
+#### Kafka
+Use the `Kafka` engine to consume data directly from Kafka compatible topics:
+
+<Callout type="info" title="Kafka with Materialized Views" compact>
+Kafka tables are streaming interfaces that don't persist data. Use a [MaterializedView](/moosestack/olap/model-materialized-view) to continuously move data to a table.
+</Callout>
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="KafkaTable.ts" copy
+import { OlapTable, ClickHouseEngines, MaterializedView, sql } from '@514labs/moose-lib';
+
+interface KafkaEvent {
+  eventId: string;
+  userId: string;
+  timestamp: number; // Unix seconds for JSONEachRow
+}
+
+// Kafka table - reads from topic, doesn't persist
+export const kafkaSource = new OlapTable<KafkaEvent>("kafka_events", {
+  engine: ClickHouseEngines.Kafka,
+  brokerList: "redpanda:9092",
+  topicList: "events",
+  groupName: "my_consumer_group",
+  format: "JSONEachRow",
+  settings: {
+    kafka_num_consumers: "1",
+  }
+});
+
+// MaterializedView moves data to MergeTree for persistence
+const cols = kafkaSource.columns;
+export const eventsMV = new MaterializedView<KafkaEvent>({
+  tableName: "events_dest",
+  materializedViewName: "events_mv",
+  orderByFields: ["eventId"],
+  selectStatement: sql`SELECT ${cols.eventId}, ${cols.userId}, ${cols.timestamp} FROM ${kafkaSource}`,
+  selectTables: [kafkaSource],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py filename="KafkaTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import KafkaEngine
+from moose_lib.dmv2 import MaterializedView, MaterializedViewOptions
+
+class KafkaEvent(BaseModel):
+    event_id: str
+    user_id: str
+    timestamp: int  # Unix seconds for JSONEachRow
+
+# Kafka table - reads from topic, doesn't persist
+kafka_source = OlapTable[KafkaEvent]("kafka_events", OlapConfig(
+    engine=KafkaEngine(
+        broker_list="redpanda:9092",
+        topic_list="events",
+        group_name="my_consumer_group",
+        format="JSONEachRow"
+    ),
+    settings={"kafka_num_consumers": "1"}
+))
+
+# MaterializedView moves data to MergeTree for persistence
+events_mv = MaterializedView[KafkaEvent](MaterializedViewOptions(
+    select_statement="SELECT event_id, user_id, timestamp FROM kafka_events",
+    select_tables=[kafka_source],
+    table_name="events_dest",
+    materialized_view_name="events_mv",
+    order_by_fields=["event_id"],
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="warning" title="Kafka Engine Limitations">
+- **No ORDER BY**: Kafka is a streaming engine and doesn't support `orderByFields`
+- **No ALTER TABLE**: Column or settings changes require DROP and CREATE (Moose handles this automatically)
+- **No direct SELECT**: Query data from the MaterializedView destination table, not the Kafka table
+</Callout>
+
 <LanguageTabs>
   <LanguageTabContent value="python">
 ### Irregular column names and Python Aliases
