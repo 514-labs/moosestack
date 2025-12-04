@@ -34,6 +34,7 @@ rdkafka-sys = "4.7" # Needed for rd_kafka_wait_destroyed
 convert_case = "0.6.0"
 humantime = "2.1.0"
 uuid = { version = "1.6", features = ["v4", "serde"] }
+ulid = "1.1"
 serde_json = { version = "1.0.133", features = ["preserve_order"] }
 serde_urlencoded = "0.7"
 semver = "1.0"
