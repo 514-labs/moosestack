@@ -91,6 +91,7 @@ fn main() -> ExitCode {
                         "  moose init MyProject typescript       # Initialize with TypeScript"
                     );
                     eprintln!("  moose init MyProject python -l ./my-dir  # With custom location");
+                    eprintln!("  moose init MyProject --from-remote <url> --language python  # From existing DB");
                     eprintln!("\nTo view all available templates, run:");
                     eprintln!("  moose template list");
                     std::process::exit(1)
