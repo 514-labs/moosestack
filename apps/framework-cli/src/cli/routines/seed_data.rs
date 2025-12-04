@@ -635,6 +635,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            custom_views: HashMap::new(),
         }
     }
 

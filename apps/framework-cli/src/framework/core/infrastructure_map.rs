@@ -383,9 +383,14 @@ pub enum InfraChange {
 pub enum OlapChange {
     /// Change to a database table
     Table(TableChange),
-    /// Change to a database view
+    /// Change to a database view (internal alias views)
     View(Change<View>),
+    /// Change to SQL resource (legacy, for raw SQL)
     SqlResource(Change<SqlResource>),
+    /// Change to a structured materialized view
+    MaterializedView(Change<super::infrastructure::materialized_view::MaterializedView>),
+    /// Change to a structured custom view (user-defined SELECT views)
+    CustomView(Change<super::infrastructure::view::CustomView>),
     /// Explicit operation to populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -537,7 +542,7 @@ pub struct InfrastructureMap {
     #[serde(default = "HashMap::new")]
     pub orchestration_workers: HashMap<String, OrchestrationWorker>,
 
-    /// resources that have setup and teardown
+    /// resources that have setup and teardown (legacy, for raw SQL)
     #[serde(default)]
     pub sql_resources: HashMap<String, SqlResource>,
 
@@ -548,6 +553,15 @@ pub struct InfrastructureMap {
     /// Collection of web applications indexed by name
     #[serde(default)]
     pub web_apps: HashMap<String, super::infrastructure::web_app::WebApp>,
+
+    /// Collection of materialized views indexed by MV name
+    #[serde(default)]
+    pub materialized_views:
+        HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+
+    /// Collection of custom views indexed by view name
+    #[serde(default)]
+    pub custom_views: HashMap<String, super::infrastructure::view::CustomView>,
 }
 
 impl InfrastructureMap {
@@ -584,6 +598,8 @@ impl InfrastructureMap {
             sql_resources: Default::default(),
             workflows: Default::default(),
             web_apps: Default::default(),
+            materialized_views: Default::default(),
+            custom_views: Default::default(),
         }
     }
 
@@ -762,6 +778,8 @@ impl InfrastructureMap {
             sql_resources: Default::default(),
             workflows: Default::default(),
             web_apps: Default::default(),
+            materialized_views: Default::default(),
+            custom_views: Default::default(),
         }
     }
 
@@ -2412,6 +2430,16 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            materialized_views: self
+                .materialized_views
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_proto()))
+                .collect(),
+            custom_views: self
+                .custom_views
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_proto()))
+                .collect(),
             special_fields: Default::default(),
         }
     }
@@ -2489,6 +2517,21 @@ impl InfrastructureMap {
                 .web_apps
                 .into_iter()
                 .map(|(k, v)| (k, super::infrastructure::web_app::WebApp::from_proto(&v)))
+                .collect(),
+            materialized_views: proto
+                .materialized_views
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        super::infrastructure::materialized_view::MaterializedView::from_proto(v),
+                    )
+                })
+                .collect(),
+            custom_views: proto
+                .custom_views
+                .into_iter()
+                .map(|(k, v)| (k, super::infrastructure::view::CustomView::from_proto(v)))
                 .collect(),
         })
     }
@@ -2935,6 +2978,8 @@ impl Default for InfrastructureMap {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            custom_views: HashMap::new(),
         }
     }
 }

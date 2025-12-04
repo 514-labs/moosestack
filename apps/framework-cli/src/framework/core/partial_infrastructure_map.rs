@@ -481,6 +481,13 @@ pub struct PartialInfrastructureMap {
     workflows: HashMap<String, PartialWorkflow>,
     #[serde(default)]
     web_apps: HashMap<String, PartialWebApp>,
+    #[serde(default)]
+    materialized_views: HashMap<
+        String,
+        crate::framework::core::infrastructure::materialized_view::MaterializedView,
+    >,
+    #[serde(default)]
+    custom_views: HashMap<String, crate::framework::core::infrastructure::view::CustomView>,
 }
 
 impl PartialInfrastructureMap {
@@ -616,6 +623,8 @@ impl PartialInfrastructureMap {
             orchestration_workers,
             workflows,
             web_apps,
+            materialized_views: self.materialized_views,
+            custom_views: self.custom_views,
         })
     }
 
