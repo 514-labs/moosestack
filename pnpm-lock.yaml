@@ -736,8 +736,8 @@ importers:
         specifier: 1.5.0
         version: 1.5.0
       '@confluentinc/kafka-javascript':
-        specifier: 1.5.0
-        version: 1.5.0
+        specifier: 1.7.0
+        version: 1.7.0
       '@kafkajs/confluent-schema-registry':
         specifier: 3.9.0
         version: 3.9.0
@@ -1300,8 +1300,8 @@ packages:
     resolution: {integrity: sha512-Ec0pCdwftIPD7hCxhOukHS0Zxr2tDc5mNAHBqkT3c0c6GO2WQdZkME9+EcfGcoF7+foUp82F5a0bPfSDDjfWmg==}
     engines: {node: '>=16'}
 
-  '@confluentinc/kafka-javascript@1.5.0':
-    resolution: {integrity: sha512-MvpjUlYv/SCQ6L/Siv4fpJCP/LSqQzky/Ch7xdIAI04sTlil1Ie/Vev3A/4SD4c1LC4gzdf2KSFXYxO+FScifA==}
+  '@confluentinc/kafka-javascript@1.7.0':
+    resolution: {integrity: sha512-nmb7+TYjokCFOX2qUgSqhSW7dCy6/raYYneqR/dLDQwUPak4yuRLGfrvGHTvoH0VC4BUUiRu8niJS//5c3SC/A==}
     engines: {node: '>=18.0.0'}
 
   '@corex/deepmerge@4.0.43':
@@ -10147,7 +10147,7 @@ snapshots:
     dependencies:
       '@clickhouse/client-common': 1.8.1
 
-  '@confluentinc/kafka-javascript@1.5.0':
+  '@confluentinc/kafka-javascript@1.7.0':
     dependencies:
       '@mapbox/node-pre-gyp': 1.0.11
       bindings: 1.5.0
