@@ -410,7 +410,7 @@ fn add_cors_headers(builder: hyper::http::response::Builder) -> hyper::http::res
         )
 }
 
-#[tracing::instrument(skip(consumption_apis, req, is_prod), fields(uri = %req.uri(), method = %req.method(), headers = ?req.headers()))]
+#[tracing::instrument(skip(http_client, req, consumption_apis))]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
@@ -418,14 +418,29 @@ async fn get_consumption_api_res(
     consumption_apis: &RwLock<HashSet<String>>,
     is_prod: bool,
     proxy_port: u16,
+    request_id: String,
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
+    let start = Instant::now();
+
+    info!(
+        method = %req.method(),
+        path = %req.uri().path(),
+        "consumption api request received"
+    );
+
     // Extract the Authorization header and check the bearer token
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
 
     // JWT config for consumption api is handled in user's api files
     if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
+        info!(
+            duration_ms = start.elapsed().as_millis(),
+            "request completed with unauthorized status"
+        );
+
         return Ok(add_cors_headers(Response::builder())
             .status(StatusCode::UNAUTHORIZED)
+            .header("x-moose-request-id", request_id)
             .body(Full::new(Bytes::from(
                 "Unauthorized: Invalid or missing token",
             )))?);
@@ -443,7 +458,6 @@ async fn get_consumption_api_res(
             .map_or("".to_string(), |q| format!("?{q}"))
     );
 
-    debug!("Creating client for route: {:?}", url);
     {
         let consumption_apis = consumption_apis.read().await;
 
@@ -473,24 +487,209 @@ async fn get_consumption_api_res(
 
     let mut client_req = reqwest::Request::new(req.method().clone(), url.parse()?);
 
-    // Copy headers
+    // Copy headers and add request ID for propagation
     let headers = client_req.headers_mut();
     for (key, value) in req.headers() {
         headers.insert(key, value.clone());
     }
+    headers.insert(
+        "x-moose-request-id",
+        HeaderValue::from_str(&request_id).expect("Invalid request ID"),
+    );
 
-    // Send request
-    let res = http_client.execute(client_req).await?;
-    let status = res.status();
-    let body = res.bytes().await?;
+    debug!(backend_url = %url, "sending request to backend");
 
-    let returned_response = add_cors_headers(Response::builder())
-        .status(status)
-        .header("Content-Type", "application/json")
-        .body(Full::new(body))
-        .unwrap();
+    // Send request with enhanced error handling
+    match http_client.execute(client_req).await {
+        Ok(res) => {
+            let status = res.status();
+            let body = res.bytes().await?;
+            let duration_ms = start.elapsed().as_millis();
 
-    Ok(returned_response)
+            // Log based on status code
+            if status.is_server_error() {
+                error!(
+                    status = status.as_u16(),
+                    duration_ms,
+                    response_size = body.len(),
+                    "request failed with server error"
+                );
+            } else if status.is_client_error() {
+                warn!(
+                    status = status.as_u16(),
+                    duration_ms,
+                    response_size = body.len(),
+                    "request failed with client error"
+                );
+            } else {
+                info!(
+                    status = status.as_u16(),
+                    duration_ms,
+                    response_size = body.len(),
+                    "request completed successfully"
+                );
+            }
+
+            let returned_response = add_cors_headers(Response::builder())
+                .status(status)
+                .header("Content-Type", "application/json")
+                .header("x-moose-request-id", request_id)
+                .body(Full::new(body))
+                .unwrap();
+
+            Ok(returned_response)
+        }
+        Err(e) => {
+            let (status, error_type) = classify_proxy_error(&e);
+
+            error!(
+                error = %e,
+                error_type,
+                duration_ms = start.elapsed().as_millis(),
+                "backend request failed"
+            );
+
+            Ok(add_cors_headers(Response::builder())
+                .status(status)
+                .header("x-moose-request-id", request_id)
+                .body(Full::new(Bytes::from("Backend request failed")))?)
+        }
+    }
+}
+
+/// Classifies proxy errors and maps them to appropriate HTTP status codes.
+fn classify_proxy_error(error: &reqwest::Error) -> (StatusCode, &'static str) {
+    if error.is_timeout() {
+        (StatusCode::GATEWAY_TIMEOUT, "Timeout")
+    } else if error.is_connect() {
+        (StatusCode::SERVICE_UNAVAILABLE, "ConnectionRefused")
+    } else if error.is_request() {
+        (StatusCode::BAD_GATEWAY, "InvalidRequest")
+    } else if error.is_body() || error.is_decode() {
+        (StatusCode::BAD_GATEWAY, "InvalidResponse")
+    } else {
+        (StatusCode::INTERNAL_SERVER_ERROR, "Unknown")
+    }
+}
+
+#[tracing::instrument(skip(http_client, req))]
+async fn get_webapp_proxy_res(
+    http_client: Arc<Client>,
+    req: Request<hyper::body::Incoming>,
+    host: String,
+    proxy_port: u16,
+    max_body_size: usize,
+    request_id: String,
+) -> Result<Response<Full<Bytes>>, anyhow::Error> {
+    let start = Instant::now();
+
+    info!(
+        method = %req.method(),
+        path = %req.uri().path(),
+        "webapp request received"
+    );
+
+    let full_path = req.uri().path();
+    let url = format!(
+        "http://{}:{}{}{}",
+        host,
+        proxy_port,
+        full_path,
+        req.uri()
+            .query()
+            .map_or("".to_string(), |q| format!("?{q}"))
+    );
+
+    // Capture method and headers before consuming the request
+    let method = req.method().clone();
+    let headers_to_copy: Vec<_> = req
+        .headers()
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    // Read request body if present
+    let limited_body = Limited::new(req.into_body(), max_body_size);
+    let body_bytes = match limited_body.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(_) => Bytes::new(),
+    };
+
+    // Build the request using RequestBuilder for proper body handling
+    let mut request_builder = http_client.request(method, &url);
+
+    // Copy all headers and add request ID for propagation
+    for (key, value) in headers_to_copy {
+        request_builder = request_builder.header(key, value);
+    }
+    request_builder = request_builder.header("x-moose-request-id", request_id.as_str());
+
+    // Add body if present
+    if !body_bytes.is_empty() {
+        request_builder = request_builder.body(body_bytes);
+    }
+
+    debug!(backend_url = %url, "sending request to backend");
+
+    // Send request with enhanced error handling
+    match request_builder.send().await {
+        Ok(response) => {
+            let status = response.status();
+            let headers = response.headers().clone();
+            let body_bytes = response.bytes().await.unwrap_or_default();
+            let duration_ms = start.elapsed().as_millis();
+
+            // Log based on status code
+            if status.is_server_error() {
+                error!(
+                    status = status.as_u16(),
+                    duration_ms,
+                    response_size = body_bytes.len(),
+                    "request failed with server error"
+                );
+            } else if status.is_client_error() {
+                warn!(
+                    status = status.as_u16(),
+                    duration_ms,
+                    response_size = body_bytes.len(),
+                    "request failed with client error"
+                );
+            } else {
+                info!(
+                    status = status.as_u16(),
+                    duration_ms,
+                    response_size = body_bytes.len(),
+                    "request completed successfully"
+                );
+            }
+
+            let mut response_builder = Response::builder()
+                .status(status)
+                .header("x-moose-request-id", request_id);
+
+            // Copy all headers from backend response
+            for (key, value) in headers.iter() {
+                response_builder = response_builder.header(key, value);
+            }
+
+            Ok(response_builder.body(Full::new(body_bytes))?)
+        }
+        Err(e) => {
+            let (status, error_type) = classify_proxy_error(&e);
+
+            error!(
+                error = %e,
+                error_type,
+                duration_ms = start.elapsed().as_millis(),
+                "backend request failed"
+            );
+
+            Ok(Response::builder()
+                .status(status)
+                .header("x-moose-request-id", request_id)
+                .body(Full::new(Bytes::from("WebApp unavailable")))?)
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1725,6 +1924,14 @@ async fn router(
             if route_segments.len() >= 2
                 && (route_segments[0] == "api" || route_segments[0] == "consumption") =>
         {
+            // Extract or generate request ID
+            let request_id = req
+                .headers()
+                .get("x-moose-request-id")
+                .and_then(|v| v.to_str().ok())
+                .map(String::from)
+                .unwrap_or_else(|| ulid::Ulid::new().to_string());
+
             match get_consumption_api_res(
                 http_client,
                 req,
@@ -1732,6 +1939,7 @@ async fn router(
                 consumption_apis,
                 is_prod,
                 project.http_server_config.proxy_port,
+                request_id,
             )
             .await
             {
@@ -1784,79 +1992,30 @@ async fn router(
             drop(web_apps_read);
 
             if is_web_app_route {
-                // Capture method and headers before consuming the request
-                let method = req.method().clone();
-                let headers_to_copy: Vec<_> = req
+                // Extract or generate request ID
+                let request_id = req
                     .headers()
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
+                    .get("x-moose-request-id")
+                    .and_then(|v| v.to_str().ok())
+                    .map(String::from)
+                    .unwrap_or_else(|| ulid::Ulid::new().to_string());
 
-                // Proxy to Node.js server with full path (Node.js server will strip mount path)
-                let url = format!(
-                    "http://{}:{}{}{}",
+                match get_webapp_proxy_res(
+                    http_client,
+                    req,
                     host,
                     project.http_server_config.proxy_port,
-                    full_path,
-                    req.uri()
-                        .query()
-                        .map_or("".to_string(), |q| format!("?{q}"))
-                );
-
-                debug!("Proxying WebApp {} request to: {:?}", method, url);
-
-                // Read request body if present
-                let limited_body = Limited::new(
-                    req.into_body(),
                     project.http_server_config.max_request_body_size,
-                );
-                let body_bytes = match limited_body.collect().await {
-                    Ok(collected) => collected.to_bytes(),
-                    Err(_) => Bytes::new(),
-                };
-
-                debug!(
-                    "WebApp proxy body size: {} bytes, headers: {:?}",
-                    body_bytes.len(),
-                    headers_to_copy
-                        .iter()
-                        .map(|(k, _)| k.as_str())
-                        .collect::<Vec<_>>()
-                );
-
-                // Build the request using RequestBuilder for proper body handling
-                let mut request_builder = http_client.request(method, &url);
-
-                // Copy all headers
-                for (key, value) in headers_to_copy {
-                    request_builder = request_builder.header(key, value);
-                }
-
-                // Add body if present
-                if !body_bytes.is_empty() {
-                    request_builder = request_builder.body(body_bytes);
-                }
-
-                match request_builder.send().await {
-                    Ok(response) => {
-                        let status = response.status();
-                        let headers = response.headers().clone();
-                        let body_bytes = response.bytes().await.unwrap_or_default();
-
-                        let mut response_builder = Response::builder().status(status);
-
-                        // Copy all headers from backend response
-                        for (key, value) in headers.iter() {
-                            response_builder = response_builder.header(key, value);
-                        }
-
-                        response_builder.body(Full::new(body_bytes))
-                    }
+                    request_id,
+                )
+                .await
+                {
+                    Ok(response) => Ok(response),
                     Err(e) => {
-                        debug!("WebApp proxy error: {:?}", e);
+                        error!("WebApp proxy error: {:?}", e);
                         Response::builder()
-                            .status(StatusCode::BAD_GATEWAY)
-                            .body(Full::new(Bytes::from("WebApp unavailable")))
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(Full::new(Bytes::from("Error")))
                     }
                 }
             } else {
