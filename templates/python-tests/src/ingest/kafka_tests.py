@@ -12,7 +12,9 @@ class KafkaTestEvent(BaseModel):
     timestamp: int
 
 
-kafka_test_input_stream = Stream[KafkaTestEvent]("kafka_test_input")
+KAFKA_TOPIC_NAME = "kafka_test_input"
+
+kafka_test_input_stream = Stream[KafkaTestEvent](KAFKA_TOPIC_NAME)
 
 kafka_test_ingest_api = IngestApi[KafkaTestEvent](
     "kafka-test",
@@ -24,7 +26,7 @@ kafka_test_source_table = OlapTable[KafkaTestEvent](
     OlapConfig(
         engine=KafkaEngine(
             broker_list="redpanda:9092",
-            topic_list="kafka_test_input",
+            topic_list=KAFKA_TOPIC_NAME,
             group_name="e2e_kafka_test_consumer_py",
             format="JSONEachRow"
         ),

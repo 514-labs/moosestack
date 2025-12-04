@@ -16,8 +16,10 @@ export interface KafkaTestEvent {
   timestamp: number;
 }
 
+const KAFKA_TOPIC_NAME = "KafkaTestInput";
+
 export const kafkaTestInputStream = new Stream<KafkaTestEvent>(
-  "KafkaTestInput",
+  KAFKA_TOPIC_NAME,
 );
 
 export const kafkaTestIngestApi = new IngestApi<KafkaTestEvent>("kafka-test", {
@@ -29,7 +31,7 @@ export const KafkaTestSourceTable = new OlapTable<KafkaTestEvent>(
   {
     engine: ClickHouseEngines.Kafka,
     brokerList: "redpanda:9092",
-    topicList: "KafkaTestInput",
+    topicList: KAFKA_TOPIC_NAME,
     groupName: "e2e_kafka_test_consumer",
     format: "JSONEachRow",
     settings: {
