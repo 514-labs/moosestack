@@ -236,6 +236,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         typeof config.table === "object" ?
           {
             ...config.table,
+            lifeCycle: config.table.lifeCycle ?? config.lifeCycle,
             ...(config.version && { version: config.version }),
           }
         : {
@@ -256,8 +257,11 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
       const streamConfig = {
         destination: undefined,
         ...(typeof config.deadLetterQueue === "object" ?
-          config.deadLetterQueue
-        : {}),
+          {
+            ...config.deadLetterQueue,
+            lifeCycle: config.deadLetterQueue.lifeCycle ?? config.lifeCycle,
+          }
+        : { lifeCycle: config.lifeCycle }),
         ...(config.version && { version: config.version }),
       };
       this.deadLetterQueue = new DeadLetterQueue<T>(
@@ -273,7 +277,10 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         destination: this.table,
         defaultDeadLetterQueue: this.deadLetterQueue,
         ...(typeof config.stream === "object" ?
-          config.stream
+          {
+            ...config.stream,
+            lifeCycle: config.stream.lifeCycle ?? config.lifeCycle,
+          }
         : { lifeCycle: config.lifeCycle }),
         ...(config.version && { version: config.version }),
       };
