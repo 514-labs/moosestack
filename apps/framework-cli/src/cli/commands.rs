@@ -9,6 +9,10 @@ use clap::{Args, Subcommand};
 pub enum Commands {
     // Initializes the developer environment with all the necessary directories including temporary ones for data storage
     /// Initialize your data-intensive app or service
+    #[command(
+        after_help = "To view all available templates, run: moose template list",
+        help_template = "{about-section}\n\n{usage-heading} {usage}\n\n{all-args}\n\n{after-help}"
+    )]
     Init {
         /// Name of your app or service
         name: String,
@@ -37,7 +41,7 @@ pub enum Commands {
         from_remote: Option<Option<String>>,
 
         /// Programming language to use for the project (e.g., "python" or "typescript")
-        /// Required when using --from-remote. If provided without a template, uses the default empty template for that language.
+        /// Required when using --from-remote.
         #[arg(long)]
         language: Option<String>,
     },

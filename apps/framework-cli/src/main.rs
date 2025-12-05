@@ -96,15 +96,15 @@ fn main() -> ExitCode {
                     eprintln!("  moose template list");
                     std::process::exit(1)
                 } else {
-                    // For other init errors, show the error and suggest help
+                    // For other init errors, show the error
                     eprintln!("{e}");
-                    eprintln!("\nFor more information, run: moose init --help");
                     std::process::exit(1)
                 }
             } else {
-                // For other errors, use Clap's default error format
-                // this includes the --version and --help string
-                e.exit()
+                // For other errors, format without the redundant footer
+                eprintln!("{e}");
+                // Don't call e.exit() as it adds "For more information, try '--help'" footer
+                std::process::exit(1)
             }
         }
     };
