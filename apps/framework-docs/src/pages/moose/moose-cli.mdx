@@ -29,28 +29,28 @@ moose init <name> --from-remote [<CONNECTION_STRING>] --language <python|typescr
 **Examples:**
 ```bash
 # Initialize with Python template (bootstrapped with example components)
-moose init MyProject python
+moose init PROJECT_NAME python
 
 # Initialize with TypeScript template (bootstrapped with example components)
-moose init MyProject typescript
+moose init PROJECT_NAME typescript
 
 # Initialize with empty Python template
-moose init MyProject python-empty
+moose init PROJECT_NAME python-empty
 
 # Specify a custom location
-moose init MyProject python --location ./my-custom-path
+moose init PROJECT_NAME python --location ./my-custom-path
 
 # Initialize from an existing ClickHouse database
-moose init MyProject --from-remote <CONNECTION_STRING> --language python
+moose init PROJECT_NAME --from-remote <CONNECTION_STRING> --language python
 
 # Initialize from database with interactive connection setup
-moose init MyProject --from-remote --language typescript
+moose init PROJECT_NAME --from-remote --language typescript
 ```
 
 **Alternative: Import from database after initialization**
 ```bash
 # First initialize your project
-moose init MyProject python
+moose init PROJECT_NAME python
 
 # Then use db pull to import from your database
 moose db pull --clickhouse-url <CONNECTION_STRING>
