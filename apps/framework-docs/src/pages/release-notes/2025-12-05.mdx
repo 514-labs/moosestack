@@ -9,18 +9,16 @@ import { Callout } from "@/components";
 
 Flexible Streaming Ingest, Web App Integration, and Infra Visibility Upgrades. This two-week release pushes MooseStack forward on three fronts: flexible high-volume ingestion, developer experience for full-stack apps, and operational visibility.
 
-Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming, IcebergS3 for data lake integration, and powerful modeling tools like materialized columns, per-column codecs, and custom PRIMARY KEY expressions. On the app side, new Fastify and Next.js patterns—plus Python LSP autocomplete for SQL queries—make it easier to build type-safe Moose-backed experiences. Meanwhile, Boreal added infra maps and storage visualizations so teams can see how their systems are wired and how their data grows.
+Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming, IcebergS3 for data lake integration, and powerful modeling tools like materialized columns and per-column codecs. Meanwhile, Boreal added storage visualizations so teams can see how their data grows.
 
 <Callout type="info" title="Highlights">
 * **New:** [Arbitrary JSON fields in ingest APIs](#arbitrary-json-fields-in-ingest-apis) for flexible schema evolution
 * **New:** [Kafka engine support](#kafka-engine-support-for-streaming-ingestion) for real-time ClickHouse ingestion
 * **New:** [IcebergS3 engine](#icebergs3-engine-for-data-lake-storage) for Apache Iceberg data lake integration
-* **New:** [Python LSP autocomplete](#python-lsp-autocomplete-for-sql-queries) for type-safe SQL queries
+* **New:** [Materialized columns](#materialized-columns-in-data-models) for precomputed fields at ingestion time
 * **New:** [Fastify web app template](#fastify-web-app-template) with automatic async initialization
-* **New:** [Boreal infrastructure map visualization](#boreal-infrastructure-map-visualization)
+* **New:** [Boreal database storage visualization](#boreal-database-storage-visualization-experimental) for capacity planning
 </Callout>
-
----
 
 ## Arbitrary JSON fields in ingest APIs
 
@@ -42,13 +40,11 @@ In Python, use `extra='allow'` in your Pydantic models to achieve the same flexi
 
 PR: [#3047](https://github.com/514-labs/moosestack/pull/3047) | Docs: [Data models](/moose/data-models)
 
----
-
 ## Kafka engine support for streaming ingestion
 
-Define tables with Kafka engine to consume streaming data directly from Kafka topics into ClickHouse, with materialized views to transform and route the data.
+Define tables with ClickHouse's Kafka engine as an alternative consumer that reads directly from Kafka topics into ClickHouse, bypassing Moose's built-in streaming consumer. Use materialized views to transform and route the data.
 
-**Why it matters:** First-class streaming from Kafka. Kafka engine tables + materialized views mean you can go directly from Kafka → ClickHouse with Moose orchestrating the flow and transformations. This reduces glue code, keeps ingestion real-time, and standardizes how streaming pipelines are defined.
+**Why it matters:** Direct Kafka → ClickHouse ingestion. When you need ClickHouse to consume from Kafka natively—without going through Moose's streaming layer—Kafka engine tables give you that option. This is useful for high-throughput scenarios or when you want ClickHouse to manage its own consumer offsets.
 
 ```typescript filename="app/ingest/kafka.ts" copy
 // Create a Kafka engine table that consumes from a topic
@@ -65,8 +61,6 @@ export const KafkaSourceTable = new OlapTable<KafkaTestEvent>(
 ```
 
 PR: [#3066](https://github.com/514-labs/moosestack/pull/3066) | Docs: [OlapTable](/moose/olap)
-
----
 
 ## IcebergS3 engine for data lake storage
 
@@ -90,50 +84,6 @@ export const AnalyticsEventsTable = new OlapTable<AnalyticsEvent>(
 
 PR: [#2978](https://github.com/514-labs/moosestack/pull/2978) | Docs: [OlapTable](/moose/olap)
 
----
-
-## Custom PRIMARY KEY expressions
-
-Define custom PRIMARY KEY expressions with hash functions and custom column ordering for optimized ClickHouse table performance.
-
-**Why it matters:** Better data distribution and query performance. Custom PRIMARY KEY expressions let you use functions like `cityHash64` for better distribution in ClickHouse, beyond simple column-based keys. This is essential for high-cardinality data where default ordering isn't optimal.
-
-```typescript filename="app/ingest/models.ts" copy
-export const primaryKeyExpressionTable = new OlapTable<PrimaryKeyExpressionTest>(
-  "PrimaryKeyExpressionTest",
-  {
-    primaryKeyExpression: "(userId, cityHash64(eventId))",
-    orderByExpression: "(userId, cityHash64(eventId), timestamp)",
-  },
-);
-```
-
-PR: [#3031](https://github.com/514-labs/moosestack/pull/3031) | Docs: [OlapTable](/moose/olap)
-
----
-
-## Python LSP autocomplete for SQL queries
-
-Get IDE autocomplete when referencing table columns in Python f-strings using the new `MooseModel` class with `{Column:col}` format.
-
-**Why it matters:** Type-safe SQL without typos. Python developers can now get autocomplete suggestions for column names when writing SQL queries, catching errors at development time rather than runtime. The `{Column:col}` format ensures proper SQL quoting.
-
-```python filename="app/models/user_event.py" copy
-from moose_lib import MooseModel
-
-class UserEvent(MooseModel):
-    user_id: int
-    event_type: str
-    timestamp: str
-
-# IDE autocomplete works when typing UserEvent.user_id
-query = f"SELECT {UserEvent.user_id:col}, {UserEvent.event_type:col} FROM user_events"
-```
-
-PR: [#3024](https://github.com/514-labs/moosestack/pull/3024) | Docs: [Python data models](/moose/data-models)
-
----
-
 ## Materialized columns in data models
 
 Define materialized columns to automatically compute derived values at ingestion time—date extractions, hash functions, JSON transformations—without separate aggregations.
@@ -152,27 +102,6 @@ export interface MaterializedTest {
 ```
 
 PR: [#3051](https://github.com/514-labs/moosestack/pull/3051) | Docs: [Supported types](/moose/olap/supported-types)
-
----
-
-## Per-column compression codecs
-
-Specify compression codecs (ZSTD, LZ4, Delta, Gorilla) on individual columns to optimize storage and query performance for different data characteristics.
-
-**Why it matters:** Per-column codecs let you tune storage/performance per field—Delta/Gorilla for time-series, higher ZSTD for logs. This directly impacts infrastructure cost and query latency.
-
-```typescript filename="app/ingest/models.ts" copy
-export interface CodecTest {
-  id: Key<string>;
-  timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
-  temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
-  log_blob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
-}
-```
-
-PR: [#3035](https://github.com/514-labs/moosestack/pull/3035) | Docs: [Supported types](/moose/olap/supported-types)
-
----
 
 ## Fastify web app template
 
@@ -195,44 +124,13 @@ export const analyticsApp = new WebApp("analyticsApi", app, {
 
 PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://github.com/514-labs/moosestack/pull/3061) | Docs: [Fastify integration](/moose/app-api-frameworks)
 
----
-
-## Next.js client-only mode
-
-Enable `MOOSE_CLIENT_ONLY` environment variable so Next.js apps can import Moose data models without running the full runtime or fighting HMR errors.
-
-**Why it matters:** Frontend type safety without runtime headaches. This solves "already exists" errors during Hot Module Replacement and supports a pattern where the frontend gets type-safe definitions while the heavy Moose runtime stays server-side where it belongs.
-
-```javascript filename="next.config.js" copy
-const nextConfig = {
-  env: {
-    MOOSE_CLIENT_ONLY: 'true', // Prevents duplicate registration errors during HMR
-  },
-}
-```
-
-PR: [#3057](https://github.com/514-labs/moosestack/pull/3057)
-
----
-
-## Web apps in `moose ls`
-
-The `moose ls` command now displays web applications alongside tables, streams, and APIs, making them first-class infrastructure citizens.
-
-**Why it matters:** Web apps as first-class infra. Discover what UIs exist (admin dashboards, portals, analytics UI) and integrate this into tooling, scripts, or dashboards.
-
-```bash filename="Terminal" copy
-moose ls                      # List all components including web apps
-moose ls --type web_apps      # Filter to show only web apps
-moose ls --type web_apps --json  # JSON format for scripting
-```
-
-PR: [#3054](https://github.com/514-labs/moosestack/pull/3054) | Docs: [CLI reference](/moose/moose-cli)
-
----
-
 ## Other Moose improvements
 
+- **Custom PRIMARY KEY expressions** – Define custom PRIMARY KEY with hash functions like `cityHash64` for better data distribution in high-cardinality scenarios. PR [#3031](https://github.com/514-labs/moosestack/pull/3031)
+- **Per-column compression codecs** – Specify codecs (ZSTD, LZ4, Delta, Gorilla) per column using `ClickHouseCodec<"...">` type annotations. PR [#3035](https://github.com/514-labs/moosestack/pull/3035)
+- **Python LSP autocomplete for SQL** – Get IDE autocomplete for column names in f-strings using `MooseModel` with `{Column:col}` format. PR [#3024](https://github.com/514-labs/moosestack/pull/3024)
+- **Next.js client-only mode (experimental)** – Set `MOOSE_CLIENT_ONLY=true` to import Moose data models without runtime, fixing HMR errors. PR [#3057](https://github.com/514-labs/moosestack/pull/3057)
+- **Web apps in `moose ls`** – List web applications alongside tables, streams, and APIs with `moose ls --type web_apps`. PR [#3054](https://github.com/514-labs/moosestack/pull/3054)
 - **Lifecycle inheritance in IngestPipeline** – Top-level lifecycle settings automatically propagate to table, stream, and deadLetterQueue components, reducing config duplication. PR [#3088](https://github.com/514-labs/moosestack/pull/3088)
 - **MCP query result compression** – Results compressed using toon format for better IDE/AI integration performance. PR [#3033](https://github.com/514-labs/moosestack/pull/3033)
 - **API key auth in MCP template** – Optional PBKDF2-based authentication for secure MCP server deployments. PR [#3053](https://github.com/514-labs/moosestack/pull/3053)
@@ -255,16 +153,6 @@ PR: [#3054](https://github.com/514-labs/moosestack/pull/3054) | Docs: [CLI refer
 - **LowCardinality columns in peek/query** – `moose peek` and `moose query` failed on tables with `LowCardinality(String)` columns. Switched to HTTP-based ClickHouse client which supports all column types. [#3025](https://github.com/514-labs/moosestack/pull/3025)
 - **DateTime precision preservation** – JavaScript Date objects drop microseconds/nanoseconds. Added `DateTimeString` and `DateTime64String<P>` types that keep timestamps as strings to preserve full precision. [#3018](https://github.com/514-labs/moosestack/pull/3018)
 
----
-
-## Boreal: Infrastructure map visualization
-
-View your deployed MooseStack architecture directly in the Boreal dashboard—services, data flows, and components in one place.
-
-**Why it matters:** See your architecture, don't guess it. The infrastructure map helps with onboarding new teammates, debugging mis-wired components, and explaining the system to stakeholders.
-
----
-
 ## Boreal: Database storage visualization (experimental)
 
 New experimental page showing table storage usage over time with interactive charts. When enabled, a "Database" tab appears in your branch navigation with per-table storage area charts, date range filters, and granularity options (minute/hour/day).
@@ -275,21 +163,15 @@ New experimental page showing table storage usage over time with interactive cha
 
 *This feature is behind an experimental flag. Contact support to enable it for your organization.*
 
----
-
 ## Other Boreal Features and Improvements
 
 - **Log drain performance** – Reuses database connections instead of creating new ones per batch, reducing connection overhead.
 - **ClickHouse query performance** – Optimized table structure and indexing for faster loading of query performance data.
 - **Temporarily removed "Build from Existing Database"** – Option removed from project creation flow while being improved. Users can still import from GitHub or templates.
 
----
-
 ## Infrastructure improvements
 
 - **Extended deployment startup timeouts** – Increased from 60 to 180 seconds to reduce failures for larger applications during high-load periods.
-
----
 
 ## Boreal Bug Fixes
 
