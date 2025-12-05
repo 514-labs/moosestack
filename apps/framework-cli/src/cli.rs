@@ -521,6 +521,8 @@ pub async fn top_command_handler(
             docker,
             amd64,
             arm64,
+            expose_dockerfile,
+            no_expose_dockerfile,
         } => {
             info!("Running build command");
             let project_arc = Arc::new(load_project(commands)?);
@@ -538,16 +540,40 @@ pub async fn top_command_handler(
                 );
 
                 let docker_client = DockerClient::new(&settings);
-                create_dockerfile(&project_arc, &docker_client)?.show();
-                let _: RoutineSuccess =
-                    build_dockerfile(&project_arc, &docker_client, *amd64, *arm64)?;
 
-                wait_for_usage_capture(capture_handle).await;
+                // Determine expose flag
+                let expose_flag = if *expose_dockerfile {
+                    Some(true)
+                } else if *no_expose_dockerfile {
+                    Some(false)
+                } else {
+                    None
+                };
 
-                Ok(RoutineSuccess::success(Message::new(
-                    "Built".to_string(),
-                    "Docker image(s)".to_string(),
-                )))
+                // Create dockerfile with settings and expose flag
+                create_dockerfile(&project_arc, &docker_client, &settings, expose_flag)?.show();
+
+                // If --expose-dockerfile flag is set, only generate the Dockerfile, don't build
+                if *expose_dockerfile {
+                    wait_for_usage_capture(capture_handle).await;
+
+                    Ok(RoutineSuccess::success(Message::new(
+                        "Ready".to_string(),
+                        "Customize ./Dockerfile, then run 'moose build --docker' to build"
+                            .to_string(),
+                    )))
+                } else {
+                    // Build the docker images
+                    let _: RoutineSuccess =
+                        build_dockerfile(&project_arc, &docker_client, &settings, *amd64, *arm64)?;
+
+                    wait_for_usage_capture(capture_handle).await;
+
+                    Ok(RoutineSuccess::success(Message::new(
+                        "Built".to_string(),
+                        "Docker image(s)".to_string(),
+                    )))
+                }
             } else {
                 let capture_handle = crate::utilities::capture::capture_usage(
                     ActivityType::BuildCommand,

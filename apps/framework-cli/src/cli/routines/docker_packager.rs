@@ -1,6 +1,7 @@
 use super::{RoutineFailure, RoutineSuccess};
 use crate::cli::display::with_spinner_completion;
 use crate::cli::routines::util::ensure_docker_running;
+use crate::cli::settings::Settings;
 use crate::framework::languages::SupportedLanguages;
 use crate::utilities::constants::{
     OLD_PROJECT_CONFIG_FILE, PACKAGE_JSON, PROJECT_CONFIG_FILE, REQUIREMENTS_TXT, SETUP_PY,
@@ -30,6 +31,38 @@ fn ensure_directory_exists(path: &Path) -> Result<(), std::io::Error> {
     } else {
         Ok(())
     }
+}
+
+/// Returns the path to a custom Dockerfile at project root
+fn custom_dockerfile_path(project: &Project) -> PathBuf {
+    project.project_location.join("Dockerfile")
+}
+
+/// Returns the path to the managed Dockerfile in the internal directory
+fn managed_dockerfile_path(internal_dir: &Path) -> PathBuf {
+    internal_dir.join("packager/Dockerfile")
+}
+
+/// Returns the path to the custom Dockerfile marker file
+fn custom_dockerfile_marker_path(internal_dir: &Path) -> PathBuf {
+    internal_dir.join("packager/.custom-dockerfile")
+}
+
+/// Displays a formatted message box for custom Dockerfile detection
+fn show_custom_dockerfile_message() {
+    eprintln!("┌────────────────────────────────────────────────────┐");
+    eprintln!("│ Custom Dockerfile Detected                         │");
+    eprintln!("│                                                    │");
+    eprintln!("│ Moose will use your custom Dockerfile at:          │");
+    eprintln!("│   ./Dockerfile                                     │");
+    eprintln!("│                                                    │");
+    eprintln!("│ Changes to your project may require manual         │");
+    eprintln!("│ updates to your Dockerfile.                        │");
+    eprintln!("│                                                    │");
+    eprintln!("│ To revert to managed mode:                         │");
+    eprintln!("│   rm Dockerfile                                    │");
+    eprintln!("│   or: moose build --docker --no-expose-dockerfile  |");
+    eprintln!("└────────────────────────────────────────────────────┘");
 }
 
 /// Helper function to copy config files for monorepo builds
@@ -253,9 +286,125 @@ CMD ["moose", "prod"]
 ///
 /// If monorepo detection fails or path analysis encounters errors, gracefully falls back
 /// to standard single-project Docker build to ensure robustness.
+///
+/// Determines the Dockerfile location based on settings and project state
+fn resolve_dockerfile_path(
+    project: &Project,
+    settings: &Settings,
+    expose_flag: Option<bool>,
+) -> Result<PathBuf, RoutineFailure> {
+    let internal_dir = project.internal_dir_with_routine_failure_err()?;
+    let custom_path = custom_dockerfile_path(project);
+
+    // Priority 1: Check for explicit CLI flag
+    if let Some(expose) = expose_flag {
+        return Ok(if expose {
+            custom_path
+        } else {
+            managed_dockerfile_path(&internal_dir)
+        });
+    }
+
+    // Priority 2: Check if custom Dockerfile already exists in project root
+    if custom_path.exists() {
+        info!("Found existing Dockerfile at project root, using custom mode");
+        return Ok(custom_path);
+    }
+
+    // Priority 3: Check settings from config file
+    Ok(if settings.dev.expose_dockerfile {
+        custom_path
+    } else {
+        managed_dockerfile_path(&internal_dir)
+    })
+}
+
+/// Checks if we should skip Dockerfile generation to preserve user customizations
+fn should_skip_dockerfile_generation(
+    project: &Project,
+    target_path: &Path,
+    expose_flag: Option<bool>,
+) -> bool {
+    let custom_path = custom_dockerfile_path(project);
+
+    // If --no-expose-dockerfile is explicitly set, never skip (force regeneration)
+    if expose_flag == Some(false) {
+        info!("Forcing managed Dockerfile regeneration (--no-expose-dockerfile)");
+        return false;
+    }
+
+    // If custom Dockerfile exists at project root, preserve it when targeting it
+    // This ensures "generate once, preserve forever" behavior
+    if custom_path.exists() && target_path == custom_path {
+        info!("Custom Dockerfile exists, skipping generation to preserve customizations");
+        return true;
+    }
+
+    false
+}
+
+/// Checks if project is using a custom Dockerfile
+fn is_using_custom_dockerfile(project: &Project) -> bool {
+    custom_dockerfile_path(project).exists()
+}
+
+/// Records that project is using custom Dockerfile for future migration tracking
+fn record_custom_dockerfile_usage(project: &Project) -> Result<(), std::io::Error> {
+    let internal_dir = project
+        .internal_dir()
+        .map_err(|e| std::io::Error::other(format!("Failed to get internal dir: {}", e)))?;
+
+    let marker_file = custom_dockerfile_marker_path(&internal_dir);
+    ensure_directory_exists(&marker_file)?;
+    std::fs::write(marker_file, "true")
+}
+
+/// Helper to write Dockerfile content to the specified path and handle custom Dockerfile tracking.
+/// Used by fallback paths to ensure they respect the resolved file_path.
+fn create_dockerfile_with_content(
+    project: &Project,
+    file_path: &Path,
+    content: String,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    fs::write(file_path, content).map_err(|err| {
+        error!("Failed to write Docker file for project: {}", err);
+        RoutineFailure::new(
+            Message::new(
+                "Failed".to_string(),
+                "to write Docker file for project".to_string(),
+            ),
+            err,
+        )
+    })?;
+
+    // Record custom Dockerfile usage if exposed to project root
+    if file_path == custom_dockerfile_path(project) {
+        record_custom_dockerfile_usage(project).ok();
+
+        show_message!(
+            crate::cli::display::MessageType::Info,
+            Message::new(
+                "Generated".to_string(),
+                format!(
+                    "Dockerfile at {} (custom mode enabled)",
+                    file_path.display()
+                ),
+            )
+        );
+    }
+
+    info!("Dockerfile created at: {:?}", file_path);
+    Ok(RoutineSuccess::success(Message::new(
+        "Successfully".to_string(),
+        "created dockerfile".to_string(),
+    )))
+}
+
 pub fn create_dockerfile(
     project: &Project,
     docker_client: &DockerClient,
+    settings: &Settings,
+    expose_flag: Option<bool>,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
 
@@ -284,7 +433,49 @@ pub fn create_dockerfile(
         )
     })?;
 
-    let file_path = internal_dir.join("packager/Dockerfile");
+    // If --no-expose-dockerfile is set, delete any existing custom Dockerfile
+    if expose_flag == Some(false) {
+        let custom_path = custom_dockerfile_path(project);
+        if custom_path.exists() {
+            fs::remove_file(&custom_path).map_err(|err| {
+                error!("Failed to remove custom Dockerfile: {}", err);
+                RoutineFailure::new(
+                    Message::new(
+                        "Failed".to_string(),
+                        "to remove custom Dockerfile".to_string(),
+                    ),
+                    err,
+                )
+            })?;
+
+            show_message!(
+                crate::cli::display::MessageType::Info,
+                Message::new(
+                    "Removed".to_string(),
+                    "custom Dockerfile from project root".to_string(),
+                )
+            );
+
+            // Also remove marker file
+            let marker_file = custom_dockerfile_marker_path(&internal_dir);
+            if marker_file.exists() {
+                fs::remove_file(&marker_file).ok();
+            }
+        }
+    }
+
+    // Determine Dockerfile path based on settings and project state
+    let file_path = resolve_dockerfile_path(project, settings, expose_flag)?;
+
+    // Check if we should skip generation to preserve user customizations
+    if should_skip_dockerfile_generation(project, &file_path, expose_flag) {
+        show_custom_dockerfile_message();
+        info!("Skipping Dockerfile generation to preserve user customizations");
+        return Ok(RoutineSuccess::success(Message::new(
+            "Using".to_string(),
+            "existing custom Dockerfile".to_string(),
+        )));
+    }
 
     info!("Creating Dockerfile at: {:?}", file_path);
     ensure_directory_exists(&file_path).map_err(|err| {
@@ -334,11 +525,15 @@ pub fn create_dockerfile(
                     Ok(path) => path,
                     Err(e) => {
                         error!("Failed to calculate relative project path: {}", e);
-                        // Fall back to standard build if we can't determine the relative path
-                        return create_standard_typescript_dockerfile(
+                        // Fall back to standard (non-monorepo) Dockerfile content
+                        // This lets the normal flow handle file_path and custom Dockerfile logic
+                        return create_dockerfile_with_content(
                             project,
-                            &internal_dir,
-                            &node_version_str,
+                            &file_path,
+                            create_standard_typescript_dockerfile_content(
+                                project,
+                                &node_version_str,
+                            )?,
                         );
                     }
                 };
@@ -348,11 +543,15 @@ pub fn create_dockerfile(
                     Ok(config) => config,
                     Err(e) => {
                         error!("Failed to read workspace config: {:?}", e);
-                        // Fall back to standard build if we can't read the workspace config
-                        return create_standard_typescript_dockerfile(
+                        // Fall back to standard (non-monorepo) Dockerfile content
+                        // This lets the normal flow handle file_path and custom Dockerfile logic
+                        return create_dockerfile_with_content(
                             project,
-                            &internal_dir,
-                            &node_version_str,
+                            &file_path,
+                            create_standard_typescript_dockerfile_content(
+                                project,
+                                &node_version_str,
+                            )?,
                         );
                     }
                 };
@@ -499,7 +698,7 @@ WORKDIR /application"#,
 
                 // Store monorepo info for build phase
                 let monorepo_info_path = internal_dir.join("packager/.monorepo-info");
-                fs::create_dir_all(monorepo_info_path.parent().unwrap()).ok();
+                ensure_directory_exists(&monorepo_info_path).ok();
                 fs::write(
                     &monorepo_info_path,
                     format!(
@@ -542,6 +741,22 @@ COPY --chown=moose:moose ./{} ./{}"#,
         )
     })?;
 
+    // Record custom Dockerfile usage if exposed
+    if file_path == custom_dockerfile_path(project) {
+        record_custom_dockerfile_usage(project).ok();
+
+        show_message!(
+            crate::cli::display::MessageType::Info,
+            Message::new(
+                "Generated".to_string(),
+                format!(
+                    "Dockerfile at {} (custom mode enabled)",
+                    file_path.display()
+                ),
+            )
+        );
+    }
+
     info!("Dockerfile created at: {:?}", file_path);
     Ok(RoutineSuccess::success(Message::new(
         "Successfully".to_string(),
@@ -555,6 +770,7 @@ COPY --chown=moose:moose ./{} ./{}"#,
 pub fn build_dockerfile(
     project: &Project,
     docker_client: &DockerClient,
+    _settings: &Settings,
     is_amd64: bool,
     is_arm64: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
@@ -571,10 +787,27 @@ pub fn build_dockerfile(
         )
     })?;
 
-    let file_path = internal_dir.join("packager/Dockerfile");
+    // Check if a custom Dockerfile exists at project root.
+    // If so, it will be copied to .moose/packager/Dockerfile for the build.
+    // This allows users to customize their Dockerfile while maintaining
+    // the expected build context structure for Boreal deployments.
+    let file_path = if is_using_custom_dockerfile(project) {
+        info!("Custom Dockerfile detected at project root");
+        show_message!(
+            crate::cli::display::MessageType::Info,
+            Message::new(
+                "Using".to_string(),
+                "custom Dockerfile at project root".to_string(),
+            )
+        );
+        custom_dockerfile_path(project)
+    } else {
+        managed_dockerfile_path(&internal_dir)
+    };
+
     info!("Building Dockerfile at: {:?}", file_path);
 
-    fs::create_dir_all(file_path.parent().unwrap()).map_err(|err| {
+    ensure_directory_exists(&file_path).map_err(|err| {
         error!("Failed to create directory for project packaging: {}", err);
         RoutineFailure::new(
             Message::new(
@@ -691,7 +924,16 @@ pub fn build_dockerfile(
                     );
 
                     // Create a temporary Dockerfile at the workspace root
-                    let temp_dockerfile = workspace_root.join("Dockerfile");
+                    // Use a temp name to avoid overwriting any custom Dockerfile at project root
+                    // when the project is at the workspace root
+                    let custom_exists = is_using_custom_dockerfile(project);
+                    let temp_dockerfile =
+                        if custom_exists && workspace_root == project.project_location {
+                            // Project is at workspace root with custom Dockerfile - use temp name
+                            workspace_root.join("Dockerfile.moose-build-temp")
+                        } else {
+                            workspace_root.join("Dockerfile")
+                        };
 
                     // Read the generated Dockerfile and adjust paths for workspace root context
                     let dockerfile_content = fs::read_to_string(&file_path).map_err(|err| {
@@ -754,7 +996,27 @@ pub fn build_dockerfile(
         }
     } else {
         // Standard build
-        (internal_dir.join("packager"), file_path)
+        let packager_dir = internal_dir.join("packager");
+        let packager_dockerfile = managed_dockerfile_path(&internal_dir);
+
+        // If using custom Dockerfile, copy it to packager directory for build
+        if is_using_custom_dockerfile(project) {
+            // Copy custom Dockerfile to packager directory
+            fs::copy(custom_dockerfile_path(project), &packager_dockerfile).map_err(|err| {
+                error!("Failed to copy custom Dockerfile to packager: {}", err);
+                RoutineFailure::new(
+                    Message::new(
+                        "Failed".to_string(),
+                        "to copy custom Dockerfile for build".to_string(),
+                    ),
+                    err,
+                )
+            })?;
+
+            info!("Copied custom Dockerfile to packager directory for build");
+        }
+
+        (packager_dir, packager_dockerfile)
     };
 
     let build_all = is_amd64 == is_arm64;
@@ -837,10 +1099,16 @@ pub fn build_dockerfile(
 
     // Clean up temporary files for monorepo builds
     if build_context != internal_dir.join("packager") {
-        // Remove temporary Dockerfile
-        if dockerfile_path.exists()
-            && dockerfile_path.file_name() == Some(std::ffi::OsStr::new("Dockerfile"))
-        {
+        // Remove temporary Dockerfile (but never the custom Dockerfile at project root)
+        let is_temp_dockerfile = dockerfile_path
+            .file_name()
+            .map(|name| {
+                name == "Dockerfile.moose-build-temp"
+                    || (name == "Dockerfile" && dockerfile_path != custom_dockerfile_path(project))
+            })
+            .unwrap_or(false);
+
+        if dockerfile_path.exists() && is_temp_dockerfile {
             fs::remove_file(&dockerfile_path).ok();
         }
 
@@ -1235,31 +1503,4 @@ fn create_standard_typescript_dockerfile_content(
 
     let ts_base_dockerfile = generate_ts_base_dockerfile(node_version);
     Ok(format!("{ts_base_dockerfile}{install}"))
-}
-
-/// Creates standard TypeScript Dockerfile and writes it to disk
-fn create_standard_typescript_dockerfile(
-    project: &Project,
-    internal_dir: &Path,
-    node_version: &str,
-) -> Result<RoutineSuccess, RoutineFailure> {
-    let dockerfile_content = create_standard_typescript_dockerfile_content(project, node_version)?;
-    let file_path = internal_dir.join("packager/Dockerfile");
-
-    fs::write(&file_path, dockerfile_content).map_err(|err| {
-        error!("Failed to write Docker file for project: {}", err);
-        RoutineFailure::new(
-            Message::new(
-                "Failed".to_string(),
-                "to write Docker file for project".to_string(),
-            ),
-            err,
-        )
-    })?;
-
-    info!("Dockerfile created at: {:?}", file_path);
-    Ok(RoutineSuccess::success(Message::new(
-        "Successfully".to_string(),
-        "created dockerfile".to_string(),
-    )))
 }

@@ -151,6 +151,13 @@ pub struct DevSettings {
     /// When true, `moose dev` will not ask to configure remote drift checks
     #[serde(default)]
     pub suppress_dev_setup_prompt: bool,
+
+    /// Whether to expose Dockerfile for user customization
+    /// When true, Dockerfile is generated to project root instead of .moose/packager/
+    /// When false (default), Dockerfile remains hidden and managed by Moose
+    /// This can be set via the MOOSE_DEV__EXPOSE_DOCKERFILE environment variable
+    #[serde(default)]
+    pub expose_dockerfile: bool,
 }
 
 impl Default for DevSettings {
@@ -161,6 +168,7 @@ impl Default for DevSettings {
             bypass_infrastructure_execution: false,
             infrastructure_timeout_seconds: default_infrastructure_timeout(),
             suppress_dev_setup_prompt: false,
+            expose_dockerfile: false,
         }
     }
 }
