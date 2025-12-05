@@ -173,5 +173,84 @@ describe("IngestPipeline", () => {
       expect(pipeline.stream).to.not.be.undefined;
       expect(pipeline.stream?.config.lifeCycle).to.be.undefined;
     });
+
+    it("should propagate top-level lifeCycle to deadLetterQueue when deadLetterQueue.lifeCycle is not specified", () => {
+      const pipeline = new IngestPipeline<TestData>("TestPipeline", {
+        table: true,
+        stream: true,
+        ingestApi: false,
+        deadLetterQueue: {
+          parallelism: 1,
+        },
+        lifeCycle: LifeCycle.DELETION_PROTECTED,
+      });
+
+      expect(pipeline.deadLetterQueue).to.not.be.undefined;
+      expect(pipeline.deadLetterQueue?.config.lifeCycle).to.equal(
+        LifeCycle.DELETION_PROTECTED,
+      );
+    });
+
+    it("should propagate top-level lifeCycle to deadLetterQueue when deadLetterQueue is true", () => {
+      const pipeline = new IngestPipeline<TestData>("TestPipeline", {
+        table: true,
+        stream: true,
+        ingestApi: false,
+        deadLetterQueue: true,
+        lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+      });
+
+      expect(pipeline.deadLetterQueue).to.not.be.undefined;
+      expect(pipeline.deadLetterQueue?.config.lifeCycle).to.equal(
+        LifeCycle.EXTERNALLY_MANAGED,
+      );
+    });
+
+    it("should respect deadLetterQueue-specific lifeCycle over top-level lifeCycle", () => {
+      const pipeline = new IngestPipeline<TestData>("TestPipeline", {
+        table: true,
+        stream: true,
+        ingestApi: false,
+        deadLetterQueue: {
+          parallelism: 2,
+          lifeCycle: LifeCycle.FULLY_MANAGED,
+        },
+        lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+      });
+
+      expect(pipeline.deadLetterQueue).to.not.be.undefined;
+      expect(pipeline.deadLetterQueue?.config.lifeCycle).to.equal(
+        LifeCycle.FULLY_MANAGED,
+      );
+    });
+
+    it("should propagate lifeCycle to all components (table, stream, deadLetterQueue)", () => {
+      const pipeline = new IngestPipeline<TestData>("TestPipeline", {
+        table: {
+          orderByFields: ["id"],
+        },
+        stream: {
+          parallelism: 1,
+        },
+        ingestApi: false,
+        deadLetterQueue: {
+          parallelism: 1,
+        },
+        lifeCycle: LifeCycle.DELETION_PROTECTED,
+      });
+
+      expect(pipeline.table).to.not.be.undefined;
+      expect(pipeline.table?.config.lifeCycle).to.equal(
+        LifeCycle.DELETION_PROTECTED,
+      );
+      expect(pipeline.stream).to.not.be.undefined;
+      expect(pipeline.stream?.config.lifeCycle).to.equal(
+        LifeCycle.DELETION_PROTECTED,
+      );
+      expect(pipeline.deadLetterQueue).to.not.be.undefined;
+      expect(pipeline.deadLetterQueue?.config.lifeCycle).to.equal(
+        LifeCycle.DELETION_PROTECTED,
+      );
+    });
   });
 });

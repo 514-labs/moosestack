@@ -257,8 +257,11 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
       const streamConfig = {
         destination: undefined,
         ...(typeof config.deadLetterQueue === "object" ?
-          config.deadLetterQueue
-        : {}),
+          {
+            ...config.deadLetterQueue,
+            lifeCycle: config.deadLetterQueue.lifeCycle ?? config.lifeCycle,
+          }
+        : { lifeCycle: config.lifeCycle }),
         ...(config.version && { version: config.version }),
       };
       this.deadLetterQueue = new DeadLetterQueue<T>(
