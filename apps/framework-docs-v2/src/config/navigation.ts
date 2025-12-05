@@ -165,8 +165,8 @@ const moosestackNavigationConfig: NavigationConfig = [
   { type: "label", title: "Fundamentals" },
   {
     type: "page",
-    slug: "moosestack/local-dev-environment",
-    title: "Local Dev Environment",
+    slug: "moosestack/runtime",
+    title: "Moose Runtime",
     icon: IconRoute,
     languages: ["typescript", "python"],
   },
@@ -622,9 +622,41 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/configuration",
-    title: "Project Configuration",
+    title: "Configuration",
     icon: IconSettings,
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/configuration/project",
+        title: "Project & Telemetry",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/configuration/infrastructure",
+        title: "Infrastructure",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/configuration/authentication",
+        title: "Authentication",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/configuration/features-migrations",
+        title: "Features & Migrations",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/configuration/dev-environment",
+        title: "Dev Environment",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",

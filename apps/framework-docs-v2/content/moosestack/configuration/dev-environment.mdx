@@ -1,0 +1,177 @@
+---
+title: Configuring Development Environment
+description: Customize your local development workflow with hooks and extra infrastructure
+order: 2
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Configuring Development Environment
+
+Moose allows you to customize your development environment by running scripts on lifecycle events and extending the infrastructure with custom Docker services.
+
+## Script Execution Hooks
+
+You can configure your dev server to run shell commands automatically during development. Use these hooks to keep generated artifacts in sync (e.g., refreshing external models, regenerating OpenAPI SDKs).
+
+### Available Hooks
+
+| Hook | Description |
+| :--- | :--- |
+| `on_first_start_script` | Runs once when the dev server first starts in this process. |
+| `on_reload_complete_script` | Runs after each dev server reload when code/infra changes have been fully applied. |
+
+Configure these in `moose.config.toml` under the `http_server_config` section:
+
+```toml copy
+# moose.config.toml
+[http_server_config]
+# One-time on first start
+on_first_start_script = "echo 'dev started'"
+
+# After every code/infra reload completes
+on_reload_complete_script = "echo 'reload complete'"
+```
+
+**Notes:**
+*   Scripts run from your project root using your `$SHELL` (falls back to `/bin/sh`).
+*   Use `&&` to chain multiple commands or point to a custom script.
+*   Prefer passing credentials via environment variables or your secret manager.
+
+### Use Case: Keep External Models in Sync
+
+Refresh `EXTERNALLY_MANAGED` table models from a remote ClickHouse on dev start so your local code matches the live schema.
+
+```bash filename="Terminal" copy
+export REMOTE_CLICKHOUSE_URL="https://username:password@host:8443/?database=default"
+```
+
+```toml copy
+# moose.config.toml
+[http_server_config]
+on_first_start_script = "moose db pull --connection-string $REMOTE_CLICKHOUSE_URL"
+```
+
+See the full guide: [DB Pull](/moosestack/olap/db-pull)
+
+### Use Case: Regenerate OpenAPI SDKs on Reload
+
+Automatically regenerate client SDKs after Moose finishes applying code/infra changes so `.moose/openapi.yaml` is fresh.
+
+```toml copy
+# moose.config.toml
+[http_server_config]
+on_first_start_script = "command -v openapi-generator-cli >/dev/null 2>&1 || npm i -g @openapitools/openapi-generator-cli"
+on_reload_complete_script = "openapi-generator-cli generate -i .moose/openapi.yaml -g typescript-fetch -o ./generated/ts"
+```
+
+## Extending Docker Infrastructure
+
+You can extend Moose's Docker Compose configuration with custom services by creating a `docker-compose.dev.override.yaml` file in your project root. This allows you to add additional infrastructure (databases, monitoring tools, etc.) that runs alongside your Moose development environment.
+
+<Callout type="warning" title="Use moose.config.toml for Moose Configuration">
+**Do not use docker-compose.dev.override.yaml to modify Moose-managed services** (ClickHouse, Redpanda, Redis, Temporal). The Docker Compose merge behavior makes it difficult to override existing configuration correctly, often leading to conflicts.
+
+Instead, use `moose.config.toml` to configure Moose infrastructure. See [Configuration](/moosestack/configuration) for all available options including database connections, ports, volumes, and service-specific settings.
+
+Use the override file **only for adding new services** that complement your Moose environment (e.g., PostgreSQL for application data, monitoring tools).
+</Callout>
+
+### How it Works
+
+When you run `moose dev`, Moose automatically detects and merges your override file with the generated Docker Compose configuration using Docker Compose's [standard merge behavior](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/).
+
+### Example: Adding PostgreSQL
+
+Create a `docker-compose.dev.override.yaml` file in your project root:
+
+```yaml copy filename="docker-compose.dev.override.yaml"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: myapp
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: myapp_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:
+```
+
+Now when you run `moose dev`, PostgreSQL will start alongside your other infrastructure. You'll see a message confirming the override file is being used:
+
+```
+[moose] Using docker-compose.dev.override.yaml for custom infrastructure
+```
+
+<Callout type="warning" title="Production Deployments">
+The override file is only used in development mode (`moose dev`). For production deployments, configure your infrastructure separately using your deployment platform's tools.
+</Callout>
+
+## Networking Reference
+
+This reference lists the default ports and service URLs used by the Moose Runtime in development mode.
+
+### Port Allocation
+
+Development mode uses the following default ports:
+
+| Port | Service | Description |
+| :--- | :--- | :--- |
+| **4000** | Main API Server | Handles ingestion and consumption API requests |
+| **5001** | Management API | Exposes health checks, metrics, and admin endpoints |
+| **18123** | ClickHouse HTTP | Direct HTTP access to the OLAP database |
+| **9000** | ClickHouse Native | Native protocol access to the OLAP database |
+| **19092** | Redpanda | Kafka-compatible streaming interface |
+| **8080** | Temporal UI | Workflow engine dashboard (if enabled) |
+
+To change these ports, see [Configuration](/moosestack/configuration).
+
+### Service URLs
+
+Access your development services at:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```bash
+# Main application
+http://localhost:4000
+
+# Management interface
+http://localhost:5001/metrics
+
+# OpenAPI documentation
+http://localhost:5001/openapi.yaml
+
+# Temporal UI (if workflows enabled)
+http://localhost:8080
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```bash
+# Main application
+http://localhost:4000
+
+# Management interface  
+http://localhost:5001/metrics
+
+# OpenAPI documentation
+http://localhost:5001/openapi.yaml
+
+# Temporal UI (if workflows enabled)
+http://localhost:8080
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Container Networking
+
+In development mode, Moose runs services in an isolated Docker network.
+
+*   **Internal Communication**: Services communicate using their Docker service names (e.g., `clickhouse`, `redpanda`).
+*   **Host Access**: Ports are mapped to `localhost` to allow you to connect from your host machine.
+*   **DNS Resolution**: Docker handles automatic DNS resolution between containers.

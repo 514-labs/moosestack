@@ -1,0 +1,78 @@
+---
+title: The Moose Runtime
+description: Understanding how MooseStack runs locally and in production
+order: 3
+---
+
+import { LanguageTabs, LanguageTabContent, Callout, FileTree, CompareBulletPointsCard } from "@/components/mdx";
+
+# The Moose Runtime
+
+The Moose Runtime is the execution engine for your MooseStack application. It connects your code to your infrastructure by:
+*   **Managing Data Schemas**: It automatically applies changes to ClickHouse and Redpanda based on your code.
+*   **Running Your Application**: It provides the server that runs your APIs, streaming consumers, data synchronization (e.g. Kafka to ClickHouse) workflows, and other server-side processes defined in your code.
+
+This integrated approach provides the best experience for most applications. However, if you only need schema management for ClickHouse (the `olap` feature), you can [use Moose as a library without the full runtime server](/guides/using-moose-as-a-library).
+
+## Execution Modes
+
+Moose runs in two ways: `moose dev` and `moose prod`.
+
+<CompareBulletPointsCard
+  leftColumn={{
+    title: "Local Development (moose dev)",
+    bullets: [
+      {
+        title: "Auto-Provisioned Infrastructure",
+        description: "Automatically starts/stops Docker containers for ClickHouse, Redpanda, Temporal, and Redis when you start/stop the local development server."
+      },
+      {
+        title: "Hot Reloaded Migrations",
+        description: "Includes a file watcher that instantly hot-reloads migrations to your local infrastructure when you save your code changes."
+      },
+      {
+        title: "Built-in MCP Server",
+        description: "Includes a Model Context Protocol server so AI assistants can query your data and logs.",
+        link: { text: "Learn more", href: "/moosestack/moosedev-mcp" }
+      }
+    ]
+  }}
+  rightColumn={{
+    title: "Production (moose prod)",
+    bullets: [
+      {
+        title: "Bring Your Own Infrastructure",
+        description: "You bring your own infrastructure. Moose Runtime won't start databases for you in production. It expects services to be running and connects via environment variables."
+      },
+      {
+        title: "Single Migration",
+        description: "Migrations run once at startup using a `plan` file, rather than watching for code changes."
+      },
+      {
+        title: "No AI Helper",
+        description: "The Model Context Protocol server is disabled in production (remote MCP server coming soon)."
+      }
+    ]
+  }}
+/>
+
+<Callout type="info" title="Local Prototyping" compact>
+Even if you are not using the Moose Runtime in production, it is a useful tool for quickly prototyping OLAP models locally. You do not need to have a production environment set up to use the local development server.
+</Callout>
+
+## The Infrastructure Map
+
+The core of the Moose Runtime is the infrastructure map. This is a representation of your infrastructure as it exists in your code. The runtime uses this map to determine exactly what needs to be provisioned, migrated, or destroyed to make your live infrastructure match your code.
+
+### Finding Dependencies
+
+Moose Runtime looks at your **Root Entrypoint** (`index.ts` for TypeScript or `main.py` for Python) to figure out what resources to include in the infrastructure map. For MooseStack to manage a resource (like a Table, Stream, or API), **it must be declared in or reachable from your root file**.
+
+This "strict declaration" rule ensures that your running infrastructure always matches the active code path of your application, preventing "zombie" tables or endpoints from lingering in your environment.
+
+## Next Steps
+
+*   **[Configure Development](/moosestack/configuration/dev-environment)**: Learn how to add your own Docker containers and scripts.
+*   **[Networking Reference](/moosestack/configuration/networking)**: See the default ports and URLs Moose uses.
+*   **[Project Configuration](/moosestack/configuration)**: Learn about `moose.config.toml` and feature flags.
+*   **[Deployment](/moosestack/deploying)**: Learn how to package and run Moose in production.
