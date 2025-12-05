@@ -200,6 +200,8 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
    * @param config Configuration specifying which components to create and their settings.
    * @param schema JSON schema collection for type validation.
    * @param columns Column definitions for the data model.
+   * @param validators Typia validation functions.
+   * @param allowExtraFields Whether extra fields are allowed (injected when type has index signature).
    */
   constructor(
     name: string,
@@ -207,6 +209,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     schema: IJsonSchemaCollection.IV3_1,
     columns: Column[],
     validators: TypiaValidators<T>,
+    allowExtraFields: boolean,
   );
 
   constructor(
@@ -215,8 +218,9 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     schema?: IJsonSchemaCollection.IV3_1,
     columns?: Column[],
     validators?: TypiaValidators<T>,
+    allowExtraFields?: boolean,
   ) {
-    super(name, config, schema, columns, validators);
+    super(name, config, schema, columns, validators, allowExtraFields);
 
     // Handle backwards compatibility for deprecated 'ingest' parameter
     if (config.ingest !== undefined) {
@@ -289,6 +293,8 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         streamConfig,
         this.schema,
         this.columnArray,
+        undefined,
+        this.allowExtraFields,
       );
       // Set pipeline parent reference for internal framework use
       (this.stream as any).pipelineParent = this;
@@ -316,6 +322,8 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         ingestConfig,
         this.schema,
         this.columnArray,
+        undefined,
+        this.allowExtraFields,
       );
       // Set pipeline parent reference for internal framework use
       (this.ingestApi as any).pipelineParent = this;
