@@ -138,6 +138,7 @@ moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --langua
 moose init my-project --from-remote --language typescript
 ```
 </TypeScript>
+
 <Python>
 ```bash filename="Initialize new project" copy
 # Option 1: Provide connection string directly
@@ -161,6 +162,17 @@ If you don't provide a connection string, Moose will guide you through an intera
 - **Database name** (optional, defaults to `default`)
 
 This is perfect if you're not sure about your connection details or prefer a guided experience.
+</Callout>
+
+<Callout type="info" title="Alternative: Two-step process" compact={true}>
+You can also initialize your project first, then import from your database:
+```bash
+# Step 1: Initialize your project
+moose init my-project typescript  # or python
+
+# Step 2: Import from your database
+moose db pull --clickhouse-url <YOUR_CLICKHOUSE_CONNECTION_STRING>
+```
 </Callout>
 
 <Callout type="info" title="What gets generated" compact={true}>

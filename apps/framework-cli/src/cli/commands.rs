@@ -9,15 +9,18 @@ use clap::{Args, Subcommand};
 pub enum Commands {
     // Initializes the developer environment with all the necessary directories including temporary ones for data storage
     /// Initialize your data-intensive app or service
+    #[command(
+        after_help = "To view all available templates, run: moose template list",
+        help_template = "{about-section}\n\n{usage-heading} {usage}\n\n{all-args}\n\n{after-help}"
+    )]
     Init {
         /// Name of your app or service
         name: String,
 
         /// Template to use for the project
-        #[arg(
-            conflicts_with = "from_remote",
-            required_unless_present = "from_remote"
-        )]
+        /// Can be a template name (e.g., "python", "typescript", "python-empty", "typescript-empty", "python-fastapi")
+        /// Use "moose template list" to see all available templates
+        #[arg(conflicts_with = "from_remote", value_name = "TEMPLATE")]
         template: Option<String>,
 
         /// Location of your app or service
@@ -31,14 +34,15 @@ pub enum Commands {
         /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
         #[arg(
             long,
-            required_unless_present = "template",
+            conflicts_with = "template",
             value_name = "CONNECTION_STRING",
             num_args = 0..=1
         )]
         from_remote: Option<Option<String>>,
 
-        /// Programming language to use for the project
-        #[arg(long, conflicts_with = "template")]
+        /// Programming language to use for the project (e.g., "python" or "typescript")
+        /// Required when using --from-remote.
+        #[arg(long)]
         language: Option<String>,
     },
     /// Builds your moose project

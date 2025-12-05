@@ -61,18 +61,52 @@ fn main() -> ExitCode {
     let cli_result = match cli::Cli::try_parse() {
         Ok(cli_result) => cli_result,
         Err(e) => {
-            // For missing template argument, provide a helpful message
-            if e.kind() == clap::error::ErrorKind::MissingRequiredArgument
-                && e.to_string().contains("<TEMPLATE>")
-            {
-                eprintln!("{e}");
-                eprintln!("To view available templates, run:");
-                eprintln!("\n  moose template list");
-                std::process::exit(1)
+            // For init command errors, provide helpful guidance
+            let error_str = e.to_string();
+            if error_str.contains("moose init") || error_str.contains("init") {
+                // Check if it's a missing argument error
+                if e.kind() == clap::error::ErrorKind::MissingRequiredArgument {
+                    eprintln!("{e}");
+
+                    // Check if --location is used but <NAME> is missing
+                    // This usually means the user put the name in the wrong position
+                    // Use both string matching and check for the specific argument name
+                    let missing_name = error_str.contains("<NAME>");
+                    let has_location_flag =
+                        error_str.contains("--location") || error_str.contains("-l");
+
+                    if missing_name && has_location_flag {
+                        eprintln!(
+                            "\n💡 Note: The project name must come before flags that take values."
+                        );
+                        eprintln!("   If using --location (-l), put the project name first:");
+                        eprintln!("   moose init <NAME> python -l <directory>");
+                        eprintln!("\n   Or use the full flag name to avoid confusion:");
+                        eprintln!("   moose init <NAME> python --location <directory>");
+                    }
+
+                    eprintln!("\n💡 Quick start examples:");
+                    eprintln!("  moose init PROJECT_NAME python          # Initialize with Python");
+                    eprintln!(
+                        "  moose init PROJECT_NAME typescript       # Initialize with TypeScript"
+                    );
+                    eprintln!(
+                        "  moose init PROJECT_NAME python -l ./my-dir  # With custom location"
+                    );
+                    eprintln!("  moose init PROJECT_NAME --from-remote <url> --language python  # From existing DB");
+                    eprintln!("\nTo view all available templates, run:");
+                    eprintln!("  moose template list");
+                    std::process::exit(1)
+                } else {
+                    // For other init errors, show the error
+                    eprintln!("{e}");
+                    std::process::exit(1)
+                }
             } else {
-                // For other errors, use Clap's default error format
-                // this includes the --version and --help string
-                e.exit()
+                // For other errors, format without the redundant footer
+                eprintln!("{e}");
+                // Don't call e.exit() as it adds "For more information, try '--help'" footer
+                std::process::exit(1)
             }
         }
     };

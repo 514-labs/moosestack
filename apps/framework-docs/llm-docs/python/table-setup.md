@@ -463,15 +463,17 @@ The `cluster` field is a **deployment directive** that controls HOW Moose runs D
 
 - **Changing `cluster` won't recreate your table** - it only affects future DDL operations (CREATE, ALTER, etc.)
 - **ClickHouse doesn't store cluster information** - the `ON CLUSTER` clause is only used during DDL execution
-- **`moose init --from-remote` & `moose db pull` cannot detect cluster names** - ClickHouse system tables don't preserve this information
+- **`moose db pull` cannot detect cluster names** - ClickHouse system tables don't preserve this information
 
 **If you're importing existing tables that were created with `ON CLUSTER`:**
-1. Run `moose init --from-remote` to generate your table definitions
-2. Manually add `cluster="your_cluster_name"` to the generated table configs
-3. Future migrations and DDL operations will correctly use `ON CLUSTER`
+1. Initialize your project: `moose init my-project python`
+2. Run `moose db pull --clickhouse-url <YOUR_URL>` to generate your table definitions
+3. Manually add `cluster="your_cluster_name"` to the generated table configs
+4. Future migrations and DDL operations will correctly use `ON CLUSTER`
 
 **Example workflow:**
 ```python
+# After moose db pull generates this:
 # After moose init --from-remote generates this:
 my_table = OlapTable[MySchema](
     "MyTable",

@@ -125,7 +125,35 @@ pub fn prompt_user(
 }
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
+#[command(
+    author,
+    version,
+    about,
+    long_about = "Moose is a framework for building data-intensive applications.
+
+Get started:
+  moose init <name> [template]            Initialize a new Moose project
+                                           (template: 'python', 'typescript', 'python-empty', etc.)
+                                           Use 'moose template list' to see all templates
+  moose init <name> --from-remote <url>    Initialize from existing ClickHouse database
+                                           --language <python|typescript> (required with --from-remote)
+  moose template list                      List available templates
+  moose dev                                 Start development environment
+
+Common commands:
+  moose build                           Build your project
+  moose check                           Validate project configuration
+  moose plan                            Preview infrastructure changes
+  moose migrate                         Apply infrastructure changes
+  moose logs                            View application logs
+  moose ls                              List infrastructure components
+  moose peek <name>                     View data from tables or streams
+  moose query '<sql>'                   Execute SQL queries
+",
+    arg_required_else_help(true),
+    next_display_order = None,
+    help_template = "{about-section}\n\n{usage-heading} {usage}\n\n{all-args}{subcommands}\n\n{after-help}"
+)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
@@ -327,6 +355,14 @@ pub async fn top_command_handler(
                 "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}",
                 name, location, template, language
             );
+
+            // If --from-remote is used, --language is required
+            if from_remote.is_some() && language.is_none() {
+                return Err(RoutineFailure::error(Message::new(
+                    "Init".to_string(),
+                    "--language is required when using --from-remote".to_string(),
+                )));
+            }
 
             // Determine template, prompting for language if needed (especially for --from-remote)
             let template = match template {
@@ -1285,7 +1321,7 @@ pub async fn top_command_handler(
                         Ok(Some(s)) => s,
                         Ok(None) => return Err(RoutineFailure::error(Message {
                             action: "DB Pull".to_string(),
-                            details: "No ClickHouse URL provided and none saved. Pass --clickhouse-url or save one during `moose init --from-remote`.".to_string(),
+                            details: "No ClickHouse URL provided and none saved. Pass --clickhouse-url or use `moose db pull` to import from a remote database.".to_string(),
                         })),
                         Err(e) => {
                             return Err(RoutineFailure::error(Message {
