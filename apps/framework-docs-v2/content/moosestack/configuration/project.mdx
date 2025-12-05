@@ -8,7 +8,7 @@ import { Callout } from "@/components/mdx";
 
 # Project Configuration
 
-This reference covers the top-level configuration for your Moose project, including language settings, directory structure, telemetry, and git integration.
+This reference covers the top-level configuration for your MooseStack project, including language settings, directory structure, telemetry, and git integration.
 
 You can configure these settings using either `moose.config.toml` or environment variables.
 
@@ -39,7 +39,7 @@ language = "Typescript"
 |:----|:-------------|:-----|:--------|:------------|
 | `language` | `MOOSE_LANGUAGE` | String | "Typescript" | The programming language used for your data models and flows. |
 | `source_dir` | `MOOSE_SOURCE_DIR` | String | "app" | The directory containing your Moose application code. |
-| `load_infra` | `MOOSE_LOAD_INFRA` | Boolean | true | Whether `moose dev` should spin up Docker containers for local infrastructure. |
+| `load_infra` | `MOOSE_LOAD_INFRA` | Boolean | true | If `true`, `moose dev` spins up local Docker containers using the settings in [Infrastructure](/moosestack/configuration/infrastructure). If `false`, no containers are created, allowing you to connect to external infra. |
 | `supported_old_versions` | N/A | Map | {} | Mapping of older project versions to their paths for backward compatibility. |
 
 ## TypeScript Configuration
