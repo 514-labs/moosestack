@@ -7,11 +7,15 @@ import { Callout } from "@/components";
 
 # December 5, 2025
 
-Flexible Streaming Ingest, Web App Integration, and Infra Visibility Upgrades. This release pushes MooseStack forward on three fronts: flexible high-volume ingestion, developer experience for full-stack apps, and operational visibility. Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming, and powerful modeling tools like materialized columns and per-column codecs. On the app side, new Fastify and Next.js patterns make it easier to build type-safe Moose-backed web experiences. Meanwhile, Boreal added infra maps and storage visualizations so teams can see how their systems are wired and how their data grows.
+Flexible Streaming Ingest, Web App Integration, and Infra Visibility Upgrades. This two-week release pushes MooseStack forward on three fronts: flexible high-volume ingestion, developer experience for full-stack apps, and operational visibility.
+
+Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming, IcebergS3 for data lake integration, and powerful modeling tools like materialized columns, per-column codecs, and custom PRIMARY KEY expressions. On the app side, new Fastify and Next.js patterns—plus Python LSP autocomplete for SQL queries—make it easier to build type-safe Moose-backed experiences. Meanwhile, Boreal added infra maps and storage visualizations so teams can see how their systems are wired and how their data grows.
 
 <Callout type="info" title="Highlights">
 * **New:** [Arbitrary JSON fields in ingest APIs](#arbitrary-json-fields-in-ingest-apis) for flexible schema evolution
 * **New:** [Kafka engine support](#kafka-engine-support-for-streaming-ingestion) for real-time ClickHouse ingestion
+* **New:** [IcebergS3 engine](#icebergs3-engine-for-data-lake-storage) for Apache Iceberg data lake integration
+* **New:** [Python LSP autocomplete](#python-lsp-autocomplete-for-sql-queries) for type-safe SQL queries
 * **New:** [Fastify web app template](#fastify-web-app-template) with automatic async initialization
 * **New:** [Infrastructure map visualization](#infrastructure-map-visualization) in Boreal dashboard
 </Callout>
@@ -157,6 +161,121 @@ export const KafkaTestMV = new MaterializedView<KafkaTestEvent>({
 ```
 
 PR: [#3066](https://github.com/514-labs/moosestack/pull/3066)
+
+---
+
+## IcebergS3 engine for data lake storage
+
+Configure tables to use Apache Iceberg format with S3 storage for better data lake integration and columnar storage capabilities.
+
+**Why it matters:** Data lake integration without the glue. IcebergS3 enables columnar storage on S3 with Parquet or ORC format, AWS credential management, and compression options. This bridges Moose's real-time pipelines with existing data lake infrastructure for analytics workloads.
+
+```typescript filename="app/tables/analytics_events.ts" copy
+import {
+  OlapTable,
+  ClickHouseEngines,
+  Key,
+  DateTime,
+} from "@514labs/moose-lib";
+
+export interface AnalyticsEvent {
+  id: Key<string>;
+  userId: string;
+  eventType: string;
+  timestamp: DateTime;
+  properties: string;
+  sessionId: string;
+}
+
+// Configure table with IcebergS3 engine for data lake storage
+export const AnalyticsEventsTable = new OlapTable<AnalyticsEvent>(
+  "AnalyticsEvents",
+  {
+    engine: ClickHouseEngines.IcebergS3,
+    path: "s3://my-data-lake/analytics/events/",
+    format: "Parquet", // or "ORC"
+    awsAccessKeyId: "{{ AWS_ACCESS_KEY_ID }}", // Environment variable
+    awsSecretAccessKey: "{{ AWS_SECRET_ACCESS_KEY }}",
+    compression: "zstd",
+    orderByFields: ["timestamp"],
+  },
+);
+```
+
+PR: [#2978](https://github.com/514-labs/moosestack/pull/2978)
+
+---
+
+## Custom PRIMARY KEY expressions
+
+Define custom PRIMARY KEY expressions with hash functions and custom column ordering for optimized ClickHouse table performance.
+
+**Why it matters:** Better data distribution and query performance. Custom PRIMARY KEY expressions let you use functions like `cityHash64` for better distribution in ClickHouse, beyond simple column-based keys. This is essential for high-cardinality data where default ordering isn't optimal.
+
+```typescript filename="app/ingest/models.ts" copy
+import { OlapTable, Key, DateTime } from "@514labs/moose-lib";
+
+export interface PrimaryKeyExpressionTest {
+  userId: string;
+  eventId: string;
+  timestamp: DateTime;
+  category: string;
+}
+
+// Table using primaryKeyExpression with hash function for better distribution
+// Note: PRIMARY KEY must be a prefix of ORDER BY in ClickHouse
+export const primaryKeyExpressionTable = new OlapTable<PrimaryKeyExpressionTest>(
+  "PrimaryKeyExpressionTest",
+  {
+    // Primary key uses hash function for better distribution
+    primaryKeyExpression: "(userId, cityHash64(eventId))",
+    // Order by must start with the same columns as primary key
+    orderByExpression: "(userId, cityHash64(eventId), timestamp)",
+  },
+);
+```
+
+PR: [#3031](https://github.com/514-labs/moosestack/pull/3031)
+
+---
+
+## Python LSP autocomplete for SQL queries
+
+Get IDE autocomplete when referencing table columns in Python f-strings using the new `MooseModel` class with `{Column:col}` format.
+
+**Why it matters:** Type-safe SQL without typos. Python developers can now get autocomplete suggestions for column names when writing SQL queries, catching errors at development time rather than runtime. The `{Column:col}` format ensures proper SQL quoting.
+
+```python filename="app/models/user_event.py" copy
+from moose_lib import MooseModel, OlapTable
+from typing import Optional
+
+# Define your data model using MooseModel for autocomplete support
+class UserEvent(MooseModel):
+    user_id: int
+    event_type: str
+    timestamp: str
+    session_id: Optional[str] = None
+    revenue: Optional[float] = None
+
+# Build SQL queries with IDE autocomplete for column names
+def create_user_analytics_query():
+    # The {Column:col} format provides proper SQL quoting and autocomplete
+    query = f"""
+    SELECT
+        {UserEvent.user_id:col},
+        {UserEvent.event_type:col},
+        COUNT(*) as event_count,
+        SUM({UserEvent.revenue:col}) as total_revenue
+    FROM user_events
+    WHERE {UserEvent.timestamp:col} >= '2024-01-01'
+        AND {UserEvent.session_id:col} IS NOT NULL
+    GROUP BY {UserEvent.user_id:col}, {UserEvent.event_type:col}
+    ORDER BY total_revenue DESC
+    """
+    return query
+```
+
+PR: [#3024](https://github.com/514-labs/moosestack/pull/3024)
 
 ---
 
@@ -350,6 +469,8 @@ PR: [#3054](https://github.com/514-labs/moosestack/pull/3054)
 - **Lifecycle inheritance in IngestPipeline** – Top-level lifecycle settings automatically propagate to table, stream, and deadLetterQueue components, reducing config duplication. PR [#3088](https://github.com/514-labs/moosestack/pull/3088)
 - **MCP query result compression** – Results compressed using toon format for better IDE/AI integration performance. PR [#3033](https://github.com/514-labs/moosestack/pull/3033)
 - **API key auth in MCP template** – Optional PBKDF2-based authentication for secure MCP server deployments. PR [#3053](https://github.com/514-labs/moosestack/pull/3053)
+- **Latency logging for TypeScript APIs** – HTTP requests to consumption APIs now log response times in milliseconds for easier performance monitoring. PR [#3042](https://github.com/514-labs/moosestack/pull/3042)
+- **Renamed --connection-string to --clickhouse-url** – CLI now uses `--clickhouse-url` for ClickHouse commands (old flag still works). Improved connection string parsing for native protocol URLs. PR [#3022](https://github.com/514-labs/moosestack/pull/3022)
 - **No-ANSI output option** – Disable colored CLI output for CI/CD systems and log files. PR [#3044](https://github.com/514-labs/moosestack/pull/3044)
 - **Faster CLI logging** – Optimized tracing implementation reduces memory allocations. PR [#3040](https://github.com/514-labs/moosestack/pull/3040), [#3041](https://github.com/514-labs/moosestack/pull/3041)
 - **Documentation updates** – Improved quickstart, ClickHouse migration guide, and simplified installation command. PR [#3079](https://github.com/514-labs/moosestack/pull/3079), [#3073](https://github.com/514-labs/moosestack/pull/3073)
@@ -362,6 +483,10 @@ PR: [#3054](https://github.com/514-labs/moosestack/pull/3054)
 - MCP SDK compilation errors and Zod-based runtime validation – [#3075](https://github.com/514-labs/moosestack/pull/3075)
 - MCP template auth setup instructions clarified – [#3058](https://github.com/514-labs/moosestack/pull/3058)
 - ORDER BY extraction when tables have projections – [#3052](https://github.com/514-labs/moosestack/pull/3052)
+- TypeScript tests template Zod import path fix – [#3038](https://github.com/514-labs/moosestack/pull/3038)
+- SQL parsing for ClickHouse array literals in views – [#3034](https://github.com/514-labs/moosestack/pull/3034)
+- LowCardinality(String) column type handling in peek/query commands – [#3025](https://github.com/514-labs/moosestack/pull/3025)
+- DateTime precision loss – preserve microseconds/nanoseconds with new DateTime64String types – [#3018](https://github.com/514-labs/moosestack/pull/3018)
 
 ---
 
@@ -382,6 +507,20 @@ New experimental page showing table storage usage over time with interactive cha
 **Why it matters:** Watch storage growth over time. Time-series charts of table sizes are crucial for capacity planning, catching runaway growth, and understanding which workloads drive storage cost.
 
 PR: [#1125](https://github.com/514-labs/commercial/pull/1125)
+
+---
+
+## Other Boreal improvements
+
+- **Log drain performance** – Reuses database connections instead of creating new ones per batch, reducing connection overhead. PR [#1121](https://github.com/514-labs/commercial/pull/1121)
+- **ClickHouse query performance** – Optimized table structure and indexing for faster loading of query performance data. PR [#1116](https://github.com/514-labs/commercial/pull/1116)
+- **Temporarily removed "Build from Existing Database"** – Option removed from project creation flow while being improved. Users can still import from GitHub or templates. PR [#1104](https://github.com/514-labs/commercial/pull/1104)
+
+---
+
+## Infrastructure improvements
+
+- **Extended deployment startup timeouts** – Increased from 60 to 180 seconds to reduce failures for larger applications during high-load periods. PR [#1098](https://github.com/514-labs/commercial/pull/1098)
 
 ---
 
