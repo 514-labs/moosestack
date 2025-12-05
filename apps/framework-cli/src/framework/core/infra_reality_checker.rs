@@ -16,11 +16,15 @@
 /// - Identifying structural differences in tables
 use crate::{
     framework::core::{
+        infrastructure::materialized_view::MaterializedView,
         infrastructure::sql_resource::SqlResource,
         infrastructure::table::Table,
+        infrastructure::view::CustomView,
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
-    infrastructure::olap::{OlapChangesError, OlapOperations},
+    infrastructure::olap::{
+        clickhouse::sql_parser::parse_create_materialized_view, OlapChangesError, OlapOperations,
+    },
     project::Project,
 };
 use serde::{Deserialize, Serialize};
@@ -63,6 +67,18 @@ pub struct InfraDiscrepancies {
     pub missing_sql_resources: Vec<String>,
     /// SQL resources that exist in both but have differences
     pub mismatched_sql_resources: Vec<OlapChange>,
+    /// Materialized views that exist in reality but are not in the map
+    pub unmapped_materialized_views: Vec<MaterializedView>,
+    /// Materialized views that are in the map but don't exist in reality
+    pub missing_materialized_views: Vec<String>,
+    /// Materialized views that exist in both but have differences
+    pub mismatched_materialized_views: Vec<OlapChange>,
+    /// Custom views that exist in reality but are not in the map
+    pub unmapped_custom_views: Vec<CustomView>,
+    /// Custom views that are in the map but don't exist in reality
+    pub missing_custom_views: Vec<String>,
+    /// Custom views that exist in both but have differences
+    pub mismatched_custom_views: Vec<OlapChange>,
 }
 
 impl InfraDiscrepancies {
@@ -74,7 +90,195 @@ impl InfraDiscrepancies {
             && self.unmapped_sql_resources.is_empty()
             && self.missing_sql_resources.is_empty()
             && self.mismatched_sql_resources.is_empty()
+            && self.unmapped_materialized_views.is_empty()
+            && self.missing_materialized_views.is_empty()
+            && self.mismatched_materialized_views.is_empty()
+            && self.unmapped_custom_views.is_empty()
+            && self.missing_custom_views.is_empty()
+            && self.mismatched_custom_views.is_empty()
     }
+}
+
+/// Normalizes SQL for comparison by:
+/// - Collapsing all whitespace (newlines, tabs, multiple spaces) to single spaces
+/// - Trimming leading/trailing whitespace
+///
+/// This is needed because ClickHouse reformats SQL when storing it
+/// (e.g., puts everything on one line in `as_select`).
+fn normalize_sql(sql: &str) -> String {
+    sql.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Checks if two SQL strings are semantically equivalent.
+/// Compares normalized versions (whitespace-collapsed).
+fn sql_is_equivalent(sql1: &str, sql2: &str) -> bool {
+    normalize_sql(sql1) == normalize_sql(sql2)
+}
+
+/// Attempts to convert a SqlResource (from ClickHouse reality) into a MaterializedView.
+/// Returns None if the SqlResource is not a moose-lib generated materialized view.
+///
+/// Only matches moose-lib generated MVs which use:
+/// - Exactly one setup statement
+/// - Exactly one teardown statement starting with "DROP VIEW IF EXISTS"
+/// - Setup starts with "CREATE MATERIALIZED VIEW IF NOT EXISTS"
+/// - Setup contains " TO " clause
+fn materialized_view_from_sql_resource(
+    sql_resource: &SqlResource,
+    default_database: &str,
+) -> Option<MaterializedView> {
+    // Must have exactly one setup and one teardown statement
+    if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
+        return None;
+    }
+
+    let setup_sql = sql_resource.setup.first()?;
+    let teardown_sql = sql_resource.teardown.first()?;
+
+    // Check teardown matches moose-lib pattern (exact prefix)
+    if !teardown_sql.starts_with("DROP VIEW IF EXISTS") {
+        return None;
+    }
+
+    // Check setup matches moose-lib pattern (exact prefix, with TO clause)
+    if !setup_sql.starts_with("CREATE MATERIALIZED VIEW IF NOT EXISTS") {
+        return None;
+    }
+    if !setup_sql.contains(" TO ") {
+        return None;
+    }
+
+    // Parse the CREATE MATERIALIZED VIEW statement
+    let parsed = parse_create_materialized_view(setup_sql).ok()?;
+
+    // Convert source tables from Vec<TableReference> to Vec<String>
+    let source_tables: Vec<String> = parsed
+        .source_tables
+        .iter()
+        .map(|t| t.qualified_name())
+        .collect();
+
+    Some(MaterializedView {
+        name: sql_resource.name.clone(),
+        database: Some(default_database.to_string()),
+        select_sql: parsed.select_statement,
+        source_tables,
+        target_table: parsed.target_table,
+        target_database: parsed.target_database,
+        source_file: sql_resource.source_file.clone(),
+    })
+}
+
+/// Attempts to convert a SqlResource (from ClickHouse reality) into a CustomView.
+/// Returns None if the SqlResource is not a moose-lib generated custom view.
+///
+/// Only matches moose-lib generated views which use:
+/// - Exactly one setup statement
+/// - Exactly one teardown statement starting with "DROP VIEW IF EXISTS"
+/// - Setup starts with "CREATE VIEW IF NOT EXISTS"
+/// - Setup does not contain "MATERIALIZED"
+/// - Setup contains " AS "
+fn custom_view_from_sql_resource(
+    sql_resource: &SqlResource,
+    default_database: &str,
+) -> Option<CustomView> {
+    use crate::infrastructure::olap::clickhouse::sql_parser::extract_source_tables_from_query_regex;
+
+    // Must have exactly one setup and one teardown statement
+    if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
+        return None;
+    }
+
+    let setup_sql = sql_resource.setup.first()?;
+    let teardown_sql = sql_resource.teardown.first()?;
+
+    // Check teardown matches moose-lib pattern (exact prefix)
+    if !teardown_sql.starts_with("DROP VIEW IF EXISTS") {
+        return None;
+    }
+
+    // Check setup matches moose-lib pattern (exact prefix)
+    if !setup_sql.starts_with("CREATE VIEW IF NOT EXISTS") {
+        return None;
+    }
+
+    // Must not be a MATERIALIZED VIEW
+    if setup_sql.contains("MATERIALIZED") {
+        return None;
+    }
+
+    // Extract the SELECT part after AS
+    let upper = setup_sql.to_uppercase();
+    let as_pos = upper.find(" AS ")?;
+    let select_sql = setup_sql[(as_pos + 4)..].trim().to_string();
+
+    // Extract source tables from the SELECT query
+    // Use regex fallback which handles default database
+    let source_tables: Vec<String> =
+        match extract_source_tables_from_query_regex(&select_sql, default_database) {
+            Ok(tables) => tables.iter().map(|t| t.qualified_name()).collect(),
+            Err(_) => Vec::new(), // If parsing fails, return empty source tables
+        };
+
+    Some(CustomView {
+        name: sql_resource.name.clone(),
+        database: Some(default_database.to_string()),
+        select_sql,
+        source_tables,
+        source_file: sql_resource.source_file.clone(),
+    })
+}
+
+/// Checks if two MaterializedViews are semantically equivalent.
+/// Compares target table, source tables (sorted), and normalized SELECT SQL.
+fn materialized_views_are_equivalent(mv1: &MaterializedView, mv2: &MaterializedView) -> bool {
+    // Compare names
+    if mv1.name != mv2.name {
+        return false;
+    }
+
+    // Compare target tables
+    if mv1.target_table != mv2.target_table {
+        return false;
+    }
+
+    // Compare target databases (both None or both equal)
+    if mv1.target_database != mv2.target_database {
+        return false;
+    }
+
+    // Compare source tables (order-independent)
+    let mut sources1: Vec<_> = mv1.source_tables.clone();
+    let mut sources2: Vec<_> = mv2.source_tables.clone();
+    sources1.sort();
+    sources2.sort();
+    if sources1 != sources2 {
+        return false;
+    }
+
+    // Compare SELECT SQL (normalized)
+    sql_is_equivalent(&mv1.select_sql, &mv2.select_sql)
+}
+
+/// Checks if two CustomViews are semantically equivalent.
+/// Compares source tables (sorted) and normalized SELECT SQL.
+fn custom_views_are_equivalent(v1: &CustomView, v2: &CustomView) -> bool {
+    // Compare names
+    if v1.name != v2.name {
+        return false;
+    }
+
+    // Compare source tables (order-independent)
+    let mut sources1: Vec<_> = v1.source_tables.clone();
+    let mut sources2: Vec<_> = v2.source_tables.clone();
+    sources1.sort();
+    sources2.sort();
+    if sources1 != sources2 {
+        return false;
+    }
+
+    // Compare SELECT SQL (normalized)
+    sql_is_equivalent(&v1.select_sql, &v2.select_sql)
 }
 
 /// The Infrastructure Reality Checker compares actual infrastructure state with the infrastructure map.
@@ -322,8 +526,48 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             actual_sql_resources.len()
         );
 
-        // Create a map of actual SQL resources by name
-        let actual_sql_resource_map: HashMap<String, _> = actual_sql_resources
+        // Convert SQL resources from reality to structured types (MVs and custom views)
+        // This allows us to compare them with the infra_map's materialized_views and custom_views
+        let mut actual_materialized_views: HashMap<String, MaterializedView> = HashMap::new();
+        let mut actual_custom_views: HashMap<String, CustomView> = HashMap::new();
+        let mut remaining_sql_resources: Vec<SqlResource> = Vec::new();
+
+        for sql_resource in actual_sql_resources {
+            // Try to convert to MaterializedView first
+            if let Some(mv) =
+                materialized_view_from_sql_resource(&sql_resource, &infra_map.default_database)
+            {
+                debug!(
+                    "Converted SQL resource '{}' to MaterializedView",
+                    sql_resource.name
+                );
+                actual_materialized_views.insert(mv.name.clone(), mv);
+            }
+            // Try to convert to CustomView
+            else if let Some(view) =
+                custom_view_from_sql_resource(&sql_resource, &infra_map.default_database)
+            {
+                debug!(
+                    "Converted SQL resource '{}' to CustomView",
+                    sql_resource.name
+                );
+                actual_custom_views.insert(view.name.clone(), view);
+            }
+            // Keep as SqlResource if it doesn't match MV or View patterns
+            else {
+                remaining_sql_resources.push(sql_resource);
+            }
+        }
+
+        debug!(
+            "Classified SQL resources: {} MVs, {} custom views, {} remaining sql_resources",
+            actual_materialized_views.len(),
+            actual_custom_views.len(),
+            remaining_sql_resources.len()
+        );
+
+        // Create a map of actual SQL resources by name (only those that weren't converted)
+        let actual_sql_resource_map: HashMap<String, _> = remaining_sql_resources
             .into_iter()
             .map(|r| (r.name.clone(), r))
             .collect();
@@ -386,6 +630,120 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             mismatched_sql_resources.len()
         );
 
+        // Compare Materialized Views
+        debug!("Comparing materialized views with infrastructure map");
+        debug!(
+            "Actual MV IDs: {:?}",
+            actual_materialized_views.keys().collect::<Vec<_>>()
+        );
+        debug!(
+            "Infrastructure map MV IDs: {:?}",
+            infra_map.materialized_views.keys().collect::<Vec<_>>()
+        );
+
+        // Find unmapped MVs (exist in reality but not in map)
+        let unmapped_materialized_views: Vec<_> = actual_materialized_views
+            .values()
+            .filter(|mv| !infra_map.materialized_views.contains_key(&mv.name))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} unmapped materialized views",
+            unmapped_materialized_views.len()
+        );
+
+        // Find missing MVs (in map but don't exist in reality)
+        let missing_materialized_views: Vec<String> = infra_map
+            .materialized_views
+            .keys()
+            .filter(|id| !actual_materialized_views.contains_key(*id))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} missing materialized views: {:?}",
+            missing_materialized_views.len(),
+            missing_materialized_views
+        );
+
+        // Find mismatched MVs (exist in both but differ)
+        let mut mismatched_materialized_views = Vec::new();
+        for (id, desired) in &infra_map.materialized_views {
+            if let Some(actual) = actual_materialized_views.get(id) {
+                if !materialized_views_are_equivalent(actual, desired) {
+                    debug!("Found mismatch in materialized view: {}", id);
+                    mismatched_materialized_views.push(OlapChange::MaterializedView(
+                        Change::Updated {
+                            before: Box::new(actual.clone()),
+                            after: Box::new(desired.clone()),
+                        },
+                    ));
+                }
+            }
+        }
+
+        debug!(
+            "Found {} mismatched materialized views",
+            mismatched_materialized_views.len()
+        );
+
+        // Compare Custom Views
+        debug!("Comparing custom views with infrastructure map");
+        debug!(
+            "Actual custom view IDs: {:?}",
+            actual_custom_views.keys().collect::<Vec<_>>()
+        );
+        debug!(
+            "Infrastructure map custom view IDs: {:?}",
+            infra_map.custom_views.keys().collect::<Vec<_>>()
+        );
+
+        // Find unmapped custom views (exist in reality but not in map)
+        let unmapped_custom_views: Vec<_> = actual_custom_views
+            .values()
+            .filter(|view| !infra_map.custom_views.contains_key(&view.name))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} unmapped custom views",
+            unmapped_custom_views.len()
+        );
+
+        // Find missing custom views (in map but don't exist in reality)
+        let missing_custom_views: Vec<String> = infra_map
+            .custom_views
+            .keys()
+            .filter(|id| !actual_custom_views.contains_key(*id))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} missing custom views: {:?}",
+            missing_custom_views.len(),
+            missing_custom_views
+        );
+
+        // Find mismatched custom views (exist in both but differ)
+        let mut mismatched_custom_views = Vec::new();
+        for (id, desired) in &infra_map.custom_views {
+            if let Some(actual) = actual_custom_views.get(id) {
+                if !custom_views_are_equivalent(actual, desired) {
+                    debug!("Found mismatch in custom view: {}", id);
+                    mismatched_custom_views.push(OlapChange::CustomView(Change::Updated {
+                        before: Box::new(actual.clone()),
+                        after: Box::new(desired.clone()),
+                    }));
+                }
+            }
+        }
+
+        debug!(
+            "Found {} mismatched custom views",
+            mismatched_custom_views.len()
+        );
+
         let discrepancies = InfraDiscrepancies {
             unmapped_tables,
             missing_tables,
@@ -393,16 +751,31 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_sql_resources,
             missing_sql_resources,
             mismatched_sql_resources,
+            unmapped_materialized_views,
+            missing_materialized_views,
+            mismatched_materialized_views,
+            unmapped_custom_views,
+            missing_custom_views,
+            mismatched_custom_views,
         };
 
         debug!(
-            "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables, {} unmapped SQL resources, {} missing SQL resources, {} mismatched SQL resources",
+            "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables, \
+            {} unmapped SQL resources, {} missing SQL resources, {} mismatched SQL resources, \
+            {} unmapped MVs, {} missing MVs, {} mismatched MVs, \
+            {} unmapped custom views, {} missing custom views, {} mismatched custom views",
             discrepancies.unmapped_tables.len(),
             discrepancies.missing_tables.len(),
             discrepancies.mismatched_tables.len(),
             discrepancies.unmapped_sql_resources.len(),
             discrepancies.missing_sql_resources.len(),
-            discrepancies.mismatched_sql_resources.len()
+            discrepancies.mismatched_sql_resources.len(),
+            discrepancies.unmapped_materialized_views.len(),
+            discrepancies.missing_materialized_views.len(),
+            discrepancies.mismatched_materialized_views.len(),
+            discrepancies.unmapped_custom_views.len(),
+            discrepancies.missing_custom_views.len(),
+            discrepancies.mismatched_custom_views.len()
         );
 
         if discrepancies.is_empty() {
