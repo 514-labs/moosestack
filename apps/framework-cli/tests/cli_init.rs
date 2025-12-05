@@ -2,7 +2,6 @@ use assert_cmd::Command;
 use assert_fs::prelude::*;
 use predicates::prelude::*; // Used for writing assertions
 use std::path::Path;
-use std::process::Command;
 
 /// Helper function to ensure a directory doesn't exist before testing
 fn ensure_directory_cleanup(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
