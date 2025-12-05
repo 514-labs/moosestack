@@ -149,11 +149,10 @@ Common commands:
   moose ls                              List infrastructure components
   moose peek <name>                     View data from tables or streams
   moose query '<sql>'                   Execute SQL queries
-
-For more information, visit: https://docs.moosejs.com
 ",
     arg_required_else_help(true),
-    next_display_order = None
+    next_display_order = None,
+    help_template = "{about-section}\n\n{usage-heading} {usage}\n\n{all-args}{subcommands}\n\n{after-help}"
 )]
 pub struct Cli {
     /// Turn debugging information on
