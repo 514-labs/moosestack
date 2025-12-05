@@ -122,7 +122,7 @@ export const analyticsApp = new WebApp("analyticsApi", app, {
 });
 ```
 
-PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://github.com/514-labs/moosestack/pull/3061) | Docs: [Fastify integration](/moose/app-api-frameworks)
+PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://github.com/514-labs/moosestack/pull/3061) | Docs: [Fastify integration](/moose/app-api-frameworks) | [Fastify template](https://github.com/514-labs/moosestack/tree/main/templates/typescript-fastify)
 
 ## Other Moose improvements
 
@@ -133,22 +133,14 @@ PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://g
 - **Web apps in `moose ls`** – List web applications alongside tables, streams, and APIs with `moose ls --type web_apps`. PR [#3054](https://github.com/514-labs/moosestack/pull/3054)
 - **Lifecycle inheritance in IngestPipeline** – Top-level lifecycle settings automatically propagate to table, stream, and deadLetterQueue components, reducing config duplication. PR [#3088](https://github.com/514-labs/moosestack/pull/3088)
 - **MCP query result compression** – Results compressed using toon format for better IDE/AI integration performance. PR [#3033](https://github.com/514-labs/moosestack/pull/3033)
-- **API key auth in MCP template** – Optional PBKDF2-based authentication for secure MCP server deployments. PR [#3053](https://github.com/514-labs/moosestack/pull/3053)
-- **Latency logging for TypeScript APIs** – HTTP requests to consumption APIs now log response times in milliseconds for easier performance monitoring. PR [#3042](https://github.com/514-labs/moosestack/pull/3042)
 - **Renamed --connection-string to --clickhouse-url** – CLI now uses `--clickhouse-url` for ClickHouse commands (old flag still works). Improved connection string parsing for native protocol URLs. PR [#3022](https://github.com/514-labs/moosestack/pull/3022)
-- **No-ANSI output option** – Disable colored CLI output for CI/CD systems and log files. PR [#3044](https://github.com/514-labs/moosestack/pull/3044)
-- **Faster CLI logging** – Optimized tracing implementation reduces memory allocations. PR [#3040](https://github.com/514-labs/moosestack/pull/3040), [#3041](https://github.com/514-labs/moosestack/pull/3041)
-- **Documentation updates** – Improved quickstart, ClickHouse migration guide, and simplified installation command. PR [#3079](https://github.com/514-labs/moosestack/pull/3079), [#3073](https://github.com/514-labs/moosestack/pull/3073)
-- **Hash-token output cleanup** – Cleaner, more concise `moose generate hash-token` output. PR [#3060](https://github.com/514-labs/moosestack/pull/3060)
 
 ## Moose bug fixes
 
 - **Security updates in templates** – Updated Next.js (15.4.7 → 16.0.7) and React (19.0.0 → 19.0.1) to patch security vulnerabilities in frontend templates. [#3089](https://github.com/514-labs/moosestack/pull/3089)
 - **MCP template build failures** – Fixed missing/empty `.npmrc` files that caused `npm install` and Docker builds to fail when creating new MCP server projects. [#3084](https://github.com/514-labs/moosestack/pull/3084), [#3082](https://github.com/514-labs/moosestack/pull/3082), [#3081](https://github.com/514-labs/moosestack/pull/3081)
 - **MCP SDK compatibility** – Updated MCP template to work with SDK v1.23+ which changed its TypeScript types. Migrated to new `server.tool` API with Zod validation. [#3075](https://github.com/514-labs/moosestack/pull/3075)
-- **MCP auth setup instructions** – Clarified authentication setup steps in the MCP template README. [#3058](https://github.com/514-labs/moosestack/pull/3058)
 - **ORDER BY parsing with projections** – Fixed incorrect ORDER BY extraction when tables contain projections. The CLI was picking up projection ORDER BY clauses instead of the main table's. [#3052](https://github.com/514-labs/moosestack/pull/3052)
-- **Zod import path in tests template** – Fixed broken import path that prevented TypeScript tests template from compiling. [#3038](https://github.com/514-labs/moosestack/pull/3038)
 - **Array literals in views** – Views containing ClickHouse array syntax like `['a', 'b']` would fail to parse. Added fallback parser to handle ClickHouse-specific SQL. [#3034](https://github.com/514-labs/moosestack/pull/3034)
 - **LowCardinality columns in peek/query** – `moose peek` and `moose query` failed on tables with `LowCardinality(String)` columns. Switched to HTTP-based ClickHouse client which supports all column types. [#3025](https://github.com/514-labs/moosestack/pull/3025)
 - **DateTime precision preservation** – JavaScript Date objects drop microseconds/nanoseconds. Added `DateTimeString` and `DateTime64String<P>` types that keep timestamps as strings to preserve full precision. [#3018](https://github.com/514-labs/moosestack/pull/3018)
