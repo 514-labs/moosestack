@@ -88,6 +88,85 @@ Example:
 </Python>
 </Callout>
 
+## Accepting Arbitrary Fields
+In some scenarios, you may need to accept payloads with arbitrary additional fields beyond your defined schema. This is useful when:
+- You don't control the payload structure from an upstream service
+- You want to gracefully accept extra fields without validation errors
+
+<TypeScript>
+### Using Index Signatures (TypeScript)
+TypeScript's index signatures allow you to define types that accept additional properties. When used with `IngestApi` or `Stream`, the API will accept payloads with extra fields without returning validation errors:
+
+```typescript filename="FlexiblePayload.ts" copy
+import { IngestApi, Stream, Key, DateTime } from "@514labs/moose-lib";
+
+// Input type with known fields + index signature for flexibility
+type UserEventInput = {
+  timestamp: DateTime;
+  eventName: string;
+  userId: Key<string>;
+  orgId?: string;
+  // Index signature: accept any additional properties
+  [key: string]: any;
+};
+
+const inputStream = new Stream<UserEventInput>("UserEventInput");
+
+// IngestApi accepts payloads with extra fields without validation errors
+const ingestApi = new IngestApi<UserEventInput>("user-events", {
+  destination: inputStream,
+});
+```
+
+**How it works:**
+- Known fields (`timestamp`, `eventName`, etc.) are validated against their declared types
+- Additional fields matching the index signature are accepted by the API (no validation error returned)
+- **All fields (known and extra) are passed through to streaming functions** for processing
+- Extra fields can be extracted in your streaming function and stored in a JSON column
+
+<Callout type="info" title="Extracting Extra Fields">
+In your streaming function, use destructuring to separate known fields from extra fields:
+```typescript
+userEventInputStream.addTransform(outputStream, (input) => {
+  const { timestamp, eventName, userId, ...extraFields } = input;
+  return { timestamp, eventName, userId, properties: extraFields };
+});
+```
+</Callout>
+</TypeScript>
+
+<Python>
+### Using Extra Fields (Python)
+In Python, configure your Pydantic model to accept extra fields using `model_config`:
+
+```python filename="FlexiblePayload.py" copy
+from pydantic import BaseModel, ConfigDict
+from moose_lib import IngestApi, Stream, Key
+from datetime import datetime
+
+# Input model accepts extra fields
+class UserEventInput(BaseModel):
+    model_config = ConfigDict(extra='allow')  # Accept arbitrary fields
+    
+    timestamp: datetime
+    event_name: str
+    user_id: Key[str]
+    org_id: str | None = None
+
+input_stream = Stream[UserEventInput]("UserEventInput")
+
+# IngestApi accepts payloads with extra fields
+ingest_api = IngestApi[UserEventInput]("user-events", IngestConfigWithDestination(
+    destination=input_stream
+))
+```
+
+**How it works:**
+- `model_config = ConfigDict(extra='allow')` tells Pydantic to accept undeclared fields
+- The API accepts payloads with extra fields without validation errors
+- Known fields are validated and passed through to streaming functions
+</Python>
+
 <Tabs items={["Valid Event", "Invalid: Missing Field", "Invalid: Bad Date"]}>
 <Tabs.Tab>
 Send a valid event - routed to the destination stream

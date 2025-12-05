@@ -158,6 +158,10 @@ message Table {
   // Optional PRIMARY KEY expression
   // When specified, overrides primary_key boolean flags on columns
   optional string primary_key_expression = 19;
+
+  // Hash of table settings for change detection (including sensitive settings)
+  // Used to detect settings changes without storing plaintext sensitive values
+  optional string table_settings_hash = 20;
 }
 
 // Structured representation of ORDER BY to support either explicit fields

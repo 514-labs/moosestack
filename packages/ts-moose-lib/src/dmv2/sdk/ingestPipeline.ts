@@ -200,6 +200,8 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
    * @param config Configuration specifying which components to create and their settings.
    * @param schema JSON schema collection for type validation.
    * @param columns Column definitions for the data model.
+   * @param validators Typia validation functions.
+   * @param allowExtraFields Whether extra fields are allowed (injected when type has index signature).
    */
   constructor(
     name: string,
@@ -207,6 +209,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     schema: IJsonSchemaCollection.IV3_1,
     columns: Column[],
     validators: TypiaValidators<T>,
+    allowExtraFields: boolean,
   );
 
   constructor(
@@ -215,8 +218,9 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
     schema?: IJsonSchemaCollection.IV3_1,
     columns?: Column[],
     validators?: TypiaValidators<T>,
+    allowExtraFields?: boolean,
   ) {
-    super(name, config, schema, columns, validators);
+    super(name, config, schema, columns, validators, allowExtraFields);
 
     // Handle backwards compatibility for deprecated 'ingest' parameter
     if (config.ingest !== undefined) {
@@ -236,6 +240,7 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         typeof config.table === "object" ?
           {
             ...config.table,
+            lifeCycle: config.table.lifeCycle ?? config.lifeCycle,
             ...(config.version && { version: config.version }),
           }
         : {
@@ -256,8 +261,11 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
       const streamConfig = {
         destination: undefined,
         ...(typeof config.deadLetterQueue === "object" ?
-          config.deadLetterQueue
-        : {}),
+          {
+            ...config.deadLetterQueue,
+            lifeCycle: config.deadLetterQueue.lifeCycle ?? config.lifeCycle,
+          }
+        : { lifeCycle: config.lifeCycle }),
         ...(config.version && { version: config.version }),
       };
       this.deadLetterQueue = new DeadLetterQueue<T>(
@@ -273,7 +281,10 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         destination: this.table,
         defaultDeadLetterQueue: this.deadLetterQueue,
         ...(typeof config.stream === "object" ?
-          config.stream
+          {
+            ...config.stream,
+            lifeCycle: config.stream.lifeCycle ?? config.lifeCycle,
+          }
         : { lifeCycle: config.lifeCycle }),
         ...(config.version && { version: config.version }),
       };
@@ -282,6 +293,8 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         streamConfig,
         this.schema,
         this.columnArray,
+        undefined,
+        this.allowExtraFields,
       );
       // Set pipeline parent reference for internal framework use
       (this.stream as any).pipelineParent = this;
@@ -309,6 +322,8 @@ export class IngestPipeline<T> extends TypedBase<T, IngestPipelineConfig<T>> {
         ingestConfig,
         this.schema,
         this.columnArray,
+        undefined,
+        this.allowExtraFields,
       );
       // Set pipeline parent reference for internal framework use
       (this.ingestApi as any).pipelineParent = this;

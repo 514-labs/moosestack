@@ -707,6 +707,69 @@ interface DistributedEngineConfig {
 
 For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed).
 
+### Kafka Engine Tables
+
+The Kafka engine allows you to consume data directly from Kafka compatible topics. Kafka tables are streaming interfaces that don't persist data — use a MaterializedView to move data to a table for storage.
+
+```typescript
+import { OlapTable, ClickHouseEngines, MaterializedView, sql } from '@514labs/moose-lib';
+
+interface KafkaEvent {
+  eventId: string;
+  userId: string;
+  timestamp: number;
+}
+
+// Kafka table - reads from topic
+export const kafkaSource = new OlapTable<KafkaEvent>("kafka_events", {
+  engine: ClickHouseEngines.Kafka,
+  brokerList: "redpanda:9092",
+  topicList: "events",
+  groupName: "my_consumer_group",
+  format: "JSONEachRow",
+  settings: {
+    kafka_num_consumers: "1",
+  }
+});
+
+// MaterializedView moves data to table
+const cols = kafkaSource.columns;
+export const eventsMV = new MaterializedView<KafkaEvent>({
+  tableName: "events_dest",
+  materializedViewName: "events_mv",
+  orderByFields: ["eventId"],
+  selectStatement: sql`SELECT ${cols.eventId}, ${cols.userId}, ${cols.timestamp} FROM ${kafkaSource}`,
+  selectTables: [kafkaSource],
+});
+```
+
+#### Kafka Engine Configuration
+
+```typescript
+// Kafka Engine Configuration (constructor parameters)
+interface KafkaEngineConfig {
+  brokerList: string;  // Kafka broker addresses (e.g., "kafka:9092")
+  topicList: string;   // Topic name to consume from
+  groupName: string;   // Consumer group name
+  format: string;      // Data format (e.g., "JSONEachRow")
+}
+
+// Kafka-specific settings (go in the 'settings' field)
+interface KafkaSettings {
+  kafka_num_consumers?: string;       // Number of consumer threads
+  kafka_security_protocol?: string;   // e.g., "SASL_PLAINTEXT"
+  kafka_sasl_mechanism?: string;      // e.g., "SCRAM-SHA-256"
+  kafka_sasl_username?: string;       // SASL username
+  kafka_sasl_password?: string;       // SASL password (use mooseRuntimeEnv.get())
+}
+```
+
+#### Kafka Engine Limitations
+
+- **No ORDER BY**: Kafka is a streaming engine and doesn't support `orderByFields`
+- **No ALTER TABLE**: Column or settings changes require DROP and CREATE (Moose handles this automatically)
+- **No direct SELECT**: Query data from the MaterializedView destination table, not the Kafka table
+
 ## Best Practices
 
 1. **Sorting Key Fields**:

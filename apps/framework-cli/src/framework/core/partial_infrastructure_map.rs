@@ -167,6 +167,15 @@ struct IcebergS3Config {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KafkaConfig {
+    broker_list: String,
+    topic_list: String,
+    group_name: String,
+    format: String,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(tag = "engine", rename_all = "camelCase")]
 enum EngineConfig {
     #[serde(rename = "MergeTree")]
@@ -241,6 +250,9 @@ enum EngineConfig {
 
     #[serde(rename = "IcebergS3")]
     IcebergS3(Box<IcebergS3Config>),
+
+    #[serde(rename = "Kafka")]
+    Kafka(Box<KafkaConfig>),
 }
 
 #[derive(Debug, Deserialize)]
@@ -331,6 +343,10 @@ struct PartialIngestApi {
     pub path: Option<String>,
     #[serde(default)]
     pub schema: serde_json::Map<String, serde_json::Value>,
+    /// Whether this API allows extra fields beyond the defined columns.
+    /// When true, extra fields in payloads are passed through to streaming functions.
+    #[serde(default)]
+    pub allow_extra_fields: bool,
 }
 
 /// Represents an egress API endpoint definition before conversion to a complete [`ApiEndpoint`].
@@ -748,14 +764,20 @@ impl PartialInfrastructureMap {
                     table_settings: if table_settings.is_empty() {
                         None
                     } else {
-                        Some(table_settings)
+                        Some(table_settings.clone())
                     },
+                    table_settings_hash: None, // Will be computed below
                     indexes: partial_table.indexes.clone(),
                     table_ttl_setting,
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),
                     primary_key_expression: partial_table.primary_key_expression.clone(),
                 };
+
+                // Compute table_settings_hash for change detection
+                let mut table = table;
+                table.table_settings_hash = table.compute_table_settings_hash();
+
                 Ok((table.id(default_database), table))
             })
             .collect()
@@ -889,6 +911,13 @@ impl PartialInfrastructureMap {
                 })
             }
 
+            Some(EngineConfig::Kafka(config)) => Ok(ClickhouseEngine::Kafka {
+                broker_list: config.broker_list.clone(),
+                topic_list: config.topic_list.clone(),
+                group_name: config.group_name.clone(),
+                format: config.format.clone(),
+            }),
+
             None => Ok(ClickhouseEngine::MergeTree),
         }
     }
@@ -976,6 +1005,7 @@ impl PartialInfrastructureMap {
                 // If this is the app directory, we should use the project reference so that
                 // if we rename the app folder we don't have to fish for references
                 abs_file_path: main_file.to_path_buf(),
+                allow_extra_fields: partial_api.allow_extra_fields,
             };
 
             let api_endpoint = ApiEndpoint {

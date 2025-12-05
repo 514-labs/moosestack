@@ -154,7 +154,7 @@ WORKDIR /monorepo
 # Copy workspace configuration files
 COPY pnpm-workspace.yaml ./
 COPY package.json ./
-COPY .npmrc ./
+COPY .npmr[c] ./
 {}
 
 # Copy workspace package directories (will be replaced with actual patterns)

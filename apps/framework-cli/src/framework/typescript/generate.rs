@@ -660,7 +660,10 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             var_name, table.name, table_name
         )
         .unwrap();
-        writeln!(output, "    {order_by_spec},").unwrap();
+
+        if table.engine.supports_order_by() {
+            writeln!(output, "    {order_by_spec},").unwrap();
+        }
 
         if let Some(ref pk_expr) = table.primary_key_expression {
             // Use the explicit primary_key_expression directly
@@ -871,6 +874,18 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                     writeln!(output, "    compression: {:?},", comp).unwrap();
                 }
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::Kafka {
+                broker_list,
+                topic_list,
+                group_name,
+                format,
+            } => {
+                writeln!(output, "    engine: ClickHouseEngines.Kafka,").unwrap();
+                writeln!(output, "    brokerList: {:?},", broker_list).unwrap();
+                writeln!(output, "    topicList: {:?},", topic_list).unwrap();
+                writeln!(output, "    groupName: {:?},", group_name).unwrap();
+                writeln!(output, "    format: {:?},", format).unwrap();
+            }
         }
         if let Some(version) = &table.version {
             writeln!(output, "    version: {:?},", version).unwrap();
@@ -1050,6 +1065,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1133,6 +1149,7 @@ export const UserTable = new OlapTable<User>("User", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: Some(
                 vec![("mode".to_string(), "unordered".to_string())]
                     .into_iter()
@@ -1184,6 +1201,7 @@ export const UserTable = new OlapTable<User>("User", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: Some(
                 vec![
                     ("index_granularity".to_string(), "8192".to_string()),
@@ -1268,6 +1286,7 @@ export const UserTable = new OlapTable<User>("User", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1316,6 +1335,7 @@ export const UserTable = new OlapTable<User>("User", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1400,6 +1420,7 @@ export const UserTable = new OlapTable<User>("User", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1451,6 +1472,7 @@ export const UserTable = new OlapTable<User>("User", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![
                 crate::framework::core::infrastructure::table::TableIndex {
@@ -1542,6 +1564,7 @@ export const UserTable = new OlapTable<User>("User", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1627,6 +1650,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1700,6 +1724,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             table_ttl_setting: None,
@@ -1750,6 +1775,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: Some("analytics_db".to_string()),

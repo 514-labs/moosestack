@@ -82,6 +82,60 @@ export const transformNewMooseResource = (
 
   const typeNode = node.typeArguments![0];
 
+  // For IngestPipeline, check if table is configured in the config object
+  // Index signatures are only allowed when table is false/not configured
+  // (because OlapTable requires a fixed schema)
+  let ingestPipelineHasTable = true; // Default to true (safe: disallows index signatures)
+  if (
+    typeName === "IngestPipeline" &&
+    node.arguments &&
+    node.arguments.length >= 2
+  ) {
+    const configArg = node.arguments[1];
+    if (ts.isObjectLiteralExpression(configArg)) {
+      const tableProperty = configArg.properties.find(
+        (prop): prop is ts.PropertyAssignment =>
+          ts.isPropertyAssignment(prop) &&
+          ts.isIdentifier(prop.name) &&
+          prop.name.text === "table",
+      );
+      if (tableProperty) {
+        const tableValue = tableProperty.initializer;
+        // Check if table value is explicitly false
+        ingestPipelineHasTable = tableValue.kind !== ts.SyntaxKind.FalseKeyword;
+      }
+      // If table property is not found, keep default (true = has table)
+      // This is the safe default since 'table' is a required property
+    }
+  }
+
+  // Allow index signatures for IngestApi, Stream, and IngestPipeline (when table is not configured)
+  // These resources accept arbitrary payload fields that pass through to streaming functions
+  const allowIndexSignatures =
+    ["IngestApi", "Stream"].includes(typeName) ||
+    (typeName === "IngestPipeline" && !ingestPipelineHasTable);
+
+  // Check if the type actually has an index signature
+  const typeAtLocation = checker.getTypeAtLocation(typeNode);
+  const indexSignatures = checker.getIndexInfosOfType(typeAtLocation);
+  const hasIndexSignature = allowIndexSignatures && indexSignatures.length > 0;
+
+  // Validate: IngestPipeline with table=true cannot have index signatures
+  // because extra fields would be silently dropped when writing to ClickHouse
+  if (
+    typeName === "IngestPipeline" &&
+    ingestPipelineHasTable &&
+    indexSignatures.length > 0
+  ) {
+    throw new Error(
+      `IngestPipeline cannot use a type with index signatures when 'table' is configured. ` +
+        `Extra fields would be silently dropped when writing to the ClickHouse table. ` +
+        `Either:\n` +
+        `  1. Remove the index signature from your type to use a fixed schema, or\n` +
+        `  2. Set 'table: false' in your IngestPipeline config if you only need the API and stream`,
+    );
+  }
+
   const internalArguments =
     typeName === "DeadLetterQueue" ?
       [typiaTypeGuard(node)]
@@ -89,7 +143,9 @@ export const transformNewMooseResource = (
         typiaJsonSchemas(typeNode),
         parseAsAny(
           JSON.stringify(
-            toColumns(checker.getTypeAtLocation(typeNode), checker),
+            toColumns(typeAtLocation, checker, {
+              allowIndexSignatures,
+            }),
           ),
         ),
       ];
@@ -128,6 +184,24 @@ export const transformNewMooseResource = (
     );
 
     updatedArgs = [...updatedArgs, validatorsObject];
+
+    // For IngestPipeline, also pass allowExtraFields so it can propagate to internal Stream/IngestApi
+    if (resourceName === "IngestPipeline") {
+      updatedArgs = [
+        ...updatedArgs,
+        hasIndexSignature ? factory.createTrue() : factory.createFalse(),
+      ];
+    }
+  }
+
+  // For IngestApi and Stream, add the allowExtraFields flag after undefined validators
+  // This enables passing extra fields through to streaming functions when the type has an index signature
+  if (resourceName === "IngestApi" || resourceName === "Stream") {
+    updatedArgs = [
+      ...updatedArgs,
+      factory.createIdentifier("undefined"), // validators (not used for these types)
+      hasIndexSignature ? factory.createTrue() : factory.createFalse(),
+    ];
   }
 
   return ts.factory.updateNewExpression(
