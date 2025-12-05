@@ -359,6 +359,47 @@ fn record_custom_dockerfile_usage(project: &Project) -> Result<(), std::io::Erro
     std::fs::write(marker_file, "true")
 }
 
+/// Helper to write Dockerfile content to the specified path and handle custom Dockerfile tracking.
+/// Used by fallback paths to ensure they respect the resolved file_path.
+fn create_dockerfile_with_content(
+    project: &Project,
+    file_path: &Path,
+    content: String,
+) -> Result<RoutineSuccess, RoutineFailure> {
+    fs::write(file_path, content).map_err(|err| {
+        error!("Failed to write Docker file for project: {}", err);
+        RoutineFailure::new(
+            Message::new(
+                "Failed".to_string(),
+                "to write Docker file for project".to_string(),
+            ),
+            err,
+        )
+    })?;
+
+    // Record custom Dockerfile usage if exposed to project root
+    if file_path == custom_dockerfile_path(project) {
+        record_custom_dockerfile_usage(project).ok();
+
+        show_message!(
+            crate::cli::display::MessageType::Info,
+            Message::new(
+                "Generated".to_string(),
+                format!(
+                    "Dockerfile at {} (custom mode enabled)",
+                    file_path.display()
+                ),
+            )
+        );
+    }
+
+    info!("Dockerfile created at: {:?}", file_path);
+    Ok(RoutineSuccess::success(Message::new(
+        "Successfully".to_string(),
+        "created dockerfile".to_string(),
+    )))
+}
+
 pub fn create_dockerfile(
     project: &Project,
     docker_client: &DockerClient,
@@ -484,11 +525,15 @@ pub fn create_dockerfile(
                     Ok(path) => path,
                     Err(e) => {
                         error!("Failed to calculate relative project path: {}", e);
-                        // Fall back to standard build if we can't determine the relative path
-                        return create_standard_typescript_dockerfile(
+                        // Fall back to standard (non-monorepo) Dockerfile content
+                        // This lets the normal flow handle file_path and custom Dockerfile logic
+                        return create_dockerfile_with_content(
                             project,
-                            &internal_dir,
-                            &node_version_str,
+                            &file_path,
+                            create_standard_typescript_dockerfile_content(
+                                project,
+                                &node_version_str,
+                            )?,
                         );
                     }
                 };
@@ -498,11 +543,15 @@ pub fn create_dockerfile(
                     Ok(config) => config,
                     Err(e) => {
                         error!("Failed to read workspace config: {:?}", e);
-                        // Fall back to standard build if we can't read the workspace config
-                        return create_standard_typescript_dockerfile(
+                        // Fall back to standard (non-monorepo) Dockerfile content
+                        // This lets the normal flow handle file_path and custom Dockerfile logic
+                        return create_dockerfile_with_content(
                             project,
-                            &internal_dir,
-                            &node_version_str,
+                            &file_path,
+                            create_standard_typescript_dockerfile_content(
+                                project,
+                                &node_version_str,
+                            )?,
                         );
                     }
                 };
@@ -875,7 +924,16 @@ pub fn build_dockerfile(
                     );
 
                     // Create a temporary Dockerfile at the workspace root
-                    let temp_dockerfile = workspace_root.join("Dockerfile");
+                    // Use a temp name to avoid overwriting any custom Dockerfile at project root
+                    // when the project is at the workspace root
+                    let custom_exists = is_using_custom_dockerfile(project);
+                    let temp_dockerfile =
+                        if custom_exists && workspace_root == project.project_location {
+                            // Project is at workspace root with custom Dockerfile - use temp name
+                            workspace_root.join("Dockerfile.moose-build-temp")
+                        } else {
+                            workspace_root.join("Dockerfile")
+                        };
 
                     // Read the generated Dockerfile and adjust paths for workspace root context
                     let dockerfile_content = fs::read_to_string(&file_path).map_err(|err| {
@@ -1041,10 +1099,16 @@ pub fn build_dockerfile(
 
     // Clean up temporary files for monorepo builds
     if build_context != internal_dir.join("packager") {
-        // Remove temporary Dockerfile
-        if dockerfile_path.exists()
-            && dockerfile_path.file_name() == Some(std::ffi::OsStr::new("Dockerfile"))
-        {
+        // Remove temporary Dockerfile (but never the custom Dockerfile at project root)
+        let is_temp_dockerfile = dockerfile_path
+            .file_name()
+            .map(|name| {
+                name == "Dockerfile.moose-build-temp"
+                    || (name == "Dockerfile" && dockerfile_path != custom_dockerfile_path(project))
+            })
+            .unwrap_or(false);
+
+        if dockerfile_path.exists() && is_temp_dockerfile {
             fs::remove_file(&dockerfile_path).ok();
         }
 
@@ -1439,31 +1503,4 @@ fn create_standard_typescript_dockerfile_content(
 
     let ts_base_dockerfile = generate_ts_base_dockerfile(node_version);
     Ok(format!("{ts_base_dockerfile}{install}"))
-}
-
-/// Creates standard TypeScript Dockerfile and writes it to disk
-fn create_standard_typescript_dockerfile(
-    project: &Project,
-    internal_dir: &Path,
-    node_version: &str,
-) -> Result<RoutineSuccess, RoutineFailure> {
-    let dockerfile_content = create_standard_typescript_dockerfile_content(project, node_version)?;
-    let file_path = internal_dir.join("packager/Dockerfile");
-
-    fs::write(&file_path, dockerfile_content).map_err(|err| {
-        error!("Failed to write Docker file for project: {}", err);
-        RoutineFailure::new(
-            Message::new(
-                "Failed".to_string(),
-                "to write Docker file for project".to_string(),
-            ),
-            err,
-        )
-    })?;
-
-    info!("Dockerfile created at: {:?}", file_path);
-    Ok(RoutineSuccess::success(Message::new(
-        "Successfully".to_string(),
-        "created dockerfile".to_string(),
-    )))
 }
