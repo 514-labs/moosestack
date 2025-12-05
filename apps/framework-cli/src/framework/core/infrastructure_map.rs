@@ -1793,33 +1793,7 @@ impl InfrastructureMap {
                         );
                     } else {
                         // Compute the basic diff components
-                        let mut column_changes = compute_table_columns_diff(table, target_table);
-
-                        // For DeletionProtected tables, filter out destructive column changes
-                        if target_table.life_cycle == LifeCycle::DeletionProtected
-                            && respect_life_cycle
-                        {
-                            let original_len = column_changes.len();
-                            column_changes.retain(|change| match change {
-                                ColumnChange::Removed(_) => {
-                                    tracing::debug!(
-                                        "Filtering out column removal for deletion-protected table '{}'",
-                                        table.name
-                                    );
-                                    false // Remove destructive column removals
-                                }
-                                ColumnChange::Added { .. } => true, // Allow additive changes
-                                ColumnChange::Updated { .. } => true, // Allow column updates
-                            });
-
-                            if original_len != column_changes.len() {
-                                tracing::info!(
-                                    "Filtered {} destructive column changes for deletion-protected table '{}'",
-                                    original_len - column_changes.len(),
-                                    table.name
-                                );
-                            }
-                        }
+                        let column_changes = compute_table_columns_diff(table, target_table);
 
                         // Compute PARTITION BY changes from normalized tables to respect ignore_ops
                         // Using normalized tables ensures that ignored operations don't incorrectly
@@ -1901,10 +1875,110 @@ impl InfrastructureMap {
                                 default_database,
                             );
 
+                            // Filter strategy changes to respect lifecycle constraints
+                            // This handles both:
+                            // 1. Strategies that convert updates to drop+create (blocks both Removed AND Added for protected tables)
+                            // 2. Strategies that return Updated (filters out column removals for DeletionProtected tables)
+                            let filtered_changes: Vec<OlapChange> = if respect_life_cycle {
+                                let mut blocked_tables = std::collections::HashSet::new();
+
+                                strategy_changes
+                                    .into_iter()
+                                    .filter_map(|change| {
+                                        match change {
+                                            OlapChange::Table(TableChange::Removed(removed_table)) => {
+                                                // CRITICAL: Use target_table lifecycle (AFTER state), not removed_table lifecycle (BEFORE state)
+                                                // This handles transitions TO protected lifecycles (e.g., FullyManaged -> DeletionProtected)
+                                                match target_table.life_cycle {
+                                                    LifeCycle::DeletionProtected => {
+                                                        tracing::warn!(
+                                                            "Strategy attempted to drop deletion-protected table '{}' - blocking operation",
+                                                            removed_table.name
+                                                        );
+                                                        blocked_tables.insert(removed_table.name.clone());
+                                                        None
+                                                    }
+                                                    LifeCycle::ExternallyManaged => {
+                                                        tracing::warn!(
+                                                            "Strategy attempted to drop externally-managed table '{}' - blocking operation",
+                                                            removed_table.name
+                                                        );
+                                                        blocked_tables.insert(removed_table.name.clone());
+                                                        None
+                                                    }
+                                                    LifeCycle::FullyManaged => {
+                                                        Some(OlapChange::Table(TableChange::Removed(removed_table)))
+                                                    }
+                                                }
+                                            }
+                                            OlapChange::Table(TableChange::Added(added_table)) => {
+                                                // If we blocked the corresponding drop, also block the create
+                                                // to avoid "table already exists" errors
+                                                if blocked_tables.contains(&added_table.name) {
+                                                    tracing::debug!(
+                                                        "Blocking orphan CREATE for table '{}' after blocking DROP",
+                                                        added_table.name
+                                                    );
+                                                    None
+                                                } else {
+                                                    Some(OlapChange::Table(TableChange::Added(added_table)))
+                                                }
+                                            }
+                                            OlapChange::Table(TableChange::Updated {
+                                                name,
+                                                column_changes,
+                                                order_by_change,
+                                                partition_by_change,
+                                                before,
+                                                after,
+                                            }) => {
+                                                // For DeletionProtected tables, filter out column removals
+                                                if after.life_cycle == LifeCycle::DeletionProtected {
+                                                    let original_len = column_changes.len();
+                                                    let filtered_column_changes: Vec<_> = column_changes
+                                                        .into_iter()
+                                                        .filter(|c| !matches!(c, ColumnChange::Removed(_)))
+                                                        .collect();
+
+                                                    if original_len != filtered_column_changes.len() {
+                                                        tracing::debug!(
+                                                            "Filtered {} column removals for deletion-protected table '{}'",
+                                                            original_len - filtered_column_changes.len(),
+                                                            name
+                                                        );
+                                                    }
+
+                                                    Some(OlapChange::Table(TableChange::Updated {
+                                                        name,
+                                                        column_changes: filtered_column_changes,
+                                                        order_by_change,
+                                                        partition_by_change,
+                                                        before,
+                                                        after,
+                                                    }))
+                                                } else {
+                                                    Some(OlapChange::Table(TableChange::Updated {
+                                                        name,
+                                                        column_changes,
+                                                        order_by_change,
+                                                        partition_by_change,
+                                                        before,
+                                                        after,
+                                                    }))
+                                                }
+                                            }
+                                            _ => Some(change),
+                                        }
+                                    })
+                                    .collect()
+                            } else {
+                                strategy_changes
+                            };
+
                             // Only count as a table update if the strategy returned actual operations
-                            if !strategy_changes.is_empty() {
+                            if !filtered_changes.is_empty() {
                                 table_updates += 1;
-                                olap_changes.extend(strategy_changes);
+                                olap_changes.extend(filtered_changes);
                             }
                         }
                     }
@@ -3370,6 +3444,330 @@ mod tests {
         assert_eq!(
             topic_additions, 0,
             "Externally managed topic should not be added"
+        );
+    }
+
+    /// Mock strategy that converts all updates to drop+create operations
+    /// This simulates ClickHouse behavior for ORDER BY changes
+    struct DropCreateStrategy;
+
+    impl super::TableDiffStrategy for DropCreateStrategy {
+        fn diff_table_update(
+            &self,
+            before: &Table,
+            after: &Table,
+            _column_changes: Vec<super::ColumnChange>,
+            _order_by_change: super::OrderByChange,
+            _partition_by_change: super::PartitionByChange,
+            _default_database: &str,
+        ) -> Vec<OlapChange> {
+            // Simulate strategy converting update to drop+create
+            vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ]
+        }
+    }
+
+    #[test]
+    fn test_deletion_protected_table_blocks_strategy_drop() {
+        // Test that deletion protection works even when strategy converts update to drop+create
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        // Create a DeletionProtected table that will be "updated"
+        let mut before_table = super::diff_tests::create_test_table("protected_table", "1.0");
+        before_table.life_cycle = LifeCycle::DeletionProtected;
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+        after_table.columns.push(Column {
+            name: "name".to_string(),
+            data_type: ColumnType::String,
+            required: false,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        });
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        // Use the DropCreateStrategy which will try to emit drop+create
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // Verify the drop operation was filtered out
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 0,
+            "DeletionProtected table should block strategy-generated drop operation"
+        );
+
+        // The orphan addition should also be blocked to avoid "table already exists" errors
+        let table_additions = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
+            .count();
+        assert_eq!(
+            table_additions, 0,
+            "Orphan CREATE should be blocked when DROP is blocked for DeletionProtected tables"
+        );
+    }
+
+    #[test]
+    fn test_externally_managed_table_blocks_strategy_drop() {
+        // Test that ExternallyManaged tables also block strategy-generated drops
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("external_table", "1.0");
+        before_table.life_cycle = LifeCycle::ExternallyManaged;
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // Verify the drop operation was filtered out
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 0,
+            "ExternallyManaged table should block strategy-generated drop operation"
+        );
+    }
+
+    #[test]
+    fn test_fully_managed_table_allows_strategy_drop() {
+        // Test that FullyManaged tables allow strategy-generated drops
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("managed_table", "1.0");
+        before_table.life_cycle = LifeCycle::FullyManaged;
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // Verify both drop and create operations are present
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 1,
+            "FullyManaged table should allow strategy-generated drop operation"
+        );
+
+        let table_additions = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
+            .count();
+        assert_eq!(table_additions, 1, "Table addition should be present");
+    }
+
+    #[test]
+    fn test_lifecycle_transition_to_protected() {
+        // Test that lifecycle protection works when transitioning FROM FullyManaged TO DeletionProtected
+        // This is a critical edge case: the table starts as FullyManaged but should be protected
+        // because the TARGET state is DeletionProtected
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("table", "1.0");
+        before_table.life_cycle = LifeCycle::FullyManaged; // START as FullyManaged
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.life_cycle = LifeCycle::DeletionProtected; // TRANSITION to DeletionProtected
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // The drop should be blocked because TARGET lifecycle is DeletionProtected
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 0,
+            "DROP should be blocked when transitioning TO DeletionProtected lifecycle"
+        );
+
+        // The orphan CREATE should also be blocked
+        let table_additions = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
+            .count();
+        assert_eq!(
+            table_additions, 0,
+            "Orphan CREATE should be blocked when DROP is blocked during lifecycle transition"
+        );
+    }
+
+    #[test]
+    fn test_lifecycle_protection_can_be_disabled() {
+        // Test that lifecycle protection can be disabled with respect_life_cycle=false
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("protected_table", "1.0");
+        before_table.life_cycle = LifeCycle::DeletionProtected;
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            false, // respect_life_cycle = false
+            false,
+            &[],
+        );
+
+        // When lifecycle protection is disabled, drops should go through
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 1,
+            "When respect_life_cycle=false, drops should not be blocked"
         );
     }
 }
