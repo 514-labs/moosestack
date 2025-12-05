@@ -28,66 +28,19 @@ Accept payloads with extra fields beyond your defined schema while still validat
 
 **Why it matters:** Schema flexibility without chaos. Teams can ship events even when they don't fully agree on every property yet. Known fields still get enforceable validation, while "extra" properties land in a JSON column for later exploration. This is ideal for product analytics, logging, and gradual schema evolution.
 
-```typescript filename="app/ingest/indexSignatureTests.ts" copy
-import {
-  IngestApi,
-  Stream,
-  OlapTable,
-  Key,
-  DateTime,
-} from "@514labs/moose-lib";
-
-// Input type with index signature - accepts arbitrary additional fields
+```typescript filename="app/ingest/models.ts" copy
+// TypeScript: Use index signature to accept arbitrary fields
 export type UserEventInput = {
   timestamp: DateTime;
   eventName: string;
   userId: Key<string>;
-  orgId?: string;
-  // Index signature allows any additional properties
-  [key: string]: any;
+  [key: string]: any;  // Allows any additional properties
 };
-
-// Output type with fixed schema for OlapTable storage
-export interface UserEventOutput {
-  timestamp: DateTime;
-  eventName: string;
-  userId: Key<string>;
-  orgId?: string;
-  // JSON column stores extra fields from index signature
-  properties: Record<string, any>;
-}
-
-// Create streams and tables
-export const userEventInputStream = new Stream<UserEventInput>("UserEventInput");
-export const userEventIngestApi = new IngestApi<UserEventInput>("userEventIngestApi", {
-  destination: userEventInputStream,
-});
-export const userEventOutputTable = new OlapTable<UserEventOutput>("UserEventOutput", {
-  orderByFields: ["userId", "timestamp"],
-});
-export const userEventOutputStream = new Stream<UserEventOutput>("UserEventOutput", {
-  destination: userEventOutputTable,
-});
-
-// Transform receives ALL fields including extras from index signature
-userEventInputStream.addTransform(
-  userEventOutputStream,
-  (input: UserEventInput): UserEventOutput => {
-    const { timestamp, eventName, userId, orgId, ...extraFields } = input;
-    return {
-      timestamp,
-      eventName,
-      userId,
-      orgId,
-      properties: extraFields, // Store extra fields in JSON column
-    };
-  },
-);
 ```
 
 In Python, use `extra='allow'` in your Pydantic models to achieve the same flexibility.
 
-PR: [#3047](https://github.com/514-labs/moosestack/pull/3047)
+PR: [#3047](https://github.com/514-labs/moosestack/pull/3047) | Docs: [Data models](/moose/data-models)
 
 ---
 
@@ -97,70 +50,21 @@ Define tables with Kafka engine to consume streaming data directly from Kafka to
 
 **Why it matters:** First-class streaming from Kafka. Kafka engine tables + materialized views mean you can go directly from Kafka → ClickHouse with Moose orchestrating the flow and transformations. This reduces glue code, keeps ingestion real-time, and standardizes how streaming pipelines are defined.
 
-```typescript filename="app/ingest/kafkaTests.ts" copy
-import {
-  Stream,
-  IngestApi,
-  OlapTable,
-  MaterializedView,
-  ClickHouseEngines,
-  Key,
-  sql,
-} from "@514labs/moose-lib";
-
-// Define the event schema
-export interface KafkaTestEvent {
-  eventId: Key<string>;
-  userId: string;
-  eventType: string;
-  amount: number;
-  timestamp: number;
-}
-
-const KAFKA_TOPIC_NAME = "KafkaTestInput";
-
-// Create a stream and ingest API to push data to Kafka
-export const kafkaTestInputStream = new Stream<KafkaTestEvent>(KAFKA_TOPIC_NAME);
-export const kafkaTestIngestApi = new IngestApi<KafkaTestEvent>("kafka-test", {
-  destination: kafkaTestInputStream,
-});
-
-// Create a Kafka engine table that consumes from the topic
-export const KafkaTestSourceTable = new OlapTable<KafkaTestEvent>(
+```typescript filename="app/ingest/kafka.ts" copy
+// Create a Kafka engine table that consumes from a topic
+export const KafkaSourceTable = new OlapTable<KafkaTestEvent>(
   "KafkaTestSource",
   {
     engine: ClickHouseEngines.Kafka,
     brokerList: "redpanda:9092",
-    topicList: KAFKA_TOPIC_NAME,
+    topicList: "KafkaTestInput",
     groupName: "moose_kafka_consumer",
     format: "JSONEachRow",
-    settings: {
-      kafka_num_consumers: "1",
-    },
   },
 );
-
-// Create a MaterializedView to transform and persist data
-const kafkaSourceColumns = KafkaTestSourceTable.columns;
-
-export const KafkaTestMV = new MaterializedView<KafkaTestEvent>({
-  tableName: "KafkaTestDest",
-  materializedViewName: "KafkaTestDest_MV",
-  orderByFields: ["eventId", "timestamp"],
-  selectStatement: sql`
-    SELECT
-      ${kafkaSourceColumns.eventId} as eventId,
-      ${kafkaSourceColumns.userId} as userId,
-      ${kafkaSourceColumns.eventType} as eventType,
-      ${kafkaSourceColumns.amount} as amount,
-      ${kafkaSourceColumns.timestamp} as timestamp
-    FROM ${KafkaTestSourceTable}
-  `,
-  selectTables: [KafkaTestSourceTable],
-});
 ```
 
-PR: [#3066](https://github.com/514-labs/moosestack/pull/3066)
+PR: [#3066](https://github.com/514-labs/moosestack/pull/3066) | Docs: [OlapTable](/moose/olap)
 
 ---
 
@@ -171,38 +75,20 @@ Configure tables to use Apache Iceberg format with S3 storage for better data la
 **Why it matters:** Data lake integration without the glue. IcebergS3 enables columnar storage on S3 with Parquet or ORC format, AWS credential management, and compression options. This bridges Moose's real-time pipelines with existing data lake infrastructure for analytics workloads.
 
 ```typescript filename="app/tables/analytics_events.ts" copy
-import {
-  OlapTable,
-  ClickHouseEngines,
-  Key,
-  DateTime,
-} from "@514labs/moose-lib";
-
-export interface AnalyticsEvent {
-  id: Key<string>;
-  userId: string;
-  eventType: string;
-  timestamp: DateTime;
-  properties: string;
-  sessionId: string;
-}
-
-// Configure table with IcebergS3 engine for data lake storage
 export const AnalyticsEventsTable = new OlapTable<AnalyticsEvent>(
   "AnalyticsEvents",
   {
     engine: ClickHouseEngines.IcebergS3,
     path: "s3://my-data-lake/analytics/events/",
-    format: "Parquet", // or "ORC"
-    awsAccessKeyId: "{{ AWS_ACCESS_KEY_ID }}", // Environment variable
+    format: "Parquet",
+    awsAccessKeyId: "{{ AWS_ACCESS_KEY_ID }}",
     awsSecretAccessKey: "{{ AWS_SECRET_ACCESS_KEY }}",
     compression: "zstd",
-    orderByFields: ["timestamp"],
   },
 );
 ```
 
-PR: [#2978](https://github.com/514-labs/moosestack/pull/2978)
+PR: [#2978](https://github.com/514-labs/moosestack/pull/2978) | Docs: [OlapTable](/moose/olap)
 
 ---
 
@@ -213,29 +99,16 @@ Define custom PRIMARY KEY expressions with hash functions and custom column orde
 **Why it matters:** Better data distribution and query performance. Custom PRIMARY KEY expressions let you use functions like `cityHash64` for better distribution in ClickHouse, beyond simple column-based keys. This is essential for high-cardinality data where default ordering isn't optimal.
 
 ```typescript filename="app/ingest/models.ts" copy
-import { OlapTable, Key, DateTime } from "@514labs/moose-lib";
-
-export interface PrimaryKeyExpressionTest {
-  userId: string;
-  eventId: string;
-  timestamp: DateTime;
-  category: string;
-}
-
-// Table using primaryKeyExpression with hash function for better distribution
-// Note: PRIMARY KEY must be a prefix of ORDER BY in ClickHouse
 export const primaryKeyExpressionTable = new OlapTable<PrimaryKeyExpressionTest>(
   "PrimaryKeyExpressionTest",
   {
-    // Primary key uses hash function for better distribution
     primaryKeyExpression: "(userId, cityHash64(eventId))",
-    // Order by must start with the same columns as primary key
     orderByExpression: "(userId, cityHash64(eventId), timestamp)",
   },
 );
 ```
 
-PR: [#3031](https://github.com/514-labs/moosestack/pull/3031)
+PR: [#3031](https://github.com/514-labs/moosestack/pull/3031) | Docs: [OlapTable](/moose/olap)
 
 ---
 
@@ -246,36 +119,18 @@ Get IDE autocomplete when referencing table columns in Python f-strings using th
 **Why it matters:** Type-safe SQL without typos. Python developers can now get autocomplete suggestions for column names when writing SQL queries, catching errors at development time rather than runtime. The `{Column:col}` format ensures proper SQL quoting.
 
 ```python filename="app/models/user_event.py" copy
-from moose_lib import MooseModel, OlapTable
-from typing import Optional
+from moose_lib import MooseModel
 
-# Define your data model using MooseModel for autocomplete support
 class UserEvent(MooseModel):
     user_id: int
     event_type: str
     timestamp: str
-    session_id: Optional[str] = None
-    revenue: Optional[float] = None
 
-# Build SQL queries with IDE autocomplete for column names
-def create_user_analytics_query():
-    # The {Column:col} format provides proper SQL quoting and autocomplete
-    query = f"""
-    SELECT
-        {UserEvent.user_id:col},
-        {UserEvent.event_type:col},
-        COUNT(*) as event_count,
-        SUM({UserEvent.revenue:col}) as total_revenue
-    FROM user_events
-    WHERE {UserEvent.timestamp:col} >= '2024-01-01'
-        AND {UserEvent.session_id:col} IS NOT NULL
-    GROUP BY {UserEvent.user_id:col}, {UserEvent.event_type:col}
-    ORDER BY total_revenue DESC
-    """
-    return query
+# IDE autocomplete works when typing UserEvent.user_id
+query = f"SELECT {UserEvent.user_id:col}, {UserEvent.event_type:col} FROM user_events"
 ```
 
-PR: [#3024](https://github.com/514-labs/moosestack/pull/3024)
+PR: [#3024](https://github.com/514-labs/moosestack/pull/3024) | Docs: [Python data models](/moose/data-models)
 
 ---
 
@@ -286,42 +141,17 @@ Define materialized columns to automatically compute derived values at ingestion
 **Why it matters:** Cheaper, faster queries at scale. Materialized columns move expensive expressions into ingestion time so queries become simple scans over precomputed fields. This directly impacts infrastructure cost and query latency for time-series, metrics, and logs.
 
 ```typescript filename="app/ingest/models.ts" copy
-import {
-  IngestPipeline,
-  Key,
-  DateTime,
-  UInt64,
-  ClickHouseMaterialized,
-  ClickHouseCodec,
-} from "@514labs/moose-lib";
-import typia from "typia";
-
-// Use ClickHouseMaterialized<"expression"> intersection type
 export interface MaterializedTest {
   id: Key<string>;
   timestamp: DateTime;
   userId: string;
-  // Materialized column - computed automatically at ingestion time
-  eventDate: string &
-    typia.tags.Format<"date"> &
-    ClickHouseMaterialized<"toDate(timestamp)">;
-  // Hash for partitioning/anonymization
+  // Materialized columns - computed at ingestion time
+  eventDate: string & ClickHouseMaterialized<"toDate(timestamp)">;
   userHash: UInt64 & ClickHouseMaterialized<"cityHash64(userId)">;
-  // JSON blob with compression
-  log_blob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
-  // Complex expression with both materialized and codec
-  combinationHash: UInt64[] &
-    ClickHouseMaterialized<"arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))"> &
-    ClickHouseCodec<"ZSTD(1)">;
 }
-
-export const MaterializedTestPipeline = new IngestPipeline<MaterializedTest>(
-  "MaterializedTest",
-  { table: true, stream: true, ingestApi: true },
-);
 ```
 
-PR: [#3051](https://github.com/514-labs/moosestack/pull/3051)
+PR: [#3051](https://github.com/514-labs/moosestack/pull/3051) | Docs: [Supported types](/moose/olap/supported-types)
 
 ---
 
@@ -332,37 +162,15 @@ Specify compression codecs (ZSTD, LZ4, Delta, Gorilla) on individual columns to 
 **Why it matters:** Per-column codecs let you tune storage/performance per field—Delta/Gorilla for time-series, higher ZSTD for logs. This directly impacts infrastructure cost and query latency.
 
 ```typescript filename="app/ingest/models.ts" copy
-import {
-  IngestPipeline,
-  Key,
-  DateTime,
-  UInt64,
-  ClickHouseCodec,
-} from "@514labs/moose-lib";
-
-// Use ClickHouseCodec<"codec"> intersection type to specify compression
 export interface CodecTest {
   id: Key<string>;
-  // Time-series data with Delta + LZ4 for optimal timestamp storage
   timestamp: DateTime & ClickHouseCodec<"Delta, LZ4">;
-  // JSON logs with high compression for storage efficiency
-  log_blob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
-  // Floating-point time series with Gorilla codec
   temperature: number & ClickHouseCodec<"Gorilla, ZSTD(3)">;
-  // Counter metrics with DoubleDelta
-  request_count: number & ClickHouseCodec<"DoubleDelta, LZ4">;
-  // Status code without compression (frequently queried)
-  status_code: number;
+  log_blob: Record<string, any> & ClickHouseCodec<"ZSTD(3)">;
 }
-
-export const CodecTestPipeline = new IngestPipeline<CodecTest>("CodecTest", {
-  table: true,
-  stream: true,
-  ingestApi: true,
-});
 ```
 
-PR: [#3035](https://github.com/514-labs/moosestack/pull/3035)
+PR: [#3035](https://github.com/514-labs/moosestack/pull/3035) | Docs: [Supported types](/moose/olap/supported-types)
 
 ---
 
@@ -372,38 +180,20 @@ New project template demonstrating Fastify framework with Moose, plus fixed WebA
 
 **Why it matters:** Fast path to production web APIs. The Fastify template + WebApp fix give a working, idiomatic example for building Moose-backed services. Fastify's performance and schema support pair nicely with Moose's data models, lowering the barrier for new services.
 
-```typescript filename="app/apis/bar.ts" copy
+```typescript filename="app/apis/analytics.ts" copy
 import Fastify from "fastify";
-import { WebApp, getMooseClients, sql } from "@514labs/moose-lib";
+import { WebApp } from "@514labs/moose-lib";
 
 const app = Fastify({ logger: true });
-
-app.get("/health", async (_request, _reply) => {
-  return {
-    status: "ok",
-    timestamp: new Date().toISOString(),
-    service: "analytics-api",
-  };
-});
-
-app.get("/query", async (request, reply) => {
-  const { client } = await getMooseClients();
-  const limit = parseInt((request.query as any).limit as string) || 10;
-
-  const result = await client.query.execute(sql`
-    SELECT * FROM analytics_table LIMIT ${limit}
-  `);
-  return result;
-});
+app.get("/health", async () => ({ status: "ok" }));
 
 // Export as WebApp - Moose handles Fastify's ready() automatically
 export const analyticsApp = new WebApp("analyticsApi", app, {
   mountPath: "/analytics",
-  metadata: { description: "Analytics API with Fastify" },
 });
 ```
 
-PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://github.com/514-labs/moosestack/pull/3061) | Docs: [Fastify integration](/moose/app-api-frameworks/typescript-fastify)
+PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://github.com/514-labs/moosestack/pull/3061) | Docs: [Fastify integration](/moose/app-api-frameworks)
 
 ---
 
@@ -414,29 +204,11 @@ Enable `MOOSE_CLIENT_ONLY` environment variable so Next.js apps can import Moose
 **Why it matters:** Frontend type safety without runtime headaches. This solves "already exists" errors during Hot Module Replacement and supports a pattern where the frontend gets type-safe definitions while the heavy Moose runtime stays server-side where it belongs.
 
 ```javascript filename="next.config.js" copy
-/** @type {import('next').NextConfig} */
 const nextConfig = {
   env: {
     MOOSE_CLIENT_ONLY: 'true', // Prevents duplicate registration errors during HMR
   },
 }
-
-module.exports = nextConfig
-```
-
-```typescript filename="app/models/UserActivity.ts" copy
-import { OlapTable, Key, DateTime } from '@514labs/moose-lib'
-
-export interface UserActivity {
-  userId: Key<string>
-  action: string
-  timestamp: DateTime
-}
-
-// Safe to import in Next.js - duplicates silently overwrite instead of throwing
-export const UserActivityTable = new OlapTable<UserActivity>('UserActivity', {
-  orderByFields: ['timestamp', 'userId'],
-})
 ```
 
 PR: [#3057](https://github.com/514-labs/moosestack/pull/3057)
@@ -450,17 +222,12 @@ The `moose ls` command now displays web applications alongside tables, streams, 
 **Why it matters:** Web apps as first-class infra. Discover what UIs exist (admin dashboards, portals, analytics UI) and integrate this into tooling, scripts, or dashboards.
 
 ```bash filename="Terminal" copy
-# List all project components including web apps
-moose ls
-
-# Filter to show only web applications
-moose ls --type web_apps
-
-# View web apps in JSON format for programmatic use
-moose ls --type web_apps --json
+moose ls                      # List all components including web apps
+moose ls --type web_apps      # Filter to show only web apps
+moose ls --type web_apps --json  # JSON format for scripting
 ```
 
-PR: [#3054](https://github.com/514-labs/moosestack/pull/3054)
+PR: [#3054](https://github.com/514-labs/moosestack/pull/3054) | Docs: [CLI reference](/moose/moose-cli)
 
 ---
 
@@ -478,15 +245,15 @@ PR: [#3054](https://github.com/514-labs/moosestack/pull/3054)
 
 ## Moose bug fixes
 
-- Next.js security updates in templates (15.4.7 → 16.0.7, React 19.0.0 → 19.0.1) – [#3089](https://github.com/514-labs/moosestack/pull/3089)
-- MCP template .npmrc fixes for Docker builds and npm install – [#3084](https://github.com/514-labs/moosestack/pull/3084), [#3082](https://github.com/514-labs/moosestack/pull/3082), [#3081](https://github.com/514-labs/moosestack/pull/3081)
-- MCP SDK compilation errors and Zod-based runtime validation – [#3075](https://github.com/514-labs/moosestack/pull/3075)
-- MCP template auth setup instructions clarified – [#3058](https://github.com/514-labs/moosestack/pull/3058)
-- ORDER BY extraction when tables have projections – [#3052](https://github.com/514-labs/moosestack/pull/3052)
-- TypeScript tests template Zod import path fix – [#3038](https://github.com/514-labs/moosestack/pull/3038)
-- SQL parsing for ClickHouse array literals in views – [#3034](https://github.com/514-labs/moosestack/pull/3034)
-- LowCardinality(String) column type handling in peek/query commands – [#3025](https://github.com/514-labs/moosestack/pull/3025)
-- DateTime precision loss – preserve microseconds/nanoseconds with new DateTime64String types – [#3018](https://github.com/514-labs/moosestack/pull/3018)
+- **Security updates in templates** – Updated Next.js (15.4.7 → 16.0.7) and React (19.0.0 → 19.0.1) to patch security vulnerabilities in frontend templates. [#3089](https://github.com/514-labs/moosestack/pull/3089)
+- **MCP template build failures** – Fixed missing/empty `.npmrc` files that caused `npm install` and Docker builds to fail when creating new MCP server projects. [#3084](https://github.com/514-labs/moosestack/pull/3084), [#3082](https://github.com/514-labs/moosestack/pull/3082), [#3081](https://github.com/514-labs/moosestack/pull/3081)
+- **MCP SDK compatibility** – Updated MCP template to work with SDK v1.23+ which changed its TypeScript types. Migrated to new `server.tool` API with Zod validation. [#3075](https://github.com/514-labs/moosestack/pull/3075)
+- **MCP auth setup instructions** – Clarified authentication setup steps in the MCP template README. [#3058](https://github.com/514-labs/moosestack/pull/3058)
+- **ORDER BY parsing with projections** – Fixed incorrect ORDER BY extraction when tables contain projections. The CLI was picking up projection ORDER BY clauses instead of the main table's. [#3052](https://github.com/514-labs/moosestack/pull/3052)
+- **Zod import path in tests template** – Fixed broken import path that prevented TypeScript tests template from compiling. [#3038](https://github.com/514-labs/moosestack/pull/3038)
+- **Array literals in views** – Views containing ClickHouse array syntax like `['a', 'b']` would fail to parse. Added fallback parser to handle ClickHouse-specific SQL. [#3034](https://github.com/514-labs/moosestack/pull/3034)
+- **LowCardinality columns in peek/query** – `moose peek` and `moose query` failed on tables with `LowCardinality(String)` columns. Switched to HTTP-based ClickHouse client which supports all column types. [#3025](https://github.com/514-labs/moosestack/pull/3025)
+- **DateTime precision preservation** – JavaScript Date objects drop microseconds/nanoseconds. Added `DateTimeString` and `DateTime64String<P>` types that keep timestamps as strings to preserve full precision. [#3018](https://github.com/514-labs/moosestack/pull/3018)
 
 ---
 
