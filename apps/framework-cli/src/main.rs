@@ -86,12 +86,14 @@ fn main() -> ExitCode {
                     }
 
                     eprintln!("\n💡 Quick start examples:");
-                    eprintln!("  moose init MyProject python          # Initialize with Python");
+                    eprintln!("  moose init PROJECT_NAME python          # Initialize with Python");
                     eprintln!(
-                        "  moose init MyProject typescript       # Initialize with TypeScript"
+                        "  moose init PROJECT_NAME typescript       # Initialize with TypeScript"
                     );
-                    eprintln!("  moose init MyProject python -l ./my-dir  # With custom location");
-                    eprintln!("  moose init MyProject --from-remote <url> --language python  # From existing DB");
+                    eprintln!(
+                        "  moose init PROJECT_NAME python -l ./my-dir  # With custom location"
+                    );
+                    eprintln!("  moose init PROJECT_NAME --from-remote <url> --language python  # From existing DB");
                     eprintln!("\nTo view all available templates, run:");
                     eprintln!("  moose template list");
                     std::process::exit(1)
