@@ -17,7 +17,7 @@ Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming
 * **New:** [IcebergS3 engine](#icebergs3-engine-for-data-lake-storage) for Apache Iceberg data lake integration
 * **New:** [Python LSP autocomplete](#python-lsp-autocomplete-for-sql-queries) for type-safe SQL queries
 * **New:** [Fastify web app template](#fastify-web-app-template) with automatic async initialization
-* **New:** [Infrastructure map visualization](#infrastructure-map-visualization) in Boreal dashboard
+* **New:** [Boreal infrastructure map visualization](#boreal-infrastructure-map-visualization)
 </Callout>
 
 ---
@@ -257,42 +257,38 @@ PR: [#3054](https://github.com/514-labs/moosestack/pull/3054) | Docs: [CLI refer
 
 ---
 
-## Infrastructure map visualization
+## Boreal: Infrastructure map visualization
 
 View your deployed MooseStack architecture directly in the Boreal dashboard—services, data flows, and components in one place.
 
 **Why it matters:** See your architecture, don't guess it. The infrastructure map helps with onboarding new teammates, debugging mis-wired components, and explaining the system to stakeholders.
 
-PR: [#1176](https://github.com/514-labs/commercial/pull/1176)
-
 ---
 
-## Database storage visualization (experimental)
+## Boreal: Database storage visualization (experimental)
 
 New experimental page showing table storage usage over time with interactive charts.
 
 **Why it matters:** Watch storage growth over time. Time-series charts of table sizes are crucial for capacity planning, catching runaway growth, and understanding which workloads drive storage cost.
 
-PR: [#1125](https://github.com/514-labs/commercial/pull/1125)
-
 ---
 
-## Other Boreal improvements
+## Other Boreal Features and Improvements
 
-- **Log drain performance** – Reuses database connections instead of creating new ones per batch, reducing connection overhead. PR [#1121](https://github.com/514-labs/commercial/pull/1121)
-- **ClickHouse query performance** – Optimized table structure and indexing for faster loading of query performance data. PR [#1116](https://github.com/514-labs/commercial/pull/1116)
-- **Temporarily removed "Build from Existing Database"** – Option removed from project creation flow while being improved. Users can still import from GitHub or templates. PR [#1104](https://github.com/514-labs/commercial/pull/1104)
+- **Log drain performance** – Reuses database connections instead of creating new ones per batch, reducing connection overhead.
+- **ClickHouse query performance** – Optimized table structure and indexing for faster loading of query performance data.
+- **Temporarily removed "Build from Existing Database"** – Option removed from project creation flow while being improved. Users can still import from GitHub or templates.
 
 ---
 
 ## Infrastructure improvements
 
-- **Extended deployment startup timeouts** – Increased from 60 to 180 seconds to reduce failures for larger applications during high-load periods. PR [#1098](https://github.com/514-labs/commercial/pull/1098)
+- **Extended deployment startup timeouts** – Increased from 60 to 180 seconds to reduce failures for larger applications during high-load periods.
 
 ---
 
-## Boreal bug fixes
+## Boreal Bug Fixes
 
-- **GitHub authentication** – Fixed issues preventing repository connections and operations. PR [#1136](https://github.com/514-labs/commercial/pull/1136)
-- **Security updates** – React 19.2.0 → 19.2.1, Next.js 16.0.1 → 16.0.7. PR [#1130](https://github.com/514-labs/commercial/pull/1130)
-- **Function names display** – Fixed missing function names in metrics table. PR [#1126](https://github.com/514-labs/commercial/pull/1126)
+- **GitHub authentication** – Fixed issues preventing repository connections and operations.
+- **Security updates** – React 19.2.0 → 19.2.1, Next.js 16.0.1 → 16.0.7.
+- **Function names display** – Fixed missing function names in metrics table.
