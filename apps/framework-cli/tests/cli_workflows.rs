@@ -127,7 +127,7 @@ fn test_workflow_init_basic() {
     let _guard = ensure_temporal();
     let temp_dir = TempDir::new().unwrap();
 
-    let mut init_command = Command::cargo_bin("moose-cli").unwrap();
+    let mut init_command = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
 
     // Initialize the project
     let _ = init_command
@@ -143,7 +143,7 @@ fn test_workflow_init_basic() {
         .unwrap();
 
     // Initialize the workflow
-    let mut workflow_command = Command::cargo_bin("moose-cli").unwrap();
+    let mut workflow_command = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
     let output = workflow_command
         .current_dir(temp_dir.path())
         .arg("workflow")
@@ -185,8 +185,7 @@ fn test_workflow_init_with_steps() {
     let temp_dir = TempDir::new().unwrap();
 
     // Initialize the project
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("init")
         .arg("moose-project")
@@ -201,8 +200,7 @@ fn test_workflow_init_with_steps() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Initialize the workflow
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("workflow")
         .arg("init")
@@ -284,8 +282,7 @@ fn test_workflow_run() -> Result<(), Box<dyn std::error::Error>> {
     let app_scripts_dir = temp_dir.path().join("app").join("scripts");
 
     // Initialize the project
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("init")
         .arg("moose-project")
@@ -298,8 +295,7 @@ fn test_workflow_run() -> Result<(), Box<dyn std::error::Error>> {
         .success();
 
     // First initialize a workflow with steps
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("workflow")
         .arg("init")
@@ -313,8 +309,7 @@ fn test_workflow_run() -> Result<(), Box<dyn std::error::Error>> {
     assert!(workflow_dir.exists(), "Workflow directory should exist");
 
     // Run the workflow with the virtual environment
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("workflow")
         .arg("run")
@@ -342,8 +337,7 @@ fn test_workflow_resume() {
     let temp_dir = TempDir::new().unwrap();
 
     // Initialize the project
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("init")
         .arg("moose-project")
@@ -358,8 +352,7 @@ fn test_workflow_resume() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Initialize the workflow
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("workflow")
         .arg("resume")
@@ -383,8 +376,7 @@ fn test_workflow_init_with_multiple_step_flags() {
     let temp_dir = TempDir::new().unwrap();
 
     // Initialize the project
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("init")
         .arg("moose-project")
@@ -399,8 +391,7 @@ fn test_workflow_init_with_multiple_step_flags() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Initialize the workflow
-    Command::cargo_bin("moose-cli")
-        .unwrap()
+    Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"))
         .current_dir(temp_dir.path())
         .arg("workflow")
         .arg("init")

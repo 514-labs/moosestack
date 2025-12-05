@@ -146,3 +146,61 @@ datetime_precision_input_model.get_stream().add_transform(
     destination=datetime_precision_output_stream,
     transformation=datetime_precision_transform,
 )
+
+
+# ============================================================================
+# Extra Fields Transform (ENG-1617)
+# Demonstrates how streaming functions receive extra fields from Pydantic's extra='allow'
+# ============================================================================
+
+from src.ingest.models import (
+    user_event_input_stream,
+    user_event_output_stream,
+    UserEventInput,
+    UserEventOutput,
+)
+
+
+def user_event_transform(input_data: UserEventInput) -> UserEventOutput:
+    """Transform for extra fields types.
+    
+    KEY POINT: The streaming function receives ALL fields from the input,
+    including extra fields allowed by Pydantic's `model_config = ConfigDict(extra='allow')`.
+    
+    Since OlapTable requires a fixed schema, we extract known fields and store
+    extra fields in a JSON column (`properties`).
+    """
+    # Get known fields
+    known_fields = {
+        "timestamp": input_data.timestamp,
+        "event_name": input_data.event_name,
+        "user_id": input_data.user_id,
+        "org_id": input_data.org_id,
+        "project_id": input_data.project_id,
+    }
+    
+    # Get extra fields using model_extra (Pydantic v2)
+    # This contains all fields that were not defined in the model schema
+    extra_fields = input_data.model_extra or {}
+    
+    # Log to demonstrate that extra fields ARE received by the streaming function
+    print("Extra fields transform received:", {
+        "known_fields": known_fields,
+        "extra_fields": extra_fields,  # These came through extra='allow'!
+    })
+    
+    return UserEventOutput(
+        timestamp=input_data.timestamp,
+        event_name=input_data.event_name,
+        user_id=input_data.user_id,
+        org_id=input_data.org_id,
+        project_id=input_data.project_id,
+        # Store extra fields in JSON column for persistence to ClickHouse
+        properties=extra_fields,
+    )
+
+
+user_event_input_stream.add_transform(
+    destination=user_event_output_stream,
+    transformation=user_event_transform,
+)

@@ -258,6 +258,7 @@ fn python_class_to_framework_datamodel(
         columns,
         name: class_name,
         config: Default::default(),
+        allow_extra_fields: false,
     })
 }
 

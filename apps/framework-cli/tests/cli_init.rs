@@ -1,4 +1,4 @@
-use assert_cmd::prelude::*; // Add methods on commands
+use assert_cmd::Command;
 use assert_fs::prelude::*;
 use predicates::prelude::*; // Used for writing assertions
 use std::path::Path;
@@ -15,7 +15,7 @@ fn ensure_directory_cleanup(dir: &Path) -> Result<(), Box<dyn std::error::Error>
 #[test]
 #[serial_test::serial(init)]
 fn cannot_run_cli_init_without_args() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("moose-cli")?;
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
 
     cmd.arg("init");
     cmd.assert().failure().stderr(predicate::str::contains(
@@ -39,7 +39,7 @@ fn can_run_cli_init() -> Result<(), Box<dyn std::error::Error>> {
     temp.child("moose.config.toml")
         .assert(predicate::path::missing());
 
-    let mut cmd = Command::cargo_bin("moose-cli")?;
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
 
     cmd.arg("init")
         .arg("test-app")
