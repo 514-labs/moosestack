@@ -1020,6 +1020,28 @@ impl InfrastructureMap {
         let sql_resource_changes = changes.olap_changes.len() - olap_changes_len_before;
         tracing::info!("SQL Resource changes detected: {}", sql_resource_changes);
 
+        // Materialized Views
+        tracing::info!("Analyzing changes in Materialized Views...");
+        let olap_changes_len_before = changes.olap_changes.len();
+        Self::diff_materialized_views(
+            &self.materialized_views,
+            &target_map.materialized_views,
+            &mut changes.olap_changes,
+        );
+        let mv_changes = changes.olap_changes.len() - olap_changes_len_before;
+        tracing::info!("Materialized View changes detected: {}", mv_changes);
+
+        // Custom Views
+        tracing::info!("Analyzing changes in Custom Views...");
+        let olap_changes_len_before = changes.olap_changes.len();
+        Self::diff_custom_views(
+            &self.custom_views,
+            &target_map.custom_views,
+            &mut changes.olap_changes,
+        );
+        let custom_view_changes = changes.olap_changes.len() - olap_changes_len_before;
+        tracing::info!("Custom View changes detected: {}", custom_view_changes);
+
         // All process types
         self.diff_all_processes(target_map, &mut changes.processes_changes);
 
@@ -1711,6 +1733,122 @@ impl InfrastructureMap {
             sql_resource_additions,
             sql_resource_removals,
             sql_resource_updates
+        );
+    }
+
+    /// Compare materialized views between two infrastructure maps and compute the differences
+    ///
+    /// # Arguments
+    /// * `self_mvs` - HashMap of source materialized views
+    /// * `target_mvs` - HashMap of target materialized views
+    /// * `olap_changes` - Mutable vector to collect the identified changes
+    pub fn diff_materialized_views(
+        self_mvs: &HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+        target_mvs: &HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+        olap_changes: &mut Vec<OlapChange>,
+    ) {
+        tracing::info!(
+            "Analyzing materialized view differences between {} source MVs and {} target MVs",
+            self_mvs.len(),
+            target_mvs.len()
+        );
+
+        let mut mv_updates = 0;
+        let mut mv_removals = 0;
+        let mut mv_additions = 0;
+
+        for (id, mv) in self_mvs {
+            if let Some(target_mv) = target_mvs.get(id) {
+                if mv != target_mv {
+                    tracing::debug!("Materialized view '{}' has differences", id);
+                    mv_updates += 1;
+                    olap_changes.push(OlapChange::MaterializedView(Change::Updated {
+                        before: Box::new(mv.clone()),
+                        after: Box::new(target_mv.clone()),
+                    }));
+                }
+            } else {
+                tracing::debug!("Materialized view '{}' removed", id);
+                mv_removals += 1;
+                olap_changes.push(OlapChange::MaterializedView(Change::Removed(Box::new(
+                    mv.clone(),
+                ))));
+            }
+        }
+
+        for (id, mv) in target_mvs {
+            if !self_mvs.contains_key(id) {
+                tracing::debug!("Materialized view '{}' added", id);
+                mv_additions += 1;
+                olap_changes.push(OlapChange::MaterializedView(Change::Added(Box::new(
+                    mv.clone(),
+                ))));
+            }
+        }
+
+        tracing::info!(
+            "Materialized view changes: {} added, {} removed, {} updated",
+            mv_additions,
+            mv_removals,
+            mv_updates
+        );
+    }
+
+    /// Compare custom views between two infrastructure maps and compute the differences
+    ///
+    /// # Arguments
+    /// * `self_views` - HashMap of source custom views
+    /// * `target_views` - HashMap of target custom views
+    /// * `olap_changes` - Mutable vector to collect the identified changes
+    pub fn diff_custom_views(
+        self_views: &HashMap<String, super::infrastructure::view::CustomView>,
+        target_views: &HashMap<String, super::infrastructure::view::CustomView>,
+        olap_changes: &mut Vec<OlapChange>,
+    ) {
+        tracing::info!(
+            "Analyzing custom view differences between {} source views and {} target views",
+            self_views.len(),
+            target_views.len()
+        );
+
+        let mut view_updates = 0;
+        let mut view_removals = 0;
+        let mut view_additions = 0;
+
+        for (id, view) in self_views {
+            if let Some(target_view) = target_views.get(id) {
+                if view != target_view {
+                    tracing::debug!("Custom view '{}' has differences", id);
+                    view_updates += 1;
+                    olap_changes.push(OlapChange::CustomView(Change::Updated {
+                        before: Box::new(view.clone()),
+                        after: Box::new(target_view.clone()),
+                    }));
+                }
+            } else {
+                tracing::debug!("Custom view '{}' removed", id);
+                view_removals += 1;
+                olap_changes.push(OlapChange::CustomView(Change::Removed(Box::new(
+                    view.clone(),
+                ))));
+            }
+        }
+
+        for (id, view) in target_views {
+            if !self_views.contains_key(id) {
+                tracing::debug!("Custom view '{}' added", id);
+                view_additions += 1;
+                olap_changes.push(OlapChange::CustomView(Change::Added(Box::new(
+                    view.clone(),
+                ))));
+            }
+        }
+
+        tracing::info!(
+            "Custom view changes: {} added, {} removed, {} updated",
+            view_additions,
+            view_removals,
+            view_updates
         );
     }
 
