@@ -117,9 +117,24 @@ export const transformNewMooseResource = (
 
   // Check if the type actually has an index signature
   const typeAtLocation = checker.getTypeAtLocation(typeNode);
-  const hasIndexSignature =
-    allowIndexSignatures &&
-    checker.getIndexInfosOfType(typeAtLocation).length > 0;
+  const indexSignatures = checker.getIndexInfosOfType(typeAtLocation);
+  const hasIndexSignature = allowIndexSignatures && indexSignatures.length > 0;
+
+  // Validate: IngestPipeline with table=true cannot have index signatures
+  // because extra fields would be silently dropped when writing to ClickHouse
+  if (
+    typeName === "IngestPipeline" &&
+    ingestPipelineHasTable &&
+    indexSignatures.length > 0
+  ) {
+    throw new Error(
+      `IngestPipeline cannot use a type with index signatures when 'table' is configured. ` +
+        `Extra fields would be silently dropped when writing to the ClickHouse table. ` +
+        `Either:\n` +
+        `  1. Remove the index signature from your type to use a fixed schema, or\n` +
+        `  2. Set 'table: false' in your IngestPipeline config if you only need the API and stream`,
+    );
+  }
 
   const internalArguments =
     typeName === "DeadLetterQueue" ?
