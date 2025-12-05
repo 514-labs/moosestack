@@ -68,7 +68,7 @@ fn init_with_positional_template_creates_directory() -> Result<(), Box<dyn std::
     // Ensure the directory doesn't exist initially
     ensure_directory_cleanup(&project_dir)?;
 
-    let mut cmd = Command::cargo_bin("moose-cli")?;
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
 
     cmd.arg("init")
         .arg("MyProject1")
@@ -98,7 +98,7 @@ fn init_with_location_flag_uses_name_in_setup_py() -> Result<(), Box<dyn std::er
     // Ensure the directory doesn't exist initially
     ensure_directory_cleanup(&project_dir)?;
 
-    let mut cmd = Command::cargo_bin("moose-cli")?;
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
 
     cmd.arg("init")
         .arg("-l")
