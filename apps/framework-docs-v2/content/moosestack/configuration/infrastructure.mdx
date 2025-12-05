@@ -8,23 +8,17 @@ import { Callout } from "@/components/mdx";
 
 # Infrastructure Configuration
 
-This reference covers the configuration for the core infrastructure components that Moose manages or connects to.
+This reference covers the configuration for the core infrastructure components that Moose Runtime manages (in development) or connects to (in production).
 
 <Callout type="warning" title="Critical Security Warning">
 **NEVER put production secrets (passwords, API keys) in `moose.config.toml`**.
 
 The infrastructure configuration in `moose.config.toml` is primarily used by `moose dev` to spin up local Docker containers. For production environments or when connecting to external infrastructure, **ALWAYS use environment variables** or `.env.prod` files to securely inject credentials.
-
-See the [Environment Variables](/moosestack/configuration/environment-variables) guide for details on managing secrets.
 </Callout>
 
 ## ClickHouse Configuration
 
 Configure the OLAP database connection and behavior.
-
-<Callout type="info" title="Dev vs. Prod">
-In `moose dev`, these settings configure the ClickHouse container created by Moose. In production, they define how Moose connects to your managed ClickHouse instance.
-</Callout>
 
 ```toml
 [clickhouse_config]
@@ -51,7 +45,7 @@ native_port = 9000
 | `password` | `MOOSE_CLICKHOUSE_CONFIG__PASSWORD` | "pandapass" | **SECRET**. Use env var in prod. |
 | `use_ssl` | `MOOSE_CLICKHOUSE_CONFIG__USE_SSL` | false | Enable SSL connection. |
 | `host` | `MOOSE_CLICKHOUSE_CONFIG__HOST` | "localhost" | ClickHouse server host. |
-| `host_port` | `MOOSE_CLICKHOUSE_CONFIG__HOST_PORT` | 18123 | HTTP interface port. |
+| `host_port` | `MOOSE_CLICKHOUSE_CONFIG__HOST_PORT` | 18123 | HTTP interface port (and Docker bind port in dev). |
 | `native_port` | `MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT` | 9000 | Native TCP protocol port. |
 
 ## Redpanda (Kafka) Configuration
@@ -76,7 +70,7 @@ message_timeout_ms = 1000
 
 | Key | Env Variable | Default | Description |
 |:----|:-------------|:--------|:------------|
-| `broker` | `MOOSE_REDPANDA_CONFIG__BROKER` | "localhost:19092" | Kafka broker address. |
+| `broker` | `MOOSE_REDPANDA_CONFIG__BROKER` | "localhost:19092" | Kafka broker address (and Docker bind address in dev). |
 | `sasl_username` | `MOOSE_REDPANDA_CONFIG__SASL_USERNAME` | - | SASL username. |
 | `sasl_password` | `MOOSE_REDPANDA_CONFIG__SASL_PASSWORD` | - | **SECRET**. SASL password. |
 | `sasl_mechanism` | `MOOSE_REDPANDA_CONFIG__SASL_MECHANISM` | - | e.g., "PLAIN", "SCRAM-SHA-256". |
@@ -100,7 +94,7 @@ key_prefix = "MS"
 
 | Key | Env Variable | Default | Description |
 |:----|:-------------|:--------|:------------|
-| `url` | `MOOSE_REDIS_CONFIG__URL` | "redis://127.0.0.1:6379" | Full connection URL (can include password). |
+| `url` | `MOOSE_REDIS_CONFIG__URL` | "redis://127.0.0.1:6379" | Full connection URL. |
 | `key_prefix` | `MOOSE_REDIS_CONFIG__KEY_PREFIX` | "MS" | Prefix for keys used by Moose. |
 
 ## Temporal Configuration
