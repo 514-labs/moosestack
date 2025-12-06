@@ -32,19 +32,25 @@ pub struct FilterResult {
 /// # Arguments
 /// * `changes` - The changes to filter (typically from a diff strategy)
 /// * `target_table` - The target table state (used to check lifecycle)
+/// * `default_database` - The default database name for generating table IDs
 ///
 /// # Returns
 /// A `FilterResult` containing both applied and filtered changes
-pub fn apply_lifecycle_filter(changes: Vec<OlapChange>, target_table: &Table) -> FilterResult {
+pub fn apply_lifecycle_filter(
+    changes: Vec<OlapChange>,
+    target_table: &Table,
+    default_database: &str,
+) -> FilterResult {
     let mut applied = Vec::new();
     let mut filtered = Vec::new();
-    let mut blocked_tables = HashSet::new();
+    // Use table IDs (which include database) instead of names to handle multi-database scenarios
+    let mut blocked_table_ids: HashSet<String> = HashSet::new();
 
     for change in changes {
         match change {
             OlapChange::Table(TableChange::Removed(removed_table)) => {
                 if should_block_table_removal(&removed_table, target_table) {
-                    blocked_tables.insert(removed_table.name.clone());
+                    blocked_table_ids.insert(removed_table.id(default_database));
                     filtered.push(create_removal_filtered_change(
                         removed_table,
                         target_table.life_cycle,
@@ -55,7 +61,7 @@ pub fn apply_lifecycle_filter(changes: Vec<OlapChange>, target_table: &Table) ->
             }
             OlapChange::Table(TableChange::Added(added_table)) => {
                 // Block orphan creates when the corresponding drop was blocked
-                if blocked_tables.contains(&added_table.name) {
+                if blocked_table_ids.contains(&added_table.id(default_database)) {
                     tracing::debug!(
                         "Blocking orphan CREATE for table '{}' after blocking DROP",
                         added_table.name

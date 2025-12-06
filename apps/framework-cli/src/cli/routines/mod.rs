@@ -1048,14 +1048,6 @@ pub async fn remote_plan(
         }
     };
 
-    // DEBUG: Write remote and local infra maps to JSON for inspection
-    if let Ok(json) = serde_json::to_string_pretty(&remote_infra_map) {
-        let _ = std::fs::write("/tmp/remote-inframap.json", json);
-    }
-    if let Ok(json) = serde_json::to_string_pretty(&local_infra_map) {
-        let _ = std::fs::write("/tmp/local-inframap.json", json);
-    }
-
     tracing::info!(
         "Remote inframap: {} topics, {} tables, {} api_endpoints",
         remote_infra_map.topics.len(),

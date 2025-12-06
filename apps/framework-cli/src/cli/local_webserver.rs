@@ -3294,15 +3294,9 @@ async fn get_admin_reconciled_inframap(
             ))
         })?;
 
-    if !project.features.olap {
-        // If OLAP is disabled, we can't reconcile, just return stored state
-        let current_map = state_storage
-            .load_infrastructure_map()
-            .await?
-            .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
-        return Ok(current_map);
-    }
-
+    // Create OLAP client - this just creates the struct, doesn't connect.
+    // load_reconciled_infrastructure handles the OLAP disabled case internally,
+    // allowing future reconciliation of other infrastructure (Kafka, etc.) to work.
     let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
 
     // If target IDs provided, use them. Otherwise, load current map and use its tables
