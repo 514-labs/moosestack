@@ -1,4 +1,10 @@
 import { FooPipeline, BarPipeline, Foo, Bar, arrayInputStream } from "./models";
+import {
+  userEventInputStream,
+  userEventOutputStream,
+  UserEventInput,
+  UserEventOutput,
+} from "./indexSignatureTests";
 import { DeadLetterQueue, MooseCache } from "@514labs/moose-lib";
 
 // Transform Foo events to Bar events
@@ -188,5 +194,46 @@ DateTimePrecisionInputPipeline.stream!.addTransform(
 
     // Pass through unchanged
     return input;
+  },
+);
+
+// ============================================================================
+// Index Signature Transform (ENG-1617)
+// Demonstrates how streaming functions receive extra fields from index signatures
+// ============================================================================
+
+/**
+ * Transform for index signature types.
+ *
+ * KEY POINT: The streaming function receives ALL fields from the input,
+ * including extra fields allowed by the index signature `[key: string]: any`.
+ *
+ * Since OlapTable requires a fixed schema, we extract known fields and store
+ * extra fields in a JSON column (`properties`).
+ */
+userEventInputStream.addTransform(
+  userEventOutputStream,
+  (input: UserEventInput): UserEventOutput => {
+    // Destructure to separate known fields from extra fields
+    // The spread operator (...extraFields) captures all additional properties
+    // that were allowed through the index signature
+    const { timestamp, eventName, userId, orgId, projectId, ...extraFields } =
+      input;
+
+    // Log to demonstrate that extra fields ARE received by the streaming function
+    console.log("Index signature transform received:", {
+      knownFields: { timestamp, eventName, userId, orgId, projectId },
+      extraFields: extraFields, // These came through the index signature!
+    });
+
+    return {
+      timestamp,
+      eventName,
+      userId,
+      orgId,
+      projectId,
+      // Store extra fields in JSON column for persistence to ClickHouse
+      properties: extraFields,
+    };
   },
 );

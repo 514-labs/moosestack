@@ -207,6 +207,21 @@ class IcebergS3ConfigDict(BaseEngineConfigDict):
     compression: Optional[str] = None
 
 
+class KafkaConfigDict(BaseEngineConfigDict):
+    """Configuration for Kafka engine.
+
+    Constructor: ENGINE = Kafka('broker', 'topic', 'group', 'format')
+    Settings (kafka_schema, kafka_num_consumers, security, etc.) go in table settings.
+
+    Reference: https://clickhouse.com/docs/engines/table-engines/integrations/kafka
+    """
+    engine: Literal["Kafka"] = "Kafka"
+    broker_list: str
+    topic_list: str
+    group_name: str
+    format: str
+
+
 # Discriminated union of all engine configurations
 EngineConfigDict = Union[
     MergeTreeConfigDict,
@@ -225,7 +240,8 @@ EngineConfigDict = Union[
     S3ConfigDict,
     BufferConfigDict,
     DistributedConfigDict,
-    IcebergS3ConfigDict
+    IcebergS3ConfigDict,
+    KafkaConfigDict
 ]
 
 
@@ -310,6 +326,8 @@ class IngestApiConfig(BaseModel):
         version: Optional version string of the API configuration.
         path: Optional custom path for the ingestion endpoint.
         metadata: Optional metadata for the API.
+        allow_extra_fields: Whether this API allows extra fields beyond the defined columns.
+            When true, extra fields in payloads are passed through to streaming functions.
     """
     model_config = model_config
 
@@ -321,6 +339,7 @@ class IngestApiConfig(BaseModel):
     path: Optional[str] = None
     metadata: Optional[dict] = None
     json_schema: dict[str, Any] = Field(serialization_alias="schema")
+    allow_extra_fields: bool = False
 
 
 class InternalApiConfig(BaseModel):
@@ -579,7 +598,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     Returns:
         EngineConfigDict with engine-specific configuration
     """
-    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine, IcebergS3Engine
+    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine, IcebergS3Engine, KafkaEngine
 
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):
@@ -639,6 +658,15 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             aws_access_key_id=engine.aws_access_key_id,
             aws_secret_access_key=engine.aws_secret_access_key,
             compression=engine.compression
+        )
+
+    # Try Kafka
+    if isinstance(engine, KafkaEngine):
+        return KafkaConfigDict(
+            broker_list=engine.broker_list,
+            topic_list=engine.topic_list,
+            group_name=engine.group_name,
+            format=engine.format
         )
 
     # Try basic engines
@@ -817,6 +845,10 @@ def to_infra_map() -> dict:
         )
 
     for name, api in get_ingest_apis().items():
+        # Check if the Pydantic model allows extra fields (extra='allow')
+        # This is the Python equivalent of TypeScript's index signatures
+        model_allows_extra = api._t.model_config.get("extra") == "allow"
+
         ingest_apis[name] = IngestApiConfig(
             name=name,
             columns=_to_columns(api._t),
@@ -830,7 +862,8 @@ def to_infra_map() -> dict:
             json_schema=api._t.model_json_schema(
                 ref_template='#/components/schemas/{model}'
             ),
-            dead_letter_queue=api.config.dead_letter_queue.name if api.config.dead_letter_queue else None
+            dead_letter_queue=api.config.dead_letter_queue.name if api.config.dead_letter_queue else None,
+            allow_extra_fields=model_allows_extra,
         )
 
     for name, api in get_apis().items():

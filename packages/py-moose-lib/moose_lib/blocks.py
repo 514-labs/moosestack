@@ -18,6 +18,7 @@ class ClickHouseEngines(Enum):
     Buffer = "Buffer"
     Distributed = "Distributed"
     IcebergS3 = "IcebergS3"
+    Kafka = "Kafka"
     ReplicatedMergeTree = "ReplicatedMergeTree"
     ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
     ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
@@ -422,6 +423,35 @@ class IcebergS3Engine(EngineConfig):
             raise ValueError("IcebergS3 engine requires 'format'")
         if self.format not in ['Parquet', 'ORC']:
             raise ValueError(f"IcebergS3 format must be 'Parquet' or 'ORC', got '{self.format}'")
+
+@dataclass
+class KafkaEngine(EngineConfig):
+    """Kafka engine for streaming data from Kafka topics.
+
+    Args:
+        broker_list: Kafka broker addresses (e.g., 'kafka:9092')
+        topic_list: Topics to consume from
+        group_name: Consumer group identifier
+        format: Message format (e.g., 'JSONEachRow')
+
+    Additional settings (kafka_num_consumers, security) go in OlapConfig.settings.
+    """
+
+    broker_list: str
+    topic_list: str
+    group_name: str
+    format: str
+
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.broker_list:
+            raise ValueError("Kafka engine requires 'broker_list'")
+        if not self.topic_list:
+            raise ValueError("Kafka engine requires 'topic_list'")
+        if not self.group_name:
+            raise ValueError("Kafka engine requires 'group_name'")
+        if not self.format:
+            raise ValueError("Kafka engine requires 'format'")
 
 # ==========================
 # New Table Configuration (Recommended API)

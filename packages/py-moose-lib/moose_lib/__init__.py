@@ -31,6 +31,7 @@ from .blocks import (
     ReplicatedVersionedCollapsingMergeTreeEngine,
     S3QueueEngine,
     IcebergS3Engine,
+    KafkaEngine,
     EngineConfig,
     # Legacy enum (already exported via .blocks import, but explicit for clarity)
     ClickHouseEngines

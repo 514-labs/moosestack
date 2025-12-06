@@ -21,6 +21,10 @@ pub struct DataModel {
     pub config: DataModelConfig,
     pub abs_file_path: PathBuf,
     pub version: Version,
+    /// Whether this data model allows extra fields beyond the defined columns.
+    /// When true, extra fields in payloads are passed through to streaming functions.
+    #[serde(default)]
+    pub allow_extra_fields: bool,
 }
 
 impl DataModel {
@@ -67,6 +71,7 @@ impl DataModel {
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None, // Will be computed below
             table_settings: None,     // TODO: Parse table_settings from data model config
+            table_settings_hash: None,
             indexes: vec![],
             database: None, // Database defaults to global config
             table_ttl_setting: None,

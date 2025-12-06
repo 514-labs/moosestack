@@ -26,6 +26,9 @@ use std::env;
 /// Prefix used to mark values that should be resolved from environment variables
 pub const MOOSE_RUNTIME_ENV_PREFIX: &str = "__MOOSE_RUNTIME_ENV__:";
 
+/// Placeholder used by ClickHouse for hidden/masked credential values
+pub const CREDENTIAL_PLACEHOLDER: &str = "[HIDDEN]";
+
 /// Resolves a value that may contain a Moose runtime environment variable marker.
 ///
 /// If the value starts with `__MOOSE_RUNTIME_ENV__:`, extracts the variable name
