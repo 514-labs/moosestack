@@ -49,6 +49,7 @@ use super::primitive_map::PrimitiveMap;
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
 use crate::framework::core::infra_reality_checker::find_table_from_infra_map;
 use crate::framework::core::infrastructure_map::Change::Added;
+use crate::framework::core::lifecycle_filter;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
@@ -66,6 +67,36 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+
+/// Controls lifecycle protection and operational behavior when diffing infrastructure maps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffMode {
+    /// Production mode: Full lifecycle protection + conservative operations (no auto-populate MVs).
+    Production,
+
+    /// Development mode: Full lifecycle protection + aggressive operations (auto-populate MVs).
+    Development,
+
+    /// Reality check mode: Bypasses ALL lifecycle protections to detect actual state mismatches.
+    /// **WARNING**: For read-only validation only, never for applying changes.
+    RealityCheck,
+}
+
+impl DiffMode {
+    /// Whether to respect lifecycle settings (DeletionProtected, ExternallyManaged).
+    /// - `true` for Production/Development (blocks protected operations)
+    /// - `false` for RealityCheck (shows all differences, ignoring protections)
+    pub fn respect_lifecycle(&self) -> bool {
+        !matches!(self, DiffMode::RealityCheck)
+    }
+
+    /// Whether to use conservative production behavior (currently: don't auto-populate MVs).
+    /// - `true` for Production
+    /// - `false` for Development/RealityCheck
+    pub fn is_production(&self) -> bool {
+        matches!(self, DiffMode::Production)
+    }
+}
 
 /// Strategy trait for handling database-specific table diffing logic
 ///
@@ -450,6 +481,15 @@ pub enum ProcessChange {
     OrchestrationWorker(Change<OrchestrationWorker>),
 }
 
+/// Represents a change that was blocked by lifecycle policies
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilteredChange {
+    /// The change that was blocked
+    pub change: OlapChange,
+    /// The reason the change was blocked
+    pub reason: String,
+}
+
 /// Collection of all changes detected between two infrastructure states
 ///
 /// This struct aggregates changes across all parts of the infrastructure
@@ -466,6 +506,9 @@ pub struct InfraChanges {
     pub web_app_changes: Vec<WebAppChange>,
     /// Changes to streaming components
     pub streaming_engine_changes: Vec<StreamingChange>,
+    /// Changes that were filtered out due to lifecycle policies
+    #[serde(default)]
+    pub filtered_olap_changes: Vec<FilteredChange>,
 }
 
 impl InfraChanges {
@@ -791,6 +834,7 @@ impl InfrastructureMap {
             api_changes,
             streaming_engine_changes,
             web_app_changes: vec![],
+            filtered_olap_changes: vec![],
         }
     }
 
@@ -979,6 +1023,7 @@ impl InfrastructureMap {
             &self.tables,
             &target_map.tables,
             &mut changes.olap_changes,
+            &mut changes.filtered_olap_changes,
             table_diff_strategy,
             respect_life_cycle,
             &target_map.default_database,
@@ -1711,13 +1756,16 @@ impl InfrastructureMap {
     /// * `self_tables` - HashMap of source tables to compare from
     /// * `target_tables` - HashMap of target tables to compare against
     /// * `olap_changes` - Mutable vector to collect the identified changes
+    /// * `filtered_changes` - Mutable vector to collect changes blocked by lifecycle policies
     /// * `strategy` - Strategy for handling database-specific table diffing logic
     /// * `default_database` - The configured default database name
     /// * `ignore_ops` - Operations to ignore during comparison (e.g., ModifyPartitionBy)
+    #[allow(clippy::too_many_arguments)]
     pub fn diff_tables_with_strategy(
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
+        filtered_changes: &mut Vec<FilteredChange>,
         strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
         default_database: &str,
@@ -1876,110 +1924,25 @@ impl InfrastructureMap {
                                 default_database,
                             );
 
-                            // Filter strategy changes to respect lifecycle constraints
+                            // Apply lifecycle filtering to respect lifecycle constraints
                             // This handles both:
                             // 1. Strategies that convert updates to drop+create (blocks both Removed AND Added for protected tables)
                             // 2. Strategies that return Updated (filters out column removals for DeletionProtected tables)
-                            let filtered_changes: Vec<OlapChange> = if respect_life_cycle {
-                                let mut blocked_tables = std::collections::HashSet::new();
-
-                                strategy_changes
-                                    .into_iter()
-                                    .filter_map(|change| {
-                                        match change {
-                                            OlapChange::Table(TableChange::Removed(removed_table)) => {
-                                                // CRITICAL: Use target_table lifecycle (AFTER state), not removed_table lifecycle (BEFORE state)
-                                                // This handles transitions TO protected lifecycles (e.g., FullyManaged -> DeletionProtected)
-                                                match target_table.life_cycle {
-                                                    LifeCycle::DeletionProtected => {
-                                                        tracing::warn!(
-                                                            "Strategy attempted to drop deletion-protected table '{}' - blocking operation",
-                                                            removed_table.name
-                                                        );
-                                                        blocked_tables.insert(removed_table.name.clone());
-                                                        None
-                                                    }
-                                                    LifeCycle::ExternallyManaged => {
-                                                        tracing::warn!(
-                                                            "Strategy attempted to drop externally-managed table '{}' - blocking operation",
-                                                            removed_table.name
-                                                        );
-                                                        blocked_tables.insert(removed_table.name.clone());
-                                                        None
-                                                    }
-                                                    LifeCycle::FullyManaged => {
-                                                        Some(OlapChange::Table(TableChange::Removed(removed_table)))
-                                                    }
-                                                }
-                                            }
-                                            OlapChange::Table(TableChange::Added(added_table)) => {
-                                                // If we blocked the corresponding drop, also block the create
-                                                // to avoid "table already exists" errors
-                                                if blocked_tables.contains(&added_table.name) {
-                                                    tracing::debug!(
-                                                        "Blocking orphan CREATE for table '{}' after blocking DROP",
-                                                        added_table.name
-                                                    );
-                                                    None
-                                                } else {
-                                                    Some(OlapChange::Table(TableChange::Added(added_table)))
-                                                }
-                                            }
-                                            OlapChange::Table(TableChange::Updated {
-                                                name,
-                                                column_changes,
-                                                order_by_change,
-                                                partition_by_change,
-                                                before,
-                                                after,
-                                            }) => {
-                                                // For DeletionProtected tables, filter out column removals
-                                                if after.life_cycle == LifeCycle::DeletionProtected {
-                                                    let original_len = column_changes.len();
-                                                    let filtered_column_changes: Vec<_> = column_changes
-                                                        .into_iter()
-                                                        .filter(|c| !matches!(c, ColumnChange::Removed(_)))
-                                                        .collect();
-
-                                                    if original_len != filtered_column_changes.len() {
-                                                        tracing::debug!(
-                                                            "Filtered {} column removals for deletion-protected table '{}'",
-                                                            original_len - filtered_column_changes.len(),
-                                                            name
-                                                        );
-                                                    }
-
-                                                    Some(OlapChange::Table(TableChange::Updated {
-                                                        name,
-                                                        column_changes: filtered_column_changes,
-                                                        order_by_change,
-                                                        partition_by_change,
-                                                        before,
-                                                        after,
-                                                    }))
-                                                } else {
-                                                    Some(OlapChange::Table(TableChange::Updated {
-                                                        name,
-                                                        column_changes,
-                                                        order_by_change,
-                                                        partition_by_change,
-                                                        before,
-                                                        after,
-                                                    }))
-                                                }
-                                            }
-                                            _ => Some(change),
-                                        }
-                                    })
-                                    .collect()
+                            let applied_changes: Vec<OlapChange> = if respect_life_cycle {
+                                let filter_result = lifecycle_filter::apply_lifecycle_filter(
+                                    strategy_changes,
+                                    target_table,
+                                );
+                                filtered_changes.extend(filter_result.filtered);
+                                filter_result.applied
                             } else {
                                 strategy_changes
                             };
 
                             // Only count as a table update if the strategy returned actual operations
-                            if !filtered_changes.is_empty() {
+                            if !applied_changes.is_empty() {
                                 table_updates += 1;
-                                olap_changes.extend(filtered_changes);
+                                olap_changes.extend(applied_changes);
                             }
                         }
                     }
@@ -2001,12 +1964,26 @@ impl InfrastructureMap {
                             "Table '{}' marked for removal but is deletion-protected - skipping removal",
                             table.name
                         );
+                        filtered_changes.push(FilteredChange {
+                            change: OlapChange::Table(TableChange::Removed(table.clone())),
+                            reason: format!(
+                                "Table '{}' has DeletionProtected lifecycle - removal blocked",
+                                table.name
+                            ),
+                        });
                     }
                     (LifeCycle::ExternallyManaged, true) => {
                         tracing::debug!(
                             "Table '{}' marked for removal but is externally managed - skipping removal",
                             table.name
                         );
+                        filtered_changes.push(FilteredChange {
+                            change: OlapChange::Table(TableChange::Removed(table.clone())),
+                            reason: format!(
+                                "Table '{}' has ExternallyManaged lifecycle - removal blocked",
+                                table.name
+                            ),
+                        });
                     }
                 }
             }
@@ -2062,10 +2039,12 @@ impl InfrastructureMap {
         default_database: &str,
     ) {
         let default_strategy = DefaultTableDiffStrategy;
+        let mut filtered = Vec::new(); // Discard filtered changes for backward compatibility
         Self::diff_tables_with_strategy(
             self_tables,
             target_tables,
             olap_changes,
+            &mut filtered,
             &default_strategy,
             respect_life_cycle,
             default_database,

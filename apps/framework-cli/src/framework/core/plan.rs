@@ -352,9 +352,8 @@ impl Default for PlanOptions {
 
 /// Converts infrastructure changes to ordered executable operations.
 ///
-/// This is the single canonical conversion function used by both display and execution
-/// to guarantee consistency. It takes the high-level infrastructure changes and converts
-/// them into a sequence of atomic OLAP operations that can be executed on the database.
+/// Used by both display and execution to guarantee consistency. Converts high-level
+/// infrastructure changes into a sequence of atomic OLAP operations.
 ///
 /// The operations are ordered in two phases:
 /// 1. Teardown operations (drops, removals) executed first
@@ -414,7 +413,9 @@ pub fn infra_changes_to_operations(
 ///
 /// # Returns
 /// * `Result<InfrastructureMap, PlanningError>` - The target infrastructure map with resolved credentials
-pub async fn load_target_state(project: &Project) -> Result<InfrastructureMap, PlanningError> {
+pub async fn load_target_infrastructure(
+    project: &Project,
+) -> Result<InfrastructureMap, PlanningError> {
     let json_path = Path::new(".moose/infrastructure_map.json");
     let mut target_infra_map = if project.is_production && json_path.exists() {
         // Load from prebuilt JSON (created by moose check without credentials)
@@ -461,7 +462,7 @@ pub async fn load_target_state(project: &Project) -> Result<InfrastructureMap, P
 ///
 /// # Returns
 /// * `Result<InfrastructureMap, PlanningError>` - The reconciled current state
-pub async fn load_current_state<T: OlapOperations>(
+pub async fn load_reconciled_infrastructure<T: OlapOperations>(
     project: &Project,
     storage: &dyn StateStorage,
     olap_client: T,
@@ -521,7 +522,7 @@ pub async fn plan_changes(
     project: &Project,
 ) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
     // Load target state from project code
-    let target_infra_map = load_target_state(project).await?;
+    let target_infra_map = load_target_infrastructure(project).await?;
 
     // Load and reconcile current state
     let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
@@ -533,7 +534,7 @@ pub async fn plan_changes(
     let target_sql_resource_ids: HashSet<String> =
         target_infra_map.sql_resources.keys().cloned().collect();
 
-    let reconciled_map = load_current_state(
+    let reconciled_map = load_reconciled_infrastructure(
         project,
         state_storage,
         olap_client,
@@ -1441,6 +1442,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            filtered_olap_changes: vec![],
         };
 
         let ops1 = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
@@ -1460,6 +1462,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            filtered_olap_changes: vec![],
         };
 
         let ops = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
@@ -1477,6 +1480,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            filtered_olap_changes: vec![],
         };
 
         // Get operations directly from the conversion function

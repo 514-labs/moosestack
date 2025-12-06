@@ -996,8 +996,7 @@ pub async fn remote_plan(
     clickhouse_url: &Option<String>,
     json: bool,
 ) -> anyhow::Result<()> {
-    // Load local target state using the canonical helper
-    let local_infra_map = crate::framework::core::plan::load_target_state(project).await?;
+    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
 
     // Determine remote source based on provided arguments
     let remote_infra_map = if let Some(clickhouse_url) = clickhouse_url {
@@ -1181,9 +1180,7 @@ pub async fn remote_gen_migration(
 ) -> anyhow::Result<MigrationPlanWithBeforeAfter> {
     use anyhow::Context;
 
-    // Build the inframap from the local project using the canonical helper
-    // Resolve credentials for generating migration DDL with S3 tables
-    let local_infra_map = crate::framework::core::plan::load_target_state(project).await?;
+    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
 
     // Get remote infrastructure map based on source type
     let remote_infra_map = match remote {
@@ -1293,10 +1290,9 @@ async fn get_remote_inframap_serverless(
         .build()
         .await?;
 
-    // Use the canonical load_current_state helper for consistency
     let olap_client = create_client(clickhouse_config.clone());
 
-    let reconciled_infra_map = crate::framework::core::plan::load_current_state(
+    let reconciled_infra_map = crate::framework::core::plan::load_reconciled_infrastructure(
         project,
         &*state_storage,
         olap_client,
@@ -1313,8 +1309,7 @@ pub async fn remote_refresh(
     base_url: &Option<String>,
     token: &Option<String>,
 ) -> anyhow::Result<RoutineSuccess> {
-    // Build the inframap from the local project using the canonical helper
-    let local_infra_map = crate::framework::core::plan::load_target_state(project).await?;
+    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
 
     // Get authentication token - prioritize command line parameter, then env var, then project config
     let auth_token = token

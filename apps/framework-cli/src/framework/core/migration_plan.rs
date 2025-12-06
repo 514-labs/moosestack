@@ -25,8 +25,6 @@ impl MigrationPlan {
         infra_plan_changes: &InfraChanges,
         default_database: &str,
     ) -> Result<Self, PlanOrderingError> {
-        // Use the canonical conversion function to ensure consistency
-        // between what's displayed and what's executed
         let operations = crate::framework::core::plan::infra_changes_to_operations(
             infra_plan_changes,
             default_database,
