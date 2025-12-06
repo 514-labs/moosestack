@@ -97,6 +97,34 @@ impl LifeCycle {
     pub fn default_for_deserialization() -> LifeCycle {
         LifeCycle::FullyManaged
     }
+
+    /// Returns true if this lifecycle protects the table from being dropped.
+    ///
+    /// Protected lifecycles: `DeletionProtected`, `ExternallyManaged`
+    #[inline]
+    pub fn is_drop_protected(self) -> bool {
+        matches!(self, Self::DeletionProtected | Self::ExternallyManaged)
+    }
+
+    /// Returns true if this lifecycle protects columns from being removed.
+    ///
+    /// Protected lifecycles: `DeletionProtected`, `ExternallyManaged`
+    #[inline]
+    pub fn is_column_removal_protected(self) -> bool {
+        matches!(self, Self::DeletionProtected | Self::ExternallyManaged)
+    }
+
+    /// Returns true if this lifecycle protects the table from ANY modifications.
+    ///
+    /// When true, Moose should not attempt to change the table in any way -
+    /// no column additions, no column removals, no TTL changes, no settings changes.
+    /// The table is managed externally and Moose only reads from it.
+    ///
+    /// Protected lifecycles: `ExternallyManaged`
+    #[inline]
+    pub fn is_any_modification_protected(self) -> bool {
+        self == Self::ExternallyManaged
+    }
 }
 
 /// Represents a table definition from user code before it's converted into a complete [`Table`].
