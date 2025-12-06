@@ -17,10 +17,12 @@ Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming
 * **New:** [IcebergS3 engine](#icebergs3-engine-for-data-lake-storage) for Apache Iceberg data lake integration
 * **New:** [Materialized columns](#materialized-columns-in-data-models) for precomputed fields at ingestion time
 * **New:** [Fastify web app template](#fastify-web-app-template) with automatic async initialization
-* **New:** [Boreal database storage visualization](#boreal-database-storage-visualization-experimental) for capacity planning
+* **New:** [Boreal database storage visualization](#database-storage-visualization-experimental) for capacity planning
 </Callout>
 
-## Arbitrary JSON fields in ingest APIs
+## Moose
+
+### Arbitrary JSON fields in ingest APIs
 
 Accept payloads with extra fields beyond your defined schema while still validating known fields. Extra fields automatically pass through to streaming functions and land in a JSON column.
 
@@ -40,7 +42,7 @@ In Python, use `extra='allow'` in your Pydantic models to achieve the same flexi
 
 PR: [#3047](https://github.com/514-labs/moosestack/pull/3047) | Docs: [Data models](/moose/data-models)
 
-## Kafka engine support for streaming ingestion
+### Kafka engine support for streaming ingestion
 
 Define tables with ClickHouse's Kafka engine as an alternative consumer that reads directly from Kafka topics into ClickHouse, bypassing Moose's built-in streaming consumer. Use materialized views to transform and route the data.
 
@@ -62,7 +64,7 @@ export const KafkaSourceTable = new OlapTable<KafkaTestEvent>(
 
 PR: [#3066](https://github.com/514-labs/moosestack/pull/3066) | Docs: [OlapTable](/moose/olap) | [ClickHouse Kafka Engine](https://clickhouse.com/docs/integrations/kafka/kafka-table-engine)
 
-## IcebergS3 engine for data lake storage
+### IcebergS3 engine for data lake storage
 
 Configure tables to use Apache Iceberg format with S3 storage for better data lake integration and columnar storage capabilities.
 
@@ -84,7 +86,7 @@ export const AnalyticsEventsTable = new OlapTable<AnalyticsEvent>(
 
 PR: [#2978](https://github.com/514-labs/moosestack/pull/2978) | Docs: [OlapTable](/moose/olap) | [ClickHouse Iceberg Engine](https://clickhouse.com/docs/engines/table-engines/integrations/iceberg)
 
-## Materialized columns in data models
+### Materialized columns in data models
 
 Define materialized columns to automatically compute derived values at ingestion time—date extractions, hash functions, JSON transformations—without separate aggregations.
 
@@ -103,7 +105,7 @@ export interface MaterializedTest {
 
 PR: [#3051](https://github.com/514-labs/moosestack/pull/3051) | Docs: [Supported types](/moose/olap/supported-types) | [ClickHouse Materialized Columns](https://clickhouse.com/docs/sql-reference/statements/alter/column)
 
-## Fastify web app template
+### Fastify web app template
 
 New project template demonstrating Fastify framework with Moose, plus fixed WebApp support for Fastify's async initialization.
 
@@ -124,7 +126,7 @@ export const analyticsApp = new WebApp("analyticsApi", app, {
 
 PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://github.com/514-labs/moosestack/pull/3061) | Docs: [Fastify integration](/moose/app-api-frameworks) | [Fastify template](https://github.com/514-labs/moosestack/tree/main/templates/typescript-fastify)
 
-## Other Moose improvements
+### Other improvements
 
 - **Custom PRIMARY KEY expressions** – Define custom PRIMARY KEY with hash functions like `cityHash64` for better data distribution in high-cardinality scenarios. PR [#3031](https://github.com/514-labs/moosestack/pull/3031) | [ClickHouse Primary Keys](https://clickhouse.com/docs/best-practices/choosing-a-primary-key)
 - **Per-column compression codecs** – Specify codecs (ZSTD, LZ4, Delta, Gorilla) per column using `ClickHouseCodec<"...">` type annotations. PR [#3035](https://github.com/514-labs/moosestack/pull/3035) | [ClickHouse Compression](https://clickhouse.com/docs/data-compression/compression-in-clickhouse)
@@ -135,7 +137,7 @@ PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://g
 - **MCP query result compression** – Results compressed using toon format for better IDE/AI integration performance. PR [#3033](https://github.com/514-labs/moosestack/pull/3033)
 - **Renamed --connection-string to --clickhouse-url** – CLI now uses `--clickhouse-url` for ClickHouse commands (old flag still works). Improved connection string parsing for native protocol URLs. PR [#3022](https://github.com/514-labs/moosestack/pull/3022)
 
-## Moose bug fixes
+### Bug fixes
 
 - **Security updates in templates** – Updated Next.js (15.4.7 → 16.0.7) and React (19.0.0 → 19.0.1) to patch security vulnerabilities in frontend templates. [#3089](https://github.com/514-labs/moosestack/pull/3089)
 - **MCP template build failures** – Fixed missing/empty `.npmrc` files that caused `npm install` and Docker builds to fail when creating new MCP server projects. [#3084](https://github.com/514-labs/moosestack/pull/3084), [#3082](https://github.com/514-labs/moosestack/pull/3082), [#3081](https://github.com/514-labs/moosestack/pull/3081)
@@ -145,7 +147,9 @@ PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://g
 - **LowCardinality columns in peek/query** – `moose peek` and `moose query` failed on tables with [`LowCardinality(String)`](https://clickhouse.com/docs/sql-reference/data-types/lowcardinality) columns. Switched to HTTP-based ClickHouse client which supports all column types. [#3025](https://github.com/514-labs/moosestack/pull/3025)
 - **DateTime precision preservation** – JavaScript Date objects drop microseconds/nanoseconds. Added `DateTimeString` and `DateTime64String<P>` types that keep timestamps as strings to preserve full precision. [#3018](https://github.com/514-labs/moosestack/pull/3018)
 
-## Boreal: Database storage visualization (experimental)
+## Boreal
+
+### Database storage visualization (experimental)
 
 New experimental page showing table storage usage over time with interactive charts. When enabled, a "Database" tab appears in your branch navigation with per-table storage area charts, date range filters, and granularity options (minute/hour/day).
 
@@ -155,17 +159,17 @@ New experimental page showing table storage usage over time with interactive cha
 
 *This feature is behind an experimental flag. Contact support to enable it for your organization.*
 
-## Other Boreal Features and Improvements
+### Other improvements
 
 - **Log drain performance** – Reuses database connections instead of creating new ones per batch, reducing connection overhead.
 - **ClickHouse query performance** – Optimized table structure and indexing for faster loading of query performance data.
 - **Temporarily removed "Build from Existing Database"** – Option removed from project creation flow while being improved. Users can still import from GitHub or templates.
 
-## Infrastructure improvements
+### Infrastructure
 
 - **Extended deployment startup timeouts** – Increased from 60 to 180 seconds to reduce failures for larger applications during high-load periods.
 
-## Boreal Bug Fixes
+### Bug fixes
 
 - **GitHub authentication** – Fixed issues preventing repository connections and operations.
 - **Security updates** – React 19.2.0 → 19.2.1, Next.js 16.0.1 → 16.0.7.
