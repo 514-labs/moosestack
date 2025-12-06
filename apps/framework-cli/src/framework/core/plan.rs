@@ -241,7 +241,11 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             }
         }
     }
-    // Add unmapped tables
+    // Add unmapped tables (tables that exist in DB but not in current infrastructure map).
+    // We only adopt tables whose IDs are in target_table_ids to avoid accidentally managing
+    // external tables. For planning, target_table_ids contains the desired end-state tables,
+    // so we'll adopt pre-existing tables that match our target (detecting "already exists").
+    // For status queries, target_table_ids contains currently-managed tables only.
     for unmapped_table in discrepancies.unmapped_tables {
         // default_database passed to `id` does not matter
         // tables from check_reality always contain non-None database
@@ -275,8 +279,9 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             .remove(&missing_sql_resource_id);
     }
 
-    // Add unmapped SQL resources (exist in database but not in current infrastructure map)
-    // Only include resources whose names are in target_sql_resource_ids to avoid managing external resources
+    // Add unmapped SQL resources (exist in database but not in current infrastructure map).
+    // Same filtering logic as unmapped tables—only adopt resources in target_sql_resource_ids
+    // to avoid managing external views/materialized views.
     for unmapped_sql_resource in discrepancies.unmapped_sql_resources {
         let name = &unmapped_sql_resource.name;
 
@@ -436,11 +441,32 @@ pub async fn load_target_infrastructure(
 /// This function loads the persisted state from storage, then reconciles it with the actual
 /// database state to handle any manual changes or drift.
 ///
+/// # Why `target_table_ids` and `target_sql_resource_ids` are required
+///
+/// During reconciliation, we discover "unmapped" tables—tables that exist in the database but
+/// are not in the current infrastructure map. We need to decide which of these to adopt into
+/// the reconciled state. The caller provides the filter criteria because different use cases
+/// need different behavior:
+///
+/// - **Planning (`plan_changes`)**: Passes **target** infrastructure IDs. This handles the edge
+///   case where a table exists in the DB (e.g., manually created or from a previous deployment)
+///   but isn't in our current state. By adopting tables that match our target, the diff will
+///   correctly show "table already exists" instead of "create table" (which would fail).
+///
+/// - **Status/Admin endpoints**: Passes **current** managed IDs. We only want to show and
+///   reconcile tables that Moose is actively managing, not external tables that happen to
+///   exist in the same database.
+///
+/// We cannot simply compute these IDs from the loaded map because:
+/// 1. For planning, we need the *target* IDs which aren't available until after loading
+/// 2. Different callers have legitimately different filtering requirements
+///
 /// # Arguments
 /// * `project` - The project configuration
 /// * `storage` - State storage implementation
-/// * `target_table_ids` - Tables to include from unmapped tables (tables in DB but not in current inframap)
-/// * `target_sql_resource_ids` - SQL resources to include from unmapped SQL resources
+/// * `olap_client` - Client for querying actual database state
+/// * `target_table_ids` - Filter for unmapped tables: only adopt tables whose IDs are in this set
+/// * `target_sql_resource_ids` - Filter for unmapped SQL resources: only adopt resources in this set
 ///
 /// # Returns
 /// * `Result<InfrastructureMap, PlanningError>` - The reconciled current state
