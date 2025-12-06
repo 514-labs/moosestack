@@ -18,3 +18,6 @@ _api_path_map: Dict[str, Any] = {}
 _sql_resources: Dict[str, Any] = {}
 _workflows: Dict[str, Any] = {}
 _web_apps: Dict[str, Any] = {}
+# Structured registries for views and materialized views
+_materialized_views: Dict[str, Any] = {}
+_custom_views: Dict[str, Any] = {}

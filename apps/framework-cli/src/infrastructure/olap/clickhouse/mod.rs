@@ -227,6 +227,42 @@ pub enum SerializableOlapOperation {
         /// Optional cluster name for ON CLUSTER support
         cluster_name: Option<String>,
     },
+    /// Create a materialized view
+    CreateMaterializedView {
+        /// Name of the materialized view
+        name: String,
+        /// Database where the MV is created (None = default database)
+        database: Option<String>,
+        /// Target table where transformed data is written
+        target_table: String,
+        /// Target database (if different from MV database)
+        target_database: Option<String>,
+        /// The SELECT SQL statement
+        select_sql: String,
+    },
+    /// Drop a materialized view
+    DropMaterializedView {
+        /// Name of the materialized view
+        name: String,
+        /// Database where the MV is located (None = default database)
+        database: Option<String>,
+    },
+    /// Create a custom view (user-defined SELECT view)
+    CreateCustomView {
+        /// Name of the view
+        name: String,
+        /// Database where the view is created (None = default database)
+        database: Option<String>,
+        /// The SELECT SQL statement
+        select_sql: String,
+    },
+    /// Drop a custom view
+    DropCustomView {
+        /// Name of the view
+        name: String,
+        /// Database where the view is located (None = default database)
+        database: Option<String>,
+    },
     RawSql {
         /// The SQL statements to execute
         sql: Vec<String>,
@@ -446,6 +482,23 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
                 format!("Removing table TTL from '{}'", table)
             }
         }
+        SerializableOlapOperation::CreateMaterializedView {
+            name, target_table, ..
+        } => {
+            format!(
+                "Creating materialized view '{}' -> table '{}'",
+                name, target_table
+            )
+        }
+        SerializableOlapOperation::DropMaterializedView { name, .. } => {
+            format!("Dropping materialized view '{}'", name)
+        }
+        SerializableOlapOperation::CreateCustomView { name, .. } => {
+            format!("Creating custom view '{}'", name)
+        }
+        SerializableOlapOperation::DropCustomView { name, .. } => {
+            format!("Dropping custom view '{}'", name)
+        }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
     }
 }
@@ -643,6 +696,38 @@ pub async fn execute_atomic_operation(
         } => {
             let target_db = database.as_deref().unwrap_or(db_name);
             execute_remove_sample_by(target_db, table, cluster_name.as_deref(), client).await?;
+        }
+        SerializableOlapOperation::CreateMaterializedView {
+            name,
+            database,
+            target_table,
+            target_database,
+            select_sql,
+        } => {
+            execute_create_materialized_view(
+                db_name,
+                name,
+                database.as_deref(),
+                target_table,
+                target_database.as_deref(),
+                select_sql,
+                client,
+            )
+            .await?;
+        }
+        SerializableOlapOperation::DropMaterializedView { name, database } => {
+            execute_drop_view(db_name, name, database.as_deref(), client).await?;
+        }
+        SerializableOlapOperation::CreateCustomView {
+            name,
+            database,
+            select_sql,
+        } => {
+            execute_create_custom_view(db_name, name, database.as_deref(), select_sql, client)
+                .await?;
+        }
+        SerializableOlapOperation::DropCustomView { name, database } => {
+            execute_drop_view(db_name, name, database.as_deref(), client).await?;
         }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
@@ -1309,6 +1394,79 @@ async fn execute_raw_sql(
                 })?;
         }
     }
+    Ok(())
+}
+
+/// Executes a CREATE MATERIALIZED VIEW statement
+async fn execute_create_materialized_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    target_table: &str,
+    target_database: Option<&str>,
+    select_sql: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let target_db = view_database.unwrap_or(db_name);
+    let to_target = match target_database {
+        Some(tdb) => format!("`{}`.`{}`", tdb, target_table),
+        None => format!("`{}`.`{}`", target_db, target_table),
+    };
+    let sql = format!(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS `{}`.`{}` TO {} AS {}",
+        target_db, view_name, to_target, select_sql
+    );
+    tracing::info!("Creating materialized view: {}.{}", target_db, view_name);
+    tracing::debug!("MV SQL: {}", sql);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(format!("materialized_view:{}", view_name)),
+        })?;
+    Ok(())
+}
+
+/// Executes a CREATE VIEW statement for custom views
+async fn execute_create_custom_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    select_sql: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let target_db = view_database.unwrap_or(db_name);
+    let sql = format!(
+        "CREATE VIEW IF NOT EXISTS `{}`.`{}` AS {}",
+        target_db, view_name, select_sql
+    );
+    tracing::info!("Creating custom view: {}.{}", target_db, view_name);
+    tracing::debug!("View SQL: {}", sql);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(format!("custom_view:{}", view_name)),
+        })?;
+    Ok(())
+}
+
+/// Executes a DROP VIEW statement (works for both MVs and regular views)
+async fn execute_drop_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let target_db = view_database.unwrap_or(db_name);
+    let sql = format!("DROP VIEW IF EXISTS `{}`.`{}`", target_db, view_name);
+    tracing::info!("Dropping view: {}.{}", target_db, view_name);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(format!("view:{}", view_name)),
+        })?;
     Ok(())
 }
 

@@ -3589,6 +3589,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_custom_views: vec![],
+            missing_custom_views: vec![],
+            mismatched_custom_views: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3608,6 +3614,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_custom_views: vec![],
+            missing_custom_views: vec![],
+            mismatched_custom_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3643,6 +3655,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_custom_views: vec![],
+            missing_custom_views: vec![],
+            mismatched_custom_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();

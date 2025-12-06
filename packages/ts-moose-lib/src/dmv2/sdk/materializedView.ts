@@ -1,14 +1,11 @@
-import {
-  ClickHouseEngines,
-  createMaterializedView,
-  dropView,
-} from "../../blocks/helpers";
+import { ClickHouseEngines } from "../../blocks/helpers";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { OlapConfig, OlapTable } from "./olapTable";
-import { SqlResource } from "./sqlResource";
 import { View } from "./view";
 import { IJsonSchemaCollection } from "typia";
 import { Column } from "../../dataModels/dataModelTypes";
+import { getMooseInternal, isClientOnlyMode } from "../internal";
+import { getSourceFileFromStack } from "../utils/stackTrace";
 
 /**
  * Configuration options for creating a Materialized View.
@@ -62,9 +59,24 @@ const requireTargetTableName = (tableName: string | undefined): string => {
  *
  * @template TargetTable The data type of the records stored in the underlying target OlapTable. The structure of T defines the target table schema.
  */
-export class MaterializedView<TargetTable> extends SqlResource {
+export class MaterializedView<TargetTable> {
+  /** @internal */
+  public readonly kind = "MaterializedView";
+
+  /** The name of the materialized view */
+  name: string;
+
   /** The target OlapTable instance where the materialized data is stored. */
   targetTable: OlapTable<TargetTable>;
+
+  /** The SELECT SQL statement */
+  selectSql: string;
+
+  /** Names of source tables that the SELECT reads from */
+  sourceTables: string[];
+
+  /** @internal Source file path where this MV was defined */
+  sourceFile?: string;
 
   /**
    * Creates a new MaterializedView instance.
@@ -122,24 +134,20 @@ export class MaterializedView<TargetTable> extends SqlResource {
       );
     }
 
-    super(
-      options.materializedViewName,
-      [
-        createMaterializedView({
-          name: options.materializedViewName,
-          destinationTable: targetTable.name,
-          select: selectStatement,
-        }),
-        // Population is now handled automatically by Rust infrastructure
-        // based on table engine type and whether this is a new or updated view
-      ],
-      [dropView(options.materializedViewName)],
-      {
-        pullsDataFrom: options.selectTables,
-        pushesDataTo: [targetTable],
-      },
-    );
-
+    this.name = options.materializedViewName;
     this.targetTable = targetTable;
+    this.selectSql = selectStatement;
+    this.sourceTables = options.selectTables.map((t) => t.name);
+
+    // Capture source file from stack trace
+    const stack = new Error().stack;
+    this.sourceFile = getSourceFileFromStack(stack);
+
+    // Register in the materializedViews registry
+    const materializedViews = getMooseInternal().materializedViews;
+    if (!isClientOnlyMode() && materializedViews.has(this.name)) {
+      throw new Error(`MaterializedView with name ${this.name} already exists`);
+    }
+    materializedViews.set(this.name, this);
   }
 }
