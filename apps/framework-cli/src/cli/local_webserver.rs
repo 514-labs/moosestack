@@ -3282,7 +3282,8 @@ async fn get_admin_reconciled_inframap(
     use crate::infrastructure::olap::clickhouse;
     use std::collections::HashSet;
 
-    // Create state storage based on project configuration
+    // Build state storage from project configuration.
+    // This provides access to the persisted infrastructure map (stored in Redis or ClickHouse).
     let state_storage = StateStorageBuilder::from_config(project)
         .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(redis_client))
@@ -3294,40 +3295,67 @@ async fn get_admin_reconciled_inframap(
             ))
         })?;
 
-    // Create OLAP client - this just creates the struct, doesn't connect.
-    // load_reconciled_infrastructure handles the OLAP disabled case internally,
-    // allowing future reconciliation of other infrastructure (Kafka, etc.) to work.
-    let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
+    // Create the ClickHouse client for database introspection.
+    // Note: This only creates the client struct - no network connection is made yet.
+    // The load_reconciled_infrastructure function handles the case where OLAP is disabled,
+    // which allows this code path to support future reconciliation of other infrastructure
+    // types (e.g., Kafka topics) even when OLAP is turned off.
+    let clickhouse_client = clickhouse::create_client(project.clickhouse_config.clone());
 
-    // If target IDs provided, use them. Otherwise, load current map and use its tables
-    // (for admin inframap endpoint that just returns current managed state)
-    let (table_ids, sql_ids) =
-        if let (Some(tids), Some(sids)) = (target_table_ids, target_sql_resource_ids) {
-            (tids.clone(), sids.clone())
+    // Determine which tables and SQL resources to include in reconciliation.
+    //
+    // Two modes of operation:
+    // 1. If target IDs are provided (e.g., from a plan request), use those IDs.
+    //    This ensures we reconcile against the tables the client wants to manage.
+    // 2. If no target IDs provided (e.g., admin inframap endpoint), load the current
+    //    managed state from storage and use its table/resource IDs.
+    let (managed_table_ids, managed_sql_resource_ids) =
+        if let (Some(provided_table_ids), Some(provided_sql_resource_ids)) =
+            (target_table_ids, target_sql_resource_ids)
+        {
+            // Use the explicitly provided target IDs from the caller
+            (
+                provided_table_ids.clone(),
+                provided_sql_resource_ids.clone(),
+            )
         } else {
-            // Load current to get managed table IDs
-            let current_map = state_storage
+            // No target IDs provided - derive them from the currently managed infrastructure.
+            // This is used by the admin inframap endpoint to return the current managed state.
+            let current_infrastructure_map = state_storage
                 .load_infrastructure_map()
                 .await?
                 .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
-            let tids: HashSet<String> = current_map
+            // Extract table IDs from the current infrastructure map.
+            // Table IDs include the database prefix for multi-database support.
+            let table_ids_from_current_state: HashSet<String> = current_infrastructure_map
                 .tables
                 .values()
-                .map(|t| t.id(&current_map.default_database))
+                .map(|table| table.id(&current_infrastructure_map.default_database))
                 .collect();
 
-            let sids: HashSet<String> = current_map.sql_resources.keys().cloned().collect();
+            // Extract SQL resource IDs (views, materialized views) from the current state.
+            let sql_resource_ids_from_current_state: HashSet<String> = current_infrastructure_map
+                .sql_resources
+                .keys()
+                .cloned()
+                .collect();
 
-            (tids, sids)
+            (
+                table_ids_from_current_state,
+                sql_resource_ids_from_current_state,
+            )
         };
 
+    // Load the infrastructure map from storage and reconcile it with the actual database state.
+    // This ensures we return the true current state of managed infrastructure, accounting for
+    // any manual changes or drift that may have occurred in the database.
     crate::framework::core::plan::load_reconciled_infrastructure(
         project,
         &*state_storage,
-        olap_client,
-        &table_ids,
-        &sql_ids,
+        clickhouse_client,
+        &managed_table_ids,
+        &managed_sql_resource_ids,
     )
     .await
 }
