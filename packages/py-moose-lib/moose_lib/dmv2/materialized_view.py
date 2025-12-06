@@ -4,14 +4,16 @@ Materialized View definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining Materialized Views,
 including their SQL statements, target tables, and dependencies.
 """
-from typing import Any, Optional, Union, Generic, List
+from typing import Any, Optional, Union, Generic, List, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
 from ..blocks import ClickHouseEngines
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
-from .sql_resource import SqlResource
 from ._registry import _materialized_views
+
+if TYPE_CHECKING:
+    from .view import View
 
 
 class MaterializedViewOptions(BaseModel):
@@ -20,6 +22,7 @@ class MaterializedViewOptions(BaseModel):
     Attributes:
         select_statement: The SQL SELECT statement defining the view's data.
         select_tables: List of source tables/views the select statement reads from.
+                       Can be OlapTable, View, or any object with a `name` attribute.
         table_name: (Deprecated in favor of target_table) Optional name of the underlying
                     target table storing the materialized data.
         materialized_view_name: The name of the MATERIALIZED VIEW object itself.
@@ -30,7 +33,7 @@ class MaterializedViewOptions(BaseModel):
         model_config: ConfigDict for Pydantic validation
     """
     select_statement: str
-    select_tables: list[Union[OlapTable, SqlResource]]
+    select_tables: List[Union[OlapTable, "View", Any]]
     # Backward-compatibility: allow specifying just the table_name and engine
     table_name: Optional[str] = None
     materialized_view_name: str

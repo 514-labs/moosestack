@@ -217,7 +217,14 @@ fn custom_view_from_sql_resource(
     let source_tables: Vec<String> =
         match extract_source_tables_from_query_regex(&select_sql, default_database) {
             Ok(tables) => tables.iter().map(|t| t.qualified_name()).collect(),
-            Err(_) => Vec::new(), // If parsing fails, return empty source tables
+            Err(e) => {
+                debug!(
+                    "Failed to extract source tables from view '{}' SELECT query: {}. \
+                     Source table dependency tracking may be incomplete.",
+                    sql_resource.name, e
+                );
+                Vec::new()
+            }
         };
 
     Some(CustomView {
@@ -229,29 +236,64 @@ fn custom_view_from_sql_resource(
     })
 }
 
+/// Normalizes a database reference for comparison.
+/// Treats `None` as equivalent to `Some(default_database)`.
+fn normalize_database(db: &Option<String>, default_database: &str) -> String {
+    db.as_deref().unwrap_or(default_database).to_string()
+}
+
+/// Normalizes a table name by stripping the default database prefix if present.
+/// e.g., "local.events" with default "local" becomes "events"
+/// but "other_db.events" stays as "other_db.events"
+fn normalize_table_name(table: &str, default_database: &str) -> String {
+    let prefix = format!("{}.", default_database);
+    if table.starts_with(&prefix) {
+        table[prefix.len()..].to_string()
+    } else {
+        table.to_string()
+    }
+}
+
+/// Normalizes source tables for comparison by:
+/// - Stripping default database prefix from qualified names
+/// - Sorting for order-independent comparison
+fn normalize_source_tables(tables: &[String], default_database: &str) -> Vec<String> {
+    let mut normalized: Vec<_> = tables
+        .iter()
+        .map(|t| normalize_table_name(t, default_database))
+        .collect();
+    normalized.sort();
+    normalized
+}
+
 /// Checks if two MaterializedViews are semantically equivalent.
 /// Compares target table, source tables (sorted), and normalized SELECT SQL.
-fn materialized_views_are_equivalent(mv1: &MaterializedView, mv2: &MaterializedView) -> bool {
+/// Uses default_database to normalize `None` database references.
+fn materialized_views_are_equivalent(
+    mv1: &MaterializedView,
+    mv2: &MaterializedView,
+    default_database: &str,
+) -> bool {
     // Compare names
     if mv1.name != mv2.name {
         return false;
     }
 
-    // Compare target tables
+    // Compare target tables (just the name, database handled separately)
     if mv1.target_table != mv2.target_table {
         return false;
     }
 
-    // Compare target databases (both None or both equal)
-    if mv1.target_database != mv2.target_database {
+    // Compare target databases (None is equivalent to default_database)
+    if normalize_database(&mv1.target_database, default_database)
+        != normalize_database(&mv2.target_database, default_database)
+    {
         return false;
     }
 
-    // Compare source tables (order-independent)
-    let mut sources1: Vec<_> = mv1.source_tables.clone();
-    let mut sources2: Vec<_> = mv2.source_tables.clone();
-    sources1.sort();
-    sources2.sort();
+    // Compare source tables (order-independent, normalized)
+    let sources1 = normalize_source_tables(&mv1.source_tables, default_database);
+    let sources2 = normalize_source_tables(&mv2.source_tables, default_database);
     if sources1 != sources2 {
         return false;
     }
@@ -262,17 +304,16 @@ fn materialized_views_are_equivalent(mv1: &MaterializedView, mv2: &MaterializedV
 
 /// Checks if two CustomViews are semantically equivalent.
 /// Compares source tables (sorted) and normalized SELECT SQL.
-fn custom_views_are_equivalent(v1: &CustomView, v2: &CustomView) -> bool {
+/// Uses default_database to normalize table references.
+fn custom_views_are_equivalent(v1: &CustomView, v2: &CustomView, default_database: &str) -> bool {
     // Compare names
     if v1.name != v2.name {
         return false;
     }
 
-    // Compare source tables (order-independent)
-    let mut sources1: Vec<_> = v1.source_tables.clone();
-    let mut sources2: Vec<_> = v2.source_tables.clone();
-    sources1.sort();
-    sources2.sort();
+    // Compare source tables (order-independent, normalized)
+    let sources1 = normalize_source_tables(&v1.source_tables, default_database);
+    let sources2 = normalize_source_tables(&v2.source_tables, default_database);
     if sources1 != sources2 {
         return false;
     }
@@ -671,7 +712,8 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         let mut mismatched_materialized_views = Vec::new();
         for (id, desired) in &infra_map.materialized_views {
             if let Some(actual) = actual_materialized_views.get(id) {
-                if !materialized_views_are_equivalent(actual, desired) {
+                if !materialized_views_are_equivalent(actual, desired, &infra_map.default_database)
+                {
                     debug!("Found mismatch in materialized view: {}", id);
                     mismatched_materialized_views.push(OlapChange::MaterializedView(
                         Change::Updated {
@@ -729,7 +771,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         let mut mismatched_custom_views = Vec::new();
         for (id, desired) in &infra_map.custom_views {
             if let Some(actual) = actual_custom_views.get(id) {
-                if !custom_views_are_equivalent(actual, desired) {
+                if !custom_views_are_equivalent(actual, desired, &infra_map.default_database) {
                     debug!("Found mismatch in custom view: {}", id);
                     mismatched_custom_views.push(OlapChange::CustomView(Change::Updated {
                         before: Box::new(actual.clone()),

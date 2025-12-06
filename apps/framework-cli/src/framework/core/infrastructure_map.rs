@@ -1819,22 +1819,31 @@ impl InfrastructureMap {
 
         // Check if any source table is S3Queue or Kafka (which don't support SELECT)
         let has_unpopulatable_source = mv.source_tables.iter().any(|source_table| {
-            // Try direct lookup
+            // Try direct lookup first
             if let Some(table) = tables.get(source_table) {
                 return ClickHouseTableDiffStrategy::is_s3queue_table(table)
                     || ClickHouseTableDiffStrategy::is_kafka_table(table);
             }
 
+            // Extract the table name from potentially qualified name (e.g., "db.table" -> "table")
+            let table_name_only = source_table.split('.').next_back().unwrap_or(source_table);
+
             // Try finding by searching for keys ending with the table name
             // Keys are in format: "{database}_{table_name}"
-            let table_suffix = format!("_{}", source_table);
+            let table_suffix = format!("_{}", table_name_only);
             if let Some((_key, table)) = tables.iter().find(|(key, _)| key.ends_with(&table_suffix))
             {
-                ClickHouseTableDiffStrategy::is_s3queue_table(table)
-                    || ClickHouseTableDiffStrategy::is_kafka_table(table)
-            } else {
-                false
+                return ClickHouseTableDiffStrategy::is_s3queue_table(table)
+                    || ClickHouseTableDiffStrategy::is_kafka_table(table);
             }
+
+            // Also try direct lookup with just the table name
+            if let Some(table) = tables.get(table_name_only) {
+                return ClickHouseTableDiffStrategy::is_s3queue_table(table)
+                    || ClickHouseTableDiffStrategy::is_kafka_table(table);
+            }
+
+            false
         });
 
         // Only populate in dev for new MVs with supported source tables
@@ -2695,9 +2704,88 @@ impl InfrastructureMap {
     /// A Result containing either the deserialized map or a proto error
     pub fn from_proto(bytes: Vec<u8>) -> Result<Self, InfraMapProtoError> {
         let proto = ProtoInfrastructureMap::parse_from_bytes(&bytes)?;
+        let default_database = proto.default_database.clone();
+
+        // Load sql_resources first, then migrate any that are MVs/Views to new format
+        let all_sql_resources: HashMap<String, SqlResource> = proto
+            .sql_resources
+            .into_iter()
+            .map(|(k, v)| (k, SqlResource::from_proto(v)))
+            .collect();
+
+        // Load existing materialized_views and custom_views from proto
+        let mut materialized_views: HashMap<
+            String,
+            super::infrastructure::materialized_view::MaterializedView,
+        > = proto
+            .materialized_views
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k,
+                    super::infrastructure::materialized_view::MaterializedView::from_proto(v),
+                )
+            })
+            .collect();
+
+        let mut custom_views: HashMap<String, super::infrastructure::view::CustomView> = proto
+            .custom_views
+            .into_iter()
+            .map(|(k, v)| (k, super::infrastructure::view::CustomView::from_proto(v)))
+            .collect();
+
+        // Migrate old SqlResources that are actually MVs or Views to new format
+        // Keep track of which ones we migrate so we can remove them from sql_resources
+        let mut migrated_keys = Vec::new();
+
+        for (key, sql_resource) in &all_sql_resources {
+            // Skip if already in new format maps (shouldn't happen but be safe)
+            if materialized_views.contains_key(&sql_resource.name)
+                || custom_views.contains_key(&sql_resource.name)
+            {
+                continue;
+            }
+
+            // Try to migrate to MaterializedView
+            if let Some(mv) = Self::try_migrate_sql_resource_to_mv(sql_resource, &default_database)
+            {
+                tracing::debug!(
+                    "Migrating SqlResource '{}' to MaterializedView format",
+                    sql_resource.name
+                );
+                materialized_views.insert(mv.name.clone(), mv);
+                migrated_keys.push(key.clone());
+                continue;
+            }
+
+            // Try to migrate to CustomView
+            if let Some(view) =
+                Self::try_migrate_sql_resource_to_custom_view(sql_resource, &default_database)
+            {
+                tracing::debug!(
+                    "Migrating SqlResource '{}' to CustomView format",
+                    sql_resource.name
+                );
+                custom_views.insert(view.name.clone(), view);
+                migrated_keys.push(key.clone());
+            }
+        }
+
+        // Remove migrated resources from sql_resources
+        let sql_resources: HashMap<String, SqlResource> = all_sql_resources
+            .into_iter()
+            .filter(|(k, _)| !migrated_keys.contains(k))
+            .collect();
+
+        if !migrated_keys.is_empty() {
+            tracing::info!(
+                "Migrated {} SqlResources to structured MV/View format",
+                migrated_keys.len()
+            );
+        }
 
         Ok(InfrastructureMap {
-            default_database: proto.default_database,
+            default_database,
             topics: proto
                 .topics
                 .into_iter()
@@ -2740,11 +2828,7 @@ impl InfrastructureMap {
                 .collect(),
             consumption_api_web_server: ConsumptionApiWebServer {},
             block_db_processes: OlapProcess {},
-            sql_resources: proto
-                .sql_resources
-                .into_iter()
-                .map(|(k, v)| (k, SqlResource::from_proto(v)))
-                .collect(),
+            sql_resources,
             // TODO: add proto
             workflows: HashMap::new(),
             web_apps: proto
@@ -2752,21 +2836,108 @@ impl InfrastructureMap {
                 .into_iter()
                 .map(|(k, v)| (k, super::infrastructure::web_app::WebApp::from_proto(&v)))
                 .collect(),
-            materialized_views: proto
-                .materialized_views
-                .into_iter()
-                .map(|(k, v)| {
-                    (
-                        k,
-                        super::infrastructure::materialized_view::MaterializedView::from_proto(v),
-                    )
-                })
-                .collect(),
-            custom_views: proto
-                .custom_views
-                .into_iter()
-                .map(|(k, v)| (k, super::infrastructure::view::CustomView::from_proto(v)))
-                .collect(),
+            materialized_views,
+            custom_views,
+        })
+    }
+
+    /// Attempts to migrate a SqlResource to a MaterializedView.
+    /// Returns None if the SqlResource is not a moose-lib generated materialized view.
+    fn try_migrate_sql_resource_to_mv(
+        sql_resource: &SqlResource,
+        default_database: &str,
+    ) -> Option<super::infrastructure::materialized_view::MaterializedView> {
+        use crate::infrastructure::olap::clickhouse::sql_parser::parse_create_materialized_view;
+
+        // Must have exactly one setup and one teardown statement
+        if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
+            return None;
+        }
+
+        let setup_sql = sql_resource.setup.first()?;
+        let teardown_sql = sql_resource.teardown.first()?;
+
+        // Check teardown matches moose-lib pattern
+        if !teardown_sql.starts_with("DROP VIEW IF EXISTS") {
+            return None;
+        }
+
+        // Check setup matches moose-lib MV pattern
+        if !setup_sql.starts_with("CREATE MATERIALIZED VIEW IF NOT EXISTS") {
+            return None;
+        }
+        if !setup_sql.contains(" TO ") {
+            return None;
+        }
+
+        // Parse the CREATE MATERIALIZED VIEW statement
+        let parsed = parse_create_materialized_view(setup_sql).ok()?;
+
+        // Convert source tables to unqualified names for consistency
+        let source_tables: Vec<String> = parsed
+            .source_tables
+            .iter()
+            .map(|t| t.table.clone())
+            .collect();
+
+        Some(super::infrastructure::materialized_view::MaterializedView {
+            name: sql_resource.name.clone(),
+            database: Some(default_database.to_string()),
+            select_sql: parsed.select_statement,
+            source_tables,
+            target_table: parsed.target_table,
+            target_database: parsed.target_database,
+            source_file: sql_resource.source_file.clone(),
+        })
+    }
+
+    /// Attempts to migrate a SqlResource to a CustomView.
+    /// Returns None if the SqlResource is not a moose-lib generated custom view.
+    fn try_migrate_sql_resource_to_custom_view(
+        sql_resource: &SqlResource,
+        default_database: &str,
+    ) -> Option<super::infrastructure::view::CustomView> {
+        use crate::infrastructure::olap::clickhouse::sql_parser::extract_source_tables_from_query_regex;
+
+        // Must have exactly one setup and one teardown statement
+        if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
+            return None;
+        }
+
+        let setup_sql = sql_resource.setup.first()?;
+        let teardown_sql = sql_resource.teardown.first()?;
+
+        // Check teardown matches moose-lib pattern
+        if !teardown_sql.starts_with("DROP VIEW IF EXISTS") {
+            return None;
+        }
+
+        // Check setup matches moose-lib View pattern (not MV)
+        if !setup_sql.starts_with("CREATE VIEW IF NOT EXISTS") {
+            return None;
+        }
+        if setup_sql.contains("MATERIALIZED") {
+            return None;
+        }
+
+        // Extract the SELECT part after AS
+        let upper = setup_sql.to_uppercase();
+        let as_pos = upper.find(" AS ")?;
+        let select_sql = setup_sql[(as_pos + 4)..].trim().to_string();
+
+        // Extract source tables (use unqualified names for consistency)
+        let source_tables: Vec<String> =
+            match extract_source_tables_from_query_regex(&select_sql, default_database) {
+                Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
+                Err(_) => Vec::new(),
+            };
+
+        Some(super::infrastructure::view::CustomView {
+            name: sql_resource.name.clone(),
+            database: Some(default_database.to_string()),
+            select_sql,
+            source_tables,
+            source_file: sql_resource.source_file.clone(),
         })
     }
 

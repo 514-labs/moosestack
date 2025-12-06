@@ -4,11 +4,13 @@ View definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining standard SQL Views,
 including their SQL statements and dependencies.
 """
-from typing import Union, List, Optional
+from typing import Union, List, Optional, Any, TYPE_CHECKING
 
-from .sql_resource import SqlResource
 from .olap_table import OlapTable
 from ._registry import _custom_views
+
+if TYPE_CHECKING:
+    from .materialized_view import MaterializedView
 
 
 class View:
@@ -19,8 +21,9 @@ class View:
     Args:
         name: The name of the view to be created.
         select_statement: The SQL SELECT statement defining the view.
-        base_tables: A list of `OlapTable`, `View`, or `MaterializedView` objects
-                     that this view depends on.
+        base_tables: A list of objects with a `name` attribute (OlapTable, View,
+                     MaterializedView) that this view depends on. Used for
+                     dependency tracking.
         metadata: Optional metadata for the view.
 
     Attributes:
@@ -40,7 +43,7 @@ class View:
         self,
         name: str,
         select_statement: str,
-        base_tables: list[Union[OlapTable, SqlResource, "View"]],
+        base_tables: List[Union[OlapTable, "View", "MaterializedView", Any]],
         metadata: dict = None
     ):
         self.name = name
