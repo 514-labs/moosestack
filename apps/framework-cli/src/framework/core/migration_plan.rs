@@ -1,6 +1,6 @@
 use crate::framework::core::infrastructure_map::{InfraChanges, InfrastructureMap};
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
-use crate::infrastructure::olap::ddl_ordering::{order_olap_changes, PlanOrderingError};
+use crate::infrastructure::olap::ddl_ordering::PlanOrderingError;
 use crate::utilities::json;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -25,23 +25,12 @@ impl MigrationPlan {
         infra_plan_changes: &InfraChanges,
         default_database: &str,
     ) -> Result<Self, PlanOrderingError> {
-        // Convert OLAP changes to atomic operations
-        let (teardown_ops, setup_ops) =
-            order_olap_changes(&infra_plan_changes.olap_changes, default_database)?;
-
-        // Combine teardown and setup operations into a single vector
-        // Teardown operations are executed first, then setup operations
-        let mut operations = Vec::new();
-
-        // Add teardown operations first
-        for op in teardown_ops {
-            operations.push(op.to_minimal());
-        }
-
-        // Add setup operations second
-        for op in setup_ops {
-            operations.push(op.to_minimal());
-        }
+        // Use the canonical conversion function to ensure consistency
+        // between what's displayed and what's executed
+        let operations = crate::framework::core::plan::infra_changes_to_operations(
+            infra_plan_changes,
+            default_database,
+        )?;
 
         Ok(MigrationPlan {
             created_at: Utc::now(),
