@@ -861,29 +861,8 @@ pub(crate) async fn get_remote_inframap_protobuf(
     }
 }
 
-/// Calculates the diff between current and target infrastructure maps on the client side
-///
-/// # Arguments
-/// * `current_map` - The current infrastructure map (from server)
-/// * `target_map` - The target infrastructure map (from local project)
-/// * `ignore_ops` - Operations to ignore during comparison (e.g., ModifyPartitionBy)
-///
-/// # Returns
-/// * `InfraChanges` - The calculated changes needed to go from current to target
-fn calculate_plan_diff_local(
-    current_map: &InfrastructureMap,
-    target_map: &InfrastructureMap,
-    ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
-) -> crate::framework::core::infrastructure_map::InfraChanges {
-    use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
-
-    let clickhouse_strategy = ClickHouseTableDiffStrategy;
-    // planning about action on prod env, respect_life_cycle is true
-    current_map.diff_with_table_strategy(target_map, &clickhouse_strategy, true, true, ignore_ops)
-}
-
-/// Legacy implementation of remote_plan using the existing /admin/plan endpoint
-/// This is used as a fallback when the new /admin/inframap endpoint is not available
+/// Legacy implementation of remote_plan using the existing /admin/plan endpoint.
+/// This is used as a fallback when the new /admin/inframap endpoint is not available.
 async fn legacy_remote_plan_logic(
     project: &Project,
     base_url: &Option<String>,
@@ -995,15 +974,8 @@ pub async fn remote_plan(
     token: &Option<String>,
     clickhouse_url: &Option<String>,
 ) -> anyhow::Result<()> {
-    // Build the inframap from the local project
-    let local_infra_map = if project.features.data_model_v2 {
-        debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project, true).await?
-    } else {
-        debug!("Loading InfrastructureMap from primitives");
-        let primitive_map = PrimitiveMap::load(project).await?;
-        InfrastructureMap::new(project, primitive_map)
-    };
+    // Load local target state using the canonical helper
+    let local_infra_map = crate::framework::core::plan::load_target_state(project).await?;
 
     // Determine remote source based on provided arguments
     let remote_infra_map = if let Some(clickhouse_url) = clickhouse_url {
@@ -1077,16 +1049,37 @@ pub async fn remote_plan(
         }
     };
 
-    // Normalize both infra maps for backward compatibility
-    // This ensures consistent comparison between old and new CLI versions
-    // by applying the same normalization logic (e.g., filling order_by from primary key)
-    let remote_infra_map = remote_infra_map.normalize();
-    let local_infra_map = local_infra_map.normalize();
+    // DEBUG: Write remote and local infra maps to JSON for inspection
+    if let Ok(json) = serde_json::to_string_pretty(&remote_infra_map) {
+        let _ = std::fs::write("/tmp/remote-inframap.json", json);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(&local_infra_map) {
+        let _ = std::fs::write("/tmp/local-inframap.json", json);
+    }
 
-    // Calculate and display changes
-    let changes = calculate_plan_diff_local(
-        &remote_infra_map,
+    tracing::info!(
+        "Remote inframap: {} topics, {} tables, {} api_endpoints",
+        remote_infra_map.topics.len(),
+        remote_infra_map.tables.len(),
+        remote_infra_map.api_endpoints.len()
+    );
+    tracing::info!(
+        "Local inframap: {} topics, {} tables, {} api_endpoints",
+        local_infra_map.topics.len(),
+        local_infra_map.tables.len(),
+        local_infra_map.api_endpoints.len()
+    );
+
+    // Calculate and display changes using the same strategy as dev/prod
+    use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+    let clickhouse_strategy = ClickHouseTableDiffStrategy;
+
+    // Remote plan always uses production settings: respect_lifecycle=true, is_production=true
+    let changes = remote_infra_map.diff_with_table_strategy(
         &local_infra_map,
+        &clickhouse_strategy,
+        true, // respect_lifecycle
+        true, // is_production
         &project.migration_config.ignore_operations,
     );
 
@@ -1139,16 +1132,9 @@ pub async fn remote_gen_migration(
 ) -> anyhow::Result<MigrationPlanWithBeforeAfter> {
     use anyhow::Context;
 
-    // Build the inframap from the local project
+    // Build the inframap from the local project using the canonical helper
     // Resolve credentials for generating migration DDL with S3 tables
-    let local_infra_map = if project.features.data_model_v2 {
-        debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project, true).await?
-    } else {
-        debug!("Loading InfrastructureMap from primitives");
-        let primitive_map = PrimitiveMap::load(project).await?;
-        InfrastructureMap::new(project, primitive_map)
-    };
+    let local_infra_map = crate::framework::core::plan::load_target_state(project).await?;
 
     // Get remote infrastructure map based on source type
     let remote_infra_map = match remote {
@@ -1197,15 +1183,16 @@ pub async fn remote_gen_migration(
         }
     };
 
-    // Normalize both infra maps for backward compatibility
-    // This ensures consistent comparison between old and new CLI versions
-    // by applying the same normalization logic (e.g., filling order_by from primary key)
-    let remote_infra_map = remote_infra_map.normalize();
-    let local_infra_map = local_infra_map.normalize();
+    // Calculate changes using the same strategy as dev/prod/remote_plan
+    use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+    let clickhouse_strategy = ClickHouseTableDiffStrategy;
 
-    let changes = calculate_plan_diff_local(
-        &remote_infra_map,
+    // Migration generation uses production settings: respect_lifecycle=true, is_production=true
+    let changes = remote_infra_map.diff_with_table_strategy(
         &local_infra_map,
+        &clickhouse_strategy,
+        true, // respect_lifecycle
+        true, // is_production
         &project.migration_config.ignore_operations,
     );
 
@@ -1287,15 +1274,8 @@ pub async fn remote_refresh(
     base_url: &Option<String>,
     token: &Option<String>,
 ) -> anyhow::Result<RoutineSuccess> {
-    // Build the inframap from the local project
-    let local_infra_map = if project.features.data_model_v2 {
-        debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project, true).await?
-    } else {
-        debug!("Loading InfrastructureMap from primitives");
-        let primitive_map = PrimitiveMap::load(project).await?;
-        InfrastructureMap::new(project, primitive_map)
-    };
+    // Build the inframap from the local project using the canonical helper
+    let local_infra_map = crate::framework::core::plan::load_target_state(project).await?;
 
     // Get authentication token - prioritize command line parameter, then env var, then project config
     let auth_token = token
