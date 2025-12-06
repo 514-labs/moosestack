@@ -332,24 +332,6 @@ pub struct InfraPlan {
     pub changes: InfraChanges,
 }
 
-/// Options for configuring plan behavior
-#[derive(Debug, Clone)]
-pub struct PlanOptions {
-    /// Whether to respect lifecycle policies (DeletionProtected, ExternallyManaged)
-    pub respect_lifecycle: bool,
-    /// Operations to ignore during planning (e.g., partition changes)
-    pub ignore_operations: Vec<crate::infrastructure::olap::clickhouse::IgnorableOperation>,
-}
-
-impl Default for PlanOptions {
-    fn default() -> Self {
-        Self {
-            respect_lifecycle: true,
-            ignore_operations: vec![],
-        }
-    }
-}
-
 /// Converts infrastructure changes to ordered executable operations.
 ///
 /// Used by both display and execution to guarantee consistency. Converts high-level
