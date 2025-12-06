@@ -1679,6 +1679,7 @@ pub fn convert_ast_to_column_type(
                             comment: None,
                             ttl: None,
                             codec: None,
+                            materialized: None,
                         });
                     }
                     TupleElement::Unnamed(_) => {

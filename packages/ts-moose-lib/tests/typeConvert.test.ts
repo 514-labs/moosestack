@@ -289,4 +289,32 @@ describe("typeConvert mappings for helper types", function () {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("maps Materialized annotations for computed columns", function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+    try {
+      const source = `
+        import { ClickHouseMaterialized, UInt64 } from "@514labs/moose-lib";
+
+        export interface TestModel {
+          timestamp: Date;
+          userId: string;
+          eventDate: Date & ClickHouseMaterialized<"toDate(timestamp)">;
+          userHash: UInt64 & ClickHouseMaterialized<"cityHash64(userId)">;
+          no_materialized: string;
+        }
+      `;
+      const { checker, type } = createProgramWithSource(tempDir, source);
+      const columns = toColumns(type, checker);
+      const byName = Object.fromEntries(columns.map((c) => [c.name, c]));
+
+      expect(byName.timestamp.materialized).to.equal(null);
+      expect(byName.userId.materialized).to.equal(null);
+      expect(byName.eventDate.materialized).to.equal("toDate(timestamp)");
+      expect(byName.userHash.materialized).to.equal("cityHash64(userId)");
+      expect(byName.no_materialized.materialized).to.equal(null);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

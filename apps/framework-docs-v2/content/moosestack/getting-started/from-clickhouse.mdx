@@ -262,9 +262,13 @@ Check what Moose created from your tables in the `app/index.ts` file:
   </LanguageTabContent>
 </LanguageTabs>
 
-### If your database includes ClickPipes/PeerDB (CDC) tables
+### ClickPipes/PeerDB (CDC) Tables
 
-As noted above, when you use `moose init --from-remote`, Moose introspects your database. If it detects CDC‑managed tables (e.g., PeerDB/ClickPipes with fields like `_peerdb_synced_at`, `_peerdb_is_deleted`, `_peerdb_version`), it marks those as `EXTERNALLY_MANAGED` and writes them into a dedicated external models file. Your root file is updated to load these models automatically.
+If your database includes CDC‑managed tables (e.g., PeerDB/ClickPipes tables) MooseStack will mark those as `EXTERNALLY_MANAGED` and write them into a dedicated external models file. Your root file will be updated to load these models automatically.
+
+<Callout type="info" title="Introspection Process" compact={true}>
+The introspection process will look for the fields `_peerdb_synced_at`, `_peerdb_is_deleted`, and `_peerdb_version` to determine if a table is CDC‑managed.
+</Callout>
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -293,16 +297,16 @@ This separation is a best‑effort by the CLI to keep clearly CDC‑owned tables
 
 ## Step 3: Start Development
 
-Start your development server. This spins up a local ClickHouse instance that perfectly mirrors your production schema:
+Start your development server:
 
 ```bash filename="Start your dev server" copy
 moose dev
 ```
 
 **What happens when you run `moose dev`:**
-- 🏗️ Creates a local ClickHouse instance with your exact table schemas in your project code
-- 🔄 Hot-reloads migrations to your local infrastructure as you save code changes
-- 🚀 Starts a web server for building APIs
+- Creates a local ClickHouse instance with your exact table schemas in your project code
+- Hot-reloads schema changes to your local infrastructure as you save code changes
+- Starts a web server for building APIs
 
 <Callout type="info" title="Production Safety" compact={true}>
 Your production ClickHouse remains completely untouched. This is a separate, local development environment.
@@ -447,39 +451,6 @@ const api = new Api<QueryParams, TargetSchema>("get-aggregated-data",
 Check out the MooseAPI module for more information on building APIs with Moose.
 </Callout>
 
-### Build Materialized Views 
-Build materialized views on top of your existing tables to improve query performance. If you have Materialized Views in your ClickHouse, you can use Moose to build new Materialized Views on top of your existing tables, or to migrate your existing Materialized Views to Moose.
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts copy
-// Data Model for your Materialized View- use type throughout your codebase
-export interface TargetSchema {
-  date: Date;
-  count: number;
-}
-// Creates both the target table and the materialized view
-export const materializedView = new MaterializedView<TargetSchema>({
-  // Raw SQL with type-safe table references
-  selectStatement: sql`SELECT count(*) as count, date FROM ${myTable} GROUP BY date`,
-  selectTables: [myTable], // Automatic dependency resolution for cascading materialized views
-  engine: ClickHouseEngines.MergeTree, // Can use which ever engine you want
-  orderByFields: ["date"],
-  tableName: "myAggregation",
-  materializedViewName: "myAggregation_MV",
-});
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-
-<Callout type="info" title="Building Materialized Views with Moose" href="/moosestack/olap/model-materialized-view" ctaLabel="Learn more">
-Check out the MooseOLAP module for more information on building Materialized Views with Moose.
-</Callout>
-
-
-<br />
-
 ## Known Limitations
 
 <Callout type="warning" title="Early Access Feature" ctaLabel="Join Slack" href="https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg">
@@ -493,9 +464,9 @@ Some advanced ClickHouse features may not be fully supported yet. Join the Moose
 <br />
 
 ## Troubleshooting
-### Error: Failed to connect to ClickHouse
+<ToggleBlock openText="Failed to connect to ClickHouse" closeText="Failed to connect to ClickHouse">
 
-This guide shows exactly where to find your host, port, username, and password, and how to construct a valid HTTPS connection string.
+Here's how to find your host, port, username, and password, and how to construct a valid HTTPS connection string.
 
 <Tabs defaultValue="cloud">
 <TabsList>
@@ -506,17 +477,13 @@ This guide shows exactly where to find your host, port, username, and password, 
 1. Log into your [ClickHouse Cloud console](https://clickhouse.cloud/)
 2. Open your service details page
 3. Click "Connect" in the sidebar
-<div className="flex justify-center p-10">
 <ZoomImg light="/ch-cloud-sidebar.png" dark="/ch-cloud-sidebar.png" alt="ClickHouse Cloud Connect Button" />
-</div>
 4. Select the `HTTPS` tab and copy the values shown
    - **Host**: e.g. `your-service-id.region.clickhouse.cloud`
    - **Port**: usually `8443`
    - **Username**: usually `default`
    - **Password**: the password you configured
-<div className="flex justify-center p-10">
 <ZoomImg light="/ch-cloud-creds.png" dark="/ch-cloud-creds.png" alt="ClickHouse Cloud HTTPS Connection Details" />
-</div>
 5. Build your connection string:
 
 ```txt
@@ -536,32 +503,38 @@ curl --user "USERNAME:PASSWORD" --data-binary "SELECT 1" https://HOST:PORT
 ```
 </TabsContent>
 <TabsContent value="self-hosted">
-### Self-hosted or Docker
-- Check your server config (usually `/etc/clickhouse-server/config.xml`)
-  - `<http_port>` default: `8123`
-  - `<https_port>` default: `8443`
-- Check users in `/etc/clickhouse-server/users.xml` or `users.d/`
-- For Docker, check environment variables in your compose/run config:
-  - `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DB`
-
-Build the HTTPS connection string with your values:
-
+1. Check your server config (usually `/etc/clickhouse-server/config.xml`) to find the default username and password.
 ```txt
-https://USERNAME:PASSWORD@HOST:8443/?database=DB
+<http_port>8123</http_port>
+<https_port>8443</https_port>
+```
+2. Check for users in `/etc/clickhouse-server/users.xml` or `users.d/`
+
+3. For Docker, check environment variables in your compose/run config:
+```txt
+CLICKHOUSE_USER=<USERNAME>
+CLICKHOUSE_PASSWORD=<PASSWORD>
+CLICKHOUSE_DB=<DATABASE_NAME>
 ```
 
+4. Build the HTTPS connection string with your values:
+
+```txt
+export $CLICKHOUSE_CONNECTION_STRING="https://USERNAME:PASSWORD@HOST:8443/?database=DB"
+```
 If you only have HTTP enabled, enable HTTPS or use an HTTPS proxy; Moose init expects an HTTPS URL for remote introspection.
+
 </TabsContent>
 </Tabs>
-
-### `moose dev` fails to start
+</ToggleBlock>
+<ToggleBlock openText="`moose dev` fails to start" closeText="`moose dev` fails to start">
 
 Double check Docker is running and you do not have any port conflicts.
 
 - ClickHouse local runs on port `18123`
 - Your local webserver runs on port `4000`
 - Your local management API runs on port `5001`
-
+</ToggleBlock>
 ## What's Next?
 
 Ready to build more? Check out the [APIs](/moosestack/apis) and [OLAP](/moosestack/olap) documentation to learn how to build powerful features on top of your ClickHouse data.

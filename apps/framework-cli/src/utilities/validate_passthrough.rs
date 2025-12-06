@@ -5,7 +5,7 @@ use crate::infrastructure::processes::kafka_clickhouse_sync::IPV4_PATTERN;
 use itertools::Either;
 use num_bigint::{BigInt, BigUint};
 use regex::Regex;
-use serde::de::{DeserializeSeed, Error, MapAccess, SeqAccess, Visitor};
+use serde::de::{Deserialize, DeserializeSeed, Error, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{forward_to_deserialize_any, Deserializer, Serialize, Serializer};
 use serde_json::Value;
@@ -616,9 +616,9 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
     {
         match self.t {
             ColumnType::Nested(ref fields) => {
-                let inner = DataModelVisitor::with_context(
+                let inner = DataModelVisitor::with_nested_context(
                     &fields.columns,
-                    Some(&self.context),
+                    &self.context,
                     self.jwt_claims,
                 );
                 let serializer = MapAccessSerializer {
@@ -649,11 +649,12 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                             comment: None,
                             ttl: None,
                             codec: None,
+                            materialized: None,
                         }
                     })
                     .collect();
                 let inner =
-                    DataModelVisitor::with_context(&columns, Some(&self.context), self.jwt_claims);
+                    DataModelVisitor::with_nested_context(&columns, &self.context, self.jwt_claims);
                 let serializer = MapAccessSerializer {
                     inner: RefCell::new(inner),
                     map: RefCell::new(map),
@@ -1002,20 +1003,143 @@ impl<'de, A: MapAccess<'de>> Serialize for MapAccessSerializer<'de, '_, A> {
     }
 }
 
+/// Helper seed for streaming pass-through of arbitrary values without intermediate allocation.
+/// This is used to efficiently pass through extra fields in ingest payloads.
+/// For complex nested structures, falls back to serde_json::Value, but handles primitives
+/// and simple types without allocation.
+struct PassThroughSeed<'a, S: SerializeMap>(&'a mut S);
+
+impl<'de, S: SerializeMap> DeserializeSeed<'de> for PassThroughSeed<'_, S> {
+    type Value = ();
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Use a visitor to deserialize and immediately serialize primitives
+        struct PassThroughVisitor<'a, S: SerializeMap>(&'a mut S);
+
+        impl<'de, S: SerializeMap> Visitor<'de> for PassThroughVisitor<'_, S> {
+            type Value = ();
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("any valid JSON value")
+            }
+
+            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.0.serialize_value(&v).map_err(E::custom)
+            }
+
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.0.serialize_value(&v).map_err(E::custom)
+            }
+
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.0.serialize_value(&v).map_err(E::custom)
+            }
+
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.0.serialize_value(&v).map_err(E::custom)
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.0.serialize_value(v).map_err(E::custom)
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.0.serialize_value(&v).map_err(E::custom)
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.0
+                    .serialize_value(&Option::<()>::None)
+                    .map_err(E::custom)
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                // For Option<T>, recursively pass through the inner value
+                PassThroughSeed(self.0).deserialize(deserializer)
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                self.0.serialize_value(&()).map_err(E::custom)
+            }
+
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                // For complex nested structures (arrays/objects), fall back to Value
+                // to avoid complexity. In practice, extra fields are usually primitives.
+                let value = Value::deserialize(serde::de::value::SeqAccessDeserializer::new(seq))?;
+                self.0.serialize_value(&value).map_err(A::Error::custom)
+            }
+
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                // For complex nested structures (arrays/objects), fall back to Value
+                // to avoid complexity. In practice, extra fields are usually primitives.
+                let value = Value::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                self.0.serialize_value(&value).map_err(A::Error::custom)
+            }
+        }
+
+        deserializer.deserialize_any(PassThroughVisitor(self.0))
+    }
+}
+
 pub struct DataModelVisitor<'a> {
     columns: HashMap<String, (Column, State)>,
     parent_context: Option<&'a ParentContext<'a>>,
     jwt_claims: Option<&'a Value>,
+    /// When true, extra fields (not defined in columns) are passed through to the output.
+    /// This is used for types with index signatures to allow arbitrary payload fields.
+    allow_extra_fields: bool,
 }
 impl<'a> DataModelVisitor<'a> {
     pub fn new(columns: &[Column], jwt_claims: Option<&'a Value>) -> Self {
-        Self::with_context(columns, None, jwt_claims)
+        Self::with_context(columns, None, jwt_claims, false)
+    }
+
+    /// Create a new visitor that allows extra fields to pass through.
+    pub fn new_with_extra_fields(columns: &[Column], jwt_claims: Option<&'a Value>) -> Self {
+        Self::with_context(columns, None, jwt_claims, true)
     }
 
     fn with_context(
         columns: &[Column],
         parent_context: Option<&'a ParentContext<'a>>,
         jwt_claims: Option<&'a Value>,
+        allow_extra_fields: bool,
     ) -> Self {
         DataModelVisitor {
             columns: columns
@@ -1024,7 +1148,18 @@ impl<'a> DataModelVisitor<'a> {
                 .collect(),
             parent_context,
             jwt_claims,
+            allow_extra_fields,
         }
+    }
+
+    /// Create a visitor for nested structures (Nested types and NamedTuples).
+    /// These types don't allow extra fields, so `allow_extra_fields` is always false.
+    fn with_nested_context(
+        columns: &[Column],
+        parent_context: &'a ParentContext<'a>,
+        jwt_claims: Option<&'a Value>,
+    ) -> Self {
+        Self::with_context(columns, Some(parent_context), jwt_claims, false)
     }
 
     fn transfer_map_access_to_serialize_map<'de, A: MapAccess<'de>, S: SerializeMap>(
@@ -1051,6 +1186,13 @@ impl<'a> DataModelVisitor<'a> {
                     jwt_claims: self.jwt_claims,
                 };
                 map.next_value_seed(&mut visitor)?;
+            } else if self.allow_extra_fields {
+                // Pass through extra fields when allowed (e.g., for types with index signatures)
+                // Use streaming pass-through to avoid intermediate Value allocation
+                map_serializer
+                    .serialize_key(&key)
+                    .map_err(A::Error::custom)?;
+                map.next_value_seed(PassThroughSeed(map_serializer))?;
             } else {
                 map.next_value::<serde::de::IgnoredAny>()?;
             }
@@ -1318,6 +1460,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "int_col".to_string(),
@@ -1330,6 +1473,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "float_col".to_string(),
@@ -1342,6 +1486,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "bool_col".to_string(),
@@ -1354,6 +1499,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "date_col".to_string(),
@@ -1366,6 +1512,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1401,6 +1548,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let json = r#"
@@ -1436,6 +1584,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let json = r#"
@@ -1478,6 +1627,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test valid enum value
@@ -1528,6 +1678,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "nested_int".to_string(),
@@ -1540,6 +1691,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1555,6 +1707,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "nested_object".to_string(),
@@ -1571,6 +1724,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1630,6 +1784,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "optional_field".to_string(),
@@ -1642,6 +1797,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1674,6 +1830,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "aud".to_string(),
@@ -1686,6 +1843,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "exp".to_string(),
@@ -1698,6 +1856,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1713,6 +1872,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "jwt_object".to_string(),
@@ -1729,6 +1889,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1775,6 +1936,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test valid map
@@ -1833,6 +1995,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test valid map with numeric keys (as strings in JSON)
@@ -1888,6 +2051,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Min boundary 0
@@ -1932,6 +2096,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Min boundary -32768
@@ -1976,6 +2141,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 127usize;
@@ -2022,6 +2188,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2068,6 +2235,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2115,6 +2283,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Valid keys
@@ -2156,6 +2325,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let positive_limit: BigInt = BigInt::from(1u8) << 255usize;
@@ -2197,6 +2367,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let limit: BigUint = BigUint::from(1u8) << 256usize;
@@ -2242,6 +2413,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         let json = r#"
@@ -2274,6 +2446,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // missing nested path
@@ -2307,6 +2480,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // null at the nested path counts as missing for non-nullable types
@@ -2355,6 +2529,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test 1: Two's complement value (what -1 becomes with naive cast) should be rejected
@@ -2425,6 +2600,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         }];
 
         // Test negative values work with i64

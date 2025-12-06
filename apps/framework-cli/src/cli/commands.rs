@@ -141,7 +141,7 @@ pub enum Commands {
     Ps {},
     /// View Moose primitives & infrastructure
     Ls {
-        /// Filter by infrastructure type (tables, streams, ingestion, sql_resource, consumption)
+        /// Filter by infrastructure type (tables, streams, ingestion, sql_resource, consumption, workflows, web_apps)
         #[arg(long)]
         _type: Option<String>,
 

@@ -421,6 +421,19 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "payloadBasic", type: "JSON(count Int64, name String)" },
     ],
   },
+  // Index signature test table (ENG-1617)
+  // Extra fields from index signature are stored in properties JSON column
+  {
+    tableName: "UserEventOutput",
+    columns: [
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "eventName", type: "String" },
+      { name: "userId", type: "String" },
+      { name: "orgId", type: "Nullable(String)" },
+      { name: "projectId", type: "Nullable(String)" },
+      { name: "properties", type: "JSON" },
+    ],
+  },
   // Primary Key Expression Tests
   {
     tableName: "PrimaryKeyExpressionTest",
@@ -453,6 +466,29 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "user_agent", type: "String", codec: "ZSTD(3)" },
       { name: "tags", type: "Array(String)", codec: "LZ4" },
       { name: "status_code", type: "Float64" },
+    ],
+  },
+  // Materialized column test table
+  {
+    tableName: "MaterializedTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "userId", type: "String" },
+      {
+        name: "eventDate",
+        type: /Date(32)?/,
+        materialized: "toDate(timestamp)",
+      },
+      { name: "userHash", type: "UInt64", materialized: "cityHash64(userId)" },
+      { name: "log_blob", type: "JSON", codec: "ZSTD(3)" },
+      {
+        name: "combinationHash",
+        type: "Array(UInt64)",
+        materialized:
+          "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))",
+        codec: "ZSTD(1)",
+      },
     ],
   },
 ];
@@ -871,6 +907,46 @@ export const PYTHON_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "user_agent", type: "String", codec: "ZSTD(3)" },
       { name: "tags", type: "Array(String)", codec: "LZ4" },
       { name: "status_code", type: "Float64" },
+    ],
+  },
+  // Materialized column test table
+  {
+    tableName: "MaterializedTest",
+    columns: [
+      { name: "id", type: "String" },
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "user_id", type: "String" },
+      {
+        name: "event_date",
+        type: /Date(32)?/,
+        materialized: "toDate(timestamp)",
+      },
+      {
+        name: "user_hash",
+        type: "UInt64",
+        materialized: "cityHash64(user_id)",
+      },
+      { name: "log_blob", type: "JSON", codec: "ZSTD(3)" },
+      {
+        name: "combination_hash",
+        type: "Array(UInt64)",
+        materialized:
+          "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))",
+        codec: "ZSTD(1)",
+      },
+    ],
+  },
+  // Extra fields test table (ENG-1617)
+  // Extra fields from Pydantic's extra='allow' are stored in properties JSON column
+  {
+    tableName: "UserEventOutput",
+    columns: [
+      { name: "timestamp", type: /DateTime\('UTC'\)/ },
+      { name: "event_name", type: "String" },
+      { name: "user_id", type: "String" },
+      { name: "org_id", type: "Nullable(String)" },
+      { name: "project_id", type: "Nullable(String)" },
+      { name: "properties", type: "JSON" },
     ],
   },
 ];

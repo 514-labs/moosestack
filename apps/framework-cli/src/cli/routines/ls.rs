@@ -8,6 +8,7 @@ use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint}
 use crate::framework::core::infrastructure::function_process::FunctionProcess;
 use crate::framework::core::infrastructure::topic::Topic;
 use crate::framework::core::infrastructure::topic_sync_process::TopicToTableSyncProcess;
+use crate::framework::core::infrastructure::web_app::WebApp;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::scripts::Workflow;
 use crate::{
@@ -261,6 +262,37 @@ impl From<Workflow> for WorkflowInfo {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WebAppInfo {
+    pub name: String,
+    pub mount_path: String,
+}
+
+impl From<WebApp> for WebAppInfo {
+    fn from(value: WebApp) -> Self {
+        Self {
+            name: value.name,
+            mount_path: value.mount_path,
+        }
+    }
+}
+
+impl ResourceInfo for Vec<WebAppInfo> {
+    fn show(&self) {
+        show_table(
+            "Web Apps".to_string(),
+            vec!["name".to_string(), "mount_path".to_string()],
+            self.iter()
+                .map(|app| vec![app.name.clone(), app.mount_path.clone()])
+                .collect(),
+        )
+    }
+
+    fn to_json_string(&self) -> Result<String, Error> {
+        serde_json::to_string_pretty(&self)
+    }
+}
+
+#[derive(Debug, Serialize)]
 pub struct ResourceListing {
     pub tables: Vec<TableInfo>,
     pub streams: Vec<StreamInfo>,
@@ -269,6 +301,7 @@ pub struct ResourceListing {
     pub consumption_apis: Vec<ConsumptionApiInfo>,
     pub stream_transformations: Vec<StreamTransformationInfo>,
     pub workflows: Vec<WorkflowInfo>,
+    pub web_apps: Vec<WebAppInfo>,
 }
 
 impl ResourceInfo for ResourceListing {
@@ -280,6 +313,7 @@ impl ResourceInfo for ResourceListing {
         self.consumption_apis.show();
         self.stream_transformations.show();
         self.workflows.show();
+        self.web_apps.show();
     }
 
     fn to_json_string(&self) -> Result<String, Error> {
@@ -351,6 +385,12 @@ pub async fn ls_dmv2(
             .filter(|api| name.is_none_or(|name| api.name().contains(name)))
             .map(|w| w.into())
             .collect(),
+        web_apps: infra_map
+            .web_apps
+            .into_values()
+            .filter(|app| name.is_none_or(|n| app.name.contains(n)))
+            .map(Into::into)
+            .collect(),
     };
     let listing: &dyn ResourceInfo = match _type {
         None => &resources,
@@ -360,6 +400,7 @@ pub async fn ls_dmv2(
         Some("sql_resource") => &resources.sql_resources,
         Some("consumption") => &resources.consumption_apis,
         Some("workflows") => &resources.workflows,
+        Some("web_apps") => &resources.web_apps,
         _ => {
             return Err(RoutineFailure::error(Message::new(
                 "Unknown".to_string(),

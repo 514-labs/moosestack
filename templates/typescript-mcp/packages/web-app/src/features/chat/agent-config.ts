@@ -18,7 +18,7 @@ export async function getAnthropicAgentStreamTextOptions(
 
   // Create MCP client and get tools
   const mcpServerUrl = getMcpServerUrl();
-  const mcpApiKey = process.env.MCP_API_KEY;
+  const mcpApiKey = process.env.MCP_API_TOKEN;
 
   const mcpClient = await experimental_createMCPClient({
     name: "moose-mcp-server",

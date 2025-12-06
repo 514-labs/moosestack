@@ -27,6 +27,7 @@ from .blocks import (
     ReplicatedSummingMergeTreeEngine,
     S3QueueEngine,
     IcebergS3Engine,
+    KafkaEngine,
     EngineConfig,
     # Legacy enum (already exported via .blocks import, but explicit for clarity)
     ClickHouseEngines
@@ -40,6 +41,7 @@ from .data_models import (
     ClickhouseDefault,
     clickhouse_default,
     ClickHouseTTL,
+    ClickHouseMaterialized,
     ClickHouseCodec,
     # Integer types
     Int8,

@@ -1363,9 +1363,13 @@ async fn handle_json_array_body(
         body.len(),
         topic_name
     );
-    let parsed = JsonDeserializer::from_slice(&body).deserialize_any(&mut DataModelArrayVisitor {
-        inner: DataModelVisitor::new(&data_model.columns, jwt_claims.as_ref()),
-    });
+    let visitor = if data_model.allow_extra_fields {
+        DataModelVisitor::new_with_extra_fields(&data_model.columns, jwt_claims.as_ref())
+    } else {
+        DataModelVisitor::new(&data_model.columns, jwt_claims.as_ref())
+    };
+    let parsed = JsonDeserializer::from_slice(&body)
+        .deserialize_any(&mut DataModelArrayVisitor { inner: visitor });
 
     debug!("parsed json array for {}", topic_name);
 
@@ -3547,6 +3551,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -3560,6 +3565,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,

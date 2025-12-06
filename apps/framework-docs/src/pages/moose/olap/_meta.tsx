@@ -23,6 +23,9 @@ const rawMeta = {
   compression: {
     title: "Compression Codecs",
   },
+  "materialized-columns": {
+    title: "Materialized Columns",
+  },
   "schema-optimization": {
     title: "Schema Optimization",
   },

@@ -6,7 +6,7 @@ import {
   isNestedType,
 } from "../../dataModels/dataModelTypes";
 import { ClickHouseEngines } from "../../blocks/helpers";
-import { getMooseInternal } from "../internal";
+import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";
 import type {
@@ -459,6 +459,48 @@ export type DistributedConfig<T> = Omit<
   policyName?: string;
 };
 
+/** Kafka table settings. See: https://clickhouse.com/docs/engines/table-engines/integrations/kafka */
+export interface KafkaTableSettings {
+  kafka_security_protocol?: "PLAINTEXT" | "SSL" | "SASL_PLAINTEXT" | "SASL_SSL";
+  kafka_sasl_mechanism?:
+    | "GSSAPI"
+    | "PLAIN"
+    | "SCRAM-SHA-256"
+    | "SCRAM-SHA-512"
+    | "OAUTHBEARER";
+  kafka_sasl_username?: string;
+  kafka_sasl_password?: string;
+  kafka_schema?: string;
+  kafka_num_consumers?: string;
+  kafka_max_block_size?: string;
+  kafka_skip_broken_messages?: string;
+  kafka_commit_every_batch?: string;
+  kafka_client_id?: string;
+  kafka_poll_timeout_ms?: string;
+  kafka_poll_max_batch_size?: string;
+  kafka_flush_interval_ms?: string;
+  kafka_consumer_reschedule_ms?: string;
+  kafka_thread_per_consumer?: string;
+  kafka_handle_error_mode?: "default" | "stream";
+  kafka_commit_on_select?: string;
+  kafka_max_rows_per_message?: string;
+  kafka_compression_codec?: string;
+  kafka_compression_level?: string;
+}
+
+/** Kafka engine for streaming data from Kafka topics. Additional settings go in `settings`. */
+export type KafkaConfig<T> = Omit<
+  BaseOlapConfig<T>,
+  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+> & {
+  engine: ClickHouseEngines.Kafka;
+  brokerList: string;
+  topicList: string;
+  groupName: string;
+  format: string;
+  settings?: KafkaTableSettings;
+};
+
 /**
  * Configuration for IcebergS3 engine - read-only Iceberg table access
  *
@@ -519,7 +561,8 @@ type EngineConfig<T> =
   | S3Config<T>
   | BufferConfig<T>
   | DistributedConfig<T>
-  | IcebergS3Config<T>;
+  | IcebergS3Config<T>
+  | KafkaConfig<T>;
 
 /**
  * Union of all engine-specific configurations (new API)
@@ -610,7 +653,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     const tables = getMooseInternal().tables;
     const registryKey =
       this.config.version ? `${name}_${this.config.version}` : name;
-    if (tables.has(registryKey)) {
+    // In client-only mode (MOOSE_CLIENT_ONLY=true), allow duplicate registrations
+    // to support Next.js HMR which re-executes modules without clearing the registry
+    if (!isClientOnlyMode() && tables.has(registryKey)) {
       throw new Error(
         `OlapTable with name ${name} and version ${config?.version ?? "unversioned"} already exists`,
       );

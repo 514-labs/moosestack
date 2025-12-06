@@ -44,6 +44,19 @@ function getSourceDir(): string {
 }
 
 /**
+ * Client-only mode check. When true, resource registration is permissive
+ * (duplicates overwrite silently instead of throwing).
+ * Set via MOOSE_CLIENT_ONLY=true environment variable.
+ *
+ * This enables Next.js apps to import OlapTable definitions for type-safe
+ * queries without the Moose runtime, avoiding "already exists" errors on HMR.
+ *
+ * @returns true if MOOSE_CLIENT_ONLY environment variable is set to "true"
+ */
+export const isClientOnlyMode = (): boolean =>
+  process.env.MOOSE_CLIENT_ONLY === "true";
+
+/**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
@@ -166,6 +179,14 @@ interface IcebergS3EngineConfig {
   compression?: string;
 }
 
+interface KafkaEngineConfig {
+  engine: "Kafka";
+  brokerList: string;
+  topicList: string;
+  groupName: string;
+  format: string;
+}
+
 /**
  * Union type for all supported engine configurations
  */
@@ -182,7 +203,8 @@ type EngineConfig =
   | S3EngineConfig
   | BufferEngineConfig
   | DistributedEngineConfig
-  | IcebergS3EngineConfig;
+  | IcebergS3EngineConfig
+  | KafkaEngineConfig;
 
 /**
  * JSON representation of an OLAP table configuration.
@@ -303,6 +325,11 @@ interface IngestApiJson {
   metadata?: { description?: string };
   /** JSON schema */
   schema: IJsonSchemaCollection.IV3_1;
+  /**
+   * Whether this API allows extra fields beyond the defined columns.
+   * When true, extra fields in payloads are passed through to streaming functions.
+   */
+  allowExtraFields?: boolean;
 }
 
 /**
@@ -367,6 +394,10 @@ interface SqlResourceJson {
   pushesDataTo: InfrastructureSignatureJson[];
   /** Optional source file path where this resource is defined. */
   sourceFile?: string;
+  /** Optional source line number where this resource is defined. */
+  sourceLine?: number;
+  /** Optional source column number where this resource is defined. */
+  sourceColumn?: number;
 }
 
 /**
@@ -626,6 +657,25 @@ function convertIcebergS3EngineConfig(
 }
 
 /**
+ * Convert Kafka engine configuration
+ */
+function convertKafkaEngineConfig(
+  config: OlapConfig<any>,
+): EngineConfig | undefined {
+  if (!("engine" in config) || config.engine !== ClickHouseEngines.Kafka) {
+    return undefined;
+  }
+
+  return {
+    engine: "Kafka",
+    brokerList: config.brokerList,
+    topicList: config.topicList,
+    groupName: config.groupName,
+    format: config.format,
+  };
+}
+
+/**
  * Convert table configuration to engine config
  */
 function convertTableConfigToEngineConfig(
@@ -668,6 +718,11 @@ function convertTableConfigToEngineConfig(
   // Handle IcebergS3
   if (engine === ClickHouseEngines.IcebergS3) {
     return convertIcebergS3EngineConfig(config);
+  }
+
+  // Handle Kafka
+  if (engine === ClickHouseEngines.Kafka) {
+    return convertKafkaEngineConfig(config);
   }
 
   return undefined;
@@ -842,6 +897,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       deadLetterQueue: api.config.deadLetterQueue?.name,
       metadata,
       schema: api.schema,
+      allowExtraFields: api.allowExtraFields,
     };
   });
 
@@ -864,6 +920,8 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       setup: sqlResource.setup,
       teardown: sqlResource.teardown,
       sourceFile: sqlResource.sourceFile,
+      sourceLine: sqlResource.sourceLine,
+      sourceColumn: sqlResource.sourceColumn,
 
       pullsDataFrom: sqlResource.pullsDataFrom.map((r) => {
         if (r.kind === "OlapTable") {
@@ -1178,6 +1236,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "errorMessage",
@@ -1189,6 +1248,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "errorType",
@@ -1200,6 +1260,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "failedAt",
@@ -1211,6 +1272,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
   {
     name: "source",
@@ -1222,6 +1284,7 @@ export const dlqColumns: Column[] = [
     annotations: [],
     ttl: null,
     codec: null,
+    materialized: null,
   },
 ];
 

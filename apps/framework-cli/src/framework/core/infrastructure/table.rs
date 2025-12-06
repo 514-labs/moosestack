@@ -285,6 +285,10 @@ pub struct Table {
     /// Used for change detection without storing sensitive data
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub engine_params_hash: Option<String>,
+    /// Hash of table settings (including sensitive settings like Kafka credentials)
+    /// Used for change detection without storing sensitive data
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub table_settings_hash: Option<String>,
     /// Table-level settings that can be modified with ALTER TABLE MODIFY SETTING
     /// These are separate from engine constructor parameters
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -358,6 +362,45 @@ impl Table {
 
         // Convert to hex string
         Some(format!("{:x}", hasher.finalize()))
+    }
+
+    /// Computes a hash of table_settings for change detection
+    pub fn compute_table_settings_hash(&self) -> Option<String> {
+        use sha2::{Digest, Sha256};
+
+        let settings = self.table_settings.as_ref()?;
+        if settings.is_empty() {
+            return None;
+        }
+
+        let mut hasher = Sha256::new();
+
+        // Sort keys for deterministic hashing
+        let mut keys: Vec<_> = settings.keys().collect();
+        keys.sort();
+
+        for key in keys {
+            if let Some(value) = settings.get(key) {
+                hasher.update(key.as_bytes());
+                hasher.update(b":");
+                hasher.update(value.as_bytes());
+                hasher.update(b";");
+            }
+        }
+
+        Some(format!("{:x}", hasher.finalize()))
+    }
+
+    /// Filters out sensitive credential settings when serializing to protobuf.
+    /// This matches the S3 engines pattern where credentials are completely omitted from storage.
+    fn filter_sensitive_settings_for_proto(&self) -> std::collections::HashMap<String, String> {
+        let sensitive = self.engine.sensitive_settings();
+        self.table_settings
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(key, _)| !sensitive.contains(&key.as_str()))
+            .collect()
     }
 
     pub fn matches(&self, target_table_name: &str, target_table_version: Option<&Version>) -> bool {
@@ -543,7 +586,11 @@ impl Table {
                 .engine_params_hash
                 .clone()
                 .or_else(|| self.compute_non_alterable_params_hash()),
-            table_settings: self.table_settings.clone().unwrap_or_default(),
+            table_settings_hash: self
+                .table_settings_hash
+                .clone()
+                .or_else(|| self.compute_table_settings_hash()),
+            table_settings: self.filter_sensitive_settings_for_proto(),
             table_ttl_setting: self.table_ttl_setting.clone(),
             cluster_name: self.cluster_name.clone(),
             primary_key_expression: self.primary_key_expression.clone(),
@@ -641,6 +688,8 @@ impl Table {
             },
             // Preserve the engine params hash for change detection
             engine_params_hash: proto.engine_params_hash,
+            // Preserve the table settings hash for change detection
+            table_settings_hash: proto.table_settings_hash,
             // Load table settings from proto
             table_settings: if !proto.table_settings.is_empty() {
                 Some(proto.table_settings)
@@ -677,6 +726,8 @@ pub struct Column {
     pub ttl: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub codec: Option<String>, // Compression codec expression (e.g., "ZSTD(3)", "Delta, LZ4")
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub materialized: Option<String>, // MATERIALIZED column expression
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -1192,6 +1243,7 @@ impl Column {
             comment: self.comment.clone(),
             ttl: self.ttl.clone(),
             codec: self.codec.clone(),
+            materialized: self.materialized.clone(),
             special_fields: Default::default(),
         }
     }
@@ -1215,6 +1267,7 @@ impl Column {
             comment: proto.comment,
             ttl: proto.ttl,
             codec: proto.codec,
+            materialized: proto.materialized,
         }
     }
 }
@@ -1595,6 +1648,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let json = serde_json::to_string(&nested_column).unwrap();
@@ -1616,6 +1670,7 @@ mod tests {
             comment: Some("[MOOSE_METADATA:DO_NOT_MODIFY] {\"version\":1,\"enum\":{\"name\":\"TestEnum\",\"members\":[]}}".to_string()),
             ttl: None,
             codec: None,
+                materialized: None,
         };
 
         // Convert to proto and back
@@ -1640,6 +1695,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let proto = column_without_comment.to_proto();
@@ -1724,6 +1780,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1825,6 +1882,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
             Column {
                 name: "name".to_string(),
@@ -1837,6 +1895,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             },
         ];
 
@@ -1856,6 +1915,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -1880,6 +1940,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,

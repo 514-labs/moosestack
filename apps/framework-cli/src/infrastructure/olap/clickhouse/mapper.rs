@@ -54,6 +54,27 @@ fn generate_column_comment(column: &Column) -> Result<Option<String>, Clickhouse
 pub fn std_column_to_clickhouse_column(
     column: Column,
 ) -> Result<ClickHouseColumn, ClickhouseError> {
+    // Validate mutual exclusivity of DEFAULT and MATERIALIZED
+    if column.default.is_some() && column.materialized.is_some() {
+        return Err(ClickhouseError::InvalidParameters {
+            message: format!(
+                "Column '{}' cannot have both DEFAULT and MATERIALIZED. Use one or the other.",
+                column.name
+            ),
+        });
+    }
+
+    // Validate that MATERIALIZED columns are not primary keys
+    if column.materialized.is_some() && column.primary_key {
+        return Err(ClickhouseError::InvalidParameters {
+            message: format!(
+                "Column '{}' cannot be both MATERIALIZED and a primary key. \
+                 MATERIALIZED columns are computed and cannot be used as primary keys.",
+                column.name
+            ),
+        });
+    }
+
     let comment = generate_column_comment(&column)?;
 
     let mut column_type =
@@ -84,6 +105,7 @@ pub fn std_column_to_clickhouse_column(
         comment,
         ttl: column.ttl.clone(),
         codec: column.codec.clone(),
+        materialized: column.materialized.clone(),
     };
 
     Ok(clickhouse_column)
@@ -429,6 +451,7 @@ mod tests {
             comment: Some("This is a user comment about the record type".to_string()),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_user_comment).unwrap();
@@ -454,6 +477,7 @@ mod tests {
             comment: Some(format!("Old user comment {}", old_metadata)),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_with_both).unwrap();
@@ -481,6 +505,7 @@ mod tests {
             comment: Some(old_metadata),
             ttl: None,
             codec: None,
+            materialized: None,
         };
 
         let clickhouse_column = std_column_to_clickhouse_column(column_metadata_only).unwrap();
@@ -524,6 +549,7 @@ mod tests {
                     comment: None,
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
                 Column {
                     name: "status".to_string(),
@@ -536,6 +562,7 @@ mod tests {
                     comment: Some("User status field".to_string()), // User comment
                     ttl: None,
                     codec: None,
+                    materialized: None,
                 },
             ],
             jwt: false,

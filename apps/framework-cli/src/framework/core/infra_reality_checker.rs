@@ -516,6 +516,7 @@ mod tests {
                 comment: None,
                 ttl: None,
                 codec: None,
+                materialized: None,
             }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
             partition_by: None,
@@ -529,6 +530,7 @@ mod tests {
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
             engine_params_hash: None,
+            table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
             database: None,
@@ -613,6 +615,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         });
 
         let mock_client = MockOlapClient {
@@ -683,6 +686,7 @@ mod tests {
             comment: None,
             ttl: None,
             codec: None,
+            materialized: None,
         };
         actual_table.columns.push(timestamp_col.clone());
         infra_table.columns.push(timestamp_col);
@@ -816,6 +820,8 @@ mod tests {
             name: "test_view".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec!["CREATE VIEW test_view AS SELECT 1".to_string()],
             teardown: vec!["DROP VIEW test_view".to_string()],
             pulls_data_from: vec![],
@@ -826,6 +832,8 @@ mod tests {
             name: "test_view".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec!["CREATE VIEW test_view AS SELECT 2".to_string()], // Difference here
             teardown: vec!["DROP VIEW test_view".to_string()],
             pulls_data_from: vec![],

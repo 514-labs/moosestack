@@ -8,3 +8,5 @@ node_modules
 dist
 coverage
 .ts-node
+
+.env*.local

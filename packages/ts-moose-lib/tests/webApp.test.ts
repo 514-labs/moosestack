@@ -1,6 +1,6 @@
 import { expect } from "chai";
-import { getMooseInternal } from "../internal";
-import { WebApp, FrameworkApp, WebAppHandler } from "./webApp";
+import { getMooseInternal } from "../src/dmv2/internal";
+import { WebApp, FrameworkApp, WebAppHandler } from "../src/dmv2/sdk/webApp";
 import http from "http";
 
 describe("WebApp", () => {
@@ -344,7 +344,7 @@ describe("WebApp", () => {
       expect(callbackCalled).to.be.true;
     });
 
-    it("should convert Fastify app to handler correctly", () => {
+    it("should convert Fastify app to handler correctly", async () => {
       let routingCalled = false;
       const fastifyApp: FrameworkApp = {
         routing: (req: any, res: any) => {
@@ -365,8 +365,123 @@ describe("WebApp", () => {
         end: () => {},
       } as any;
 
-      webApp.handler(req, res);
+      await webApp.handler(req, res);
       expect(routingCalled).to.be.true;
+    });
+
+    it("should wait for Fastify ready() before calling routing()", async () => {
+      let readyCalled = false;
+      let routingCalled = false;
+      let readyResolve: () => void;
+
+      // Create a promise that we control externally
+      const readyPromise = new Promise<void>((resolve) => {
+        readyResolve = () => {
+          readyCalled = true;
+          resolve();
+        };
+      });
+
+      const fastifyApp: FrameworkApp = {
+        routing: (req: any, res: any) => {
+          // Verify ready was called before routing
+          expect(readyCalled).to.be.true;
+          routingCalled = true;
+          res.writeHead(200);
+          res.end("Fastify");
+        },
+        ready: () => readyPromise,
+      };
+
+      const webApp = new WebApp("fastifyReadyApp", fastifyApp, {
+        mountPath: "/fastify-ready-test",
+      });
+
+      const req = {} as http.IncomingMessage;
+      const res = {
+        writeHead: () => {},
+        end: () => {},
+      } as any;
+
+      // Start the handler - it should wait for ready
+      const handlerPromise = webApp.handler(req, res);
+
+      // Verify routing hasn't been called yet (ready not resolved)
+      expect(routingCalled).to.be.false;
+
+      // Now resolve ready
+      readyResolve!();
+
+      // Wait for handler to complete
+      await handlerPromise;
+
+      expect(readyCalled).to.be.true;
+      expect(routingCalled).to.be.true;
+    });
+
+    it("should handle Fastify app without ready() method", async () => {
+      let routingCalled = false;
+      const fastifyApp: FrameworkApp = {
+        routing: (req: any, res: any) => {
+          routingCalled = true;
+          res.writeHead(200);
+          res.end("Fastify");
+        },
+        // No ready() method
+      };
+
+      const webApp = new WebApp("fastifyNoReadyApp", fastifyApp, {
+        mountPath: "/fastify-no-ready-test",
+      });
+
+      const req = {} as http.IncomingMessage;
+      const res = {
+        writeHead: () => {},
+        end: () => {},
+      } as any;
+
+      await webApp.handler(req, res);
+      expect(routingCalled).to.be.true;
+    });
+
+    it("should call ready() only once and reuse for subsequent requests", async () => {
+      let readyCallCount = 0;
+      let routingCallCount = 0;
+
+      const fastifyApp: FrameworkApp = {
+        routing: (req: any, res: any) => {
+          routingCallCount++;
+          res.writeHead(200);
+          res.end("Fastify");
+        },
+        ready: () => {
+          readyCallCount++;
+          return Promise.resolve();
+        },
+      };
+
+      const webApp = new WebApp("fastifyMultiRequestApp", fastifyApp, {
+        mountPath: "/fastify-multi-request-test",
+      });
+
+      const req = {} as http.IncomingMessage;
+      const res = {
+        writeHead: () => {},
+        end: () => {},
+      } as any;
+
+      // ready() should NOT be called during construction (lazy initialization)
+      expect(readyCallCount).to.equal(0);
+
+      // Call handler multiple times
+      await webApp.handler(req, res);
+      await webApp.handler(req, res);
+      await webApp.handler(req, res);
+
+      // ready() should only be called once on first request (lazy initialization)
+      expect(readyCallCount).to.equal(1);
+      // routing() should be called for each request
+      expect(routingCallCount).to.equal(3);
     });
 
     it("should convert raw handler correctly", () => {
