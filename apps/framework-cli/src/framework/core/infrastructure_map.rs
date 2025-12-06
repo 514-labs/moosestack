@@ -515,12 +515,14 @@ impl InfraChanges {
     /// Checks if there are any changes in this collection
     ///
     /// Returns true if all change vectors are empty, false otherwise.
+    /// This includes filtered changes so users see feedback about blocked operations.
     pub fn is_empty(&self) -> bool {
         self.olap_changes.is_empty()
             && self.processes_changes.is_empty()
             && self.api_changes.is_empty()
             && self.web_app_changes.is_empty()
             && self.streaming_engine_changes.is_empty()
+            && self.filtered_olap_changes.is_empty()
     }
 }
 
@@ -1932,6 +1934,7 @@ impl InfrastructureMap {
                                 let filter_result = lifecycle_filter::apply_lifecycle_filter(
                                     strategy_changes,
                                     target_table,
+                                    default_database,
                                 );
                                 filtered_changes.extend(filter_result.filtered);
                                 filter_result.applied
