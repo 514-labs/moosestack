@@ -5,6 +5,26 @@
 //! - DeletionProtected tables cannot be dropped or have columns removed
 //! - ExternallyManaged tables cannot be dropped or created automatically
 //! - When a drop is blocked, the corresponding create is also blocked to prevent errors
+//!
+//! # Position in the Pipeline
+//!
+//! This filter operates AFTER both:
+//! 1. The diff algorithm has detected what changed (columns, ORDER BY, PARTITION BY, etc.)
+//! 2. The database-specific strategy (e.g., ClickHouseTableDiffStrategy) has converted
+//!    high-level changes into database-specific operations
+//!
+//! By this point, ORDER BY/PARTITION BY/primary key changes have already been converted
+//! to `Removed` + `Added` operations by the strategy. The `TableChange::Updated` variant
+//! only contains column-level changes as actual operations - the `order_by_change` and
+//! `partition_by_change` fields are metadata/context, not operations to execute.
+//!
+//! # Design Philosophy
+//!
+//! This filter's job is strictly to block changes that violate lifecycle policies.
+//! It does NOT re-evaluate whether changes are "meaningful" - that determination
+//! was already made by the diff algorithm and strategy. Changes that pass through
+//! this filter may have empty operation lists if all their operations were blocked,
+//! and downstream code is expected to handle such cases gracefully.
 
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{
@@ -88,26 +108,50 @@ pub fn apply_lifecycle_filter(
                 let (filtered_columns, removed_columns) =
                     filter_column_changes(column_changes, &after);
 
-                // Record filtered column removals
-                for removed in removed_columns {
-                    if let ColumnChange::Removed(col) = removed {
-                        filtered.push(FilteredChange {
-                            change: OlapChange::Table(TableChange::Updated {
-                                name: name.clone(),
-                                column_changes: vec![ColumnChange::Removed(col.clone())],
-                                order_by_change: order_by_change.clone(),
-                                partition_by_change: partition_by_change.clone(),
-                                before: before.clone(),
-                                after: after.clone(),
-                            }),
-                            reason: format!(
-                                "Table '{}' has DeletionProtected lifecycle - column '{}' removal blocked",
-                                name, col.name
-                            ),
-                        });
-                    }
+                // Record all filtered column removals as a single FilteredChange
+                if !removed_columns.is_empty() {
+                    // Collect column names first (before moving removed_columns)
+                    let blocked_column_names: Vec<String> = removed_columns
+                        .iter()
+                        .filter_map(|c| {
+                            if let ColumnChange::Removed(col) = c {
+                                Some(col.name.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+
+                    let reason = format!(
+                        "Table '{}' has DeletionProtected lifecycle - {} column removal(s) blocked: {}",
+                        name,
+                        blocked_column_names.len(),
+                        blocked_column_names.join(", ")
+                    );
+
+                    filtered.push(FilteredChange {
+                        change: OlapChange::Table(TableChange::Updated {
+                            name: name.clone(),
+                            column_changes: removed_columns,
+                            order_by_change: order_by_change.clone(),
+                            partition_by_change: partition_by_change.clone(),
+                            before: before.clone(),
+                            after: after.clone(),
+                        }),
+                        reason,
+                    });
                 }
 
+                // Always pass through the Updated change with filtered column_changes.
+                //
+                // At this point in the pipeline, the strategy has already converted ORDER BY
+                // and PARTITION BY changes into Removed+Added operations. The Updated variant
+                // only carries column changes as actual operations - order_by_change and
+                // partition_by_change are metadata from the diff algorithm, not operations.
+                //
+                // Our job is strictly to filter lifecycle-protected operations (column removals),
+                // not to re-evaluate whether the change is meaningful. If all column changes
+                // were filtered, downstream code handles the empty change gracefully.
                 applied.push(OlapChange::Table(TableChange::Updated {
                     name,
                     column_changes: filtered_columns,
