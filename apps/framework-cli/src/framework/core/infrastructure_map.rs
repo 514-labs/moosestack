@@ -68,36 +68,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-/// Controls lifecycle protection and operational behavior when diffing infrastructure maps.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiffMode {
-    /// Production mode: Full lifecycle protection + conservative operations (no auto-populate MVs).
-    Production,
-
-    /// Development mode: Full lifecycle protection + aggressive operations (auto-populate MVs).
-    Development,
-
-    /// Reality check mode: Bypasses ALL lifecycle protections to detect actual state mismatches.
-    /// **WARNING**: For read-only validation only, never for applying changes.
-    RealityCheck,
-}
-
-impl DiffMode {
-    /// Whether to respect lifecycle settings (DeletionProtected, ExternallyManaged).
-    /// - `true` for Production/Development (blocks protected operations)
-    /// - `false` for RealityCheck (shows all differences, ignoring protections)
-    pub fn respect_lifecycle(&self) -> bool {
-        !matches!(self, DiffMode::RealityCheck)
-    }
-
-    /// Whether to use conservative production behavior (currently: don't auto-populate MVs).
-    /// - `true` for Production
-    /// - `false` for Development/RealityCheck
-    pub fn is_production(&self) -> bool {
-        matches!(self, DiffMode::Production)
-    }
-}
-
 /// Strategy trait for handling database-specific table diffing logic
 ///
 /// Different OLAP engines have different capabilities for handling schema changes.
