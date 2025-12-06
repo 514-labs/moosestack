@@ -1007,14 +1007,12 @@ impl InfrastructureMap {
         // Views
         Self::diff_views(&self.views, &target_map.views, &mut changes.olap_changes);
 
-        // SQL Resources (needs tables context for MV population detection)
+        // SQL Resources
         tracing::info!("Analyzing changes in SQL Resources...");
         let olap_changes_len_before = changes.olap_changes.len();
         Self::diff_sql_resources(
             &self.sql_resources,
             &target_map.sql_resources,
-            &target_map.tables, // Pass target tables for MV analysis
-            is_production,
             &mut changes.olap_changes,
         );
         let sql_resource_changes = changes.olap_changes.len() - olap_changes_len_before;
@@ -1026,6 +1024,8 @@ impl InfrastructureMap {
         Self::diff_materialized_views(
             &self.materialized_views,
             &target_map.materialized_views,
+            &target_map.tables,
+            is_production,
             &mut changes.olap_changes,
         );
         let mv_changes = changes.olap_changes.len() - olap_changes_len_before;
@@ -1655,17 +1655,17 @@ impl InfrastructureMap {
     /// Changes are collected in the provided changes vector with detailed logging
     /// of what has changed.
     ///
+    /// Note: MV population detection is no longer done here. Moose-lib generated MVs
+    /// are now emitted as structured MaterializedView types, and old SqlResource MVs
+    /// are converted by normalize(). Population is handled by diff_materialized_views().
+    ///
     /// # Arguments
     /// * `self_sql_resources` - HashMap of source SQL resources to compare from
     /// * `target_sql_resources` - HashMap of target SQL resources to compare against
-    /// * `target_tables` - Target tables for MV population analysis
-    /// * `is_production` - Whether running in production environment
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_sql_resources(
         self_sql_resources: &HashMap<String, SqlResource>,
         target_sql_resources: &HashMap<String, SqlResource>,
-        target_tables: &HashMap<String, Table>,
-        is_production: bool,
         olap_changes: &mut Vec<OlapChange>,
     ) {
         tracing::info!(
@@ -1688,16 +1688,10 @@ impl InfrastructureMap {
                         before: Box::new(sql_resource.clone()),
                         after: Box::new(target_sql_resource.clone()),
                     }));
-
-                    // Check if updated SQL resource is a materialized view that needs population
-                    use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
-                    ClickHouseTableDiffStrategy::check_materialized_view_population(
-                        target_sql_resource,
-                        target_tables,
-                        true,
-                        is_production,
-                        olap_changes,
-                    );
+                    // Note: MV population check is no longer needed here.
+                    // Moose-lib generated MVs are now emitted as structured MaterializedView types.
+                    // Old SqlResource MVs are converted by normalize() to MaterializedView.
+                    // Population is handled by diff_materialized_views().
                 }
             } else {
                 tracing::debug!("SQL resource '{}' removed", id);
@@ -1715,16 +1709,10 @@ impl InfrastructureMap {
                 olap_changes.push(OlapChange::SqlResource(Change::Added(Box::new(
                     sql_resource.clone(),
                 ))));
-
-                // Check if this is a materialized view that needs population (ClickHouse-specific)
-                use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
-                ClickHouseTableDiffStrategy::check_materialized_view_population(
-                    sql_resource,
-                    target_tables,
-                    true,
-                    is_production,
-                    olap_changes,
-                );
+                // Note: MV population check is no longer needed here.
+                // Moose-lib generated MVs are now emitted as structured MaterializedView types.
+                // Old SqlResource MVs are converted by normalize() to MaterializedView.
+                // Population is handled by diff_materialized_views().
             }
         }
 
@@ -1741,10 +1729,14 @@ impl InfrastructureMap {
     /// # Arguments
     /// * `self_mvs` - HashMap of source materialized views
     /// * `target_mvs` - HashMap of target materialized views
+    /// * `tables` - HashMap of target tables (for checking if source tables are S3Queue/Kafka)
+    /// * `is_production` - Whether we're in production mode (population only in dev)
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_materialized_views(
         self_mvs: &HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
         target_mvs: &HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+        tables: &HashMap<String, Table>,
+        is_production: bool,
         olap_changes: &mut Vec<OlapChange>,
     ) {
         tracing::info!(
@@ -1766,6 +1758,15 @@ impl InfrastructureMap {
                         before: Box::new(mv.clone()),
                         after: Box::new(target_mv.clone()),
                     }));
+
+                    // Check if updated MV needs population (only in dev)
+                    Self::check_materialized_view_population(
+                        target_mv,
+                        tables,
+                        true,
+                        is_production,
+                        olap_changes,
+                    );
                 }
             } else {
                 tracing::debug!("Materialized view '{}' removed", id);
@@ -1783,6 +1784,15 @@ impl InfrastructureMap {
                 olap_changes.push(OlapChange::MaterializedView(Change::Added(Box::new(
                     mv.clone(),
                 ))));
+
+                // Check if new MV needs population (only in dev)
+                Self::check_materialized_view_population(
+                    mv,
+                    tables,
+                    true,
+                    is_production,
+                    olap_changes,
+                );
             }
         }
 
@@ -1792,6 +1802,57 @@ impl InfrastructureMap {
             mv_removals,
             mv_updates
         );
+    }
+
+    /// Check if a materialized view needs initial population
+    ///
+    /// Population is only done in dev mode and when source tables are not S3Queue or Kafka
+    /// (since those don't support SELECT queries for backfill).
+    fn check_materialized_view_population(
+        mv: &super::infrastructure::materialized_view::MaterializedView,
+        tables: &HashMap<String, Table>,
+        is_new: bool,
+        is_production: bool,
+        olap_changes: &mut Vec<OlapChange>,
+    ) {
+        use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+
+        // Check if any source table is S3Queue or Kafka (which don't support SELECT)
+        let has_unpopulatable_source = mv.source_tables.iter().any(|source_table| {
+            // Try direct lookup
+            if let Some(table) = tables.get(source_table) {
+                return ClickHouseTableDiffStrategy::is_s3queue_table(table)
+                    || ClickHouseTableDiffStrategy::is_kafka_table(table);
+            }
+
+            // Try finding by searching for keys ending with the table name
+            // Keys are in format: "{database}_{table_name}"
+            let table_suffix = format!("_{}", source_table);
+            if let Some((_key, table)) = tables.iter().find(|(key, _)| key.ends_with(&table_suffix))
+            {
+                ClickHouseTableDiffStrategy::is_s3queue_table(table)
+                    || ClickHouseTableDiffStrategy::is_kafka_table(table)
+            } else {
+                false
+            }
+        });
+
+        // Only populate in dev for new MVs with supported source tables
+        if is_new && !has_unpopulatable_source && !is_production {
+            tracing::info!(
+                "Adding population operation for materialized view '{}'",
+                mv.name
+            );
+
+            olap_changes.push(OlapChange::PopulateMaterializedView {
+                view_name: mv.name.clone(),
+                target_table: mv.target_table.clone(),
+                target_database: mv.target_database.clone(),
+                select_statement: mv.select_sql.clone(),
+                source_tables: mv.source_tables.clone(),
+                should_truncate: true,
+            });
+        }
     }
 
     /// Compare custom views between two infrastructure maps and compute the differences
@@ -2810,9 +2871,9 @@ impl InfrastructureMap {
                         source_file: sql_resource.source_file.clone(),
                     };
 
-                    // Insert into materialized_views map (use same key)
-                    self.materialized_views
-                        .insert(mv.id(&self.default_database), mv);
+                    // Insert into materialized_views map using name as key
+                    // (consistent with TS/Python moose-lib which emit name as key)
+                    self.materialized_views.insert(mv.name.clone(), mv);
                     sql_resources_to_remove.push(key.clone());
                 }
             }
@@ -2841,8 +2902,8 @@ impl InfrastructureMap {
                         source_file: sql_resource.source_file.clone(),
                     };
 
-                    self.custom_views
-                        .insert(view.id(&self.default_database), view);
+                    // Insert using name as key (consistent with TS/Python moose-lib)
+                    self.custom_views.insert(view.name.clone(), view);
                     sql_resources_to_remove.push(key.clone());
                 }
             }
@@ -5227,12 +5288,9 @@ mod diff_sql_resources_tests {
         let target_resources = HashMap::new();
         let mut olap_changes = Vec::new();
 
-        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
-            &tables,
-            false,
             &mut olap_changes,
         );
         assert!(olap_changes.is_empty());
@@ -5248,12 +5306,9 @@ mod diff_sql_resources_tests {
         target_resources.insert(resource1.name.clone(), resource1);
 
         let mut olap_changes = Vec::new();
-        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
-            &tables,
-            false,
             &mut olap_changes,
         );
         assert!(olap_changes.is_empty());
@@ -5267,12 +5322,9 @@ mod diff_sql_resources_tests {
         target_resources.insert(resource1.name.clone(), resource1.clone());
 
         let mut olap_changes = Vec::new();
-        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
-            &tables,
-            false,
             &mut olap_changes,
         );
 
@@ -5293,12 +5345,9 @@ mod diff_sql_resources_tests {
 
         let target_resources = HashMap::new();
         let mut olap_changes = Vec::new();
-        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
-            &tables,
-            false,
             &mut olap_changes,
         );
 
@@ -5323,12 +5372,9 @@ mod diff_sql_resources_tests {
         target_resources.insert(after_resource.name.clone(), after_resource.clone());
 
         let mut olap_changes = Vec::new();
-        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
-            &tables,
-            false,
             &mut olap_changes,
         );
 
@@ -5358,12 +5404,9 @@ mod diff_sql_resources_tests {
         target_resources.insert(after_resource.name.clone(), after_resource.clone());
 
         let mut olap_changes = Vec::new();
-        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
-            &tables,
-            false,
             &mut olap_changes,
         );
 
@@ -5402,12 +5445,9 @@ mod diff_sql_resources_tests {
         target_resources.insert(res4_after.name.clone(), res4_after.clone());
 
         let mut olap_changes = Vec::new();
-        let tables = HashMap::new(); // Empty tables for tests
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
-            &tables,
-            false,
             &mut olap_changes,
         );
 
@@ -5446,6 +5486,11 @@ mod diff_sql_resources_tests {
     #[test]
     fn test_update_materialized_view_select_statement_should_trigger_backfill() {
         use crate::framework::core::infrastructure::InfrastructureSignature;
+
+        // Note: MV population is no longer triggered by SqlResource diff.
+        // Moose-lib generated MVs are now emitted as structured MaterializedView types.
+        // Old SqlResource MVs are converted by normalize() to MaterializedView.
+        // Population is handled by diff_materialized_views().
 
         let mv_before = SqlResource {
             name: "events_summary_mv".to_string(),
@@ -5486,47 +5531,25 @@ mod diff_sql_resources_tests {
         target_resources.insert(mv_after.name.clone(), mv_after.clone());
 
         let mut olap_changes = Vec::new();
-        let tables = HashMap::new();
 
         InfrastructureMap::diff_sql_resources(
             &self_resources,
             &target_resources,
-            &tables,
-            false,
             &mut olap_changes,
         );
 
-        assert_eq!(olap_changes.len(), 2);
+        // Only the Update change is expected - population is handled elsewhere
+        assert_eq!(olap_changes.len(), 1);
 
-        let mut has_updated = false;
-        let mut has_populate = false;
-
-        for change in &olap_changes {
-            match change {
-                OlapChange::SqlResource(Change::Updated { before, after }) => {
-                    assert_eq!(before.name, "events_summary_mv");
-                    assert_eq!(after.name, "events_summary_mv");
-                    assert!(before.setup[0].contains("SELECT id, name FROM"));
-                    assert!(after.setup[0].contains("SELECT id, name, timestamp FROM"));
-                    has_updated = true;
-                }
-                OlapChange::PopulateMaterializedView {
-                    view_name,
-                    target_table,
-                    select_statement,
-                    ..
-                } => {
-                    assert_eq!(view_name, "events_summary_mv");
-                    assert_eq!(target_table, "events_summary_table");
-                    assert!(select_statement.contains("SELECT id, name, timestamp FROM events"));
-                    has_populate = true;
-                }
-                _ => panic!("Unexpected change type: {:?}", change),
+        match &olap_changes[0] {
+            OlapChange::SqlResource(Change::Updated { before, after }) => {
+                assert_eq!(before.name, "events_summary_mv");
+                assert_eq!(after.name, "events_summary_mv");
+                assert!(before.setup[0].contains("SELECT id, name FROM"));
+                assert!(after.setup[0].contains("SELECT id, name, timestamp FROM"));
             }
+            _ => panic!("Expected Updated change, got {:?}", olap_changes[0]),
         }
-
-        assert!(has_updated);
-        assert!(has_populate);
     }
 }
 
@@ -6619,6 +6642,8 @@ mod normalize_tests {
             name: "events_summary_mv".to_string(),
             database: None,
             source_file: Some("app/sql/events.ts".to_string()),
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW IF NOT EXISTS events_summary_mv TO events_summary AS SELECT user_id, count(*) as cnt FROM events GROUP BY user_id".to_string(),
             ],
@@ -6670,6 +6695,8 @@ mod normalize_tests {
             name: "active_users".to_string(),
             database: None,
             source_file: Some("app/sql/views.ts".to_string()),
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "CREATE VIEW IF NOT EXISTS active_users AS SELECT * FROM users WHERE status = 'active'"
                     .to_string(),
@@ -6719,6 +6746,8 @@ mod normalize_tests {
             name: "custom_function".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec!["CREATE FUNCTION my_func AS () -> 42".to_string()],
             teardown: vec!["DROP FUNCTION my_func".to_string()],
             pulls_data_from: vec![],
@@ -6757,6 +6786,8 @@ mod normalize_tests {
             name: "fake_mv".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW IF NOT EXISTS fake_mv TO target AS SELECT * FROM source"
                     .to_string(),
@@ -6793,6 +6824,8 @@ mod normalize_tests {
             name: "lowercase_mv".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "create materialized view if not exists lowercase_mv TO target AS SELECT * FROM source"
                     .to_string(),
@@ -6828,6 +6861,8 @@ mod normalize_tests {
             name: "multi_mv".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW IF NOT EXISTS multi_mv TO target AS SELECT * FROM source"
                     .to_string(),
@@ -6864,6 +6899,8 @@ mod normalize_tests {
             name: "no_to_mv".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW IF NOT EXISTS no_to_mv AS SELECT * FROM source"
                     .to_string(),
