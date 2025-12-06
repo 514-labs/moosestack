@@ -680,6 +680,121 @@ ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTE
 For more details, see the [ClickHouse documentation](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree).
 </Callout>
 
+#### Collapsing State Changes (`CollapsingMergeTree`)
+Use the `CollapsingMergeTree` engine to efficiently track object state changes by collapsing insert/cancel row pairs:
+
+<TypeScript>
+```ts filename="CollapsingTable.ts" copy
+import { OlapTable, ClickHouseEngines, Int8 } from "@514labs/moose-lib";
+
+interface UserActivity {
+  userId: Key<string>;
+  pageViews: number;
+  duration: number;
+  sign: Int8;  // Required: 1 = state row, -1 = cancel row
+}
+
+// Track user activity with state collapsing
+const activityTable = new OlapTable<UserActivity>("user_activity", {
+  engine: ClickHouseEngines.CollapsingMergeTree,
+  sign: "sign",
+  orderByFields: ["userId"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="CollapsingTable.py" copy
+from moose_lib import Key, Int8, OlapTable, OlapConfig
+from moose_lib.blocks import CollapsingMergeTreeEngine
+from pydantic import BaseModel
+
+class UserActivity(BaseModel):
+    user_id: Key[str]
+    page_views: int
+    duration: int
+    sign: Int8  # Required: 1 = state row, -1 = cancel row
+
+# Track user activity with state collapsing
+activity_table = OlapTable[UserActivity]("user_activity", OlapConfig(
+    order_by_fields=["user_id"],
+    engine=CollapsingMergeTreeEngine(sign="sign")
+))
+```
+</Python>
+
+<Callout type="info" title="How Collapsing Works">
+To update a record, insert two rows:
+1. A cancel row (`sign = -1`) with the old values
+2. A state row (`sign = 1`) with the new values
+
+During background merges, ClickHouse collapses matching pairs, keeping only the latest state.
+
+**Important**: Use aggregation in queries to get accurate results:
+```sql
+SELECT userId, sum(pageViews * sign) as pageViews
+FROM user_activity
+GROUP BY userId
+HAVING sum(sign) > 0
+```
+</Callout>
+
+#### Versioned Collapsing (`VersionedCollapsingMergeTree`)
+Use `VersionedCollapsingMergeTree` when you need collapsing with out-of-order inserts. The version column ensures correct collapse ordering regardless of insertion order:
+
+<TypeScript>
+```ts filename="VersionedCollapsingTable.ts" copy
+import { OlapTable, ClickHouseEngines, Int8 } from "@514labs/moose-lib";
+
+interface UserState {
+  userId: Key<string>;
+  pageViews: number;
+  duration: number;
+  sign: Int8;     // Required: 1 = state row, -1 = cancel row
+  version: number; // Required: version for ordering state changes
+}
+
+// Track user state with versioned collapsing
+const stateTable = new OlapTable<UserState>("user_state", {
+  engine: ClickHouseEngines.VersionedCollapsingMergeTree,
+  sign: "sign",
+  ver: "version",
+  orderByFields: ["userId"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="VersionedCollapsingTable.py" copy
+from moose_lib import Key, Int8, OlapTable, OlapConfig
+from moose_lib.blocks import VersionedCollapsingMergeTreeEngine
+from pydantic import BaseModel
+
+class UserState(BaseModel):
+    user_id: Key[str]
+    page_views: int
+    duration: int
+    sign: Int8      # Required: 1 = state row, -1 = cancel row
+    version: int    # Required: version for ordering state changes
+
+# Track user state with versioned collapsing
+state_table = OlapTable[UserState]("user_state", OlapConfig(
+    order_by_fields=["user_id"],
+    engine=VersionedCollapsingMergeTreeEngine(sign="sign", ver="version")
+))
+```
+</Python>
+
+<Callout type="warning" title="CollapsingMergeTree vs VersionedCollapsingMergeTree">
+**CollapsingMergeTree**: Requires strictly consecutive insertion order. Use when you control insertion order (e.g., single writer).
+
+**VersionedCollapsingMergeTree**: Uses a version column to handle out-of-order inserts. Use when multiple threads/sources insert data or order isn't guaranteed.
+
+Both engines require the `sign` column to be `Int8` type.
+
+For more details, see the ClickHouse documentation on [CollapsingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/collapsingmergetree) and [VersionedCollapsingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/versionedcollapsingmergetree).
+</Callout>
+
 #### Streaming from S3 (`S3Queue`)
 Use the `S3Queue` engine to automatically ingest data from S3 buckets as files are added:
 
@@ -1018,6 +1133,8 @@ Replicated engines provide high availability and data replication across multipl
 - `ReplicatedReplacingMergeTree` - Replicated with deduplication
 - `ReplicatedAggregatingMergeTree` - Replicated with aggregation
 - `ReplicatedSummingMergeTree` - Replicated with summation
+- `ReplicatedCollapsingMergeTree` - Replicated with state collapsing
+- `ReplicatedVersionedCollapsingMergeTree` - Replicated with versioned collapsing
 
 <TypeScript>
 ```ts filename="ReplicatedEngines.ts" copy

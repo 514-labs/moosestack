@@ -25,6 +25,8 @@ import {
   ReplicatedReplacingMergeTreeConfig,
   ReplicatedAggregatingMergeTreeConfig,
   ReplicatedSummingMergeTreeConfig,
+  ReplicatedCollapsingMergeTreeConfig,
+  ReplicatedVersionedCollapsingMergeTreeConfig,
   S3QueueConfig,
 } from "./sdk/olapTable";
 import {
@@ -101,6 +103,17 @@ interface SummingMergeTreeEngineConfig {
   columns?: string[];
 }
 
+interface CollapsingMergeTreeEngineConfig {
+  engine: "CollapsingMergeTree";
+  sign: string;
+}
+
+interface VersionedCollapsingMergeTreeEngineConfig {
+  engine: "VersionedCollapsingMergeTree";
+  sign: string;
+  ver: string;
+}
+
 interface ReplicatedMergeTreeEngineConfig {
   engine: "ReplicatedMergeTree";
   keeperPath?: string;
@@ -126,6 +139,21 @@ interface ReplicatedSummingMergeTreeEngineConfig {
   keeperPath?: string;
   replicaName?: string;
   columns?: string[];
+}
+
+interface ReplicatedCollapsingMergeTreeEngineConfig {
+  engine: "ReplicatedCollapsingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+  sign: string;
+}
+
+interface ReplicatedVersionedCollapsingMergeTreeEngineConfig {
+  engine: "ReplicatedVersionedCollapsingMergeTree";
+  keeperPath?: string;
+  replicaName?: string;
+  sign: string;
+  ver: string;
 }
 
 interface S3QueueEngineConfig {
@@ -199,10 +227,14 @@ type EngineConfig =
   | ReplacingMergeTreeEngineConfig
   | AggregatingMergeTreeEngineConfig
   | SummingMergeTreeEngineConfig
+  | CollapsingMergeTreeEngineConfig
+  | VersionedCollapsingMergeTreeEngineConfig
   | ReplicatedMergeTreeEngineConfig
   | ReplicatedReplacingMergeTreeEngineConfig
   | ReplicatedAggregatingMergeTreeEngineConfig
   | ReplicatedSummingMergeTreeEngineConfig
+  | ReplicatedCollapsingMergeTreeEngineConfig
+  | ReplicatedVersionedCollapsingMergeTreeEngineConfig
   | S3QueueEngineConfig
   | S3EngineConfig
   | BufferEngineConfig
@@ -459,7 +491,9 @@ function hasReplicatedEngine(
   | ReplicatedMergeTreeConfig<any>
   | ReplicatedReplacingMergeTreeConfig<any>
   | ReplicatedAggregatingMergeTreeConfig<any>
-  | ReplicatedSummingMergeTreeConfig<any> {
+  | ReplicatedSummingMergeTreeConfig<any>
+  | ReplicatedCollapsingMergeTreeConfig<any>
+  | ReplicatedVersionedCollapsingMergeTreeConfig<any> {
   if (!("engine" in config)) {
     return false;
   }
@@ -470,7 +504,9 @@ function hasReplicatedEngine(
     engine === ClickHouseEngines.ReplicatedMergeTree ||
     engine === ClickHouseEngines.ReplicatedReplacingMergeTree ||
     engine === ClickHouseEngines.ReplicatedAggregatingMergeTree ||
-    engine === ClickHouseEngines.ReplicatedSummingMergeTree
+    engine === ClickHouseEngines.ReplicatedSummingMergeTree ||
+    engine === ClickHouseEngines.ReplicatedCollapsingMergeTree ||
+    engine === ClickHouseEngines.ReplicatedVersionedCollapsingMergeTree
   );
 }
 
@@ -515,6 +551,23 @@ function convertBasicEngineConfig(
       return {
         engine: "SummingMergeTree",
         columns: summingConfig.columns,
+      };
+    }
+
+    case ClickHouseEngines.CollapsingMergeTree: {
+      const collapsingConfig = config as any; // CollapsingMergeTreeConfig<any>
+      return {
+        engine: "CollapsingMergeTree",
+        sign: collapsingConfig.sign,
+      };
+    }
+
+    case ClickHouseEngines.VersionedCollapsingMergeTree: {
+      const versionedConfig = config as any; // VersionedCollapsingMergeTreeConfig<any>
+      return {
+        engine: "VersionedCollapsingMergeTree",
+        sign: versionedConfig.sign,
+        ver: versionedConfig.ver,
       };
     }
 
@@ -574,6 +627,27 @@ function convertReplicatedEngineConfig(
         keeperPath: replicatedConfig.keeperPath,
         replicaName: replicatedConfig.replicaName,
         columns: replicatedConfig.columns,
+      };
+    }
+
+    case ClickHouseEngines.ReplicatedCollapsingMergeTree: {
+      const replicatedConfig = config as any; // ReplicatedCollapsingMergeTreeConfig<any>
+      return {
+        engine: "ReplicatedCollapsingMergeTree",
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+        sign: replicatedConfig.sign,
+      };
+    }
+
+    case ClickHouseEngines.ReplicatedVersionedCollapsingMergeTree: {
+      const replicatedConfig = config as any; // ReplicatedVersionedCollapsingMergeTreeConfig<any>
+      return {
+        engine: "ReplicatedVersionedCollapsingMergeTree",
+        keeperPath: replicatedConfig.keeperPath,
+        replicaName: replicatedConfig.replicaName,
+        sign: replicatedConfig.sign,
+        ver: replicatedConfig.ver,
       };
     }
 
