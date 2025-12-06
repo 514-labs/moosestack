@@ -1281,7 +1281,6 @@ async fn get_remote_inframap_serverless(
     target_table_ids: &HashSet<String>,
     target_sql_resource_ids: &HashSet<String>,
 ) -> anyhow::Result<InfrastructureMap> {
-    use crate::framework::core::plan::reconcile_with_reality;
     use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
     use crate::infrastructure::olap::clickhouse::create_client;
 
@@ -1294,26 +1293,17 @@ async fn get_remote_inframap_serverless(
         .build()
         .await?;
 
-    let remote_infra_map = state_storage
-        .load_infrastructure_map()
-        .await?
-        .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
+    // Use the canonical load_current_state helper for consistency
+    let olap_client = create_client(clickhouse_config.clone());
 
-    // Reconcile with actual database state to detect manual changes
-    let reconciled_infra_map = if project.features.olap {
-        // Create a separate client for reconciliation
-        let reconcile_client = create_client(clickhouse_config.clone());
-        reconcile_with_reality(
-            project,
-            &remote_infra_map,
-            target_table_ids,
-            target_sql_resource_ids,
-            reconcile_client,
-        )
-        .await?
-    } else {
-        remote_infra_map
-    };
+    let reconciled_infra_map = crate::framework::core::plan::load_current_state(
+        project,
+        &*state_storage,
+        olap_client,
+        target_table_ids,
+        target_sql_resource_ids,
+    )
+    .await?;
 
     Ok(reconciled_infra_map)
 }

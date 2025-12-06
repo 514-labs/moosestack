@@ -3275,6 +3275,8 @@ pub struct InfraMapResponse {
 async fn get_admin_reconciled_inframap(
     redis_client: &Arc<RedisClient>,
     project: &Project,
+    target_table_ids: Option<&HashSet<String>>,
+    target_sql_resource_ids: Option<&HashSet<String>>,
 ) -> Result<InfrastructureMap, crate::framework::core::plan::PlanningError> {
     use crate::framework::core::state_storage::StateStorageBuilder;
     use crate::infrastructure::olap::clickhouse;
@@ -3292,41 +3294,47 @@ async fn get_admin_reconciled_inframap(
             ))
         })?;
 
-    // Load current map from state storage (these are the tables under Moose management)
-    let current_map = match state_storage.load_infrastructure_map().await {
-        Ok(Some(infra_map)) => infra_map,
-        Ok(None) => InfrastructureMap::empty_from_project(project),
-        Err(e) => {
-            return Err(crate::framework::core::plan::PlanningError::Other(
-                anyhow::anyhow!("Failed to load infrastructure map from state storage: {e}"),
-            ));
-        }
-    };
-
     if !project.features.olap {
+        // If OLAP is disabled, we can't reconcile, just return stored state
+        let current_map = state_storage
+            .load_infrastructure_map()
+            .await?
+            .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
         return Ok(current_map);
     }
 
-    // For admin endpoints, reconcile all currently managed tables and SQL resources only
-    // Pass the managed table IDs as target_table_ids - this ensures that
-    // reconcile_with_reality only operates on resources that are already managed by Moose
-    let target_table_ids: HashSet<String> = current_map
-        .tables
-        .values()
-        .map(|t| t.id(&current_map.default_database))
-        .collect();
-
-    let target_sql_resource_ids: HashSet<String> =
-        current_map.sql_resources.keys().cloned().collect();
-
+    // Use the canonical load_current_state helper for consistency
     let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
 
-    crate::framework::core::plan::reconcile_with_reality(
+    // If target IDs provided, use them. Otherwise, load current map and use its tables
+    // (for admin inframap endpoint that just returns current managed state)
+    let (table_ids, sql_ids) =
+        if let (Some(tids), Some(sids)) = (target_table_ids, target_sql_resource_ids) {
+            (tids.clone(), sids.clone())
+        } else {
+            // Load current to get managed table IDs
+            let current_map = state_storage
+                .load_infrastructure_map()
+                .await?
+                .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
+
+            let tids: HashSet<String> = current_map
+                .tables
+                .values()
+                .map(|t| t.id(&current_map.default_database))
+                .collect();
+
+            let sids: HashSet<String> = current_map.sql_resources.keys().cloned().collect();
+
+            (tids, sids)
+        };
+
+    crate::framework::core::plan::load_current_state(
         project,
-        &current_map,
-        &target_table_ids,
-        &target_sql_resource_ids,
+        &*state_storage,
         olap_client,
+        &table_ids,
+        &sql_ids,
     )
     .await
 }
@@ -3391,9 +3399,31 @@ async fn admin_plan_route(
         }
     };
 
-    // Get the reconciled infrastructure map (combines Redis + reality check for managed tables)
-    // This ensures we're diffing against the true current state of managed infrastructure only
-    let current_infra_map = match get_admin_reconciled_inframap(redis_client, project).await {
+    // Get the reconciled infrastructure map based on TARGET infrastructure (from plan_request)
+    // This ensures we reconcile with the correct set of tables that the client wants to manage
+    use std::collections::HashSet;
+    let target_table_ids: HashSet<String> = plan_request
+        .infra_map
+        .tables
+        .values()
+        .map(|t| t.id(&plan_request.infra_map.default_database))
+        .collect();
+
+    let target_sql_resource_ids: HashSet<String> = plan_request
+        .infra_map
+        .sql_resources
+        .keys()
+        .cloned()
+        .collect();
+
+    let current_infra_map = match get_admin_reconciled_inframap(
+        redis_client,
+        project,
+        Some(&target_table_ids),
+        Some(&target_sql_resource_ids),
+    )
+    .await
+    {
         Ok(infra_map) => infra_map,
         Err(e) => {
             error!("Failed to get reconciled infrastructure map: {}", e);
@@ -3465,20 +3495,21 @@ async fn admin_inframap_route(
         return e.to_response();
     }
 
-    // Get the reconciled infrastructure map (combines Redis + reality check for managed tables)
-    // This ensures we return the true current state of managed infrastructure only
-    let current_infra_map = match get_admin_reconciled_inframap(redis_client, project).await {
-        Ok(infra_map) => infra_map,
-        Err(e) => {
-            error!("Failed to get reconciled infrastructure map: {}", e);
-            return Ok(Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Full::new(Bytes::from(format!(
-                    "Failed to get current infrastructure state: {e}"
-                ))))
-                .unwrap());
-        }
-    };
+    // Get the reconciled infrastructure map for currently managed resources only
+    // Pass None for target IDs to use current managed tables
+    let current_infra_map =
+        match get_admin_reconciled_inframap(redis_client, project, None, None).await {
+            Ok(infra_map) => infra_map,
+            Err(e) => {
+                error!("Failed to get reconciled infrastructure map: {}", e);
+                return Ok(Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Full::new(Bytes::from(format!(
+                        "Failed to get current infrastructure state: {e}"
+                    ))))
+                    .unwrap());
+            }
+        };
 
     // Check Accept header to determine response format
     let accept_header = req
