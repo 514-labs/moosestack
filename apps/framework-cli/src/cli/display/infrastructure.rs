@@ -772,16 +772,34 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_databa
                 // Use after table's ID for unambiguous identification in multi-database scenarios
                 let table_id = after.id(default_database);
                 let mut details = vec![format!("  ⚠ {}", filtered.reason)];
-                details.push("  Blocked column changes:".to_string());
-                for change in column_changes {
-                    if let crate::framework::core::infrastructure_map::ColumnChange::Removed(col) =
-                        change
-                    {
-                        details.push(format!(
-                            "    - {}: {}",
-                            col.name,
-                            format_column_type(&col.data_type)
-                        ));
+                if !column_changes.is_empty() {
+                    details.push("  Blocked column changes:".to_string());
+                    for change in column_changes {
+                        use crate::framework::core::infrastructure_map::ColumnChange;
+                        match change {
+                            ColumnChange::Added { column, .. } => {
+                                details.push(format!(
+                                    "    + {}: {} (add blocked)",
+                                    column.name,
+                                    format_column_type(&column.data_type)
+                                ));
+                            }
+                            ColumnChange::Removed(col) => {
+                                details.push(format!(
+                                    "    - {}: {} (removal blocked)",
+                                    col.name,
+                                    format_column_type(&col.data_type)
+                                ));
+                            }
+                            ColumnChange::Updated { before, after } => {
+                                details.push(format!(
+                                    "    ~ {}: {} → {} (modification blocked)",
+                                    before.name,
+                                    format_column_type(&before.data_type),
+                                    format_column_type(&after.data_type)
+                                ));
+                            }
+                        }
                     }
                 }
                 infra_updated_detailed(&format!("Table: {} (protected)", table_id), &details);
