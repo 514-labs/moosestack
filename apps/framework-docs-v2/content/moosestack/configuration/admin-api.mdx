@@ -1,0 +1,52 @@
+---
+title: Admin API Authentication
+description: Configure authentication settings for the Admin API
+order: 52
+---
+
+import { Callout } from "@/components/mdx";
+
+# Admin API Authentication
+
+Configure authentication for the Admin API. The Moose CLI uses a plain-text token from your local environment to authenticate against your production instance, which validates it using a stored hash.
+
+
+## Configuration Reference
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `admin_api_key` | `MOOSE_AUTHENTICATION__ADMIN_API_KEY` | - | **Server-side**. PBKDF2 hash of the admin token for validating requests. |
+| `admin_token` | `MOOSE_ADMIN_TOKEN` | - | **Client-side**. Plain-text token used by the CLI to authenticate against the Admin API. |
+
+
+## Admin API Key (Server-Side)
+
+Store the PBKDF2 hash of the admin token on your production instance:
+
+```toml filename="moose.config.toml"
+[authentication]
+# Optional hashed admin API key for auth (Default: None)
+# admin_api_key = "hashed_api_key"
+```
+
+Or set it as an environment variable:
+
+```bash
+MOOSE_AUTHENTICATION__ADMIN_API_KEY=your_pbkdf2_hmac_sha256_hashed_key
+```
+
+<Callout type="info">
+The `admin_api_key` stores a **PBKDF2 hash**, not the plain-text token. It is safe to commit this hashed value to version control since the Bearer token cannot be derived from it.
+</Callout>
+
+## Admin Token (Client-Side)
+
+Store the plain-text token in your local `.env.local` file. The CLI uses this token to authenticate API requests to your production Admin API:
+
+```bash filename=".env.local"
+MOOSE_ADMIN_TOKEN=your_plain_text_token
+```
+
+<Callout type="warning">
+The `admin_token` contains a plain-text token and **must never be committed to version control**. Store it only in your git-ignored `.env.local` file.
+</Callout>

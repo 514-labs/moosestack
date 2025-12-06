@@ -1,0 +1,98 @@
+---
+title: Dev Environment
+description: Configure local development scripts, docker extensions, and networking
+order: 70
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Dev Environment Configuration
+
+This reference covers configuration options specific to the local development workflow (`moose dev`), including lifecycle hooks, Docker infrastructure extensions, and network defaults.
+
+## Lifecycle Hooks
+
+Configure shell commands to run automatically during the development server's lifecycle. These are defined within the `[http_server_config]` section of your configuration.
+
+```toml
+[http_server_config]
+# Script to run once on first start
+on_first_start_script = "echo 'Dev server started'"
+
+# Script to run after every reload completes
+on_reload_complete_script = "echo 'Reload complete'"
+```
+
+| Key | Env Variable | Type | Default | Description |
+|:----|:-------------|:-----|:--------|:------------|
+| `on_first_start_script` | `MOOSE_HTTP_SERVER_CONFIG__ON_FIRST_START_SCRIPT` | String | - | Shell command executed once when `moose dev` starts. |
+| `on_reload_complete_script` | `MOOSE_HTTP_SERVER_CONFIG__ON_RELOAD_COMPLETE_SCRIPT` | String | - | Shell command executed after every code/infra reload. |
+
+<Callout type="info" title="Execution Context">
+Scripts run from your project root using your system's default shell (usually `/bin/sh` or `bash`). You can chain commands using `&&`.
+</Callout>
+
+### Common Examples
+
+**Sync External Tables on Start**
+```toml
+on_first_start_script = "moose db pull --connection-string $REMOTE_DB_URL"
+```
+
+**Regenerate Clients on Reload**
+```toml
+on_reload_complete_script = "openapi-generator-cli generate -i .moose/openapi.yaml ..."
+```
+
+## Docker Infrastructure Extensions
+
+Extend the default Moose development infrastructure by creating a specific override file in your project root.
+
+| File Name | Purpose |
+|:----------|:--------|
+| `docker-compose.dev.override.yaml` | Adds or overrides services in the generated Docker Compose setup. |
+
+### Usage
+
+Create `docker-compose.dev.override.yaml` to add services like PostgreSQL or monitoring tools. Moose automatically detects and merges this file when running `moose dev`.
+
+```yaml
+# docker-compose.dev.override.yaml
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: mypassword
+    ports:
+      - "5432:5432"
+```
+
+<Callout type="warning" title="Limitations">
+**Do not** use this file to configure Moose-managed services (ClickHouse, Redpanda, Redis, Temporal). Use `moose.config.toml` for those components to avoid configuration conflicts.
+</Callout>
+
+## Networking Reference
+
+Reference for default ports and URLs used by the Moose Runtime in development mode.
+
+### Default Ports
+
+| Port | Service | Description | Config Key |
+|:-----|:--------|:------------|:-----------|
+| **4000** | API Server | Main Ingestion/Consumption APIs | `http_server_config.port` |
+| **5001** | Management API | Health checks & Metrics | `http_server_config.management_port` |
+| **18123** | ClickHouse HTTP | OLAP Database (HTTP) | `clickhouse_config.host_port` |
+| **9000** | ClickHouse Native | OLAP Database (TCP) | `clickhouse_config.native_port` |
+| **19092** | Redpanda | Kafka Streaming | `redpanda_config.broker` |
+| **8080** | Temporal UI | Workflow Dashboard | `temporal_config.ui_port` |
+
+### Service URLs
+
+Access points for local development services:
+
+| Service | URL |
+|:--------|:----|
+| **Main API** | `http://localhost:4000` |
+| **Management API** | `http://localhost:5001/metrics` |
+| **OpenAPI Spec** | `http://localhost:5001/openapi.yaml` |
+| **Temporal UI** | `http://localhost:8080` |
