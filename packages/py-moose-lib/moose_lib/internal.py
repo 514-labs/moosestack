@@ -294,6 +294,8 @@ class IngestApiConfig(BaseModel):
         version: Optional version string of the API configuration.
         path: Optional custom path for the ingestion endpoint.
         metadata: Optional metadata for the API.
+        allow_extra_fields: Whether this API allows extra fields beyond the defined columns.
+            When true, extra fields in payloads are passed through to streaming functions.
     """
     model_config = model_config
 
@@ -305,6 +307,7 @@ class IngestApiConfig(BaseModel):
     path: Optional[str] = None
     metadata: Optional[dict] = None
     json_schema: dict[str, Any] = Field(serialization_alias="schema")
+    allow_extra_fields: bool = False
 
 
 class InternalApiConfig(BaseModel):
@@ -836,6 +839,10 @@ def to_infra_map() -> dict:
         )
 
     for name, api in get_ingest_apis().items():
+        # Check if the Pydantic model allows extra fields (extra='allow')
+        # This is the Python equivalent of TypeScript's index signatures
+        model_allows_extra = api._t.model_config.get("extra") == "allow"
+
         ingest_apis[name] = IngestApiConfig(
             name=name,
             columns=_to_columns(api._t),
@@ -849,7 +856,8 @@ def to_infra_map() -> dict:
             json_schema=api._t.model_json_schema(
                 ref_template='#/components/schemas/{model}'
             ),
-            dead_letter_queue=api.config.dead_letter_queue.name if api.config.dead_letter_queue else None
+            dead_letter_queue=api.config.dead_letter_queue.name if api.config.dead_letter_queue else None,
+            allow_extra_fields=model_allows_extra,
         )
 
     for name, api in get_apis().items():

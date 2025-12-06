@@ -1201,6 +1201,8 @@ mod tests {
             name: "test_view".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec!["CREATE VIEW test_view AS SELECT 1".to_string()],
             teardown: vec!["DROP VIEW test_view".to_string()],
             pulls_data_from: vec![],
@@ -1211,6 +1213,8 @@ mod tests {
             name: "test_view".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec!["CREATE VIEW test_view AS SELECT 2".to_string()], // Difference here
             teardown: vec!["DROP VIEW test_view".to_string()],
             pulls_data_from: vec![],

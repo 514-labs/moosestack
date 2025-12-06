@@ -2455,6 +2455,8 @@ mod tests {
             name: "mv_a_to_b".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2606,6 +2608,8 @@ mod tests {
             name: "mv_a_to_b".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),
@@ -2761,6 +2765,8 @@ mod tests {
             name: "mv_a_to_b".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec![
                 "CREATE MATERIALIZED VIEW mv_a_to_b TO table_b AS SELECT * FROM table_a"
                     .to_string(),

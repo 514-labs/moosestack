@@ -2527,6 +2527,8 @@ fn reconstruct_sql_resource_common(
         name,
         database: Some(database),
         source_file: None, // Introspected from database, not from user code
+        source_line: None,
+        source_column: None,
         setup: vec![setup],
         teardown: vec![teardown],
         pulls_data_from,

@@ -21,6 +21,10 @@ pub struct DataModel {
     pub config: DataModelConfig,
     pub abs_file_path: PathBuf,
     pub version: Version,
+    /// Whether this data model allows extra fields beyond the defined columns.
+    /// When true, extra fields in payloads are passed through to streaming functions.
+    #[serde(default)]
+    pub allow_extra_fields: bool,
 }
 
 impl DataModel {

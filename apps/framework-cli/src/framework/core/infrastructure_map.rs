@@ -5212,6 +5212,8 @@ mod diff_sql_resources_tests {
             name: name.to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: setup.iter().map(|s| s.to_string()).collect(),
             teardown: teardown.iter().map(|s| s.to_string()).collect(),
             pulls_data_from: vec![],
@@ -5449,6 +5451,8 @@ mod diff_sql_resources_tests {
             name: "events_summary_mv".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name FROM events".to_string()],
             teardown: vec!["DROP VIEW events_summary_mv".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
@@ -5463,6 +5467,8 @@ mod diff_sql_resources_tests {
             name: "events_summary_mv".to_string(),
             database: None,
             source_file: None,
+            source_line: None,
+            source_column: None,
             setup: vec!["CREATE MATERIALIZED VIEW events_summary_mv TO events_summary_table AS SELECT id, name, timestamp FROM events".to_string()],
             teardown: vec!["DROP VIEW events_summary_mv".to_string()],
             pulls_data_from: vec![InfrastructureSignature::Table {
