@@ -562,7 +562,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine"
+        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine"
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -822,6 +822,12 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 }
                 writeln!(output, "),").unwrap();
             }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::CollapsingMergeTree { sign } => {
+                writeln!(output, "    engine=CollapsingMergeTreeEngine(sign={:?}),", sign).unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
+                writeln!(output, "    engine=VersionedCollapsingMergeTreeEngine(sign={:?}, ver={:?}),", sign, version).unwrap();
+            }
             crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedMergeTree {
                 keeper_path,
                 replica_name,
@@ -877,6 +883,36 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                         params.push(format!("columns={:?}", cols));
                     }
                 }
+                write!(output, "{}", params.join(", ")).unwrap();
+                writeln!(output, "),").unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+            } => {
+                write!(output, "    engine=ReplicatedCollapsingMergeTreeEngine(").unwrap();
+                let mut params = vec![];
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    params.push(format!("keeper_path={:?}, replica_name={:?}", path, name));
+                }
+                params.push(format!("sign={:?}", sign));
+                write!(output, "{}", params.join(", ")).unwrap();
+                writeln!(output, "),").unwrap();
+            }
+            crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+                version,
+            } => {
+                write!(output, "    engine=ReplicatedVersionedCollapsingMergeTreeEngine(").unwrap();
+                let mut params = vec![];
+                if let (Some(path), Some(name)) = (keeper_path, replica_name) {
+                    params.push(format!("keeper_path={:?}, replica_name={:?}", path, name));
+                }
+                params.push(format!("sign={:?}", sign));
+                params.push(format!("ver={:?}", version));
                 write!(output, "{}", params.join(", ")).unwrap();
                 writeln!(output, "),").unwrap();
             }
@@ -1138,7 +1174,7 @@ from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, Olap
 from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
 from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, LifeCycle, ClickHouseTTL
-from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine
+from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine
 
 class Foo(BaseModel):
     primary_key: Key[str]

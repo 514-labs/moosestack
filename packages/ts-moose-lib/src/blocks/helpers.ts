@@ -52,6 +52,8 @@ export enum ClickHouseEngines {
   ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree",
   ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree",
   ReplicatedSummingMergeTree = "ReplicatedSummingMergeTree",
+  ReplicatedCollapsingMergeTree = "ReplicatedCollapsingMergeTree",
+  ReplicatedVersionedCollapsingMergeTree = "ReplicatedVersionedCollapsingMergeTree",
 }
 
 /**

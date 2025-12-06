@@ -297,6 +297,8 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 ReplicatedReplacingMergeTreeEngine,
                 ReplicatedAggregatingMergeTreeEngine,
                 ReplicatedSummingMergeTreeEngine,
+                ReplicatedCollapsingMergeTreeEngine,
+                ReplicatedVersionedCollapsingMergeTreeEngine,
             )
 
             if isinstance(
@@ -306,6 +308,8 @@ class OlapTable(TypedMooseResource, Generic[T]):
                     ReplicatedReplacingMergeTreeEngine,
                     ReplicatedAggregatingMergeTreeEngine,
                     ReplicatedSummingMergeTreeEngine,
+                    ReplicatedCollapsingMergeTreeEngine,
+                    ReplicatedVersionedCollapsingMergeTreeEngine,
                 ),
             ):
                 if (
