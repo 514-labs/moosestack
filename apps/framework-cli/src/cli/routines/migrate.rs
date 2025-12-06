@@ -593,9 +593,8 @@ pub async fn execute_migration(
 
             let olap_client = create_client(clickhouse_config.clone());
 
-            // Use the canonical load_current_state helper for consistency
-            // We already have the current_infra_map loaded, but need to reconcile it
-            // So we'll use reconcile_with_reality directly (load_current_state would reload from storage)
+            // We already have the current_infra_map loaded, so reconcile it directly
+            // instead of reloading from storage via load_reconciled_infrastructure
             crate::framework::core::plan::reconcile_with_reality(
                 project,
                 &current_infra_map,

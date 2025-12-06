@@ -3303,7 +3303,6 @@ async fn get_admin_reconciled_inframap(
         return Ok(current_map);
     }
 
-    // Use the canonical load_current_state helper for consistency
     let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
 
     // If target IDs provided, use them. Otherwise, load current map and use its tables
@@ -3329,7 +3328,7 @@ async fn get_admin_reconciled_inframap(
             (tids, sids)
         };
 
-    crate::framework::core::plan::load_current_state(
+    crate::framework::core::plan::load_reconciled_infrastructure(
         project,
         &*state_storage,
         olap_client,
