@@ -3275,8 +3275,6 @@ pub struct InfraMapResponse {
 async fn get_admin_reconciled_inframap(
     redis_client: &Arc<RedisClient>,
     project: &Project,
-    target_table_ids: Option<&HashSet<String>>,
-    target_sql_resource_ids: Option<&HashSet<String>>,
 ) -> Result<InfrastructureMap, crate::framework::core::plan::PlanningError> {
     use crate::framework::core::state_storage::StateStorageBuilder;
     use crate::infrastructure::olap::clickhouse;
@@ -3302,50 +3300,27 @@ async fn get_admin_reconciled_inframap(
     // types (e.g., Kafka topics) even when OLAP is turned off.
     let clickhouse_client = clickhouse::create_client(project.clickhouse_config.clone());
 
-    // Determine which tables and SQL resources to include in reconciliation.
-    //
-    // Two modes of operation:
-    // 1. If target IDs are provided (e.g., from a plan request), use those IDs.
-    //    This ensures we reconcile against the tables the client wants to manage.
-    // 2. If no target IDs provided (e.g., admin inframap endpoint), load the current
-    //    managed state from storage and use its table/resource IDs.
-    let (managed_table_ids, managed_sql_resource_ids) =
-        if let (Some(provided_table_ids), Some(provided_sql_resource_ids)) =
-            (target_table_ids, target_sql_resource_ids)
-        {
-            // Use the explicitly provided target IDs from the caller
-            (
-                provided_table_ids.clone(),
-                provided_sql_resource_ids.clone(),
-            )
-        } else {
-            // No target IDs provided - derive them from the currently managed infrastructure.
-            // This is used by the admin inframap endpoint to return the current managed state.
-            let current_infrastructure_map = state_storage
-                .load_infrastructure_map()
-                .await?
-                .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
+    // Derive table/resource IDs from the currently managed infrastructure.
+    // This ensures we only reconcile tables that Moose is already managing.
+    let current_infrastructure_map = state_storage
+        .load_infrastructure_map()
+        .await?
+        .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
-            // Extract table IDs from the current infrastructure map.
-            // Table IDs include the database prefix for multi-database support.
-            let table_ids_from_current_state: HashSet<String> = current_infrastructure_map
-                .tables
-                .values()
-                .map(|table| table.id(&current_infrastructure_map.default_database))
-                .collect();
+    // Extract table IDs from the current infrastructure map.
+    // Table IDs include the database prefix for multi-database support.
+    let managed_table_ids: HashSet<String> = current_infrastructure_map
+        .tables
+        .values()
+        .map(|table| table.id(&current_infrastructure_map.default_database))
+        .collect();
 
-            // Extract SQL resource IDs (views, materialized views) from the current state.
-            let sql_resource_ids_from_current_state: HashSet<String> = current_infrastructure_map
-                .sql_resources
-                .keys()
-                .cloned()
-                .collect();
-
-            (
-                table_ids_from_current_state,
-                sql_resource_ids_from_current_state,
-            )
-        };
+    // Extract SQL resource IDs (views, materialized views) from the current state.
+    let managed_sql_resource_ids: HashSet<String> = current_infrastructure_map
+        .sql_resources
+        .keys()
+        .cloned()
+        .collect();
 
     // Load the infrastructure map from storage and reconcile it with the actual database state.
     // This ensures we return the true current state of managed infrastructure, accounting for
@@ -3422,31 +3397,9 @@ async fn admin_plan_route(
         }
     };
 
-    // Get the reconciled infrastructure map based on TARGET infrastructure (from plan_request)
-    // This ensures we reconcile with the correct set of tables that the client wants to manage
-    use std::collections::HashSet;
-    let target_table_ids: HashSet<String> = plan_request
-        .infra_map
-        .tables
-        .values()
-        .map(|t| t.id(&plan_request.infra_map.default_database))
-        .collect();
-
-    let target_sql_resource_ids: HashSet<String> = plan_request
-        .infra_map
-        .sql_resources
-        .keys()
-        .cloned()
-        .collect();
-
-    let current_infra_map = match get_admin_reconciled_inframap(
-        redis_client,
-        project,
-        Some(&target_table_ids),
-        Some(&target_sql_resource_ids),
-    )
-    .await
-    {
+    // Get the reconciled infrastructure map (combines Redis + reality check for managed tables)
+    // This ensures we're diffing against the true current state of managed infrastructure only
+    let current_infra_map = match get_admin_reconciled_inframap(redis_client, project).await {
         Ok(infra_map) => infra_map,
         Err(e) => {
             error!("Failed to get reconciled infrastructure map: {}", e);
@@ -3518,21 +3471,20 @@ async fn admin_inframap_route(
         return e.to_response();
     }
 
-    // Get the reconciled infrastructure map for currently managed resources only
-    // Pass None for target IDs to use current managed tables
-    let current_infra_map =
-        match get_admin_reconciled_inframap(redis_client, project, None, None).await {
-            Ok(infra_map) => infra_map,
-            Err(e) => {
-                error!("Failed to get reconciled infrastructure map: {}", e);
-                return Ok(Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Full::new(Bytes::from(format!(
-                        "Failed to get current infrastructure state: {e}"
-                    ))))
-                    .unwrap());
-            }
-        };
+    // Get the reconciled infrastructure map (combines Redis + reality check for managed tables)
+    // This ensures we return the true current state of managed infrastructure only
+    let current_infra_map = match get_admin_reconciled_inframap(redis_client, project).await {
+        Ok(infra_map) => infra_map,
+        Err(e) => {
+            error!("Failed to get reconciled infrastructure map: {}", e);
+            return Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Full::new(Bytes::from(format!(
+                    "Failed to get current infrastructure state: {e}"
+                ))))
+                .unwrap());
+        }
+    };
 
     // Check Accept header to determine response format
     let accept_header = req
