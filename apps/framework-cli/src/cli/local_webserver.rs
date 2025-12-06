@@ -3332,6 +3332,8 @@ async fn get_admin_reconciled_inframap(
     .await
 }
 
+/// DPRECATED DO NOT USE
+///
 /// Handles the admin plan endpoint, which compares a submitted infrastructure map
 /// with the server's reconciled managed infrastructure state and returns the changes that would be applied.
 ///
