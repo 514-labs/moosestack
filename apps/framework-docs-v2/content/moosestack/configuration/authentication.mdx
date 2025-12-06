@@ -8,10 +8,10 @@ import { Callout } from "@/components/mdx";
 
 # Authentication Configuration
 
-This reference covers security and authentication settings for your Moose APIs.
+This reference covers security and authentication settings for your MooseStack APIs.
 
 <Callout type="warning" title="Secret Management">
-Authentication keys and secrets are sensitive. **Do not commit them to your `moose.config.toml`**. Use environment variables or `.env.local` (for development) to manage these values securely.
+Never commit **plain-text tokens or passwords** to version control. Store sensitive values in a secrets manager or as environment variables (for example `MOOSE_JWT__SECRET` or `MOOSE_ADMIN_TOKEN`) and reference them from config. For local development only, use a git-ignored `.env.local` file.
 </Callout>
 
 ## JWT Configuration
@@ -24,11 +24,11 @@ Configure JSON Web Token (JWT) validation for your ingestion and consumption API
 enforce_on_all_consumptions_apis = false
 # Enforce JWT on all ingestion APIs (Default: false)
 enforce_on_all_ingest_apis = false
-# Secret key for JWT signing (Required if jwt section is present)
+# Secret key for JWT signing (Required if jwt is enabled)
 # secret = "your-jwt-secret"
-# JWT issuer (Required if jwt section is present)
+# JWT issuer (Required if jwt is enabled)
 # issuer = "your-issuer-name"
-# JWT audience (Required if jwt section is present)
+# JWT audience (Required if jwt is enabled)
 # audience = "your-audience-name"
 ```
 
@@ -40,9 +40,13 @@ enforce_on_all_ingest_apis = false
 | `issuer` | `MOOSE_JWT__ISSUER` | - | Expected token issuer claim (`iss`). |
 | `audience` | `MOOSE_JWT__AUDIENCE` | - | Expected token audience claim (`aud`). |
 
-## General Authentication
+<Callout type="warning">
+The `secret` field contains sensitive authentication material and **should never be defined in plaintext in `moose.config.toml`**. Store it in your secrets manager and expose it via the `MOOSE_JWT__SECRET` environment variable.
+</Callout>
 
-Configure global authentication settings like Admin API keys.
+## General Authentication Settings
+
+Configure global authentication settings for the Admin API.
 
 ```toml
 [authentication]
@@ -53,3 +57,12 @@ Configure global authentication settings like Admin API keys.
 | Key | Env Variable | Default | Description |
 |:----|:-------------|:--------|:------------|
 | `admin_api_key` | `MOOSE_AUTHENTICATION__ADMIN_API_KEY` | - | **SECRET**. Hash of the admin API key. |
+| `admin_token` | `MOOSE_ADMIN_TOKEN` | - | **SECRET**. Plain-text admin API token. DO NOT COMMIT THIS TO VERSION CONTROL. |
+
+<Callout type="warning">
+The `admin_token` field contains a plain-text token and **should never be defined in `moose.config.toml`**. Store it in your `.env.local` file for local development only.
+</Callout>
+
+<Callout type="info">
+The `admin_api_key` field stores a **PBKDF2 hash**, not the plain-text token. It is safe to commit this hashed value to version control since the Bearer token cannot be derived from it.
+</Callout>
