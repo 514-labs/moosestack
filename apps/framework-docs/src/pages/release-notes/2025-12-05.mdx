@@ -12,7 +12,6 @@ Flexible Streaming Ingest, Web App Integration, and Infra Visibility Upgrades. T
 Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming, IcebergS3 for data lake integration, and powerful modeling tools like materialized columns and per-column codecs. Meanwhile, Boreal added storage visualizations so teams can see how their data grows.
 
 <Callout type="info" title="Highlights">
-* **New:** [Arbitrary JSON fields in ingest APIs](#arbitrary-json-fields-in-ingest-apis) for flexible schema evolution
 * **New:** [Kafka engine support](#kafka-engine-support-for-streaming-ingestion) for real-time ClickHouse ingestion
 * **New:** [IcebergS3 engine](#icebergs3-engine-for-data-lake-storage) for Apache Iceberg data lake integration
 * **New:** [Materialized columns](#materialized-columns-in-data-models) for precomputed fields at ingestion time
@@ -22,31 +21,9 @@ Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming
 
 ## Moose
 
-### Arbitrary JSON fields in ingest APIs
-
-Accept payloads with extra fields beyond your defined schema while still validating known fields. Extra fields automatically pass through to streaming functions and land in a JSON column.
-
-**Why it matters:** Schema flexibility without chaos. Teams can ship events even when they don't fully agree on every property yet. Known fields still get enforceable validation, while "extra" properties land in a JSON column for later exploration. This is ideal for product analytics, logging, and gradual schema evolution.
-
-```typescript filename="app/ingest/models.ts" copy
-// TypeScript: Use index signature to accept arbitrary fields
-export type UserEventInput = {
-  timestamp: DateTime;
-  eventName: string;
-  userId: Key<string>;
-  [key: string]: any;  // Allows any additional properties
-};
-```
-
-In Python, use `extra='allow'` in your Pydantic models to achieve the same flexibility.
-
-PR: [#3047](https://github.com/514-labs/moosestack/pull/3047) | Docs: [Data models](/moose/data-models)
-
 ### Kafka engine support for streaming ingestion
 
-Define tables with ClickHouse's Kafka engine as an alternative consumer that reads directly from Kafka topics into ClickHouse, bypassing Moose's built-in streaming consumer. Use materialized views to transform and route the data.
-
-**Why it matters:** Direct Kafka → ClickHouse ingestion. When you need ClickHouse to consume from Kafka natively—without going through Moose's streaming layer—Kafka engine tables give you that option. This is useful for high-throughput scenarios or when you want ClickHouse to manage its own consumer offsets.
+Define tables with ClickHouse's Kafka engine as an alternative consumer that reads directly from Kafka topics into ClickHouse, bypassing Moose's built-in streaming consumer. Use materialized views to transform and route the data. This is an experimental engine from ClickHouse.
 
 ```typescript filename="app/ingest/kafka.ts" copy
 // Create a Kafka engine table that consumes from a topic
@@ -66,9 +43,7 @@ PR: [#3066](https://github.com/514-labs/moosestack/pull/3066) | Docs: [OlapTable
 
 ### IcebergS3 engine for data lake storage
 
-Configure tables to use Apache Iceberg format with S3 storage for better data lake integration and columnar storage capabilities.
-
-**Why it matters:** Data lake integration without the glue. IcebergS3 enables columnar storage on S3 with Parquet or ORC format, AWS credential management, and compression options. This bridges Moose's real-time pipelines with existing data lake infrastructure for analytics workloads.
+Configure tables on Apache Iceberg with S3 storage.
 
 ```typescript filename="app/tables/analytics_events.ts" copy
 export const AnalyticsEventsTable = new OlapTable<AnalyticsEvent>(
@@ -109,25 +84,16 @@ PR: [#3051](https://github.com/514-labs/moosestack/pull/3051) | Docs: [Supported
 
 New project template demonstrating Fastify framework with Moose, plus fixed WebApp support for Fastify's async initialization.
 
-**Why it matters:** Fast path to production web APIs. The Fastify template + WebApp fix give a working, idiomatic example for building Moose-backed services. Fastify's performance and schema support pair nicely with Moose's data models, lowering the barrier for new services.
 
-```typescript filename="app/apis/analytics.ts" copy
-import Fastify from "fastify";
-import { WebApp } from "@514labs/moose-lib";
-
-const app = Fastify({ logger: true });
-app.get("/health", async () => ({ status: "ok" }));
-
-// Export as WebApp - Moose handles Fastify's ready() automatically
-export const analyticsApp = new WebApp("analyticsApi", app, {
-  mountPath: "/analytics",
-});
+```bash copy
+moose init <project-name> --template fastify
 ```
 
 PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://github.com/514-labs/moosestack/pull/3061) | Docs: [Fastify integration](/moose/app-api-frameworks) | [Fastify template](https://github.com/514-labs/moosestack/tree/main/templates/typescript-fastify)
 
 ### Other improvements
 
+- **Arbitrary JSON fields in ingest APIs** – Accept payloads with extra fields beyond your schema; extras land in a JSON column for flexible schema evolution. PR [#3047](https://github.com/514-labs/moosestack/pull/3047) | [Data models](/moose/data-models)
 - **Custom PRIMARY KEY expressions** – Define custom PRIMARY KEY with hash functions like `cityHash64` for better data distribution in high-cardinality scenarios. PR [#3031](https://github.com/514-labs/moosestack/pull/3031) | [ClickHouse Primary Keys](https://clickhouse.com/docs/best-practices/choosing-a-primary-key)
 - **Per-column compression codecs** – Specify codecs (ZSTD, LZ4, Delta, Gorilla) per column using `ClickHouseCodec<"...">` type annotations. PR [#3035](https://github.com/514-labs/moosestack/pull/3035) | [ClickHouse Compression](https://clickhouse.com/docs/data-compression/compression-in-clickhouse)
 - **Python LSP autocomplete for SQL** – Get IDE autocomplete for column names in f-strings using `MooseModel` with `{Column:col}` format. PR [#3024](https://github.com/514-labs/moosestack/pull/3024)
