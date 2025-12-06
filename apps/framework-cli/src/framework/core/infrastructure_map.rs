@@ -815,7 +815,7 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// A vector of `StreamingChange` objects for topic creation
-    pub fn init_topics(&self) -> Vec<StreamingChange> {
+    fn init_topics(&self) -> Vec<StreamingChange> {
         self.topics
             .values()
             .map(|topic| StreamingChange::Topic(Change::<Topic>::Added(Box::new(topic.clone()))))
@@ -860,7 +860,7 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// A vector of `OlapChange` objects for table creation
-    pub fn init_tables(&self) -> Vec<OlapChange> {
+    fn init_tables(&self) -> Vec<OlapChange> {
         self.tables
             .values()
             .map(|table| OlapChange::Table(TableChange::Added(table.clone())))
@@ -1638,7 +1638,7 @@ impl InfrastructureMap {
     /// * `target_tables` - Target tables for MV population analysis
     /// * `is_production` - Whether running in production environment
     /// * `olap_changes` - Mutable vector to collect the identified changes
-    pub fn diff_sql_resources(
+    fn diff_sql_resources(
         self_sql_resources: &HashMap<String, SqlResource>,
         target_sql_resources: &HashMap<String, SqlResource>,
         target_tables: &HashMap<String, Table>,
@@ -1732,7 +1732,7 @@ impl InfrastructureMap {
     /// * `default_database` - The configured default database name
     /// * `ignore_ops` - Operations to ignore during comparison (e.g., ModifyPartitionBy)
     #[allow(clippy::too_many_arguments)]
-    pub fn diff_tables_with_strategy(
+    fn diff_tables_with_strategy(
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
@@ -2102,7 +2102,8 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// * `Option<TableChange>` - None if identical, Some(change) if different
-    pub fn simple_table_diff_with_lifecycle(
+    #[cfg(test)]
+    fn simple_table_diff_with_lifecycle(
         table: &Table,
         target_table: &Table,
     ) -> Option<TableChange> {
