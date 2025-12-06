@@ -25,6 +25,14 @@
 //! was already made by the diff algorithm and strategy. Changes that pass through
 //! this filter may have empty operation lists if all their operations were blocked,
 //! and downstream code is expected to handle such cases gracefully.
+//!
+//! # Defense in Depth: Lifecycle Guard
+//!
+//! In addition to filtering during diff computation, this module provides a
+//! `validate_lifecycle_compliance` function that acts as a final guard before
+//! execution. This ensures that even if a bug allows a dangerous change through
+//! the diffing logic, it will be caught and rejected before reaching the database.
+//! This guard is called in `olap::execute_changes` as the last line of defense.
 
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{
@@ -47,7 +55,7 @@ pub struct FilterResult {
 /// This function filters changes based on table lifecycle policies:
 /// - Blocks DROP operations on DeletionProtected and ExternallyManaged tables
 /// - Blocks orphan CREATE operations when their corresponding DROP was blocked
-/// - Filters out column removals from DeletionProtected tables
+/// - Filters out column changes based on lifecycle rules
 ///
 /// # Arguments
 /// * `changes` - The changes to filter (typically from a diff strategy)
@@ -63,109 +71,196 @@ pub fn apply_lifecycle_filter(
 ) -> FilterResult {
     let mut applied = Vec::new();
     let mut filtered = Vec::new();
-    // Use table IDs (which include database) instead of names to handle multi-database scenarios
     let mut blocked_table_ids: HashSet<String> = HashSet::new();
 
     for change in changes {
-        match change {
-            OlapChange::Table(TableChange::Removed(removed_table)) => {
-                if should_block_table_removal(&removed_table, target_table) {
-                    blocked_table_ids.insert(removed_table.id(default_database));
-                    filtered.push(create_removal_filtered_change(
-                        removed_table,
-                        target_table.life_cycle,
-                    ));
-                } else {
-                    applied.push(OlapChange::Table(TableChange::Removed(removed_table)));
-                }
-            }
-            OlapChange::Table(TableChange::Added(added_table)) => {
-                // Block orphan creates when the corresponding drop was blocked
-                if blocked_table_ids.contains(&added_table.id(default_database)) {
-                    tracing::debug!(
-                        "Blocking orphan CREATE for table '{}' after blocking DROP",
-                        added_table.name
-                    );
-                    filtered.push(FilteredChange {
-                        change: OlapChange::Table(TableChange::Added(added_table.clone())),
-                        reason: format!(
-                            "Table '{}' CREATE blocked because corresponding DROP was blocked",
-                            added_table.name
-                        ),
-                    });
-                } else {
-                    applied.push(OlapChange::Table(TableChange::Added(added_table)));
-                }
-            }
-            OlapChange::Table(TableChange::Updated {
+        filter_single_change(
+            change,
+            target_table,
+            default_database,
+            &mut blocked_table_ids,
+            &mut applied,
+            &mut filtered,
+        );
+    }
+
+    FilterResult { applied, filtered }
+}
+
+/// Filters a single OLAP change based on lifecycle policies
+fn filter_single_change(
+    change: OlapChange,
+    target_table: &Table,
+    default_database: &str,
+    blocked_table_ids: &mut HashSet<String>,
+    applied: &mut Vec<OlapChange>,
+    filtered: &mut Vec<FilteredChange>,
+) {
+    match change {
+        OlapChange::Table(TableChange::Removed(removed_table)) => {
+            filter_table_removal(
+                removed_table,
+                target_table,
+                default_database,
+                blocked_table_ids,
+                applied,
+                filtered,
+            );
+        }
+        OlapChange::Table(TableChange::Added(added_table)) => {
+            filter_table_addition(
+                added_table,
+                default_database,
+                blocked_table_ids,
+                applied,
+                filtered,
+            );
+        }
+        OlapChange::Table(TableChange::Updated {
+            name,
+            column_changes,
+            order_by_change,
+            partition_by_change,
+            before,
+            after,
+        }) => {
+            filter_table_update(
                 name,
                 column_changes,
                 order_by_change,
                 partition_by_change,
                 before,
                 after,
-            }) => {
-                let (filtered_columns, removed_columns) =
-                    filter_column_changes(column_changes, &after);
-
-                // Record all filtered column removals as a single FilteredChange
-                if !removed_columns.is_empty() {
-                    // Collect column names first (before moving removed_columns)
-                    let blocked_column_names: Vec<String> = removed_columns
-                        .iter()
-                        .filter_map(|c| {
-                            if let ColumnChange::Removed(col) = c {
-                                Some(col.name.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
-                    let reason = format!(
-                        "Table '{}' has DeletionProtected lifecycle - {} column removal(s) blocked: {}",
-                        name,
-                        blocked_column_names.len(),
-                        blocked_column_names.join(", ")
-                    );
-
-                    filtered.push(FilteredChange {
-                        change: OlapChange::Table(TableChange::Updated {
-                            name: name.clone(),
-                            column_changes: removed_columns,
-                            order_by_change: order_by_change.clone(),
-                            partition_by_change: partition_by_change.clone(),
-                            before: before.clone(),
-                            after: after.clone(),
-                        }),
-                        reason,
-                    });
-                }
-
-                // Always pass through the Updated change with filtered column_changes.
-                //
-                // At this point in the pipeline, the strategy has already converted ORDER BY
-                // and PARTITION BY changes into Removed+Added operations. The Updated variant
-                // only carries column changes as actual operations - order_by_change and
-                // partition_by_change are metadata from the diff algorithm, not operations.
-                //
-                // Our job is strictly to filter lifecycle-protected operations (column removals),
-                // not to re-evaluate whether the change is meaningful. If all column changes
-                // were filtered, downstream code handles the empty change gracefully.
-                applied.push(OlapChange::Table(TableChange::Updated {
-                    name,
-                    column_changes: filtered_columns,
-                    order_by_change,
-                    partition_by_change,
-                    before,
-                    after,
-                }));
-            }
-            _ => applied.push(change),
+                applied,
+                filtered,
+            );
         }
+        _ => applied.push(change),
+    }
+}
+
+/// Filters a table removal operation
+fn filter_table_removal(
+    removed_table: Table,
+    target_table: &Table,
+    default_database: &str,
+    blocked_table_ids: &mut HashSet<String>,
+    applied: &mut Vec<OlapChange>,
+    filtered: &mut Vec<FilteredChange>,
+) {
+    if should_block_table_removal(&removed_table, target_table) {
+        blocked_table_ids.insert(removed_table.id(default_database));
+        filtered.push(create_removal_filtered_change(
+            removed_table,
+            target_table.life_cycle,
+        ));
+    } else {
+        applied.push(OlapChange::Table(TableChange::Removed(removed_table)));
+    }
+}
+
+/// Filters a table addition operation (blocks orphan creates)
+fn filter_table_addition(
+    added_table: Table,
+    default_database: &str,
+    blocked_table_ids: &HashSet<String>,
+    applied: &mut Vec<OlapChange>,
+    filtered: &mut Vec<FilteredChange>,
+) {
+    if blocked_table_ids.contains(&added_table.id(default_database)) {
+        tracing::debug!(
+            "Blocking orphan CREATE for table '{}' after blocking DROP",
+            added_table.display_name()
+        );
+        filtered.push(create_orphan_create_filtered_change(added_table));
+    } else {
+        applied.push(OlapChange::Table(TableChange::Added(added_table)));
+    }
+}
+
+/// Creates a FilteredChange for an orphan CREATE that was blocked
+fn create_orphan_create_filtered_change(table: Table) -> FilteredChange {
+    FilteredChange {
+        reason: format!(
+            "Table '{}' CREATE blocked because corresponding DROP was blocked",
+            table.display_name()
+        ),
+        change: OlapChange::Table(TableChange::Added(table)),
+    }
+}
+
+/// Filters a table update operation (filters column changes)
+#[allow(clippy::too_many_arguments)]
+fn filter_table_update(
+    name: String,
+    column_changes: Vec<ColumnChange>,
+    order_by_change: crate::framework::core::infrastructure_map::OrderByChange,
+    partition_by_change: crate::framework::core::infrastructure_map::PartitionByChange,
+    before: Table,
+    after: Table,
+    applied: &mut Vec<OlapChange>,
+    filtered: &mut Vec<FilteredChange>,
+) {
+    let (allowed_columns, blocked_columns) = filter_column_changes(column_changes, &after);
+
+    // Record blocked column changes
+    if !blocked_columns.is_empty() {
+        filtered.push(create_column_changes_filtered_change(
+            &name,
+            blocked_columns,
+            order_by_change.clone(),
+            partition_by_change.clone(),
+            before.clone(),
+            after.clone(),
+        ));
     }
 
-    FilterResult { applied, filtered }
+    // Always pass through the Updated change with filtered column_changes
+    applied.push(OlapChange::Table(TableChange::Updated {
+        name,
+        column_changes: allowed_columns,
+        order_by_change,
+        partition_by_change,
+        before,
+        after,
+    }));
+}
+
+/// Creates a FilteredChange for blocked column changes
+fn create_column_changes_filtered_change(
+    table_name: &str,
+    blocked_columns: Vec<ColumnChange>,
+    order_by_change: crate::framework::core::infrastructure_map::OrderByChange,
+    partition_by_change: crate::framework::core::infrastructure_map::PartitionByChange,
+    before: Table,
+    after: Table,
+) -> FilteredChange {
+    let blocked_column_names: Vec<String> = blocked_columns
+        .iter()
+        .map(|c| match c {
+            ColumnChange::Removed(col) => col.name.clone(),
+            ColumnChange::Added { column, .. } => column.name.clone(),
+            ColumnChange::Updated { after: col, .. } => col.name.clone(),
+        })
+        .collect();
+
+    FilteredChange {
+        reason: format!(
+            "Table '{}' has {:?} lifecycle - {} column change(s) blocked: {}",
+            after.display_name(),
+            after.life_cycle,
+            blocked_column_names.len(),
+            blocked_column_names.join(", ")
+        ),
+        change: OlapChange::Table(TableChange::Updated {
+            name: table_name.to_string(),
+            column_changes: blocked_columns,
+            order_by_change,
+            partition_by_change,
+            before,
+            after,
+        }),
+    }
 }
 
 /// Determines if a table removal should be blocked based on lifecycle policies
@@ -173,78 +268,809 @@ pub fn apply_lifecycle_filter(
 /// CRITICAL: Uses target_table lifecycle (AFTER state), not removed_table lifecycle (BEFORE state)
 /// This handles transitions TO protected lifecycles (e.g., FullyManaged -> DeletionProtected)
 fn should_block_table_removal(removed_table: &Table, target_table: &Table) -> bool {
-    match target_table.life_cycle {
-        LifeCycle::DeletionProtected => {
-            tracing::warn!(
-                "Strategy attempted to drop deletion-protected table '{}' - blocking operation",
-                removed_table.name
-            );
-            true
-        }
-        LifeCycle::ExternallyManaged => {
-            tracing::warn!(
-                "Strategy attempted to drop externally-managed table '{}' - blocking operation",
-                removed_table.name
-            );
-            true
-        }
-        LifeCycle::FullyManaged => false,
+    if target_table.life_cycle.is_drop_protected() {
+        tracing::warn!(
+            "Strategy attempted to drop {:?} table '{}' - blocking operation",
+            target_table.life_cycle,
+            removed_table.display_name()
+        );
+        true
+    } else {
+        false
     }
 }
 
 /// Creates a FilteredChange entry for a blocked table removal
 fn create_removal_filtered_change(removed_table: Table, lifecycle: LifeCycle) -> FilteredChange {
-    let reason = match lifecycle {
-        LifeCycle::DeletionProtected => format!(
-            "Table '{}' has DeletionProtected lifecycle - DROP operation blocked",
-            removed_table.name
-        ),
-        LifeCycle::ExternallyManaged => format!(
-            "Table '{}' has ExternallyManaged lifecycle - DROP operation blocked",
-            removed_table.name
-        ),
-        LifeCycle::FullyManaged => {
-            unreachable!("FullyManaged tables should not be filtered")
-        }
-    };
-
     FilteredChange {
+        reason: format!(
+            "Table '{}' has {:?} lifecycle - DROP operation blocked",
+            removed_table.display_name(),
+            lifecycle
+        ),
         change: OlapChange::Table(TableChange::Removed(removed_table)),
-        reason,
     }
 }
 
-/// Filters column changes to respect DeletionProtected lifecycle
+/// Filters column changes to respect lifecycle protection policies.
 ///
-/// Returns a tuple of (filtered_changes, removed_changes) where:
-/// - filtered_changes: Changes that can be applied
-/// - removed_changes: Changes that were filtered out
+/// Returns a tuple of (allowed_changes, blocked_changes) where:
+/// - allowed_changes: Changes that can be applied
+/// - blocked_changes: Changes that were blocked by lifecycle policies
+///
+/// For `ExternallyManaged` tables: blocks ALL column changes (add, remove, update)
+/// For `DeletionProtected` tables: blocks only column removals
 fn filter_column_changes(
     column_changes: Vec<ColumnChange>,
     after_table: &Table,
 ) -> (Vec<ColumnChange>, Vec<ColumnChange>) {
-    if after_table.life_cycle != LifeCycle::DeletionProtected {
+    // ExternallyManaged: block ALL column changes
+    if after_table.life_cycle.is_any_modification_protected() {
+        if !column_changes.is_empty() {
+            tracing::debug!(
+                "Filtered {} column changes for {:?} table '{}' (no modifications allowed)",
+                column_changes.len(),
+                after_table.life_cycle,
+                after_table.display_name()
+            );
+        }
+        return (Vec::new(), column_changes);
+    }
+
+    // DeletionProtected: block only column removals
+    if !after_table.life_cycle.is_column_removal_protected() {
         return (column_changes, Vec::new());
     }
 
-    let original_len = column_changes.len();
-    let mut filtered = Vec::new();
-    let mut removed = Vec::new();
+    let mut allowed = Vec::new();
+    let mut blocked = Vec::new();
 
     for change in column_changes {
-        match change {
-            ColumnChange::Removed(_) => removed.push(change),
-            _ => filtered.push(change),
+        if matches!(change, ColumnChange::Removed(_)) {
+            blocked.push(change);
+        } else {
+            allowed.push(change);
         }
     }
 
-    if original_len != filtered.len() {
+    if !blocked.is_empty() {
         tracing::debug!(
-            "Filtered {} column removals for deletion-protected table '{}'",
-            original_len - filtered.len(),
-            after_table.name
+            "Filtered {} column removals for {:?} table '{}'",
+            blocked.len(),
+            after_table.life_cycle,
+            after_table.display_name()
         );
     }
 
-    (filtered, removed)
+    (allowed, blocked)
+}
+
+// ============================================================================
+// LIFECYCLE GUARD - Defense in Depth
+// ============================================================================
+//
+// The guard below is called at the execution boundary (in olap::execute_changes)
+// as a final safety check. Unlike the filter above which removes disallowed
+// operations during diff computation, this guard ERRORS if a violation is found.
+// A violation at this point indicates a bug in the diffing/filtering logic.
+
+/// A lifecycle violation that was detected at the execution boundary.
+///
+/// This represents a change that violates lifecycle policies but somehow
+/// made it through the diff/filter pipeline. Finding one of these indicates
+/// a bug in the earlier stages.
+#[derive(Debug, Clone)]
+pub struct LifecycleViolation {
+    /// Human-readable description of the violation
+    pub message: String,
+    /// Name of the table involved
+    pub table_name: String,
+    /// Database containing the table (None means default database)
+    pub database: Option<String>,
+    /// The lifecycle of the table
+    pub life_cycle: LifeCycle,
+    /// Type of violation
+    pub violation_type: ViolationType,
+}
+
+/// Types of lifecycle violations
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ViolationType {
+    /// Attempted to drop a protected table
+    TableDrop,
+    /// Attempted to remove a column from a protected table
+    ColumnRemoval,
+    /// Attempted to add a column to an externally managed table
+    ColumnAddition,
+    /// Attempted to modify a column in an externally managed table
+    ColumnModification,
+    /// Attempted to modify an externally managed table (generic)
+    TableModification,
+}
+
+impl std::fmt::Display for LifecycleViolation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+/// Validates that a set of OLAP changes comply with lifecycle policies.
+///
+/// This is a **guard function** meant to be called at the execution boundary
+/// (in `olap::execute_changes`) as a final safety check before changes are
+/// sent to the database.
+///
+/// Unlike `apply_lifecycle_filter` which filters out disallowed operations,
+/// this function **returns an error** if any violations are found. A violation
+/// at this point indicates a bug in the diff/filter pipeline that should be
+/// fixed.
+///
+/// # Arguments
+/// * `changes` - The OLAP changes about to be executed
+///
+/// # Returns
+/// * `Ok(())` if all changes comply with lifecycle policies
+/// * `Err(Vec<LifecycleViolation>)` if any violations are found
+///
+/// # What is checked
+/// - `TableChange::Removed` for `DeletionProtected` or `ExternallyManaged` tables
+/// - `ColumnChange::Removed` for `DeletionProtected` or `ExternallyManaged` tables
+/// - Any modifications (column add/update, TTL, settings) for `ExternallyManaged` tables
+///
+/// # Example
+/// ```ignore
+/// // In olap::execute_changes
+/// validate_lifecycle_compliance(changes)?;
+/// // Only execute if validation passed
+/// execute_ordered_changes(changes);
+/// ```
+pub fn validate_lifecycle_compliance(
+    changes: &[OlapChange],
+) -> Result<(), Vec<LifecycleViolation>> {
+    let mut violations = Vec::new();
+
+    for change in changes {
+        // Only table changes have lifecycle protection - views, SQL resources, and
+        // materialized view population are fully managed by Moose
+        if let OlapChange::Table(table_change) = change {
+            check_table_change_compliance(table_change, &mut violations);
+        }
+    }
+
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        // Log all violations for debugging
+        for violation in &violations {
+            let table_display = match &violation.database {
+                Some(db) => format!("{}.{}", db, violation.table_name),
+                None => violation.table_name.clone(),
+            };
+            tracing::error!(
+                "LIFECYCLE GUARD VIOLATION: {} (table: {}, lifecycle: {:?}, type: {:?})",
+                violation.message,
+                table_display,
+                violation.life_cycle,
+                violation.violation_type
+            );
+        }
+        Err(violations)
+    }
+}
+
+/// Checks a single table change for lifecycle violations
+fn check_table_change_compliance(
+    table_change: &TableChange,
+    violations: &mut Vec<LifecycleViolation>,
+) {
+    match table_change {
+        TableChange::Removed(table) => {
+            check_table_drop_compliance(table, violations);
+        }
+        TableChange::Updated {
+            name,
+            column_changes,
+            after,
+            ..
+        } => {
+            check_column_changes_compliance(name, column_changes, after, violations);
+        }
+        TableChange::SettingsChanged { table, name, .. } => {
+            check_settings_change_compliance(table, name, violations);
+        }
+        TableChange::TtlChanged { table, name, .. } => {
+            check_ttl_change_compliance(table, name, violations);
+        }
+        // Added and ValidationError are allowed
+        _ => {}
+    }
+}
+
+/// Checks if a table drop violates lifecycle policies
+fn check_table_drop_compliance(table: &Table, violations: &mut Vec<LifecycleViolation>) {
+    if table.life_cycle.is_drop_protected() {
+        violations.push(create_table_drop_violation(table));
+    }
+}
+
+/// Creates a violation for an illegal table drop
+fn create_table_drop_violation(table: &Table) -> LifecycleViolation {
+    LifecycleViolation {
+        message: format!(
+            "Attempted to DROP table '{}' which has {:?} lifecycle. \
+            This is a bug - the diff/filter pipeline should have blocked this.",
+            table.display_name(),
+            table.life_cycle
+        ),
+        table_name: table.name.clone(),
+        database: table.database.clone(),
+        life_cycle: table.life_cycle,
+        violation_type: ViolationType::TableDrop,
+    }
+}
+
+/// Checks if column changes violate lifecycle policies
+fn check_column_changes_compliance(
+    table_name: &str,
+    column_changes: &[ColumnChange],
+    table: &Table,
+    violations: &mut Vec<LifecycleViolation>,
+) {
+    if table.life_cycle.is_any_modification_protected() {
+        // ExternallyManaged: block ALL column changes
+        for column_change in column_changes {
+            violations.push(create_column_change_violation(
+                table_name,
+                column_change,
+                table,
+            ));
+        }
+    } else if table.life_cycle.is_column_removal_protected() {
+        // DeletionProtected: only block column removals
+        for column_change in column_changes {
+            if let ColumnChange::Removed(column) = column_change {
+                violations.push(create_column_removal_violation(table_name, column, table));
+            }
+        }
+    }
+}
+
+/// Creates a violation for an illegal column change on ExternallyManaged table
+fn create_column_change_violation(
+    table_name: &str,
+    column_change: &ColumnChange,
+    table: &Table,
+) -> LifecycleViolation {
+    let (col_name, violation_type) = match column_change {
+        ColumnChange::Removed(col) => (col.name.clone(), ViolationType::ColumnRemoval),
+        ColumnChange::Added { column, .. } => (column.name.clone(), ViolationType::ColumnAddition),
+        ColumnChange::Updated { after: col, .. } => {
+            (col.name.clone(), ViolationType::ColumnModification)
+        }
+    };
+
+    LifecycleViolation {
+        message: format!(
+            "Attempted to modify column '{}' on table '{}' which has \
+            {:?} lifecycle. This is a bug - the diff/filter \
+            pipeline should have blocked this.",
+            col_name,
+            table.display_name(),
+            table.life_cycle
+        ),
+        table_name: table_name.to_string(),
+        database: table.database.clone(),
+        life_cycle: table.life_cycle,
+        violation_type,
+    }
+}
+
+/// Creates a violation for an illegal column removal on DeletionProtected table
+fn create_column_removal_violation(
+    table_name: &str,
+    column: &crate::framework::core::infrastructure::table::Column,
+    table: &Table,
+) -> LifecycleViolation {
+    LifecycleViolation {
+        message: format!(
+            "Attempted to DROP COLUMN '{}' from table '{}' which has \
+            {:?} lifecycle. This is a bug - the diff/filter \
+            pipeline should have blocked this.",
+            column.name,
+            table.display_name(),
+            table.life_cycle
+        ),
+        table_name: table_name.to_string(),
+        database: table.database.clone(),
+        life_cycle: table.life_cycle,
+        violation_type: ViolationType::ColumnRemoval,
+    }
+}
+
+/// Checks if a settings change violates lifecycle policies
+fn check_settings_change_compliance(
+    table: &Table,
+    table_name: &str,
+    violations: &mut Vec<LifecycleViolation>,
+) {
+    if table.life_cycle.is_any_modification_protected() {
+        violations.push(create_table_modification_violation(
+            table, table_name, "settings",
+        ));
+    }
+}
+
+/// Checks if a TTL change violates lifecycle policies
+fn check_ttl_change_compliance(
+    table: &Table,
+    table_name: &str,
+    violations: &mut Vec<LifecycleViolation>,
+) {
+    if table.life_cycle.is_any_modification_protected() {
+        violations.push(create_table_modification_violation(
+            table, table_name, "TTL",
+        ));
+    }
+}
+
+/// Creates a violation for an illegal table modification (settings/TTL)
+fn create_table_modification_violation(
+    table: &Table,
+    table_name: &str,
+    modification_type: &str,
+) -> LifecycleViolation {
+    LifecycleViolation {
+        message: format!(
+            "Attempted to modify {} on table '{}' which has \
+            {:?} lifecycle. This is a bug - the diff/filter \
+            pipeline should have blocked this.",
+            modification_type,
+            table.display_name(),
+            table.life_cycle
+        ),
+        table_name: table_name.to_string(),
+        database: table.database.clone(),
+        life_cycle: table.life_cycle,
+        violation_type: ViolationType::TableModification,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType, OrderBy};
+    use crate::framework::core::infrastructure_map::{OrderByChange, PartitionByChange};
+    use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+    fn create_test_table(name: &str, life_cycle: LifeCycle) -> Table {
+        Table {
+            name: name.to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: Some(Version::from_string("1.0.0".to_string())),
+            source_primitive: crate::framework::core::infrastructure_map::PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type:
+                    crate::framework::core::infrastructure_map::PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        }
+    }
+
+    fn create_test_column(name: &str) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }
+    }
+
+    // =========================================================================
+    // Tests for validate_lifecycle_compliance (Guard function)
+    // =========================================================================
+
+    #[test]
+    fn test_guard_allows_fully_managed_table_drop() {
+        let table = create_test_table("test_table", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::Table(TableChange::Removed(table))];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(result.is_ok(), "Should allow dropping FullyManaged tables");
+    }
+
+    #[test]
+    fn test_guard_blocks_deletion_protected_table_drop() {
+        let table = create_test_table("protected_table", LifeCycle::DeletionProtected);
+        let changes = vec![OlapChange::Table(TableChange::Removed(table))];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_err(),
+            "Should block dropping DeletionProtected tables"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].table_name, "protected_table");
+        assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
+        assert_eq!(violations[0].life_cycle, LifeCycle::DeletionProtected);
+    }
+
+    #[test]
+    fn test_guard_blocks_externally_managed_table_drop() {
+        let table = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let changes = vec![OlapChange::Table(TableChange::Removed(table))];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_err(),
+            "Should block dropping ExternallyManaged tables"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].table_name, "external_table");
+        assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_guard_allows_column_removal_from_fully_managed() {
+        let before = create_test_table("test_table", LifeCycle::FullyManaged);
+        let after = create_test_table("test_table", LifeCycle::FullyManaged);
+        let column = create_test_column("old_column");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "test_table".to_string(),
+            column_changes: vec![ColumnChange::Removed(column)],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_ok(),
+            "Should allow column removal from FullyManaged tables"
+        );
+    }
+
+    #[test]
+    fn test_guard_blocks_column_removal_from_deletion_protected() {
+        let before = create_test_table("protected_table", LifeCycle::DeletionProtected);
+        let after = create_test_table("protected_table", LifeCycle::DeletionProtected);
+        let column = create_test_column("sensitive_column");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "protected_table".to_string(),
+            column_changes: vec![ColumnChange::Removed(column)],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_err(),
+            "Should block column removal from DeletionProtected tables"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].table_name, "protected_table");
+        assert_eq!(violations[0].violation_type, ViolationType::ColumnRemoval);
+    }
+
+    #[test]
+    fn test_guard_allows_column_addition_to_deletion_protected() {
+        let before = create_test_table("protected_table", LifeCycle::DeletionProtected);
+        let after = create_test_table("protected_table", LifeCycle::DeletionProtected);
+        let column = create_test_column("new_column");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "protected_table".to_string(),
+            column_changes: vec![ColumnChange::Added {
+                column,
+                position_after: None,
+            }],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_ok(),
+            "Should allow adding columns to DeletionProtected tables"
+        );
+    }
+
+    #[test]
+    fn test_guard_collects_multiple_violations() {
+        let table1 = create_test_table("protected_table1", LifeCycle::DeletionProtected);
+        let table2 = create_test_table("external_table", LifeCycle::ExternallyManaged);
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(table1)),
+            OlapChange::Table(TableChange::Removed(table2)),
+        ];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(result.is_err());
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 2, "Should collect all violations");
+        assert!(violations
+            .iter()
+            .any(|v| v.table_name == "protected_table1"));
+        assert!(violations.iter().any(|v| v.table_name == "external_table"));
+    }
+
+    #[test]
+    fn test_guard_allows_table_addition() {
+        let table = create_test_table("new_table", LifeCycle::FullyManaged);
+        let changes = vec![OlapChange::Table(TableChange::Added(table))];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(result.is_ok(), "Should allow table additions");
+    }
+
+    #[test]
+    fn test_guard_allows_ttl_change() {
+        let table = create_test_table("test_table", LifeCycle::DeletionProtected);
+        let changes = vec![OlapChange::Table(TableChange::TtlChanged {
+            name: "test_table".to_string(),
+            before: Some("timestamp + INTERVAL 1 DAY".to_string()),
+            after: Some("timestamp + INTERVAL 7 DAY".to_string()),
+            table,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_ok(),
+            "Should allow TTL changes on protected tables"
+        );
+    }
+
+    #[test]
+    fn test_guard_allows_settings_change() {
+        let table = create_test_table("test_table", LifeCycle::DeletionProtected);
+        let changes = vec![OlapChange::Table(TableChange::SettingsChanged {
+            name: "test_table".to_string(),
+            before_settings: None,
+            after_settings: Some([("index_granularity".to_string(), "8192".to_string())].into()),
+            table,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_ok(),
+            "Should allow settings changes on protected tables"
+        );
+    }
+
+    #[test]
+    fn test_guard_empty_changes() {
+        let changes: Vec<OlapChange> = vec![];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(result.is_ok(), "Empty changes should pass validation");
+    }
+
+    // =========================================================================
+    // Tests for ExternallyManaged protection (no modifications allowed)
+    // =========================================================================
+
+    #[test]
+    fn test_guard_blocks_column_removal_from_externally_managed() {
+        let before = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let after = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let column = create_test_column("some_column");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "external_table".to_string(),
+            column_changes: vec![ColumnChange::Removed(column)],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_err(),
+            "Should block column removal from ExternallyManaged tables"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].violation_type, ViolationType::ColumnRemoval);
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_guard_blocks_column_addition_to_externally_managed() {
+        let before = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let after = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let column = create_test_column("new_column");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "external_table".to_string(),
+            column_changes: vec![ColumnChange::Added {
+                column,
+                position_after: None,
+            }],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_err(),
+            "Should block column addition to ExternallyManaged tables"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].violation_type, ViolationType::ColumnAddition);
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_guard_blocks_column_modification_on_externally_managed() {
+        let before = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let after = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let before_col = create_test_column("col");
+        let after_col = create_test_column("col");
+
+        let changes = vec![OlapChange::Table(TableChange::Updated {
+            name: "external_table".to_string(),
+            column_changes: vec![ColumnChange::Updated {
+                before: before_col,
+                after: after_col,
+            }],
+            order_by_change: OrderByChange {
+                before: OrderBy::Fields(vec![]),
+                after: OrderBy::Fields(vec![]),
+            },
+            partition_by_change: PartitionByChange {
+                before: None,
+                after: None,
+            },
+            before,
+            after,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_err(),
+            "Should block column modification on ExternallyManaged tables"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::ColumnModification
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_guard_blocks_ttl_change_on_externally_managed() {
+        let table = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let changes = vec![OlapChange::Table(TableChange::TtlChanged {
+            name: "external_table".to_string(),
+            before: Some("timestamp + INTERVAL 1 DAY".to_string()),
+            after: Some("timestamp + INTERVAL 7 DAY".to_string()),
+            table,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_err(),
+            "Should block TTL changes on ExternallyManaged tables"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::TableModification
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    #[test]
+    fn test_guard_blocks_settings_change_on_externally_managed() {
+        let table = create_test_table("external_table", LifeCycle::ExternallyManaged);
+        let changes = vec![OlapChange::Table(TableChange::SettingsChanged {
+            name: "external_table".to_string(),
+            before_settings: None,
+            after_settings: Some([("index_granularity".to_string(), "8192".to_string())].into()),
+            table,
+        })];
+
+        let result = validate_lifecycle_compliance(&changes);
+        assert!(
+            result.is_err(),
+            "Should block settings changes on ExternallyManaged tables"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(
+            violations[0].violation_type,
+            ViolationType::TableModification
+        );
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
 }

@@ -337,6 +337,17 @@ impl Table {
         }
     }
 
+    /// Returns a human-readable display name for the table.
+    ///
+    /// Returns "database.name" if database is set, otherwise just "name".
+    /// Used for logging and error messages.
+    pub fn display_name(&self) -> String {
+        match &self.database {
+            Some(db) => format!("{}.{}", db, self.name),
+            None => self.name.clone(),
+        }
+    }
+
     /// Computes a hash of non-alterable parameters including engine params and database
     /// This hash is used for change detection - if it changes, the table must be dropped and recreated
     pub fn compute_non_alterable_params_hash(&self) -> Option<String> {
