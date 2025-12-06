@@ -3280,7 +3280,8 @@ async fn get_admin_reconciled_inframap(
     use crate::infrastructure::olap::clickhouse;
     use std::collections::HashSet;
 
-    // Create state storage based on project configuration
+    // Build state storage from project configuration.
+    // This provides access to the persisted infrastructure map (stored in Redis or ClickHouse).
     let state_storage = StateStorageBuilder::from_config(project)
         .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(redis_client))
@@ -3292,45 +3293,50 @@ async fn get_admin_reconciled_inframap(
             ))
         })?;
 
-    // Load current map from state storage (these are the tables under Moose management)
-    let current_map = match state_storage.load_infrastructure_map().await {
-        Ok(Some(infra_map)) => infra_map,
-        Ok(None) => InfrastructureMap::empty_from_project(project),
-        Err(e) => {
-            return Err(crate::framework::core::plan::PlanningError::Other(
-                anyhow::anyhow!("Failed to load infrastructure map from state storage: {e}"),
-            ));
-        }
-    };
+    // Create the ClickHouse client for database introspection.
+    // Note: This only creates the client struct - no network connection is made yet.
+    // The load_reconciled_infrastructure function handles the case where OLAP is disabled,
+    // which allows this code path to support future reconciliation of other infrastructure
+    // types (e.g., Kafka topics) even when OLAP is turned off.
+    let clickhouse_client = clickhouse::create_client(project.clickhouse_config.clone());
 
-    if !project.features.olap {
-        return Ok(current_map);
-    }
+    // Derive table/resource IDs from the currently managed infrastructure.
+    // This ensures we only reconcile tables that Moose is already managing.
+    let current_infrastructure_map = state_storage
+        .load_infrastructure_map()
+        .await?
+        .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
-    // For admin endpoints, reconcile all currently managed tables and SQL resources only
-    // Pass the managed table IDs as target_table_ids - this ensures that
-    // reconcile_with_reality only operates on resources that are already managed by Moose
-    let target_table_ids: HashSet<String> = current_map
+    // Extract table IDs from the current infrastructure map.
+    // Table IDs include the database prefix for multi-database support.
+    let managed_table_ids: HashSet<String> = current_infrastructure_map
         .tables
         .values()
-        .map(|t| t.id(&current_map.default_database))
+        .map(|table| table.id(&current_infrastructure_map.default_database))
         .collect();
 
-    let target_sql_resource_ids: HashSet<String> =
-        current_map.sql_resources.keys().cloned().collect();
+    // Extract SQL resource IDs (views, materialized views) from the current state.
+    let managed_sql_resource_ids: HashSet<String> = current_infrastructure_map
+        .sql_resources
+        .keys()
+        .cloned()
+        .collect();
 
-    let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
-
-    crate::framework::core::plan::reconcile_with_reality(
+    // Load the infrastructure map from storage and reconcile it with the actual database state.
+    // This ensures we return the true current state of managed infrastructure, accounting for
+    // any manual changes or drift that may have occurred in the database.
+    crate::framework::core::plan::load_reconciled_infrastructure(
         project,
-        &current_map,
-        &target_table_ids,
-        &target_sql_resource_ids,
-        olap_client,
+        &*state_storage,
+        clickhouse_client,
+        &managed_table_ids,
+        &managed_sql_resource_ids,
     )
     .await
 }
 
+/// DEPRECATED: DO NOT USE
+///
 /// Handles the admin plan endpoint, which compares a submitted infrastructure map
 /// with the server's reconciled managed infrastructure state and returns the changes that would be applied.
 ///

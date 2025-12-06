@@ -579,18 +579,23 @@ pub async fn execute_migration(
             .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
         let current_infra_map = if project.features.olap {
-            use crate::framework::core::plan::reconcile_with_reality;
             use std::collections::HashSet;
 
-            let target_table_ids: HashSet<String> =
-                current_infra_map.tables.keys().cloned().collect();
+            // Use proper full IDs (with database prefix), not just table keys
+            let target_table_ids: HashSet<String> = current_infra_map
+                .tables
+                .values()
+                .map(|t| t.id(&current_infra_map.default_database))
+                .collect();
 
             let target_sql_resource_ids: HashSet<String> =
                 current_infra_map.sql_resources.keys().cloned().collect();
 
             let olap_client = create_client(clickhouse_config.clone());
 
-            reconcile_with_reality(
+            // We already have the current_infra_map loaded, so reconcile it directly
+            // instead of reloading from storage via load_reconciled_infrastructure
+            crate::framework::core::plan::reconcile_with_reality(
                 project,
                 &current_infra_map,
                 &target_table_ids,
