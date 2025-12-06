@@ -741,14 +741,15 @@ pub fn show_api_changes(api_changes: &[ApiChange]) {
 /// # Arguments
 ///
 /// * `filtered_changes` - A slice of filtered changes with their blocking reasons
+/// * `default_database` - The default database name used to compute unambiguous table IDs
 ///
 /// # Examples
 ///
 /// ```rust
 /// # use crate::cli::display::infrastructure::show_filtered_changes;
-/// show_filtered_changes(&infrastructure_plan.changes.filtered_olap_changes);
+/// show_filtered_changes(&infrastructure_plan.changes.filtered_olap_changes, "local");
 /// ```
-pub fn show_filtered_changes(filtered_changes: &[FilteredChange]) {
+pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_database: &str) {
     if filtered_changes.is_empty() {
         return;
     }
@@ -756,16 +757,20 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange]) {
     for filtered in filtered_changes {
         match &filtered.change {
             OlapChange::Table(TableChange::Removed(table)) => {
+                // Use table ID (includes database) for unambiguous identification
+                let table_id = table.id(default_database);
                 infra_updated_detailed(
-                    &format!("Table: {} (protected)", table.name),
+                    &format!("Table: {} (protected)", table_id),
                     &[format!("  ⚠ {}", filtered.reason)],
                 );
             }
             OlapChange::Table(TableChange::Updated {
-                name,
                 column_changes,
+                after,
                 ..
             }) => {
+                // Use after table's ID for unambiguous identification in multi-database scenarios
+                let table_id = after.id(default_database);
                 let mut details = vec![format!("  ⚠ {}", filtered.reason)];
                 details.push("  Blocked column changes:".to_string());
                 for change in column_changes {
@@ -779,7 +784,7 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange]) {
                         ));
                     }
                 }
-                infra_updated_detailed(&format!("Table: {} (protected)", name), &details);
+                infra_updated_detailed(&format!("Table: {} (protected)", table_id), &details);
             }
             _ => {
                 // For other change types, just show the reason
@@ -817,7 +822,10 @@ pub fn show_changes(infra_plan: &InfraPlan) {
     show_olap_changes(&infra_plan.changes.olap_changes);
     show_process_changes(&infra_plan.changes.processes_changes);
     show_api_changes(&infra_plan.changes.api_changes);
-    show_filtered_changes(&infra_plan.changes.filtered_olap_changes);
+    show_filtered_changes(
+        &infra_plan.changes.filtered_olap_changes,
+        &infra_plan.target_infra_map.default_database,
+    );
 }
 
 #[cfg(test)]
