@@ -1934,26 +1934,26 @@ impl InfrastructureMap {
                     (LifeCycle::DeletionProtected, true) => {
                         tracing::debug!(
                             "Table '{}' marked for removal but is deletion-protected - skipping removal",
-                            table.name
+                            table.display_name()
                         );
                         filtered_changes.push(FilteredChange {
                             change: OlapChange::Table(TableChange::Removed(table.clone())),
                             reason: format!(
                                 "Table '{}' has DeletionProtected lifecycle - removal blocked",
-                                table.name
+                                table.display_name()
                             ),
                         });
                     }
                     (LifeCycle::ExternallyManaged, true) => {
                         tracing::debug!(
                             "Table '{}' marked for removal but is externally managed - skipping removal",
-                            table.name
+                            table.display_name()
                         );
                         filtered_changes.push(FilteredChange {
                             change: OlapChange::Table(TableChange::Removed(table.clone())),
                             reason: format!(
                                 "Table '{}' has ExternallyManaged lifecycle - removal blocked",
-                                table.name
+                                table.display_name()
                             ),
                         });
                     }
