@@ -640,8 +640,14 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/configuration/authentication",
-        title: "Authentication",
+        slug: "moosestack/configuration/jwt",
+        title: "JWT",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/configuration/admin-api",
+        title: "Admin API",
         languages: ["typescript", "python"],
       },
       {
