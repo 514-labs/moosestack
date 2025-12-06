@@ -2575,40 +2575,6 @@ impl InfrastructureMap {
         self.tables.values().find(|table| table.name == name)
     }
 
-    /// Normalizes the infrastructure map for backward compatibility
-    ///
-    /// This applies the same normalization logic as partial_infrastructure_map.rs
-    /// to ensure consistent comparison between old and new infrastructure maps.
-    ///
-    /// Specifically:
-    /// - Falls back to primary key columns for order_by when it's empty (for MergeTree tables)
-    /// - Ensures arrays are always required=true (ClickHouse doesn't support Nullable(Array))
-    ///
-    /// This is needed because older CLI versions didn't persist order_by when it was
-    /// derived from primary key columns.
-    pub fn normalize(mut self) -> Self {
-        use crate::framework::core::infrastructure::table::ColumnType;
-
-        self.tables.values_mut().for_each(|table| {
-            // Fall back to primary key columns if order_by is empty for MergeTree engines
-            // This ensures backward compatibility when order_by isn't explicitly set
-            // We only do this for MergeTree family to avoid breaking S3 tables
-            if table.order_by.is_empty() {
-                table.order_by = table.order_by_with_fallback();
-            }
-
-            // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
-            // Arrays must always be NOT NULL (required=true)
-            for col in &mut table.columns {
-                if matches!(col.data_type, ColumnType::Array { .. }) {
-                    col.required = true;
-                }
-            }
-        });
-
-        self
-    }
-
     /// Masks sensitive credentials before exporting to JSON migration files.
     pub fn mask_credentials_for_json_export(mut self) -> Self {
         for table in self.tables.values_mut() {
