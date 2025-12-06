@@ -8,6 +8,8 @@ from typing import Union, List, Optional, Any, TYPE_CHECKING
 
 from .olap_table import OlapTable
 from ._registry import _custom_views
+from .source_location import get_source_file_from_stack
+from .client_mode import is_client_only_mode
 
 if TYPE_CHECKING:
     from .materialized_view import MaterializedView
@@ -50,18 +52,10 @@ class View:
         self.select_sql = select_statement
         self.source_tables = [t.name for t in base_tables]
         self.metadata = metadata
-
-        # Try to capture source file
-        import traceback
-        try:
-            for frame in traceback.extract_stack():
-                if '/app/' in frame.filename or '\\app\\' in frame.filename:
-                    self.source_file = frame.filename
-                    break
-        except Exception:
-            pass
+        self.source_file = get_source_file_from_stack()
 
         # Register in the custom_views registry
-        if self.name in _custom_views:
+        # In client-only mode, allow duplicate registrations for HMR support
+        if not is_client_only_mode() and self.name in _custom_views:
             raise ValueError(f"View with name {self.name} already exists")
         _custom_views[self.name] = self

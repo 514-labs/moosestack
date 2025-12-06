@@ -11,6 +11,8 @@ from ..blocks import ClickHouseEngines
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
 from ._registry import _materialized_views
+from .source_location import get_source_file_from_stack
+from .client_mode import is_client_only_mode
 
 if TYPE_CHECKING:
     from .view import View
@@ -105,18 +107,10 @@ class MaterializedView(BaseTypedResource, Generic[T]):
         self.config = options
         self.select_sql = options.select_statement
         self.source_tables = [t.name for t in options.select_tables]
-
-        # Try to capture source file
-        import traceback
-        try:
-            for frame in traceback.extract_stack():
-                if '/app/' in frame.filename or '\\app\\' in frame.filename:
-                    self.source_file = frame.filename
-                    break
-        except Exception:
-            pass
+        self.source_file = get_source_file_from_stack()
 
         # Register in the materialized_views registry
-        if self.name in _materialized_views:
+        # In client-only mode, allow duplicate registrations for HMR support
+        if not is_client_only_mode() and self.name in _materialized_views:
             raise ValueError(f"MaterializedView with name {self.name} already exists")
         _materialized_views[self.name] = self
