@@ -83,6 +83,34 @@ type OlapConfig<T> =
       orderByFields?: (keyof T & string)[]; 
       settings?: { [key: string]: string }; 
     }
+  | {
+      engine: ClickHouseEngines.CollapsingMergeTree;
+      sign: keyof T & string;         // Required: sign column (Int8: 1 = state, -1 = cancel)
+      orderByFields?: (keyof T & string)[];
+      settings?: { [key: string]: string };
+    }
+  | {
+      engine: ClickHouseEngines.VersionedCollapsingMergeTree;
+      sign: keyof T & string;         // Required: sign column (Int8)
+      ver: keyof T & string;          // Required: version column for ordering
+      orderByFields?: (keyof T & string)[];
+      settings?: { [key: string]: string };
+    }
+  | {
+      engine: ClickHouseEngines.ReplicatedCollapsingMergeTree;
+      keeperPath?: string;
+      replicaName?: string;
+      sign: keyof T & string;
+      orderByFields?: (keyof T & string)[];
+    }
+  | {
+      engine: ClickHouseEngines.ReplicatedVersionedCollapsingMergeTree;
+      keeperPath?: string;
+      replicaName?: string;
+      sign: keyof T & string;
+      ver: keyof T & string;
+      orderByFields?: (keyof T & string)[];
+    }
   | { 
       engine: ClickHouseEngines.S3Queue;
       s3Path: string;        // S3 bucket path

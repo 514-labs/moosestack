@@ -198,6 +198,12 @@ enum EngineConfig {
         columns: Option<Vec<String>>,
     },
 
+    #[serde(rename = "CollapsingMergeTree")]
+    CollapsingMergeTree { sign: String },
+
+    #[serde(rename = "VersionedCollapsingMergeTree")]
+    VersionedCollapsingMergeTree { sign: String, ver: String },
+
     #[serde(rename = "ReplicatedMergeTree")]
     ReplicatedMergeTree {
         #[serde(alias = "keeperPath", default)]
@@ -234,6 +240,25 @@ enum EngineConfig {
         replica_name: Option<String>,
         #[serde(default)]
         columns: Option<Vec<String>>,
+    },
+
+    #[serde(rename = "ReplicatedCollapsingMergeTree")]
+    ReplicatedCollapsingMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+        sign: String,
+    },
+
+    #[serde(rename = "ReplicatedVersionedCollapsingMergeTree")]
+    ReplicatedVersionedCollapsingMergeTree {
+        #[serde(alias = "keeperPath", default)]
+        keeper_path: Option<String>,
+        #[serde(alias = "replicaName", default)]
+        replica_name: Option<String>,
+        sign: String,
+        ver: String,
     },
 
     #[serde(rename = "S3Queue")]
@@ -813,6 +838,17 @@ impl PartialInfrastructureMap {
                 })
             }
 
+            Some(EngineConfig::CollapsingMergeTree { sign }) => {
+                Ok(ClickhouseEngine::CollapsingMergeTree { sign: sign.clone() })
+            }
+
+            Some(EngineConfig::VersionedCollapsingMergeTree { sign, ver }) => {
+                Ok(ClickhouseEngine::VersionedCollapsingMergeTree {
+                    sign: sign.clone(),
+                    version: ver.clone(),
+                })
+            }
+
             Some(EngineConfig::ReplicatedMergeTree {
                 keeper_path,
                 replica_name,
@@ -849,6 +885,28 @@ impl PartialInfrastructureMap {
                 keeper_path: keeper_path.clone(),
                 replica_name: replica_name.clone(),
                 columns: columns.clone(),
+            }),
+
+            Some(EngineConfig::ReplicatedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+            }) => Ok(ClickhouseEngine::ReplicatedCollapsingMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+                sign: sign.clone(),
+            }),
+
+            Some(EngineConfig::ReplicatedVersionedCollapsingMergeTree {
+                keeper_path,
+                replica_name,
+                sign,
+                ver,
+            }) => Ok(ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+                keeper_path: keeper_path.clone(),
+                replica_name: replica_name.clone(),
+                sign: sign.clone(),
+                version: ver.clone(),
             }),
 
             Some(EngineConfig::S3Queue(config)) => {
