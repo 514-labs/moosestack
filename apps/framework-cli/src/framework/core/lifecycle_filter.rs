@@ -407,6 +407,7 @@ impl std::fmt::Display for LifecycleViolation {
 ///
 /// # Arguments
 /// * `changes` - The OLAP changes about to be executed
+/// * `default_database` - The default database name for computing table IDs
 ///
 /// # Returns
 /// * `Ok(())` if all changes comply with lifecycle policies
@@ -414,26 +415,52 @@ impl std::fmt::Display for LifecycleViolation {
 ///
 /// # What is checked
 /// - `TableChange::Removed` for `DeletionProtected` or `ExternallyManaged` tables
+///   (checks BOTH the removed table's lifecycle AND any corresponding Added table's lifecycle
+///   to catch transitions TO protected lifecycles like `FullyManaged → DeletionProtected`)
 /// - `ColumnChange::Removed` for `DeletionProtected` or `ExternallyManaged` tables
 /// - Any modifications (column add/update, TTL, settings) for `ExternallyManaged` tables
 ///
 /// # Example
 /// ```ignore
 /// // In olap::execute_changes
-/// validate_lifecycle_compliance(changes)?;
+/// validate_lifecycle_compliance(changes, &project.clickhouse_config.db_name)?;
 /// // Only execute if validation passed
 /// execute_ordered_changes(changes);
 /// ```
 pub fn validate_lifecycle_compliance(
     changes: &[OlapChange],
+    default_database: &str,
 ) -> Result<(), Vec<LifecycleViolation>> {
+    use std::collections::HashMap;
+
     let mut violations = Vec::new();
+
+    // First pass: collect all Added tables and their lifecycles.
+    // This allows us to check the TARGET lifecycle for Removed+Added pairs,
+    // catching transitions TO protected lifecycles (e.g., FullyManaged → DeletionProtected).
+    let added_table_lifecycles: HashMap<String, LifeCycle> = changes
+        .iter()
+        .filter_map(|change| {
+            if let OlapChange::Table(TableChange::Added(table)) = change {
+                // Use table ID as key for consistent matching with Removed tables
+                let key = table.id(default_database);
+                Some((key, table.life_cycle))
+            } else {
+                None
+            }
+        })
+        .collect();
 
     for change in changes {
         // Only table changes have lifecycle protection - views, SQL resources, and
         // materialized view population are fully managed by Moose
         if let OlapChange::Table(table_change) = change {
-            check_table_change_compliance(table_change, &mut violations);
+            check_table_change_compliance(
+                table_change,
+                default_database,
+                &added_table_lifecycles,
+                &mut violations,
+            );
         }
     }
 
@@ -461,11 +488,18 @@ pub fn validate_lifecycle_compliance(
 /// Checks a single table change for lifecycle violations
 fn check_table_change_compliance(
     table_change: &TableChange,
+    default_database: &str,
+    added_table_lifecycles: &std::collections::HashMap<String, LifeCycle>,
     violations: &mut Vec<LifecycleViolation>,
 ) {
     match table_change {
         TableChange::Removed(table) => {
-            check_table_drop_compliance(table, violations);
+            check_table_drop_compliance(
+                table,
+                default_database,
+                added_table_lifecycles,
+                violations,
+            );
         }
         TableChange::Updated {
             name,
@@ -487,24 +521,55 @@ fn check_table_change_compliance(
 }
 
 /// Checks if a table drop violates lifecycle policies
-fn check_table_drop_compliance(table: &Table, violations: &mut Vec<LifecycleViolation>) {
-    if table.life_cycle.is_drop_protected() {
-        violations.push(create_table_drop_violation(table));
+///
+/// The logic depends on whether this is a drop+create pair or a pure deletion:
+///
+/// 1. **Drop+Create pair** (Removed + Added for same table): Check only the AFTER lifecycle.
+///    - If user deliberately removes protection (`DeletionProtected → FullyManaged`), allow the drop.
+///    - If user adds protection (`FullyManaged → DeletionProtected`), block the drop.
+///
+/// 2. **Pure deletion** (Removed without corresponding Added): Check the BEFORE lifecycle.
+///    - User must first change lifecycle to `FullyManaged` before deleting the model.
+fn check_table_drop_compliance(
+    table: &Table,
+    default_database: &str,
+    added_table_lifecycles: &std::collections::HashMap<String, LifeCycle>,
+    violations: &mut Vec<LifecycleViolation>,
+) {
+    let table_id = table.id(default_database);
+
+    // Check if there's a corresponding Added table (drop+create scenario)
+    if let Some(&target_lifecycle) = added_table_lifecycles.get(&table_id) {
+        // Drop+Create pair: check only the AFTER/target lifecycle
+        // If user removes protection, they intend to allow the drop
+        if target_lifecycle.is_drop_protected() {
+            violations.push(create_table_drop_violation(table, target_lifecycle));
+        }
+    } else {
+        // Pure deletion: check the BEFORE state (removed table's own lifecycle)
+        // User must first change lifecycle to FullyManaged before deleting
+        if table.life_cycle.is_drop_protected() {
+            violations.push(create_table_drop_violation(table, table.life_cycle));
+        }
     }
 }
 
 /// Creates a violation for an illegal table drop
-fn create_table_drop_violation(table: &Table) -> LifecycleViolation {
+///
+/// The `lifecycle` parameter is the lifecycle that triggered the violation -
+/// this may be either the removed table's lifecycle (BEFORE state) or the
+/// target table's lifecycle (AFTER state) for drop+create transitions.
+fn create_table_drop_violation(table: &Table, lifecycle: LifeCycle) -> LifecycleViolation {
     LifecycleViolation {
         message: format!(
             "Attempted to DROP table '{}' which has {:?} lifecycle. \
             This is a bug - the diff/filter pipeline should have blocked this.",
             table.display_name(),
-            table.life_cycle
+            lifecycle
         ),
         table_name: table.name.clone(),
         database: table.database.clone(),
-        life_cycle: table.life_cycle,
+        life_cycle: lifecycle,
         violation_type: ViolationType::TableDrop,
     }
 }
@@ -707,7 +772,7 @@ mod tests {
         let table = create_test_table("test_table", LifeCycle::FullyManaged);
         let changes = vec![OlapChange::Table(TableChange::Removed(table))];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(result.is_ok(), "Should allow dropping FullyManaged tables");
     }
 
@@ -716,7 +781,7 @@ mod tests {
         let table = create_test_table("protected_table", LifeCycle::DeletionProtected);
         let changes = vec![OlapChange::Table(TableChange::Removed(table))];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_err(),
             "Should block dropping DeletionProtected tables"
@@ -734,7 +799,7 @@ mod tests {
         let table = create_test_table("external_table", LifeCycle::ExternallyManaged);
         let changes = vec![OlapChange::Table(TableChange::Removed(table))];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_err(),
             "Should block dropping ExternallyManaged tables"
@@ -768,7 +833,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_ok(),
             "Should allow column removal from FullyManaged tables"
@@ -796,7 +861,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_err(),
             "Should block column removal from DeletionProtected tables"
@@ -832,7 +897,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_ok(),
             "Should allow adding columns to DeletionProtected tables"
@@ -849,7 +914,7 @@ mod tests {
             OlapChange::Table(TableChange::Removed(table2)),
         ];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(result.is_err());
 
         let violations = result.unwrap_err();
@@ -865,8 +930,124 @@ mod tests {
         let table = create_test_table("new_table", LifeCycle::FullyManaged);
         let changes = vec![OlapChange::Table(TableChange::Added(table))];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(result.is_ok(), "Should allow table additions");
+    }
+
+    /// Tests the critical case where the guard catches a lifecycle TRANSITION
+    /// to a protected state during a drop+create operation.
+    ///
+    /// Scenario: A table transitions from FullyManaged → DeletionProtected
+    /// (e.g., user adds @DeletionProtected annotation and also changes ORDER BY)
+    ///
+    /// The strategy converts this to Removed(old_table) + Added(new_table).
+    /// The old_table has FullyManaged lifecycle, the new_table has DeletionProtected.
+    /// The guard must check the TARGET lifecycle, not just the removed table's lifecycle.
+    #[test]
+    fn test_guard_blocks_transition_to_deletion_protected() {
+        // Before: FullyManaged table
+        let removed_table = create_test_table("transitioning_table", LifeCycle::FullyManaged);
+        // After: Same table but now DeletionProtected (plus some structural change)
+        let added_table = create_test_table("transitioning_table", LifeCycle::DeletionProtected);
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(removed_table)),
+            OlapChange::Table(TableChange::Added(added_table)),
+        ];
+
+        let result = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            result.is_err(),
+            "Should block drop when target table has DeletionProtected lifecycle"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].table_name, "transitioning_table");
+        assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
+        // The violation should report the TARGET lifecycle, not the old one
+        assert_eq!(violations[0].life_cycle, LifeCycle::DeletionProtected);
+    }
+
+    /// Tests transition to ExternallyManaged during drop+create
+    #[test]
+    fn test_guard_blocks_transition_to_externally_managed() {
+        let removed_table = create_test_table("transitioning_table", LifeCycle::FullyManaged);
+        let added_table = create_test_table("transitioning_table", LifeCycle::ExternallyManaged);
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(removed_table)),
+            OlapChange::Table(TableChange::Added(added_table)),
+        ];
+
+        let result = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            result.is_err(),
+            "Should block drop when target table has ExternallyManaged lifecycle"
+        );
+
+        let violations = result.unwrap_err();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
+    }
+
+    /// Ensures that normal drop+create (both FullyManaged) is still allowed
+    #[test]
+    fn test_guard_allows_fully_managed_drop_create() {
+        let removed_table = create_test_table("test_table", LifeCycle::FullyManaged);
+        let added_table = create_test_table("test_table", LifeCycle::FullyManaged);
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(removed_table)),
+            OlapChange::Table(TableChange::Added(added_table)),
+        ];
+
+        let result = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            result.is_ok(),
+            "Should allow drop+create for FullyManaged tables"
+        );
+    }
+
+    /// Tests that deliberately removing protection allows the drop+create.
+    ///
+    /// Scenario: User removes @DeletionProtected annotation AND makes a structural change.
+    /// The user explicitly intends to allow the table to be dropped.
+    #[test]
+    fn test_guard_allows_removal_of_protection() {
+        // Before: DeletionProtected table
+        let removed_table = create_test_table("transitioning_table", LifeCycle::DeletionProtected);
+        // After: User removed the protection annotation (plus some structural change)
+        let added_table = create_test_table("transitioning_table", LifeCycle::FullyManaged);
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(removed_table)),
+            OlapChange::Table(TableChange::Added(added_table)),
+        ];
+
+        let result = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            result.is_ok(),
+            "Should allow drop+create when user deliberately removes protection"
+        );
+    }
+
+    /// Tests that removing ExternallyManaged allows the drop+create
+    #[test]
+    fn test_guard_allows_removal_of_externally_managed() {
+        let removed_table = create_test_table("transitioning_table", LifeCycle::ExternallyManaged);
+        let added_table = create_test_table("transitioning_table", LifeCycle::FullyManaged);
+
+        let changes = vec![
+            OlapChange::Table(TableChange::Removed(removed_table)),
+            OlapChange::Table(TableChange::Added(added_table)),
+        ];
+
+        let result = validate_lifecycle_compliance(&changes, "test_db");
+        assert!(
+            result.is_ok(),
+            "Should allow drop+create when user deliberately removes ExternallyManaged"
+        );
     }
 
     #[test]
@@ -879,7 +1060,7 @@ mod tests {
             table,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_ok(),
             "Should allow TTL changes on protected tables"
@@ -896,7 +1077,7 @@ mod tests {
             table,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_ok(),
             "Should allow settings changes on protected tables"
@@ -907,7 +1088,7 @@ mod tests {
     fn test_guard_empty_changes() {
         let changes: Vec<OlapChange> = vec![];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(result.is_ok(), "Empty changes should pass validation");
     }
 
@@ -936,7 +1117,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_err(),
             "Should block column removal from ExternallyManaged tables"
@@ -972,7 +1153,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_err(),
             "Should block column addition to ExternallyManaged tables"
@@ -1009,7 +1190,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_err(),
             "Should block column modification on ExternallyManaged tables"
@@ -1034,7 +1215,7 @@ mod tests {
             table,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_err(),
             "Should block TTL changes on ExternallyManaged tables"
@@ -1059,7 +1240,7 @@ mod tests {
             table,
         })];
 
-        let result = validate_lifecycle_compliance(&changes);
+        let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
             result.is_err(),
             "Should block settings changes on ExternallyManaged tables"
