@@ -23,6 +23,8 @@ import {
   ClickHouseJson,
   Int64,
   ClickHouseCodec,
+  LifeCycle,
+  ClickHouseTTL,
 } from "@514labs/moose-lib";
 
 /**
@@ -791,5 +793,156 @@ export const nonDefaultDbTable = new OlapTable<NonDefaultDbRecord>(
   {
     database: "analytics", // Use non-default database
     orderByFields: ["id", "timestamp"],
+  },
+);
+
+/** =======LifeCycle Management Tests========= */
+// Test resources for verifying LifeCycle behavior:
+// - EXTERNALLY_MANAGED: Moose should never create/update/delete these resources
+// - DELETION_PROTECTED: Moose can add but not remove columns/tables
+// - FULLY_MANAGED: Moose has full control (default behavior)
+
+/** Base interface for lifecycle test data */
+export interface LifeCycleTestData {
+  id: Key<string>;
+  timestamp: DateTime;
+  value: string;
+  category: string;
+}
+
+/** Extended interface with additional column for testing column removal */
+export interface LifeCycleTestDataWithExtra extends LifeCycleTestData {
+  removableColumn: string;
+}
+
+/**
+ * EXTERNALLY_MANAGED table - Moose should NEVER touch this table
+ * Tests: No create, no update, no delete operations should be generated
+ */
+export const externallyManagedTable = new OlapTable<LifeCycleTestData>(
+  "ExternallyManagedTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+  },
+);
+
+/**
+ * DELETION_PROTECTED table - Moose can add but not remove
+ * Tests: Create OK, add column OK, remove column BLOCKED, drop table BLOCKED
+ */
+export const deletionProtectedTable = new OlapTable<LifeCycleTestDataWithExtra>(
+  "DeletionProtectedTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    lifeCycle: LifeCycle.DELETION_PROTECTED,
+  },
+);
+
+/**
+ * FULLY_MANAGED table (default) - Moose has full lifecycle control
+ * Tests: All operations allowed (create, update, delete)
+ */
+export const fullyManagedTable = new OlapTable<LifeCycleTestDataWithExtra>(
+  "FullyManagedTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    // lifeCycle defaults to FULLY_MANAGED
+  },
+);
+
+/**
+ * DELETION_PROTECTED table with TTL for testing TTL changes
+ */
+export interface LifeCycleWithTTL {
+  id: Key<string>;
+  timestamp: DateTime;
+  value: string;
+  expireAt: DateTime & ClickHouseTTL<"expireAt + INTERVAL 30 DAY">;
+}
+
+export const deletionProtectedWithTTLTable = new OlapTable<LifeCycleWithTTL>(
+  "DeletionProtectedWithTTL",
+  {
+    orderByFields: ["id", "timestamp"],
+    lifeCycle: LifeCycle.DELETION_PROTECTED,
+  },
+);
+
+/**
+ * DELETION_PROTECTED table with specific engine for testing engine changes
+ * Uses MergeTree - changing to ReplacingMergeTree should be BLOCKED
+ */
+export const deletionProtectedEngineTable = new OlapTable<LifeCycleTestData>(
+  "DeletionProtectedEngineTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    engine: ClickHouseEngines.MergeTree,
+    lifeCycle: LifeCycle.DELETION_PROTECTED,
+  },
+);
+
+/**
+ * FULLY_MANAGED table with specific engine for testing engine changes
+ * Uses MergeTree - changing to ReplacingMergeTree should be ALLOWED (drop+create)
+ */
+export const fullyManagedEngineTable = new OlapTable<LifeCycleTestData>(
+  "FullyManagedEngineTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    engine: ClickHouseEngines.MergeTree,
+    // lifeCycle defaults to FULLY_MANAGED
+  },
+);
+
+/**
+ * DELETION_PROTECTED table for testing ORDER BY changes
+ * Changing orderByFields should be BLOCKED (requires drop+create)
+ */
+export const deletionProtectedOrderByTable = new OlapTable<LifeCycleTestData>(
+  "DeletionProtectedOrderByTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    lifeCycle: LifeCycle.DELETION_PROTECTED,
+  },
+);
+
+/**
+ * FULLY_MANAGED table for testing ORDER BY changes
+ * Changing orderByFields should be ALLOWED (drop+create)
+ */
+export const fullyManagedOrderByTable = new OlapTable<LifeCycleTestData>(
+  "FullyManagedOrderByTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    // lifeCycle defaults to FULLY_MANAGED
+  },
+);
+
+/**
+ * DELETION_PROTECTED table with table settings for testing settings changes
+ */
+export const deletionProtectedSettingsTable = new OlapTable<LifeCycleTestData>(
+  "DeletionProtectedSettingsTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    lifeCycle: LifeCycle.DELETION_PROTECTED,
+    settings: {
+      index_granularity: "8192",
+    },
+  },
+);
+
+/**
+ * FULLY_MANAGED table with table settings for testing settings changes
+ */
+export const fullyManagedSettingsTable = new OlapTable<LifeCycleTestData>(
+  "FullyManagedSettingsTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    settings: {
+      index_granularity: "8192",
+    },
+    // lifeCycle defaults to FULLY_MANAGED
   },
 );
