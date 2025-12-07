@@ -410,8 +410,16 @@ export const runApis = async (config: ApisConfig) => {
     maxWorkerCount:
       (config.workerCount ?? 0) > 0 ? config.workerCount : undefined,
     workerStart: async () => {
+      const workerInfo = `[Worker ${process.pid}]`;
+      const startTime = Date.now();
+      console.log(`${workerInfo} workerStart: beginning initialization`);
+
       let temporalClient: TemporalClient | undefined;
       if (config.temporalConfig) {
+        const temporalStart = Date.now();
+        console.log(
+          `${workerInfo} workerStart: initializing Temporal client...`,
+        );
         temporalClient = await getTemporalClient(
           config.temporalConfig.url,
           config.temporalConfig.namespace,
@@ -419,31 +427,57 @@ export const runApis = async (config: ApisConfig) => {
           config.temporalConfig.clientKey,
           config.temporalConfig.apiKey,
         );
+        console.log(
+          `${workerInfo} workerStart: Temporal client initialized in ${Date.now() - temporalStart}ms`,
+        );
       }
+
+      const clickhouseStart = Date.now();
+      console.log(
+        `${workerInfo} workerStart: initializing ClickHouse client...`,
+      );
       const clickhouseClient = getClickhouseClient(
         toClientConfig(config.clickhouseConfig),
       );
+      console.log(
+        `${workerInfo} workerStart: ClickHouse client initialized in ${Date.now() - clickhouseStart}ms`,
+      );
+
       let publicKey: jose.KeyLike | undefined;
       if (config.jwtConfig?.secret) {
-        console.log("Importing JWT public key...");
+        const jwtStart = Date.now();
+        console.log(`${workerInfo} workerStart: importing JWT public key...`);
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
+        console.log(
+          `${workerInfo} workerStart: JWT key imported in ${Date.now() - jwtStart}ms`,
+        );
       }
 
-      const server = http.createServer(
-        await createMainRouter(
-          publicKey,
-          clickhouseClient,
-          temporalClient,
-          config.apisDir,
-          config.enforceAuth,
-          config.isDmv2,
-          config.jwtConfig,
-        ),
+      const routerStart = Date.now();
+      console.log(`${workerInfo} workerStart: creating main router...`);
+      const router = await createMainRouter(
+        publicKey,
+        clickhouseClient,
+        temporalClient,
+        config.apisDir,
+        config.enforceAuth,
+        config.isDmv2,
+        config.jwtConfig,
       );
+      console.log(
+        `${workerInfo} workerStart: main router created in ${Date.now() - routerStart}ms`,
+      );
+
+      const serverStart = Date.now();
+      console.log(`${workerInfo} workerStart: creating HTTP server...`);
+      const server = http.createServer(router);
+
       // port is now passed via config.proxyPort or defaults to 4001
       const port = config.proxyPort !== undefined ? config.proxyPort : 4001;
       server.listen(port, "localhost", () => {
-        console.log(`Server running on port ${port}`);
+        console.log(
+          `${workerInfo} Server running on port ${port} (total startup: ${Date.now() - startTime}ms)`,
+        );
       });
 
       return server;

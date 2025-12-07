@@ -1111,20 +1111,56 @@ let indexLoadState: "unloaded" | "loading" | "loaded" = "unloaded";
 let indexLoadPromise: Promise<void> | null = null;
 
 const loadIndex = async (): Promise<void> => {
+  const workerInfo = `[Worker ${process.pid}]`;
+
   // If already loaded, return immediately
   if (indexLoadState === "loaded") {
+    console.log(
+      `${workerInfo} loadIndex: already loaded, returning immediately`,
+    );
     return;
   }
 
   // If currently loading, wait for the existing load to complete
   if (indexLoadState === "loading" && indexLoadPromise) {
+    console.log(
+      `${workerInfo} loadIndex: already loading, waiting for completion`,
+    );
     return indexLoadPromise;
+  }
+
+  console.log(`${workerInfo} loadIndex: starting load process`);
+  const startTime = Date.now();
+
+  // Add a small random delay (0-500ms) to stagger worker loads
+  const delay = Math.random() * 500;
+  console.log(
+    `${workerInfo} loadIndex: waiting ${delay.toFixed(0)}ms to stagger load`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, delay));
+
+  // Check again after delay - another worker might have started loading
+  if (indexLoadState === "loading" && indexLoadPromise) {
+    console.log(
+      `${workerInfo} loadIndex: another worker started loading during delay, waiting`,
+    );
+    return indexLoadPromise;
+  }
+
+  if (indexLoadState === "loaded") {
+    console.log(
+      `${workerInfo} loadIndex: loaded by another worker during delay`,
+    );
+    return;
   }
 
   // Mark as loading and create the load promise
   indexLoadState = "loading";
   indexLoadPromise = (async () => {
     try {
+      console.log(`${workerInfo} loadIndex: clearing registry...`);
+      const clearStart = Date.now();
+
       // Clear the registry before loading to support hot reloading
       const registry = getMooseInternal();
       registry.tables.clear();
@@ -1135,6 +1171,13 @@ const loadIndex = async (): Promise<void> => {
       registry.workflows.clear();
       registry.webApps.clear();
 
+      console.log(
+        `${workerInfo} loadIndex: registry cleared in ${Date.now() - clearStart}ms`,
+      );
+
+      console.log(`${workerInfo} loadIndex: clearing require cache...`);
+      const cacheStart = Date.now();
+
       // Clear require cache for app directory to pick up changes
       const appDir = `${process.cwd()}/${getSourceDir()}`;
       Object.keys(require.cache).forEach((key) => {
@@ -1143,11 +1186,30 @@ const loadIndex = async (): Promise<void> => {
         }
       });
 
+      console.log(
+        `${workerInfo} loadIndex: require cache cleared in ${Date.now() - cacheStart}ms`,
+      );
+
+      console.log(`${workerInfo} loadIndex: requiring index.ts...`);
+      const requireStart = Date.now();
+
       require(`${process.cwd()}/${getSourceDir()}/index.ts`);
+
+      console.log(
+        `${workerInfo} loadIndex: require completed in ${Date.now() - requireStart}ms`,
+      );
 
       // Mark as successfully loaded
       indexLoadState = "loaded";
+      console.log(
+        `${workerInfo} loadIndex: total load time ${Date.now() - startTime}ms`,
+      );
     } catch (error) {
+      console.error(
+        `${workerInfo} loadIndex: FAILED after ${Date.now() - startTime}ms`,
+        error,
+      );
+
       // Reset state on error so it can be retried
       indexLoadState = "unloaded";
       indexLoadPromise = null;
