@@ -1094,7 +1094,7 @@ if (getMooseInternal() === undefined) {
  * and `end___MOOSE_STUFF___`) for easy extraction by the calling process.
  */
 export const dumpMooseInternal = async () => {
-  loadIndex();
+  await loadIndex();
 
   console.log(
     "___MOOSE_STUFF___start",
@@ -1103,40 +1103,73 @@ export const dumpMooseInternal = async () => {
   );
 };
 
-const loadIndex = () => {
-  // Clear the registry before loading to support hot reloading
-  const registry = getMooseInternal();
-  registry.tables.clear();
-  registry.streams.clear();
-  registry.ingestApis.clear();
-  registry.apis.clear();
-  registry.sqlResources.clear();
-  registry.workflows.clear();
-  registry.webApps.clear();
+/**
+ * Track whether the index has been loaded to prevent race conditions
+ * when multiple workers try to load simultaneously.
+ */
+let indexLoadState: "unloaded" | "loading" | "loaded" = "unloaded";
+let indexLoadPromise: Promise<void> | null = null;
 
-  // Clear require cache for app directory to pick up changes
-  const appDir = `${process.cwd()}/${getSourceDir()}`;
-  Object.keys(require.cache).forEach((key) => {
-    if (key.startsWith(appDir)) {
-      delete require.cache[key];
-    }
-  });
-
-  try {
-    require(`${process.cwd()}/${getSourceDir()}/index.ts`);
-  } catch (error) {
-    let hint: string | undefined;
-    const details = error instanceof Error ? error.message : String(error);
-    if (details.includes("ERR_REQUIRE_ESM") || details.includes("ES Module")) {
-      hint =
-        "The file or its dependencies are ESM-only. Switch to packages that dual-support CJS & ESM, or upgrade to Node 22.12+. " +
-        "If you must use Node 20, you may try Node 20.19\n\n";
-    }
-
-    const errorMsg = `${hint ?? ""}${details}`;
-    const cause = error instanceof Error ? error : undefined;
-    throw new Error(errorMsg, { cause });
+const loadIndex = async (): Promise<void> => {
+  // If already loaded, return immediately
+  if (indexLoadState === "loaded") {
+    return;
   }
+
+  // If currently loading, wait for the existing load to complete
+  if (indexLoadState === "loading" && indexLoadPromise) {
+    return indexLoadPromise;
+  }
+
+  // Mark as loading and create the load promise
+  indexLoadState = "loading";
+  indexLoadPromise = (async () => {
+    try {
+      // Clear the registry before loading to support hot reloading
+      const registry = getMooseInternal();
+      registry.tables.clear();
+      registry.streams.clear();
+      registry.ingestApis.clear();
+      registry.apis.clear();
+      registry.sqlResources.clear();
+      registry.workflows.clear();
+      registry.webApps.clear();
+
+      // Clear require cache for app directory to pick up changes
+      const appDir = `${process.cwd()}/${getSourceDir()}`;
+      Object.keys(require.cache).forEach((key) => {
+        if (key.startsWith(appDir)) {
+          delete require.cache[key];
+        }
+      });
+
+      require(`${process.cwd()}/${getSourceDir()}/index.ts`);
+
+      // Mark as successfully loaded
+      indexLoadState = "loaded";
+    } catch (error) {
+      // Reset state on error so it can be retried
+      indexLoadState = "unloaded";
+      indexLoadPromise = null;
+
+      let hint: string | undefined;
+      const details = error instanceof Error ? error.message : String(error);
+      if (
+        details.includes("ERR_REQUIRE_ESM") ||
+        details.includes("ES Module")
+      ) {
+        hint =
+          "The file or its dependencies are ESM-only. Switch to packages that dual-support CJS & ESM, or upgrade to Node 22.12+. " +
+          "If you must use Node 20, you may try Node 20.19\n\n";
+      }
+
+      const errorMsg = `${hint ?? ""}${details}`;
+      const cause = error instanceof Error ? error : undefined;
+      throw new Error(errorMsg, { cause });
+    }
+  })();
+
+  return indexLoadPromise;
 };
 
 /**
@@ -1148,7 +1181,7 @@ const loadIndex = () => {
  *          and values are tuples containing: [handler function, config, source stream columns]
  */
 export const getStreamingFunctions = async () => {
-  loadIndex();
+  await loadIndex();
 
   const registry = getMooseInternal();
   const transformFunctions = new Map<
@@ -1194,7 +1227,7 @@ export const getStreamingFunctions = async () => {
  *          are their corresponding handler functions.
  */
 export const getApis = async () => {
-  loadIndex();
+  await loadIndex();
   const apiFunctions = new Map<
     string,
     (params: unknown, utils: ApiUtil) => unknown
@@ -1363,7 +1396,7 @@ export const dlqColumns: Column[] = [
 ];
 
 export const getWorkflows = async () => {
-  loadIndex();
+  await loadIndex();
 
   const registry = getMooseInternal();
   return registry.workflows;
@@ -1411,6 +1444,6 @@ export const getTaskForWorkflow = async (
 };
 
 export const getWebApps = async () => {
-  loadIndex();
+  await loadIndex();
   return getMooseInternal().webApps;
 };
