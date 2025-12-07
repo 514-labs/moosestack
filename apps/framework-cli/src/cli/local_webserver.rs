@@ -856,8 +856,8 @@ async fn health_route(
         });
     }
 
-    // Spawn Consumption API check (if enabled)
-    if project.features.apis {
+    // Spawn Consumption API check (if enabled and not disabled by env var)
+    if project.features.apis && !*MOOSE_DISABLE_CONSUMPTION_HEALTHCHECK {
         let consumption_api_port = project.http_server_config.proxy_port;
         join_set.spawn(async move {
             let health_url = format!(
@@ -1469,6 +1469,10 @@ fn get_env_var(s: &str) -> Option<String> {
 lazy_static! {
     static ref MOOSE_CONSUMPTION_API_KEY: Option<String> = get_env_var("MOOSE_CONSUMPTION_API_KEY");
     static ref MOOSE_INGEST_API_KEY: Option<String> = get_env_var("MOOSE_INGEST_API_KEY");
+    static ref MOOSE_DISABLE_CONSUMPTION_HEALTHCHECK: bool =
+        get_env_var("MOOSE_DISABLE_CONSUMPTION_HEALTHCHECK")
+            .map(|v| v.to_lowercase() == "true" || v == "1")
+            .unwrap_or(false);
 }
 
 async fn check_authorization(
