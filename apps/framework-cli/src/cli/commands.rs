@@ -73,6 +73,10 @@ pub enum Commands {
         /// ClickHouse connection URL for serverless deployments
         #[arg(long, conflicts_with = "url")]
         clickhouse_url: Option<String>,
+
+        /// Output plan as JSON for programmatic use
+        #[arg(long)]
+        json: bool,
     },
 
     /// Execute a migration plan against a remote ClickHouse database

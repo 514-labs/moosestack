@@ -98,7 +98,10 @@ fn main() -> ExitCode {
     // Process the result using the original display formatting
     match result {
         Ok(s) => {
-            show_message!(s.message_type, s.message);
+            // Skip displaying empty messages (used for --json output where JSON is already printed)
+            if !s.message.action.is_empty() || !s.message.details.is_empty() {
+                show_message!(s.message_type, s.message);
+            }
             ensure_terminal_cleanup();
             ExitCode::from(0)
         }

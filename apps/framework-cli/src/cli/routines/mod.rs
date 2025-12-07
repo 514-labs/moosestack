@@ -888,6 +888,7 @@ async fn legacy_remote_plan_logic(
     project: &Project,
     base_url: &Option<String>,
     token: &Option<String>,
+    json: bool,
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
@@ -902,13 +903,17 @@ async fn legacy_remote_plan_logic(
     // Use existing implementation
     let target_url = prepend_base_url(base_url.as_deref(), "admin/plan");
 
-    display::show_message_wrapper(
-        MessageType::Info,
-        Message {
-            action: "Remote Plan".to_string(),
-            details: format!("Comparing local project code with remote instance at {target_url}"),
-        },
-    );
+    if !json {
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "Remote Plan".to_string(),
+                details: format!(
+                    "Comparing local project code with remote instance at {target_url}"
+                ),
+            },
+        );
+    }
 
     let request_body = PlanRequest {
         infra_map: local_infra_map,
@@ -938,22 +943,33 @@ async fn legacy_remote_plan_logic(
 
     let plan_response: PlanResponse = response.json().await?;
 
-    display::show_message_wrapper(
-        MessageType::Success,
-        Message {
-            action: "Legacy Plan".to_string(),
-            details: "Retrieved plan from remote instance using legacy endpoint".to_string(),
-        },
-    );
-
-    if plan_response.changes.is_empty() {
+    if !json {
         display::show_message_wrapper(
-            MessageType::Info,
+            MessageType::Success,
             Message {
-                action: "No Changes".to_string(),
-                details: "No changes detected".to_string(),
+                action: "Legacy Plan".to_string(),
+                details: "Retrieved plan from remote instance using legacy endpoint".to_string(),
             },
         );
+    }
+
+    if plan_response.changes.is_empty() {
+        if json {
+            // Output empty plan as JSON
+            let temp_plan = InfraPlan {
+                changes: plan_response.changes,
+                target_infra_map: InfrastructureMap::new(project, PrimitiveMap::default()),
+            };
+            println!("{}", serde_json::to_string_pretty(&temp_plan)?);
+        } else {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "No Changes".to_string(),
+                    details: "No changes detected".to_string(),
+                },
+            );
+        }
         return Ok(());
     }
 
@@ -963,7 +979,12 @@ async fn legacy_remote_plan_logic(
         target_infra_map: InfrastructureMap::new(project, PrimitiveMap::default()),
     };
 
-    display::show_changes(&temp_plan);
+    if json {
+        // ONLY output JSON to stdout - no other messages
+        println!("{}", serde_json::to_string_pretty(&temp_plan)?);
+    } else {
+        display::show_changes(&temp_plan);
+    }
     Ok(())
 }
 
@@ -994,6 +1015,7 @@ pub async fn remote_plan(
     base_url: &Option<String>,
     token: &Option<String>,
     clickhouse_url: &Option<String>,
+    json: bool,
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
     let local_infra_map = if project.features.data_model_v2 {
@@ -1008,13 +1030,16 @@ pub async fn remote_plan(
     // Determine remote source based on provided arguments
     let remote_infra_map = if let Some(clickhouse_url) = clickhouse_url {
         // Serverless flow: connect directly to ClickHouse
-        display::show_message_wrapper(
-            MessageType::Info,
-            Message {
-                action: "Remote Plan".to_string(),
-                details: "Comparing local project code with deployed infrastructure".to_string(),
-            },
-        );
+        if !json {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Remote Plan".to_string(),
+                    details: "Comparing local project code with deployed infrastructure"
+                        .to_string(),
+                },
+            );
+        }
 
         let table_names: HashSet<String> = local_infra_map
             .tables
@@ -1035,38 +1060,46 @@ pub async fn remote_plan(
         .await?
     } else {
         // Moose server flow
-        display::show_message_wrapper(
-            MessageType::Info,
-            Message {
-                action: "Remote Plan".to_string(),
-                details: "Comparing local project code with remote Moose instance".to_string(),
-            },
-        );
+        if !json {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "Remote Plan".to_string(),
+                    details: "Comparing local project code with remote Moose instance".to_string(),
+                },
+            );
+        }
 
         // Try new endpoint first, fallback to legacy if not available
         match get_remote_inframap_protobuf(base_url.as_deref(), token).await {
             Ok(infra_map) => {
-                display::show_message_wrapper(
-                    MessageType::Info,
-                    Message {
-                        action: "New Endpoint".to_string(),
-                        details: "Successfully retrieved infrastructure map from /admin/inframap"
-                            .to_string(),
-                    },
-                );
+                if !json {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message {
+                            action: "New Endpoint".to_string(),
+                            details:
+                                "Successfully retrieved infrastructure map from /admin/inframap"
+                                    .to_string(),
+                        },
+                    );
+                }
                 infra_map
             }
             Err(InfraRetrievalError::EndpointNotFound) => {
                 // Fallback to legacy logic
-                display::show_message_wrapper(
-                    MessageType::Info,
-                    Message {
-                        action: "Legacy Fallback".to_string(),
-                        details: "New endpoint not available, using legacy /admin/plan endpoint"
-                            .to_string(),
-                    },
-                );
-                return legacy_remote_plan_logic(project, base_url, token).await;
+                if !json {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message {
+                            action: "Legacy Fallback".to_string(),
+                            details:
+                                "New endpoint not available, using legacy /admin/plan endpoint"
+                                    .to_string(),
+                        },
+                    );
+                }
+                return legacy_remote_plan_logic(project, base_url, token, json).await;
             }
             Err(e) => {
                 return Err(anyhow::anyhow!(
@@ -1090,22 +1123,33 @@ pub async fn remote_plan(
         &project.migration_config.ignore_operations,
     );
 
-    display::show_message_wrapper(
-        MessageType::Success,
-        Message {
-            action: "Remote Plan".to_string(),
-            details: "Calculated plan differences locally".to_string(),
-        },
-    );
-
-    if changes.is_empty() {
+    if !json {
         display::show_message_wrapper(
-            MessageType::Info,
+            MessageType::Success,
             Message {
-                action: "No Changes".to_string(),
-                details: "No changes detected".to_string(),
+                action: "Remote Plan".to_string(),
+                details: "Calculated plan differences locally".to_string(),
             },
         );
+    }
+
+    if changes.is_empty() {
+        if json {
+            // Output empty plan as JSON
+            let temp_plan = InfraPlan {
+                changes,
+                target_infra_map: local_infra_map,
+            };
+            println!("{}", serde_json::to_string_pretty(&temp_plan)?);
+        } else {
+            display::show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "No Changes".to_string(),
+                    details: "No changes detected".to_string(),
+                },
+            );
+        }
         return Ok(());
     }
 
@@ -1115,7 +1159,12 @@ pub async fn remote_plan(
         target_infra_map: local_infra_map,
     };
 
-    display::show_changes(&temp_plan);
+    if json {
+        // ONLY output JSON to stdout - no other messages
+        println!("{}", serde_json::to_string_pretty(&temp_plan)?);
+    } else {
+        display::show_changes(&temp_plan);
+    }
     Ok(())
 }
 
