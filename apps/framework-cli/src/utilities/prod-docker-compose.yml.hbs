@@ -86,8 +86,8 @@ services:
       - clickhouse-keeper-lib:/var/lib/clickhouse
     environment:
       - KEEPER_SERVER_ID=1
-    ports:
-      - "9181:9181"
+    expose:
+      - "9181"
     deploy:
       resources:
         reservations:
@@ -98,48 +98,49 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "echo 'ruok' | nc clickhouse-keeper 9181 | grep -q 'imok'"]
       interval: 10s
-      retries: 3
-      start_period: 10s
+      retries: 5
+      start_period: 20s
       timeout: 5s
-    command: >
-      sh -c "
-             mkdir -p /etc/clickhouse-keeper &&
-       cat > /etc/clickhouse-keeper/keeper_config.xml << 'EOF'
-       <clickhouse>
-         <logger>
-           <level>information</level>
-           <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
-           <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
-           <size>1000M</size>
-           <count>10</count>
-         </logger>
-         <listen_host>0.0.0.0</listen_host>
-         <max_connections>4096</max_connections>
-         <keeper_server>
-           <tcp_port>9181</tcp_port>
-           <server_id>1</server_id>
-           <log_storage_path>/var/lib/clickhouse-keeper/coordination/log</log_storage_path>
-           <snapshot_storage_path>/var/lib/clickhouse-keeper/coordination/snapshots</snapshot_storage_path>
-           <coordination_settings>
-             <operation_timeout_ms>10000</operation_timeout_ms>
-             <min_session_timeout_ms>10000</min_session_timeout_ms>
-             <session_timeout_ms>30000</session_timeout_ms>
-             <raft_logs_level>information</raft_logs_level>
-           </coordination_settings>
-           <hostname_checks_enabled>false</hostname_checks_enabled>
-           <raft_configuration>
-             <server>
-               <id>1</id>
-               <hostname>clickhouse-keeper</hostname>
-               <port>9234</port>
-             </server>
-           </raft_configuration>
-           <four_letter_word_white_list>*</four_letter_word_white_list>
-         </keeper_server>
-       </clickhouse>
-      EOF
-      exec /entrypoint.sh
-      "
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /etc/clickhouse-keeper
+        cat > /etc/clickhouse-keeper/keeper_config.xml << 'EOF'
+        <clickhouse>
+          <logger>
+            <level>information</level>
+            <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+            <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+            <size>1000M</size>
+            <count>10</count>
+          </logger>
+          <listen_host>0.0.0.0</listen_host>
+          <max_connections>4096</max_connections>
+          <keeper_server>
+            <tcp_port>9181</tcp_port>
+            <server_id>1</server_id>
+            <log_storage_path>/var/lib/clickhouse-keeper/coordination/log</log_storage_path>
+            <snapshot_storage_path>/var/lib/clickhouse-keeper/coordination/snapshots</snapshot_storage_path>
+            <coordination_settings>
+              <operation_timeout_ms>10000</operation_timeout_ms>
+              <min_session_timeout_ms>10000</min_session_timeout_ms>
+              <session_timeout_ms>30000</session_timeout_ms>
+              <raft_logs_level>information</raft_logs_level>
+            </coordination_settings>
+            <hostname_checks_enabled>false</hostname_checks_enabled>
+            <raft_configuration>
+              <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper</hostname>
+                <port>9234</port>
+              </server>
+            </raft_configuration>
+            <four_letter_word_white_list>*</four_letter_word_white_list>
+          </keeper_server>
+        </clickhouse>
+        EOF
+        exec /entrypoint.sh
 
   clickhousedb:
     image: docker.io/clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.6}
@@ -182,32 +183,33 @@ services:
       nofile:
         soft: 20000
         hard: 40000
-    command: >
-      sh -c "
-      mkdir -p /etc/clickhouse-server/config.d &&
-      cat > /etc/clickhouse-server/config.d/keeper.xml << 'EOF'
-      <clickhouse>
-        <zookeeper>
-          <node>
-            <host>clickhouse-keeper</host>
-            <port>9181</port>
-          </node>
-        </zookeeper>
-        <distributed_ddl>
-          <path>/clickhouse/task_queue/ddl</path>
-        </distributed_ddl>
-        <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
-        <macros>
-          <shard>01</shard>
-          <replica>replica_1</replica>
-          <database>local</database>
-        </macros>
-        <!-- Macros are used for ReplicatedMergeTree default paths -->
-        <!-- Default path: /clickhouse/tables/{uuid}/{shard} works with Atomic database (default) -->
-      </clickhouse>
-      EOF
-      exec /entrypoint.sh
-      "
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /etc/clickhouse-server/config.d
+        cat > /etc/clickhouse-server/config.d/keeper.xml << 'EOF'
+        <clickhouse>
+          <zookeeper>
+            <node>
+              <host>clickhouse-keeper</host>
+              <port>9181</port>
+            </node>
+          </zookeeper>
+          <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+          </distributed_ddl>
+          <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+          <macros>
+            <shard>01</shard>
+            <replica>replica_1</replica>
+            <database>local</database>
+          </macros>
+          <!-- Macros are used for ReplicatedMergeTree default paths -->
+          <!-- Default path: /clickhouse/tables/{uuid}/{shard} works with Atomic database (default) -->
+        </clickhouse>
+        EOF
+        exec /entrypoint.sh
 {{/if}}
 
 {{#if scripts_feature}}

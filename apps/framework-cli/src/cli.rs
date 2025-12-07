@@ -875,13 +875,14 @@ pub async fn top_command_handler(
 
             // If start_include_dependencies is true, manage Docker containers like dev mode
             if *start_include_dependencies {
-                let docker_client = DockerClient::new(&settings);
-                run_local_infrastructure(&project_arc, &settings, &docker_client).map_err(|e| {
-                    RoutineFailure::error(Message {
-                        action: "Prod".to_string(),
-                        details: format!("Failed to run local infrastructure: {e:?}"),
-                    })
-                })?;
+                run_local_infrastructure_with_timeout(&project_arc, &settings)
+                    .await
+                    .map_err(|e| {
+                        RoutineFailure::error(Message {
+                            action: "Prod".to_string(),
+                            details: format!("Failed to run local infrastructure: {e:?}"),
+                        })
+                    })?;
             }
 
             let redis_client = setup_redis_client(project_arc.clone()).await.map_err(|e| {
@@ -940,6 +941,7 @@ pub async fn top_command_handler(
             url,
             token,
             clickhouse_url,
+            json,
         } => {
             info!("Running plan command");
             let project = load_project(commands)?;
@@ -954,7 +956,7 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
-            let result = routines::remote_plan(&project, url, token, clickhouse_url).await;
+            let result = routines::remote_plan(&project, url, token, clickhouse_url, *json).await;
 
             result.map_err(|e| {
                 RoutineFailure::error(Message {
@@ -965,10 +967,18 @@ pub async fn top_command_handler(
 
             wait_for_usage_capture(capture_handle).await;
 
-            Ok(RoutineSuccess::success(Message::new(
-                "Plan".to_string(),
-                "Successfully planned changes to the infrastructure".to_string(),
-            )))
+            // When --json is used, output is already printed, so suppress success message
+            if *json {
+                Ok(RoutineSuccess::success(Message::new(
+                    "".to_string(),
+                    "".to_string(),
+                )))
+            } else {
+                Ok(RoutineSuccess::success(Message::new(
+                    "Plan".to_string(),
+                    "Successfully planned changes to the infrastructure".to_string(),
+                )))
+            }
         }
         Commands::Migrate {
             clickhouse_url,
