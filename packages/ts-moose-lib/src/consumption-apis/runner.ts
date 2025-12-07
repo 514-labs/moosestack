@@ -1,4 +1,5 @@
 import http from "http";
+import cluster from "node:cluster";
 import { getClickhouseClient } from "../commons";
 import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
 import * as jose from "jose";
@@ -86,7 +87,13 @@ const apiHandler = async (
   isDmv2: boolean,
   jwtConfig?: JwtConfig,
 ) => {
+  console.log(
+    `[DEBUG] Worker ${cluster.worker?.id} apiHandler: about to call getApis (isDmv2=${isDmv2})`,
+  );
   const apis = isDmv2 ? await getApis() : new Map();
+  console.log(
+    `[DEBUG] Worker ${cluster.worker?.id} apiHandler: getApis completed, returning handler`,
+  );
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const start = Date.now();
 
@@ -269,6 +276,9 @@ const createMainRouter = async (
   isDmv2: boolean,
   jwtConfig?: JwtConfig,
 ) => {
+  console.log(
+    `[DEBUG] Worker ${cluster.worker?.id} createMainRouter: about to call apiHandler`,
+  );
   const apiRequestHandler = await apiHandler(
     publicKey,
     clickhouseClient,
@@ -278,8 +288,17 @@ const createMainRouter = async (
     isDmv2,
     jwtConfig,
   );
+  console.log(
+    `[DEBUG] Worker ${cluster.worker?.id} createMainRouter: apiHandler completed`,
+  );
 
+  console.log(
+    `[DEBUG] Worker ${cluster.worker?.id} createMainRouter: about to call getWebApps (isDmv2=${isDmv2})`,
+  );
   const webApps = isDmv2 ? await getWebApps() : new Map();
+  console.log(
+    `[DEBUG] Worker ${cluster.worker?.id} createMainRouter: getWebApps completed, returning router`,
+  );
 
   const sortedWebApps = Array.from(webApps.values()).sort((a, b) => {
     const pathA = a.config.mountPath || "/";
@@ -429,6 +448,13 @@ export const runApis = async (config: ApisConfig) => {
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
       }
 
+      // port is now passed via config.proxyPort or defaults to 4001
+      const port = config.proxyPort !== undefined ? config.proxyPort : 4001;
+
+      console.log(
+        `[DEBUG] Worker ${cluster.worker?.id} about to create server on port ${port}`,
+      );
+
       const server = http.createServer(
         await createMainRouter(
           publicKey,
@@ -440,13 +466,47 @@ export const runApis = async (config: ApisConfig) => {
           config.jwtConfig,
         ),
       );
-      // port is now passed via config.proxyPort or defaults to 4001
-      const port = config.proxyPort !== undefined ? config.proxyPort : 4001;
-      server.listen(port, "localhost", () => {
-        console.log(`Server running on port ${port}`);
-      });
 
-      return server;
+      console.log(
+        `[DEBUG] Worker ${cluster.worker?.id} server created, about to listen on port ${port}`,
+      );
+
+      // Return a promise that waits for listen to complete
+      return new Promise<http.Server>((resolve, reject) => {
+        // Add error handler INSIDE the promise to properly reject on failure
+        server.on("error", (err) => {
+          console.error(
+            `[ERROR] Worker ${cluster.worker?.id} server error on port ${port}:`,
+            err,
+          );
+          if ((err as any).code === "EADDRINUSE") {
+            console.error(`[ERROR] Port ${port} is already in use`);
+          }
+          reject(err); // Reject the promise on error
+        });
+
+        server.listen(port, "localhost", () => {
+          console.log(
+            `[SUCCESS] Worker ${cluster.worker?.id} server running on port ${port}`,
+          );
+          resolve(server);
+        });
+
+        // Add timeout in case listen hangs
+        const timeout = setTimeout(() => {
+          console.error(
+            `[ERROR] Worker ${cluster.worker?.id} listen timeout after 10s on port ${port}`,
+          );
+          reject(new Error(`Listen timeout on port ${port}`));
+        }, 10000);
+
+        server.once("listening", () => {
+          clearTimeout(timeout);
+          console.log(
+            `[DEBUG] Worker ${cluster.worker?.id} 'listening' event fired for port ${port}`,
+          );
+        });
+      });
     },
     workerStop: async (server) => {
       return new Promise<void>((resolve) => {
