@@ -1,4 +1,5 @@
 import http from "http";
+import cluster from "node:cluster";
 import { getClickhouseClient } from "../commons";
 import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
 import * as jose from "jose";
@@ -429,6 +430,13 @@ export const runApis = async (config: ApisConfig) => {
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
       }
 
+      // port is now passed via config.proxyPort or defaults to 4001
+      const port = config.proxyPort !== undefined ? config.proxyPort : 4001;
+
+      console.log(
+        `[DEBUG] Worker ${cluster.worker?.id} about to create server on port ${port}`,
+      );
+
       const server = http.createServer(
         await createMainRouter(
           publicKey,
@@ -440,13 +448,46 @@ export const runApis = async (config: ApisConfig) => {
           config.jwtConfig,
         ),
       );
-      // port is now passed via config.proxyPort or defaults to 4001
-      const port = config.proxyPort !== undefined ? config.proxyPort : 4001;
-      server.listen(port, "localhost", () => {
-        console.log(`Server running on port ${port}`);
+
+      console.log(
+        `[DEBUG] Worker ${cluster.worker?.id} server created, about to listen on port ${port}`,
+      );
+
+      // Add error handler BEFORE calling listen
+      server.on("error", (err) => {
+        console.error(
+          `[ERROR] Worker ${cluster.worker?.id} server error on port ${port}:`,
+          err,
+        );
+        if ((err as any).code === "EADDRINUSE") {
+          console.error(`[ERROR] Port ${port} is already in use`);
+        }
       });
 
-      return server;
+      // Return a promise that waits for listen to complete
+      return new Promise((resolve, reject) => {
+        server.listen(port, "localhost", () => {
+          console.log(
+            `[SUCCESS] Worker ${cluster.worker?.id} server running on port ${port}`,
+          );
+          resolve(server);
+        });
+
+        // Add timeout in case listen hangs
+        const timeout = setTimeout(() => {
+          console.error(
+            `[ERROR] Worker ${cluster.worker?.id} listen timeout after 10s on port ${port}`,
+          );
+          reject(new Error(`Listen timeout on port ${port}`));
+        }, 10000);
+
+        server.once("listening", () => {
+          clearTimeout(timeout);
+          console.log(
+            `[DEBUG] Worker ${cluster.worker?.id} 'listening' event fired for port ${port}`,
+          );
+        });
+      });
     },
     workerStop: async (server) => {
       return new Promise<void>((resolve) => {
