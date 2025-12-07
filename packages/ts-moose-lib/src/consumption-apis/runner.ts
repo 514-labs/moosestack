@@ -440,7 +440,7 @@ export const runApis = async (config: ApisConfig) => {
         toClientConfig(config.clickhouseConfig),
       );
       console.log(
-        `${workerInfo} workerStart: ClickHouse client initialized in ${Date.now() - clickhouseStart}ms`,
+        `${workerInfo} workerStart: ClickHouse  client initialized in ${Date.now() - clickhouseStart}ms`,
       );
 
       let publicKey: jose.KeyLike | undefined;
