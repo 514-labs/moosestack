@@ -825,22 +825,25 @@ pub(crate) async fn get_remote_inframap_protobuf(
                 .unwrap_or("");
 
             if content_type.contains("application/protobuf") {
-                // Parse protobuf response
+                // Parse protobuf response and canonicalize tables to handle backward compatibility
+                // with remote servers running older CLI versions
                 let bytes = response
                     .bytes()
                     .await
                     .map_err(|e| InfraRetrievalError::NetworkError(e.to_string()))?;
 
-                InfrastructureMap::from_proto(bytes.to_vec()).map_err(|e| {
-                    InfraRetrievalError::ParseError(format!("Failed to parse protobuf: {e}"))
-                })
+                InfrastructureMap::from_proto(bytes.to_vec())
+                    .map(|m| m.canonicalize_tables())
+                    .map_err(|e| {
+                        InfraRetrievalError::ParseError(format!("Failed to parse protobuf: {e}"))
+                    })
             } else {
-                // Fallback to JSON response
+                // Fallback to JSON response, canonicalize tables for backward compatibility
                 let json_response: super::local_webserver::InfraMapResponse =
                     response.json().await.map_err(|e| {
                         InfraRetrievalError::ParseError(format!("Failed to parse JSON: {e}"))
                     })?;
-                Ok(json_response.infra_map)
+                Ok(json_response.infra_map.canonicalize_tables())
             }
         }
         reqwest::StatusCode::NOT_FOUND => Err(InfraRetrievalError::EndpointNotFound),

@@ -157,7 +157,8 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             "Updating table {} in infrastructure map to match reality",
                             reality_table.name
                         );
-                        let mut table = reality_table.clone();
+                        // Canonicalize the reality table to ensure all invariants are satisfied
+                        let mut table = reality_table.clone().canonicalize();
                         // we refer to the life cycle value in the target infra map
                         // if missing, we then refer to the old infra map
                         // but never `reality_table.life_cycle` which is reconstructed in list_tables
@@ -247,6 +248,10 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     // so we'll adopt pre-existing tables that match our target (detecting "already exists").
     // For status queries, target_table_ids contains currently-managed tables only.
     for unmapped_table in discrepancies.unmapped_tables {
+        // Canonicalize tables from reality check to ensure they satisfy all invariants
+        // (order_by fallback, array nullability, primary_key clearing for unsupported engines)
+        let unmapped_table = unmapped_table.canonicalize();
+
         // default_database passed to `id` does not matter
         // tables from check_reality always contain non-None database
         let id = unmapped_table.id(&reconciled_map.default_database);
