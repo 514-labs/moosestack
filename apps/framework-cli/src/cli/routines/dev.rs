@@ -48,7 +48,7 @@ pub fn run_local_infrastructure(
         show_message_wrapper(
             MessageType::Info,
             Message {
-                action: "Clickhouse Connection:".to_string(),
+                action: "ClickHouse Connection:".to_string(),
                 details: project.clickhouse_config.display_url(),
             },
         );
