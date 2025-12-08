@@ -2201,6 +2201,9 @@ impl InfrastructureMap {
 
     /// Loads an infrastructure map from a JSON file
     ///
+    /// Canonicalizes tables to handle backward compatibility with JSON files
+    /// created by older CLI versions (e.g., Docker images built before canonicalization).
+    ///
     /// # Arguments
     /// * `path` - The path to the JSON file
     ///
@@ -2208,8 +2211,8 @@ impl InfrastructureMap {
     /// A Result containing either the loaded map or an IO error
     pub fn load_from_json(path: &Path) -> Result<Self, std::io::Error> {
         let json = fs::read_to_string(path)?;
-        let infra_map = serde_json::from_str(&json)?;
-        Ok(infra_map)
+        let infra_map: InfrastructureMap = serde_json::from_str(&json)?;
+        Ok(infra_map.canonicalize_tables())
     }
 
     /// Resolves runtime environment variables for engine credentials and table settings.
