@@ -455,12 +455,10 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
 
 /// Pulls schema for ExternallyManaged tables and regenerates only external model files.
 /// Does not modify `main.py` or `index.ts`.
-pub async fn db_pull(
-    remote_url: &str,
-    project: &Project,
-    file_path: Option<&str>,
-) -> Result<(), RoutineFailure> {
-    let (client, db) = create_client_and_db(remote_url).await?;
+pub async fn db_pull(project: &Project, file_path: Option<&str>) -> Result<(), RoutineFailure> {
+    // Use project's clickhouse_config (already parsed via override_project_config_from_url)
+    let client = create_client(project.clickhouse_config.clone());
+    let db = &project.clickhouse_config.db_name;
 
     debug!("Loading InfrastructureMap from user code (DMV2)");
     // Don't resolve credentials for code generation - only needs structure

@@ -1278,7 +1278,7 @@ pub async fn top_command_handler(
                 },
         }) => {
             info!("Running db pull command");
-            let project = load_project(commands)?;
+            let mut project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::DbPullCommand,
@@ -1287,15 +1287,24 @@ pub async fn top_command_handler(
                 machine_id.clone(),
                 HashMap::new(),
             );
-            let resolved_clickhouse_url: String = match clickhouse_url {
-                Some(s) => s.clone(),
+
+            // Use resolve_serverless_urls for env var fallback (same as migrate/generate migration)
+            let (resolved_from_flag_or_env, _) =
+                resolve_serverless_urls(&project, clickhouse_url.as_deref(), None)?;
+
+            // Fall back to keyring if not provided via flag or env var
+            let resolved_clickhouse_url: String = match resolved_from_flag_or_env {
+                Some(url) => url,
                 None => {
                     let repo = KeyringSecretRepository;
                     match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
                         Ok(Some(s)) => s,
                         Ok(None) => return Err(RoutineFailure::error(Message {
                             action: "DB Pull".to_string(),
-                            details: "No ClickHouse URL provided and none saved. Pass --clickhouse-url or save one during `moose init --from-remote`.".to_string(),
+                            details: format!(
+                                "No ClickHouse URL provided. Pass --clickhouse-url, set {} environment variable, or save one during `moose init --from-remote`.",
+                                ENV_CLICKHOUSE_URL
+                            ),
                         })),
                         Err(e) => {
                             return Err(RoutineFailure::error(Message {
@@ -1309,14 +1318,12 @@ pub async fn top_command_handler(
                 }
             };
 
-            db_pull(&resolved_clickhouse_url, &project, file_path.as_deref())
-                .await
-                .map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new("DB Pull".to_string(), "failed".to_string()),
-                        e,
-                    )
-                })?;
+            // Use override_project_config_from_url (same as migrate/generate migration)
+            override_project_config_from_url(&mut project, &resolved_clickhouse_url)?;
+
+            db_pull(&project, file_path.as_deref()).await.map_err(|e| {
+                RoutineFailure::new(Message::new("DB Pull".to_string(), "failed".to_string()), e)
+            })?;
 
             wait_for_usage_capture(capture_handle).await;
             Ok(RoutineSuccess::success(Message::new(
