@@ -59,6 +59,16 @@ export const isClientOnlyMode = (): boolean =>
   process.env.MOOSE_CLIENT_ONLY === "true";
 
 /**
+ * Production mode check. When true, certain development-only behaviors
+ * are disabled (e.g., require cache clearing for hot-reload).
+ * Set via NODE_ENV=production environment variable (automatically set by `moose prod`).
+ *
+ * @returns true if NODE_ENV environment variable is set to "production"
+ */
+export const isProductionMode = (): boolean =>
+  process.env.NODE_ENV === "production";
+
+/**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
@@ -1137,13 +1147,16 @@ const reloadIndex = () => {
   registry.workflows.clear();
   registry.webApps.clear();
 
-  // Clear require cache for app directory to pick up changes
-  const appDir = `${process.cwd()}/${getSourceDir()}`;
-  Object.keys(require.cache).forEach((key) => {
-    if (key.startsWith(appDir)) {
-      delete require.cache[key];
-    }
-  });
+  // Clear require cache for app directory to pick up changes (development only)
+  // In production, skip cache clearing since hot-reload is not needed
+  if (!isProductionMode()) {
+    const appDir = `${process.cwd()}/${getSourceDir()}`;
+    Object.keys(require.cache).forEach((key) => {
+      if (key.startsWith(appDir)) {
+        delete require.cache[key];
+      }
+    });
+  }
 
   try {
     require(`${process.cwd()}/${getSourceDir()}/index.ts`);
