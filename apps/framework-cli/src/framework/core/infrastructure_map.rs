@@ -2374,9 +2374,12 @@ impl InfrastructureMap {
             .context("Failed to get InfrastructureMap from Redis")?;
 
         if let Some(encoded) = encoded {
-            let decoded = InfrastructureMap::from_proto(encoded).map_err(|e| {
-                anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
-            })?;
+            // Canonicalize tables to handle backward compatibility with data saved by older CLI versions
+            let decoded = InfrastructureMap::from_proto(encoded)
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
+                })?
+                .canonicalize_tables();
             Ok(Some(decoded))
         } else {
             Ok(None)
@@ -2403,9 +2406,12 @@ impl InfrastructureMap {
         }
 
         if let Ok(Some(encoded)) = encoded {
-            let decoded = InfrastructureMap::from_proto(encoded).map_err(|e| {
-                anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
-            })?;
+            // Canonicalize tables to handle backward compatibility with data saved by older CLI versions
+            let decoded = InfrastructureMap::from_proto(encoded)
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
+                })?
+                .canonicalize_tables();
             Ok(Some(decoded))
         } else {
             Ok(None)
@@ -2613,6 +2619,26 @@ impl InfrastructureMap {
             }
         }
 
+        self
+    }
+
+    /// Canonicalizes all tables in the infrastructure map.
+    ///
+    /// This ensures all tables satisfy ClickHouse-specific invariants:
+    /// - MergeTree tables have an ORDER BY clause (falls back to primary key)
+    /// - Arrays are non-nullable (required=true)
+    /// - Engines that don't support PRIMARY KEY don't have primary_key flags on columns
+    ///
+    /// This method should be called after loading an infrastructure map from storage
+    /// to handle backward compatibility with data saved by older CLI versions.
+    ///
+    /// This method is idempotent - calling it multiple times produces the same result.
+    pub fn canonicalize_tables(mut self) -> Self {
+        self.tables = self
+            .tables
+            .into_iter()
+            .map(|(k, t)| (k, t.canonicalize()))
+            .collect();
         self
     }
 
