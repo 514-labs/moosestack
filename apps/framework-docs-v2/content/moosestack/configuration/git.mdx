@@ -1,0 +1,19 @@
+---
+title: Git Configuration
+description: Configure integration with version control
+order: 34
+---
+
+# Git Configuration
+
+Configure integration with version control.
+
+```toml filename="moose.config.toml"
+[git_config]
+# Name of the main branch (Default: "main")
+main_branch_name = "main"
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `main_branch_name` | `MOOSE_GIT_CONFIG__MAIN_BRANCH_NAME` | "main" | The name of your main git branch. |

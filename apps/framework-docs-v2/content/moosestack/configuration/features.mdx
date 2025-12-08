@@ -1,16 +1,12 @@
 ---
-title: Features & Migrations
-description: Configure feature flags and migration behavior
+title: Feature Flags
+description: Configure feature flags to enable or disable Moose capabilities
 order: 60
 ---
 
 import { Callout } from "@/components/mdx";
 
-# Features & Migrations
-
-This reference covers configuration for Moose feature flags and database migration behavior.
-
-## Feature Flags
+# Feature Flags
 
 Enable or disable specific Moose capabilities to tailor the runtime to your needs.
 
@@ -18,7 +14,7 @@ Enable or disable specific Moose capabilities to tailor the runtime to your need
 Feature flags can be toggled in `moose.config.toml` for project-wide defaults, or overridden via environment variables (e.g., `MOOSE_FEATURES__WORKFLOWS=true`) for specific environments.
 </Callout>
 
-```toml
+```toml filename="moose.config.toml"
 [features]
 # Enable the streaming engine (Default: true)
 streaming_engine = true
@@ -42,17 +38,3 @@ ddl_plan = false
 | `apis` | `MOOSE_FEATURES__APIS` | true | Enables the API server for ingestion and consumption endpoints. |
 | `data_model_v2` | `MOOSE_FEATURES__DATA_MODEL_V2` | false | Enables the next-generation data modeling system (experimental). |
 | `ddl_plan` | `MOOSE_FEATURES__DDL_PLAN` | false | Requires explicit approval for DDL changes. |
-
-## Migration Configuration
-
-Control how Moose handles database migrations and schema changes.
-
-```toml
-[migration_config]
-# Operations to ignore during migration plan generation and drift detection
-# ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl"]
-```
-
-| Key | Env Variable | Default | Description |
-|:----|:-------------|:--------|:------------|
-| `ignore_operations` | `MOOSE_MIGRATION_CONFIG__IGNORE_OPERATIONS` | [] | List of migration operations to ignore during plan generation. |
