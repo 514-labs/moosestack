@@ -290,7 +290,12 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
           "\n--- Testing EXTERNALLY_MANAGED table should not be updated ---",
         );
 
-        // First, manually create the table in ClickHouse (simulating external creation)
+        // ExternallyManagedTest already exists in the template with lifeCycle: EXTERNALLY_MANAGED
+        // Run initial plan to establish baseline (should have no operations since it's externally managed)
+        const initialPlan = await runMoosePlanJson(testProjectDir);
+        console.log("✓ Initial plan generated");
+
+        // Manually create the table in ClickHouse to simulate external management
         await client.command({
           query: `
             CREATE TABLE IF NOT EXISTS ExternallyManagedTest (
@@ -301,18 +306,54 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
             ) ENGINE = MergeTree() ORDER BY (id, timestamp)
           `,
         });
-        console.log("✓ Manually created ExternallyManagedTest table");
+        console.log(
+          "✓ Manually created ExternallyManagedTest table in ClickHouse",
+        );
 
-        // Generate plan - should have no operations for this table
+        // Now MODIFY the externally managed table definition by adding a new column
+        const modelsPath = path.join(
+          testProjectDir,
+          "src",
+          "ingest",
+          "models.ts",
+        );
+        let modelsContent = fs.readFileSync(modelsPath, "utf-8");
+
+        // Find and replace the externallyManagedTable definition to add a new column
+        modelsContent = modelsContent.replace(
+          /export const externallyManagedTable = new OlapTable<LifeCycleTestData>\(\s*"ExternallyManagedTest",\s*{[\s\S]*?}\s*\);/,
+          `export const externallyManagedTable = new OlapTable<LifeCycleTestDataWithExtra>(
+  "ExternallyManagedTest",
+  {
+    orderByFields: ["id", "timestamp"],
+    lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+  },
+);`,
+        );
+
+        fs.writeFileSync(modelsPath, modelsContent);
+        console.log(
+          "✓ Modified ExternallyManagedTest to add 'removableColumn' field",
+        );
+
+        // Generate plan after schema change - should STILL have no operations at all
         const plan = await runMoosePlanJson(testProjectDir);
 
         const operations = getTableChanges(plan, "ExternallyManagedTest");
         expect(operations).to.have.lengthOf(
           0,
-          `Expected no operations for ExternallyManagedTest, got: ${JSON.stringify(operations)}`,
+          `Expected no operations for ExternallyManagedTest after schema change, got: ${JSON.stringify(operations)}`,
         );
 
-        console.log("✓ No operations for ExternallyManagedTest (as expected)");
+        // Also verify specifically that no create or update operations exist
+        const hasCreate = hasTableAdded(plan, "ExternallyManagedTest");
+        const hasUpdate = hasTableUpdated(plan, "ExternallyManagedTest");
+        expect(hasCreate).to.be.false;
+        expect(hasUpdate).to.be.false;
+
+        console.log(
+          "✓ No create or update operations for ExternallyManagedTest after schema change (as expected)",
+        );
       } finally {
         await cleanup();
       }
