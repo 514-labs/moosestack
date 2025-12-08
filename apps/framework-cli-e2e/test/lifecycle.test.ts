@@ -200,6 +200,13 @@ async function setupTestEnvironment(testName: string) {
   // Return cleanup function
   const cleanup = async () => {
     console.log(`\n=== Cleaning up environment for: ${testName} ===`);
+
+    // Close ClickHouse client connection to prevent leaks
+    if (client) {
+      await client.close();
+      console.log(`✓ ClickHouse client closed for: ${testName}`);
+    }
+
     await cleanupTestSuite(mooseProcess, testProjectDir, projectName, {
       logPrefix: testName,
     });
