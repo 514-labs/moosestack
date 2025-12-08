@@ -61,9 +61,25 @@ fn main() -> ExitCode {
     let cli_result = match cli::Cli::try_parse() {
         Ok(cli_result) => cli_result,
         Err(e) => {
-            // For init command errors, provide helpful guidance
+            // For help and version requests, use clap's default handling
+            // which exits with code 0 and writes to stdout
+            if matches!(
+                e.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) {
+                e.exit()
+            }
+
             let error_str = e.to_string();
-            if error_str.contains("moose init") || error_str.contains("init") {
+
+            // Check if this is specifically an init command error by looking at the usage line.
+            // The usage line shows the command being parsed, e.g., "Usage: moose-cli init ..."
+            // This is more reliable than checking if "init" appears anywhere in the error,
+            // which could match flags like "--initialize" or help text mentioning "init".
+            let is_init_error = error_str.contains("Usage: moose-cli init")
+                || error_str.contains("Usage: moose init");
+
+            if is_init_error {
                 // Check if it's a missing argument error
                 if e.kind() == clap::error::ErrorKind::MissingRequiredArgument {
                     eprintln!("{e}");
@@ -103,10 +119,8 @@ fn main() -> ExitCode {
                     std::process::exit(1)
                 }
             } else {
-                // For other errors, format without the redundant footer
-                eprintln!("{e}");
-                // Don't call e.exit() as it adds "For more information, try '--help'" footer
-                std::process::exit(1)
+                // For non-init errors, use clap's default error formatting
+                e.exit()
             }
         }
     };
