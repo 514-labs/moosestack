@@ -165,6 +165,8 @@ pub struct Inserter<C: ClickHouseClientTrait + 'static> {
     commit_callback: OffsetCommitCallback,
     /// Target ClickHouse table name
     table: String,
+    /// Target database name (None means use client's default)
+    database: Option<String>,
     /// Column names for the target table
     columns: Vec<String>,
 }
@@ -178,6 +180,7 @@ impl<C: ClickHouseClientTrait + 'static> Inserter<C> {
     /// * `batch_size` - Maximum number of records in a batch
     /// * `commit_callback` - Function to call for committing offsets
     /// * `table` - Target ClickHouse table name
+    /// * `database` - Optional target database name. If None, uses client's default database
     /// * `columns` - Column names for the target table
     ///
     /// # Returns
@@ -188,6 +191,7 @@ impl<C: ClickHouseClientTrait + 'static> Inserter<C> {
         batch_size: usize,
         commit_callback: OffsetCommitCallback,
         table: String,
+        database: Option<String>,
         columns: Vec<String>,
     ) -> Self {
         let queue = VecDeque::from([Batch::default()]);
@@ -198,6 +202,7 @@ impl<C: ClickHouseClientTrait + 'static> Inserter<C> {
             batch_size,
             commit_callback,
             table,
+            database,
             columns,
         }
     }
@@ -276,7 +281,12 @@ impl<C: ClickHouseClientTrait + 'static> Inserter<C> {
         if let Some(batch) = self.queue.front() {
             match self
                 .client
-                .insert(&self.table, &self.columns, &batch.records)
+                .insert(
+                    &self.table,
+                    self.database.as_deref(),
+                    &self.columns,
+                    &batch.records,
+                )
                 .await
             {
                 Ok(_) => {
@@ -320,10 +330,13 @@ mod tests {
     use super::*;
     use crate::infrastructure::olap::clickhouse::model::ClickHouseValue;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+
     struct MockClickHouseClient {
         insert_calls: Arc<AtomicUsize>,
         should_fail: bool,
+        /// Captures the database parameter passed to insert calls
+        last_database: Arc<Mutex<Option<Option<String>>>>,
     }
 
     impl MockClickHouseClient {
@@ -331,6 +344,7 @@ mod tests {
             Self {
                 insert_calls: Arc::new(AtomicUsize::new(0)),
                 should_fail,
+                last_database: Arc::new(Mutex::new(None)),
             }
         }
     }
@@ -340,10 +354,13 @@ mod tests {
         async fn insert(
             &self,
             _table: &str,
+            database: Option<&str>,
             _columns: &[String],
             _records: &[ClickHouseRecord],
         ) -> anyhow::Result<()> {
             self.insert_calls.fetch_add(1, Ordering::SeqCst);
+            // Capture the database parameter
+            *self.last_database.lock().unwrap() = Some(database.map(|s| s.to_string()));
             if self.should_fail {
                 Err(anyhow::anyhow!("Mock insert error"))
             } else {
@@ -366,6 +383,7 @@ mod tests {
             1,
             Box::new(|_, _| Ok(())),
             "test_table".to_string(),
+            None, // default database
             vec!["test".to_string()],
         );
 
@@ -397,6 +415,7 @@ mod tests {
             100,
             Box::new(|_, _| Ok(())),
             "test_table".to_string(),
+            None, // default database
             vec!["test".to_string()],
         );
 
@@ -432,6 +451,7 @@ mod tests {
             100,
             Box::new(|_, _| Ok(())),
             "test_table".to_string(),
+            None, // default database
             vec!["test".to_string()],
         );
 
@@ -451,6 +471,58 @@ mod tests {
             *batch.partition_offsets.get(&1).unwrap(),
             200,
             "Should track highest offset for partition 1"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_flush_with_default_database() {
+        let mock_client = MockClickHouseClient::new(false);
+        let last_database = mock_client.last_database.clone();
+
+        let mut inserter = Inserter::new(
+            mock_client,
+            100,
+            Box::new(|_, _| Ok(())),
+            "test_table".to_string(),
+            None, // No database specified - should use client default
+            vec!["test".to_string()],
+        );
+
+        inserter.insert(create_test_record(1), 0, 100);
+        inserter.flush().await;
+
+        // Verify None was passed to the client (meaning use default)
+        let captured = last_database.lock().unwrap();
+        assert_eq!(
+            *captured,
+            Some(None),
+            "Should pass None for database when not specified"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_flush_with_custom_database() {
+        let mock_client = MockClickHouseClient::new(false);
+        let last_database = mock_client.last_database.clone();
+
+        let mut inserter = Inserter::new(
+            mock_client,
+            100,
+            Box::new(|_, _| Ok(())),
+            "test_table".to_string(),
+            Some("custom_db".to_string()), // Custom database
+            vec!["test".to_string()],
+        );
+
+        inserter.insert(create_test_record(1), 0, 100);
+        inserter.flush().await;
+
+        // Verify the custom database was passed
+        let captured = last_database.lock().unwrap();
+        assert_eq!(
+            *captured,
+            Some(Some("custom_db".to_string())),
+            "Should pass custom database to client"
         );
     }
 }
