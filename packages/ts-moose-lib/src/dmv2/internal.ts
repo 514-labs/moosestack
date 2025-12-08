@@ -1175,20 +1175,28 @@ const loadIndex = async (): Promise<void> => {
         `${workerInfo} loadIndex: registry cleared in ${Date.now() - clearStart}ms`,
       );
 
-      console.log(`${workerInfo} loadIndex: clearing require cache...`);
-      const cacheStart = Date.now();
+      // Only clear require cache in development mode for hot-reloading
+      // In production, preserve the cache so workers can reuse compiled modules
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`${workerInfo} loadIndex: clearing require cache...`);
+        const cacheStart = Date.now();
 
-      // Clear require cache for app directory to pick up changes
-      const appDir = `${process.cwd()}/${getSourceDir()}`;
-      Object.keys(require.cache).forEach((key) => {
-        if (key.startsWith(appDir)) {
-          delete require.cache[key];
-        }
-      });
+        // Clear require cache for app directory to pick up changes
+        const appDir = `${process.cwd()}/${getSourceDir()}`;
+        Object.keys(require.cache).forEach((key) => {
+          if (key.startsWith(appDir)) {
+            delete require.cache[key];
+          }
+        });
 
-      console.log(
-        `${workerInfo} loadIndex: require cache cleared in ${Date.now() - cacheStart}ms`,
-      );
+        console.log(
+          `${workerInfo} loadIndex: require cache cleared in ${Date.now() - cacheStart}ms`,
+        );
+      } else {
+        console.log(
+          `${workerInfo} loadIndex: skipping cache clear in production mode`,
+        );
+      }
 
       console.log(`${workerInfo} loadIndex: requiring index.ts...`);
       const requireStart = Date.now();
