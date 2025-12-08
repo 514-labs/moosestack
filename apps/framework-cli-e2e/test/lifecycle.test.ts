@@ -236,14 +236,42 @@ describe("LifeCycle Management Tests", function () {
           "\n--- Testing EXTERNALLY_MANAGED table should not be created ---",
         );
 
+        // Add a NEW table with EXTERNALLY_MANAGED annotation after server starts
+        const newTablePath = path.join(
+          testProjectDir,
+          "src",
+          "ingest",
+          "externalTable.ts",
+        );
+
+        fs.writeFileSync(
+          newTablePath,
+          `
+import { OlapTable, Key, DateTime, LifeCycle } from "@514labs/moose-lib";
+
+export interface NewExternalTable {
+  id: Key<string>;
+  timestamp: DateTime;
+  externalData: string;
+}
+
+export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTable", {
+  orderByFields: ["id", "timestamp"],
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+});
+`.trim(),
+        );
+
+        console.log("✓ Added new EXTERNALLY_MANAGED table");
+
         const plan = await runMoosePlanJson(testProjectDir);
 
-        // ExternallyManagedTest table should NOT have any CreateTable operation
-        const hasCreate = hasTableAdded(plan, "ExternallyManagedTest");
+        // NewExternalTable should NOT have any CreateTable operation
+        const hasCreate = hasTableAdded(plan, "NewExternalTable");
         expect(hasCreate).to.be.false;
 
         console.log(
-          "✓ No CreateTable operation for ExternallyManagedTest (as expected)",
+          "✓ No CreateTable operation for NewExternalTable (as expected)",
         );
       } finally {
         await cleanup();
