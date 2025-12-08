@@ -132,10 +132,11 @@ export class Cluster<C> {
   bootWorkers = async (numWorkers: number) => {
     console.info(`Setting ${numWorkers} workers...`);
 
-    // Stagger worker startup to reduce compilation contention in production
-    const staggerDelay = process.env.NODE_ENV === "production" ? 2000 : 0;
+    // Stagger worker startup to reduce compilation contention
+    // Workers compile TypeScript on startup, so starting all at once causes CPU/disk contention
+    const staggerDelay = 2000;
     for (let i = 0; i < numWorkers; i++) {
-      if (i > 0 && staggerDelay > 0) {
+      if (i > 0) {
         await new Promise((resolve) => setTimeout(resolve, staggerDelay));
         console.info(
           `Starting worker ${i + 1}/${numWorkers} (staggered ${staggerDelay}ms)`,
