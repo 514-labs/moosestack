@@ -406,6 +406,20 @@ const createMainRouter = async (
 };
 
 export const runApis = async (config: ApisConfig) => {
+  // CRITICAL: Load index.ts in the primary process BEFORE forking workers
+  // This prevents all workers from simultaneously trying to require() and deadlocking
+  if (config.isDmv2) {
+    const preloadStart = Date.now();
+    console.log(
+      `[Primary ${process.pid}] Pre-loading index.ts before forking workers...`,
+    );
+    await getApis(); // This calls loadIndex() internally
+    await getWebApps(); // This also calls loadIndex() but will return immediately if already loaded
+    console.log(
+      `[Primary ${process.pid}] Index pre-loaded in ${Date.now() - preloadStart}ms`,
+    );
+  }
+
   const apisCluster = new Cluster({
     maxWorkerCount:
       (config.workerCount ?? 0) > 0 ? config.workerCount : undefined,
