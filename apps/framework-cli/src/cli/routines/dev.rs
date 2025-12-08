@@ -52,6 +52,13 @@ pub fn run_local_infrastructure(
                 details: project.clickhouse_config.display_url(),
             },
         );
+        show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "".to_string(),
+                details: "See moose.config.toml for complete connection details".to_string(),
+            },
+        );
     }
     if project.features.streaming_engine {
         validate_redpanda_run(project, docker_client)?.show();
