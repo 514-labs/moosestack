@@ -29,6 +29,11 @@ import {
   cleanupClickhouseData,
   createTempTestDirectory,
   cleanupTestSuite,
+  PlanOutput,
+  hasTableAdded,
+  hasTableRemoved,
+  hasTableUpdated,
+  getTableChanges,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -44,97 +49,6 @@ const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG
 
 // Moose server URL for plan command
 const MOOSE_SERVER_URL = "http://localhost:4000";
-
-// Plan output structure from moose plan --json
-interface PlanOutput {
-  target_infra_map: any;
-  changes: {
-    olap_changes: Array<Record<string, any>>;
-    streaming_engine_changes: Array<Record<string, any>>;
-    processes_changes: Array<Record<string, any>>;
-    api_changes: Array<Record<string, any>>;
-    web_app_changes: Array<Record<string, any>>;
-  };
-}
-
-/**
- * Check if a table was added (Created)
- */
-function hasTableAdded(plan: PlanOutput, tableName: string): boolean {
-  if (!plan.changes?.olap_changes) return false;
-  return plan.changes.olap_changes.some((change) => {
-    const tableChange = change.Table;
-    if (!tableChange) return false;
-    return tableChange.Added?.name === tableName;
-  });
-}
-
-/**
- * Check if a table was removed (Dropped)
- */
-function hasTableRemoved(plan: PlanOutput, tableName: string): boolean {
-  if (!plan.changes?.olap_changes) return false;
-  return plan.changes.olap_changes.some((change) => {
-    const tableChange = change.Table;
-    if (!tableChange) return false;
-    return tableChange.Removed?.name === tableName;
-  });
-}
-
-/**
- * Check if a table was updated (column changes, etc.)
- */
-function hasTableUpdated(plan: PlanOutput, tableName: string): boolean {
-  if (!plan.changes?.olap_changes) return false;
-  return plan.changes.olap_changes.some((change) => {
-    const tableChange = change.Table;
-    if (!tableChange) return false;
-    if (tableChange.Updated) {
-      return (
-        tableChange.Updated.before?.name === tableName ||
-        tableChange.Updated.after?.name === tableName
-      );
-    }
-    return false;
-  });
-}
-
-/**
- * Get all table changes for a specific table
- */
-function getTableChanges(
-  plan: PlanOutput,
-  tableName: string,
-): Array<{ type: string; details: any }> {
-  const results: Array<{ type: string; details: any }> = [];
-
-  if (!plan.changes?.olap_changes) return results;
-
-  for (const change of plan.changes.olap_changes) {
-    for (const [changeType, details] of Object.entries(change)) {
-      if (changeType === "Table") {
-        const tableChange = details;
-        let matches = false;
-
-        if (tableChange.Added?.name === tableName) {
-          matches = true;
-        } else if (tableChange.Removed?.name === tableName) {
-          matches = true;
-        } else if (tableChange.Updated) {
-          matches =
-            tableChange.Updated.before?.name === tableName ||
-            tableChange.Updated.after?.name === tableName;
-        }
-
-        if (matches) {
-          results.push({ type: changeType, details: tableChange });
-        }
-      }
-    }
-  }
-
-  return results;
-}
 
 /**
  * Environment variables needed for the typescript-tests template
