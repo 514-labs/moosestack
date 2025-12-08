@@ -708,6 +708,7 @@ jobs:
     runs-on: ubuntu-latest
     # Only run for release builds (main branch), not CI builds
     # if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
+    continue-on-error: true
     needs:
       - version
     # Add explicit permissions
@@ -735,6 +736,8 @@ jobs:
 
       - name: Clean up PyPI and only keep the latest 80 days of moose CLI and lib
         run: |
+          ERROR_CODE=0
+
           # Function to run pypi-cleanup with error handling
           cleanup_package() {
             local package_name=$1
@@ -772,11 +775,27 @@ jobs:
             exit \$exit_code
           }
           EOF
+            local exit_code=$?
+            if [ $exit_code -ne 0 ]; then
+              echo "::error::pypi-cleanup for ${package_name} failed with exit code $exit_code"
+              echo ""
+              echo "This is most likely due to PyPI device authentication."
+              echo "Please check your email for a message from noreply@pypi.org"
+              echo "with the subject line 'Unrecognized login to your PyPI account'."
+              echo "Click the confirmation link in that email to authorize this device."
+              echo "For more details, see: https://pypi.org/help/#utfkey"
+              ERROR_CODE=1
+            fi
           }
 
-          # Clean up both packages
+          # Clean up both packages (both will run even if first fails)
           cleanup_package "moose-cli" 80
           cleanup_package "moose-lib" 80
+
+          # Fail the step if any error occurred
+          if [ $ERROR_CODE -eq 1 ]; then
+            exit 1
+          fi
 
         env:
           PYPI_CLEANUP_PASSWORD: ${{ steps.op-load-secret.outputs.PYPI_CLEANUP_PASSWORD }}
