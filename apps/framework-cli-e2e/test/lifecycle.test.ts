@@ -29,6 +29,7 @@ import {
   cleanupClickhouseData,
   createTempTestDirectory,
   cleanupTestSuite,
+  performGlobalCleanup,
   PlanOutput,
   hasTableAdded,
   hasTableRemoved,
@@ -216,6 +217,15 @@ async function setupTestEnvironment(testName: string) {
 
   return { mooseProcess, testProjectDir, client, cleanup };
 }
+
+// Global setup - clean Docker state from previous runs
+before(async function () {
+  this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+  console.log(
+    "Running global setup for lifecycle tests - cleaning Docker state from previous runs...",
+  );
+  await performGlobalCleanup();
+});
 
 describe("LifeCycle Management Tests", function () {
   // Global cleanup before all tests
@@ -851,4 +861,11 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestData>(
       }
     });
   });
+});
+
+// Global cleanup to ensure no hanging processes or Docker resources
+after(async function () {
+  this.timeout(TIMEOUTS.GLOBAL_CLEANUP_MS);
+  console.log("\n=== Running global cleanup for lifecycle tests ===");
+  await performGlobalCleanup();
 });
