@@ -64,8 +64,8 @@ use anyhow::{Context, Result};
 use protobuf::{EnumOrUnknown, Message as ProtoMessage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
+use std::{fs, mem};
 
 /// Strategy trait for handling database-specific table diffing logic
 ///
@@ -2805,6 +2805,31 @@ impl InfrastructureMap {
             .values()
             .any(|endpoint| matches!(endpoint.api_type, APIType::EGRESS { .. }))
     }
+
+    pub fn fixup_default_db(&mut self, db_name: &str) {
+        self.default_database = db_name.to_string();
+        if self.tables.iter().any(|(id, t)| id != &t.id(db_name)) {
+            // fix up IDs where the default_database might be "local",
+            // or old versions which does not include DB name
+            let existing_tables = mem::take(&mut self.tables);
+
+            let mut table_id_mapping: HashMap<String, String> = HashMap::new();
+
+            for (old_id, t) in existing_tables {
+                let new_id = t.id(db_name);
+                self.tables.insert(new_id.clone(), t);
+                table_id_mapping.insert(old_id, new_id);
+            }
+
+            let syncs = mem::take(&mut self.topic_to_table_sync_processes);
+            for (_, mut sync) in syncs {
+                if let Some(new_id) = table_id_mapping.get(&sync.target_table_id) {
+                    sync.target_table_id = new_id.clone();
+                }
+                self.topic_to_table_sync_processes.insert(sync.id(), sync);
+            }
+        }
+    }
 }
 
 /// Compare two optional TTL expressions for equivalence, accounting for ClickHouse normalization.
@@ -2989,6 +3014,7 @@ pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnCh
     diff
 }
 
+#[cfg(test)]
 impl Default for InfrastructureMap {
     /// Creates a default empty infrastructure map
     ///
