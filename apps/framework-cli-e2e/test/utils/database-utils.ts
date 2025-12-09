@@ -2,12 +2,23 @@ import { createClient } from "@clickhouse/client";
 import { ChildProcess } from "child_process";
 import { CLICKHOUSE_CONFIG, RETRY_CONFIG } from "../constants";
 import { withRetries } from "./retry-utils";
+import { logger, ScopedLogger } from "./logger";
+
+const dbLogger = logger.scope("utils:database");
+
+export interface DatabaseOptions {
+  logger?: ScopedLogger;
+}
 
 /**
  * Cleans up ClickHouse data by truncating test tables
  */
-export const cleanupClickhouseData = async (): Promise<void> => {
-  console.log("Cleaning up ClickHouse data...");
+export const cleanupClickhouseData = async (
+  options: DatabaseOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? dbLogger;
+  log.info("Cleaning up ClickHouse data");
+
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
@@ -17,10 +28,7 @@ export const cleanupClickhouseData = async (): Promise<void> => {
           format: "JSONEachRow",
         });
         const tables: any[] = await result.json();
-        console.log(
-          "Existing tables:",
-          tables.map((t) => t.name),
-        );
+        log.debug("Existing tables", { tables: tables.map((t) => t.name) });
 
         // Truncate all tables except system tables
         for (const table of tables) {
@@ -37,9 +45,9 @@ export const cleanupClickhouseData = async (): Promise<void> => {
             await client.command({
               query: `TRUNCATE TABLE IF EXISTS \`${tableName}\``,
             });
-            console.log(`Truncated ${tableName} table`);
+            log.debug(`Truncated ${tableName} table`);
           } catch (error) {
-            console.log(`Failed to truncate ${tableName}:`, error);
+            log.warn(`Failed to truncate ${tableName}`, error);
           }
         }
       } finally {
@@ -49,9 +57,11 @@ export const cleanupClickhouseData = async (): Promise<void> => {
     {
       attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
       delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+      logger: log,
+      operationName: "ClickHouse cleanup",
     },
   );
-  console.log("ClickHouse data cleanup completed successfully");
+  log.info("✓ ClickHouse data cleanup completed successfully");
 };
 
 /**
@@ -64,11 +74,14 @@ export const waitForDBWrite = async (
   timeout: number = 60_000,
   database?: string,
   whereClause?: string,
+  options: DatabaseOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? dbLogger;
   const attempts = Math.ceil(timeout / 1000); // Convert timeout to attempts (1 second per attempt)
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
   const whereCondition = whereClause ? ` WHERE ${whereClause}` : "";
+
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
@@ -79,13 +92,14 @@ export const waitForDBWrite = async (
         });
         const rows: any[] = await result.json();
         const count = parseInt(rows[0].count);
-        console.log(`Records in ${tableName}${whereCondition}:`, count);
+        log.debug(`Records in ${tableName}${whereCondition}`, { count });
+
         if (count >= expectedRecords) {
           return; // Success - exit retry loop
         }
 
         // Log what's actually in the table before throwing
-        console.log(
+        log.debug(
           `Expected ${expectedRecords} but found ${count}. Querying actual records...`,
         );
         const dataResult = await client.query({
@@ -93,7 +107,7 @@ export const waitForDBWrite = async (
           format: "JSONEachRow",
         });
         const actualRecords: any[] = await dataResult.json();
-        console.log(`Actual records in ${tableName}:`, actualRecords);
+        log.debug(`Actual records in ${tableName}`, { actualRecords });
 
         throw new Error(
           `Expected ${expectedRecords} records, but found ${count}`,
@@ -102,7 +116,13 @@ export const waitForDBWrite = async (
         await client.close();
       }
     },
-    { attempts, delayMs: RETRY_CONFIG.DB_WRITE_DELAY_MS, backoffFactor: 1 }, // Linear backoff
+    {
+      attempts,
+      delayMs: RETRY_CONFIG.DB_WRITE_DELAY_MS,
+      backoffFactor: 1,
+      logger: log,
+      operationName: `DB write: ${tableName}`,
+    },
   );
 };
 
@@ -114,8 +134,12 @@ export const waitForMaterializedViewUpdate = async (
   expectedRows: number,
   timeout: number = 60_000,
   database?: string,
+  options: DatabaseOptions = {},
 ): Promise<void> => {
-  console.log(`Waiting for materialized view ${tableName} to update...`);
+  const log = options.logger ?? dbLogger;
+  log.debug(`Waiting for materialized view ${tableName} to update`, {
+    expectedRows,
+  });
   const attempts = Math.ceil(timeout / 1000); // Convert timeout to attempts (1 second per attempt)
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
@@ -131,9 +155,7 @@ export const waitForMaterializedViewUpdate = async (
         const count = parseInt(rows[0].count);
 
         if (count >= expectedRows) {
-          console.log(
-            `Materialized view ${tableName} updated with ${count} rows`,
-          );
+          log.debug(`Materialized view ${tableName} updated`, { rows: count });
           return; // Success - exit retry loop
         }
 
@@ -144,7 +166,13 @@ export const waitForMaterializedViewUpdate = async (
         await client.close();
       }
     },
-    { attempts, delayMs: RETRY_CONFIG.DB_WRITE_DELAY_MS, backoffFactor: 1 }, // Linear backoff
+    {
+      attempts,
+      delayMs: RETRY_CONFIG.DB_WRITE_DELAY_MS,
+      backoffFactor: 1,
+      logger: log,
+      operationName: `Materialized view update: ${tableName}`,
+    },
   );
 };
 
@@ -156,9 +184,12 @@ export const verifyClickhouseData = async (
   eventId: string,
   primaryKeyField: string,
   database?: string,
+  options: DatabaseOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? dbLogger;
   const fullTableName =
     database ? `\`${database}\`.\`${tableName}\`` : tableName;
+
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
@@ -168,7 +199,7 @@ export const verifyClickhouseData = async (
           format: "JSONEachRow",
         });
         const rows: any[] = await result.json();
-        console.log(`${tableName} data:`, rows);
+        log.debug(`${tableName} data retrieved`, { rows: rows.length });
 
         if (rows.length === 0) {
           throw new Error(
@@ -190,6 +221,8 @@ export const verifyClickhouseData = async (
       // Too many attempts would make this go longer than the test timeout because of exponential backoff.
       attempts: RETRY_CONFIG.DEFAULT_ATTEMPTS,
       delayMs: RETRY_CONFIG.DEFAULT_DELAY_MS,
+      logger: log,
+      operationName: `ClickHouse data verification: ${tableName}`,
     },
   );
 };
@@ -653,8 +686,13 @@ export const verifyVersionedTables = async (
   baseTableName: string,
   expectedVersions: string[],
   database?: string,
+  options: DatabaseOptions = {},
 ): Promise<void> => {
-  console.log(`Verifying versioned tables for ${baseTableName}...`);
+  const log = options.logger ?? dbLogger;
+  log.debug(`Verifying versioned tables for ${baseTableName}`, {
+    expectedVersions,
+  });
+
   await withRetries(
     async () => {
       const client = createClient(CLICKHOUSE_CONFIG);
@@ -667,7 +705,7 @@ export const verifyVersionedTables = async (
         });
         const tables: any[] = await result.json();
         const tableNames = tables.map((t) => t.name);
-        console.log("All tables:", tableNames);
+        log.debug("All tables", { tables: tableNames });
 
         // Check for each expected versioned table
         for (const version of expectedVersions) {
@@ -679,7 +717,7 @@ export const verifyVersionedTables = async (
               `Expected versioned table ${expectedTableName} not found. Available tables: ${tableNames.join(", ")}`,
             );
           }
-          console.log(`✓ Found versioned table: ${expectedTableName}`);
+          log.debug(`✓ Found versioned table: ${expectedTableName}`);
         }
 
         // Verify table structures are different by checking column counts
@@ -696,7 +734,7 @@ export const verifyVersionedTables = async (
           });
           const columns: any[] = await descResult.json();
           tableStructures[tableName] = columns.length;
-          console.log(`Table ${tableName} has ${columns.length} columns`);
+          log.debug(`Table ${tableName}`, { columns: columns.length });
         }
 
         // Verify that different versions have different structures (for our test case)
@@ -705,11 +743,9 @@ export const verifyVersionedTables = async (
           // Check if at least some versions have different column counts
           const uniqueCounts = new Set(columnCounts);
           if (uniqueCounts.size === 1) {
-            console.log(
-              "Warning: All versioned tables have the same column count",
-            );
+            log.warn("All versioned tables have the same column count");
           } else {
-            console.log(
+            log.debug(
               "✓ Versioned tables have different structures as expected",
             );
           }

@@ -6,6 +6,9 @@ import {
   removeTestProject,
   cleanupLeftoverTestDirectories,
 } from "./file-utils";
+import { logger, ScopedLogger } from "./logger";
+
+const cleanupLogger = logger.scope("utils:cleanup");
 
 /**
  * Options for test suite cleanup
@@ -17,6 +20,8 @@ export interface CleanupOptions {
   includeDocker?: boolean;
   /** Optional prefix for log messages */
   logPrefix?: string;
+  /** Optional logger (uses test context logger if provided) */
+  logger?: ScopedLogger;
 }
 
 /**
@@ -35,41 +40,49 @@ export async function cleanupTestSuite(
   appName: string,
   options: CleanupOptions = {},
 ): Promise<void> {
-  const { includeDocker = true, logPrefix = "Test suite" } = options;
+  const {
+    includeDocker = true,
+    logPrefix = "Test suite",
+    logger: log = cleanupLogger,
+  } = options;
 
   try {
     if (logPrefix) {
-      console.log(`Starting cleanup for ${logPrefix}...`);
+      log.info(`Starting cleanup for ${logPrefix}`);
     }
 
     // Step 1: Stop the dev process
-    await stopDevProcess(devProcess);
+    log.debug("Stopping dev process");
+    await stopDevProcess(devProcess, { logger: log });
 
     // Step 2: Clean up Docker resources (if enabled)
     if (includeDocker) {
-      await cleanupDocker(testProjectDir, appName);
+      log.debug("Cleaning up Docker resources", { appName });
+      await cleanupDocker(testProjectDir, appName, { logger: log });
     }
 
     // Step 3: Remove test project directory
-    removeTestProject(testProjectDir);
+    log.debug("Removing test project directory", { path: testProjectDir });
+    removeTestProject(testProjectDir, { logger: log });
 
     if (logPrefix) {
-      console.log(`Cleanup completed for ${logPrefix}`);
+      log.info(`✓ Cleanup completed for ${logPrefix}`);
     }
   } catch (error) {
-    console.error("Error during cleanup:", error);
+    log.error("Error during cleanup", error);
 
     // Force cleanup even if some steps fail
     try {
       if (devProcess && !devProcess.killed) {
+        log.warn("Force killing process with SIGKILL");
         devProcess.kill("SIGKILL");
       }
     } catch (killError) {
-      console.error("Error killing process:", killError);
+      log.error("Error killing process", killError);
     }
 
     // Always try to remove the test directory
-    removeTestProject(testProjectDir);
+    removeTestProject(testProjectDir, { logger: log });
   }
 }
 
@@ -79,20 +92,24 @@ export async function cleanupTestSuite(
 export async function performGlobalCleanup(
   logMessage = "Running global cleanup...",
 ): Promise<void> {
-  console.log(logMessage);
+  const globalLogger = logger.scope("global-cleanup");
+  globalLogger.info(logMessage);
 
   try {
     // Kill any remaining moose-cli processes
+    globalLogger.debug("Killing remaining moose-cli processes");
     await killRemainingProcesses();
 
     // Clean up any remaining Docker resources
-    await globalDockerCleanup();
+    globalLogger.debug("Cleaning up Docker resources");
+    await globalDockerCleanup({ logger: globalLogger });
 
     // Clean up any leftover test directories
-    cleanupLeftoverTestDirectories();
+    globalLogger.debug("Cleaning up leftover test directories");
+    cleanupLeftoverTestDirectories({ logger: globalLogger });
 
-    console.log("Global cleanup completed");
+    globalLogger.info("✓ Global cleanup completed");
   } catch (error) {
-    console.warn("Error during global cleanup:", error);
+    globalLogger.warn("Error during global cleanup", error);
   }
 }

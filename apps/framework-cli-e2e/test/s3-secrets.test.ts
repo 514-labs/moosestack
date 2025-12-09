@@ -28,6 +28,7 @@ import {
   setupPythonProject,
   removeTestProject,
   cleanupTestSuite,
+  logger,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -39,6 +40,8 @@ const MOOSE_PY_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/py-moose-lib",
 );
+
+const testLogger = logger.scope("s3-secrets-test");
 
 describe("typescript template tests - S3Queue Runtime Environment Variable Resolution", () => {
   describe("With Environment Variables", () => {
@@ -81,9 +84,9 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         "http://localhost:4000",
       );
 
-      console.log("Server started, waiting for streaming functions...");
+      testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions();
-      console.log("All components ready");
+      testLogger.info("All components ready");
     });
 
     after(async function () {
@@ -180,10 +183,10 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         const output = stdoutOutput + stderrOutput;
 
         // Log captured output for debugging
-        console.log("=== Captured stdout ===");
-        console.log(stdoutOutput);
-        console.log("=== Captured stderr ===");
-        console.log(stderrOutput);
+        testLogger.info("=== Captured stdout ===");
+        testLogger.info(stdoutOutput);
+        testLogger.info("=== Captured stderr ===");
+        testLogger.info(stderrOutput);
 
         // Verify error message includes table name, field name, and env var name
         expect(output).to.include("S3QueueWithSecrets");
@@ -192,13 +195,13 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
           /TEST_AWS_ACCESS_KEY_ID|TEST_AWS_SECRET_ACCESS_KEY/,
         );
 
-        console.log("Process exited with expected error message");
+        testLogger.info("Process exited with expected error message");
       } catch (error) {
         // Log captured output even on timeout
-        console.log("=== Process timed out - captured stdout ===");
-        console.log(stdoutOutput);
-        console.log("=== Process timed out - captured stderr ===");
-        console.log(stderrOutput);
+        testLogger.info("=== Process timed out - captured stdout ===");
+        testLogger.info(stdoutOutput);
+        testLogger.info("=== Process timed out - captured stderr ===");
+        testLogger.info(stderrOutput);
         throw error;
       } finally {
         // Cleanup
@@ -253,9 +256,9 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         "http://localhost:4000",
       );
 
-      console.log("Server started, waiting for streaming functions...");
+      testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions();
-      console.log("All components ready");
+      testLogger.info("All components ready");
     });
 
     after(async function () {
@@ -355,10 +358,10 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         const output = stdoutOutput + stderrOutput;
 
         // Log captured output for debugging
-        console.log("=== Captured stdout ===");
-        console.log(stdoutOutput);
-        console.log("=== Captured stderr ===");
-        console.log(stderrOutput);
+        testLogger.info("=== Captured stdout ===");
+        testLogger.info(stdoutOutput);
+        testLogger.info("=== Captured stderr ===");
+        testLogger.info(stderrOutput);
 
         // Verify error message includes table name, field name, and env var name
         expect(output).to.include("S3QueueWithSecrets");
@@ -367,13 +370,13 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
           /TEST_AWS_ACCESS_KEY_ID|TEST_AWS_SECRET_ACCESS_KEY/,
         );
 
-        console.log("Process exited with expected error message");
+        testLogger.info("Process exited with expected error message");
       } catch (error) {
         // Log captured output even on timeout
-        console.log("=== Process timed out - captured stdout ===");
-        console.log(stdoutOutput);
-        console.log("=== Process timed out - captured stderr ===");
-        console.log(stderrOutput);
+        testLogger.info("=== Process timed out - captured stdout ===");
+        testLogger.info(stdoutOutput);
+        testLogger.info("=== Process timed out - captured stderr ===");
+        testLogger.info(stderrOutput);
         throw error;
       } finally {
         // Cleanup
