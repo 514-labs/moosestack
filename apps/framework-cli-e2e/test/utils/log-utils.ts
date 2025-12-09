@@ -2,6 +2,13 @@ import * as fs from "fs";
 import * as path from "path";
 import { RETRY_CONFIG } from "../constants";
 import { withRetries } from "./retry-utils";
+import { logger, ScopedLogger } from "./logger";
+
+const logUtilsLogger = logger.scope("utils:log-verification");
+
+export interface LogVerifyOptions {
+  logger?: ScopedLogger;
+}
 
 /**
  * Verifies that expected output appears in consumer logs
@@ -9,7 +16,9 @@ import { withRetries } from "./retry-utils";
 export const verifyConsumerLogs = async (
   projectDir: string,
   expectedOutput: string[],
+  options: LogVerifyOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? logUtilsLogger;
   const homeDir = process.env.HOME || process.env.USERPROFILE || "";
   const mooseDir = path.join(homeDir, ".moose");
   const today = new Date();
@@ -33,17 +42,22 @@ export const verifyConsumerLogs = async (
         }
       }
 
-      console.log("Checking consumer logs in:", logPath);
+      log.debug("Checking consumer logs in", { logPath });
       const logContent = fs.readFileSync(logPath, "utf-8");
       for (const expected of expectedOutput) {
         if (!logContent.includes(expected)) {
           throw new Error(`Log should contain "${expected}"`);
         }
       }
+      log.debug("All expected log entries found", {
+        expectedCount: expectedOutput.length,
+      });
     },
     {
       attempts: RETRY_CONFIG.LOG_VERIFICATION_ATTEMPTS,
       delayMs: RETRY_CONFIG.LOG_VERIFICATION_DELAY_MS,
+      logger: log,
+      operationName: "Consumer log verification",
     },
   );
 };

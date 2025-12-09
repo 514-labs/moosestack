@@ -53,7 +53,8 @@ class Logger {
     const levelStr = `[${level}]`.padEnd(7);
 
     if (this.config.useColor && color) {
-      return `${color}${timestamp} ${levelStr}${message}\x1b[0m`;
+      // Only color the level part, not the entire message
+      return `${timestamp} ${color}${levelStr}\x1b[0m${message}`;
     }
 
     return `${timestamp} ${levelStr}${message}`;
