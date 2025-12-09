@@ -329,6 +329,7 @@ def create_producer() -> Optional[KafkaProducer]:
     Create a Kafka producer configured for the target topic.
     
     Handles SASL authentication if configured and sets appropriate message size limits.
+    Configures retries and batching for better throughput and reliability.
     
     Returns:
         Configured KafkaProducer instance
@@ -342,6 +343,13 @@ def create_producer() -> Optional[KafkaProducer]:
         sasl_mechanism=sasl_config.get("mechanism"),
         security_protocol=args.security_protocol,
         max_request_size=max_request_size,
+        # Retry configuration for transient failures
+        retries=5,
+        retry_backoff_ms=100,
+        # Batching for throughput - wait up to 5ms to accumulate messages
+        linger_ms=5,
+        # Durability - wait for all in-sync replicas to acknowledge
+        acks='all',
     )
 
 
@@ -426,6 +434,10 @@ def main():
                     if not messages:
                         continue
 
+                    # Collect all send futures across the entire poll batch for throughput.
+                    # We only wait for futures and commit once per poll, not per message.
+                    batch_send_futures = []
+
                     # Process each partition's messages
                     for partition_messages in messages.values():
                         for message in partition_messages:
@@ -452,7 +464,8 @@ def main():
                                             source="transform"
                                         )
                                         record = dead_letter.model_dump_json().encode('utf-8')
-                                        producer.send(dlq.name, record).get()
+                                        # DLQ sends are collected with the batch too
+                                        batch_send_futures.append(producer.send(dlq.name, record))
                                         cli_log(CliLogData(
                                             action="DeadLetter",
                                             message=f"Sent message to DLQ {dlq.name}: {str(e)}",
@@ -487,18 +500,24 @@ def main():
                                     if item is not None:
                                         record = json.dumps(item, cls=EnhancedJSONEncoder).encode('utf-8')
 
-                                        producer.send(target_topic.name, record)
+                                        # producer.send is async - collect futures to wait on later
+                                        future = producer.send(target_topic.name, record)
+                                        batch_send_futures.append(future)
 
                                         with metrics_lock:
                                             metrics['bytes_count'] += len(record)
                                             metrics['count_out'] += 1
-                                
-                                # Flush producer to ensure messages are sent before committing
-                                producer.flush()
 
-                            # Commit offset only after successful processing and flushing
-                            # This ensures at-least-once delivery semantics
-                            consumer.commit()
+                    # Wait for all sends in the batch to complete successfully.
+                    # This is done once per poll batch, not per message, for throughput.
+                    # If any send fails, we don't commit and the entire batch will be reprocessed.
+                    for future in batch_send_futures:
+                        future.get()  # Raises exception on send failure
+
+                    # Commit offset asynchronously after successful send verification.
+                    # Non-blocking - at-least-once is guaranteed because we've verified
+                    # all sends completed. If commit fails, batch will be reprocessed.
+                    consumer.commit_async()
 
                 except Exception as e:
                     cli_log(CliLogData(action="Function", message=str(e), message_type="Error"))
