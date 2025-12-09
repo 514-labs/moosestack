@@ -37,6 +37,7 @@ import {
   getTableSchema,
   setupPythonProject,
   setupTypeScriptProject,
+  logger,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -52,6 +53,8 @@ const MOOSE_TS_LIB_PATH = path.resolve(
 );
 const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123?database=${CLICKHOUSE_CONFIG.database}`;
 
+const testLogger = logger.scope("db-pull-defaults-test");
+
 describe("python template tests - db-pull with SQL function defaults", () => {
   let devProcess: ChildProcess;
   let testProjectDir: string;
@@ -62,11 +65,11 @@ describe("python template tests - db-pull with SQL function defaults", () => {
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    console.log("\n=== Starting Python db-pull Defaults Test ===");
+    testLogger.info("\n=== Starting Python db-pull Defaults Test ===");
 
     // Create temp test directory
     testProjectDir = createTempTestDirectory("py-db-pull-defaults");
-    console.log("Test project dir:", testProjectDir);
+    testLogger.info("Test project dir:", testProjectDir);
 
     // Setup Python project with dependencies
     await setupPythonProject(
@@ -78,7 +81,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     );
 
     // Start moose dev for infrastructure
-    console.log("\nStarting moose dev...");
+    testLogger.info("\nStarting moose dev...");
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: testProjectDir,
@@ -96,7 +99,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       "http://localhost:4000",
     );
 
-    console.log("✓ Infrastructure ready");
+    testLogger.info("✓ Infrastructure ready");
 
     // Clean ClickHouse and create test table
     await cleanupClickhouseData();
@@ -105,7 +108,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
 
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
-    console.log("\n=== Cleaning up Python db-pull Defaults Test ===");
+    testLogger.info("\n=== Cleaning up Python db-pull Defaults Test ===");
 
     if (client) {
       await client.close();
@@ -120,7 +123,9 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     this.timeout(TIMEOUTS.MIGRATION_MS * 2);
 
     // ============ STEP 1: Create ClickHouse Table with Function Defaults ============
-    console.log("\n--- Creating ClickHouse table with function defaults ---");
+    testLogger.info(
+      "\n--- Creating ClickHouse table with function defaults ---",
+    );
 
     // Drop table if it exists from previous run
     await client.command({
@@ -143,7 +148,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     `;
 
     await client.command({ query: createTableSQL });
-    console.log("✓ Test table created with function defaults");
+    testLogger.info("✓ Test table created with function defaults");
 
     // Verify table exists
     const tables = await client.query({
@@ -154,7 +159,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     expect(tableList.map((t) => t.name)).to.include(TEST_TABLE_NAME);
 
     // ============ STEP 2: Run db pull ============
-    console.log("\n--- Running db pull ---");
+    testLogger.info("\n--- Running db pull ---");
 
     const { stdout: pullOutput } = await execAsync(
       `"${CLI_PATH}" db pull --connection-string "${CLICKHOUSE_URL}"`,
@@ -168,10 +173,10 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       },
     );
 
-    console.log("db-pull output:", pullOutput);
+    testLogger.info("db-pull output:", pullOutput);
 
     // ============ STEP 3: Verify Generated Python Code ============
-    console.log("\n--- Verifying generated Python code ---");
+    testLogger.info("\n--- Verifying generated Python code ---");
 
     const externalModelsPath = path.join(
       testProjectDir,
@@ -182,7 +187,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     expect(fs.existsSync(externalModelsPath)).to.be.true;
 
     const generatedCode = fs.readFileSync(externalModelsPath, "utf-8");
-    console.log("Generated Python code:\n", generatedCode);
+    testLogger.info("Generated Python code:\n", generatedCode);
 
     // CRITICAL: Verify defaults are NOT double-quoted
     // Bug would generate: clickhouse_default("\"xxHash64(_id)\"")  ❌
@@ -212,11 +217,11 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     expect(generatedCode).to.include("NotFound = 404");
     expect(generatedCode).to.include("LargeValue = 1000"); // Value > 255 that previously overflowed
 
-    console.log("✓ Generated Python code has correct default syntax");
-    console.log("✓ Enum16 with large values (> 255) correctly generated");
+    testLogger.info("✓ Generated Python code has correct default syntax");
+    testLogger.info("✓ Enum16 with large values (> 255) correctly generated");
 
     // ============ STEP 3.5: Move external model to datamodels for migration ============
-    console.log("\n--- Moving external model to datamodels ---");
+    testLogger.info("\n--- Moving external model to datamodels ---");
     // Migration system only processes models in datamodels/, not external_models.py
     // We need to move the generated code to test the roundtrip
     const datamodelsDir = path.join(testProjectDir, "app", "datamodels");
@@ -225,10 +230,10 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     }
     const datamodelPath = path.join(datamodelsDir, "test_defaults_model.py");
     fs.copyFileSync(externalModelsPath, datamodelPath);
-    console.log("✓ Model copied to datamodels");
+    testLogger.info("✓ Model copied to datamodels");
 
     // ============ STEP 4: Generate Migration Plan ============
-    console.log("\n--- Generating migration plan ---");
+    testLogger.info("\n--- Generating migration plan ---");
 
     const { stdout: planOutput } = await execAsync(
       `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
@@ -242,10 +247,12 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       },
     );
 
-    console.log("Migration plan output:", planOutput);
+    testLogger.info("Migration plan output:", planOutput);
 
     // ============ STEP 5: Apply Migration (Roundtrip Test) ============
-    console.log("\n--- Applying migration (this would fail with the bug) ---");
+    testLogger.info(
+      "\n--- Applying migration (this would fail with the bug) ---",
+    );
 
     // This is where the bug manifests: ALTER TABLE tries to apply
     // DEFAULT 'xxHash64(_id)' (with quotes) instead of DEFAULT xxHash64(_id)
@@ -262,13 +269,13 @@ describe("python template tests - db-pull with SQL function defaults", () => {
           },
         },
       );
-      console.log("Migration output:", migrateOutput);
-      console.log("✓ Migration applied successfully (bug is fixed!)");
+      testLogger.info("Migration output:", migrateOutput);
+      testLogger.info("✓ Migration applied successfully (bug is fixed!)");
     } catch (error: any) {
-      console.log("Migration failed!");
-      console.log("stdout:", error.stdout || "(empty)");
-      console.log("stderr:", error.stderr || "(empty)");
-      console.log("message:", error.message);
+      testLogger.info("Migration failed!");
+      testLogger.info("stdout:", error.stdout || "(empty)");
+      testLogger.info("stderr:", error.stderr || "(empty)");
+      testLogger.info("message:", error.message);
 
       // Check if it's the expected bug error
       if (error.stdout && error.stdout.includes("Cannot parse string")) {
@@ -282,13 +289,16 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     }
 
     // ============ STEP 6: Verify Table Schema ============
-    console.log("\n--- Verifying table schema after migration ---");
+    testLogger.info("\n--- Verifying table schema after migration ---");
 
     const schema = await getTableSchema(TEST_TABLE_NAME);
-    console.log("Table schema:", JSON.stringify(schema, null, 2));
+    testLogger.info("Table schema:", JSON.stringify(schema, null, 2));
 
     const sampleHashCol = schema.find((col) => col.name === "sample_hash");
-    console.log("sample_hash column:", JSON.stringify(sampleHashCol, null, 2));
+    testLogger.info(
+      "sample_hash column:",
+      JSON.stringify(sampleHashCol, null, 2),
+    );
     expect(sampleHashCol).to.exist;
     expect(sampleHashCol!.default_type).to.equal("DEFAULT");
     expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
@@ -300,10 +310,10 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       "toStartOfHour(toDateTime(_time_observed / 1000))",
     );
 
-    console.log("✓ Table schema is correct after migration");
+    testLogger.info("✓ Table schema is correct after migration");
 
     // ============ STEP 7: Test Data Insertion with Defaults ============
-    console.log("\n--- Testing data insertion with defaults ---");
+    testLogger.info("\n--- Testing data insertion with defaults ---");
 
     const testId = "test-row-" + Date.now();
     const testTime = Date.now();
@@ -319,7 +329,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       format: "JSONEachRow",
     });
 
-    console.log("✓ Data inserted (only provided _id and _time_observed)");
+    testLogger.info("✓ Data inserted (only provided _id and _time_observed)");
 
     // Verify defaults were applied
     const result = await client.query({
@@ -331,7 +341,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     expect(rows.length).to.equal(1);
 
     const row = rows[0];
-    console.log("Inserted row:", row);
+    testLogger.info("Inserted row:", row);
 
     // Verify computed defaults
     expect(row.sample_hash).to.be.a("string"); // xxHash64 result
@@ -341,8 +351,8 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     expect(row.literal_default).to.equal("active");
     expect(row.numeric_default).to.equal(42);
 
-    console.log("✓ All defaults applied correctly");
-    console.log("✅ ENG-1162 Python test passed - bug is fixed!");
+    testLogger.info("✓ All defaults applied correctly");
+    testLogger.info("✅ ENG-1162 Python test passed - bug is fixed!");
   });
 
   it("should handle defaults with special characters", async function () {
@@ -350,7 +360,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
 
     const tableName = "test_special_chars_py";
 
-    console.log("\n--- Testing special characters in defaults ---");
+    testLogger.info("\n--- Testing special characters in defaults ---");
 
     // Drop table if it exists from previous run
     await client.command({
@@ -367,7 +377,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     `,
     });
 
-    console.log("✓ Created table with special character defaults");
+    testLogger.info("✓ Created table with special character defaults");
 
     // Run db pull
     await execAsync(
@@ -387,7 +397,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
       "utf-8",
     );
 
-    console.log("Generated code (snippet):");
+    testLogger.info("Generated code (snippet):");
     const lines = code.split("\n");
     const relevantLines = lines.filter(
       (line) =>
@@ -395,14 +405,14 @@ describe("python template tests - db-pull with SQL function defaults", () => {
         line.includes("backslash") ||
         line.includes("test_special_chars"),
     );
-    console.log(relevantLines.join("\n"));
+    testLogger.info(relevantLines.join("\n"));
 
     // Verify proper escaping - the exact format depends on how ClickHouse stores the defaults
     // Just verify it doesn't have the double-quote bug
     expect(code).to.not.include('clickhouse_default("\\"\'it');
     expect(code).to.not.include('clickhouse_default("\\"\'path');
 
-    console.log("✓ Special characters handled correctly");
+    testLogger.info("✓ Special characters handled correctly");
   });
 });
 
@@ -416,11 +426,11 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    console.log("\n=== Starting TypeScript db-pull Defaults Test ===");
+    testLogger.info("\n=== Starting TypeScript db-pull Defaults Test ===");
 
     // Create temp test directory
     testProjectDir = createTempTestDirectory("ts-db-pull-defaults");
-    console.log("Test project dir:", testProjectDir);
+    testLogger.info("Test project dir:", testProjectDir);
 
     // Setup TypeScript project with dependencies
     await setupTypeScriptProject(
@@ -433,7 +443,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     );
 
     // Start moose dev for infrastructure
-    console.log("\nStarting moose dev...");
+    testLogger.info("\nStarting moose dev...");
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: testProjectDir,
@@ -446,7 +456,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
       "http://localhost:4000",
     );
 
-    console.log("✓ Infrastructure ready");
+    testLogger.info("✓ Infrastructure ready");
 
     // Clean ClickHouse and create test table
     await cleanupClickhouseData();
@@ -455,7 +465,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
 
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
-    console.log("\n=== Cleaning up TypeScript db-pull Defaults Test ===");
+    testLogger.info("\n=== Cleaning up TypeScript db-pull Defaults Test ===");
 
     if (client) {
       await client.close();
@@ -470,7 +480,9 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     this.timeout(TIMEOUTS.MIGRATION_MS * 2);
 
     // ============ STEP 1: Create ClickHouse Table with Function Defaults ============
-    console.log("\n--- Creating ClickHouse table with function defaults ---");
+    testLogger.info(
+      "\n--- Creating ClickHouse table with function defaults ---",
+    );
 
     // Drop table if it exists from previous run
     await client.command({
@@ -493,7 +505,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     `;
 
     await client.command({ query: createTableSQL });
-    console.log("✓ Test table created with function defaults");
+    testLogger.info("✓ Test table created with function defaults");
 
     // Verify table exists
     const tables = await client.query({
@@ -504,17 +516,17 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     expect(tableList.map((t) => t.name)).to.include(TEST_TABLE_NAME);
 
     // ============ STEP 2: Run db pull ============
-    console.log("\n--- Running db pull ---");
+    testLogger.info("\n--- Running db pull ---");
 
     const { stdout: pullOutput } = await execAsync(
       `"${CLI_PATH}" db pull --connection-string "${CLICKHOUSE_URL}"`,
       { cwd: testProjectDir },
     );
 
-    console.log("db-pull output:", pullOutput);
+    testLogger.info("db-pull output:", pullOutput);
 
     // ============ STEP 3: Verify Generated TypeScript Code ============
-    console.log("\n--- Verifying generated TypeScript code ---");
+    testLogger.info("\n--- Verifying generated TypeScript code ---");
 
     const externalModelsPath = path.join(
       testProjectDir,
@@ -525,7 +537,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     expect(fs.existsSync(externalModelsPath)).to.be.true;
 
     const generatedCode = fs.readFileSync(externalModelsPath, "utf-8");
-    console.log("Generated TypeScript code:\n", generatedCode);
+    testLogger.info("Generated TypeScript code:\n", generatedCode);
 
     // CRITICAL: Verify defaults are NOT double-quoted
     // Bug would generate: ClickHouseDefault<"\"xxHash64(_id)\"">  ❌
@@ -554,11 +566,11 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     expect(generatedCode).to.include('"NotFound" = 404');
     expect(generatedCode).to.include('"LargeValue" = 1000'); // Value > 255 that previously overflowed
 
-    console.log("✓ Generated TypeScript code has correct default syntax");
-    console.log("✓ Enum16 with large values (> 255) correctly generated");
+    testLogger.info("✓ Generated TypeScript code has correct default syntax");
+    testLogger.info("✓ Enum16 with large values (> 255) correctly generated");
 
     // ============ STEP 3.5: Move external model to datamodels for migration ============
-    console.log("\n--- Moving external model to datamodels ---");
+    testLogger.info("\n--- Moving external model to datamodels ---");
     // Migration system only processes models in datamodels/, not external_models.ts
     // We need to move the generated code to test the roundtrip
     const datamodelsDir = path.join(testProjectDir, "app", "datamodels");
@@ -567,10 +579,10 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     }
     const datamodelPath = path.join(datamodelsDir, "TestDefaultsModel.ts");
     fs.copyFileSync(externalModelsPath, datamodelPath);
-    console.log("✓ Model copied to datamodels");
+    testLogger.info("✓ Model copied to datamodels");
 
     // ============ STEP 4: Generate Migration Plan ============
-    console.log("\n--- Generating migration plan ---");
+    testLogger.info("\n--- Generating migration plan ---");
 
     const { stdout: planOutput } = await execAsync(
       `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --redis-url "redis://127.0.0.1:6379" --save`,
@@ -584,10 +596,12 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
       },
     );
 
-    console.log("Migration plan output:", planOutput);
+    testLogger.info("Migration plan output:", planOutput);
 
     // ============ STEP 5: Apply Migration (Roundtrip Test) ============
-    console.log("\n--- Applying migration (this would fail with the bug) ---");
+    testLogger.info(
+      "\n--- Applying migration (this would fail with the bug) ---",
+    );
 
     // This is where the bug manifests: ALTER TABLE tries to apply
     // DEFAULT 'xxHash64(_id)' (with quotes) instead of DEFAULT xxHash64(_id)
@@ -604,13 +618,13 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
           },
         },
       );
-      console.log("Migration output:", migrateOutput);
-      console.log("✓ Migration applied successfully (bug is fixed!)");
+      testLogger.info("Migration output:", migrateOutput);
+      testLogger.info("✓ Migration applied successfully (bug is fixed!)");
     } catch (error: any) {
-      console.log("Migration failed!");
-      console.log("stdout:", error.stdout || "(empty)");
-      console.log("stderr:", error.stderr || "(empty)");
-      console.log("message:", error.message);
+      testLogger.info("Migration failed!");
+      testLogger.info("stdout:", error.stdout || "(empty)");
+      testLogger.info("stderr:", error.stderr || "(empty)");
+      testLogger.info("message:", error.message);
 
       // Check if it's the expected bug error
       if (error.stdout && error.stdout.includes("Cannot parse string")) {
@@ -624,13 +638,16 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     }
 
     // ============ STEP 6: Verify Table Schema ============
-    console.log("\n--- Verifying table schema after migration ---");
+    testLogger.info("\n--- Verifying table schema after migration ---");
 
     const schema = await getTableSchema(TEST_TABLE_NAME);
-    console.log("Table schema:", JSON.stringify(schema, null, 2));
+    testLogger.info("Table schema:", JSON.stringify(schema, null, 2));
 
     const sampleHashCol = schema.find((col) => col.name === "sample_hash");
-    console.log("sample_hash column:", JSON.stringify(sampleHashCol, null, 2));
+    testLogger.info(
+      "sample_hash column:",
+      JSON.stringify(sampleHashCol, null, 2),
+    );
     expect(sampleHashCol).to.exist;
     expect(sampleHashCol!.default_type).to.equal("DEFAULT");
     expect(sampleHashCol!.default_expression).to.equal("xxHash64(_id)");
@@ -642,10 +659,10 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
       "toStartOfHour(toDateTime(_time_observed / 1000))",
     );
 
-    console.log("✓ Table schema is correct after migration");
+    testLogger.info("✓ Table schema is correct after migration");
 
     // ============ STEP 7: Test Data Insertion with Defaults ============
-    console.log("\n--- Testing data insertion with defaults ---");
+    testLogger.info("\n--- Testing data insertion with defaults ---");
 
     const testId = "test-row-" + Date.now();
     const testTime = Date.now();
@@ -661,7 +678,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
       format: "JSONEachRow",
     });
 
-    console.log("✓ Data inserted (only provided _id and _time_observed)");
+    testLogger.info("✓ Data inserted (only provided _id and _time_observed)");
 
     // Verify defaults were applied
     const result = await client.query({
@@ -673,7 +690,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     expect(rows.length).to.equal(1);
 
     const row = rows[0];
-    console.log("Inserted row:", row);
+    testLogger.info("Inserted row:", row);
 
     // Verify computed defaults
     expect(row.sample_hash).to.be.a("string"); // xxHash64 result
@@ -683,8 +700,8 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     expect(row.literal_default).to.equal("active");
     expect(row.numeric_default).to.equal(42);
 
-    console.log("✓ All defaults applied correctly");
-    console.log("✅ ENG-1162 TypeScript test passed - bug is fixed!");
+    testLogger.info("✓ All defaults applied correctly");
+    testLogger.info("✅ ENG-1162 TypeScript test passed - bug is fixed!");
   });
 
   it("should handle defaults with special characters", async function () {
@@ -692,7 +709,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
 
     const tableName = "test_special_chars_ts";
 
-    console.log("\n--- Testing special characters in defaults ---");
+    testLogger.info("\n--- Testing special characters in defaults ---");
 
     // Drop table if it exists from previous run
     await client.command({
@@ -709,7 +726,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
       `,
     });
 
-    console.log("✓ Created table with special character defaults");
+    testLogger.info("✓ Created table with special character defaults");
 
     // Run db pull
     await execAsync(
@@ -722,7 +739,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
       "utf-8",
     );
 
-    console.log("Generated code (snippet):");
+    testLogger.info("Generated code (snippet):");
     const lines = code.split("\n");
     const relevantLines = lines.filter(
       (line) =>
@@ -730,13 +747,13 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
         line.includes("backslash") ||
         line.includes("test_special_chars_ts"),
     );
-    console.log(relevantLines.join("\n"));
+    testLogger.info(relevantLines.join("\n"));
 
     // Verify proper escaping - the exact format depends on how ClickHouse stores the defaults
     // Just verify it doesn't have the double-quote bug
     expect(code).to.not.include('ClickHouseDefault<"\\"\'it');
     expect(code).to.not.include('ClickHouseDefault<"\\"\'path');
 
-    console.log("✓ Special characters handled correctly");
+    testLogger.info("✓ Special characters handled correctly");
   });
 });
