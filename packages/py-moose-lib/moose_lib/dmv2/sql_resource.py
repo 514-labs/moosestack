@@ -7,31 +7,10 @@ handling common functionality like setup/teardown SQL commands and dependency tr
 
 from typing import Any, Optional, Union, List
 from pydantic import BaseModel
-import inspect
 
 from .olap_table import OlapTable
 from ._registry import _sql_resources
-
-
-def _get_source_file_from_stack() -> Optional[str]:
-    """Extract the source file path from the call stack, skipping internal modules."""
-    try:
-        # Get the current call stack
-        stack = inspect.stack()
-        # Start from index 1 to skip this function itself
-        for frame_info in stack[1:]:
-            filename = frame_info.filename
-            # Skip internal modules and site-packages
-            if (
-                "site-packages" not in filename
-                and "moose_lib" not in filename
-                and "<" not in filename  # Skip special frames like <frozen importlib>
-            ):
-                return filename
-    except Exception:
-        # If anything goes wrong, just return None
-        pass
-    return None
+from ._source_capture import get_source_file_from_stack
 
 
 class SqlResource:
@@ -74,5 +53,5 @@ class SqlResource:
         self.pushes_data_to = pushes_data_to or []
         self.metadata = metadata
         # Capture source file from call stack
-        self.source_file = _get_source_file_from_stack()
+        self.source_file = get_source_file_from_stack()
         _sql_resources[name] = self
