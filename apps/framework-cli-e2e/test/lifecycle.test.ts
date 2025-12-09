@@ -191,9 +191,10 @@ async function setupTestEnvironment(testName: string) {
   // Initialize ClickHouse client for manual operations
   const client = createClient(CLICKHOUSE_CONFIG);
 
-  // Clean up any existing test tables
-  await cleanupClickhouseData();
-  console.log("✓ ClickHouse cleaned");
+  // Note: moose prod automatically runs migrations in memory, so FULLY_MANAGED
+  // and DELETION_PROTECTED tables should already be created at this point.
+  // We do NOT call cleanupClickhouseData() here to preserve those tables.
+  console.log("✓ Tables auto-created by moose prod");
 
   console.log(`=== Environment ready for: ${testName} ===\n`);
 
@@ -373,20 +374,19 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
           "\n--- Testing DELETION_PROTECTED table should be created ---",
         );
 
-        // Drop the table so moose plan will generate a create operation
-        await client.command({
-          query: `DROP TABLE IF EXISTS DeletionProtectedTest`,
+        // Verify the table was auto-created by moose prod
+        const result = await client.query({
+          query: "SHOW TABLES LIKE 'DeletionProtectedTest'",
+          format: "JSONEachRow",
         });
-        console.log("✓ Dropped DeletionProtectedTest table to test creation");
-
-        const plan = await runMoosePlanJson(testProjectDir);
-
-        // DeletionProtectedTest table SHOULD have CreateTable operation
-        const hasCreate = hasTableAdded(plan, "DeletionProtectedTest");
-        expect(hasCreate).to.be.true;
+        const rows = await result.json<any>();
+        expect(rows).to.have.lengthOf(
+          1,
+          "DeletionProtectedTest should already exist from moose prod auto-migration",
+        );
 
         console.log(
-          "✓ CreateTable operation exists for DeletionProtectedTest (as expected)",
+          "✓ DeletionProtectedTest was auto-created by moose prod (as expected)",
         );
       } finally {
         await cleanup();
@@ -405,19 +405,8 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
           "\n--- Testing DELETION_PROTECTED table should not be dropped ---",
         );
 
-        // First, manually create the table in ClickHouse
-        await client.command({
-          query: `
-            CREATE TABLE IF NOT EXISTS DeletionProtectedTest (
-              id String,
-              timestamp DateTime,
-              value String,
-              category String,
-              removableColumn String
-            ) ENGINE = MergeTree() ORDER BY (id, timestamp)
-          `,
-        });
-        console.log("✓ Manually created DeletionProtectedTest table");
+        // DeletionProtectedTest should already exist from moose prod auto-migration
+        console.log("✓ DeletionProtectedTest already exists from moose prod");
 
         // Now "remove" the table from code by commenting it out
         modifyModelsFile(
@@ -460,27 +449,10 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
           "\n--- Testing DELETION_PROTECTED table should not drop columns ---",
         );
 
-        // Reset models file first
-        fs.cpSync(
-          path.join(TEMPLATE_SOURCE_DIR, "src", "ingest", "models.ts"),
-          path.join(testProjectDir, "src", "ingest", "models.ts"),
-        );
-
-        // Clean and manually create table with the column
-        await cleanupClickhouseData();
-        await client.command({
-          query: `
-            CREATE TABLE IF NOT EXISTS DeletionProtectedTest (
-              id String,
-              timestamp DateTime,
-              value String,
-              category String,
-              removableColumn String
-            ) ENGINE = MergeTree() ORDER BY (id, timestamp)
-          `,
-        });
+        // DeletionProtectedTest already exists from moose prod with removableColumn
+        // (it uses LifeCycleTestDataWithExtra which includes removableColumn)
         console.log(
-          "✓ Manually created DeletionProtectedTest with removableColumn",
+          "✓ DeletionProtectedTest with removableColumn exists from moose prod",
         );
 
         // Now remove the column from the interface
@@ -529,25 +501,8 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
           "\n--- Testing DELETION_PROTECTED table ORDER BY change should be blocked ---",
         );
 
-        // Reset models file
-        fs.cpSync(
-          path.join(TEMPLATE_SOURCE_DIR, "src", "ingest", "models.ts"),
-          path.join(testProjectDir, "src", "ingest", "models.ts"),
-        );
-
-        await cleanupClickhouseData();
-        // Manually create table with original ORDER BY
-        await client.command({
-          query: `
-            CREATE TABLE IF NOT EXISTS DeletionProtectedOrderByTest (
-              id String,
-              timestamp DateTime,
-              value String,
-              category String
-            ) ENGINE = MergeTree() ORDER BY (id, timestamp)
-          `,
-        });
-        console.log("✓ Manually created DeletionProtectedOrderByTest");
+        // DeletionProtectedOrderByTest already exists from moose prod with ORDER BY (id, timestamp)
+        console.log("✓ DeletionProtectedOrderByTest exists from moose prod");
 
         // Change orderByFields for DeletionProtectedOrderByTest
         modifyModelsFile(
@@ -594,25 +549,8 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
           "\n--- Testing DELETION_PROTECTED table engine change should be blocked ---",
         );
 
-        // Reset models file
-        fs.cpSync(
-          path.join(TEMPLATE_SOURCE_DIR, "src", "ingest", "models.ts"),
-          path.join(testProjectDir, "src", "ingest", "models.ts"),
-        );
-
-        await cleanupClickhouseData();
-        // Manually create table with MergeTree engine
-        await client.command({
-          query: `
-            CREATE TABLE IF NOT EXISTS DeletionProtectedEngineTest (
-              id String,
-              timestamp DateTime,
-              value String,
-              category String
-            ) ENGINE = MergeTree() ORDER BY (id, timestamp)
-          `,
-        });
-        console.log("✓ Manually created DeletionProtectedEngineTest");
+        // DeletionProtectedEngineTest already exists from moose prod with MergeTree engine
+        console.log("✓ DeletionProtectedEngineTest exists from moose prod");
 
         // Change engine from MergeTree to ReplacingMergeTree
         modifyModelsFile(
@@ -654,55 +592,19 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
       try {
         console.log("\n--- Testing FULLY_MANAGED table should be created ---");
 
-        // Reset models file
-        fs.cpSync(
-          path.join(TEMPLATE_SOURCE_DIR, "src", "ingest", "models.ts"),
-          path.join(testProjectDir, "src", "ingest", "models.ts"),
+        // Verify the table was auto-created by moose prod
+        const result = await client.query({
+          query: "SHOW TABLES LIKE 'FullyManagedTest'",
+          format: "JSONEachRow",
+        });
+        const rows = await result.json<any>();
+        expect(rows).to.have.lengthOf(
+          1,
+          "FullyManagedTest should already exist from moose prod auto-migration",
         );
 
-        await cleanupClickhouseData();
-
-        // Explicitly drop FullyManagedTest table if it exists to ensure clean state
-        try {
-          await client.command({
-            query: "DROP TABLE IF EXISTS FullyManagedTest",
-          });
-          console.log("✓ Dropped FullyManagedTest table if it existed");
-        } catch (e) {
-          // Ignore errors - table might not exist
-        }
-
-        const plan = await runMoosePlanJson(testProjectDir);
-
-        // Debug: log all olap changes to see what we got
         console.log(
-          "Number of olap changes:",
-          plan.changes?.olap_changes?.length ?? 0,
-        );
-        if (
-          plan.changes?.olap_changes &&
-          plan.changes.olap_changes.length > 0
-        ) {
-          console.log(
-            "First olap change keys:",
-            Object.keys(plan.changes.olap_changes[0]),
-          );
-          console.log(
-            "First olap change:",
-            JSON.stringify(plan.changes.olap_changes[0], null, 2).substring(
-              0,
-              1000,
-            ),
-          );
-        }
-
-        // FullyManagedTest table SHOULD have CreateTable operation
-        const hasCreate = hasTableAdded(plan, "FullyManagedTest");
-        console.log("hasTableAdded result:", hasCreate);
-        expect(hasCreate).to.be.true;
-
-        console.log(
-          "✓ CreateTable operation exists for FullyManagedTest (as expected)",
+          "✓ FullyManagedTest was auto-created by moose prod (as expected)",
         );
       } finally {
         await cleanup();
@@ -718,38 +620,9 @@ export const newExternalTable = new OlapTable<NewExternalTable>("NewExternalTabl
       try {
         console.log("\n--- Testing FULLY_MANAGED table should be dropped ---");
 
-        // Reset and apply initial migration
-        fs.cpSync(
-          path.join(TEMPLATE_SOURCE_DIR, "src", "ingest", "models.ts"),
-          path.join(testProjectDir, "src", "ingest", "models.ts"),
-        );
-
-        await cleanupClickhouseData();
-
-        // First, ensure the table exists in code and sync it to remote state
-        // This is critical: moose plan compares local code with remote state (Redis),
-        // not ClickHouse directly. We need the table in remote state first.
-        console.log("Step 1: Syncing FullyManagedTest to remote state...");
-        const initialPlan = await runMoosePlanJson(testProjectDir);
-        // If table needs to be created, it will be in the plan
-        // The table should already be in code, so this should sync it to remote state
-        console.log(
-          "✓ Initial plan generated (table should be synced to remote state)",
-        );
-
-        // Manually create table in ClickHouse to match what's in code
-        await client.command({
-          query: `
-            CREATE TABLE IF NOT EXISTS FullyManagedTest (
-              id String,
-              timestamp DateTime,
-              value String,
-              category String,
-              removableColumn String
-            ) ENGINE = MergeTree() ORDER BY (id, timestamp)
-          `,
-        });
-        console.log("✓ Manually created FullyManagedTest table in ClickHouse");
+        // FullyManagedTest already exists from moose prod auto-migration
+        // (both in ClickHouse and synced to Redis state)
+        console.log("✓ FullyManagedTest exists from moose prod");
 
         // Remove the table from code - remove the entire table definition
         modifyModelsFile(
@@ -820,56 +693,11 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestDataWithExtra>(
           "\n--- Testing FULLY_MANAGED table should drop columns ---",
         );
 
-        // Reset models file
-        fs.cpSync(
-          path.join(TEMPLATE_SOURCE_DIR, "src", "ingest", "models.ts"),
-          path.join(testProjectDir, "src", "ingest", "models.ts"),
-        );
-
-        await cleanupClickhouseData();
-
-        // CRITICAL: moose plan compares local code with remote state (Redis), not ClickHouse directly
-        // We need the table WITH removableColumn to exist in remote state before we can test column removal
-        // Strategy: Create table in ClickHouse, then ensure it's synced to remote state
+        // FullyManagedTest already exists from moose prod with removableColumn
+        // (it uses LifeCycleTestDataWithExtra which includes removableColumn)
         console.log(
-          "Step 1: Creating FullyManagedTest with removableColumn in ClickHouse...",
+          "✓ FullyManagedTest with removableColumn exists from moose prod",
         );
-
-        // Manually create table in ClickHouse with removableColumn
-        await client.command({
-          query: `
-            CREATE TABLE IF NOT EXISTS FullyManagedTest (
-              id String,
-              timestamp DateTime,
-              value String,
-              category String,
-              removableColumn String
-            ) ENGINE = MergeTree() ORDER BY (id, timestamp)
-          `,
-        });
-        console.log(
-          "✓ Created FullyManagedTest with removableColumn in ClickHouse",
-        );
-
-        // Now check the plan to see what remote state thinks
-        // If table is in code but not in remote state, plan will show CreateTable
-        // If table is already in remote state, plan should show no changes (or other changes)
-        const initialPlan = await runMoosePlanJson(testProjectDir);
-        const needsCreate = hasTableAdded(initialPlan, "FullyManagedTest");
-        const tableChangesInitial = getTableChanges(
-          initialPlan,
-          "FullyManagedTest",
-        );
-        console.log(`Initial plan check: table needs creation: ${needsCreate}`);
-        console.log(
-          `Initial plan table changes:`,
-          JSON.stringify(tableChangesInitial, null, 2),
-        );
-
-        // If the table needs to be created, it means it's not in remote state yet
-        // This can happen if a previous test removed it from code
-        // In this case, we need to wait for or trigger state sync
-        // For now, we'll proceed and see if the column removal is detected
 
         // Change the interface to remove removableColumn from FullyManagedTest only
         // We need to replace the entire table definition to change the type parameter
@@ -947,25 +775,8 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestData>(
           "\n--- Testing FULLY_MANAGED table ORDER BY change should work ---",
         );
 
-        // Reset models file
-        fs.cpSync(
-          path.join(TEMPLATE_SOURCE_DIR, "src", "ingest", "models.ts"),
-          path.join(testProjectDir, "src", "ingest", "models.ts"),
-        );
-
-        await cleanupClickhouseData();
-        // Manually create table with original ORDER BY
-        await client.command({
-          query: `
-            CREATE TABLE IF NOT EXISTS FullyManagedOrderByTest (
-              id String,
-              timestamp DateTime,
-              value String,
-              category String
-            ) ENGINE = MergeTree() ORDER BY (id, timestamp)
-          `,
-        });
-        console.log("✓ Manually created FullyManagedOrderByTest");
+        // FullyManagedOrderByTest already exists from moose prod with ORDER BY (id, timestamp)
+        console.log("✓ FullyManagedOrderByTest exists from moose prod");
 
         // Change orderByFields for FullyManagedOrderByTest
         modifyModelsFile(
@@ -1009,25 +820,8 @@ export const fullyManagedTable = new OlapTable<LifeCycleTestData>(
           "\n--- Testing FULLY_MANAGED table engine change should work ---",
         );
 
-        // Reset models file
-        fs.cpSync(
-          path.join(TEMPLATE_SOURCE_DIR, "src", "ingest", "models.ts"),
-          path.join(testProjectDir, "src", "ingest", "models.ts"),
-        );
-
-        await cleanupClickhouseData();
-        // Manually create table with MergeTree engine
-        await client.command({
-          query: `
-            CREATE TABLE IF NOT EXISTS FullyManagedEngineTest (
-              id String,
-              timestamp DateTime,
-              value String,
-              category String
-            ) ENGINE = MergeTree() ORDER BY (id, timestamp)
-          `,
-        });
-        console.log("✓ Manually created FullyManagedEngineTest");
+        // FullyManagedEngineTest already exists from moose prod with MergeTree engine
+        console.log("✓ FullyManagedEngineTest exists from moose prod");
 
         // Change engine from MergeTree to ReplacingMergeTree
         modifyModelsFile(
