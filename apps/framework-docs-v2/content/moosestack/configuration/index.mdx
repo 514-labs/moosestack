@@ -6,7 +6,7 @@ order: 10
 
 # Configuration
 
-Moose settings live in two places: a project config file and runtime environment variables. The config file is tracked in git and defines the shape of your app; env vars are per-environment values (often secrets) that override the file at runtime. Moose loads both at startup, with env vars winning when they overlap.
+MooseStack settings live in two places: a project config file and runtime environment variables. The config file is tracked in git and defines the shape of your app; env vars are per-environment values (often secrets) that override the file at runtime. Moose Runtime loads both at startup, with env vars winning when they overlap.
 
 ## Concept
 
@@ -17,7 +17,7 @@ Two layers you configure:
 
 ## Configuration Resolution
 
-Moose resolves configuration values in the following order (highest priority first):
+MooseStack resolves configuration values in the following order (highest priority first):
 
 1. **System Env Vars** - `MOOSE_*` variables set in the shell or platform. Overrides everything.
 2. **`.env.local`** - Local overrides for development secrets. **Gitignored**.
@@ -41,7 +41,7 @@ Environment variables are the primary mechanism for managing secrets and differe
 
 ### `.env` Files
 
-Moose automatically loads `.env` files in order of precedence. Files loaded later override values from earlier files.
+Moose Runtime automatically loads `.env` files in order of precedence. Files loaded later override values from earlier files.
 
 | File | Purpose | Committed? | When Loaded |
 |:-----|:--------|:-----------|:------------|
