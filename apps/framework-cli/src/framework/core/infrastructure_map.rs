@@ -2809,7 +2809,8 @@ impl InfrastructureMap {
     pub fn fixup_default_db(&mut self, db_name: &str) {
         self.default_database = db_name.to_string();
         if self.tables.iter().any(|(id, t)| id != &t.id(db_name)) {
-            // fix up IDs where in the old version it does not contain the DB name
+            // fix up IDs where the default_database might be "local",
+            // or old versions which does not include DB name
             let existing_tables = mem::take(&mut self.tables);
             for (_, t) in existing_tables {
                 self.tables.insert(t.id(db_name), t);
