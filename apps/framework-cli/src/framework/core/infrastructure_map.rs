@@ -2812,8 +2812,21 @@ impl InfrastructureMap {
             // fix up IDs where the default_database might be "local",
             // or old versions which does not include DB name
             let existing_tables = mem::take(&mut self.tables);
-            for (_, t) in existing_tables {
-                self.tables.insert(t.id(db_name), t);
+
+            let mut table_id_mapping: HashMap<String, String> = HashMap::new();
+
+            for (old_id, t) in existing_tables {
+                let new_id = t.id(db_name);
+                self.tables.insert(new_id.clone(), t);
+                table_id_mapping.insert(old_id, new_id);
+            }
+
+            let syncs = mem::take(&mut self.topic_to_table_sync_processes);
+            for (_, mut sync) in syncs {
+                if let Some(new_id) = table_id_mapping.get(&sync.target_table_id) {
+                    sync.target_table_id = new_id.clone();
+                }
+                self.topic_to_table_sync_processes.insert(sync.id(), sync);
             }
         }
     }
