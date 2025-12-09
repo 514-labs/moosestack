@@ -1,0 +1,27 @@
+# Black configuration for Python code formatting
+# This applies to all Python files in the monorepo
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    # Standard excludes
+    \.eggs
+    | \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+    | __pycache__
+    # Project specific excludes
+    | node_modules
+    | target
+    | \.turbo
+)/
+'''
