@@ -36,7 +36,7 @@ Scripts run from your project root using your system's default shell (usually `/
 
 **Sync External Tables on Start**
 ```toml
-on_first_start_script = "moose db pull --connection-string $REMOTE_DB_URL"
+on_first_start_script = "moose db pull --clickhouse-url $REMOTE_DB_URL"
 ```
 
 **Regenerate Clients on Reload**

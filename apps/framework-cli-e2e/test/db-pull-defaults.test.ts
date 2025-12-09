@@ -162,7 +162,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     testLogger.info("\n--- Running db pull ---");
 
     const { stdout: pullOutput } = await execAsync(
-      `"${CLI_PATH}" db pull --connection-string "${CLICKHOUSE_URL}"`,
+      `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
       {
         cwd: testProjectDir,
         env: {
@@ -381,7 +381,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
 
     // Run db pull
     await execAsync(
-      `"${CLI_PATH}" db pull --connection-string "${CLICKHOUSE_URL}"`,
+      `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
       {
         cwd: testProjectDir,
         env: {
@@ -519,7 +519,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     testLogger.info("\n--- Running db pull ---");
 
     const { stdout: pullOutput } = await execAsync(
-      `"${CLI_PATH}" db pull --connection-string "${CLICKHOUSE_URL}"`,
+      `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
       { cwd: testProjectDir },
     );
 
@@ -730,7 +730,7 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
 
     // Run db pull
     await execAsync(
-      `"${CLI_PATH}" db pull --connection-string "${CLICKHOUSE_URL}"`,
+      `"${CLI_PATH}" db pull --clickhouse-url "${CLICKHOUSE_URL}"`,
       { cwd: testProjectDir },
     );
 

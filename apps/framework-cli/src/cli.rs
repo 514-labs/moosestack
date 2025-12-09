@@ -205,17 +205,26 @@ fn check_project_name(name: &str) -> Result<(), RoutineFailure> {
     Ok(())
 }
 
-/// Resolves ClickHouse and Redis URLs from flags and environment variables, and validates Redis URL if needed
-fn resolve_serverless_urls<'a>(
-    project: &Project,
-    clickhouse_url: Option<&'a str>,
-    redis_url: Option<&'a str>,
-) -> Result<(Option<String>, Option<String>), RoutineFailure> {
-    use crate::utilities::constants::{ENV_CLICKHOUSE_URL, ENV_REDIS_URL};
+/// Resolves ClickHouse URL from flag and environment variable (no Redis validation)
+/// Use this for commands that only need ClickHouse access (e.g., db pull)
+fn resolve_clickhouse_url(clickhouse_url: Option<&str>) -> Option<String> {
+    use crate::utilities::constants::ENV_CLICKHOUSE_URL;
 
     // Resolve ClickHouse URL from flag or env var
     let clickhouse_url_from_env = std::env::var(ENV_CLICKHOUSE_URL).ok();
-    let resolved_clickhouse_url = clickhouse_url.map(String::from).or(clickhouse_url_from_env);
+    clickhouse_url.map(String::from).or(clickhouse_url_from_env)
+}
+
+/// Resolves ClickHouse and Redis URLs from flags and environment variables, and validates Redis URL if needed
+fn resolve_serverless_urls(
+    project: &Project,
+    clickhouse_url: Option<&str>,
+    redis_url: Option<&str>,
+) -> Result<(Option<String>, Option<String>), RoutineFailure> {
+    use crate::utilities::constants::ENV_REDIS_URL;
+
+    // Resolve ClickHouse URL from flag or env var
+    let resolved_clickhouse_url = resolve_clickhouse_url(clickhouse_url);
 
     // Resolve Redis URL from flag or env var
     let redis_url_from_env = std::env::var(ENV_REDIS_URL).ok();
@@ -1287,15 +1296,23 @@ pub async fn top_command_handler(
                 machine_id.clone(),
                 HashMap::new(),
             );
-            let resolved_clickhouse_url: String = match clickhouse_url {
-                Some(s) => s.clone(),
+
+            // Use resolve_clickhouse_url for env var fallback (db pull only needs ClickHouse, not Redis)
+            let resolved_from_flag_or_env = resolve_clickhouse_url(clickhouse_url.as_deref());
+
+            // Fall back to keyring if not provided via flag or env var
+            let resolved_clickhouse_url: String = match resolved_from_flag_or_env {
+                Some(url) => url,
                 None => {
                     let repo = KeyringSecretRepository;
                     match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
                         Ok(Some(s)) => s,
                         Ok(None) => return Err(RoutineFailure::error(Message {
                             action: "DB Pull".to_string(),
-                            details: "No ClickHouse URL provided and none saved. Pass --clickhouse-url or save one during `moose init --from-remote`.".to_string(),
+                            details: format!(
+                                "No ClickHouse URL provided. Pass --clickhouse-url, set {} environment variable, or save one during `moose init --from-remote`.",
+                                ENV_CLICKHOUSE_URL
+                            ),
                         })),
                         Err(e) => {
                             return Err(RoutineFailure::error(Message {

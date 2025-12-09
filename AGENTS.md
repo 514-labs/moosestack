@@ -59,6 +59,8 @@ Multi-language monorepo (Rust CLI + TypeScript/Python libraries) using PNPM work
 
 ### Python
 - **Style**: Follow PEP 8; snake_case for functions/vars, PascalCase for classes, UPPER_SNAKE_CASE for constants
+- **Formatting**: Black (line-length 88); auto-formats on commit (Husky + lint-staged)
+- **Format manually**: `black <file_or_directory>`
 - **Types**: Use type hints for function signatures and public APIs
 - **Tests**: Use pytest with fixtures and parametrize decorators
 

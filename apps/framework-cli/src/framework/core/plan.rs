@@ -27,7 +27,6 @@ use crate::project::Project;
 use rdkafka::error::KafkaError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::mem;
 use std::path::Path;
 use tracing::{debug, error, info};
 
@@ -89,21 +88,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
 
     // Clone the map so we can modify it
     let mut reconciled_map = current_infra_map.clone();
-    reconciled_map.default_database = project.clickhouse_config.db_name.clone();
-
-    if current_infra_map
-        .tables
-        .iter()
-        .any(|(id, t)| id != &t.id(&project.clickhouse_config.db_name))
-    {
-        // fix up IDs where in the old version it does not contain the DB name
-        let existing_tables = mem::take(&mut reconciled_map.tables);
-        for (_, t) in existing_tables {
-            reconciled_map
-                .tables
-                .insert(t.id(&project.clickhouse_config.db_name), t);
-        }
-    }
+    reconciled_map.fixup_default_db(&project.clickhouse_config.db_name);
 
     // Create the reality checker with the provided client
     let reality_checker = InfraRealityChecker::new(olap_client);
@@ -411,7 +396,12 @@ pub async fn load_target_infrastructure(
     let json_path = Path::new(".moose/infrastructure_map.json");
     let mut target_infra_map = if project.is_production && json_path.exists() {
         // Load from prebuilt JSON (created by moose check without credentials)
-        InfrastructureMap::load_from_json(json_path).map_err(|e| PlanningError::Other(e.into()))?
+        let mut infra_map = InfrastructureMap::load_from_json(json_path)
+            .map_err(|e| PlanningError::Other(e.into()))?;
+
+        infra_map.fixup_default_db(&project.clickhouse_config.db_name);
+
+        infra_map
     } else {
         if project.is_production && project.is_docker_image() {
             error!("Docker Build images should have the infrastructure map already created and embedded");
