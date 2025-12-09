@@ -1278,7 +1278,7 @@ pub async fn top_command_handler(
                 },
         }) => {
             info!("Running db pull command");
-            let mut project = load_project(commands)?;
+            let project = load_project(commands)?;
 
             let capture_handle = crate::utilities::capture::capture_usage(
                 ActivityType::DbPullCommand,
@@ -1318,12 +1318,14 @@ pub async fn top_command_handler(
                 }
             };
 
-            // Use override_project_config_from_url (same as migrate/generate migration)
-            override_project_config_from_url(&mut project, &resolved_clickhouse_url)?;
-
-            db_pull(&project, file_path.as_deref()).await.map_err(|e| {
-                RoutineFailure::new(Message::new("DB Pull".to_string(), "failed".to_string()), e)
-            })?;
+            db_pull(&resolved_clickhouse_url, &project, file_path.as_deref())
+                .await
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new("DB Pull".to_string(), "failed".to_string()),
+                        e,
+                    )
+                })?;
 
             wait_for_usage_capture(capture_handle).await;
             Ok(RoutineSuccess::success(Message::new(
