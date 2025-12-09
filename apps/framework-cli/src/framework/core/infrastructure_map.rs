@@ -64,8 +64,8 @@ use anyhow::{Context, Result};
 use protobuf::{EnumOrUnknown, Message as ProtoMessage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
+use std::{fs, mem};
 
 /// Strategy trait for handling database-specific table diffing logic
 ///
@@ -2805,6 +2805,17 @@ impl InfrastructureMap {
             .values()
             .any(|endpoint| matches!(endpoint.api_type, APIType::EGRESS { .. }))
     }
+
+    pub fn fixup_default_db(&mut self, db_name: &str) {
+        self.default_database = db_name.to_string();
+        if self.tables.iter().any(|(id, t)| id != &t.id(db_name)) {
+            // fix up IDs where in the old version it does not contain the DB name
+            let existing_tables = mem::take(&mut self.tables);
+            for (_, t) in existing_tables {
+                self.tables.insert(t.id(db_name), t);
+            }
+        }
+    }
 }
 
 /// Compare two optional TTL expressions for equivalence, accounting for ClickHouse normalization.
@@ -2989,6 +3000,7 @@ pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnCh
     diff
 }
 
+#[cfg(test)]
 impl Default for InfrastructureMap {
     /// Creates a default empty infrastructure map
     ///
