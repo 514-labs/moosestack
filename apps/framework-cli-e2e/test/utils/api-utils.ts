@@ -1,5 +1,12 @@
 import { SERVER_CONFIG, RETRY_CONFIG } from "../constants";
 import { withRetries } from "./retry-utils";
+import { logger, ScopedLogger } from "./logger";
+
+const apiLogger = logger.scope("utils:api");
+
+export interface ApiVerifyOptions {
+  logger?: ScopedLogger;
+}
 
 /**
  * Verifies consumption API responses
@@ -7,7 +14,10 @@ import { withRetries } from "./retry-utils";
 export const verifyConsumptionApi = async (
   endpoint: string,
   expectedResponse: any,
+  options: ApiVerifyOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? apiLogger;
+
   await withRetries(
     async () => {
       const response = await fetch(`${SERVER_CONFIG.url}/api/${endpoint}`);
@@ -15,10 +25,10 @@ export const verifyConsumptionApi = async (
         const text = await response.text();
         throw new Error(`${response.status}: ${text}`);
       }
-      console.log("Test request sent successfully");
+      log.debug("Test request sent successfully", { endpoint });
       const json = (await response.json()) as any[];
 
-      console.log("API response:", json);
+      log.debug("API response received", { rows: json.length });
 
       if (!Array.isArray(json)) {
         throw new Error("Expected array response");
@@ -51,6 +61,8 @@ export const verifyConsumptionApi = async (
     {
       attempts: RETRY_CONFIG.API_VERIFICATION_ATTEMPTS,
       delayMs: RETRY_CONFIG.API_VERIFICATION_DELAY_MS,
+      logger: log,
+      operationName: `API verification: ${endpoint}`,
     },
   );
 };
@@ -61,7 +73,10 @@ export const verifyConsumptionApi = async (
 export const verifyVersionedConsumptionApi = async (
   endpoint: string,
   expectedResponse: any,
+  options: ApiVerifyOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? apiLogger;
+
   await withRetries(
     async () => {
       const response = await fetch(`${SERVER_CONFIG.url}/api/${endpoint}`);
@@ -69,7 +84,7 @@ export const verifyVersionedConsumptionApi = async (
         const text = await response.text();
         throw new Error(`${response.status}: ${text}`);
       }
-      console.log("Versioned API test request sent successfully");
+      log.debug("Versioned API test request sent successfully", { endpoint });
       const json = (await response.json()) as any[];
 
       if (!Array.isArray(json)) {
@@ -155,6 +170,8 @@ export const verifyVersionedConsumptionApi = async (
     {
       attempts: RETRY_CONFIG.API_VERIFICATION_ATTEMPTS,
       delayMs: RETRY_CONFIG.API_VERIFICATION_DELAY_MS,
+      logger: log,
+      operationName: `Versioned API verification: ${endpoint}`,
     },
   );
 };
@@ -165,7 +182,10 @@ export const verifyVersionedConsumptionApi = async (
 export const verifyProxyHealth = async (
   expectedHealthy: string[],
   expectedUnhealthy: string[] = [],
+  options: ApiVerifyOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? apiLogger;
+
   await withRetries(
     async () => {
       const response = await fetch(`${SERVER_CONFIG.url}/health`);
@@ -185,7 +205,10 @@ export const verifyProxyHealth = async (
         unhealthy: string[];
       };
 
-      console.log("Health check response:", json);
+      log.debug("Health check response received", {
+        healthy: json.healthy,
+        unhealthy: json.unhealthy,
+      });
 
       // Verify healthy list
       for (const service of expectedHealthy) {
@@ -213,6 +236,8 @@ export const verifyProxyHealth = async (
     {
       attempts: RETRY_CONFIG.API_VERIFICATION_ATTEMPTS,
       delayMs: RETRY_CONFIG.API_VERIFICATION_DELAY_MS,
+      logger: log,
+      operationName: "Proxy health verification",
     },
   );
 };
@@ -220,7 +245,11 @@ export const verifyProxyHealth = async (
 /**
  * Verifies the consumption API internal health endpoint (/_moose_internal/health)
  */
-export const verifyConsumptionApiInternalHealth = async (): Promise<void> => {
+export const verifyConsumptionApiInternalHealth = async (
+  options: ApiVerifyOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? apiLogger;
+
   await withRetries(
     async () => {
       // Note: The internal health endpoint runs on the consumption API port (4001 by default)
@@ -228,6 +257,8 @@ export const verifyConsumptionApiInternalHealth = async (): Promise<void> => {
       const consumptionApiPort = new URL(SERVER_CONFIG.url).port || "4000";
       const consumptionPort = parseInt(consumptionApiPort) + 1; // Default: 4001
       const healthUrl = `http://localhost:${consumptionPort}/_moose_internal/health`;
+
+      log.debug("Checking internal health endpoint", { url: healthUrl });
 
       const response = await fetch(healthUrl);
       if (!response.ok) {
@@ -240,7 +271,10 @@ export const verifyConsumptionApiInternalHealth = async (): Promise<void> => {
         timestamp: string;
       };
 
-      console.log("Internal health check response:", json);
+      log.debug("Internal health check response received", {
+        status: json.status,
+        timestamp: json.timestamp,
+      });
 
       if (json.status !== "healthy") {
         throw new Error(`Expected status "healthy", got "${json.status}"`);
@@ -259,6 +293,8 @@ export const verifyConsumptionApiInternalHealth = async (): Promise<void> => {
     {
       attempts: RETRY_CONFIG.API_VERIFICATION_ATTEMPTS,
       delayMs: RETRY_CONFIG.API_VERIFICATION_DELAY_MS,
+      logger: log,
+      operationName: "Internal health verification",
     },
   );
 };

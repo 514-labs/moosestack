@@ -30,6 +30,7 @@ import {
   cleanupClickhouseData,
   createTempTestDirectory,
   cleanupTestSuite,
+  logger,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -39,6 +40,8 @@ const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
   "../../../templates/typescript-migrate-test",
 );
+
+const testLogger = logger.scope("migration-test");
 
 // Build ClickHouse connection URL for migration commands
 const CLICKHOUSE_URL = `http://${CLICKHOUSE_CONFIG.username}:${CLICKHOUSE_CONFIG.password}@localhost:18123/${CLICKHOUSE_CONFIG.database}`;
@@ -52,33 +55,33 @@ describe("typescript template tests - migration", () => {
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    console.log("\n=== Starting Migration Tests ===");
+    testLogger.info("\n=== Starting Migration Tests ===");
 
     testProjectDir = createTempTestDirectory("ts-migrate");
     outerMooseDir = testProjectDir;
     innerMooseDir = path.join(testProjectDir, "migration");
 
-    console.log("Test project dir:", testProjectDir);
-    console.log("Outer moose dir:", outerMooseDir);
-    console.log("Inner moose dir:", innerMooseDir);
+    testLogger.info("Test project dir:", testProjectDir);
+    testLogger.info("Outer moose dir:", outerMooseDir);
+    testLogger.info("Inner moose dir:", innerMooseDir);
 
     // Copy template structure to temp directory
-    console.log("\nCopying template to temp directory...");
+    testLogger.info("\nCopying template to temp directory...");
     fs.cpSync(TEMPLATE_SOURCE_DIR, testProjectDir, { recursive: true });
-    console.log("✓ Template copied");
+    testLogger.info("✓ Template copied");
 
     // Install dependencies for outer moose app
-    console.log("\nInstalling dependencies for outer moose app...");
+    testLogger.info("\nInstalling dependencies for outer moose app...");
     await execAsync("npm install", { cwd: outerMooseDir });
-    console.log("✓ Dependencies installed");
+    testLogger.info("✓ Dependencies installed");
 
     // Install dependencies for inner moose app
-    console.log("\nInstalling dependencies for inner moose app...");
+    testLogger.info("\nInstalling dependencies for inner moose app...");
     await execAsync("npm install", { cwd: innerMooseDir });
-    console.log("✓ Dependencies installed");
+    testLogger.info("✓ Dependencies installed");
 
     // Start outer moose dev (just for infrastructure - ClickHouse + Keeper)
-    console.log("\nStarting outer moose dev for infrastructure...");
+    testLogger.info("\nStarting outer moose dev for infrastructure...");
     outerMooseProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: outerMooseDir,
@@ -93,16 +96,16 @@ describe("typescript template tests - migration", () => {
       SERVER_CONFIG.url,
     );
 
-    console.log("✓ Infrastructure ready (ClickHouse + Keeper running)");
+    testLogger.info("✓ Infrastructure ready (ClickHouse + Keeper running)");
 
     // Clean up any existing test tables
     await cleanupClickhouseData();
-    console.log("✓ ClickHouse cleaned");
+    testLogger.info("✓ ClickHouse cleaned");
   });
 
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
-    console.log("\n=== Cleaning up Migration Tests ===");
+    testLogger.info("\n=== Cleaning up Migration Tests ===");
     await cleanupTestSuite(outerMooseProcess, outerMooseDir, "ts-migrate", {
       logPrefix: "Migration Tests",
     });
@@ -112,7 +115,7 @@ describe("typescript template tests - migration", () => {
     it("should generate migration plan from code", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Generating migration plan ---");
+      testLogger.info("\n--- Generating migration plan ---");
 
       const { stdout } = await execAsync(
         `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
@@ -121,7 +124,7 @@ describe("typescript template tests - migration", () => {
         },
       );
 
-      console.log("Generate migration output:", stdout);
+      testLogger.info("Generate migration output:", stdout);
 
       // Verify migration files were created
       const migrationsDir = path.join(innerMooseDir, "migrations");
@@ -140,16 +143,16 @@ describe("typescript template tests - migration", () => {
       expect(fs.existsSync(localInfraMapPath)).to.be.true;
 
       const planContent = fs.readFileSync(planPath, "utf-8");
-      console.log("Migration plan content:", planContent);
+      testLogger.info("Migration plan content:", planContent);
 
       expect(planContent).to.include("operations:");
-      console.log("✓ Migration plan generated");
+      testLogger.info("✓ Migration plan generated");
     });
 
     it("should apply migration plan and create tables", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Applying migration ---");
+      testLogger.info("\n--- Applying migration ---");
 
       const { stdout } = await execAsync(
         `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
@@ -158,7 +161,7 @@ describe("typescript template tests - migration", () => {
         },
       );
 
-      console.log("Migrate output:", stdout);
+      testLogger.info("Migrate output:", stdout);
 
       // Verify tables were created in ClickHouse
       const client = createClient(CLICKHOUSE_CONFIG);
@@ -169,7 +172,7 @@ describe("typescript template tests - migration", () => {
       });
 
       const tables: any[] = await result.json();
-      console.log(
+      testLogger.info(
         "Tables in ClickHouse:",
         tables.map((t) => t.name),
       );
@@ -191,8 +194,8 @@ describe("typescript template tests - migration", () => {
       const stateRows: any[] = await stateData.json();
       expect(stateRows.length).to.be.greaterThan(0);
 
-      console.log("✓ Migration applied successfully");
-      console.log("✓ State saved to _MOOSE_STATE");
+      testLogger.info("✓ Migration applied successfully");
+      testLogger.info("✓ State saved to _MOOSE_STATE");
     });
   });
 
@@ -200,29 +203,29 @@ describe("typescript template tests - migration", () => {
     it("should detect drift when database is modified between plan generation and execution", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing drift detection ---");
+      testLogger.info("\n--- Testing drift detection ---");
 
       // Generate migration plan (captures current DB state as "expected")
-      console.log("Generating migration plan...");
+      testLogger.info("Generating migration plan...");
       await execAsync(
         `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
         {
           cwd: innerMooseDir,
         },
       );
-      console.log("✓ Migration plan generated");
+      testLogger.info("✓ Migration plan generated");
 
       // NOW manually modify the database BEFORE applying the migration
-      console.log("Manually modifying database to create drift...");
+      testLogger.info("Manually modifying database to create drift...");
       const client = createClient(CLICKHOUSE_CONFIG);
       await client.command({
         query: "ALTER TABLE Bar ADD COLUMN drift_column String",
       });
-      console.log("✓ Added drift_column to Bar table");
+      testLogger.info("✓ Added drift_column to Bar table");
 
       // Try to apply the migration - should fail due to drift
       // The plan's "expected state" doesn't include drift_column, but current DB does
-      console.log(
+      testLogger.info(
         "Attempting to apply migration (should fail due to drift)...",
       );
       try {
@@ -237,7 +240,7 @@ describe("typescript template tests - migration", () => {
         expect.fail("Migration should have failed due to drift");
       } catch (error: any) {
         // Expected to fail - check that it's a drift error, not some other error
-        console.log("Migration failed as expected:", error.message);
+        testLogger.info("Migration failed as expected:", error.message);
 
         // The error should contain the drift detection message
         const errorOutput = error.message + (error.stderr || "");
@@ -245,7 +248,7 @@ describe("typescript template tests - migration", () => {
           "The database state has changed since the migration plan was generated",
         );
 
-        console.log("✓ Drift detected correctly");
+        testLogger.info("✓ Drift detected correctly");
       }
     });
   });

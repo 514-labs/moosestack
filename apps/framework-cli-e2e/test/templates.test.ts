@@ -59,11 +59,14 @@ import {
   verifyWebAppPostEndpoint,
   cleanupTestSuite,
   performGlobalCleanup,
+  logger,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
 import { createClient } from "@clickhouse/client";
+
+const testLogger = logger.scope("templates-test");
 
 const execAsync = promisify(require("child_process").exec);
 const setTimeoutAsync = (ms: number) =>
@@ -85,7 +88,7 @@ const TEST_PACKAGE_MANAGER = (process.env.TEST_PACKAGE_MANAGER || "npm") as
   | "pip";
 
 if (process.env.TEST_PACKAGE_MANAGER) {
-  console.log(
+  testLogger.info(
     `\n🧪 Testing templates with package manager: ${TEST_PACKAGE_MANAGER}\n`,
   );
 }
@@ -95,8 +98,8 @@ it("should return the dummy version in debug build", async () => {
   const version = stdout.trim();
   const expectedVersion = TEST_DATA.EXPECTED_CLI_VERSION;
 
-  console.log("Resulting version:", version);
-  console.log("Expected version:", expectedVersion);
+  testLogger.info("Resulting version:", version);
+  testLogger.info("Expected version:", expectedVersion);
 
   expect(version).to.equal(expectedVersion);
 });
@@ -166,7 +169,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       try {
         await fs.promises.access(CLI_PATH, fs.constants.F_OK);
       } catch (err) {
-        console.error(
+        testLogger.error(
           `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
         );
         throw err;
@@ -196,7 +199,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
 
       // Start dev server
-      console.log("Starting dev server...");
+      testLogger.info("Starting dev server...");
       const devEnv =
         config.language === "python" ?
           {
@@ -226,17 +229,19 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         SERVER_CONFIG.startupMessage,
         SERVER_CONFIG.url,
       );
-      console.log("Server started, waiting for Kafka broker to be ready...");
+      testLogger.info(
+        "Server started, waiting for Kafka broker to be ready...",
+      );
       await waitForKafkaReady(TIMEOUTS.KAFKA_READY_MS);
-      console.log("Kafka ready, cleaning up old data...");
+      testLogger.info("Kafka ready, cleaning up old data...");
       await cleanupClickhouseData();
-      console.log("Waiting for streaming functions to be ready...");
+      testLogger.info("Waiting for streaming functions to be ready...");
       await waitForStreamingFunctions();
-      console.log(
+      testLogger.info(
         "Verifying all infrastructure is ready (Redis, Kafka, ClickHouse, Temporal)...",
       );
       await waitForInfrastructureReady();
-      console.log("All components ready, starting tests...");
+      testLogger.info("All components ready, starting tests...");
     });
 
     after(async function () {
@@ -250,7 +255,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     it("should create tables with correct schema structure", async function () {
       this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
-      console.log(`Validating schema for ${config.displayName}...`);
+      testLogger.info(`Validating schema for ${config.displayName}...`);
 
       // Get expected schemas for this template
       const expectedSchemas = getExpectedSchemas(
@@ -273,7 +278,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         throw new Error(`Schema validation failed for tables: ${failedTables}`);
       }
 
-      console.log(`✅ Schema validation passed for ${config.displayName}`);
+      testLogger.info(`✅ Schema validation passed for ${config.displayName}`);
     });
 
     it("should include TTL in DDL when configured", async function () {
@@ -370,7 +375,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        console.log("✅ FixedString DDL validation passed");
+        testLogger.info("✅ FixedString DDL validation passed");
       }
     });
 
@@ -381,6 +386,36 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Verify that both versions of UserEvents tables are created
         await verifyVersionedTables("UserEvents", ["1.0", "2.0"], "local");
+      });
+
+      it("should create table in non-default database when configured", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Wait for the analytics database and NonDefaultDbRecord table to be created
+        // This tests that OlapTable with database="analytics" creates the table in the correct database
+        await waitForDBWrite(
+          devProcess!,
+          "NonDefaultDbRecord",
+          0,
+          30_000,
+          "analytics",
+        );
+
+        // Verify we can query the table in the analytics database (even if empty)
+        const client = createClient(CLICKHOUSE_CONFIG);
+        try {
+          const result = await client.query({
+            query: "SELECT count(*) as count FROM analytics.NonDefaultDbRecord",
+            format: "JSONEachRow",
+          });
+          const rows: any[] = await result.json();
+          console.log(
+            "NonDefaultDbRecord table exists in analytics database, count:",
+            rows[0].count,
+          );
+        } finally {
+          await client.close();
+        }
       });
 
       it("should create indexes defined in templates", async function () {
@@ -428,7 +463,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
         // Wait for infrastructure to stabilize after previous test's file modification
-        console.log(
+        testLogger.info(
           "Waiting for streaming functions to stabilize after index modification...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
@@ -442,7 +477,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000, backoffFactor: 1 },
         );
-        console.log(`Destination table DDL: ${destinationDDL}`);
+        testLogger.info(`Destination table DDL: ${destinationDDL}`);
 
         if (!destinationDDL.includes("ENGINE = MergeTree")) {
           throw new Error(
@@ -457,7 +492,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000, backoffFactor: 1 },
         );
-        console.log(`Buffer table DDL: ${bufferDDL}`);
+        testLogger.info(`Buffer table DDL: ${bufferDDL}`);
 
         // Check that it uses Buffer engine with correct parameters
         if (!bufferDDL.includes("ENGINE = Buffer")) {
@@ -484,13 +519,15 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
-        console.log("✅ Buffer engine table created successfully");
+        testLogger.info("✅ Buffer engine table created successfully");
       });
 
       it("should create Kafka engine table and consume data via MV", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        console.log("Waiting for Kafka table infrastructure to be ready...");
+        testLogger.info(
+          "Waiting for Kafka table infrastructure to be ready...",
+        );
         await waitForStreamingFunctions(180_000);
 
         const kafkaSourceDDL = await withRetries(
@@ -504,7 +541,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           },
           { attempts: 10, delayMs: 1000, backoffFactor: 1 },
         );
-        console.log(`Kafka source table DDL: ${kafkaSourceDDL}`);
+        testLogger.info(`Kafka source table DDL: ${kafkaSourceDDL}`);
 
         if (!kafkaSourceDDL.includes("ENGINE = Kafka")) {
           throw new Error(
@@ -585,7 +622,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "local",
         );
 
-        console.log(
+        testLogger.info(
           "✅ Kafka engine table created and data flow verified successfully",
         );
       });
@@ -668,7 +705,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
         // Wait for infrastructure to stabilize after previous test's file modification
-        console.log(
+        testLogger.info(
           "Waiting for streaming functions to stabilize after TTL modification...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
@@ -750,7 +787,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     if (config.language === "typescript") {
       it("should successfully ingest data and verify through consumption API (DateTime support)", async function () {
         // Wait for infrastructure to stabilize after previous test's file modification
-        console.log(
+        testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
@@ -1001,12 +1038,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             !dlqRecord.errorMessage.toLowerCase().includes("too large") &&
             !dlqRecord.errorMessage.toLowerCase().includes("size")
           ) {
-            console.warn(
+            testLogger.warn(
               `Warning: Error message might not be about size: ${dlqRecord.errorMessage}`,
             );
           }
 
-          console.log(
+          testLogger.info(
             `✅ Large message successfully sent to DLQ: ${dlqRecord.errorMessage}`,
           );
 
@@ -1040,7 +1077,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             "Consumption API",
           ]);
 
-          console.log(
+          testLogger.info(
             "✅ Proxy health check correctly includes Consumption API",
           );
         });
@@ -1051,7 +1088,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           // Verify the consumption API internal health endpoint works
           await verifyConsumptionApiInternalHealth();
 
-          console.log("✅ Internal health endpoint works correctly");
+          testLogger.info("✅ Internal health endpoint works correctly");
         });
 
         it("should serve WebApp at custom mountPath with Express framework", async function () {
@@ -1162,8 +1199,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           // Log response details for debugging
           if (!response.ok) {
             const errorText = await response.text();
-            console.error(`MCP request failed with status ${response.status}`);
-            console.error(`Response body: ${errorText}`);
+            testLogger.error(
+              `MCP request failed with status ${response.status}`,
+            );
+            testLogger.error(`Response body: ${errorText}`);
             throw new Error(
               `MCP request failed: ${response.status} ${response.statusText} - ${errorText}`,
             );
@@ -1196,7 +1235,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           expect(queryTool).to.exist;
           expect(queryTool).to.have.property("description");
 
-          console.log("✅ MCP server works correctly through proxy");
+          testLogger.info("✅ MCP server works correctly through proxy");
         });
 
         it("should create JSON table and accept extra fields in payload", async function () {
@@ -1401,7 +1440,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          console.log(
+          testLogger.info(
             "✅ Index signature test passed - extra fields received by streaming function and stored in properties column",
           );
         });
@@ -1421,7 +1460,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             .toISOString()
             .replace(/\.\d{3}Z$/, ".123456789Z");
 
-          console.log(
+          testLogger.info(
             `Testing DateTime precision with timestamp: ${timestampWithMicroseconds}`,
           );
 
@@ -1486,7 +1525,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           }
 
           const row = data[0];
-          console.log("Retrieved row:", row);
+          testLogger.info("Retrieved row:", row);
 
           // Verify that DateTime64String<6> preserves microseconds
           if (!row.timestampUsString.includes(".123456")) {
@@ -1502,7 +1541,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          console.log(
+          testLogger.info(
             "✅ DateTime precision test passed - microseconds preserved",
           );
         });
@@ -1510,7 +1549,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
     } else {
       it("should successfully ingest data and verify through consumption API", async function () {
         // Wait for infrastructure to stabilize after previous test's file modification
-        console.log(
+        testLogger.info(
           "Waiting for streaming functions to stabilize after DEFAULT removal...",
         );
         // Table modifications trigger cascading function restarts, so use longer timeout
@@ -1904,7 +1943,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          console.log(
+          testLogger.info(
             "✅ Extra fields test passed (Python) - extra fields received by streaming function via model_extra and stored in properties column",
           );
         });
@@ -1924,7 +1963,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             .toISOString()
             .replace(/\.\d{3}Z$/, ".123456789Z");
 
-          console.log(
+          testLogger.info(
             `Testing DateTime precision (Python) with timestamp: ${timestampWithMicroseconds}`,
           );
 
@@ -1935,7 +1974,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             timestamp_us: timestampWithMicroseconds,
             timestamp_ns: timestampWithNanoseconds,
           };
-          console.log("Sending payload:", JSON.stringify(payload, null, 2));
+          testLogger.info("Sending payload:", JSON.stringify(payload, null, 2));
 
           // Ingest to DateTimePrecisionInput (which has a transform to Output)
           const response = await fetch(
@@ -1988,7 +2027,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           }
 
           const row = data[0];
-          console.log("Retrieved row (Python):", JSON.stringify(row, null, 2));
+          testLogger.info(
+            "Retrieved row (Python):",
+            JSON.stringify(row, null, 2),
+          );
 
           // Verify that datetime with clickhouse_datetime64(6) preserves microseconds
           if (!row.timestamp_us.includes(".123456")) {
@@ -2000,17 +2042,17 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           // Note: Python datetime truncates nanoseconds to microseconds, so we expect .123456 not .123456789
           // Log if nanoseconds were truncated (expected behavior)
           if (row.timestamp_ns.includes(".123456789")) {
-            console.log(
+            testLogger.info(
               "✅ Nanoseconds preserved in ClickHouse:",
               row.timestamp_ns,
             );
           } else if (row.timestamp_ns.includes(".123456")) {
-            console.log(
+            testLogger.info(
               "⚠️  Nanoseconds truncated to microseconds (expected Python behavior):",
               row.timestamp_ns,
             );
           } else {
-            console.log(
+            testLogger.info(
               "❌ No sub-second precision found in timestamp_ns:",
               row.timestamp_ns,
             );
@@ -2019,7 +2061,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          console.log(
+          testLogger.info(
             "✅ DateTime precision test passed (Python) - microseconds preserved",
           );
         });

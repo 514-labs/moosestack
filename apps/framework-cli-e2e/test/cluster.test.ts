@@ -41,6 +41,7 @@ import {
   performGlobalCleanup,
   cleanupClickhouseData,
   waitForInfrastructureReady,
+  logger,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -59,6 +60,7 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 const TEST_ADMIN_HASH =
   "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
 
+const testLogger = logger.scope("cluster-test");
 /**
  * Query ClickHouse to verify cluster configuration
  */
@@ -80,7 +82,7 @@ async function verifyClustersInClickHouse(
     const clusters = await result.json<{ cluster: string }>();
     const clusterNames = clusters.map((row) => row.cluster);
 
-    console.log("Clusters found in ClickHouse:", clusterNames);
+    testLogger.info("Clusters found in ClickHouse:", clusterNames);
 
     for (const expected of expectedClusters) {
       expect(
@@ -113,14 +115,14 @@ async function verifyInfraMapClusters(
   }
 
   const response_data = await response.json();
-  console.log("InfraMap response:", JSON.stringify(response_data, null, 2));
+  testLogger.info("InfraMap response:", JSON.stringify(response_data, null, 2));
 
   // Handle both direct format and wrapped format
   const infraMap = response_data.infra_map || response_data;
 
   expect(infraMap.tables, "InfraMap should have tables field").to.exist;
 
-  console.log("InfraMap tables:", Object.keys(infraMap.tables));
+  testLogger.info("InfraMap tables:", Object.keys(infraMap.tables));
 
   for (const expectedTable of expectedTables) {
     const tableKey = `local_${expectedTable.name}`;
@@ -154,7 +156,7 @@ function verifyClusterXmlGenerated(projectDir: string): void {
   ).to.be.true;
 
   const xmlContent = fs.readFileSync(clusterXmlPath, "utf-8");
-  console.log("Generated cluster XML:", xmlContent);
+  testLogger.info("Generated cluster XML:", xmlContent);
 
   // Verify XML contains expected cluster definitions
   expect(xmlContent).to.include("<remote_servers>");
@@ -192,7 +194,7 @@ async function verifyTableExists(tableName: string): Promise<void> {
       rows.length,
       `Table ${tableName} should exist in ClickHouse`,
     ).to.equal(1);
-    console.log(`Table ${tableName} exists with engine: ${rows[0].engine}`);
+    testLogger.info(`Table ${tableName} exists with engine: ${rows[0].engine}`);
   } finally {
     await client.close();
   }
@@ -241,7 +243,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       try {
         await fs.promises.access(CLI_PATH, fs.constants.F_OK);
       } catch (err) {
-        console.error(
+        testLogger.error(
           `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
         );
         throw err;
@@ -271,7 +273,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       }
 
       // Start dev server
-      console.log("Starting dev server...");
+      testLogger.info("Starting dev server...");
       const devEnv =
         config.language === "python" ?
           {
@@ -293,11 +295,11 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         SERVER_CONFIG.startupMessage,
         SERVER_CONFIG.url,
       );
-      console.log("Server started, cleaning up old data...");
+      testLogger.info("Server started, cleaning up old data...");
       await cleanupClickhouseData();
-      console.log("Waiting for infrastructure to be ready...");
+      testLogger.info("Waiting for infrastructure to be ready...");
       await waitForInfrastructureReady();
-      console.log("All components ready, starting tests...");
+      testLogger.info("All components ready, starting tests...");
     });
 
     after(async function () {
@@ -426,7 +428,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         const data = await result.json<{ statement: string }>();
         const createStatement = data[0].statement;
 
-        console.log(`TableE CREATE statement: ${createStatement}`);
+        testLogger.info(`TableE CREATE statement: ${createStatement}`);
 
         // Verify it's ReplicatedMergeTree
         expect(createStatement).to.include("ReplicatedMergeTree");

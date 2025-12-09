@@ -396,10 +396,12 @@ class OlapTable(TypedMooseResource, Generic[T]):
         """
         import hashlib
 
+        # Use per-table database if specified, otherwise fall back to global config
+        effective_database = self.config.database or clickhouse_config.database
         config_string = (
             f"{clickhouse_config.host}:{clickhouse_config.port}:"
             f"{clickhouse_config.username}:{clickhouse_config.password}:"
-            f"{clickhouse_config.database}:{clickhouse_config.use_ssl}"
+            f"{effective_database}:{clickhouse_config.use_ssl}"
         )
         return hashlib.sha256(config_string.encode()).hexdigest()[:16]
 
@@ -434,6 +436,8 @@ class OlapTable(TypedMooseResource, Generic[T]):
 
         try:
             # Create new client with standard configuration
+            # Use per-table database if specified, otherwise fall back to global config
+            effective_database = self.config.database or clickhouse_config.database
             interface = "https" if clickhouse_config.use_ssl else "http"
             client = get_client(
                 interface=interface,
@@ -441,7 +445,7 @@ class OlapTable(TypedMooseResource, Generic[T]):
                 port=int(clickhouse_config.port),
                 username=clickhouse_config.username,
                 password=clickhouse_config.password,
-                database=clickhouse_config.database,
+                database=effective_database,
             )
 
             # Cache the new client and config hash

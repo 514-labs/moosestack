@@ -939,3 +939,27 @@ user_event_output_table = OlapTable[UserEventOutput](
 user_event_output_stream = Stream[UserEventOutput](
     "UserEventOutput", StreamConfig(destination=user_event_output_table)
 )
+
+
+# =======Non-Default Database Insert Test (Issue #3101)=========
+# Tests that OlapTable.insert() respects the database field in OlapConfig
+# This validates the fix for inserting into non-default databases
+
+
+class NonDefaultDbRecord(BaseModel):
+    """Test model for inserting into a non-default database."""
+
+    id: Key[str]
+    timestamp: datetime
+    value: str
+
+
+# Table configured to use a non-default database ("analytics")
+# This requires additional_databases = ["analytics"] in moose.config.toml
+non_default_db_table = OlapTable[NonDefaultDbRecord](
+    "NonDefaultDbRecord",
+    OlapConfig(
+        database="analytics",  # Use non-default database
+        order_by_fields=["id", "timestamp"],
+    ),
+)

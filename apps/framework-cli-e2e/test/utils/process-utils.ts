@@ -1,5 +1,12 @@
 import { TIMEOUTS, SERVER_CONFIG } from "../constants";
 import { withRetries } from "./retry-utils";
+import { logger, ScopedLogger } from "./logger";
+
+const processLogger = logger.scope("utils:process");
+
+export interface ProcessOptions {
+  logger?: ScopedLogger;
+}
 
 declare const require: any;
 
@@ -25,21 +32,26 @@ const setTimeoutAsync = (ms: number) =>
 /**
  * Stops a development process with graceful shutdown and forced termination fallback
  */
-export const stopDevProcess = async (devProcess: any): Promise<void> => {
+export const stopDevProcess = async (
+  devProcess: any,
+  options: ProcessOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? processLogger;
+
   if (devProcess && !devProcess.killed) {
-    console.log("Stopping dev process...");
+    log.debug("Stopping dev process");
 
     // Set up exit handler before killing
     const gracefulShutdownPromise = new Promise<void>((resolve) => {
       devProcess!.on("exit", () => {
-        console.log("Dev process has exited gracefully");
+        log.debug("Dev process has exited gracefully");
         resolve();
       });
     });
 
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
-        console.log("Dev process did not exit gracefully, forcing kill...");
+        log.warn("Dev process did not exit gracefully, forcing kill");
         if (!devProcess!.killed) {
           devProcess!.kill("SIGKILL");
         }
@@ -58,8 +70,8 @@ export const stopDevProcess = async (devProcess: any): Promise<void> => {
       await setTimeoutAsync(TIMEOUTS.BRIEF_CLEANUP_WAIT_MS);
     }
 
-    console.log("Ensuring all moose processes are terminated...");
-    await killRemainingProcesses();
+    log.debug("Ensuring all moose processes are terminated");
+    await killRemainingProcesses(options);
   }
 };
 
@@ -71,7 +83,10 @@ export const waitForServerStart = async (
   timeout: number,
   startupMessage: string,
   serverUrl: string,
+  options: ProcessOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? processLogger;
+
   return new Promise<void>((resolve, reject) => {
     let serverStarted = false;
     let timeoutId: any = null;
@@ -94,22 +109,23 @@ export const waitForServerStart = async (
     const onStdout = async (data: any) => {
       const output = data.toString();
       if (!output.match(/^\n[⢹⢺⢼⣸⣇⡧⡗⡏] Starting local infrastructure$/)) {
-        console.log("Dev server output:", output);
+        log.debug("Dev server output", { output: output.trim() });
       }
 
       if (!serverStarted && output.includes(startupMessage)) {
         serverStarted = true;
+        log.debug("Server startup message detected");
         cleanup();
         resolve();
       }
     };
 
     const onStderr = (data: any) => {
-      console.error("Dev server stderr:", data.toString());
+      log.warn("Dev server stderr", { stderr: data.toString() });
     };
 
     const onExit = (code: number | null) => {
-      console.log(`Dev process exited with code ${code}`);
+      log.debug(`Dev process exited`, { exitCode: code });
       if (!serverStarted) {
         cleanup();
         reject(new Error(`Dev process exited with code ${code}`));
@@ -142,7 +158,10 @@ export const waitForServerStart = async (
 
     timeoutId = setTimeout(() => {
       if (serverStarted) return;
-      console.error("Dev server did not start or complete in time");
+      log.error("Dev server did not start or complete in time", {
+        timeout,
+        serverUrl,
+      });
       devProcess.kill("SIGINT");
       cleanup();
       reject(new Error("Dev server timeout"));
@@ -153,14 +172,18 @@ export const waitForServerStart = async (
 /**
  * Kills any remaining moose-cli processes
  */
-export const killRemainingProcesses = async (): Promise<void> => {
+export const killRemainingProcesses = async (
+  options: ProcessOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? processLogger;
+
   try {
     await execAsync("pkill -9 -f moose-cli || true", {
       timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
       killSignal: "SIGKILL",
       windowsHide: true,
     });
-    console.log("Killed any remaining moose-cli processes");
+    log.debug("Killed any remaining moose-cli processes");
 
     await execAsync(
       "pkill -9 -f 'streaming_function_runner|python_worker_wrapper|consumption.*localhost' || true",
@@ -170,9 +193,9 @@ export const killRemainingProcesses = async (): Promise<void> => {
         windowsHide: true,
       },
     );
-    console.log("Killed any remaining Python processes");
+    log.debug("Killed any remaining Python processes");
   } catch (error) {
-    console.warn("Error killing remaining processes:", error);
+    log.warn("Error killing remaining processes", error);
   }
 };
 
@@ -189,10 +212,16 @@ export const killRemainingProcesses = async (): Promise<void> => {
  */
 export const waitForStreamingFunctions = async (
   timeoutMs: number = 120000,
+  options: ProcessOptions = {},
 ): Promise<void> => {
-  console.log(
-    "Waiting for streaming functions to start (checking Redpanda consumer groups)...",
+  const log = options.logger ?? processLogger;
+  log.debug(
+    "Waiting for streaming functions to start (checking Redpanda consumer groups)",
+    {
+      timeoutMs,
+    },
   );
+
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
@@ -203,7 +232,7 @@ export const waitForStreamingFunctions = async (
       );
 
       if (!containerName.trim()) {
-        console.log("Waiting for Redpanda container to start...");
+        log.debug("Waiting for Redpanda container to start");
         await setTimeoutAsync(1000);
         continue;
       }
@@ -213,8 +242,7 @@ export const waitForStreamingFunctions = async (
         `docker exec ${containerName.trim()} rpk group list`,
       );
 
-      console.log("Redpanda consumer groups:");
-      console.log(groupList);
+      log.debug("Redpanda consumer groups", { groupList: groupList.trim() });
 
       // Parse for Stable flow-* groups
       // Expected format: "BROKER  GROUP  STATE"
@@ -230,26 +258,30 @@ export const waitForStreamingFunctions = async (
         flowGroups.length > 0 &&
         stableFlowGroups.length === flowGroups.length
       ) {
-        console.log(
-          `Found ${stableFlowGroups.length} active streaming function(s):`,
+        log.debug(
+          `Found ${stableFlowGroups.length} active streaming function(s)`,
+          {
+            functions: stableFlowGroups.map((g) => g.trim()),
+          },
         );
-        stableFlowGroups.forEach((g) => console.log(`  ${g.trim()}`));
 
         // Grace period for consumer group to fully stabilize
-        console.log("Waiting for consumer groups to stabilize...");
+        log.debug("Waiting for consumer groups to stabilize");
         await setTimeoutAsync(3000);
-        console.log("Streaming functions ready");
+        log.debug("✓ Streaming functions ready");
         return;
       }
 
-      console.log(
-        `Waiting for all streaming functions to be stable (${stableFlowGroups.length}/${flowGroups.length} ready)...`,
+      log.debug(
+        `Waiting for all streaming functions to be stable (${stableFlowGroups.length}/${flowGroups.length} ready)`,
       );
       await setTimeoutAsync(1000);
     } catch (error) {
       // Container might not be ready yet, or rpk command failed
       // Continue polling until timeout
-      console.log(`Error checking consumer groups: ${error}, retrying...`);
+      log.debug("Error checking consumer groups, retrying", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       await setTimeoutAsync(1000);
     }
   }
@@ -265,8 +297,10 @@ export const waitForStreamingFunctions = async (
  */
 export const waitForInfrastructureReady = async (
   timeoutMs: number = 60_000,
+  options: ProcessOptions = {},
 ): Promise<void> => {
-  console.log("Waiting for all infrastructure to be ready...");
+  const log = options.logger ?? processLogger;
+  log.debug("Waiting for all infrastructure to be ready", { timeoutMs });
 
   await withRetries(
     async () => {
@@ -278,12 +312,14 @@ export const waitForInfrastructureReady = async (
           `Infrastructure not ready (${response.status}): ${body}`,
         );
       }
-      console.log("All infrastructure components are ready");
+      log.debug("✓ All infrastructure components are ready");
     },
     {
       attempts: Math.floor(timeoutMs / 1000),
       delayMs: 1000,
       backoffFactor: 1,
+      logger: log,
+      operationName: "Infrastructure readiness check",
     },
   );
 };
