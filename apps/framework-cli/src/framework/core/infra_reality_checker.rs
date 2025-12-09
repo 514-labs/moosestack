@@ -819,6 +819,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_reality_checker_replicated_vs_mergetree_mismatch() {
+        // This test simulates the user's bug report:
+        // - ClickHouse actually has ReplicatedReplacingMergeTree
+        // - Stored infra map has MergeTree
+        // - We should detect a mismatch
+        let mut actual_table = create_base_table("test_table");
+        let mut infra_table = create_base_table("test_table");
+
+        // ClickHouse has ReplicatedReplacingMergeTree (with empty params - cloud mode)
+        actual_table.engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            ver: None,
+            is_deleted: None,
+        };
+        // Stored infra map has MergeTree (potentially from older deployment)
+        infra_table.engine = ClickhouseEngine::MergeTree;
+
+        let mock_client = MockOlapClient {
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..actual_table.clone()
+            }],
+            sql_resources: vec![],
+        };
+
+        let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables: HashMap::new(),
+            views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: OlapProcess {},
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        };
+
+        infra_map
+            .tables
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let project = create_test_project();
+
+        let discrepancies = checker.check_reality(&project, &infra_map).await.unwrap();
+
+        assert!(discrepancies.unmapped_tables.is_empty());
+        assert!(discrepancies.missing_tables.is_empty());
+        assert_eq!(
+            discrepancies.mismatched_tables.len(),
+            1,
+            "Should detect engine mismatch between ReplicatedReplacingMergeTree and MergeTree"
+        );
+
+        // Verify the change shows reality has ReplicatedReplacingMergeTree
+        match &discrepancies.mismatched_tables[0] {
+            OlapChange::Table(TableChange::Updated { before, after, .. }) => {
+                assert!(
+                    matches!(
+                        &before.engine,
+                        ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
+                    ),
+                    "before (reality) should have ReplicatedReplacingMergeTree, got {:?}",
+                    before.engine
+                );
+                assert!(
+                    matches!(&after.engine, ClickhouseEngine::MergeTree),
+                    "after (infra map) should have MergeTree, got {:?}",
+                    after.engine
+                );
+            }
+            _ => panic!("Expected TableChange::Updated variant"),
+        }
+    }
+
+    #[tokio::test]
     async fn test_reality_checker_sql_resource_mismatch() {
         let actual_resource = SqlResource {
             name: "test_view".to_string(),
