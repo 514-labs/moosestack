@@ -383,6 +383,36 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         await verifyVersionedTables("UserEvents", ["1.0", "2.0"], "local");
       });
 
+      it("should create table in non-default database when configured", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Wait for the analytics database and NonDefaultDbRecord table to be created
+        // This tests that OlapTable with database="analytics" creates the table in the correct database
+        await waitForDBWrite(
+          devProcess!,
+          "NonDefaultDbRecord",
+          0,
+          30_000,
+          "analytics",
+        );
+
+        // Verify we can query the table in the analytics database (even if empty)
+        const client = createClient(CLICKHOUSE_CONFIG);
+        try {
+          const result = await client.query({
+            query: "SELECT count(*) as count FROM analytics.NonDefaultDbRecord",
+            format: "JSONEachRow",
+          });
+          const rows: any[] = await result.json();
+          console.log(
+            "NonDefaultDbRecord table exists in analytics database, count:",
+            rows[0].count,
+          );
+        } finally {
+          await client.close();
+        }
+      });
+
       it("should create indexes defined in templates", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
