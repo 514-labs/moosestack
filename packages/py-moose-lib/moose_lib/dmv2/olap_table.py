@@ -31,6 +31,7 @@ from .types import TypedMooseResource, T, Cols
 from ._registry import _tables
 from ..data_models import Column, is_array_nested_type, is_nested_type, _to_columns
 from .life_cycle import LifeCycle
+from ._source_capture import get_source_file_from_stack
 
 
 @dataclass
@@ -278,7 +279,19 @@ class OlapTable(TypedMooseResource, Generic[T]):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
         self.config = config
-        self.metadata = config.metadata
+
+        if config.metadata:
+            self.metadata = config.metadata.copy() if isinstance(config.metadata, dict) else config.metadata
+        else:
+            self.metadata = {}
+
+        if not isinstance(self.metadata, dict):
+            self.metadata = {}
+        if 'source' not in self.metadata:
+            source_file = get_source_file_from_stack()
+            if source_file:
+                self.metadata['source'] = {'file': source_file}
+
         self._column_list = _to_columns(self._t)
 
         # Create Cols instance for backward compatibility
