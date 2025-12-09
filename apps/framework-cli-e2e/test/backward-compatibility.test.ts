@@ -347,12 +347,14 @@ describe("Backward Compatibility Tests", function () {
               // Add test credentials for S3Queue tests
               TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+              MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
             }
           : {
               ...process.env,
               // Add test credentials for S3Queue tests
               TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+              MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
             };
 
         devProcess = spawn(LATEST_CLI_PATH, ["dev"], {

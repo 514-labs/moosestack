@@ -280,8 +280,12 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
             ...process.env,
             VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
             PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+            MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
           }
-        : { ...process.env };
+        : {
+            ...process.env,
+            MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+          };
 
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",

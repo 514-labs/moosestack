@@ -89,6 +89,7 @@ describe("python template tests - db-pull with SQL function defaults", () => {
         ...process.env,
         VIRTUAL_ENV: path.join(testProjectDir, ".venv"),
         PATH: `${path.join(testProjectDir, ".venv", "bin")}:${process.env.PATH}`,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
       },
     });
 
@@ -447,6 +448,10 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: testProjectDir,
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      },
     });
 
     await waitForServerStart(

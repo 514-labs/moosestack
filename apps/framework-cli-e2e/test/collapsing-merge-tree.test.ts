@@ -82,7 +82,10 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: testDir,
-        env: process.env,
+        env: {
+          ...process.env,
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        },
       });
 
       testLogger.info("Waiting for server to start...");
@@ -212,6 +215,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
           ...process.env,
           VIRTUAL_ENV: path.join(testDir, ".venv"),
           PATH: `${path.join(testDir, ".venv", "bin")}:${process.env.PATH}`,
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
