@@ -142,20 +142,28 @@ impl SyncingProcessesRegistry {
     /// * `source_topic_name` - Source Kafka topic name
     /// * `source_topic_columns` - Schema definition of the source topic
     /// * `target_table_name` - Target ClickHouse table name
+    /// * `target_database` - Optional target database name. If None, uses the default database
     /// * `target_table_columns` - Schema definition of the target table
     /// * `metrics` - Metrics collection service
+    #[allow(clippy::too_many_arguments)]
     pub fn start_topic_to_table(
         &mut self,
         sync_id: String,
         source_topic_name: String,
         source_topic_columns: Vec<Column>,
         target_table_name: String,
+        target_database: Option<String>,
         target_table_columns: Vec<ClickHouseColumn>,
         metrics: Arc<Metrics>,
     ) {
         info!(
-            "Starting syncing process for topic: {} and table: {}",
-            source_topic_name, target_table_name
+            "Starting syncing process for topic: {} and table: {}{}",
+            source_topic_name,
+            target_table_name,
+            target_database
+                .as_ref()
+                .map(|db| format!(" (database: {})", db))
+                .unwrap_or_default()
         );
         // the schema of the currently running process is outdated
         if let Some(TableSyncProcess {
@@ -173,6 +181,7 @@ impl SyncingProcessesRegistry {
             source_topic_name,
             source_topic_columns,
             target_table_name,
+            target_database,
             target_table_columns,
             metrics,
         );
@@ -357,6 +366,7 @@ impl SyncingProcessesRegistry {
 /// * `source_topic_name` - Source Kafka topic name
 /// * `source_topic_columns` - Schema definition of the source topic
 /// * `target_table_name` - Target ClickHouse table name
+/// * `target_database` - Optional target database name. If None, uses the default database
 /// * `target_table_columns` - Schema definition of the target table
 /// * `metrics` - Metrics collection service
 ///
@@ -369,6 +379,7 @@ fn spawn_sync_process_core(
     source_topic_name: String,
     source_topic_columns: Vec<Column>,
     target_table_name: String,
+    target_database: Option<String>,
     target_table_columns: Vec<ClickHouseColumn>,
     metrics: Arc<Metrics>,
 ) -> TableSyncProcess {
@@ -384,6 +395,7 @@ fn spawn_sync_process_core(
             source_topic_name.clone(),
             source_topic_columns,
             target_table_name.clone(),
+            target_database,
             target_table_columns,
             metrics,
             cancel_rx,
@@ -549,6 +561,7 @@ async fn sync_kafka_to_clickhouse(
     source_topic_name: String,
     source_topic_columns: Vec<Column>,
     target_table_name: String,
+    target_database: Option<String>,
     target_table_columns: Vec<ClickHouseColumn>,
     metrics: Arc<Metrics>,
     mut cancel_rx: tokio::sync::oneshot::Receiver<()>,
@@ -564,7 +577,7 @@ async fn sync_kafka_to_clickhouse(
         &source_topic_name,
     ));
 
-    let clickhouse_columns = target_table_columns
+    let clickhouse_columns: Vec<String> = target_table_columns
         .iter()
         .map(|column| column.name.clone())
         .collect();
@@ -581,6 +594,7 @@ async fn sync_kafka_to_clickhouse(
             subscriber_clone.store_offset(&topic_clone, partition, offset)
         }),
         target_table_name,
+        target_database,
         clickhouse_columns,
     );
 
