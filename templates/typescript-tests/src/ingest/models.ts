@@ -773,3 +773,23 @@ export const MaterializedTestPipeline = new IngestPipeline<MaterializedTest>(
     ingestApi: true,
   },
 );
+
+/** =======Non-Default Database Insert Test (Issue #3101)========= */
+// Tests that OlapTable.insert() respects the database field in OlapConfig
+// This validates the fix for inserting into non-default databases
+
+export interface NonDefaultDbRecord {
+  id: Key<string>;
+  timestamp: DateTime;
+  value: string;
+}
+
+// Table configured to use a non-default database ("analytics")
+// This requires additional_databases = ["analytics"] in moose.config.toml
+export const nonDefaultDbTable = new OlapTable<NonDefaultDbRecord>(
+  "NonDefaultDbRecord",
+  {
+    database: "analytics", // Use non-default database
+    orderByFields: ["id", "timestamp"],
+  },
+);
