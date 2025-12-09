@@ -91,13 +91,13 @@ export class TypedBase<T, C> {
     // Always ensure metadata is an object and attach stackTrace (last 10 lines only)
     this.metadata =
       (config as any)?.metadata ? { ...(config as any).metadata } : {};
-    const stack = new Error().stack;
-    if (stack) {
-      // Add source object with file and line using shared utility
-      const info = getSourceFileInfo(stack);
-      this.metadata.source = { file: info.file, line: info.line };
-    } else {
-      this.metadata.source = undefined;
+
+    if (!this.metadata.source) {
+      const stack = new Error().stack;
+      if (stack) {
+        const info = getSourceFileInfo(stack);
+        this.metadata.source = { file: info.file, line: info.line };
+      }
     }
   }
 }

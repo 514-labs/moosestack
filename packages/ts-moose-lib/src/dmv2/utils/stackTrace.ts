@@ -35,10 +35,11 @@ export interface SourceLocation {
 function shouldSkipStackLine(line: string): boolean {
   return (
     line.includes("node_modules") || // Skip npm installed packages (prod)
-    line.includes("internal/modules") || // Skip Node.js internals
+    line.includes("node:internal") || // Skip Node.js internals (modern format)
+    line.includes("internal/modules") || // Skip Node.js internals (older format)
     line.includes("ts-node") || // Skip TypeScript execution
-    line.includes("/ts-moose-lib/") || // Skip dev/linked moose-lib (Unix)
-    line.includes("\\ts-moose-lib\\") // Skip dev/linked moose-lib (Windows)
+    line.includes("/ts-moose-lib/src/") || // Skip dev/linked moose-lib src (Unix)
+    line.includes("\\ts-moose-lib\\src\\") // Skip dev/linked moose-lib src (Windows)
   );
 }
 

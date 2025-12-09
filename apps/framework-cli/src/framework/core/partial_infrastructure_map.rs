@@ -66,7 +66,7 @@ use crate::{
         scripts::Workflow, versions::Version,
     },
     infrastructure::olap::clickhouse::queries::ClickhouseEngine,
-    utilities::constants,
+    utilities::{constants, normalize_path_string},
 };
 
 /// Defines how Moose manages the lifecycle of database resources when code changes.
@@ -609,6 +609,7 @@ impl PartialInfrastructureMap {
     ///
     /// * `language` - The programming language of the user's code
     /// * `main_file` - Path to the main file containing the user's code
+    /// * `project_root` - Root directory of the project for normalizing file paths
     ///
     /// # Returns
     ///
@@ -625,6 +626,7 @@ impl PartialInfrastructureMap {
         language: SupportedLanguages,
         main_file: &Path,
         default_database: &str,
+        project_root: &Path,
     ) -> Result<InfrastructureMap, DmV2LoadingError> {
         let tables = self.convert_tables(default_database)?;
         let topics = self.convert_topics();
@@ -640,7 +642,7 @@ impl PartialInfrastructureMap {
         let orchestration_worker = OrchestrationWorker::new(language);
         orchestration_workers.insert(orchestration_worker.id(), orchestration_worker);
 
-        Ok(InfrastructureMap {
+        let mut infra_map = InfrastructureMap {
             default_database: default_database.to_string(),
             topics,
             api_endpoints,
@@ -657,7 +659,11 @@ impl PartialInfrastructureMap {
             orchestration_workers,
             workflows,
             web_apps,
-        })
+        };
+
+        normalize_all_metadata_paths(&mut infra_map, project_root);
+
+        Ok(infra_map)
     }
 
     /// Converts partial table definitions into complete [`Table`] instances.
@@ -1405,5 +1411,38 @@ impl PartialInfrastructureMap {
                 (partial_webapp.name.clone(), webapp)
             })
             .collect()
+    }
+}
+
+fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root: &Path) {
+    for table in infra_map.tables.values_mut() {
+        if let Some(metadata) = &mut table.metadata {
+            metadata.normalize_source_path(project_root);
+        }
+    }
+
+    for topic in infra_map.topics.values_mut() {
+        if let Some(metadata) = &mut topic.metadata {
+            metadata.normalize_source_path(project_root);
+        }
+    }
+
+    for api in infra_map.api_endpoints.values_mut() {
+        if let Some(metadata) = &mut api.metadata {
+            metadata.normalize_source_path(project_root);
+        }
+    }
+
+    for func in infra_map.function_processes.values_mut() {
+        if let Some(metadata) = &mut func.metadata {
+            metadata.normalize_source_path(project_root);
+        }
+    }
+
+    // SqlResource has source_file directly, not in metadata struct
+    for resource in infra_map.sql_resources.values_mut() {
+        if let Some(source_file) = &mut resource.source_file {
+            *source_file = normalize_path_string(source_file, project_root);
+        }
     }
 }
