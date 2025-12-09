@@ -59,6 +59,16 @@ export const isClientOnlyMode = (): boolean =>
   process.env.MOOSE_CLIENT_ONLY === "true";
 
 /**
+ * Production mode check. When true, certain development-only behaviors
+ * are disabled (e.g., require cache clearing for hot-reload).
+ * Set via NODE_ENV=production environment variable (automatically set by `moose prod`).
+ *
+ * @returns true if NODE_ENV environment variable is set to "production"
+ */
+export const isProductionMode = (): boolean =>
+  process.env.NODE_ENV === "production";
+
+/**
  * Internal registry holding all defined Moose dmv2 resources.
  * Populated by the constructors of OlapTable, Stream, IngestApi, etc.
  * Accessed via `getMooseInternal()`.
@@ -72,6 +82,7 @@ const moose_internal = {
   workflows: new Map<string, Workflow>(),
   webApps: new Map<string, WebApp>(),
 };
+
 /**
  * Default retention period for streams if not specified (7 days in seconds).
  */
@@ -1094,7 +1105,8 @@ if (getMooseInternal() === undefined) {
  * and `end___MOOSE_STUFF___`) for easy extraction by the calling process.
  */
 export const dumpMooseInternal = async () => {
-  loadIndex();
+  // Force reload to pick up any changes (used for serialization/hot reload)
+  reloadIndex();
 
   console.log(
     "___MOOSE_STUFF___start",
@@ -1103,8 +1115,29 @@ export const dumpMooseInternal = async () => {
   );
 };
 
-const loadIndex = () => {
-  // Clear the registry before loading to support hot reloading
+/**
+ * Checks if the registry has been populated with any resources.
+ */
+const isRegistryEmpty = (): boolean => {
+  const registry = getMooseInternal();
+  return (
+    registry.tables.size === 0 &&
+    registry.streams.size === 0 &&
+    registry.ingestApis.size === 0 &&
+    registry.apis.size === 0 &&
+    registry.sqlResources.size === 0 &&
+    registry.workflows.size === 0 &&
+    registry.webApps.size === 0
+  );
+};
+
+/**
+ * Loads the user's application entry point to register all dmv2 resources.
+ * This clears the registry and require cache before loading, so it always
+ * gets fresh data. Used for hot-reloading and serialization.
+ */
+const reloadIndex = () => {
+  // Clear the registry before loading
   const registry = getMooseInternal();
   registry.tables.clear();
   registry.streams.clear();
@@ -1114,13 +1147,16 @@ const loadIndex = () => {
   registry.workflows.clear();
   registry.webApps.clear();
 
-  // Clear require cache for app directory to pick up changes
-  const appDir = `${process.cwd()}/${getSourceDir()}`;
-  Object.keys(require.cache).forEach((key) => {
-    if (key.startsWith(appDir)) {
-      delete require.cache[key];
-    }
-  });
+  // Clear require cache for app directory to pick up changes (development only)
+  // In production, skip cache clearing since hot-reload is not needed
+  if (!isProductionMode()) {
+    const appDir = `${process.cwd()}/${getSourceDir()}`;
+    Object.keys(require.cache).forEach((key) => {
+      if (key.startsWith(appDir)) {
+        delete require.cache[key];
+      }
+    });
+  }
 
   try {
     require(`${process.cwd()}/${getSourceDir()}/index.ts`);
@@ -1140,6 +1176,16 @@ const loadIndex = () => {
 };
 
 /**
+ * Ensures the index is loaded. Only loads if the registry is empty.
+ * This is idempotent - safe to call multiple times.
+ */
+const ensureIndexLoaded = () => {
+  if (isRegistryEmpty()) {
+    reloadIndex();
+  }
+};
+
+/**
  * Loads the user's application entry point and extracts all registered stream
  * transformation and consumer functions.
  *
@@ -1148,7 +1194,7 @@ const loadIndex = () => {
  *          and values are tuples containing: [handler function, config, source stream columns]
  */
 export const getStreamingFunctions = async () => {
-  loadIndex();
+  ensureIndexLoaded();
 
   const registry = getMooseInternal();
   const transformFunctions = new Map<
@@ -1194,7 +1240,7 @@ export const getStreamingFunctions = async () => {
  *          are their corresponding handler functions.
  */
 export const getApis = async () => {
-  loadIndex();
+  ensureIndexLoaded();
   const apiFunctions = new Map<
     string,
     (params: unknown, utils: ApiUtil) => unknown
@@ -1363,7 +1409,7 @@ export const dlqColumns: Column[] = [
 ];
 
 export const getWorkflows = async () => {
-  loadIndex();
+  ensureIndexLoaded();
 
   const registry = getMooseInternal();
   return registry.workflows;
@@ -1411,6 +1457,6 @@ export const getTaskForWorkflow = async (
 };
 
 export const getWebApps = async () => {
-  loadIndex();
+  ensureIndexLoaded();
   return getMooseInternal().webApps;
 };
