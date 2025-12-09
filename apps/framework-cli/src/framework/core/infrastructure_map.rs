@@ -55,6 +55,7 @@ use crate::framework::scripts::Workflow;
 use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
@@ -945,7 +946,7 @@ impl InfrastructureMap {
         table_diff_strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
         is_production: bool,
-        ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
+        ignore_ops: &[IgnorableOperation],
     ) -> InfraChanges {
         let mut changes = InfraChanges::default();
 
@@ -1858,8 +1859,8 @@ impl InfrastructureMap {
                         // Detect and emit table-level TTL changes
                         // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
                         if !ttl_expressions_are_equivalent(
-                            &table.table_ttl_setting,
-                            &target_table.table_ttl_setting,
+                            &normalized_table.table_ttl_setting,
+                            &normalized_target.table_ttl_setting,
                         ) {
                             tracing::debug!(
                                 "Table '{}' has table-level TTL change: {:?} -> {:?}",
@@ -4921,6 +4922,61 @@ mod diff_tests {
             ..base_col.clone()
         };
         assert!(!columns_are_equivalent(&col_with_mat, &col_without_mat));
+    }
+
+    #[test]
+    fn test_ignore_ttl_operations_with_other_changes() {
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut table_before = super::diff_tests::create_test_table("test", "1.0");
+        table_before.table_ttl_setting = Some("ts + toIntervalDay(30)".to_string());
+
+        let mut table_after = table_before.clone();
+        table_after.table_ttl_setting = Some("ts + toIntervalDay(90)".to_string());
+        table_after.columns.push(Column {
+            name: "new_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        });
+
+        map1.tables
+            .insert(table_before.id(DEFAULT_DATABASE_NAME), table_before);
+        map2.tables
+            .insert(table_after.id(DEFAULT_DATABASE_NAME), table_after);
+
+        // With ignore: should NOT see TTL change
+        let changes_ignored = map1.diff_with_table_strategy(
+            &map2,
+            &DefaultTableDiffStrategy,
+            false,
+            false,
+            &[IgnorableOperation::ModifyTableTtl],
+        );
+        let ttl_ignored = changes_ignored
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::TtlChanged { .. })))
+            .count();
+        assert_eq!(ttl_ignored, 0, "TTL should be ignored");
+
+        // Without ignore: should see TTL change
+        let changes_not_ignored =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, false, false, &[]);
+        let ttl_not_ignored = changes_not_ignored
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::TtlChanged { .. })))
+            .count();
+        assert_eq!(ttl_not_ignored, 1, "TTL should be detected");
     }
 }
 
