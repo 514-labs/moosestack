@@ -27,6 +27,7 @@ import {
   setupTypeScriptProject,
   setupPythonProject,
   cleanupTestSuite,
+  logger,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -38,6 +39,8 @@ const MOOSE_PY_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/py-moose-lib",
 );
+
+const testLogger = logger.scope("s3-engine-test");
 
 describe("typescript template tests - S3 Engine Runtime Environment Variable Resolution", () => {
   describe("With Environment Variables", () => {
@@ -80,9 +83,9 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         "http://localhost:4000",
       );
 
-      console.log("Server started, waiting for streaming functions...");
+      testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions();
-      console.log("All components ready");
+      testLogger.info("All components ready");
     });
 
     after(async function () {
@@ -155,9 +158,9 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
         "http://localhost:4000",
       );
 
-      console.log("Server started, waiting for streaming functions...");
+      testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions();
-      console.log("All components ready");
+      testLogger.info("All components ready");
     });
 
     after(async function () {
