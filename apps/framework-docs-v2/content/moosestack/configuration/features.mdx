@@ -1,0 +1,40 @@
+---
+title: Feature Flags
+description: Configure feature flags to enable or disable Moose capabilities
+order: 60
+---
+
+import { Callout } from "@/components/mdx";
+
+# Feature Flags
+
+Enable or disable specific Moose capabilities to tailor the runtime to your needs.
+
+<Callout type="info" title="Configuration Source">
+Feature flags can be toggled in `moose.config.toml` for project-wide defaults, or overridden via environment variables (e.g., `MOOSE_FEATURES__WORKFLOWS=true`) for specific environments.
+</Callout>
+
+```toml filename="moose.config.toml"
+[features]
+# Enable the streaming engine (Default: true)
+streaming_engine = true
+# Enable Temporal workflows (Default: false)
+workflows = false
+# Enable OLAP database (Default: true)
+olap = true
+# Enable Analytics APIs server (Default: true)
+apis = true
+# Enable data model V2 (Default: false)
+data_model_v2 = false
+# Enable DDL plan execution (Default: false)
+ddl_plan = false
+```
+
+| Flag | Env Variable | Default | Description |
+|:-----|:-------------|:--------|:------------|
+| `streaming_engine` | `MOOSE_FEATURES__STREAMING_ENGINE` | true | Enables Redpanda/Kafka integration and streaming functions. |
+| `workflows` | `MOOSE_FEATURES__WORKFLOWS` | false | Enables Temporal workflow integration. |
+| `olap` | `MOOSE_FEATURES__OLAP` | true | Enables ClickHouse integration and management. |
+| `apis` | `MOOSE_FEATURES__APIS` | true | Enables the API server for ingestion and consumption endpoints. |
+| `data_model_v2` | `MOOSE_FEATURES__DATA_MODEL_V2` | false | Enables the next-generation data modeling system (experimental). |
+| `ddl_plan` | `MOOSE_FEATURES__DDL_PLAN` | false | Requires explicit approval for DDL changes. |

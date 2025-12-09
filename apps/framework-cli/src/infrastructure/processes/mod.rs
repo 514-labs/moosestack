@@ -71,6 +71,7 @@ pub async fn execute_changes(
                     source_kafka_topic.name.clone(),
                     source_topic.columns.clone(),
                     target_table.name.clone(),
+                    target_table.database.clone(),
                     target_table_columns,
                     metrics.clone(),
                 );
@@ -97,6 +98,7 @@ pub async fn execute_changes(
                     after_kafka_source_topic.name.clone(),
                     after_source_topic.columns.clone(),
                     after_target_table.name.clone(),
+                    after_target_table.database.clone(),
                     target_table_columns,
                     metrics.clone(),
                 );

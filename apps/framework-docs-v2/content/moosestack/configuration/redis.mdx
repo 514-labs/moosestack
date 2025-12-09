@@ -1,0 +1,33 @@
+---
+title: Redis Configuration
+description: Configure the caching and state management layer
+order: 43
+---
+
+import { Callout } from "@/components/mdx";
+
+# Redis Configuration
+
+Configure the caching and state management layer.
+
+<Callout type="info" title="Configuration Precedence">
+If `url` is provided, it takes precedence over `hostname`, `port`, `password`, etc.
+</Callout>
+
+<Callout type="warning" title="Security Warning">
+**NEVER put production credentials in `moose.config.toml`**. For production environments or when connecting to external infrastructure, **ALWAYS use environment variables** and/or secrets to securely inject credentials.
+</Callout>
+
+
+```toml filename="moose.config.toml"
+[redis_config]
+# Redis connection URL (Default: "redis://127.0.0.1:6379")
+url = "redis://127.0.0.1:6379"
+# Namespace prefix for all Redis keys (Default: "MS")
+key_prefix = "MS"
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `url` | `MOOSE_REDIS_CONFIG__URL` | "redis://127.0.0.1:6379" | Full connection URL. |
+| `key_prefix` | `MOOSE_REDIS_CONFIG__KEY_PREFIX` | "MS" | Prefix for keys used by Moose. |
