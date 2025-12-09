@@ -1,0 +1,19 @@
+---
+title: TypeScript Configuration
+description: Specific settings for TypeScript projects
+order: 32
+---
+
+# TypeScript Configuration
+
+Specific settings for TypeScript projects.
+
+```toml filename="moose.config.toml"
+[typescript_config]
+# Package manager to use (npm, pnpm, yarn) (Default: "npm")
+package_manager = "npm"
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `package_manager` | `MOOSE_TYPESCRIPT_CONFIG__PACKAGE_MANAGER` | "npm" | The package manager used for the project. |
