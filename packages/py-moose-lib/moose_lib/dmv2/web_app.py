@@ -5,6 +5,7 @@ This module allows developers to register FastAPI applications as WebApp resourc
 that are managed by the Moose infrastructure, similar to other resources like
 OlapTables, Streams, and APIs.
 """
+
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -29,6 +30,7 @@ class WebAppMetadata:
     Attributes:
         description: Optional description of the WebApp's purpose.
     """
+
     description: Optional[str] = None
 
 
@@ -45,6 +47,7 @@ class WebAppConfig:
         inject_moose_utils: Whether to inject MooseClient utilities into requests.
                            Defaults to True.
     """
+
     mount_path: str
     metadata: Optional[WebAppMetadata] = None
     inject_moose_utils: bool = True
@@ -111,7 +114,9 @@ class WebApp:
         _web_apps[name] = self
 
     @staticmethod
-    def _validate(name: str, config: WebAppConfig, existing_web_apps: Dict[str, 'WebApp']) -> None:
+    def _validate(
+        name: str, config: WebAppConfig, existing_web_apps: Dict[str, "WebApp"]
+    ) -> None:
         """Validate WebApp configuration.
 
         Args:
@@ -129,7 +134,7 @@ class WebApp:
         # Validate mountPath - it is required
         if not config.mount_path:
             raise ValueError(
-                f"mountPath is required. Please specify a mount path for your WebApp (e.g., \"/myapi\")."
+                f'mountPath is required. Please specify a mount path for your WebApp (e.g., "/myapi").'
             )
 
         mount_path = config.mount_path
@@ -137,7 +142,7 @@ class WebApp:
         # Check for root path - not allowed as it would overlap reserved paths
         if mount_path == "/":
             raise ValueError(
-                f"mountPath cannot be \"/\" as it would allow routes to overlap with reserved paths: "
+                f'mountPath cannot be "/" as it would allow routes to overlap with reserved paths: '
                 f"{', '.join(RESERVED_MOUNT_PATHS)}"
             )
 
@@ -154,7 +159,7 @@ class WebApp:
                 raise ValueError(
                     f"mountPath cannot begin with a reserved path: "
                     f"{', '.join(RESERVED_MOUNT_PATHS)}. "
-                    f"Got: \"{mount_path}\""
+                    f'Got: "{mount_path}"'
                 )
 
         # Check for duplicate mount path
@@ -162,8 +167,8 @@ class WebApp:
             existing_mount = existing_app.config.mount_path
             if existing_mount == mount_path:
                 raise ValueError(
-                    f"WebApp with mountPath \"{mount_path}\" already exists "
-                    f"(used by WebApp \"{existing_name}\")"
+                    f'WebApp with mountPath "{mount_path}" already exists '
+                    f'(used by WebApp "{existing_name}")'
                 )
 
     def __repr__(self) -> str:

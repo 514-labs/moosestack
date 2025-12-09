@@ -197,7 +197,13 @@ class OlapConfig(BaseModel):
 
             # S3QueueEngine, BufferEngine, DistributedEngine, KafkaEngine, and IcebergS3Engine don't support ORDER BY
             # Note: S3Engine DOES support ORDER BY (unlike S3Queue)
-            engines_without_order_by = (S3QueueEngine, BufferEngine, DistributedEngine, KafkaEngine, IcebergS3Engine)
+            engines_without_order_by = (
+                S3QueueEngine,
+                BufferEngine,
+                DistributedEngine,
+                KafkaEngine,
+                IcebergS3Engine,
+            )
             if isinstance(self.engine, engines_without_order_by):
                 engine_name = type(self.engine).__name__
 
@@ -669,9 +675,9 @@ class OlapTable(TypedMooseResource, Generic[T]):
         # Base settings for all inserts
         base_settings = {
             "date_time_input_format": "best_effort",
-            "max_insert_block_size": 100000
-            if is_stream
-            else min(len(validated_data), 100000),
+            "max_insert_block_size": (
+                100000 if is_stream else min(len(validated_data), 100000)
+            ),
             "max_block_size": 65536,
             "async_insert": 1 if len(validated_data) > 1000 else 0,
             "wait_for_async_insert": 1,

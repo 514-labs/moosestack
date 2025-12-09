@@ -83,4 +83,3 @@ def test_replicated_engine_without_cluster_or_explicit_params_is_allowed():
         ),
     )
     assert table is not None
-

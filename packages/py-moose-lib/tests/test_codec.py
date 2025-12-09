@@ -73,4 +73,3 @@ def test_codec_none():
     by_name = {col.name: col for col in columns}
 
     assert by_name["data"].codec == "NONE"
-

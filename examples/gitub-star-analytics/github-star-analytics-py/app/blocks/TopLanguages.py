@@ -1,7 +1,7 @@
 # This file is where you can define your SQL queries to shape and manipulate batches
-# of data using Blocks. Blocks can also manage materialized views to store the results of 
+# of data using Blocks. Blocks can also manage materialized views to store the results of
 # your queries for improved performance. A materialized view is the recommended approach for aggregating
-# data. For more information on the types of aggregate functions you can run on your existing data, 
+# data. For more information on the types of aggregate functions you can run on your existing data,
 # consult the Clickhouse documentation: https://clickhouse.com/docs/en/sql-reference/aggregate-functions
 
 from moose_lib import (
@@ -30,8 +30,8 @@ TABLE_OPTIONS = TableCreateOptions(
     columns={
         "language": "String",
         "total_projects": "AggregateFunction(count, Int64)",
-        "total_repo_size_kb": "AggregateFunction(sum, Int64)", 
-        "avg_repo_size_kb": "AggregateFunction(avg, Int64)"
+        "total_repo_size_kb": "AggregateFunction(sum, Int64)",
+        "avg_repo_size_kb": "AggregateFunction(avg, Int64)",
     },
     engine=ClickHouseEngines.AggregatingMergeTree,
     order_by="language",
@@ -44,7 +44,7 @@ TABLE_OPTIONS = TableCreateOptions(
 # - Summing total KB of code per language
 # - Calculating average KB per repo per language
 # Uses *State functions which store partial aggregation results
-SQL = f'''
+SQL = f"""
 SELECT
     language,
     countState(*) AS total_projects,
@@ -52,18 +52,22 @@ SELECT
     avgState(repo_size_kb) AS avg_repo_size_kb
 FROM StargazerProjectInfo_0_0
 GROUP BY language
-'''
+"""
 
 # Cleanup queries to remove the materialized view and table when needed
-teardown_queries = drop_aggregation(AggregationDropOptions(view_name=MV_NAME, table_name=TABLE_NAME))
+teardown_queries = drop_aggregation(
+    AggregationDropOptions(view_name=MV_NAME, table_name=TABLE_NAME)
+)
 
 # Setup queries to create the materialized view and underlying table
 # The view will automatically stay up-to-date as new data arrives
-setup_queries = create_aggregation(AggregationCreateOptions(
-    materialized_view_name=MV_NAME,
-    select=SQL,
-    table_create_options=TABLE_OPTIONS,
-))
+setup_queries = create_aggregation(
+    AggregationCreateOptions(
+        materialized_view_name=MV_NAME,
+        select=SQL,
+        table_create_options=TABLE_OPTIONS,
+    )
+)
 
 # Create a Blocks instance with our setup and teardown queries
 block = Blocks(teardown=teardown_queries, setup=setup_queries)

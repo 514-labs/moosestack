@@ -2,7 +2,13 @@
 Test models for ClickHouse cluster support
 """
 
-from moose_lib import Key, OlapTable, OlapConfig, ReplicatedMergeTreeEngine, MergeTreeEngine
+from moose_lib import (
+    Key,
+    OlapTable,
+    OlapConfig,
+    ReplicatedMergeTreeEngine,
+    MergeTreeEngine,
+)
 from pydantic import BaseModel
 
 
@@ -93,4 +99,3 @@ table_e = OlapTable[TableE](
         # No cluster, no keeper_path, no replica_name - Moose will auto-inject in dev
     ),
 )
-

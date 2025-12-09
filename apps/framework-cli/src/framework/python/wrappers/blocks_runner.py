@@ -9,22 +9,19 @@ import signal
 from moose_lib import cli_log, CliLogData
 
 
-parser = argparse.ArgumentParser(description='Run blocks')
-parser.add_argument('blocks_dir_path', type=str,
-                    help='Path to the blocks directory')
-parser.add_argument('clickhouse_db', type=str, help='Clickhouse database name')
-parser.add_argument('clickhouse_host', type=str, help='Clickhouse host')
-parser.add_argument('clickhouse_port', type=int, help='Clickhouse port')
-parser.add_argument('clickhouse_username', type=str,
-                    help='Clickhouse username')
-parser.add_argument('clickhouse_password', type=str,
-                    help='Clickhouse password')
-parser.add_argument('clickhouse_use_ssl', type=str, help='Clickhouse use SSL')
+parser = argparse.ArgumentParser(description="Run blocks")
+parser.add_argument("blocks_dir_path", type=str, help="Path to the blocks directory")
+parser.add_argument("clickhouse_db", type=str, help="Clickhouse database name")
+parser.add_argument("clickhouse_host", type=str, help="Clickhouse host")
+parser.add_argument("clickhouse_port", type=int, help="Clickhouse port")
+parser.add_argument("clickhouse_username", type=str, help="Clickhouse username")
+parser.add_argument("clickhouse_password", type=str, help="Clickhouse password")
+parser.add_argument("clickhouse_use_ssl", type=str, help="Clickhouse use SSL")
 
 
 args = parser.parse_args()
 
-interface = 'http' if args.clickhouse_use_ssl == "false" else 'https'
+interface = "http" if args.clickhouse_use_ssl == "false" else "https"
 host = args.clickhouse_host
 port = args.clickhouse_port
 db = args.clickhouse_db
@@ -33,6 +30,7 @@ password = args.clickhouse_password
 blocks_dir_path = args.blocks_dir_path
 
 sys.path.append(blocks_dir_path)
+
 
 # TODO: Handle retries
 class DependencyError(Exception):
@@ -51,9 +49,9 @@ def get_blocks_from_file(path):
     blocks_def = block.Blocks
 
     # Find the Blocks objects in the module
-    blocks_objs = [obj for obj in dir(block) if isinstance(
-        getattr(block, obj), blocks_def)]
-    
+    blocks_objs = [
+        obj for obj in dir(block) if isinstance(getattr(block, obj), blocks_def)
+    ]
 
     # Make sure there is exactly one Blocks object in the modules
     if len(blocks_objs) == 0:
@@ -70,7 +68,7 @@ def walk_dir(dir, file_extension):
 
     for root, dirs, files in os.walk(dir):
         for file in files:
-            if file.endswith(file_extension) and file != '__init__.py':
+            if file.endswith(file_extension) and file != "__init__.py":
                 file_list.append(os.path.join(root, file))
 
     return file_list
@@ -83,10 +81,18 @@ def create_blocks(ch_client, path):
         try:
             print(f"Creating block using query {query}")
             # Merge with any existing client settings to preserve defaults like date_time_input_format
-            default_settings = getattr(ch_client, 'default_settings', {})
-            ch_client.command(query, settings={**default_settings, 'wait_end_of_query': 1})  # Ensure at least once delivery and DDL acknowledgment
+            default_settings = getattr(ch_client, "default_settings", {})
+            ch_client.command(
+                query, settings={**default_settings, "wait_end_of_query": 1}
+            )  # Ensure at least once delivery and DDL acknowledgment
         except Exception as err:
-            cli_log(CliLogData(action="Blocks", message=f"Failed to create blocks: {err}", message_type="Error"))
+            cli_log(
+                CliLogData(
+                    action="Blocks",
+                    message=f"Failed to create blocks: {err}",
+                    message_type="Error",
+                )
+            )
 
 
 def delete_blocks(ch_client, path):
@@ -96,16 +102,23 @@ def delete_blocks(ch_client, path):
         try:
             print(f"Deleting block using query {query}")
             # Merge with any existing client settings to preserve defaults like date_time_input_format
-            default_settings = getattr(ch_client, 'default_settings', {})
-            ch_client.command(query, settings={**default_settings, 'wait_end_of_query': 1})  # Ensure at least once delivery and DDL acknowledgment
+            default_settings = getattr(ch_client, "default_settings", {})
+            ch_client.command(
+                query, settings={**default_settings, "wait_end_of_query": 1}
+            )  # Ensure at least once delivery and DDL acknowledgment
         except Exception as err:
-            cli_log(CliLogData(action="Blocks", message=f"Failed to delete blocks: {err}", message_type="Error"))
+            cli_log(
+                CliLogData(
+                    action="Blocks",
+                    message=f"Failed to delete blocks: {err}",
+                    message_type="Error",
+                )
+            )
 
 
 async def async_worker(task):
-    delete_blocks(task['ch_client'], task['path'])
-    create_blocks(task['ch_client'], task['path'])
-
+    delete_blocks(task["ch_client"], task["path"])
+    create_blocks(task["ch_client"], task["path"])
 
 
 async def main():
@@ -120,12 +133,20 @@ async def main():
             task.cancel()
 
     # Add signal handlers
-    for signame in ('SIGTERM', 'SIGQUIT', 'SIGHUP'):
-        loop.add_signal_handler(getattr(signal, signame), lambda: handle_signal(signame))
+    for signame in ("SIGTERM", "SIGQUIT", "SIGHUP"):
+        loop.add_signal_handler(
+            getattr(signal, signame), lambda: handle_signal(signame)
+        )
 
-    ch_client = get_client(interface=interface, host=host,
-                           port=port, database=db, username=user, password=password)
-    py_files = walk_dir(blocks_dir_path, '.py')
+    ch_client = get_client(
+        interface=interface,
+        host=host,
+        port=port,
+        database=db,
+        username=user,
+        password=password,
+    )
+    py_files = walk_dir(blocks_dir_path, ".py")
 
     block_files = []
 
@@ -134,12 +155,21 @@ async def main():
             get_blocks_from_file(file)
             block_files.append(file)
         except Exception as err:
-            cli_log(CliLogData(action="Blocks", message=f"Failed to import blocks from {file}: {err}", message_type="Error"))
+            cli_log(
+                CliLogData(
+                    action="Blocks",
+                    message=f"Failed to import blocks from {file}: {err}",
+                    message_type="Error",
+                )
+            )
 
     print(f"Found {len(block_files)} blocks in {blocks_dir_path}")
     print(f"Blocks: {block_files}")
 
-    task_defs = [{'ch_client': ch_client, 'path': path, 'retries': len(block_files)} for path in block_files]
+    task_defs = [
+        {"ch_client": ch_client, "path": path, "retries": len(block_files)}
+        for path in block_files
+    ]
 
     print(f"Creating {len(task_defs)} tasks...")
     print(f"Tasks: {task_defs}")
@@ -151,5 +181,6 @@ async def main():
 
     while not all([task.done() for task in tasks]):
         await asyncio.sleep(1)
+
 
 asyncio.run(main())

@@ -109,6 +109,7 @@ class ClickHouseMaterialized:
         - Can be combined with ClickHouseCodec for compression
         - Changing the expression modifies the column in-place (existing values preserved)
     """
+
     expression: str
 
 

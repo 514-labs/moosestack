@@ -6,9 +6,11 @@ import pytest
 from pydantic import BaseModel
 from moose_lib import MooseCache
 
+
 class Config(BaseModel):
     baz: int
     qux: bool
+
 
 @pytest.mark.integration
 def test_cache_strings():
@@ -25,6 +27,7 @@ def test_cache_strings():
 
     # Clean up
     cache.clear_keys("test")
+
 
 @pytest.mark.integration
 def test_cache_pydantic():
@@ -47,6 +50,7 @@ def test_cache_pydantic():
     # Clean up
     cache.clear_keys("test")
 
+
 @pytest.mark.integration
 def test_cache_ttl():
     cache = MooseCache()
@@ -66,6 +70,7 @@ def test_cache_ttl():
     # Clean up
     cache.clear_keys("test")
 
+
 @pytest.mark.integration
 def test_cache_nonexistent():
     cache = MooseCache()
@@ -74,6 +79,7 @@ def test_cache_nonexistent():
     assert cache.get("nonexistent") is None
     assert cache.get("nonexistent", str) is None
     assert cache.get("nonexistent", Config) is None
+
 
 @pytest.mark.integration
 def test_cache_invalid_type():
@@ -85,6 +91,7 @@ def test_cache_invalid_type():
 
     with pytest.raises(TypeError):
         cache.get("test", dict)
+
 
 @pytest.mark.integration
 def test_atexit_cleanup():
@@ -107,9 +114,9 @@ sys.exit(0)
 
     try:
         # Run the script and capture output
-        result = subprocess.run([sys.executable, "test_atexit.py"],
-                              capture_output=True,
-                              text=True)
+        result = subprocess.run(
+            [sys.executable, "test_atexit.py"], capture_output=True, text=True
+        )
 
         # Check if we see both the connection and disconnection messages
         output = result.stdout + result.stderr

@@ -3,7 +3,8 @@ import os
 import sys
 
 # Add the package root to Python path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 
 @pytest.fixture(autouse=True)
 def clear_registries():
@@ -18,7 +19,7 @@ def clear_registries():
         _sql_resources,
         _workflows,
     )
-    
+
     # Clear all registries
     _tables.clear()
     _streams.clear()
@@ -28,9 +29,9 @@ def clear_registries():
     _api_path_map.clear()
     _sql_resources.clear()
     _workflows.clear()
-    
+
     yield
-    
+
     # Clean up after test (optional, but good practice)
     _tables.clear()
     _streams.clear()
