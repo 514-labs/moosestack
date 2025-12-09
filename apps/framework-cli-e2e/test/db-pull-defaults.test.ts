@@ -334,8 +334,8 @@ describe("python template tests - db-pull with SQL function defaults", () => {
     console.log("Inserted row:", row);
 
     // Verify computed defaults
-    expect(row.sample_hash).to.be.a("string"); // xxHash64 result
-    expect(row.hour_stamp).to.be.a("string"); // toStartOfHour result
+    expect(row.sample_hash).to.be.a("number"); // xxHash64 result (UInt64)
+    expect(row.hour_stamp).to.be.a("number"); // toStartOfHour result (UInt64)
     expect(row.created_at).to.match(/^\d{4}-\d{2}-\d{2}/); // now() result
     expect(row.updated_at).to.match(/^\d{4}-\d{2}-\d{2}/); // today() result
     expect(row.literal_default).to.equal("active");
@@ -676,8 +676,8 @@ describe("typescript template tests - db-pull with SQL function defaults", () =>
     console.log("Inserted row:", row);
 
     // Verify computed defaults
-    expect(row.sample_hash).to.be.a("string"); // xxHash64 result
-    expect(row.hour_stamp).to.be.a("string"); // toStartOfHour result
+    expect(row.sample_hash).to.be.a("number"); // xxHash64 result (UInt64)
+    expect(row.hour_stamp).to.be.a("number"); // toStartOfHour result (UInt64)
     expect(row.created_at).to.match(/^\d{4}-\d{2}-\d{2}/); // now() result
     expect(row.updated_at).to.match(/^\d{4}-\d{2}-\d{2}/); // today() result
     expect(row.literal_default).to.equal("active");
