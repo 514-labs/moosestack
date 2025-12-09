@@ -3300,39 +3300,48 @@ async fn get_admin_reconciled_inframap(
     // types (e.g., Kafka topics) even when OLAP is turned off.
     let clickhouse_client = clickhouse::create_client(project.clickhouse_config.clone());
 
-    // Derive table/resource IDs from the currently managed infrastructure.
-    // This ensures we only reconcile tables that Moose is already managing.
-    let current_infrastructure_map = state_storage
-        .load_infrastructure_map()
-        .await?
-        .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
+    // Load current map from state storage (these are the tables under Moose management).
+    // We load once here and reconcile directly to avoid a double-load and potential race condition.
+    let current_map = match state_storage.load_infrastructure_map().await {
+        Ok(Some(infra_map)) => infra_map,
+        Ok(None) => InfrastructureMap::empty_from_project(project),
+        Err(e) => {
+            return Err(crate::framework::core::plan::PlanningError::Other(
+                anyhow::anyhow!("Failed to load infrastructure map from state storage: {e}"),
+            ));
+        }
+    };
 
-    // Extract table IDs from the current infrastructure map.
-    // Table IDs include the database prefix for multi-database support.
-    let managed_table_ids: HashSet<String> = current_infrastructure_map
+    // For admin endpoints, reconcile all currently managed tables and SQL resources only.
+    // Pass the managed table IDs as target_table_ids - this ensures that
+    // reconcile_with_reality only operates on resources that are already managed by Moose.
+    let target_table_ids: HashSet<String> = current_map
         .tables
         .values()
-        .map(|table| table.id(&current_infrastructure_map.default_database))
+        .map(|t| t.id(&current_map.default_database))
         .collect();
 
-    // Extract SQL resource IDs (views, materialized views) from the current state.
-    let managed_sql_resource_ids: HashSet<String> = current_infrastructure_map
-        .sql_resources
-        .keys()
-        .cloned()
-        .collect();
+    let target_sql_resource_ids: HashSet<String> =
+        current_map.sql_resources.keys().cloned().collect();
 
-    // Load the infrastructure map from storage and reconcile it with the actual database state.
-    // This ensures we return the true current state of managed infrastructure, accounting for
-    // any manual changes or drift that may have occurred in the database.
-    crate::framework::core::plan::load_reconciled_infrastructure(
-        project,
-        &*state_storage,
-        clickhouse_client,
-        &managed_table_ids,
-        &managed_sql_resource_ids,
-    )
-    .await
+    // Reconcile the loaded map with actual database state (single load, no race condition).
+    // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
+    // may support reconciliation of other infrastructure types (e.g., Kafka topics).
+    let reconciled_map = if project.features.olap {
+        crate::framework::core::plan::reconcile_with_reality(
+            project,
+            &current_map,
+            &target_table_ids,
+            &target_sql_resource_ids,
+            clickhouse_client,
+        )
+        .await?
+    } else {
+        debug!("OLAP disabled, skipping reality check reconciliation");
+        current_map
+    };
+
+    Ok(reconciled_map)
 }
 
 /// DEPRECATED: DO NOT USE
