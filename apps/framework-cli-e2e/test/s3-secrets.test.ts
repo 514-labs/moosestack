@@ -165,7 +165,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         const timeout = setTimeout(() => {
           devProcess?.kill("SIGKILL");
           reject(new Error("Process did not exit within timeout"));
-        }, 30000); // 30 second timeout
+        }, TIMEOUTS.PROCESS_EXIT_MS);
 
         devProcess!.on("exit", (code) => {
           clearTimeout(timeout);
@@ -340,7 +340,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         const timeout = setTimeout(() => {
           devProcess?.kill("SIGKILL");
           reject(new Error("Process did not exit within timeout"));
-        }, 30000); // 30 second timeout
+        }, TIMEOUTS.PROCESS_EXIT_MS);
 
         devProcess!.on("exit", (code) => {
           clearTimeout(timeout);
