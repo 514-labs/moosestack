@@ -28,7 +28,7 @@ export interface PlanOutput {
  * @returns Table ID string
  */
 export function getTableId(
-  table: { name: string; database?: string; version?: any },
+  table: { name: string; database?: string; version?: string },
   defaultDatabase: string,
 ): string {
   // Use table's database or fall back to default
@@ -38,10 +38,7 @@ export function getTableId(
   let baseId = table.name;
   if (table.version) {
     // Format version as suffix (assuming version has as_suffix() method or similar)
-    const versionSuffix =
-      typeof table.version === "string" ?
-        table.version
-      : table.version.major + "_" + table.version.minor;
+    const versionSuffix = table.version.replace(/\./g, "_");
     baseId = `${table.name}_${versionSuffix}`;
   }
 
