@@ -77,6 +77,7 @@ pub mod message;
 pub mod spinner;
 pub mod table;
 pub mod terminal;
+pub mod timing;
 
 // Re-export commonly used types and functions for convenience
 pub use infrastructure::show_changes;
@@ -84,6 +85,7 @@ pub use message::{Message, MessageType};
 pub use message_display::{batch_inserted, show_message_wrapper};
 pub use spinner::{with_spinner_completion, with_spinner_completion_async};
 pub use table::show_table;
+pub use timing::with_timing_async;
 
 // Legacy compatibility - maintain the crossterm_utils module for existing code
 pub mod crossterm_utils {

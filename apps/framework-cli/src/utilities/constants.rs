@@ -88,6 +88,16 @@ lazy_static! {
 /// This is set once at startup based on logger configuration
 pub static NO_ANSI: AtomicBool = AtomicBool::new(false);
 
+/// Global flag to enable timestamp display on every output line
+/// When true, prepends HH:MM:SS.mmm (hours:minutes:seconds.milliseconds) to each line
+/// This is set once at startup based on CLI flags
+pub static SHOW_TIMESTAMPS: AtomicBool = AtomicBool::new(false);
+
+/// Global flag to enable timing information for operations
+/// When true, shows elapsed time like "completed in 234ms" or "completed in 2.3s" for tracked operations
+/// This is set once at startup based on CLI flags
+pub static SHOW_TIMING: AtomicBool = AtomicBool::new(false);
+
 pub const README_PREFIX: &str = r#"
 This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the
 [`Moose CLI`](https://github.com/514-labs/moose/tree/main/apps/framework-cli).
