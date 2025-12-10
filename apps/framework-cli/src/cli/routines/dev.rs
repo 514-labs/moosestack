@@ -8,9 +8,11 @@ use super::{
 use crate::cli::display::with_timing;
 use crate::cli::{display::with_spinner_completion, settings::Settings};
 use crate::utilities::constants::CLI_PROJECT_INTERNAL_DIR;
+use crate::utilities::constants::SHOW_TIMING;
 use crate::{cli::display::Message, project::Project};
 use crate::{cli::routines::util::ensure_docker_running, utilities::docker::DockerClient};
 use lazy_static::lazy_static;
+use std::sync::atomic::Ordering;
 
 pub fn run_local_infrastructure(
     project: &Project,
@@ -70,11 +72,7 @@ pub fn run_containers(project: &Project, docker_client: &DockerClient) -> anyhow
             "Starting local infrastructure",
             "Local infrastructure started successfully",
             || docker_client.start_containers(project),
-            {
-                use crate::utilities::constants::SHOW_TIMING;
-                use std::sync::atomic::Ordering;
-                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
-            },
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
         )
     })
 }
