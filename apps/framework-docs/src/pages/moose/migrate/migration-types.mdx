@@ -291,7 +291,7 @@ All credentials for your local infrastructure are located in your project config
 clickhouse-client --host localhost --port 18123 --user panda --password pandapass --database local
 
 # Using connection string
-clickhouse-client "clickhouse://panda:pandapass@localhost:18123/local"
+clickhouse-client "clickhouse://panda:pandapass@localhost:18123?database=local"
 ```
 
 #### Connecting to Redpanda

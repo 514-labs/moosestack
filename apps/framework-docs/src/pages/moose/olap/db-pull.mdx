@@ -34,7 +34,7 @@ Examples:
 
 ```bash filename="Terminal" copy
 # Native (auto-converted to HTTPS + 8443)
-moose db pull --clickhouse-url "clickhouse://explorer@play.clickhouse.com:9440/default"
+moose db pull --clickhouse-url "clickhouse://explorer@play.clickhouse.com:9440?database=default"
 
 # HTTPS (explicit database via query param)
 moose db pull --clickhouse-url "https://play.clickhouse.com/?user=explorer&database=default"

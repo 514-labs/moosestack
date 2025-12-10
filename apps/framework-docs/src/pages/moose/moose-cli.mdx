@@ -84,7 +84,7 @@ moose seed clickhouse [--clickhouse-url <URL>] [--table <name>] [--limit <n> | -
 The connection string must use ClickHouse native protocol:
 ```bash
 # ClickHouse native protocol (secure connection)
-clickhouse://username:password@host:9440/database
+clickhouse://username:password@host:9440?database=mydb
 ```
 
 **Important:** 
@@ -102,7 +102,7 @@ Notes:
 - Seeding is batched automatically for large datasets; Ctrl+C finishes the current batch gracefully.
 - Use env var fallback:
 ```bash
-export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440/database'
+export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440?database=mydb'
 ```
 
 ### Truncate

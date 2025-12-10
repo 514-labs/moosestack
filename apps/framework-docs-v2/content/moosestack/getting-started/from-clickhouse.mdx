@@ -362,20 +362,20 @@ moose seed clickhouse --connection-string <YOUR_CLICKHOUSE_CONNECTION_STRING> --
 The connection string must use ClickHouse native protocol:
 ```bash
 # ClickHouse native protocol (secure connection)
-clickhouse://username:password@host:9440/database
+clickhouse://username:password@host:9440?database=mydb
 ```
 
 **Note:** Data transfer uses ClickHouse's native TCP protocol via `remoteSecure()`. The remote server must have the native TCP port accessible. The command automatically handles table mismatches gracefully.
 </TabsContent>
 <TabsContent value="playground-seed">
 ```bash filename="Terminal" copy
-moose seed clickhouse --connection-string clickhouse://explorer:@play.clickhouse.com:9440/default --limit 100000
+moose seed clickhouse --connection-string clickhouse://explorer:@play.clickhouse.com:9440?database=default --limit 100000
 ```
 </TabsContent>
 <TabsContent value="env-var">
 ```bash filename="Terminal" copy
 # You can omit --connection-string by setting an env var
-export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440/database'
+export MOOSE_SEED_CLICKHOUSE_URL='clickhouse://username:password@host:9440?database=mydb'
 
 # copy a limited number of rows (batched under the hood)
 moose seed clickhouse --limit 100000
