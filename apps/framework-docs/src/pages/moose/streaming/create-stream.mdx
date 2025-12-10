@@ -444,13 +444,16 @@ intermediate_stream.add_transform(destination=final_data.get_stream(), transform
 
 ## Stream Configurations
 
-### Parallelism and Retention
+### Stream Parallelisation  
+
+Modify your stream's parallelisation/partitions. By default, this is set to 1. 
+
+This can increase performance, at the cost of ordinality.
 
 <TypeScript>
 ```typescript filename="StreamConfig.ts"
 export const highThroughputStream = new Stream<Data>("high_throughput", {
   parallelism: 4,              // Process 4 records simultaneously
-  retentionPeriod: 86400      // Keep data for 1 day
 });
 ```
 </TypeScript>
@@ -460,8 +463,31 @@ export const highThroughputStream = new Stream<Data>("high_throughput", {
 from moose_lib import Stream, StreamConfig
 
 high_throughput_stream = Stream[Data]("high_throughput", StreamConfig(
-  parallelism=4, # Process 4 records simultaneously
-  retention_period=86400, # Keep data for 1 day
+  parallelism=4,          # Process 4 records simultaneously
+))
+```
+</Python>
+
+### Stream Retention Period
+
+Modify your stream's retention period. By default, this is set to 7 days.
+
+Increasing retention period increases data storage.
+
+<TypeScript>
+```typescript filename="StreamConfig.ts"
+export const highThroughputStream = new Stream<Data>("high_throughput", {
+  retentionPeriod: 86400       // (unit, seconds) Keep data for 1 day
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="StreamConfig.py" copy
+from moose_lib import Stream, StreamConfig
+
+high_throughput_stream = Stream[Data]("high_throughput", StreamConfig(
+  retention_period=86400, # (unit, seconds) Keep data for 1 day
 ))
 ```
 </Python>
