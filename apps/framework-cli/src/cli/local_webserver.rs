@@ -39,6 +39,7 @@ use crate::framework::core::infrastructure_map::{InfraChanges, OlapChange, Table
 use crate::framework::versions::Version;
 use crate::metrics::Metrics;
 use crate::utilities::auth::{get_claims, validate_jwt};
+use crate::utilities::constants::SHOW_TIMING;
 
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::framework::typescript::bin::CliMessage;
@@ -100,7 +101,6 @@ use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure::table::Table;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::utilities::constants;
-use crate::utilities::constants::SHOW_TIMING;
 
 /// Request wrapper for router handling.
 /// This struct combines the HTTP request with the route table for processing.
