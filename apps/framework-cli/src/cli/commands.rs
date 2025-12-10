@@ -400,8 +400,8 @@ pub struct DbArgs {
 pub enum DbCommands {
     /// Update DB schema for EXTERNALLY_MANAGED tables
     Pull {
-        /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
-        #[arg(long)]
+        /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port?database=mydb or https://user:pass@host:port?database=mydb)
+        #[arg(long, alias = "connection-string")]
         clickhouse_url: Option<String>,
         /// File storing the EXTERNALLY_MANAGED table definitions, defaults to app/external_models.py or app/externalModels.ts
         #[arg(long)]
