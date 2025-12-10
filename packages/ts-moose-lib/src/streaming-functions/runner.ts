@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { KafkaJS } from "@confluentinc/kafka-javascript";
+import { KafkaJS } from "@514labs/kafka-javascript";
 const { Kafka } = KafkaJS;
 
 type Consumer = KafkaJS.Consumer;
