@@ -48,6 +48,35 @@ fn custom_dockerfile_marker_path(internal_dir: &Path) -> PathBuf {
     internal_dir.join("packager/.custom-dockerfile")
 }
 
+/// Sets up standard (non-monorepo) build context, copying custom Dockerfile if present.
+/// Returns (build_context_path, dockerfile_path).
+fn setup_standard_build_context(
+    project: &Project,
+    internal_dir: &Path,
+) -> Result<(PathBuf, PathBuf), RoutineFailure> {
+    let packager_dir = internal_dir.join("packager");
+    let packager_dockerfile = managed_dockerfile_path(internal_dir);
+
+    // If using custom Dockerfile, copy it to packager directory for build
+    if is_using_custom_dockerfile(project) {
+        // Copy custom Dockerfile to packager directory
+        fs::copy(custom_dockerfile_path(project), &packager_dockerfile).map_err(|err| {
+            error!("Failed to copy custom Dockerfile to packager: {}", err);
+            RoutineFailure::new(
+                Message::new(
+                    "Failed".to_string(),
+                    "to copy custom Dockerfile for build".to_string(),
+                ),
+                err,
+            )
+        })?;
+
+        info!("Copied custom Dockerfile to packager directory for build");
+    }
+
+    Ok((packager_dir, packager_dockerfile))
+}
+
 /// Displays a formatted message box for custom Dockerfile detection
 fn show_custom_dockerfile_message() {
     eprintln!("┌────────────────────────────────────────────────────┐");
@@ -982,7 +1011,7 @@ pub fn build_dockerfile(
                     (workspace_root, temp_dockerfile)
                 } else {
                     info!("Invalid monorepo info, falling back to standard build");
-                    (internal_dir.join("packager"), file_path)
+                    setup_standard_build_context(project, &internal_dir)?
                 }
             }
             Err(e) => {
@@ -990,32 +1019,12 @@ pub fn build_dockerfile(
                     "Failed to read monorepo info: {}, falling back to standard build",
                     e
                 );
-                (internal_dir.join("packager"), file_path)
+                setup_standard_build_context(project, &internal_dir)?
             }
         }
     } else {
         // Standard build
-        let packager_dir = internal_dir.join("packager");
-        let packager_dockerfile = managed_dockerfile_path(&internal_dir);
-
-        // If using custom Dockerfile, copy it to packager directory for build
-        if is_using_custom_dockerfile(project) {
-            // Copy custom Dockerfile to packager directory
-            fs::copy(custom_dockerfile_path(project), &packager_dockerfile).map_err(|err| {
-                error!("Failed to copy custom Dockerfile to packager: {}", err);
-                RoutineFailure::new(
-                    Message::new(
-                        "Failed".to_string(),
-                        "to copy custom Dockerfile for build".to_string(),
-                    ),
-                    err,
-                )
-            })?;
-
-            info!("Copied custom Dockerfile to packager directory for build");
-        }
-
-        (packager_dir, packager_dockerfile)
+        setup_standard_build_context(project, &internal_dir)?
     };
 
     let build_all = is_amd64 == is_arm64;
