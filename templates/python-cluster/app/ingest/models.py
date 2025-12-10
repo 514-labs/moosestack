@@ -2,7 +2,13 @@
 Test models for ClickHouse cluster support
 """
 
-from moose_lib import Key, OlapTable, OlapConfig, ReplicatedMergeTreeEngine, MergeTreeEngine
+from moose_lib import (
+    Key,
+    OlapTable,
+    OlapConfig,
+    ReplicatedMergeTreeEngine,
+    MergeTreeEngine,
+)
 from pydantic import BaseModel
 
 
@@ -38,6 +44,13 @@ class TableD(BaseModel):
 class TableE(BaseModel):
     id: Key[str]
     status: str
+    timestamp: float
+
+
+# Table in additional database with cluster (tests database creation bug)
+class TableF(BaseModel):
+    id: Key[str]
+    metric: int
     timestamp: float
 
 
@@ -94,3 +107,13 @@ table_e = OlapTable[TableE](
     ),
 )
 
+# TableF: In additional database with cluster
+table_f = OlapTable[TableF](
+    "TableF",
+    OlapConfig(
+        order_by_fields=["id"],
+        engine=ReplicatedMergeTreeEngine(),
+        cluster="cluster_a",
+        database="analytics",
+    ),
+)
