@@ -578,12 +578,16 @@ impl Table {
         // S3 supports ORDER BY but does not auto set ORDER BY from PRIMARY KEY
         // Buffer, S3Queue, and Distributed don't support ORDER BY
         if self.order_by.is_empty() && self.engine.is_merge_tree_family() {
-            OrderBy::Fields(
-                self.primary_key_columns()
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect(),
-            )
+            if let Some(key_expr) = self.primary_key_expression {
+                OrderBy::SingleExpr(key_expr)
+            } else {
+                OrderBy::Fields(
+                    self.primary_key_columns()
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect(),
+                )
+            }
         } else {
             self.order_by.clone()
         }
