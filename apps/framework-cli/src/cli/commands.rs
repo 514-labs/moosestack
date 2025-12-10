@@ -120,6 +120,14 @@ pub enum Commands {
         /// Enable or disable the MCP (Model Context Protocol) server
         #[arg(long, default_value = "true")]
         mcp: bool,
+
+        /// Show HH:MM:SS.mmm timestamps on all output lines
+        #[arg(long)]
+        timestamps: bool,
+
+        /// Show elapsed time for operations (e.g., "completed in 234ms")
+        #[arg(long)]
+        timing: bool,
     },
     /// Start a remote environment for use in cloud deployments
     Prod {

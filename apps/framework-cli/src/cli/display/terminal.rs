@@ -214,6 +214,15 @@ fn write_styled_line_to<W: std::io::Write>(
     message: &str,
     no_ansi: bool,
 ) -> IoResult<()> {
+    // Prepend timestamp if enabled
+    use crate::utilities::constants::SHOW_TIMESTAMPS;
+    use std::sync::atomic::Ordering;
+
+    if SHOW_TIMESTAMPS.load(Ordering::Relaxed) {
+        let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
+        execute!(writer, Print(&format!("{} ", timestamp)))?;
+    }
+
     // Ensure action is exactly ACTION_WIDTH characters, right-aligned
     // Use character-aware truncation to avoid panics on multi-byte UTF-8 characters
     let truncated_action = if styled_text.text.chars().count() > ACTION_WIDTH {
