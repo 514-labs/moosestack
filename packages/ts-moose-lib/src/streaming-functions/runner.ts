@@ -1,24 +1,9 @@
 import { Readable } from "node:stream";
-import { KafkaJS } from "@confluentinc/kafka-javascript";
+import { KafkaJS, CODES } from "@confluentinc/kafka-javascript";
 const { Kafka } = KafkaJS;
 
-type Consumer = KafkaJS.Consumer;
 type Producer = KafkaJS.Producer;
 
-type KafkaMessage = {
-  value: Buffer | string | null;
-  key?: Buffer | string | null;
-  partition?: number;
-  offset?: string;
-  timestamp?: string;
-  headers?: Record<string, Buffer | string | undefined>;
-};
-
-type SASLOptions = {
-  mechanism: "plain" | "scram-sha-256" | "scram-sha-512";
-  username: string;
-  password: string;
-};
 import { Buffer } from "node:buffer";
 import * as process from "node:process";
 import * as http from "node:http";
@@ -26,18 +11,37 @@ import {
   cliLog,
   getKafkaClient,
   createProducerConfig,
+  createNativeKafkaConsumer,
   Logger,
   logError,
+  KafkaConsumer,
+  type NativeKafkaMessage,
+  type TopicPartition,
+  type LibrdKafkaError,
 } from "../commons";
 import { Cluster } from "../cluster-utils";
 import { getStreamingFunctions } from "../dmv2/internal";
 import type { ConsumerConfig, TransformConfig, DeadLetterQueue } from "../dmv2";
+import type { MessageHeader } from "@confluentinc/kafka-javascript";
 import {
   buildFieldMutationsFromColumns,
   mutateParsedJson,
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
+
+/**
+ * Internal message type compatible with both KafkaJS and native consumer formats.
+ * This provides a unified interface for message handling.
+ */
+type KafkaMessage = {
+  value: Buffer | string | null;
+  key?: Buffer | string | null;
+  partition?: number;
+  offset?: string | number;
+  timestamp?: string | number;
+  headers?: MessageHeader[] | Record<string, Buffer | string | undefined>;
+};
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -181,47 +185,51 @@ const stopProducer = async (
 };
 
 /**
- * Gracefully stops a Kafka consumer by pausing all partitions and then disconnecting
+ * Gracefully stops a native Kafka consumer by pausing all partitions and then disconnecting
  *
  * @param logger - Logger instance for outputting consumer status
- * @param consumer - KafkaJS Consumer instance to disconnect
+ * @param consumer - Native KafkaConsumer instance to disconnect
  * @param sourceTopic - Topic configuration containing name and partition count
  * @returns Promise that resolves when consumer is disconnected
- * @example
- * ```ts
- * await stopConsumer(logger, consumer, sourceTopic); // Pauses all partitions and disconnects consumer
- * ```
  */
 const stopConsumer = async (
   logger: Logger,
-  consumer: Consumer,
+  consumer: KafkaConsumer,
   sourceTopic: TopicConfig,
 ): Promise<void> => {
   try {
-    // Try to pause the consumer first if the method exists
+    // Try to pause the consumer first
     logger.log("Pausing consumer...");
 
     // Generate partition numbers array based on the topic's partition count
-    const partitionNumbers = Array.from(
+    const topicPartitions: TopicPartition[] = Array.from(
       { length: sourceTopic.partitions },
-      (_, i) => i,
+      (_, i) => ({
+        topic: sourceTopic.name,
+        partition: i,
+      }),
     );
 
-    await consumer.pause([
-      {
-        topic: sourceTopic.name,
-        partitions: partitionNumbers,
-      },
-    ]);
+    consumer.pause(topicPartitions);
 
     logger.log("Disconnecting consumer...");
-    await consumer.disconnect();
+    await new Promise<void>((resolve, reject) => {
+      consumer.disconnect((err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
     logger.log("Consumer is shutting down...");
   } catch (error) {
     logger.error(`Error during consumer shutdown: ${error}`);
     // Continue with disconnect even if pause fails
     try {
-      await consumer.disconnect();
+      await new Promise<void>((resolve) => {
+        consumer.disconnect(() => resolve());
+      });
       logger.log("Consumer disconnected after error");
     } catch (disconnectError) {
       logger.error(`Failed to disconnect consumer: ${disconnectError}`);
@@ -613,16 +621,15 @@ async function loadStreamingFunctionV2(
 }
 
 /**
- * Initializes and starts a Kafka consumer that processes messages using a streaming function
+ * Initializes and starts a native Kafka consumer that processes messages using a streaming function
  *
  * @param logger - Logger instance for outputting consumer status and errors
  * @param metrics - Metrics object for tracking message counts and bytes processed
- * @param parallelism - Number of parallel workers processing messages
+ * @param _parallelism - Number of parallel workers processing messages (unused, kept for API compatibility)
  * @param args - Configuration arguments for source/target topics and streaming function
- * @param consumer - KafkaJS Consumer instance
+ * @param consumer - Native KafkaConsumer instance
  * @param producer - KafkaJS Producer instance for sending processed messages
  * @param streamingFuncId - Unique identifier for this consumer group
- * @param maxMessageSize - Maximum message size in bytes allowed by Kafka broker
  * @returns Promise that resolves when consumer is started
  *
  * The consumer will:
@@ -630,14 +637,14 @@ async function loadStreamingFunctionV2(
  * 2. Subscribe to the source topic
  * 3. Process messages in batches using the streaming function
  * 4. Send processed messages to target topic (if configured)
- * 5. Commit offsets after successful processing
+ * 5. Auto-commit offsets (managed by librdkafka)
  */
 const startConsumer = async (
   args: StreamingFunctionArgs,
   logger: Logger,
   metrics: Metrics,
   _parallelism: number,
-  consumer: Consumer,
+  consumer: KafkaConsumer,
   producer: Producer,
   streamingFuncId: string,
 ): Promise<void> => {
@@ -647,9 +654,18 @@ const startConsumer = async (
     validateTopicConfig(args.targetTopic);
   }
 
+  // Connect to Kafka (callback-based API wrapped in Promise)
   try {
     logger.log("Connecting consumer...");
-    await consumer.connect();
+    await new Promise<void>((resolve, reject) => {
+      consumer.connect({}, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
     logger.log("Consumer connected successfully");
   } catch (error) {
     logger.error("Failed to connect consumer:");
@@ -684,78 +700,127 @@ const startConsumer = async (
     fieldMutations = undefined;
   }
 
-  await consumer.subscribe({
-    topics: [args.sourceTopic.name], // Use full topic name for Kafka operations
-  });
+  // Subscribe to topic (native API - synchronous, takes array directly)
+  consumer.subscribe([args.sourceTopic.name]);
 
-  await consumer.run({
-    eachBatchAutoResolve: true,
-    // Enable parallel processing of partitions
-    partitionsConsumedConcurrently: PARTITIONS_CONSUMED_CONCURRENTLY, // To be adjusted
-    eachBatch: async ({ batch, heartbeat, isRunning, isStale }) => {
-      if (!isRunning() || isStale()) {
-        return;
-      }
+  // Set consume timeout for batch polling
+  consumer.setDefaultConsumeTimeout(1000);
 
-      metrics.count_in += batch.messages.length;
+  // Flag to track if consumer is running
+  let isRunning = true;
 
-      cliLog({
-        action: "Received",
-        message: `${logger.logPrefix} ${batch.messages.length} message(s)`,
-      });
-      logger.log(`Received ${batch.messages.length} message(s)`);
-
-      let index = 0;
-      const readableStream = Readable.from(batch.messages);
-
-      const processedMessages: (KafkaMessageWithLineage[] | undefined)[] =
-        await readableStream
-          .map(
-            async (message) => {
-              index++;
-              if (
-                (batch.messages.length > DEFAULT_MAX_STREAMING_CONCURRENCY &&
-                  index % DEFAULT_MAX_STREAMING_CONCURRENCY) ||
-                index - 1 === batch.messages.length
-              ) {
-                await heartbeat();
+  // Process messages in a loop using the native consume API
+  const consumeLoop = async (): Promise<void> => {
+    while (isRunning && consumer.isConnected()) {
+      try {
+        // Fetch a batch of messages
+        const messages = await new Promise<NativeKafkaMessage[]>(
+          (resolve, reject) => {
+            consumer.consume(CONSUMER_MAX_BATCH_SIZE, (err, messages) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(messages || []);
               }
-              return handleMessage(
-                logger,
-                streamingFunctions,
-                message,
-                producer,
-                fieldMutations,
-              );
-            },
-            {
-              concurrency: MAX_STREAMING_CONCURRENCY,
-            },
-          )
-          .toArray();
-
-      const filteredMessages = processedMessages
-        .flat()
-        .filter((msg) => msg !== undefined && msg.value !== undefined);
-
-      if (args.targetTopic === undefined || processedMessages.length === 0) {
-        return;
-      }
-
-      await heartbeat();
-
-      if (filteredMessages.length > 0) {
-        // Messages now carry their own DLQ configuration in the lineage
-        await sendMessages(
-          logger,
-          metrics,
-          args.targetTopic,
-          producer,
-          filteredMessages as KafkaMessageWithLineage[],
+            });
+          },
         );
+
+        if (messages.length === 0) {
+          // No messages, continue loop
+          continue;
+        }
+
+        metrics.count_in += messages.length;
+
+        cliLog({
+          action: "Received",
+          message: `${logger.logPrefix} ${messages.length} message(s)`,
+        });
+        logger.log(`Received ${messages.length} message(s)`);
+
+        // Process messages using Readable stream for concurrency
+        const readableStream = Readable.from(messages);
+
+        const processedMessages: (KafkaMessageWithLineage[] | undefined)[] =
+          await readableStream
+            .map(
+              async (message: NativeKafkaMessage) => {
+                // Convert native message format to internal KafkaMessage format
+                const kafkaMessage: KafkaMessage = {
+                  value: message.value,
+                  key: message.key,
+                  partition: message.partition,
+                  offset: message.offset,
+                  timestamp: message.timestamp,
+                  headers: message.headers,
+                };
+                return handleMessage(
+                  logger,
+                  streamingFunctions,
+                  kafkaMessage,
+                  producer,
+                  fieldMutations,
+                );
+              },
+              {
+                concurrency: MAX_STREAMING_CONCURRENCY,
+              },
+            )
+            .toArray();
+
+        const filteredMessages = processedMessages
+          .flat()
+          .filter((msg) => msg !== undefined && msg.value !== undefined);
+
+        if (args.targetTopic === undefined || processedMessages.length === 0) {
+          continue;
+        }
+
+        if (filteredMessages.length > 0) {
+          // Messages now carry their own DLQ configuration in the lineage
+          await sendMessages(
+            logger,
+            metrics,
+            args.targetTopic,
+            producer,
+            filteredMessages as KafkaMessageWithLineage[],
+          );
+        }
+      } catch (error) {
+        // Handle specific Kafka errors
+        if (error && typeof error === "object" && "code" in error) {
+          const kafkaError = error as LibrdKafkaError;
+          // ERR__TIMED_OUT is expected when no messages available
+          if (kafkaError.code === CODES.ERRORS.ERR__TIMED_OUT) {
+            continue;
+          }
+          // ERR__PARTITION_EOF is normal - end of partition reached
+          if (kafkaError.code === CODES.ERRORS.ERR__PARTITION_EOF) {
+            continue;
+          }
+        }
+        logger.error(`Error consuming messages: ${error}`);
+        if (error instanceof Error) {
+          logError(logger, error);
+        }
+        // Brief pause before retry to avoid tight loop on persistent errors
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
-    },
+    }
+  };
+
+  // Start the consume loop in the background
+  consumeLoop().catch((err) => {
+    logger.error(`Consumer loop crashed: ${err}`);
+    isRunning = false;
   });
+
+  // Store the isRunning flag and setter on the consumer for shutdown
+  (consumer as any)._isRunning = isRunning;
+  (consumer as any)._stopConsuming = () => {
+    isRunning = false;
+  };
 
   logger.log("Consumer is running...");
 };
@@ -913,6 +978,37 @@ export const runStreamingFunctions = async (
       const clientIdPrefix = HOSTNAME ? `${HOSTNAME}-` : "";
       const processId = `${clientIdPrefix}${streamingFuncId}-ts-${worker.id}`;
 
+      // Create native KafkaConsumer with rebalance handling
+      const consumer = createNativeKafkaConsumer(
+        {
+          clientId: processId,
+          broker: args.broker,
+          groupId: streamingFuncId,
+          securityProtocol: args.securityProtocol,
+          saslUsername: args.saslUsername,
+          saslPassword: args.saslPassword,
+          saslMechanism: args.saslMechanism,
+          sessionTimeoutMs: SESSION_TIMEOUT_CONSUMER,
+          heartbeatIntervalMs: HEARTBEAT_INTERVAL_CONSUMER,
+          autoCommit: true,
+          autoCommitIntervalMs: AUTO_COMMIT_INTERVAL_MS,
+          autoOffsetReset: "earliest",
+          maxBatchSize: CONSUMER_MAX_BATCH_SIZE,
+        },
+        logger,
+        (err, assignments) => {
+          // Handle rebalance events
+          if (err.code === CODES.ERRORS.ERR__ASSIGN_PARTITIONS) {
+            logger.log(`Assigned partitions: ${JSON.stringify(assignments)}`);
+          } else if (err.code === CODES.ERRORS.ERR__REVOKE_PARTITIONS) {
+            logger.log(`Revoked partitions: ${JSON.stringify(assignments)}`);
+          } else {
+            logger.error(`Rebalance error: ${err.message}`);
+          }
+        },
+      );
+
+      // Create KafkaJS producer (producer API is similar, keep using wrapper for simplicity)
       const kafka = await getKafkaClient(
         {
           clientId: processId,
@@ -924,22 +1020,6 @@ export const runStreamingFunctions = async (
         },
         logger,
       );
-
-      // Note: "js.consumer.max.batch.size" is a librdkafka native config not in TS types
-      const consumer: Consumer = kafka.consumer({
-        kafkaJS: {
-          groupId: streamingFuncId,
-          sessionTimeout: SESSION_TIMEOUT_CONSUMER,
-          heartbeatInterval: HEARTBEAT_INTERVAL_CONSUMER,
-          retry: {
-            retries: MAX_RETRIES_CONSUMER,
-          },
-          autoCommit: true,
-          autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
-          fromBeginning: true,
-        },
-        "js.consumer.max.batch.size": CONSUMER_MAX_BATCH_SIZE,
-      });
 
       // Sync producer message.max.bytes with topic config
       const maxMessageBytes =
@@ -981,10 +1061,15 @@ export const runStreamingFunctions = async (
         throw e;
       }
 
-      return [logger, producer, consumer] as [Logger, Producer, Consumer];
+      return [logger, producer, consumer] as [Logger, Producer, KafkaConsumer];
     },
     workerStop: async ([logger, producer, consumer]) => {
       logger.log(`Received SIGTERM, shutting down gracefully...`);
+
+      // Signal the consume loop to stop
+      if ((consumer as any)._stopConsuming) {
+        (consumer as any)._stopConsuming();
+      }
 
       // First stop the consumer to prevent new messages
       logger.log("Stopping consumer first...");

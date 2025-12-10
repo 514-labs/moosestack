@@ -1,11 +1,32 @@
 import http from "http";
 import { createClient } from "@clickhouse/client";
-import { KafkaJS } from "@confluentinc/kafka-javascript";
+import {
+  KafkaConsumer,
+  KafkaJS,
+  type Message as NativeKafkaMessage,
+  type ConsumerGlobalConfig,
+  type ConsumerTopicConfig,
+  type TopicPartition,
+  type TopicPartitionOffset,
+  type LibrdKafkaError,
+  CODES,
+} from "@confluentinc/kafka-javascript";
 import { SASLOptions } from "@confluentinc/kafka-javascript/types/kafkajs";
 const { Kafka } = KafkaJS;
 type Kafka = KafkaJS.Kafka;
 type Consumer = KafkaJS.Consumer;
 export type Producer = KafkaJS.Producer;
+
+// Re-export native consumer types for use in other modules
+export {
+  KafkaConsumer,
+  type NativeKafkaMessage,
+  type ConsumerGlobalConfig,
+  type TopicPartition,
+  type TopicPartitionOffset,
+  type LibrdKafkaError,
+  CODES,
+};
 
 /**
  * Utility function for compiler-related logging that can be disabled via environment variable.
@@ -255,4 +276,106 @@ export const getKafkaClient = async (
       },
     },
   });
+};
+
+/**
+ * Configuration for native KafkaConsumer
+ */
+export interface NativeConsumerConfig extends KafkaClientConfig {
+  groupId: string;
+  sessionTimeoutMs?: number;
+  heartbeatIntervalMs?: number;
+  maxPollIntervalMs?: number;
+  autoCommit?: boolean;
+  autoCommitIntervalMs?: number;
+  autoOffsetReset?: "smallest" | "earliest" | "largest" | "latest" | "error";
+  maxBatchSize?: number;
+}
+
+/**
+ * Builds the native SASL configuration for librdkafka.
+ * Native consumer uses different config keys than KafkaJS wrapper.
+ */
+const buildNativeSaslConfig = (
+  logger: Logger,
+  cfg: KafkaClientConfig,
+): Partial<ConsumerGlobalConfig> => {
+  if (!cfg.saslMechanism || !cfg.saslUsername || !cfg.saslPassword) {
+    return {};
+  }
+
+  const mechanism = cfg.saslMechanism.toUpperCase();
+  const validMechanisms = ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512"];
+
+  if (!validMechanisms.includes(mechanism)) {
+    logger.warn(`Unsupported SASL mechanism: ${cfg.saslMechanism}`);
+    return {};
+  }
+
+  return {
+    "sasl.mechanisms": mechanism,
+    "sasl.username": cfg.saslUsername,
+    "sasl.password": cfg.saslPassword,
+  };
+};
+
+/**
+ * Creates a native KafkaConsumer instance (using librdkafka directly).
+ * This provides lower-level control and potentially better performance than the KafkaJS wrapper.
+ *
+ * @param cfg - Consumer configuration
+ * @param logger - Logger instance
+ * @param rebalanceCb - Optional callback for rebalance events
+ * @returns Configured but not yet connected KafkaConsumer
+ */
+export const createNativeKafkaConsumer = (
+  cfg: NativeConsumerConfig,
+  logger: Logger,
+  rebalanceCb?: (err: LibrdKafkaError, assignments: TopicPartition[]) => void,
+): KafkaConsumer => {
+  const brokers = parseBrokerString(cfg.broker || "");
+  if (brokers.length === 0) {
+    throw new Error(`No valid broker addresses found in: "${cfg.broker}"`);
+  }
+
+  logger.log(
+    `Creating native KafkaConsumer with brokers: ${brokers.join(", ")}`,
+  );
+  logger.log(`Security protocol: ${cfg.securityProtocol || "plaintext"}`);
+  logger.log(`Client ID: ${cfg.clientId}`);
+  logger.log(`Group ID: ${cfg.groupId}`);
+
+  const saslConfig = buildNativeSaslConfig(logger, cfg);
+
+  const consumerConfig: ConsumerGlobalConfig = {
+    // Connection
+    "bootstrap.servers": brokers.join(","),
+    "client.id": cfg.clientId,
+
+    // Group management
+    "group.id": cfg.groupId,
+    "session.timeout.ms": cfg.sessionTimeoutMs ?? 30000,
+    "heartbeat.interval.ms": cfg.heartbeatIntervalMs ?? 3000,
+    "max.poll.interval.ms": cfg.maxPollIntervalMs ?? 300000,
+
+    // Offset management
+    "enable.auto.commit": cfg.autoCommit ?? true,
+    "auto.commit.interval.ms": cfg.autoCommitIntervalMs ?? 5000,
+
+    // Security
+    ...(cfg.securityProtocol === "SASL_SSL" && {
+      "security.protocol": "sasl_ssl",
+    }),
+    ...saslConfig,
+
+    // Rebalance callback
+    ...(rebalanceCb && { rebalance_cb: rebalanceCb }),
+  };
+
+  // Topic-level config (auto.offset.reset belongs here)
+  const topicConfig: ConsumerTopicConfig = {
+    "auto.offset.reset": cfg.autoOffsetReset ?? "earliest",
+  };
+
+  return new KafkaConsumer(consumerConfig, topicConfig);
 };
