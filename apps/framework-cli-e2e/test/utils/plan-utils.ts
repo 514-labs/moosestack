@@ -37,17 +37,10 @@ export function getTableId(
   // Build base_id with name and optional version
   let baseId = table.name;
   if (table.version) {
-    // Format version as suffix (assuming version has as_suffix() method or similar)
     const versionSuffix = table.version.replace(/\./g, "_");
     baseId = `${table.name}_${versionSuffix}`;
   }
-
-  // Only include database prefix if name doesn't already contain a dot (fully qualified name)
-  if (table.name.includes(".")) {
-    return baseId;
-  } else {
-    return `${db}_${baseId}`;
-  }
+  return `${db}_${baseId}`;
 }
 
 /**
