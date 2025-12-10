@@ -202,6 +202,8 @@ fn format_table_display(
 ) -> (String, Vec<String>) {
     let mut details = Vec::new();
 
+    // TODO: handle table.database for unambiguous identification
+
     // Table header
     let title = if let Some(ref version) = table.version {
         format!("Table: {} (Version: {})", table.name, version)
