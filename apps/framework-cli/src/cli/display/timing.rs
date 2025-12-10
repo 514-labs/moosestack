@@ -33,28 +33,6 @@ use std::future::Future;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
 
-/// Format a duration as a human-readable string.
-///
-/// Formats durations using appropriate units:
-/// - Milliseconds (< 1000ms): "234ms"
-/// - Seconds (>= 1s): "2.3s" (1 decimal place)
-///
-/// # Arguments
-///
-/// * `duration` - The duration to format
-///
-/// # Returns
-///
-/// A formatted string like "234ms" or "2.3s"
-fn format_duration(duration: std::time::Duration) -> String {
-    let millis = duration.as_millis();
-    if millis < 1000 {
-        format!("{millis}ms")
-    } else {
-        format!("{:.1}s", duration.as_secs_f64())
-    }
-}
-
 /// Wraps a synchronous operation with timing information.
 ///
 /// If SHOW_TIMING is enabled, displays the elapsed time after completion
@@ -93,7 +71,7 @@ where
         show_message!(MessageType::Info, {
             Message {
                 action: operation_name.to_string(),
-                details: format!("completed in {}", format_duration(elapsed)),
+                details: format!("completed in {}", humantime::format_duration(elapsed)),
             }
         });
     }
@@ -138,7 +116,7 @@ where
         show_message!(MessageType::Info, {
             Message {
                 action: operation_name.to_string(),
-                details: format!("completed in {}", format_duration(elapsed)),
+                details: format!("completed in {}", humantime::format_duration(elapsed)),
             }
         });
     }
@@ -149,42 +127,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_duration_milliseconds() {
-        let duration = std::time::Duration::from_millis(234);
-        assert_eq!(format_duration(duration), "234ms");
-    }
-
-    #[test]
-    fn test_format_duration_sub_millisecond() {
-        let duration = std::time::Duration::from_micros(500);
-        assert_eq!(format_duration(duration), "0ms");
-    }
-
-    #[test]
-    fn test_format_duration_seconds() {
-        let duration = std::time::Duration::from_millis(2345);
-        assert_eq!(format_duration(duration), "2.3s");
-    }
-
-    #[test]
-    fn test_format_duration_exact_second() {
-        let duration = std::time::Duration::from_millis(1000);
-        assert_eq!(format_duration(duration), "1.0s");
-    }
-
-    #[test]
-    fn test_format_duration_edge_case_999ms() {
-        let duration = std::time::Duration::from_millis(999);
-        assert_eq!(format_duration(duration), "999ms");
-    }
-
-    #[test]
-    fn test_format_duration_large() {
-        let duration = std::time::Duration::from_secs(65);
-        assert_eq!(format_duration(duration), "65.0s");
-    }
 
     #[test]
     fn test_with_timing_returns_value() {
