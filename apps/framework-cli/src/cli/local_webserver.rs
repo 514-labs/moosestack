@@ -3293,13 +3293,6 @@ async fn get_admin_reconciled_inframap(
             ))
         })?;
 
-    // Create the ClickHouse client for database introspection.
-    // Note: This only creates the client struct - no network connection is made yet.
-    // The load_reconciled_infrastructure function handles the case where OLAP is disabled,
-    // which allows this code path to support future reconciliation of other infrastructure
-    // types (e.g., Kafka topics) even when OLAP is turned off.
-    let clickhouse_client = clickhouse::create_client(project.clickhouse_config.clone());
-
     // Load current map from state storage (these are the tables under Moose management).
     // We load once here and reconcile directly to avoid a double-load and potential race condition.
     let current_map = match state_storage.load_infrastructure_map().await {
@@ -3328,6 +3321,8 @@ async fn get_admin_reconciled_inframap(
     // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
     // may support reconciliation of other infrastructure types (e.g., Kafka topics).
     let reconciled_map = if project.features.olap {
+        // Create the ClickHouse client for database introspection.
+        let clickhouse_client = clickhouse::create_client(project.clickhouse_config.clone());
         crate::framework::core::plan::reconcile_with_reality(
             project,
             &current_map,
