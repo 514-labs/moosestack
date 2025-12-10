@@ -5,7 +5,11 @@ from typing import Optional, Union, Any
 import inspect
 
 from pydantic import BaseModel
-from .data_models import DataEnum, py_type_to_column_type, ArrayType as DataModelArrayType
+from .data_models import (
+    DataEnum,
+    py_type_to_column_type,
+    ArrayType as DataModelArrayType,
+)
 
 scalar_types = Union[str, DataEnum]
 
@@ -40,18 +44,20 @@ def unwrap_optional(union_type):
 # dmV1 code, won't upgrade to include the rich types
 def parse_scalar_value(value: str, t: scalar_types) -> Any:
     match t:
-        case 'String':
+        case "String":
             return value
-        case 'Int' | 'Int64':
+        case "Int" | "Int64":
             return int(value)
-        case 'Float' | 'Float64' | 'Float32':
+        case "Float" | "Float64" | "Float32":
             return float(value)
-        case 'Boolean':
+        case "Boolean":
             value_lower = value.lower()
-            if value_lower not in ('true', 'false'):
-                raise ValueError(f"Boolean value must be 'true' or 'false', got: {value}")
-            return value_lower == 'true'
-        case 'DateTime':
+            if value_lower not in ("true", "false"):
+                raise ValueError(
+                    f"Boolean value must be 'true' or 'false', got: {value}"
+                )
+            return value_lower == "true"
+        case "DateTime":
             return datetime.fromisoformat(value)
         case _:
             # enum parsing will not be added to dmV1 code
@@ -78,11 +84,21 @@ def convert_pydantic_definition(cls: type) -> list[QueryField]:
                 element_type = field_type.__args__[0]  # type: ignore
                 scala_type = to_scalar_type(element_type)
                 fields_list.append(
-                    QueryField(field_name, ArrayType(scala_type), has_default=not no_default, required=required))
+                    QueryField(
+                        field_name,
+                        ArrayType(scala_type),
+                        has_default=not no_default,
+                        required=required,
+                    )
+                )
                 continue
 
         scala_type = to_scalar_type(field_type)
-        fields_list.append(QueryField(field_name, scala_type, has_default=not no_default, required=required))
+        fields_list.append(
+            QueryField(
+                field_name, scala_type, has_default=not no_default, required=required
+            )
+        )
 
     return fields_list
 
@@ -98,7 +114,9 @@ def convert_dataclass_definition(cls: type) -> list[QueryField]:
 
         # Handle Optional types
         # Field is not required if it has a default value or is Optional
-        no_default = field_def.default == field_def.default_factory == dataclasses.MISSING
+        no_default = (
+            field_def.default == field_def.default_factory == dataclasses.MISSING
+        )
         required = no_default
 
         if hasattr(field_type, "__origin__"):
@@ -109,11 +127,21 @@ def convert_dataclass_definition(cls: type) -> list[QueryField]:
                 element_type = field_type.__args__[0]  # type: ignore
                 scala_type = to_scalar_type(element_type)
                 fields_list.append(
-                    QueryField(field_name, ArrayType(scala_type), has_default=not no_default, required=required))
+                    QueryField(
+                        field_name,
+                        ArrayType(scala_type),
+                        has_default=not no_default,
+                        required=required,
+                    )
+                )
                 continue
 
         scala_type = to_scalar_type(field_type)
-        fields_list.append(QueryField(field_name, scala_type, has_default=not no_default, required=required))
+        fields_list.append(
+            QueryField(
+                field_name, scala_type, has_default=not no_default, required=required
+            )
+        )
 
     return fields_list
 
@@ -129,14 +157,16 @@ def convert_api_param(module) -> Optional[tuple[type, list[QueryField]]]:
     elif issubclass(param_class, BaseModel):
         query_fields = convert_pydantic_definition(param_class)
     else:
-        raise ValueError(f"{param_class.__name__} is neither a Pydantic model or a dataclass")
+        raise ValueError(
+            f"{param_class.__name__} is neither a Pydantic model or a dataclass"
+        )
     return param_class, query_fields
 
 
 def map_params_to_class(
-        params: dict[str, list[str]],
-        field_def_list: list[QueryField],
-        cls: type,
+    params: dict[str, list[str]],
+    field_def_list: list[QueryField],
+    cls: type,
 ) -> Any:
     # Initialize an empty dict for the constructor arguments
     constructor_args: dict[str, Any] = {}
@@ -147,7 +177,9 @@ def map_params_to_class(
         elif is_dataclass(cls):
             return parse_scalar_value(param, t)
         else:
-            raise ValueError(f"{cls.__name__} is neither a Pydantic model or a dataclass")
+            raise ValueError(
+                f"{cls.__name__} is neither a Pydantic model or a dataclass"
+            )
 
     # Get field definitions from the dataclass
     for field_def in field_def_list:
@@ -167,7 +199,9 @@ def map_params_to_class(
         values = params[field_name]
 
         if isinstance(field_type, ArrayType):
-            constructor_args[field_name] = [parse(v, field_type.element_type) for v in values]
+            constructor_args[field_name] = [
+                parse(v, field_type.element_type) for v in values
+            ]
         else:
             if len(values) != 1:
                 raise ValueError(f"Expected a single element for {field_name}")

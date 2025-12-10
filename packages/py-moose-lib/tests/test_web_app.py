@@ -1,6 +1,7 @@
 """
 Unit tests for WebApp SDK functionality.
 """
+
 import pytest
 from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
 from moose_lib.dmv2._registry import _web_apps
@@ -9,6 +10,7 @@ from moose_lib.dmv2._registry import _web_apps
 # Mock FastAPI app for testing
 class MockFastAPIApp:
     """Mock FastAPI application for testing."""
+
     pass
 
 
@@ -84,7 +86,10 @@ def test_webapp_root_path_rejected():
     app = MockFastAPIApp()
     config = WebAppConfig(mount_path="/")
 
-    with pytest.raises(ValueError, match='mountPath cannot be "/" as it would allow routes to overlap with reserved paths'):
+    with pytest.raises(
+        ValueError,
+        match='mountPath cannot be "/" as it would allow routes to overlap with reserved paths',
+    ):
         WebApp("test_app", app, config)
 
 
@@ -127,7 +132,9 @@ def test_webapp_duplicate_mount_path():
     WebApp("app1", app1, config1)
 
     config2 = WebAppConfig(mount_path="/myapi")
-    with pytest.raises(ValueError, match='WebApp with mountPath "/myapi" already exists'):
+    with pytest.raises(
+        ValueError, match='WebApp with mountPath "/myapi" already exists'
+    ):
         WebApp("app2", app2, config2)
 
 
@@ -178,9 +185,8 @@ def test_webapp_serialization():
         "test_app",
         app,
         WebAppConfig(
-            mount_path="/myapi",
-            metadata=WebAppMetadata(description="Test API")
-        )
+            mount_path="/myapi", metadata=WebAppMetadata(description="Test API")
+        ),
     )
 
     # Verify it's in the registry

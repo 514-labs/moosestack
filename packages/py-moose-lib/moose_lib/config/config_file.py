@@ -4,6 +4,7 @@ Configuration file handling for Moose.
 This module provides functionality for reading and parsing the moose.config.toml file,
 which contains project-wide configuration settings.
 """
+
 import os
 import tomllib
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from typing import Optional
 @dataclass
 class ClickHouseConfig:
     """ClickHouse configuration settings from moose.config.toml."""
+
     host: str
     host_port: int
     user: str
@@ -25,6 +27,7 @@ class ClickHouseConfig:
 @dataclass
 class KafkaConfig:
     """Redpanda/Kafka configuration settings from moose.config.toml."""
+
     broker: str
     message_timeout_ms: int
     sasl_username: Optional[str] = None
@@ -38,6 +41,7 @@ class KafkaConfig:
 @dataclass
 class ProjectConfig:
     """Project configuration from moose.config.toml."""
+
     language: str
     clickhouse_config: ClickHouseConfig
     kafka_config: Optional[KafkaConfig] = None
@@ -89,7 +93,7 @@ def read_project_config() -> ProjectConfig:
             password=config_data["clickhouse_config"]["password"],
             db_name=config_data["clickhouse_config"]["db_name"],
             use_ssl=config_data["clickhouse_config"].get("use_ssl", False),
-            native_port=config_data["clickhouse_config"].get("native_port")
+            native_port=config_data["clickhouse_config"].get("native_port"),
         )
 
         def _parse_kafka(section_name: str) -> Optional[KafkaConfig]:

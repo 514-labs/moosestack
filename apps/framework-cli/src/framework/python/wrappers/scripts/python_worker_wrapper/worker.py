@@ -14,6 +14,7 @@ from moose_lib.internal import load_models
 # Maintain a global set of activity names we've already created
 _ALREADY_REGISTERED = set()
 
+
 def collect_activities_dmv2(workflows: dict[str, Workflow]) -> List[str]:
     """Collect all task names from DMv2 workflows, formatted as 'workflowName/taskName'.
 
@@ -34,6 +35,7 @@ def collect_activities_dmv2(workflows: dict[str, Workflow]) -> List[str]:
 
     return script_names
 
+
 def load_dmv2_workflows() -> dict[str, Workflow]:
     """Load DMV2 workflows, returning an empty dict if there's an error.
 
@@ -47,7 +49,10 @@ def load_dmv2_workflows() -> dict[str, Workflow]:
         log.error(f"Failed to load DMV2 workflows: {e}")
         return {}
 
-async def register_workflows(temporal_url: str, namespace: str, client_cert: str, client_key: str, api_key: str) -> Optional[Worker]:
+
+async def register_workflows(
+    temporal_url: str, namespace: str, client_cert: str, client_key: str, api_key: str
+) -> Optional[Worker]:
     """
     Register DMv2 workflows and their activities.
     """
@@ -86,8 +91,10 @@ async def register_workflows(temporal_url: str, namespace: str, client_cert: str
         log.info(f"Created {len(dynamic_activities)} dynamic activities")
 
         log.info("Connecting to Temporal server...")
-        client = await create_temporal_connection(temporal_url, namespace, client_cert, client_key, api_key)
-        
+        client = await create_temporal_connection(
+            temporal_url, namespace, client_cert, client_key, api_key
+        )
+
         log.info("Creating worker...")
         worker = Worker(
             client,
@@ -97,12 +104,15 @@ async def register_workflows(temporal_url: str, namespace: str, client_cert: str
         )
         log.info("Worker created successfully")
         return worker
-        
+
     except Exception as e:
         log.error(f"Error registering workflows: {str(e)}")
         raise
 
-async def start_worker(temporal_url: str, namespace: str, client_cert: str, client_key: str, api_key: str) -> Worker:
+
+async def start_worker(
+    temporal_url: str, namespace: str, client_cert: str, client_key: str, api_key: str
+) -> Worker:
     """
     Start a Temporal worker that handles Python script execution workflows.
 
@@ -113,7 +123,9 @@ async def start_worker(temporal_url: str, namespace: str, client_cert: str, clie
 
     loop = asyncio.get_running_loop()
 
-    worker = await register_workflows(temporal_url, namespace, client_cert, client_key, api_key)
+    worker = await register_workflows(
+        temporal_url, namespace, client_cert, client_key, api_key
+    )
 
     if worker is None:
         log.info("No worker found to start")
@@ -139,13 +151,15 @@ async def start_worker(temporal_url: str, namespace: str, client_cert: str, clie
             shutdown_task = asyncio.create_task(shutdown())
 
     # Add signal handlers
-    for signame in ('SIGTERM', 'SIGQUIT', 'SIGHUP'):
-        loop.add_signal_handler(getattr(signal, signame), lambda s=signame: handle_signal(s))
-    
+    for signame in ("SIGTERM", "SIGQUIT", "SIGHUP"):
+        loop.add_signal_handler(
+            getattr(signal, signame), lambda s=signame: handle_signal(s)
+        )
+
     log.info("Starting Python worker...")
     try:
         worker_task = asyncio.create_task(worker.run())
-        
+
         # Loop and check for shutdown
         while True:
             if shutdown_task is not None:
@@ -170,5 +184,5 @@ async def start_worker(temporal_url: str, namespace: str, client_cert: str, clie
                 await asyncio.wait_for(worker_task, timeout=5.0)
             except asyncio.TimeoutError:
                 log.warning("Worker task did not complete after cancellation")
-    
+
     return worker

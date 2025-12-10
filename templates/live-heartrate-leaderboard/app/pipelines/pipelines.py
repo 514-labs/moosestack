@@ -7,49 +7,49 @@ from app.datamodels.RawAntHRPacket import RawAntHRPacket
 from app.datamodels.BluetoothHRPacket import BluetoothHRPacket
 
 # Instantiate functions for kafka stream processing
-from app.functions.raw_ant_to_processed_ant_packet import RawAntHRPacket__ProcessedAntHRPacket
-from app.functions.processed_ant_to_unified_packet import processedAntHRPacket__UNIFIED_HR_PACKET
-from app.functions.bluetooth_to_unified_packet import bluetoothHRPacket__UNIFIED_HRM_MODEL
+from app.functions.raw_ant_to_processed_ant_packet import (
+    RawAntHRPacket__ProcessedAntHRPacket,
+)
+from app.functions.processed_ant_to_unified_packet import (
+    processedAntHRPacket__UNIFIED_HR_PACKET,
+)
+from app.functions.bluetooth_to_unified_packet import (
+    bluetoothHRPacket__UNIFIED_HRM_MODEL,
+)
 
 
 # Initalize Ingest Pipeline Infrastructure
-rawAntHRPipeline = IngestPipeline[RawAntHRPacket]("raw_ant_hr_packet", IngestPipelineConfig(
-    ingest_api=True,
-    stream=True,
-    table=True
-))
+rawAntHRPipeline = IngestPipeline[RawAntHRPacket](
+    "raw_ant_hr_packet", IngestPipelineConfig(ingest_api=True, stream=True, table=True)
+)
 
 
-processedAntHRPipeline = IngestPipeline[ProcessedAntHRPacket]("processed_ant_hr_packet", IngestPipelineConfig(
-    ingest_api=True,
-    stream=True,
-    table=True
-))
+processedAntHRPipeline = IngestPipeline[ProcessedAntHRPacket](
+    "processed_ant_hr_packet",
+    IngestPipelineConfig(ingest_api=True, stream=True, table=True),
+)
 
-unifiedHRPipeline = IngestPipeline[UnifiedHRPacket]("unified_hr_packet", IngestPipelineConfig(
-    ingest_api=True,
-    stream=True,
-    table=True
-))
+unifiedHRPipeline = IngestPipeline[UnifiedHRPacket](
+    "unified_hr_packet", IngestPipelineConfig(ingest_api=True, stream=True, table=True)
+)
 
-bluetoothHRPipeline = IngestPipeline[BluetoothHRPacket]("bluetooth_hr_packet", IngestPipelineConfig(
-    ingest_api=True,
-    stream=True,
-    table=True
-))
+bluetoothHRPipeline = IngestPipeline[BluetoothHRPacket](
+    "bluetooth_hr_packet",
+    IngestPipelineConfig(ingest_api=True, stream=True, table=True),
+)
 
 # Transform RawAntHRPacket to ProcessedAntHRPacket in stream
 rawAntHRPipeline.get_stream().add_transform(
     destination=processedAntHRPipeline.get_stream(),
-    transformation=RawAntHRPacket__ProcessedAntHRPacket
+    transformation=RawAntHRPacket__ProcessedAntHRPacket,
 )
 
 processedAntHRPipeline.get_stream().add_transform(
     destination=unifiedHRPipeline.get_stream(),
-    transformation=processedAntHRPacket__UNIFIED_HR_PACKET
+    transformation=processedAntHRPacket__UNIFIED_HR_PACKET,
 )
 
 bluetoothHRPipeline.get_stream().add_transform(
     destination=unifiedHRPipeline.get_stream(),
-    transformation=bluetoothHRPacket__UNIFIED_HRM_MODEL
+    transformation=bluetoothHRPacket__UNIFIED_HRM_MODEL,
 )

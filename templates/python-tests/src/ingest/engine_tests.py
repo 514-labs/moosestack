@@ -1,7 +1,15 @@
 # Test all supported ClickHouse engines to ensure proper configuration
 # These tables verify that all engine types can be created and configured correctly
 
-from moose_lib import OlapTable, OlapConfig, Key, Int8, ClickHouseTTL, clickhouse_default, FixedString
+from moose_lib import (
+    OlapTable,
+    OlapConfig,
+    Key,
+    Int8,
+    ClickHouseTTL,
+    clickhouse_default,
+    FixedString,
+)
 from moose_lib.blocks import (
     MergeTreeEngine,
     ReplacingMergeTreeEngine,
@@ -25,6 +33,7 @@ from typing import Optional, Annotated, List
 
 class EngineTestData(BaseModel):
     """Test data model for engine testing"""
+
     id: Key[str]
     timestamp: datetime
     value: int
@@ -32,11 +41,13 @@ class EngineTestData(BaseModel):
     version: int
     is_deleted: bool  # For ReplacingMergeTree soft deletes (UInt8 in ClickHouse)
 
+
 # Table with TTL: delete rows older than 90 days, delete email after 30 days
 class TTLTestData(BaseModel):
     id: Key[str]
     timestamp: datetime
     email: Annotated[str, ClickHouseTTL("timestamp + INTERVAL 30 DAY")]
+
 
 ttl_table = OlapTable[TTLTestData](
     "TTLTable",
@@ -47,12 +58,14 @@ ttl_table = OlapTable[TTLTestData](
     ),
 )
 
+
 # Table with DEFAULT values for testing DEFAULT removal
 class DefaultTestData(BaseModel):
     id: Key[str]
     timestamp: datetime
     status: Annotated[str, clickhouse_default("'pending'")]
     count: Annotated[int, clickhouse_default("0"), "uint32"]
+
 
 default_table = OlapTable[DefaultTestData](
     "DefaultTable",
@@ -66,6 +79,7 @@ default_table = OlapTable[DefaultTestData](
 # Type alias for MAC address (17 bytes for format "XX:XX:XX:XX:XX:XX")
 type MacAddress = Annotated[str, FixedString(17)]
 
+
 class FixedStringTestData(BaseModel):
     id: Key[str]
     timestamp: datetime
@@ -76,6 +90,7 @@ class FixedStringTestData(BaseModel):
     mac_address: MacAddress  # Should become FixedString(17)
     mac_addresses: List[MacAddress]  # Should become Array(FixedString(17))
 
+
 fixedstring_table = OlapTable[FixedStringTestData](
     "FixedStringTest",
     OlapConfig(
@@ -84,12 +99,16 @@ fixedstring_table = OlapTable[FixedStringTestData](
     ),
 )
 
+
 class CollapsingTestData(EngineTestData):
     """Test data model for CollapsingMergeTree and VersionedCollapsingMergeTree testing"""
+
     sign: Int8  # For CollapsingMergeTree (1 = state, -1 = cancel)
+
 
 class EngineTestDataSample(BaseModel):
     """Test data model for engine testing"""
+
     id: str
     timestamp: datetime
     value: int
@@ -101,10 +120,7 @@ class EngineTestDataSample(BaseModel):
 # Test MergeTree engine (default)
 merge_tree_table = OlapTable[EngineTestData](
     "MergeTreeTest",
-    OlapConfig(
-        engine=MergeTreeEngine(),
-        order_by_fields=["id", "timestamp"]
-    )
+    OlapConfig(engine=MergeTreeEngine(), order_by_fields=["id", "timestamp"]),
 )
 
 # Test MergeTree with order_by_expression (equivalent to fields)
@@ -113,25 +129,19 @@ merge_tree_table_expr = OlapTable[EngineTestData](
     OlapConfig(
         engine=MergeTreeEngine(),
         order_by_expression="(id, timestamp)",
-    )
+    ),
 )
 
 # Test ReplacingMergeTree engine with basic deduplication
 replacing_merge_tree_basic_table = OlapTable[EngineTestData](
-    "ReplacingMergeTreeBasic", 
-    OlapConfig(
-        engine=ReplacingMergeTreeEngine(),
-        order_by_fields=["id"]
-    )
+    "ReplacingMergeTreeBasic",
+    OlapConfig(engine=ReplacingMergeTreeEngine(), order_by_fields=["id"]),
 )
 
 # Test ReplacingMergeTree engine with version column
 replacing_merge_tree_version_table = OlapTable[EngineTestData](
     "ReplacingMergeTreeVersion",
-    OlapConfig(
-        engine=ReplacingMergeTreeEngine(ver="version"),
-        order_by_fields=["id"]
-    )
+    OlapConfig(engine=ReplacingMergeTreeEngine(ver="version"), order_by_fields=["id"]),
 )
 
 # Test ReplacingMergeTree engine with version and soft delete
@@ -139,26 +149,20 @@ replacing_merge_tree_soft_delete_table = OlapTable[EngineTestData](
     "ReplacingMergeTreeSoftDelete",
     OlapConfig(
         engine=ReplacingMergeTreeEngine(ver="version", is_deleted="is_deleted"),
-        order_by_fields=["id"]
-    )
+        order_by_fields=["id"],
+    ),
 )
 
 # Test SummingMergeTree engine
 summing_merge_tree_table = OlapTable[EngineTestData](
     "SummingMergeTreeTest",
-    OlapConfig(
-        engine=SummingMergeTreeEngine(),
-        order_by_fields=["id", "category"]
-    )
+    OlapConfig(engine=SummingMergeTreeEngine(), order_by_fields=["id", "category"]),
 )
 
 # Test AggregatingMergeTree engine
 aggregating_merge_tree_table = OlapTable[EngineTestData](
-    "AggregatingMergeTreeTest", 
-    OlapConfig(
-        engine=AggregatingMergeTreeEngine(),
-        order_by_fields=["id", "category"]
-    )
+    "AggregatingMergeTreeTest",
+    OlapConfig(engine=AggregatingMergeTreeEngine(), order_by_fields=["id", "category"]),
 )
 
 # Test CollapsingMergeTree engine
@@ -166,8 +170,8 @@ collapsing_merge_tree_table = OlapTable[CollapsingTestData](
     "CollapsingMergeTreeTest",
     OlapConfig(
         engine=CollapsingMergeTreeEngine(sign="sign"),
-        order_by_fields=["id", "timestamp"]
-    )
+        order_by_fields=["id", "timestamp"],
+    ),
 )
 
 # Test VersionedCollapsingMergeTree engine
@@ -175,8 +179,8 @@ versioned_collapsing_merge_tree_table = OlapTable[CollapsingTestData](
     "VersionedCollapsingMergeTreeTest",
     OlapConfig(
         engine=VersionedCollapsingMergeTreeEngine(sign="sign", ver="version"),
-        order_by_fields=["id", "timestamp"]
-    )
+        order_by_fields=["id", "timestamp"],
+    ),
 )
 
 # Test ReplicatedMergeTree engine (with explicit keeper params - for self-hosted)
@@ -185,10 +189,10 @@ replicated_merge_tree_table = OlapTable[EngineTestData](
     OlapConfig(
         engine=ReplicatedMergeTreeEngine(
             keeper_path="/clickhouse/tables/{database}/{shard}/replicated_merge_tree_test",
-            replica_name="{replica}"
+            replica_name="{replica}",
         ),
-        order_by_fields=["id", "timestamp"]
-    )
+        order_by_fields=["id", "timestamp"],
+    ),
 )
 
 # Test ReplicatedMergeTree engine (Cloud-compatible - no keeper params)
@@ -198,8 +202,8 @@ replicated_merge_tree_cloud_table = OlapTable[EngineTestData](
     "ReplicatedMergeTreeCloudTest",
     OlapConfig(
         engine=ReplicatedMergeTreeEngine(),  # No params - uses server defaults (Cloud compatible)
-        order_by_fields=["id", "timestamp"]
-    )
+        order_by_fields=["id", "timestamp"],
+    ),
 )
 
 # Test ReplicatedReplacingMergeTree engine with version column
@@ -209,10 +213,10 @@ replicated_replacing_merge_tree_table = OlapTable[EngineTestData](
         engine=ReplicatedReplacingMergeTreeEngine(
             keeper_path="/clickhouse/tables/{database}/{shard}/replicated_replacing_test",
             replica_name="{replica}",
-            ver="version"
+            ver="version",
         ),
-        order_by_fields=["id"]
-    )
+        order_by_fields=["id"],
+    ),
 )
 
 # Test ReplicatedReplacingMergeTree with soft delete
@@ -223,10 +227,10 @@ replicated_replacing_soft_delete_table = OlapTable[EngineTestData](
             keeper_path="/clickhouse/tables/{database}/{shard}/replicated_replacing_sd_test",
             replica_name="{replica}",
             ver="version",
-            is_deleted="is_deleted"
+            is_deleted="is_deleted",
         ),
-        order_by_fields=["id"]
-    )
+        order_by_fields=["id"],
+    ),
 )
 
 # Test ReplicatedAggregatingMergeTree engine
@@ -235,10 +239,10 @@ replicated_aggregating_merge_tree_table = OlapTable[EngineTestData](
     OlapConfig(
         engine=ReplicatedAggregatingMergeTreeEngine(
             keeper_path="/clickhouse/tables/{database}/{shard}/replicated_aggregating_test",
-            replica_name="{replica}"
+            replica_name="{replica}",
         ),
-        order_by_fields=["id", "category"]
-    )
+        order_by_fields=["id", "category"],
+    ),
 )
 
 # Test ReplicatedSummingMergeTree engine
@@ -248,10 +252,10 @@ replicated_summing_merge_tree_table = OlapTable[EngineTestData](
         engine=ReplicatedSummingMergeTreeEngine(
             keeper_path="/clickhouse/tables/{database}/{shard}/replicated_summing_test",
             replica_name="{replica}",
-            columns=["value"]
+            columns=["value"],
         ),
-        order_by_fields=["id", "category"]
-    )
+        order_by_fields=["id", "category"],
+    ),
 )
 
 # Test ReplicatedCollapsingMergeTree engine
@@ -261,10 +265,10 @@ replicated_collapsing_merge_tree_table = OlapTable[CollapsingTestData](
         engine=ReplicatedCollapsingMergeTreeEngine(
             keeper_path="/clickhouse/tables/{database}/{shard}/replicated_collapsing_test",
             replica_name="{replica}",
-            sign="sign"
+            sign="sign",
         ),
-        order_by_fields=["id", "timestamp"]
-    )
+        order_by_fields=["id", "timestamp"],
+    ),
 )
 
 # Test ReplicatedVersionedCollapsingMergeTree engine
@@ -275,10 +279,10 @@ replicated_versioned_collapsing_merge_tree_table = OlapTable[CollapsingTestData]
             keeper_path="/clickhouse/tables/{database}/{shard}/replicated_versioned_collapsing_test",
             replica_name="{replica}",
             sign="sign",
-            ver="version"
+            ver="version",
         ),
-        order_by_fields=["id", "timestamp"]
-    )
+        order_by_fields=["id", "timestamp"],
+    ),
 )
 
 # Test SAMPLE BY clause for data sampling
@@ -287,8 +291,8 @@ sample_by_table = OlapTable[EngineTestDataSample](
     OlapConfig(
         engine=MergeTreeEngine(),
         order_by_expression="cityHash64(id)",
-        sample_by_expression="cityHash64(id)"
-    )
+        sample_by_expression="cityHash64(id)",
+    ),
 )
 
 # Note: S3Queue engine testing is more complex as it requires S3 configuration
@@ -299,10 +303,7 @@ sample_by_table = OlapTable[EngineTestDataSample](
 # First create the destination table
 buffer_destination_table = OlapTable[EngineTestData](
     "BufferDestinationTest",
-    OlapConfig(
-        engine=MergeTreeEngine(),
-        order_by_fields=["id", "timestamp"]
-    )
+    OlapConfig(engine=MergeTreeEngine(), order_by_fields=["id", "timestamp"]),
 )
 
 # Then create the buffer table that points to it
@@ -320,7 +321,7 @@ buffer_table = OlapTable[EngineTestData](
             min_bytes=10485760,
             max_bytes=104857600,
         ),
-    )
+    ),
 )
 
 # Export all test tables for verification that engine configurations

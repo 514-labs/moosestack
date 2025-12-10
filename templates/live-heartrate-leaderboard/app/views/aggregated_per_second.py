@@ -1,4 +1,9 @@
-from moose_lib import MaterializedView, MaterializedViewOptions, AggregateFunction, ClickHouseEngines
+from moose_lib import (
+    MaterializedView,
+    MaterializedViewOptions,
+    AggregateFunction,
+    ClickHouseEngines,
+)
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Annotated
@@ -30,13 +35,16 @@ from app.pipelines.pipelines import unifiedHRPipeline
         
 """
 
+
 # Target table for the materialized view
 class AggregateHeartRateSummaryPerSecond(BaseModel):
     user_name: str
     rounded_up_time: int
     processed_timestamp: datetime
     # Params: Aggregated [return_type_of_the_aggregated_function, AggregateFunction(agg_func="avg", param_types=[float])]
-    avg_hr_per_second: Annotated[float, AggregateFunction(agg_func="avg", param_types=[float])]
+    avg_hr_per_second: Annotated[
+        float, AggregateFunction(agg_func="avg", param_types=[float])
+    ]
 
 
 SELECT_QUERY = """
@@ -53,11 +61,15 @@ SELECT_QUERY = """
 ## New: Get the table from the pipeline & pass it to the materialized view
 unifiedHRTable = unifiedHRPipeline.get_table()
 
-aggregateHeartRateSummaryPerSecondMV = MaterializedView[AggregateHeartRateSummaryPerSecond](MaterializedViewOptions(
-    select_statement=SELECT_QUERY,
-    table_name="per_second_heart_rate_aggregate",
-    materialized_view_name="per_second_heart_rate_aggregate_view",
-    order_by_fields=["user_name", "rounded_up_time"],
-    engine=ClickHouseEngines.AggregatingMergeTree,
-    select_tables=[unifiedHRTable]
-))
+aggregateHeartRateSummaryPerSecondMV = MaterializedView[
+    AggregateHeartRateSummaryPerSecond
+](
+    MaterializedViewOptions(
+        select_statement=SELECT_QUERY,
+        table_name="per_second_heart_rate_aggregate",
+        materialized_view_name="per_second_heart_rate_aggregate_view",
+        order_by_fields=["user_name", "rounded_up_time"],
+        engine=ClickHouseEngines.AggregatingMergeTree,
+        select_tables=[unifiedHRTable],
+    )
+)

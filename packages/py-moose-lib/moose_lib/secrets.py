@@ -53,13 +53,13 @@ def get(env_var_name: str) -> str:
         >>> aws_key = moose_runtime_env.get("AWS_ACCESS_KEY_ID")
     """
     import os
-    
+
     if not env_var_name or not env_var_name.strip():
         raise ValueError("Environment variable name cannot be empty")
-    
+
     # Check if we're loading infrastructure map
     is_loading_infra_map = os.environ.get("IS_LOADING_INFRA_MAP") == "true"
-    
+
     if is_loading_infra_map:
         # Return marker string for later resolution by Moose CLI
         return f"{MOOSE_RUNTIME_ENV_PREFIX}{env_var_name}"
@@ -106,7 +106,9 @@ moose_runtime_env = MooseRuntimeEnv()
 # Legacy exports for backwards compatibility
 MooseEnvSecrets = MooseRuntimeEnv  # Deprecated: Use MooseRuntimeEnv instead
 moose_env_secrets = moose_runtime_env  # Deprecated: Use moose_runtime_env instead
-MOOSE_ENV_SECRET_PREFIX = MOOSE_RUNTIME_ENV_PREFIX  # Deprecated: Use MOOSE_RUNTIME_ENV_PREFIX instead
+MOOSE_ENV_SECRET_PREFIX = (
+    MOOSE_RUNTIME_ENV_PREFIX  # Deprecated: Use MOOSE_RUNTIME_ENV_PREFIX instead
+)
 
 __all__ = [
     "moose_runtime_env",

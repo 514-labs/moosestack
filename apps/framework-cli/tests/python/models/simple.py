@@ -9,6 +9,7 @@ class Status(Enum):
     OK = "ok"
     ERROR = "error"
 
+
 @dataclass
 class MySubModel:
     name: str
@@ -26,4 +27,3 @@ class MyModel:
     opt: Optional[str]
     sub: MySubModel
     date: datetime
-

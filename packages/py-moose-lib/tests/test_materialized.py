@@ -41,8 +41,10 @@ def test_materialized_with_codec():
         log_blob: Annotated[Any, ClickHouseCodec("ZSTD(3)")]
         combination_hash: Annotated[
             list[UInt64],
-            ClickHouseMaterialized("arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))"),
-            ClickHouseCodec("ZSTD(1)")
+            ClickHouseMaterialized(
+                "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))"
+            ),
+            ClickHouseCodec("ZSTD(1)"),
         ]
 
     columns = _to_columns(MaterializedCodecTest)
@@ -50,7 +52,10 @@ def test_materialized_with_codec():
 
     assert by_name["log_blob"].materialized is None
     assert by_name["log_blob"].codec == "ZSTD(3)"
-    assert by_name["combination_hash"].materialized == "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))"
+    assert (
+        by_name["combination_hash"].materialized
+        == "arrayMap(kv -> cityHash64(kv.1, kv.2), JSONExtractKeysAndValuesRaw(toString(log_blob)))"
+    )
     assert by_name["combination_hash"].codec == "ZSTD(1)"
 
 
@@ -62,9 +67,8 @@ def test_materialized_mutually_exclusive_with_default():
         bad_field: Annotated[
             str,
             clickhouse_default("'default_value'"),
-            ClickHouseMaterialized("'materialized_value'")
+            ClickHouseMaterialized("'materialized_value'"),
         ]
 
     with pytest.raises(ValueError, match="cannot have both DEFAULT and MATERIALIZED"):
         _to_columns(BadModel)
-

@@ -6,9 +6,11 @@ from datetime import datetime
 
 type Key[T: (str, int)] = T
 
+
 class Status(Enum):
     OK = "ok"
     ERROR = "error"
+
 
 class MySubModel:
     name: str
@@ -26,4 +28,3 @@ class ComplexModel:
     opt: Optional[str]
     list_sub: list[MySubModel]
     date: datetime
-

@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from moose_lib import Key
 
+
 class ProcessedAntHRPacket(BaseModel):
     device_id: Key[int]
     previous_beat_time: float

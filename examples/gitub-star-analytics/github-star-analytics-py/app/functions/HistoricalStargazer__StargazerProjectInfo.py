@@ -1,4 +1,3 @@
-
 # Import your Moose data models to use in the streaming function
 from app.datamodels.HistoricalStargazer import HistoricalStargazer
 from app.datamodels.StargazerProjectInfo import StargazerProjectInfo
@@ -6,6 +5,7 @@ from moose_lib import StreamingFunction, cli_log, CliLogData
 from typing import Optional
 from datetime import datetime
 import requests
+
 
 # Helper function to make GitHub API calls
 # Takes a URL and returns the JSON response
@@ -15,14 +15,21 @@ def call_github_api(url: str) -> dict:
     response.raise_for_status()
     return response.json()
 
+
 # Main processing function that takes a HistoricalStargazer event and returns StargazerProjectInfo objects
 # Returns a list of StargazerProjectInfo objects, one for each repository owned by the stargazer
 # Returns None if there's an error processing the event
 def fn(source: HistoricalStargazer) -> Optional[list[StargazerProjectInfo]]:
     # Fetch all repositories for the user who starred the project
     repositories = call_github_api(source.repos_url)
-    cli_log(CliLogData(action="Got repositories", message=f"{len(repositories)}", message_type="Info"))
-    
+    cli_log(
+        CliLogData(
+            action="Got repositories",
+            message=f"{len(repositories)}",
+            message_type="Info",
+        )
+    )
+
     # For each repository owned by the stargazer, create a StargazerProjectInfo object
     # This includes metadata about:
     # - When they starred our project
@@ -48,7 +55,6 @@ def fn(source: HistoricalStargazer) -> Optional[list[StargazerProjectInfo]]:
         for repo in repositories
     ]
 
-# Create a StreamingFunction that will execute our processing function    
-my_function = StreamingFunction(
-    run=fn
-)
+
+# Create a StreamingFunction that will execute our processing function
+my_function = StreamingFunction(run=fn)
