@@ -22,6 +22,7 @@
   "lint-staged": {
     "*.rs": "rustfmt --edition 2021",
     "**/*.{ts,tsx,js,jsx,json,md}": "prettier --write",
+    "*.py": "black",
     "!**/*.hbs": "echo 'Skipping Handlebars template files'"
   }
 }

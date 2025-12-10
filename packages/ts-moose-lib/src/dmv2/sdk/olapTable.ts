@@ -284,6 +284,25 @@ export type SummingMergeTreeConfig<T> = BaseOlapConfig<T> & {
   columns?: string[];
 };
 
+/**
+ * Configuration for CollapsingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ */
+export type CollapsingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.CollapsingMergeTree;
+  sign: keyof T & string; // Sign column (1 = state, -1 = cancel)
+};
+
+/**
+ * Configuration for VersionedCollapsingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ */
+export type VersionedCollapsingMergeTreeConfig<T> = BaseOlapConfig<T> & {
+  engine: ClickHouseEngines.VersionedCollapsingMergeTree;
+  sign: keyof T & string; // Sign column (1 = state, -1 = cancel)
+  ver: keyof T & string; // Version column for ordering state changes
+};
+
 interface ReplicatedEngineProperties {
   keeperPath?: string;
   replicaName?: string;
@@ -348,6 +367,38 @@ export type ReplicatedSummingMergeTreeConfig<T> = Omit<
 > &
   ReplicatedEngineProperties & {
     engine: ClickHouseEngines.ReplicatedSummingMergeTree;
+  };
+
+/**
+ * Configuration for ReplicatedCollapsingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ *
+ * Note: keeperPath and replicaName are optional. Omit them for ClickHouse Cloud,
+ * which manages replication automatically. For self-hosted with ClickHouse Keeper,
+ * provide both parameters or neither (to use server defaults).
+ */
+export type ReplicatedCollapsingMergeTreeConfig<T> = Omit<
+  CollapsingMergeTreeConfig<T>,
+  "engine"
+> &
+  ReplicatedEngineProperties & {
+    engine: ClickHouseEngines.ReplicatedCollapsingMergeTree;
+  };
+
+/**
+ * Configuration for ReplicatedVersionedCollapsingMergeTree engine
+ * @template T The data type of the records stored in the table.
+ *
+ * Note: keeperPath and replicaName are optional. Omit them for ClickHouse Cloud,
+ * which manages replication automatically. For self-hosted with ClickHouse Keeper,
+ * provide both parameters or neither (to use server defaults).
+ */
+export type ReplicatedVersionedCollapsingMergeTreeConfig<T> = Omit<
+  VersionedCollapsingMergeTreeConfig<T>,
+  "engine"
+> &
+  ReplicatedEngineProperties & {
+    engine: ClickHouseEngines.ReplicatedVersionedCollapsingMergeTree;
   };
 
 /**
@@ -553,10 +604,14 @@ type EngineConfig<T> =
   | ReplacingMergeTreeConfig<T>
   | AggregatingMergeTreeConfig<T>
   | SummingMergeTreeConfig<T>
+  | CollapsingMergeTreeConfig<T>
+  | VersionedCollapsingMergeTreeConfig<T>
   | ReplicatedMergeTreeConfig<T>
   | ReplicatedReplacingMergeTreeConfig<T>
   | ReplicatedAggregatingMergeTreeConfig<T>
   | ReplicatedSummingMergeTreeConfig<T>
+  | ReplicatedCollapsingMergeTreeConfig<T>
+  | ReplicatedVersionedCollapsingMergeTreeConfig<T>
   | S3QueueConfig<T>
   | S3Config<T>
   | BufferConfig<T>
@@ -691,8 +746,9 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
    * @private
    */
   private createConfigHash(clickhouseConfig: any): string {
-    // Create a deterministic string from config values only
-    const configString = `${clickhouseConfig.host}:${clickhouseConfig.port}:${clickhouseConfig.username}:${clickhouseConfig.password}:${clickhouseConfig.database}:${clickhouseConfig.useSSL}`;
+    // Use per-table database if specified, otherwise fall back to global config
+    const effectiveDatabase = this.config.database ?? clickhouseConfig.database;
+    const configString = `${clickhouseConfig.host}:${clickhouseConfig.port}:${clickhouseConfig.username}:${clickhouseConfig.password}:${effectiveDatabase}:${clickhouseConfig.useSSL}`;
     return createHash("sha256")
       .update(configString)
       .digest("hex")
@@ -733,10 +789,12 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     }
 
     // Create new client with standard configuration
+    // Use per-table database if specified, otherwise fall back to global config
+    const effectiveDatabase = this.config.database ?? clickhouseConfig.database;
     const client = getClickhouseClient({
       username: clickhouseConfig.username,
       password: clickhouseConfig.password,
-      database: clickhouseConfig.database,
+      database: effectiveDatabase,
       useSSL: clickhouseConfig.useSSL ? "true" : "false",
       host: clickhouseConfig.host,
       port: clickhouseConfig.port,

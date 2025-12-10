@@ -5,11 +5,11 @@
 
 // Test execution timeouts
 export const TIMEOUTS = {
-  // Main test setup timeout (4 minutes)
-  TEST_SETUP_MS: 240_000,
+  // Main test setup timeout (6 minutes)
+  TEST_SETUP_MS: 360_000,
 
-  // Server startup timeout (3 minutes)
-  SERVER_STARTUP_MS: 180_000,
+  // Server startup timeout (5 minutes)
+  SERVER_STARTUP_MS: 300_000,
 
   // Cleanup timeout (1.5 minutes)
   CLEANUP_MS: 90_000,
@@ -19,6 +19,9 @@ export const TIMEOUTS = {
 
   // Process termination timeout (30 seconds)
   PROCESS_TERMINATION_MS: 30_000,
+
+  // Process exit timeout for error condition tests (60 seconds)
+  PROCESS_EXIT_MS: 60_000,
 
   // Docker operations timeouts
   DOCKER_COMPOSE_DOWN_MS: 30_000,

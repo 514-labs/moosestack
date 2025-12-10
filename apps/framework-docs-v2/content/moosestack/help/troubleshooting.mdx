@@ -28,6 +28,14 @@ Common issues and their solutions when working with Moose.
    # Kill process by PID
    kill <PID>
    ```
+   
+   **Configuration Override:**
+   You can also change the ports Moose uses via environment variables:
+   ```bash
+   export MOOSE_HTTP_PORT=4040
+   export MOOSE_MANAGEMENT_PORT=5010
+   moose dev
+   ```
 
 2. **Missing dependencies**
    - Solution: Ensure all dependencies are installed
@@ -54,6 +62,15 @@ Common issues and their solutions when working with Moose.
    
    # Start Docker on Linux
    sudo systemctl start docker
+   ```
+
+4. **Container Startup Failures**
+   - Check if specific containers failed to start.
+   - Solution: View container logs to debug service-specific issues.
+
+   ```bash
+   # View logs
+   moose logs
    ```
 
 ## Data Ingestion

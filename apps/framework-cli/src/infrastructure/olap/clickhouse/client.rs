@@ -131,19 +131,23 @@ impl ClickHouseClient {
         format!("({value_list})")
     }
 
+    /// Inserts records into a ClickHouse table.
+    ///
+    /// # Arguments
+    /// * `table_name` - The name of the table to insert into
+    /// * `database` - Optional database name. If None, uses the config's default database
+    /// * `columns` - The column names to insert
+    /// * `records` - The records to insert
     pub async fn insert(
         &self,
         table_name: &str,
+        database: Option<&str>,
         columns: &[String],
         records: &[ClickHouseRecord],
     ) -> anyhow::Result<()> {
+        let target_db = database.unwrap_or(&self.config.db_name);
         // TODO - this could be optimized with RowBinary instead
-        let insert_query = format!(
-            "INSERT INTO \"{}\".\"{}\" ({}) VALUES",
-            self.config.db_name,
-            table_name,
-            wrap_and_join_column_names(columns, ","),
-        );
+        let insert_query = build_insert_query(target_db, table_name, columns);
 
         debug!("Inserting into clickhouse: {}", insert_query);
 
@@ -226,6 +230,24 @@ impl ClickHouseClient {
 
 const DDL_COMMANDS: &[&str] = &["INSERT", "CREATE", "ALTER", "DROP", "TRUNCATE"];
 
+/// Builds an INSERT query string for a ClickHouse table.
+///
+/// # Arguments
+/// * `database` - The database name
+/// * `table_name` - The table name
+/// * `columns` - The column names to insert
+///
+/// # Returns
+/// A formatted INSERT query string like: `INSERT INTO "db"."table" ("col1","col2") VALUES`
+fn build_insert_query(database: &str, table_name: &str, columns: &[String]) -> String {
+    format!(
+        "INSERT INTO \"{}\".\"{}\" ({}) VALUES",
+        database,
+        table_name,
+        wrap_and_join_column_names(columns, ","),
+    )
+}
+
 fn query_param(query: &str, database: Option<&str>) -> anyhow::Result<String> {
     let mut params = vec![("query", query), ("date_time_input_format", "best_effort")];
 
@@ -247,9 +269,17 @@ fn query_param(query: &str, database: Option<&str>) -> anyhow::Result<String> {
 
 #[async_trait]
 pub trait ClickHouseClientTrait: Send + Sync {
+    /// Inserts records into a ClickHouse table.
+    ///
+    /// # Arguments
+    /// * `table` - The name of the table to insert into
+    /// * `database` - Optional database name. If None, uses the client's default database
+    /// * `columns` - The column names to insert
+    /// * `records` - The records to insert
     async fn insert(
         &self,
         table: &str,
+        database: Option<&str>,
         columns: &[String],
         records: &[ClickHouseRecord],
     ) -> anyhow::Result<()>;
@@ -260,11 +290,12 @@ impl ClickHouseClientTrait for ClickHouseClient {
     async fn insert(
         &self,
         table: &str,
+        database: Option<&str>,
         columns: &[String],
         records: &[ClickHouseRecord],
     ) -> anyhow::Result<()> {
         // Call the actual implementation
-        self.insert(table, columns, records).await
+        self.insert(table, database, columns, records).await
     }
 }
 
@@ -385,6 +416,36 @@ mod tests {
         assert!(
             result.contains("database=test_db"),
             "Should include database parameter when provided"
+        );
+    }
+
+    #[test]
+    fn test_build_insert_query_with_database() {
+        let columns = vec!["id".to_string(), "name".to_string()];
+        let result = build_insert_query("custom_db", "my_table", &columns);
+        assert_eq!(
+            result, "INSERT INTO \"custom_db\".\"my_table\" (`id`,`name`) VALUES",
+            "Should build INSERT query with correct database and table"
+        );
+    }
+
+    #[test]
+    fn test_build_insert_query_with_default_database() {
+        let columns = vec!["col1".to_string()];
+        let result = build_insert_query("local", "test_table", &columns);
+        assert!(
+            result.contains(r#""local"."test_table""#),
+            "Should use provided database in query"
+        );
+    }
+
+    #[test]
+    fn test_build_insert_query_with_special_characters() {
+        let columns = vec!["user_id".to_string(), "event_time".to_string()];
+        let result = build_insert_query("analytics_db", "user_events", &columns);
+        assert_eq!(
+            result, "INSERT INTO \"analytics_db\".\"user_events\" (`user_id`,`event_time`) VALUES",
+            "Should handle underscores in database and table names"
         );
     }
 }

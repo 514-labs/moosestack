@@ -1,0 +1,35 @@
+---
+title: Temporal Configuration
+description: Configure the workflow orchestration engine
+order: 44
+---
+
+import { Callout } from "@/components/mdx";
+
+# Temporal Configuration
+
+Configure the workflow orchestration engine.
+
+<Callout type="warning" title="Security Warning">
+**NEVER put production credentials in `moose.config.toml`**. For production environments or when connecting to external infrastructure, **ALWAYS use environment variables** and/or secrets to securely inject credentials.
+</Callout>
+
+
+```toml filename="moose.config.toml"
+[temporal_config]
+# Temporal server host (Default: "localhost")
+temporal_host = "localhost"
+# Temporal server port (Default: 7233)
+temporal_port = 7233
+# API key for Temporal Cloud connection (Default: "")
+api_key = ""
+# Temporal namespace (Default: "default")
+namespace = "default"
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `temporal_host` | `MOOSE_TEMPORAL_CONFIG__TEMPORAL_HOST` | "localhost" | Temporal server host. |
+| `temporal_port` | `MOOSE_TEMPORAL_CONFIG__TEMPORAL_PORT` | 7233 | Temporal server port. |
+| `api_key` | `MOOSE_TEMPORAL_CONFIG__API_KEY` | "" | **SECRET**. API Key for Temporal Cloud. |
+| `namespace` | `MOOSE_TEMPORAL_CONFIG__NAMESPACE` | "default" | Temporal namespace. |

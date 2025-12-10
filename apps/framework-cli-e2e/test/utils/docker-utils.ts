@@ -1,4 +1,11 @@
 import { TIMEOUTS } from "../constants";
+import { logger, ScopedLogger } from "./logger";
+
+const dockerLogger = logger.scope("utils:docker");
+
+export interface DockerOptions {
+  logger?: ScopedLogger;
+}
 
 declare const require: any;
 
@@ -47,8 +54,11 @@ const withTimeout = async <T>(
 export const cleanupDocker = async (
   projectDir: string,
   appName: string,
+  options: DockerOptions = {},
 ): Promise<void> => {
-  console.log(`Cleaning up Docker resources for ${appName}...`);
+  const log = options.logger ?? dockerLogger;
+  log.debug("Cleaning up Docker resources", { appName });
+
   try {
     // Stop containers and remove volumes with timeout
     await withTimeout(
@@ -72,7 +82,7 @@ export const cleanupDocker = async (
     if (volumeList.trim()) {
       const volumes = volumeList.split("\n").filter(Boolean);
       for (const volume of volumes) {
-        console.log(`Removing volume: ${volume}`);
+        log.debug("Removing volume", { volume });
         try {
           await withTimeout(
             execAsync(`docker volume rm -f ${volume}`),
@@ -80,14 +90,14 @@ export const cleanupDocker = async (
             "Volume removal timeout",
           );
         } catch (volumeError) {
-          console.warn(`Failed to remove volume ${volume}:`, volumeError);
+          log.warn(`Failed to remove volume ${volume}`, volumeError);
         }
       }
     }
 
-    console.log("Docker cleanup completed successfully");
+    log.info("✓ Docker cleanup completed successfully");
   } catch (error) {
-    console.error("Error during Docker cleanup:", error);
+    log.error("Error during Docker cleanup", error);
     // Don't throw - we want cleanup to continue even if Docker cleanup fails
   }
 };
@@ -95,15 +105,20 @@ export const cleanupDocker = async (
 /**
  * Performs global Docker system cleanup
  */
-export const globalDockerCleanup = async (): Promise<void> => {
+export const globalDockerCleanup = async (
+  options: DockerOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? dockerLogger;
+
   try {
+    log.debug("Running global Docker cleanup");
     await withTimeout(
       execAsync("docker system prune -f --volumes || true"),
       TIMEOUTS.DOCKER_COMPOSE_DOWN_MS,
       "Docker system prune timeout",
     );
-    console.log("Cleaned up Docker resources");
+    log.info("✓ Cleaned up Docker resources");
   } catch (error) {
-    console.warn("Error during global Docker cleanup:", error);
+    log.warn("Error during global Docker cleanup", error);
   }
 };
