@@ -550,11 +550,22 @@ pub async fn top_command_handler(
                     None
                 };
 
+                // Check if custom Dockerfile already exists BEFORE creating
+                let custom_dockerfile_existed =
+                    project_arc.project_location.join("Dockerfile").exists();
+
                 // Create dockerfile with settings and expose flag
                 create_dockerfile(&project_arc, &docker_client, &settings, expose_flag)?.show();
 
-                // If --expose-dockerfile flag is set, only generate the Dockerfile, don't build
-                if *expose_dockerfile {
+                // Determine if we should skip the build (expose-only mode)
+                // Skip build if: CLI flag is set OR config/env enables expose AND no custom Dockerfile existed before
+                let skip_build_for_expose = *expose_dockerfile
+                    || (expose_flag.is_none()
+                        && settings.dev.expose_dockerfile
+                        && !custom_dockerfile_existed);
+
+                // If in expose-only mode, only generate the Dockerfile, don't build
+                if skip_build_for_expose {
                     wait_for_usage_capture(capture_handle).await;
 
                     Ok(RoutineSuccess::success(Message::new(

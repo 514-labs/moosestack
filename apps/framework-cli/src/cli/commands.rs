@@ -54,10 +54,10 @@ pub enum Commands {
         arm64: bool,
         /// Expose Dockerfile to project root for customization
         /// generates Dockerfile at ./Dockerfile instead of hidden .moose/packager/
-        #[arg(long, conflicts_with = "no_expose_dockerfile")]
+        #[arg(long, requires = "docker", conflicts_with = "no_expose_dockerfile")]
         expose_dockerfile: bool,
         /// Revert to hidden, managed Dockerfile (default behavior)
-        #[arg(long, conflicts_with = "expose_dockerfile")]
+        #[arg(long, requires = "docker", conflicts_with = "expose_dockerfile")]
         no_expose_dockerfile: bool,
     },
     /// Checks the project for non-runtime errors
