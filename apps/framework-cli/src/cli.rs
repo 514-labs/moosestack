@@ -595,9 +595,21 @@ pub async fn top_command_handler(
                 )))
             }
         }
-        Commands::Dev { no_infra, mcp } => {
+        Commands::Dev {
+            no_infra,
+            mcp,
+            timestamps,
+            timing,
+        } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
+
+            // Set global flags for timestamps and timing
+            use crate::utilities::constants::{SHOW_TIMESTAMPS, SHOW_TIMING};
+            use std::sync::atomic::Ordering;
+
+            SHOW_TIMESTAMPS.store(*timestamps, Ordering::Relaxed);
+            SHOW_TIMING.store(*timing, Ordering::Relaxed);
 
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
