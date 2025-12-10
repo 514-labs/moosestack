@@ -58,7 +58,6 @@ use std::time::Instant;
 /// // If --timing flag is enabled, displays:
 /// // "Database Query completed in 234ms"
 /// ```
-#[allow(dead_code)]
 pub fn with_timing<F, R>(operation_name: &str, f: F) -> R
 where
     F: FnOnce() -> R,
