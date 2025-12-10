@@ -329,12 +329,7 @@ impl Table {
             format!("{}_{}", self.name, v.as_suffix())
         });
 
-        // Only include database prefix if name doesn't already contain a dot (fully qualified name)
-        if self.name.contains('.') {
-            base_id
-        } else {
-            format!("{}_{}", db, base_id)
-        }
+        format!("{}_{}", db, base_id)
     }
 
     /// Returns a human-readable display name for the table.
