@@ -52,7 +52,7 @@ export const stopDevProcess = async (
 
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
-        if (devProcess.exitCode !== null) {
+        if (devProcess.exitCode === null) {
           log.warn("Moose process did not exit gracefully, forcing kill");
           devProcess!.kill("SIGKILL");
         }
