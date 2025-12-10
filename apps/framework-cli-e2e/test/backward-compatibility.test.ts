@@ -322,15 +322,15 @@ describe("Backward Compatibility Tests", function () {
         );
         let mooseConfig = fs.readFileSync(mooseConfigPath, "utf-8");
         // Check if [authentication] section exists
-        if (mooseConfig.includes("[authentication]")) {
+        if (!mooseConfig.includes("[authentication]")) {
+          // Append the [authentication] section if it doesn't exist
+          mooseConfig += `\n[authentication]\nadmin_api_key = "${TEST_ADMIN_HASH}"\n`;
+        } else if (!mooseConfig.includes("admin_api_key =")) {
           // Replace the empty [authentication] section with one that includes admin_api_key
           mooseConfig = mooseConfig.replace(
             /\[authentication\]\s*$/m,
             `[authentication]\nadmin_api_key = "${TEST_ADMIN_HASH}"`,
           );
-        } else {
-          // Append the [authentication] section if it doesn't exist
-          mooseConfig += `\n[authentication]\nadmin_api_key = "${TEST_ADMIN_HASH}"\n`;
         }
         fs.writeFileSync(mooseConfigPath, mooseConfig);
 
