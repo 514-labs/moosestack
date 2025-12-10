@@ -18,6 +18,8 @@
 /// 3. After a short delay (debouncing), changes are processed to update the infrastructure
 /// 4. The updated infrastructure is applied to the system
 use crate::framework;
+use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
+use display::with_timing_async;
 use notify::event::ModifyKind;
 use notify::{Event, EventHandler, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
@@ -26,8 +28,6 @@ use std::time::Duration;
 use std::{io::Error, path::PathBuf};
 use tokio::sync::RwLock;
 use tracing::info;
-
-use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 
 use super::display::{self, with_spinner_completion_async, Message, MessageType};
 use super::processing_coordinator::ProcessingCoordinator;
@@ -177,8 +177,6 @@ async fn watch(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
                         async {
-                            use display::with_timing_async;
-
                             let plan_result = with_timing_async("Planning", async {
                                 framework::core::plan::plan_changes(&**state_storage, &project).await
                             })

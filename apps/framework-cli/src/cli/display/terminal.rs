@@ -4,6 +4,7 @@
 //! crate. It includes components for displaying styled text and managing
 //! terminal state during CLI operations.
 
+use crate::utilities::constants::SHOW_TIMESTAMPS;
 use crossterm::{
     execute,
     style::{
@@ -11,6 +12,7 @@ use crossterm::{
     },
 };
 use std::io::{stdout, Result as IoResult};
+use std::sync::atomic::Ordering;
 
 /// Width of the action column in terminal output
 pub const ACTION_WIDTH: usize = 15;
@@ -215,9 +217,6 @@ fn write_styled_line_to<W: std::io::Write>(
     no_ansi: bool,
 ) -> IoResult<()> {
     // Prepend timestamp if enabled
-    use crate::utilities::constants::SHOW_TIMESTAMPS;
-    use std::sync::atomic::Ordering;
-
     if SHOW_TIMESTAMPS.load(Ordering::Relaxed) {
         let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
         execute!(writer, Print(&format!("{} ", timestamp)))?;
