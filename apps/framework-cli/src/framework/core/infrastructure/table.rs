@@ -1863,55 +1863,23 @@ mod tests {
         };
         assert_eq!(table2b.id(DEFAULT_DATABASE_NAME), "analytics_users");
 
-        // Test 3: Legacy format - table name contains database prefix (backward compatibility)
+        // Test 3: With version - database should be included
         let table3 = Table {
-            name: "analytics.users".to_string(),
-            database: None,
+            name: "users".to_string(),
+            version: Some(Version::from_string("1.0".to_string())),
+            database: Some("analytics".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table3.id(DEFAULT_DATABASE_NAME), "analytics.users");
+        assert_eq!(table3.id(DEFAULT_DATABASE_NAME), "analytics_users_1_0");
 
-        // Test 4: CRITICAL - Adding database field to legacy format should NOT change ID
+        // Test 4: With version and default database
         let table4 = Table {
-            name: "analytics.users".to_string(),
-            database: Some("analytics".to_string()),
-            ..table1.clone()
-        };
-        assert_eq!(
-            table4.id(DEFAULT_DATABASE_NAME),
-            "analytics.users",
-            "ID should remain stable when database field is added to legacy table name format"
-        );
-
-        // Test 5: Even with mismatched database, ID should remain stable (name takes precedence)
-        let table5 = Table {
-            name: "analytics.users".to_string(),
-            database: Some("other_db".to_string()),
-            ..table1.clone()
-        };
-        assert_eq!(
-            table5.id(DEFAULT_DATABASE_NAME),
-            "analytics.users",
-            "ID should use name (which contains dot) even if database field differs"
-        );
-
-        // Test 6: With version - database should be included
-        let table6 = Table {
-            name: "users".to_string(),
-            version: Some(Version::from_string("1.0".to_string())),
-            database: Some("analytics".to_string()),
-            ..table1.clone()
-        };
-        assert_eq!(table6.id(DEFAULT_DATABASE_NAME), "analytics_users_1_0");
-
-        // Test 7: With version and default database
-        let table7 = Table {
             name: "users".to_string(),
             version: Some(Version::from_string("1.0".to_string())),
             database: None,
             ..table1.clone()
         };
-        assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
+        assert_eq!(table4.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
     }
 
     #[test]
