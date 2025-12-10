@@ -71,14 +71,12 @@ pub fn apply_lifecycle_filter(
 ) -> FilterResult {
     let mut applied = Vec::new();
     let mut filtered = Vec::new();
-    let mut blocked_table_ids: HashSet<String> = HashSet::new();
 
     for change in changes {
         filter_single_change(
             change,
             target_table,
             default_database,
-            &mut blocked_table_ids,
             &mut applied,
             &mut filtered,
         );
@@ -92,17 +90,19 @@ fn filter_single_change(
     change: OlapChange,
     target_table: &Table,
     default_database: &str,
-    blocked_table_ids: &mut HashSet<String>,
     applied: &mut Vec<OlapChange>,
     filtered: &mut Vec<FilteredChange>,
 ) {
+    // to block orphan CREATE in DROP+CREATE pair
+    let mut blocked_table_ids: HashSet<String> = HashSet::new();
+
     match change {
         OlapChange::Table(TableChange::Removed(removed_table)) => {
             filter_table_removal(
                 removed_table,
                 target_table,
                 default_database,
-                blocked_table_ids,
+                &mut blocked_table_ids,
                 applied,
                 filtered,
             );
@@ -111,7 +111,7 @@ fn filter_single_change(
             filter_table_addition(
                 added_table,
                 default_database,
-                blocked_table_ids,
+                &blocked_table_ids,
                 applied,
                 filtered,
             );
