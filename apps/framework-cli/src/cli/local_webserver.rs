@@ -19,7 +19,8 @@
 /// The webserver is configurable through the `LocalWebserverConfig` struct and
 /// can be started in both development and production modes.
 use super::display::{
-    with_spinner_completion, with_spinner_completion_async, Message, MessageType,
+    with_spinner_completion, with_spinner_completion_async, with_timing, with_timing_async,
+    Message, MessageType,
 };
 use super::routines::auth::validate_auth_token;
 use super::routines::scripts::{
@@ -99,6 +100,7 @@ use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
 use crate::framework::core::infrastructure::table::Table;
 use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::utilities::constants;
+use crate::utilities::constants::SHOW_TIMING;
 
 /// Request wrapper for router handling.
 /// This struct combines the HTTP request with the route table for processing.
@@ -2727,7 +2729,6 @@ async fn shutdown(
     // Step 1: Stop all managed processes (functions, syncing, consumption, orchestration workers)
     // This sends termination signals and waits with timeouts for all processes to exit
     // Note: This happens in BOTH dev and production - workers must always be stopped gracefully
-    use super::display::with_timing_async;
 
     let stop_result = with_timing_async("Stop Processes", async {
         with_spinner_completion_async(
@@ -2737,11 +2738,7 @@ async fn shutdown(
                 let mut process_registry = process_registry.write().await;
                 process_registry.stop().await
             },
-            {
-                use crate::utilities::constants::SHOW_TIMING;
-                use std::sync::atomic::Ordering;
-                !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
-            },
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
         )
         .await
     })
@@ -2802,11 +2799,7 @@ async fn shutdown(
                 "Stopping workflows",
                 "Workflows stopped",
                 async { terminate_all_workflows(project).await },
-                {
-                    use crate::utilities::constants::SHOW_TIMING;
-                    use std::sync::atomic::Ordering;
-                    !SHOW_TIMING.load(Ordering::Relaxed)
-                },
+                !SHOW_TIMING.load(Ordering::Relaxed),
             )
             .await
         })
@@ -2864,8 +2857,6 @@ async fn shutdown(
             let docker = DockerClient::new(settings);
             info!("Starting container shutdown process");
 
-            use super::display::with_timing;
-
             with_timing("Stop Containers", || {
                 with_spinner_completion(
                     "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
@@ -2873,11 +2864,7 @@ async fn shutdown(
                     || {
                         let _ = docker.stop_containers(project);
                     },
-                    {
-                        use crate::utilities::constants::SHOW_TIMING;
-                        use std::sync::atomic::Ordering;
-                        !SHOW_TIMING.load(Ordering::Relaxed)
-                    },
+                    !SHOW_TIMING.load(Ordering::Relaxed),
                 )
             });
 
