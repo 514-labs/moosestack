@@ -760,8 +760,8 @@ importers:
   packages/ts-moose-lib:
     dependencies:
       '@514labs/kafka-javascript':
-        specifier: 1.7.0-4-g36c72c7
-        version: 1.7.0-4-g36c72c7
+        specifier: 1.7.1-patch
+        version: 1.7.1-patch
       '@clickhouse/client':
         specifier: 1.8.1
         version: 1.8.1
@@ -878,8 +878,8 @@ importers:
 
 packages:
 
-  '@514labs/kafka-javascript@1.7.0-4-g36c72c7':
-    resolution: {integrity: sha512-ctFMNKJnMcM+IN+zlwGFBusoMtdJlnmKnO8nGlPaOO9a2qiC5IcRaVX1HbnPqsJRsBweEQJxl7rV/5nrx15KGg==}
+  '@514labs/kafka-javascript@1.7.1-patch':
+    resolution: {integrity: sha512-wE9zNdx39tcXOlMN4RGQEkuwGPUIJ+4xVQ4WRMFOjVN9Ixndat89jTUIBQSlCOc4B3RrRcn4VTz13pJo9tESMg==}
     engines: {node: '>=18.0.0'}
 
   '@514labs/moose-cli-darwin-arm64@0.3.205':
@@ -9391,7 +9391,7 @@ packages:
 
 snapshots:
 
-  '@514labs/kafka-javascript@1.7.0-4-g36c72c7':
+  '@514labs/kafka-javascript@1.7.1-patch':
     dependencies:
       '@mapbox/node-pre-gyp': 1.0.11
       bindings: 1.5.0
