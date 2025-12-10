@@ -685,7 +685,7 @@ impl Table {
                     Ok(engine) => Some(engine),
                     Err(failed_str) => {
                         warn!(
-                            "Failed to parse engine string '{}' for table '{}'. Falling back to MergeTree. \
+                            "Failed to parse engine string '{}' for table '{}'. Falling back to default engine. \
                             This may indicate an incompatibility with the ClickHouse cluster configuration. \
                             Original engine string: {:?}",
                             failed_str,
