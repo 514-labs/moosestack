@@ -924,16 +924,15 @@ pub fn build_dockerfile(
                     );
 
                     // Create a temporary Dockerfile at the workspace root
-                    // Use a temp name to avoid overwriting any custom Dockerfile at project root
-                    // when the project is at the workspace root
-                    let custom_exists = is_using_custom_dockerfile(project);
-                    let temp_dockerfile =
-                        if custom_exists && workspace_root == project.project_location {
-                            // Project is at workspace root with custom Dockerfile - use temp name
-                            workspace_root.join("Dockerfile.moose-build-temp")
-                        } else {
-                            workspace_root.join("Dockerfile")
-                        };
+                    // Use a temp name when project is at workspace root to:
+                    // 1. Avoid overwriting any existing custom Dockerfile
+                    // 2. Ensure cleanup can distinguish temp from custom Dockerfiles
+                    let temp_dockerfile = if workspace_root == project.project_location {
+                        // Project is at workspace root - always use temp name
+                        workspace_root.join("Dockerfile.moose-build-temp")
+                    } else {
+                        workspace_root.join("Dockerfile")
+                    };
 
                     // Read the generated Dockerfile and adjust paths for workspace root context
                     let dockerfile_content = fs::read_to_string(&file_path).map_err(|err| {
