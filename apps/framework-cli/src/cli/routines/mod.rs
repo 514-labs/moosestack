@@ -119,6 +119,7 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorageBuilder;
+use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
@@ -1097,7 +1098,6 @@ pub async fn remote_plan(
     );
 
     // Calculate and display changes using the same strategy as dev/prod
-    use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
 
     // Remote plan always uses production settings: respect_lifecycle=true, is_production=true
@@ -1224,7 +1224,6 @@ pub async fn remote_gen_migration(
     };
 
     // Calculate changes using the same strategy as dev/prod/remote_plan
-    use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
 
     // Migration generation uses production settings: respect_lifecycle=true, is_production=true
