@@ -65,6 +65,10 @@ describe("moose query command", () => {
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: testProjectDir,
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      },
     });
 
     await waitForServerStart(

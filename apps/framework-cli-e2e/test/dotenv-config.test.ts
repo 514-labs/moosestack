@@ -93,7 +93,10 @@ describe("typescript template tests - .env file configuration", function () {
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: TEST_PROJECT_DIR,
-      env: { ...process.env },
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      },
     });
 
     // Wait for server to start
@@ -211,6 +214,7 @@ describe("python template tests - .env file configuration", function () {
         ...process.env,
         VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
         PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
       },
     });
 

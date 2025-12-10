@@ -82,7 +82,10 @@ services:
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: TEST_PROJECT_DIR,
-      env: process.env,
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      },
     });
 
     await waitForServerStart(

@@ -73,6 +73,7 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
@@ -148,6 +149,7 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
