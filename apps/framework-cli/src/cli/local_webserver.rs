@@ -1707,6 +1707,7 @@ async fn router(
             .await
         }
         (_, &hyper::Method::POST, ["admin", "plan"]) => {
+            // deprecated
             admin_plan_route(
                 req,
                 &project.authentication.admin_api_key,
@@ -3339,7 +3340,7 @@ async fn get_admin_reconciled_inframap(
     Ok(reconciled_map)
 }
 
-/// DEPRECATED: DO NOT USE
+/// DEPRECATED: only for the admin/plan endpoint
 ///
 /// Handles the admin plan endpoint, which compares a submitted infrastructure map
 /// with the server's reconciled managed infrastructure state and returns the changes that would be applied.
