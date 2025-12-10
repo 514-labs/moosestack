@@ -1812,6 +1812,30 @@ impl InfrastructureMap {
                             "Table '{}' has changes but is externally managed - skipping update",
                             table.name
                         );
+                        // Record the blocked update in filtered_changes for user visibility
+                        let column_changes = compute_table_columns_diff(table, target_table);
+                        let order_by_change = OrderByChange {
+                            before: table.order_by.clone(),
+                            after: target_table.order_by.clone(),
+                        };
+                        let partition_by_change = PartitionByChange {
+                            before: normalized_table.partition_by.clone(),
+                            after: normalized_target.partition_by.clone(),
+                        };
+                        filtered_changes.push(FilteredChange {
+                            change: OlapChange::Table(TableChange::Updated {
+                                name: table.name.clone(),
+                                column_changes,
+                                order_by_change,
+                                partition_by_change,
+                                before: table.clone(),
+                                after: target_table.clone(),
+                            }),
+                            reason: format!(
+                                "Table '{}' has ExternallyManaged lifecycle - update blocked",
+                                table.display_name()
+                            ),
+                        });
                     } else {
                         // Compute the basic diff components
                         let column_changes = compute_table_columns_diff(table, target_table);
@@ -1971,6 +1995,14 @@ impl InfrastructureMap {
                         "Table '{}' marked for addition but is externally managed - skipping addition",
                         table.name
                     );
+                    // Record the blocked addition in filtered_changes for user visibility
+                    filtered_changes.push(FilteredChange {
+                        change: OlapChange::Table(TableChange::Added(table.clone())),
+                        reason: format!(
+                            "Table '{}' has ExternallyManaged lifecycle - addition blocked",
+                            table.display_name()
+                        ),
+                    });
                 } else {
                     tracing::debug!(
                         "Table '{}' added with {} columns",
