@@ -117,9 +117,12 @@ function modifyModelsFile(
   replaceString: string,
 ): void {
   const modelsPath = path.join(projectDir, "src", "ingest", "models.ts");
-  let content = fs.readFileSync(modelsPath, "utf-8");
-  content = content.replace(searchString, replaceString);
-  fs.writeFileSync(modelsPath, content);
+  const content = fs.readFileSync(modelsPath, "utf-8");
+  const replaced = content.replace(searchString, replaceString);
+  if (content === replaced) {
+    throw new Error("Replacement failed");
+  }
+  fs.writeFileSync(modelsPath, replaced);
 }
 
 /**
