@@ -2026,6 +2026,8 @@ impl InfrastructureMap {
         );
     }
 
+    // TODO: this function is only used for single-table `HashMap`s in check_reality
+    // we should clean up the interface
     /// Compare tables between two infrastructure maps and compute the differences
     ///
     /// This is a backward-compatible version that uses the default table diff strategy.
@@ -2044,7 +2046,9 @@ impl InfrastructureMap {
         default_database: &str,
     ) {
         let default_strategy = DefaultTableDiffStrategy;
-        let mut filtered = Vec::new(); // Discard filtered changes for backward compatibility
+        // Dummy filtered object to call the function
+        // unused, see TODO note above
+        let mut filtered = Vec::new();
         Self::diff_tables_with_strategy(
             self_tables,
             target_tables,
