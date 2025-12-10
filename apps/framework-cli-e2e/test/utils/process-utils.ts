@@ -1,6 +1,7 @@
 import { TIMEOUTS, SERVER_CONFIG } from "../constants";
 import { withRetries } from "./retry-utils";
 import { logger, ScopedLogger } from "./logger";
+import { ChildProcess } from "child_process";
 
 const processLogger = logger.scope("utils:process");
 
@@ -30,29 +31,29 @@ const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * Stops a development process with graceful shutdown and forced termination fallback
+ * Stops a moose process with graceful shutdown and forced termination fallback
  */
 export const stopDevProcess = async (
-  devProcess: any,
+  devProcess: ChildProcess | null,
   options: ProcessOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
 
   if (devProcess && !devProcess.killed) {
-    log.debug("Stopping dev process");
+    log.debug("Stopping moose server process");
 
     // Set up exit handler before killing
     const gracefulShutdownPromise = new Promise<void>((resolve) => {
       devProcess!.on("exit", () => {
-        log.debug("Dev process has exited gracefully");
+        log.debug("Moose process has exited gracefully");
         resolve();
       });
     });
 
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
-        log.warn("Dev process did not exit gracefully, forcing kill");
-        if (!devProcess!.killed) {
+        if (devProcess.exitCode === null) {
+          log.warn("Moose process did not exit gracefully, forcing kill");
           devProcess!.kill("SIGKILL");
         }
         resolve();
@@ -76,10 +77,10 @@ export const stopDevProcess = async (
 };
 
 /**
- * Waits for the development server to start by monitoring stdout and HTTP pings
+ * Waits for the moose server to start by monitoring stdout and HTTP pings
  */
 export const waitForServerStart = async (
-  devProcess: any,
+  devProcess: ChildProcess,
   timeout: number,
   startupMessage: string,
   serverUrl: string,
@@ -109,7 +110,7 @@ export const waitForServerStart = async (
     const onStdout = async (data: any) => {
       const output = data.toString();
       if (!output.match(/^\n[⢹⢺⢼⣸⣇⡧⡗⡏] Starting local infrastructure$/)) {
-        log.debug("Dev server output", { output: output.trim() });
+        log.debug("Moose server output", { output: output.trim() });
       }
 
       if (!serverStarted && output.includes(startupMessage)) {
@@ -121,14 +122,14 @@ export const waitForServerStart = async (
     };
 
     const onStderr = (data: any) => {
-      log.warn("Dev server stderr", { stderr: data.toString() });
+      log.warn("Moose server stderr", { stderr: data.toString() });
     };
 
     const onExit = (code: number | null) => {
-      log.debug(`Dev process exited`, { exitCode: code });
+      log.debug(`Moose process exited`, { exitCode: code });
       if (!serverStarted) {
         cleanup();
-        reject(new Error(`Dev process exited with code ${code}`));
+        reject(new Error(`Moose process exited with code ${code}`));
       } else {
         cleanup();
       }
@@ -158,13 +159,13 @@ export const waitForServerStart = async (
 
     timeoutId = setTimeout(() => {
       if (serverStarted) return;
-      log.error("Dev server did not start or complete in time", {
+      log.error("Moose server did not start or complete in time", {
         timeout,
         serverUrl,
       });
       devProcess.kill("SIGINT");
       cleanup();
-      reject(new Error("Dev server timeout"));
+      reject(new Error("Moose server timeout"));
     }, timeout);
   });
 };

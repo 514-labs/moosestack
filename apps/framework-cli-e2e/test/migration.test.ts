@@ -85,7 +85,10 @@ describe("typescript template tests - migration", () => {
     outerMooseProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: outerMooseDir,
-      env: process.env,
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      },
     });
 
     // Wait for moose dev to start (ClickHouse ready)

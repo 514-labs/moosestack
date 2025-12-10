@@ -1,6 +1,7 @@
 use clickhouse::ClickhouseChangesError;
 
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
+use crate::framework::core::lifecycle_filter::{self, LifecycleViolation};
 use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;
 use crate::{
     framework::core::infrastructure::table::Table, framework::core::infrastructure_map::OlapChange,
@@ -24,6 +25,20 @@ pub enum OlapChangesError {
     ClickhouseTypeParser(#[from] clickhouse::type_parser::ClickHouseTypeError),
     #[error("Failed to parse ClickHouse SQL: {0}")]
     ClickhouseSqlParse(#[from] clickhouse::sql_parser::SqlParseError),
+
+    /// Lifecycle policy violations detected at execution boundary.
+    /// This indicates a bug in the diff/filter pipeline - protected changes
+    /// should have been blocked earlier.
+    #[error("Lifecycle policy violations detected: {}", format_violations(.0))]
+    LifecycleViolation(Vec<LifecycleViolation>),
+}
+
+fn format_violations(violations: &[LifecycleViolation]) -> String {
+    violations
+        .iter()
+        .map(|v| v.message.clone())
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Trait defining operations that can be performed on an OLAP database
@@ -87,10 +102,28 @@ pub trait OlapOperations {
 /// is called, during the diff computation in `plan_changes()`. Tables are normalized
 /// before diffing to prevent ignored fields (like partition_by, TTL) from triggering
 /// unnecessary drop+create operations.
+///
+/// # Lifecycle Guard
+/// Before executing any changes, this function validates that no lifecycle policy
+/// violations are present. This is a defense-in-depth measure - the diff/filter
+/// pipeline should have already blocked protected operations, but this guard
+/// ensures that even if a bug allows a violation through, it will be caught here
+/// before any changes reach the database.
 pub async fn execute_changes(
     project: &Project,
     changes: &[OlapChange],
 ) -> Result<(), OlapChangesError> {
+    // LIFECYCLE GUARD: Final safety check before execution
+    // This catches any lifecycle violations that may have slipped through the
+    // diff/filter pipeline. A violation here indicates a bug that should be fixed.
+    let violations = lifecycle_filter::validate_lifecycle_compliance(
+        changes,
+        &project.clickhouse_config.db_name,
+    );
+    if !violations.is_empty() {
+        return Err(OlapChangesError::LifecycleViolation(violations));
+    };
+
     // Order changes based on dependencies, including database context for SQL resources
     let (teardown_plan, setup_plan) =
         ddl_ordering::order_olap_changes(changes, &project.clickhouse_config.db_name)?;

@@ -5,6 +5,7 @@ use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::migration_plan::MigrationPlan;
+use crate::framework::core::plan::reconcile_with_reality;
 use crate::framework::core::state_storage::{StateStorage, StateStorageBuilder};
 use crate::infrastructure::olap::clickhouse::config::{ClickHouseConfig, ClusterConfig};
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
@@ -579,17 +580,22 @@ pub async fn execute_migration(
             .unwrap_or_else(|| InfrastructureMap::empty_from_project(project));
 
         let current_infra_map = if project.features.olap {
-            use crate::framework::core::plan::reconcile_with_reality;
             use std::collections::HashSet;
 
-            let target_table_ids: HashSet<String> =
-                current_infra_map.tables.keys().cloned().collect();
+            // current_infra_map should have gone through fixup_default_db, but better safe than sorry
+            let target_table_ids: HashSet<String> = current_infra_map
+                .tables
+                .values()
+                .map(|t| t.id(&current_infra_map.default_database))
+                .collect();
 
             let target_sql_resource_ids: HashSet<String> =
                 current_infra_map.sql_resources.keys().cloned().collect();
 
             let olap_client = create_client(clickhouse_config.clone());
 
+            // We already have the current_infra_map loaded, so reconcile it directly
+            // instead of reloading from storage via load_reconciled_infrastructure
             reconcile_with_reality(
                 project,
                 &current_infra_map,

@@ -74,6 +74,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
@@ -138,7 +139,10 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
 
       // Start dev server WITHOUT the required environment variables
       // Create a clean environment without the test credentials
-      const envWithoutCredentials = { ...process.env };
+      const envWithoutCredentials: NodeJS.ProcessEnv = {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      };
       delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
       delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
 
@@ -165,7 +169,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         const timeout = setTimeout(() => {
           devProcess?.kill("SIGKILL");
           reject(new Error("Process did not exit within timeout"));
-        }, 30000); // 30 second timeout
+        }, TIMEOUTS.PROCESS_EXIT_MS);
 
         devProcess!.on("exit", (code) => {
           clearTimeout(timeout);
@@ -246,6 +250,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
@@ -313,6 +318,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         ...process.env,
         VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
         PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
       };
       delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
       delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
@@ -340,7 +346,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         const timeout = setTimeout(() => {
           devProcess?.kill("SIGKILL");
           reject(new Error("Process did not exit within timeout"));
-        }, 30000); // 30 second timeout
+        }, TIMEOUTS.PROCESS_EXIT_MS);
 
         devProcess!.on("exit", (code) => {
           clearTimeout(timeout);

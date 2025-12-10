@@ -34,6 +34,11 @@ key_prefix = "MS"
 [git_config]
 main_branch_name = "main"
 
+[authentication]
+# Test admin API key hash for E2E tests
+# Token: deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef
+admin_api_key = "445fd4696cfc5c49e28995c4aba05de44303a112"
+
 [temporal_config]
 db_user = "temporal"
 db_password = "temporal"
