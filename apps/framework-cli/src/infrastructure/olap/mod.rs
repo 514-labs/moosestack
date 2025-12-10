@@ -116,8 +116,13 @@ pub async fn execute_changes(
     // LIFECYCLE GUARD: Final safety check before execution
     // This catches any lifecycle violations that may have slipped through the
     // diff/filter pipeline. A violation here indicates a bug that should be fixed.
-    lifecycle_filter::validate_lifecycle_compliance(changes, &project.clickhouse_config.db_name)
-        .map_err(OlapChangesError::LifecycleViolation)?;
+    let violations = lifecycle_filter::validate_lifecycle_compliance(
+        changes,
+        &project.clickhouse_config.db_name,
+    );
+    if !violations.is_empty() {
+        return Err(OlapChangesError::LifecycleViolation(violations));
+    };
 
     // Order changes based on dependencies, including database context for SQL resources
     let (teardown_plan, setup_plan) =

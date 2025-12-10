@@ -430,7 +430,7 @@ impl std::fmt::Display for LifecycleViolation {
 pub fn validate_lifecycle_compliance(
     changes: &[OlapChange],
     default_database: &str,
-) -> Result<(), Vec<LifecycleViolation>> {
+) -> Vec<LifecycleViolation> {
     use std::collections::HashMap;
 
     let mut violations = Vec::new();
@@ -464,9 +464,7 @@ pub fn validate_lifecycle_compliance(
         }
     }
 
-    if violations.is_empty() {
-        Ok(())
-    } else {
+    if !violations.is_empty() {
         // Log all violations for debugging
         for violation in &violations {
             let table_display = match &violation.database {
@@ -481,8 +479,8 @@ pub fn validate_lifecycle_compliance(
                 violation.violation_type
             );
         }
-        Err(violations)
-    }
+    };
+    violations
 }
 
 /// Checks a single table change for lifecycle violations
@@ -773,7 +771,10 @@ mod tests {
         let changes = vec![OlapChange::Table(TableChange::Removed(table))];
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(result.is_ok(), "Should allow dropping FullyManaged tables");
+        assert!(
+            result.is_empty(),
+            "Should allow dropping FullyManaged tables"
+        );
     }
 
     #[test]
@@ -781,13 +782,7 @@ mod tests {
         let table = create_test_table("protected_table", LifeCycle::DeletionProtected);
         let changes = vec![OlapChange::Table(TableChange::Removed(table))];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block dropping DeletionProtected tables"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].table_name, "protected_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
@@ -799,13 +794,7 @@ mod tests {
         let table = create_test_table("external_table", LifeCycle::ExternallyManaged);
         let changes = vec![OlapChange::Table(TableChange::Removed(table))];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block dropping ExternallyManaged tables"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].table_name, "external_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
@@ -835,7 +824,7 @@ mod tests {
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
-            result.is_ok(),
+            result.is_empty(),
             "Should allow column removal from FullyManaged tables"
         );
     }
@@ -861,13 +850,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block column removal from DeletionProtected tables"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].table_name, "protected_table");
         assert_eq!(violations[0].violation_type, ViolationType::ColumnRemoval);
@@ -899,7 +882,7 @@ mod tests {
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
-            result.is_ok(),
+            result.is_empty(),
             "Should allow adding columns to DeletionProtected tables"
         );
     }
@@ -914,10 +897,7 @@ mod tests {
             OlapChange::Table(TableChange::Removed(table2)),
         ];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(result.is_err());
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 2, "Should collect all violations");
         assert!(violations
             .iter()
@@ -931,7 +911,7 @@ mod tests {
         let changes = vec![OlapChange::Table(TableChange::Added(table))];
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(result.is_ok(), "Should allow table additions");
+        assert!(result.is_empty(), "Should allow table additions");
     }
 
     /// Tests the critical case where the guard catches a lifecycle TRANSITION
@@ -955,13 +935,7 @@ mod tests {
             OlapChange::Table(TableChange::Added(added_table)),
         ];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block drop when target table has DeletionProtected lifecycle"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].table_name, "transitioning_table");
         assert_eq!(violations[0].violation_type, ViolationType::TableDrop);
@@ -980,13 +954,7 @@ mod tests {
             OlapChange::Table(TableChange::Added(added_table)),
         ];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block drop when target table has ExternallyManaged lifecycle"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
     }
@@ -1004,7 +972,7 @@ mod tests {
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
-            result.is_ok(),
+            result.is_empty(),
             "Should allow drop+create for FullyManaged tables"
         );
     }
@@ -1027,7 +995,7 @@ mod tests {
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
-            result.is_ok(),
+            result.is_empty(),
             "Should allow drop+create when user deliberately removes protection"
         );
     }
@@ -1045,7 +1013,7 @@ mod tests {
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
-            result.is_ok(),
+            result.is_empty(),
             "Should allow drop+create when user deliberately removes ExternallyManaged"
         );
     }
@@ -1062,7 +1030,7 @@ mod tests {
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
-            result.is_ok(),
+            result.is_empty(),
             "Should allow TTL changes on protected tables"
         );
     }
@@ -1079,7 +1047,7 @@ mod tests {
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
         assert!(
-            result.is_ok(),
+            result.is_empty(),
             "Should allow settings changes on protected tables"
         );
     }
@@ -1089,7 +1057,7 @@ mod tests {
         let changes: Vec<OlapChange> = vec![];
 
         let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(result.is_ok(), "Empty changes should pass validation");
+        assert!(result.is_empty(), "Empty changes should pass validation");
     }
 
     // =========================================================================
@@ -1117,13 +1085,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block column removal from ExternallyManaged tables"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].violation_type, ViolationType::ColumnRemoval);
         assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
@@ -1153,13 +1115,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block column addition to ExternallyManaged tables"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].violation_type, ViolationType::ColumnAddition);
         assert_eq!(violations[0].life_cycle, LifeCycle::ExternallyManaged);
@@ -1190,13 +1146,7 @@ mod tests {
             after,
         })];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block column modification on ExternallyManaged tables"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(
             violations[0].violation_type,
@@ -1215,13 +1165,7 @@ mod tests {
             table,
         })];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block TTL changes on ExternallyManaged tables"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(
             violations[0].violation_type,
@@ -1240,13 +1184,7 @@ mod tests {
             table,
         })];
 
-        let result = validate_lifecycle_compliance(&changes, "test_db");
-        assert!(
-            result.is_err(),
-            "Should block settings changes on ExternallyManaged tables"
-        );
-
-        let violations = result.unwrap_err();
+        let violations = validate_lifecycle_compliance(&changes, "test_db");
         assert_eq!(violations.len(), 1);
         assert_eq!(
             violations[0].violation_type,
