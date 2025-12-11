@@ -614,6 +614,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                         && READONLY_SETTINGS
                             .iter()
                             .find(|(setting, _)| *setting == key.as_str())
+                            // it is not readonly, or they *actually* differ
                             .map_or(true, |(_, default)| {
                                 // Treat missing as default value
                                 let before_effective =
