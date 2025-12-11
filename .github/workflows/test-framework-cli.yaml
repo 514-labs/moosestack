@@ -34,10 +34,44 @@ jobs:
       - name: Fetch main branch
         run: git fetch origin main:main
 
+      - name: Check if merge queue tests can be skipped
+        if: github.event_name == 'merge_group'
+        id: check-merge-skip
+        shell: bash
+        run: |
+          # In merge queue, HEAD is a squashed commit with one parent:
+          # - HEAD~1 is the base (last commit in queue, or main if queue is empty)
+          #
+          # If there's no diff between HEAD~1 and origin/main, then:
+          # 1. No other PRs are ahead in the merge queue
+          # 2. Main hasn't moved since the PR was tested
+          # Therefore, the exact same code was already validated by PR checks.
+
+          SQUASH_BASE=$(git rev-parse HEAD~1)
+          MAIN_HEAD=$(git rev-parse origin/main)
+
+          echo "Squash base: $SQUASH_BASE"
+          echo "Main branch head: $MAIN_HEAD"
+
+          if git diff --quiet HEAD~1 origin/main; then
+            echo "::notice title=⏭️ Skipping Merge Queue::No diff between squash base and main - PR checks already validated this code"
+            echo "skip_merge_queue=true" >> $GITHUB_OUTPUT
+          else
+            echo "::notice title=✅ Running Merge Queue::Base has changed or other PRs in queue - need to validate"
+            echo "skip_merge_queue=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Check for relevant changes
         id: check-changes
         shell: bash
         run: |
+          # Skip if merge queue determined we can skip (same code already tested)
+          if [[ "${{ steps.check-merge-skip.outputs.skip_merge_queue }}" == "true" ]]; then
+            echo "::notice title=⏭️ Skipping Tests::Merge queue base equals main - PR checks already validated this code"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           # Define patterns to check - one per line for readability
           PATTERNS=(
             "^\.github/workflows/test-framework-cli\.yaml"
