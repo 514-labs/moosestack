@@ -294,6 +294,14 @@ describe("Backward Compatibility Tests", function () {
 
         // Setup project with LATEST published version
         if (config.language === "typescript") {
+          let packageJson = path.join(TEST_PROJECT_DIR, "package.json");
+          let content = fs.readFileSync(packageJson, "utf-8");
+          content.replace(
+            "@confluentinc/kafka-javascript",
+            "@514labs/kafka-javascript",
+          );
+          fs.writeFileSync(packageJson, content);
+
           await setupTypeScriptProjectWithLatestNpm(
             TEST_PROJECT_DIR,
             config.templateName,
