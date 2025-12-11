@@ -974,7 +974,7 @@ def to_infra_map() -> dict:
 
     for name, api in get_ingest_apis().items():
         # Check if the Pydantic model allows extra fields (extra='allow')
-        # This is the Python equivalent of TypeScript's index signatures
+        # This is the Python equivalent of TypeScript's index signature `[key: string]: any`
         model_allows_extra = api._t.model_config.get("extra") == "allow"
 
         ingest_apis[name] = IngestApiConfig(
