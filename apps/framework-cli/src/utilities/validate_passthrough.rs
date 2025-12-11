@@ -676,6 +676,7 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                     _phantom_data: &'de PhantomData<()>,
                 }
                 impl<'de, MA: MapAccess<'de>> Serialize for MapPassThrough<'de, '_, MA> {
+                    #[allow(unused_assignments)]
                     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
                     where
                         S: Serializer,
