@@ -4,12 +4,14 @@ Workflow definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining and configuring workflows composed of tasks,
 including task dependencies, configurations, and execution functions.
 """
+
 import dataclasses
 from typing import Any, Optional, Dict, List, Callable, Union, Awaitable, Generic
 from pydantic import BaseModel
 
 from .types import TypedMooseResource, T_none, U_none
 from ._registry import _workflows
+
 
 @dataclasses.dataclass
 class TaskContext(Generic[T_none]):
@@ -18,10 +20,15 @@ class TaskContext(Generic[T_none]):
     - When a task declares an input model `T`, `input` is of type `T` (not Optional).
     - For no-input tasks (`T` is `None`), `input` is exactly `None`.
     """
+
     state: Dict[str, Any]
     input: T_none
 
-type TaskRunFunc[T_none, U_none] = Callable[[TaskContext[T_none]], Union[U_none, Awaitable[U_none]]]
+
+type TaskRunFunc[T_none, U_none] = Callable[
+    [TaskContext[T_none]], Union[U_none, Awaitable[U_none]]
+]
+
 
 @dataclasses.dataclass
 class TaskConfig(Generic[T_none, U_none]):
@@ -36,11 +43,15 @@ class TaskConfig(Generic[T_none, U_none]):
         timeout: Optional timeout string (e.g. "5m", "1h", "never").
         retries: Optional number of retry attempts.
     """
+
     run: TaskRunFunc[T_none, U_none]
     on_complete: Optional[list["Task[U_none, Any]"]] = None
-    on_cancel: Optional[Callable[[TaskContext[T_none]], Union[None, Awaitable[None]]]] = None
+    on_cancel: Optional[
+        Callable[[TaskContext[T_none]], Union[None, Awaitable[None]]]
+    ] = None
     timeout: Optional[str] = None
     retries: Optional[int] = None
+
 
 class Task(TypedMooseResource, Generic[T_none, U_none]):
     """Represents a task that can be executed as part of a workflow.
@@ -61,6 +72,7 @@ class Task(TypedMooseResource, Generic[T_none, U_none]):
         name (str): The name of the task.
         model_type (type[T]): The Pydantic model associated with this task's input.
     """
+
     config: TaskConfig[T_none, U_none]
 
     def __init__(self, name: str, config: TaskConfig[T_none, U_none], **kwargs):
@@ -70,17 +82,27 @@ class Task(TypedMooseResource, Generic[T_none, U_none]):
 
     @classmethod
     def _get_type(cls, keyword_args: dict):
-        t = keyword_args.get('t')
+        t = keyword_args.get("t")
         if t is None:
-            raise ValueError(f"Use `{cls.__name__}[T, U](name='...')` to supply both input and output types")
+            raise ValueError(
+                f"Use `{cls.__name__}[T, U](name='...')` to supply both input and output types"
+            )
         if not isinstance(t, tuple) or len(t) != 2:
-            raise ValueError(f"Use `{cls.__name__}[T, U](name='...')` to supply both input and output types")
+            raise ValueError(
+                f"Use `{cls.__name__}[T, U](name='...')` to supply both input and output types"
+            )
 
         input_type, output_type = t
-        if input_type is not None and (not isinstance(input_type, type) or not issubclass(input_type, BaseModel)):
+        if input_type is not None and (
+            not isinstance(input_type, type) or not issubclass(input_type, BaseModel)
+        ):
             raise ValueError(f"Input type {input_type} is not a Pydantic model or None")
-        if output_type is not None and (not isinstance(output_type, type) or not issubclass(output_type, BaseModel)):
-            raise ValueError(f"Output type {output_type} is not a Pydantic model or None")
+        if output_type is not None and (
+            not isinstance(output_type, type) or not issubclass(output_type, BaseModel)
+        ):
+            raise ValueError(
+                f"Output type {output_type} is not a Pydantic model or None"
+            )
         return t
 
     def _set_type(self, name: str, t: tuple[type[T_none], type[U_none]]):
@@ -88,6 +110,7 @@ class Task(TypedMooseResource, Generic[T_none, U_none]):
         self._t = input_type
         self._u = output_type
         self.name = name
+
 
 @dataclasses.dataclass
 class WorkflowConfig:
@@ -99,10 +122,12 @@ class WorkflowConfig:
         timeout: Optional timeout string for the entire workflow.
         schedule: Optional cron-like schedule string for recurring execution.
     """
+
     starting_task: Task[Any, Any]
     retries: Optional[int] = None
     timeout: Optional[str] = None
     schedule: Optional[str] = None
+
 
 class Workflow:
     """Represents a workflow composed of one or more tasks.
@@ -118,6 +143,7 @@ class Workflow:
         name (str): The name of the workflow.
         config (WorkflowConfig): The configuration for this workflow.
     """
+
     def __init__(self, name: str, config: WorkflowConfig):
         self.name = name
         self.config = config
@@ -130,6 +156,7 @@ class Workflow:
         Returns:
             list[str]: List of task names in the workflow, including all child tasks
         """
+
         def collect_task_names(task: Task) -> list[str]:
             names = [task.name]
             if task.config.on_complete:
@@ -148,6 +175,7 @@ class Workflow:
         Returns:
             Optional[Task]: The task if found, None otherwise
         """
+
         def find_task(task: Task) -> Optional[Task]:
             if task.name == task_name:
                 return task

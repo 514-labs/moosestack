@@ -1707,6 +1707,7 @@ async fn router(
             .await
         }
         (_, &hyper::Method::POST, ["admin", "plan"]) => {
+            // deprecated
             admin_plan_route(
                 req,
                 &project.authentication.admin_api_key,
@@ -3280,7 +3281,8 @@ async fn get_admin_reconciled_inframap(
     use crate::infrastructure::olap::clickhouse;
     use std::collections::HashSet;
 
-    // Create state storage based on project configuration
+    // Build state storage from project configuration.
+    // This provides access to the persisted infrastructure map (stored in Redis or ClickHouse).
     let state_storage = StateStorageBuilder::from_config(project)
         .clickhouse_config(Some(project.clickhouse_config.clone()))
         .redis_client(Some(redis_client))
@@ -3292,7 +3294,8 @@ async fn get_admin_reconciled_inframap(
             ))
         })?;
 
-    // Load current map from state storage (these are the tables under Moose management)
+    // Load current map from state storage (these are the tables under Moose management).
+    // We load once here and reconcile directly to avoid a double-load and potential race condition.
     let current_map = match state_storage.load_infrastructure_map().await {
         Ok(Some(infra_map)) => infra_map,
         Ok(None) => InfrastructureMap::empty_from_project(project),
@@ -3303,13 +3306,9 @@ async fn get_admin_reconciled_inframap(
         }
     };
 
-    if !project.features.olap {
-        return Ok(current_map);
-    }
-
-    // For admin endpoints, reconcile all currently managed tables and SQL resources only
+    // For admin endpoints, reconcile all currently managed tables and SQL resources only.
     // Pass the managed table IDs as target_table_ids - this ensures that
-    // reconcile_with_reality only operates on resources that are already managed by Moose
+    // reconcile_with_reality only operates on resources that are already managed by Moose.
     let target_table_ids: HashSet<String> = current_map
         .tables
         .values()
@@ -3319,18 +3318,30 @@ async fn get_admin_reconciled_inframap(
     let target_sql_resource_ids: HashSet<String> =
         current_map.sql_resources.keys().cloned().collect();
 
-    let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
+    // Reconcile the loaded map with actual database state (single load, no race condition).
+    // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
+    // may support reconciliation of other infrastructure types (e.g., Kafka topics).
+    let reconciled_map = if project.features.olap {
+        // Create the ClickHouse client for database introspection.
+        let clickhouse_client = clickhouse::create_client(project.clickhouse_config.clone());
+        crate::framework::core::plan::reconcile_with_reality(
+            project,
+            &current_map,
+            &target_table_ids,
+            &target_sql_resource_ids,
+            clickhouse_client,
+        )
+        .await?
+    } else {
+        debug!("OLAP disabled, skipping reality check reconciliation");
+        current_map
+    };
 
-    crate::framework::core::plan::reconcile_with_reality(
-        project,
-        &current_map,
-        &target_table_ids,
-        &target_sql_resource_ids,
-        olap_client,
-    )
-    .await
+    Ok(reconciled_map)
 }
 
+/// DEPRECATED: only for the admin/plan endpoint
+///
 /// Handles the admin plan endpoint, which compares a submitted infrastructure map
 /// with the server's reconciled managed infrastructure state and returns the changes that would be applied.
 ///

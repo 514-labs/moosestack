@@ -27,7 +27,6 @@ use crate::project::Project;
 use rdkafka::error::KafkaError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::mem;
 use std::path::Path;
 use tracing::{debug, error, info};
 
@@ -89,21 +88,7 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
 
     // Clone the map so we can modify it
     let mut reconciled_map = current_infra_map.clone();
-    reconciled_map.default_database = project.clickhouse_config.db_name.clone();
-
-    if current_infra_map
-        .tables
-        .iter()
-        .any(|(id, t)| id != &t.id(&project.clickhouse_config.db_name))
-    {
-        // fix up IDs where in the old version it does not contain the DB name
-        let existing_tables = mem::take(&mut reconciled_map.tables);
-        for (_, t) in existing_tables {
-            reconciled_map
-                .tables
-                .insert(t.id(&project.clickhouse_config.db_name), t);
-        }
-    }
+    reconciled_map.fixup_default_db(&project.clickhouse_config.db_name);
 
     // Create the reality checker with the provided client
     let reality_checker = InfraRealityChecker::new(olap_client);
@@ -157,7 +142,8 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
                             "Updating table {} in infrastructure map to match reality",
                             reality_table.name
                         );
-                        let mut table = reality_table.clone();
+                        // Canonicalize the reality table to ensure all invariants are satisfied
+                        let mut table = reality_table.clone().canonicalize();
                         // we refer to the life cycle value in the target infra map
                         // if missing, we then refer to the old infra map
                         // but never `reality_table.life_cycle` which is reconstructed in list_tables
@@ -241,8 +227,16 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             }
         }
     }
-    // Add unmapped tables
+    // Add unmapped tables (tables that exist in DB but not in current infrastructure map).
+    // We only adopt tables whose IDs are in target_table_ids to avoid accidentally managing
+    // external tables. For planning, target_table_ids contains the desired end-state tables,
+    // so we'll adopt pre-existing tables that match our target (detecting "already exists").
+    // For status queries, target_table_ids contains currently-managed tables only.
     for unmapped_table in discrepancies.unmapped_tables {
+        // Canonicalize tables from reality check to ensure they satisfy all invariants
+        // (order_by fallback, array nullability, primary_key clearing for unsupported engines)
+        let unmapped_table = unmapped_table.canonicalize();
+
         // default_database passed to `id` does not matter
         // tables from check_reality always contain non-None database
         let id = unmapped_table.id(&reconciled_map.default_database);
@@ -275,8 +269,9 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
             .remove(&missing_sql_resource_id);
     }
 
-    // Add unmapped SQL resources (exist in database but not in current infrastructure map)
-    // Only include resources whose names are in target_sql_resource_ids to avoid managing external resources
+    // Add unmapped SQL resources (exist in database but not in current infrastructure map).
+    // Same filtering logic as unmapped tables—only adopt resources in target_sql_resource_ids
+    // to avoid managing external views/materialized views.
     for unmapped_sql_resource in discrepancies.unmapped_sql_resources {
         let name = &unmapped_sql_resource.name;
 
@@ -426,27 +421,81 @@ pub struct InfraPlan {
     pub changes: InfraChanges,
 }
 
-/// Plans infrastructure changes by comparing the current state with the target state.
+/// Converts infrastructure changes to ordered executable operations.
 ///
-/// This function loads the current infrastructure map from state storage,
-/// reconciles it with the actual database state, and compares it with the target infrastructure map derived
-/// from the project configuration. It then generates a plan that describes the changes
-/// needed to transition from the current state to the target state.
+/// Used by both display and execution to guarantee consistency. Converts high-level
+/// infrastructure changes into a sequence of atomic OLAP operations.
+///
+/// The operations are ordered in two phases:
+/// 1. Teardown operations (drops, removals) executed first
+/// 2. Setup operations (creates, adds) executed second
 ///
 /// # Arguments
-/// * `state_storage` - State storage implementation for loading the current infrastructure map
-/// * `project` - Project configuration for building the target infrastructure map
+/// * `changes` - The infrastructure changes to convert
+/// * `default_database` - The default database name for table operations
 ///
 /// # Returns
-/// * `Result<(InfrastructureMap, InfraPlan), PlanningError>` - The current state and infrastructure plan, or an error
-pub async fn plan_changes(
-    state_storage: &dyn StateStorage,
+/// * `Result<Vec<SerializableOlapOperation>, PlanOrderingError>` - Ordered operations ready for execution
+///
+/// # Example
+/// ```ignore
+/// let operations = infra_changes_to_operations(&plan.changes, "my_database")?;
+/// // Display path
+/// show_operations(&operations);
+/// // Execution path
+/// execute_operations(&operations);
+/// // Both use the same operations!
+/// ```
+pub fn infra_changes_to_operations(
+    changes: &InfraChanges,
+    default_database: &str,
+) -> Result<
+    Vec<crate::infrastructure::olap::clickhouse::SerializableOlapOperation>,
+    crate::infrastructure::olap::ddl_ordering::PlanOrderingError,
+> {
+    use crate::infrastructure::olap::ddl_ordering::order_olap_changes;
+
+    // Convert OLAP changes to atomic operations with dependency ordering
+    let (teardown_ops, setup_ops) = order_olap_changes(&changes.olap_changes, default_database)?;
+
+    let mut operations = Vec::new();
+
+    // Add teardown operations first (drops, removals)
+    for op in teardown_ops {
+        operations.push(op.to_minimal());
+    }
+
+    // Add setup operations second (creates, adds)
+    for op in setup_ops {
+        operations.push(op.to_minimal());
+    }
+
+    Ok(operations)
+}
+
+/// Loads the target infrastructure map from the project code.
+///
+/// In production mode with a pre-built JSON file, loads from `.moose/infrastructure_map.json`.
+/// Otherwise, loads from user code (DMV2) or primitive map (DMV1).
+/// Always resolves runtime credentials after loading.
+///
+/// # Arguments
+/// * `project` - The project configuration
+///
+/// # Returns
+/// * `Result<InfrastructureMap, PlanningError>` - The target infrastructure map with resolved credentials
+pub async fn load_target_infrastructure(
     project: &Project,
-) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
+) -> Result<InfrastructureMap, PlanningError> {
     let json_path = Path::new(".moose/infrastructure_map.json");
     let mut target_infra_map = if project.is_production && json_path.exists() {
         // Load from prebuilt JSON (created by moose check without credentials)
-        InfrastructureMap::load_from_json(json_path).map_err(|e| PlanningError::Other(e.into()))?
+        let mut infra_map = InfrastructureMap::load_from_json(json_path)
+            .map_err(|e| PlanningError::Other(e.into()))?;
+
+        infra_map.fixup_default_db(&project.clickhouse_config.db_name);
+
+        infra_map
     } else {
         if project.is_production && project.is_docker_image() {
             error!("Docker Build images should have the infrastructure map already created and embedded");
@@ -473,7 +522,51 @@ pub async fn plan_changes(
             ))
         })?;
 
-    let current_infra_map = state_storage.load_infrastructure_map().await?;
+    Ok(target_infra_map)
+}
+
+/// Loads the current infrastructure state from storage and reconciles with reality.
+///
+/// This function loads the persisted state from storage, then reconciles it with the actual
+/// database state to handle any manual changes or drift.
+///
+/// # Why `target_table_ids` and `target_sql_resource_ids` are required
+///
+/// During reconciliation, we discover "unmapped" tables—tables that exist in the database but
+/// are not in the current infrastructure map. We need to decide which of these to adopt into
+/// the reconciled state. The caller provides the filter criteria because different use cases
+/// need different behavior:
+///
+/// - **Planning (`plan_changes`)**: Passes **target** infrastructure IDs. This handles the edge
+///   case where a table exists in the DB (e.g., manually created or from a previous deployment)
+///   but isn't in our current state. By adopting tables that match our target, the diff will
+///   correctly show "table already exists" instead of "create table" (which would fail).
+///
+/// - **Status/Admin endpoints**: Passes **current** managed IDs. We only want to show and
+///   reconcile tables that Moose is actively managing, not external tables that happen to
+///   exist in the same database.
+///
+/// We cannot simply compute these IDs from the loaded map because:
+/// 1. For planning, we need the *target* IDs which aren't available until after loading
+/// 2. Different callers have legitimately different filtering requirements
+///
+/// # Arguments
+/// * `project` - The project configuration
+/// * `storage` - State storage implementation
+/// * `olap_client` - Client for querying actual database state
+/// * `target_table_ids` - Filter for unmapped tables: only adopt tables whose IDs are in this set
+/// * `target_sql_resource_ids` - Filter for unmapped SQL resources: only adopt resources in this set
+///
+/// # Returns
+/// * `Result<InfrastructureMap, PlanningError>` - The reconciled current state
+pub async fn load_reconciled_infrastructure<T: OlapOperations>(
+    project: &Project,
+    storage: &dyn StateStorage,
+    olap_client: T,
+    target_table_ids: &HashSet<String>,
+    target_sql_resource_ids: &HashSet<String>,
+) -> Result<InfrastructureMap, PlanningError> {
+    let current_infra_map = storage.load_infrastructure_map().await?;
 
     debug!(
         "Current infrastructure map: {}",
@@ -486,18 +579,11 @@ pub async fn plan_changes(
 
     // Reconcile the current map with reality before diffing, but only if OLAP is enabled
     let reconciled_map = if project.features.olap {
-        // Plan changes, reconciling with reality
-        let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
-
         reconcile_with_reality(
             project,
             &current_map_or_empty,
-            &target_infra_map
-                .tables
-                .values()
-                .map(|t| t.id(&target_infra_map.default_database))
-                .collect(),
-            &target_infra_map.sql_resources.keys().cloned().collect(),
+            target_table_ids,
+            target_sql_resource_ids,
             olap_client,
         )
         .await?
@@ -512,9 +598,47 @@ pub async fn plan_changes(
             .unwrap_or("Could not serialize reconciled infrastructure map".to_string())
     );
 
-    // Normalize both infra maps, same as remote_plan
-    let reconciled_map = reconciled_map.normalize();
-    let target_infra_map = target_infra_map.normalize();
+    Ok(reconciled_map)
+}
+
+/// Plans infrastructure changes by comparing the current state with the target state.
+///
+/// This function loads the current infrastructure map from state storage,
+/// reconciles it with the actual database state, and compares it with the target infrastructure map derived
+/// from the project configuration. It then generates a plan that describes the changes
+/// needed to transition from the current state to the target state.
+///
+/// # Arguments
+/// * `state_storage` - State storage implementation for loading the current infrastructure map
+/// * `project` - Project configuration for building the target infrastructure map
+///
+/// # Returns
+/// * `Result<(InfrastructureMap, InfraPlan), PlanningError>` - The current state and infrastructure plan, or an error
+pub async fn plan_changes(
+    state_storage: &dyn StateStorage,
+    project: &Project,
+) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
+    // Load target state from project code
+    let target_infra_map = load_target_infrastructure(project).await?;
+
+    // Load and reconcile current state
+    let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
+    let target_table_ids: HashSet<String> = target_infra_map
+        .tables
+        .values()
+        .map(|t| t.id(&target_infra_map.default_database))
+        .collect();
+    let target_sql_resource_ids: HashSet<String> =
+        target_infra_map.sql_resources.keys().cloned().collect();
+
+    let reconciled_map = load_reconciled_infrastructure(
+        project,
+        state_storage,
+        olap_client,
+        &target_table_ids,
+        &target_sql_resource_ids,
+    )
+    .await?;
 
     // Use the reconciled map for diffing with ClickHouse-specific strategy
     // Pass ignore_ops so the diff can normalize tables internally for comparison
@@ -1402,5 +1526,72 @@ mod tests {
         assert_eq!(reconciled.sql_resources.len(), 1);
         let reconciled_view = reconciled.sql_resources.get(&reality_view.name).unwrap();
         assert_eq!(reconciled_view.setup, reality_view.setup);
+    }
+
+    #[test]
+    fn test_infra_changes_to_operations_deterministic() {
+        // Test that calling the function multiple times with the same input
+        // produces identical results (deterministic behavior)
+        let table = create_test_table("test_table");
+        let changes = InfraChanges {
+            olap_changes: vec![OlapChange::Table(TableChange::Added(table))],
+            processes_changes: vec![],
+            api_changes: vec![],
+            web_app_changes: vec![],
+            streaming_engine_changes: vec![],
+            filtered_olap_changes: vec![],
+        };
+
+        let ops1 = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
+        let ops2 = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        // Same input should produce identical output
+        assert_eq!(ops1.len(), ops2.len());
+        assert_eq!(ops1, ops2);
+    }
+
+    #[test]
+    fn test_infra_changes_to_operations_empty() {
+        // Test that empty changes produce empty operations
+        let changes = InfraChanges {
+            olap_changes: vec![],
+            processes_changes: vec![],
+            api_changes: vec![],
+            web_app_changes: vec![],
+            streaming_engine_changes: vec![],
+            filtered_olap_changes: vec![],
+        };
+
+        let ops = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
+        assert_eq!(ops.len(), 0);
+    }
+
+    #[test]
+    fn test_display_equals_execution() {
+        // This test ensures that display and execution use the same conversion logic
+        // by verifying that MigrationPlan::from_infra_plan uses infra_changes_to_operations
+        let table = create_test_table("test_table");
+        let changes = InfraChanges {
+            olap_changes: vec![OlapChange::Table(TableChange::Added(table))],
+            processes_changes: vec![],
+            api_changes: vec![],
+            web_app_changes: vec![],
+            streaming_engine_changes: vec![],
+            filtered_olap_changes: vec![],
+        };
+
+        // Get operations directly from the conversion function
+        let direct_ops = infra_changes_to_operations(&changes, DEFAULT_DATABASE_NAME).unwrap();
+
+        // Get operations via MigrationPlan (the execution path)
+        let migration_plan =
+            crate::framework::core::migration_plan::MigrationPlan::from_infra_plan(
+                &changes,
+                DEFAULT_DATABASE_NAME,
+            )
+            .unwrap();
+
+        // They should be identical - this is the critical guarantee
+        assert_eq!(direct_ops, migration_plan.operations);
     }
 }

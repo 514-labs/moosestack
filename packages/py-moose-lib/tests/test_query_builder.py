@@ -14,15 +14,19 @@ class Bar(BaseModel):
 
 
 def test_simple_select_and_where():
-    bar_model = IngestPipeline[Bar]("Bar", IngestPipelineConfig(
-        ingest=False,
-        stream=True,
-        table=True,
-        dead_letter_queue=True
-    ))
+    bar_model = IngestPipeline[Bar](
+        "Bar",
+        IngestPipelineConfig(
+            ingest=False, stream=True, table=True, dead_letter_queue=True
+        ),
+    )
     bar_cols = bar_model.get_table().cols
 
-    q1 = Query().from_(bar_model.get_table()).select(bar_cols.has_text, bar_cols.text_length)
+    q1 = (
+        Query()
+        .from_(bar_model.get_table())
+        .select(bar_cols.has_text, bar_cols.text_length)
+    )
     assert q1.to_sql() == 'SELECT "Bar"."has_text", "Bar"."text_length" FROM Bar'
 
     q2 = (
@@ -32,7 +36,10 @@ def test_simple_select_and_where():
         .where(col(bar_cols.has_text).eq(True))
     )
     sql, params = q2.to_sql_and_params()
-    assert sql == 'SELECT "Bar"."has_text", "Bar"."text_length" FROM Bar WHERE "Bar"."has_text" = {p0: Bool}'
+    assert (
+        sql
+        == 'SELECT "Bar"."has_text", "Bar"."text_length" FROM Bar WHERE "Bar"."has_text" = {p0: Bool}'
+    )
     assert params == {"p0": True}
 
 
@@ -47,10 +54,16 @@ def test_table_with_database_config():
     table_without_db = OlapTable[TestModel]("my_table_no_db", OlapConfig())
 
     # Table with database
-    table_with_db = OlapTable[TestModel]("my_table_with_db", OlapConfig(database="my_database"))
+    table_with_db = OlapTable[TestModel](
+        "my_table_with_db", OlapConfig(database="my_database")
+    )
 
     # Test Query builder with table that has database
-    q1 = Query().from_(table_with_db).select(table_with_db.cols.id, table_with_db.cols.name)
+    q1 = (
+        Query()
+        .from_(table_with_db)
+        .select(table_with_db.cols.id, table_with_db.cols.name)
+    )
     sql1 = q1.to_sql()
     # The Query builder should handle the database-qualified table reference
     assert "my_database" in sql1 or "my_table" in sql1
@@ -72,13 +85,13 @@ def test_table_with_database_config():
             value = variables[variable_name]
             if isinstance(value, OlapTable) and value.config.database:
                 # Should use two separate Identifier parameters
-                params[variable_name] = f'{{p{i}: Identifier}}.{{p{i + 1}: Identifier}}'
-                values[f'p{i}'] = value.config.database
-                values[f'p{i + 1}'] = value.name
+                params[variable_name] = f"{{p{i}: Identifier}}.{{p{i + 1}: Identifier}}"
+                values[f"p{i}"] = value.config.database
+                values[f"p{i + 1}"] = value.name
                 i += 2
             else:
-                params[variable_name] = f'{{p{i}: Identifier}}'
-                values[f'p{i}'] = value.name
+                params[variable_name] = f"{{p{i}: Identifier}}"
+                values[f"p{i}"] = value.name
                 i += 1
 
     clickhouse_query = template.format_map(params)
@@ -96,13 +109,15 @@ def test_table_with_database_config():
         if variable_name:
             value = variables_no_db[variable_name]
             if isinstance(value, OlapTable) and value.config.database:
-                params_no_db[variable_name] = f'{{p{i}: Identifier}}.{{p{i + 1}: Identifier}}'
-                values_no_db[f'p{i}'] = value.config.database
-                values_no_db[f'p{i + 1}'] = value.name
+                params_no_db[variable_name] = (
+                    f"{{p{i}: Identifier}}.{{p{i + 1}: Identifier}}"
+                )
+                values_no_db[f"p{i}"] = value.config.database
+                values_no_db[f"p{i + 1}"] = value.name
                 i += 2
             else:
-                params_no_db[variable_name] = f'{{p{i}: Identifier}}'
-                values_no_db[f'p{i}'] = value.name
+                params_no_db[variable_name] = f"{{p{i}: Identifier}}"
+                values_no_db[f"p{i}"] = value.name
                 i += 1
 
     clickhouse_query_no_db = template.format_map(params_no_db)

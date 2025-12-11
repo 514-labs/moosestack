@@ -42,19 +42,25 @@ use super::infrastructure::sql_resource::SqlResource;
 use super::infrastructure::table::{Column, OrderBy, Table};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
-use super::infrastructure::view::View;
+use super::infrastructure::view::{CustomView, View};
 use super::partial_infrastructure_map::LifeCycle;
 use super::partial_infrastructure_map::PartialInfrastructureMap;
 use super::primitive_map::PrimitiveMap;
 use crate::cli::display::{show_message_wrapper, Message, MessageType};
 use crate::framework::core::infra_reality_checker::find_table_from_infra_map;
+use crate::framework::core::infrastructure::materialized_view::MaterializedView;
 use crate::framework::core::infrastructure_map::Change::Added;
+use crate::framework::core::lifecycle_filter;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
 use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+use crate::infrastructure::olap::clickhouse::sql_parser::{
+    extract_source_tables_from_query, parse_create_materialized_view,
+};
+use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
@@ -63,8 +69,8 @@ use anyhow::{Context, Result};
 use protobuf::{EnumOrUnknown, Message as ProtoMessage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
+use std::{fs, mem};
 
 /// Strategy trait for handling database-specific table diffing logic
 ///
@@ -454,6 +460,15 @@ pub enum ProcessChange {
     OrchestrationWorker(Change<OrchestrationWorker>),
 }
 
+/// Represents a change that was blocked by lifecycle policies
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilteredChange {
+    /// The change that was blocked
+    pub change: OlapChange,
+    /// The reason the change was blocked
+    pub reason: String,
+}
+
 /// Collection of all changes detected between two infrastructure states
 ///
 /// This struct aggregates changes across all parts of the infrastructure
@@ -470,18 +485,23 @@ pub struct InfraChanges {
     pub web_app_changes: Vec<WebAppChange>,
     /// Changes to streaming components
     pub streaming_engine_changes: Vec<StreamingChange>,
+    /// Changes that were filtered out due to lifecycle policies
+    #[serde(default)]
+    pub filtered_olap_changes: Vec<FilteredChange>,
 }
 
 impl InfraChanges {
     /// Checks if there are any changes in this collection
     ///
     /// Returns true if all change vectors are empty, false otherwise.
+    /// This includes filtered changes so users see feedback about blocked operations.
     pub fn is_empty(&self) -> bool {
         self.olap_changes.is_empty()
             && self.processes_changes.is_empty()
             && self.api_changes.is_empty()
             && self.web_app_changes.is_empty()
             && self.streaming_engine_changes.is_empty()
+            && self.filtered_olap_changes.is_empty()
     }
 }
 
@@ -808,6 +828,7 @@ impl InfrastructureMap {
             api_changes,
             streaming_engine_changes,
             web_app_changes: vec![],
+            filtered_olap_changes: vec![],
         }
     }
 
@@ -817,7 +838,7 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// A vector of `StreamingChange` objects for topic creation
-    pub fn init_topics(&self) -> Vec<StreamingChange> {
+    fn init_topics(&self) -> Vec<StreamingChange> {
         self.topics
             .values()
             .map(|topic| StreamingChange::Topic(Change::<Topic>::Added(Box::new(topic.clone()))))
@@ -862,7 +883,7 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// A vector of `OlapChange` objects for table creation
-    pub fn init_tables(&self) -> Vec<OlapChange> {
+    fn init_tables(&self) -> Vec<OlapChange> {
         self.tables
             .values()
             .map(|table| OlapChange::Table(TableChange::Added(table.clone())))
@@ -963,7 +984,7 @@ impl InfrastructureMap {
         table_diff_strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
         is_production: bool,
-        ignore_ops: &[crate::infrastructure::olap::clickhouse::IgnorableOperation],
+        ignore_ops: &[IgnorableOperation],
     ) -> InfraChanges {
         let mut changes = InfraChanges::default();
 
@@ -996,6 +1017,7 @@ impl InfrastructureMap {
             &self.tables,
             &target_map.tables,
             &mut changes.olap_changes,
+            &mut changes.filtered_olap_changes,
             table_diff_strategy,
             respect_life_cycle,
             &target_map.default_database,
@@ -1663,7 +1685,7 @@ impl InfrastructureMap {
     /// * `self_sql_resources` - HashMap of source SQL resources to compare from
     /// * `target_sql_resources` - HashMap of target SQL resources to compare against
     /// * `olap_changes` - Mutable vector to collect the identified changes
-    pub fn diff_sql_resources(
+    fn diff_sql_resources(
         self_sql_resources: &HashMap<String, SqlResource>,
         target_sql_resources: &HashMap<String, SqlResource>,
         olap_changes: &mut Vec<OlapChange>,
@@ -1936,13 +1958,16 @@ impl InfrastructureMap {
     /// * `self_tables` - HashMap of source tables to compare from
     /// * `target_tables` - HashMap of target tables to compare against
     /// * `olap_changes` - Mutable vector to collect the identified changes
+    /// * `filtered_changes` - Mutable vector to collect changes blocked by lifecycle policies
     /// * `strategy` - Strategy for handling database-specific table diffing logic
     /// * `default_database` - The configured default database name
     /// * `ignore_ops` - Operations to ignore during comparison (e.g., ModifyPartitionBy)
-    pub fn diff_tables_with_strategy(
+    #[allow(clippy::too_many_arguments)]
+    fn diff_tables_with_strategy(
         self_tables: &HashMap<String, Table>,
         target_tables: &HashMap<String, Table>,
         olap_changes: &mut Vec<OlapChange>,
+        filtered_changes: &mut Vec<FilteredChange>,
         strategy: &dyn TableDiffStrategy,
         respect_life_cycle: bool,
         default_database: &str,
@@ -2017,35 +2042,33 @@ impl InfrastructureMap {
                             "Table '{}' has changes but is externally managed - skipping update",
                             table.name
                         );
+                        // Record the blocked update in filtered_changes for user visibility
+                        let column_changes = compute_table_columns_diff(table, target_table);
+                        let order_by_change = OrderByChange {
+                            before: table.order_by.clone(),
+                            after: target_table.order_by.clone(),
+                        };
+                        let partition_by_change = PartitionByChange {
+                            before: normalized_table.partition_by.clone(),
+                            after: normalized_target.partition_by.clone(),
+                        };
+                        filtered_changes.push(FilteredChange {
+                            change: OlapChange::Table(TableChange::Updated {
+                                name: table.name.clone(),
+                                column_changes,
+                                order_by_change,
+                                partition_by_change,
+                                before: table.clone(),
+                                after: target_table.clone(),
+                            }),
+                            reason: format!(
+                                "Table '{}' has ExternallyManaged lifecycle - update blocked",
+                                table.display_name()
+                            ),
+                        });
                     } else {
                         // Compute the basic diff components
-                        let mut column_changes = compute_table_columns_diff(table, target_table);
-
-                        // For DeletionProtected tables, filter out destructive column changes
-                        if target_table.life_cycle == LifeCycle::DeletionProtected
-                            && respect_life_cycle
-                        {
-                            let original_len = column_changes.len();
-                            column_changes.retain(|change| match change {
-                                ColumnChange::Removed(_) => {
-                                    tracing::debug!(
-                                        "Filtering out column removal for deletion-protected table '{}'",
-                                        table.name
-                                    );
-                                    false // Remove destructive column removals
-                                }
-                                ColumnChange::Added { .. } => true, // Allow additive changes
-                                ColumnChange::Updated { .. } => true, // Allow column updates
-                            });
-
-                            if original_len != column_changes.len() {
-                                tracing::info!(
-                                    "Filtered {} destructive column changes for deletion-protected table '{}'",
-                                    original_len - column_changes.len(),
-                                    table.name
-                                );
-                            }
-                        }
+                        let column_changes = compute_table_columns_diff(table, target_table);
 
                         // Compute PARTITION BY changes from normalized tables to respect ignore_ops
                         // Using normalized tables ensures that ignored operations don't incorrectly
@@ -2084,8 +2107,8 @@ impl InfrastructureMap {
                         // Detect and emit table-level TTL changes
                         // Use normalized comparison to avoid false positives from ClickHouse's TTL normalization
                         if !ttl_expressions_are_equivalent(
-                            &table.table_ttl_setting,
-                            &target_table.table_ttl_setting,
+                            &normalized_table.table_ttl_setting,
+                            &normalized_target.table_ttl_setting,
                         ) {
                             tracing::debug!(
                                 "Table '{}' has table-level TTL change: {:?} -> {:?}",
@@ -2127,10 +2150,26 @@ impl InfrastructureMap {
                                 default_database,
                             );
 
+                            // Apply lifecycle filtering to respect lifecycle constraints
+                            // This handles both:
+                            // 1. Strategies that convert updates to drop+create (blocks both Removed AND Added for protected tables)
+                            // 2. Strategies that return Updated (filters out column removals for DeletionProtected tables)
+                            let applied_changes: Vec<OlapChange> = if respect_life_cycle {
+                                let filter_result = lifecycle_filter::apply_lifecycle_filter(
+                                    strategy_changes,
+                                    target_table,
+                                    default_database,
+                                );
+                                filtered_changes.extend(filter_result.filtered);
+                                filter_result.applied
+                            } else {
+                                strategy_changes
+                            };
+
                             // Only count as a table update if the strategy returned actual operations
-                            if !strategy_changes.is_empty() {
+                            if !applied_changes.is_empty() {
                                 table_updates += 1;
-                                olap_changes.extend(strategy_changes);
+                                olap_changes.extend(applied_changes);
                             }
                         }
                     }
@@ -2150,14 +2189,28 @@ impl InfrastructureMap {
                     (LifeCycle::DeletionProtected, true) => {
                         tracing::debug!(
                             "Table '{}' marked for removal but is deletion-protected - skipping removal",
-                            table.name
+                            table.display_name()
                         );
+                        filtered_changes.push(FilteredChange {
+                            change: OlapChange::Table(TableChange::Removed(table.clone())),
+                            reason: format!(
+                                "Table '{}' has DeletionProtected lifecycle - removal blocked",
+                                table.display_name()
+                            ),
+                        });
                     }
                     (LifeCycle::ExternallyManaged, true) => {
                         tracing::debug!(
                             "Table '{}' marked for removal but is externally managed - skipping removal",
-                            table.name
+                            table.display_name()
                         );
+                        filtered_changes.push(FilteredChange {
+                            change: OlapChange::Table(TableChange::Removed(table.clone())),
+                            reason: format!(
+                                "Table '{}' has ExternallyManaged lifecycle - removal blocked",
+                                table.display_name()
+                            ),
+                        });
                     }
                 }
             }
@@ -2172,6 +2225,14 @@ impl InfrastructureMap {
                         "Table '{}' marked for addition but is externally managed - skipping addition",
                         table.name
                     );
+                    // Record the blocked addition in filtered_changes for user visibility
+                    filtered_changes.push(FilteredChange {
+                        change: OlapChange::Table(TableChange::Added(table.clone())),
+                        reason: format!(
+                            "Table '{}' has ExternallyManaged lifecycle - addition blocked",
+                            table.display_name()
+                        ),
+                    });
                 } else {
                     tracing::debug!(
                         "Table '{}' added with {} columns",
@@ -2195,6 +2256,8 @@ impl InfrastructureMap {
         );
     }
 
+    // TODO: this function is only used for single-table `HashMap`s in check_reality
+    // we should clean up the interface
     /// Compare tables between two infrastructure maps and compute the differences
     ///
     /// This is a backward-compatible version that uses the default table diff strategy.
@@ -2213,10 +2276,14 @@ impl InfrastructureMap {
         default_database: &str,
     ) {
         let default_strategy = DefaultTableDiffStrategy;
+        // Dummy filtered object to call the function
+        // unused, see TODO note above
+        let mut filtered = Vec::new();
         Self::diff_tables_with_strategy(
             self_tables,
             target_tables,
             olap_changes,
+            &mut filtered,
             &default_strategy,
             respect_life_cycle,
             default_database,
@@ -2302,7 +2369,8 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// * `Option<TableChange>` - None if identical, Some(change) if different
-    pub fn simple_table_diff_with_lifecycle(
+    #[cfg(test)]
+    fn simple_table_diff_with_lifecycle(
         table: &Table,
         target_table: &Table,
     ) -> Option<TableChange> {
@@ -2399,6 +2467,9 @@ impl InfrastructureMap {
 
     /// Loads an infrastructure map from a JSON file
     ///
+    /// Canonicalizes tables to handle backward compatibility with JSON files
+    /// created by older CLI versions (e.g., Docker images built before canonicalization).
+    ///
     /// # Arguments
     /// * `path` - The path to the JSON file
     ///
@@ -2406,8 +2477,8 @@ impl InfrastructureMap {
     /// A Result containing either the loaded map or an IO error
     pub fn load_from_json(path: &Path) -> Result<Self, std::io::Error> {
         let json = fs::read_to_string(path)?;
-        let infra_map = serde_json::from_str(&json)?;
-        Ok(infra_map)
+        let infra_map: InfrastructureMap = serde_json::from_str(&json)?;
+        Ok(infra_map.canonicalize_tables())
     }
 
     /// Resolves runtime environment variables for engine credentials and table settings.
@@ -2573,9 +2644,12 @@ impl InfrastructureMap {
             .context("Failed to get InfrastructureMap from Redis")?;
 
         if let Some(encoded) = encoded {
-            let decoded = InfrastructureMap::from_proto(encoded).map_err(|e| {
-                anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
-            })?;
+            // Canonicalize tables to handle backward compatibility with data saved by older CLI versions
+            let decoded = InfrastructureMap::from_proto(encoded)
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
+                })?
+                .canonicalize_tables();
             Ok(Some(decoded))
         } else {
             Ok(None)
@@ -2602,9 +2676,12 @@ impl InfrastructureMap {
         }
 
         if let Ok(Some(encoded)) = encoded {
-            let decoded = InfrastructureMap::from_proto(encoded).map_err(|e| {
-                anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
-            })?;
+            // Canonicalize tables to handle backward compatibility with data saved by older CLI versions
+            let decoded = InfrastructureMap::from_proto(encoded)
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to decode InfrastructureMap from proto: {}", e)
+                })?
+                .canonicalize_tables();
             Ok(Some(decoded))
         } else {
             Ok(None)
@@ -2960,43 +3037,65 @@ impl InfrastructureMap {
         self.tables.values().find(|table| table.name == name)
     }
 
-    /// Normalizes the infrastructure map for backward compatibility
-    ///
-    /// This applies the same normalization logic as partial_infrastructure_map.rs
-    /// to ensure consistent comparison between old and new infrastructure maps.
-    ///
-    /// Specifically:
-    /// - Falls back to primary key columns for order_by when it's empty (for MergeTree tables)
-    /// - Ensures arrays are always required=true (ClickHouse doesn't support Nullable(Array))
-    /// - Converts old SqlResource entries that are actually materialized views to structured MaterializedView
-    /// - Converts old SqlResource entries that are actually views to structured CustomView
-    ///
-    /// This is needed because older CLI versions didn't persist order_by when it was
-    /// derived from primary key columns, and older moose-lib versions emitted MVs/Views as SqlResources.
-    pub fn normalize(mut self) -> Self {
-        use crate::framework::core::infrastructure::materialized_view::MaterializedView;
-        use crate::framework::core::infrastructure::table::ColumnType;
-        use crate::framework::core::infrastructure::view::CustomView;
-        use crate::infrastructure::olap::clickhouse::sql_parser::{
-            extract_source_tables_from_query, parse_create_materialized_view,
-        };
-
-        self.tables.values_mut().for_each(|table| {
-            // Fall back to primary key columns if order_by is empty for MergeTree engines
-            // This ensures backward compatibility when order_by isn't explicitly set
-            // We only do this for MergeTree family to avoid breaking S3 tables
-            if table.order_by.is_empty() {
-                table.order_by = table.order_by_with_fallback();
+    /// Masks sensitive credentials before exporting to JSON migration files.
+    pub fn mask_credentials_for_json_export(mut self) -> Self {
+        for table in self.tables.values_mut() {
+            match &mut table.engine {
+                ClickhouseEngine::S3Queue {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                }
+                | ClickhouseEngine::S3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                }
+                | ClickhouseEngine::IcebergS3 {
+                    aws_access_key_id,
+                    aws_secret_access_key,
+                    ..
+                } => {
+                    if aws_access_key_id.is_some() {
+                        *aws_access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                    }
+                    if aws_secret_access_key.is_some() {
+                        *aws_secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
+                    }
+                }
+                _ => {}
             }
 
-            // Normalize columns: ClickHouse doesn't support Nullable(Array(...))
-            // Arrays must always be NOT NULL (required=true)
-            for col in &mut table.columns {
-                if matches!(col.data_type, ColumnType::Array { .. }) {
-                    col.required = true;
+            // Mask engine-specific sensitive settings (e.g., Kafka credentials)
+            if let Some(ref mut settings) = table.table_settings {
+                for key in table.engine.sensitive_settings() {
+                    if let Some(value) = settings.get_mut(*key) {
+                        *value = CREDENTIAL_PLACEHOLDER.to_string();
+                    }
                 }
             }
-        });
+        }
+
+        self
+    }
+
+    /// Canonicalizes all tables in the infrastructure map.
+    ///
+    /// This ensures all tables satisfy ClickHouse-specific invariants:
+    /// - MergeTree tables have an ORDER BY clause (falls back to primary key)
+    /// - Arrays are non-nullable (required=true)
+    /// - Engines that don't support PRIMARY KEY don't have primary_key flags on columns
+    ///
+    /// This method should be called after loading an infrastructure map from storage
+    /// to handle backward compatibility with data saved by older CLI versions.
+    ///
+    /// This method is idempotent - calling it multiple times produces the same result.
+    pub fn canonicalize_tables(mut self) -> Self {
+        self.tables = self
+            .tables
+            .into_iter()
+            .map(|(k, t)| (k, t.canonicalize()))
+            .collect();
 
         // Convert old SqlResource entries that are actually MVs or Views to structured types.
         // This handles backward compatibility with older moose-lib versions.
@@ -3083,48 +3182,6 @@ impl InfrastructureMap {
         // Remove converted SqlResources
         for key in sql_resources_to_remove {
             self.sql_resources.remove(&key);
-        }
-
-        self
-    }
-
-    /// Masks sensitive credentials before exporting to JSON migration files.
-    pub fn mask_credentials_for_json_export(mut self) -> Self {
-        for table in self.tables.values_mut() {
-            match &mut table.engine {
-                ClickhouseEngine::S3Queue {
-                    aws_access_key_id,
-                    aws_secret_access_key,
-                    ..
-                }
-                | ClickhouseEngine::S3 {
-                    aws_access_key_id,
-                    aws_secret_access_key,
-                    ..
-                }
-                | ClickhouseEngine::IcebergS3 {
-                    aws_access_key_id,
-                    aws_secret_access_key,
-                    ..
-                } => {
-                    if aws_access_key_id.is_some() {
-                        *aws_access_key_id = Some(CREDENTIAL_PLACEHOLDER.to_string());
-                    }
-                    if aws_secret_access_key.is_some() {
-                        *aws_secret_access_key = Some(CREDENTIAL_PLACEHOLDER.to_string());
-                    }
-                }
-                _ => {}
-            }
-
-            // Mask engine-specific sensitive settings (e.g., Kafka credentials)
-            if let Some(ref mut settings) = table.table_settings {
-                for key in table.engine.sensitive_settings() {
-                    if let Some(value) = settings.get_mut(*key) {
-                        *value = CREDENTIAL_PLACEHOLDER.to_string();
-                    }
-                }
-            }
         }
 
         self
@@ -3311,6 +3368,31 @@ impl InfrastructureMap {
             .values()
             .any(|endpoint| matches!(endpoint.api_type, APIType::EGRESS { .. }))
     }
+
+    pub fn fixup_default_db(&mut self, db_name: &str) {
+        self.default_database = db_name.to_string();
+        if self.tables.iter().any(|(id, t)| id != &t.id(db_name)) {
+            // fix up IDs where the default_database might be "local",
+            // or old versions which does not include DB name
+            let existing_tables = mem::take(&mut self.tables);
+
+            let mut table_id_mapping: HashMap<String, String> = HashMap::new();
+
+            for (old_id, t) in existing_tables {
+                let new_id = t.id(db_name);
+                self.tables.insert(new_id.clone(), t);
+                table_id_mapping.insert(old_id, new_id);
+            }
+
+            let syncs = mem::take(&mut self.topic_to_table_sync_processes);
+            for (_, mut sync) in syncs {
+                if let Some(new_id) = table_id_mapping.get(&sync.target_table_id) {
+                    sync.target_table_id = new_id.clone();
+                }
+                self.topic_to_table_sync_processes.insert(sync.id(), sync);
+            }
+        }
+    }
 }
 
 /// Compare two optional TTL expressions for equivalence, accounting for ClickHouse normalization.
@@ -3495,6 +3577,7 @@ pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnCh
     diff
 }
 
+#[cfg(test)]
 impl Default for InfrastructureMap {
     /// Creates a default empty infrastructure map
     ///
@@ -3879,6 +3962,330 @@ mod tests {
         assert_eq!(
             topic_additions, 0,
             "Externally managed topic should not be added"
+        );
+    }
+
+    /// Mock strategy that converts all updates to drop+create operations
+    /// This simulates ClickHouse behavior for ORDER BY changes
+    struct DropCreateStrategy;
+
+    impl super::TableDiffStrategy for DropCreateStrategy {
+        fn diff_table_update(
+            &self,
+            before: &Table,
+            after: &Table,
+            _column_changes: Vec<super::ColumnChange>,
+            _order_by_change: super::OrderByChange,
+            _partition_by_change: super::PartitionByChange,
+            _default_database: &str,
+        ) -> Vec<OlapChange> {
+            // Simulate strategy converting update to drop+create
+            vec![
+                OlapChange::Table(TableChange::Removed(before.clone())),
+                OlapChange::Table(TableChange::Added(after.clone())),
+            ]
+        }
+    }
+
+    #[test]
+    fn test_deletion_protected_table_blocks_strategy_drop() {
+        // Test that deletion protection works even when strategy converts update to drop+create
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        // Create a DeletionProtected table that will be "updated"
+        let mut before_table = super::diff_tests::create_test_table("protected_table", "1.0");
+        before_table.life_cycle = LifeCycle::DeletionProtected;
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+        after_table.columns.push(Column {
+            name: "name".to_string(),
+            data_type: ColumnType::String,
+            required: false,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        });
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        // Use the DropCreateStrategy which will try to emit drop+create
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // Verify the drop operation was filtered out
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 0,
+            "DeletionProtected table should block strategy-generated drop operation"
+        );
+
+        // The orphan addition should also be blocked to avoid "table already exists" errors
+        let table_additions = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
+            .count();
+        assert_eq!(
+            table_additions, 0,
+            "Orphan CREATE should be blocked when DROP is blocked for DeletionProtected tables"
+        );
+    }
+
+    #[test]
+    fn test_externally_managed_table_blocks_strategy_drop() {
+        // Test that ExternallyManaged tables also block strategy-generated drops
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("external_table", "1.0");
+        before_table.life_cycle = LifeCycle::ExternallyManaged;
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // Verify the drop operation was filtered out
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 0,
+            "ExternallyManaged table should block strategy-generated drop operation"
+        );
+    }
+
+    #[test]
+    fn test_fully_managed_table_allows_strategy_drop() {
+        // Test that FullyManaged tables allow strategy-generated drops
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("managed_table", "1.0");
+        before_table.life_cycle = LifeCycle::FullyManaged;
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // Verify both drop and create operations are present
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 1,
+            "FullyManaged table should allow strategy-generated drop operation"
+        );
+
+        let table_additions = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
+            .count();
+        assert_eq!(table_additions, 1, "Table addition should be present");
+    }
+
+    #[test]
+    fn test_lifecycle_transition_to_protected() {
+        // Test that lifecycle protection works when transitioning FROM FullyManaged TO DeletionProtected
+        // This is a critical edge case: the table starts as FullyManaged but should be protected
+        // because the TARGET state is DeletionProtected
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("table", "1.0");
+        before_table.life_cycle = LifeCycle::FullyManaged; // START as FullyManaged
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.life_cycle = LifeCycle::DeletionProtected; // TRANSITION to DeletionProtected
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            true, // respect_life_cycle = true
+            false,
+            &[],
+        );
+
+        // The drop should be blocked because TARGET lifecycle is DeletionProtected
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 0,
+            "DROP should be blocked when transitioning TO DeletionProtected lifecycle"
+        );
+
+        // The orphan CREATE should also be blocked
+        let table_additions = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Added(_))))
+            .count();
+        assert_eq!(
+            table_additions, 0,
+            "Orphan CREATE should be blocked when DROP is blocked during lifecycle transition"
+        );
+    }
+
+    #[test]
+    fn test_lifecycle_protection_can_be_disabled() {
+        // Test that lifecycle protection can be disabled with respect_life_cycle=false
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut before_table = super::diff_tests::create_test_table("protected_table", "1.0");
+        before_table.life_cycle = LifeCycle::DeletionProtected;
+        before_table.order_by = OrderBy::Fields(vec!["id".to_string()]);
+        before_table.columns = vec![Column {
+            name: "id".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }];
+
+        let mut after_table = before_table.clone();
+        after_table.order_by = OrderBy::Fields(vec!["id".to_string(), "name".to_string()]);
+
+        map1.tables
+            .insert(before_table.id(DEFAULT_DATABASE_NAME), before_table.clone());
+        map2.tables
+            .insert(after_table.id(DEFAULT_DATABASE_NAME), after_table.clone());
+
+        let changes = map1.diff_with_table_strategy(
+            &map2,
+            &DropCreateStrategy,
+            false, // respect_life_cycle = false
+            false,
+            &[],
+        );
+
+        // When lifecycle protection is disabled, drops should go through
+        let table_removals = changes
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::Removed(_))))
+            .count();
+        assert_eq!(
+            table_removals, 1,
+            "When respect_life_cycle=false, drops should not be blocked"
         );
     }
 }
@@ -5430,6 +5837,61 @@ mod diff_tests {
             ..base_col.clone()
         };
         assert!(!columns_are_equivalent(&col_with_mat, &col_without_mat));
+    }
+
+    #[test]
+    fn test_ignore_ttl_operations_with_other_changes() {
+        let mut map1 = InfrastructureMap::default();
+        let mut map2 = InfrastructureMap::default();
+
+        let mut table_before = super::diff_tests::create_test_table("test", "1.0");
+        table_before.table_ttl_setting = Some("ts + toIntervalDay(30)".to_string());
+
+        let mut table_after = table_before.clone();
+        table_after.table_ttl_setting = Some("ts + toIntervalDay(90)".to_string());
+        table_after.columns.push(Column {
+            name: "new_col".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        });
+
+        map1.tables
+            .insert(table_before.id(DEFAULT_DATABASE_NAME), table_before);
+        map2.tables
+            .insert(table_after.id(DEFAULT_DATABASE_NAME), table_after);
+
+        // With ignore: should NOT see TTL change
+        let changes_ignored = map1.diff_with_table_strategy(
+            &map2,
+            &DefaultTableDiffStrategy,
+            false,
+            false,
+            &[IgnorableOperation::ModifyTableTtl],
+        );
+        let ttl_ignored = changes_ignored
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::TtlChanged { .. })))
+            .count();
+        assert_eq!(ttl_ignored, 0, "TTL should be ignored");
+
+        // Without ignore: should see TTL change
+        let changes_not_ignored =
+            map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, false, false, &[]);
+        let ttl_not_ignored = changes_not_ignored
+            .olap_changes
+            .iter()
+            .filter(|c| matches!(c, OlapChange::Table(TableChange::TtlChanged { .. })))
+            .count();
+        assert_eq!(ttl_not_ignored, 1, "TTL should be detected");
     }
 }
 

@@ -27,6 +27,7 @@ import {
   cleanupLeftoverTestDirectories,
   setupTypeScriptProject,
   setupPythonProject,
+  logger,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -41,6 +42,8 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 
 const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => global.setTimeout(resolve, ms));
+
+const testLogger = logger.scope("dotenv-config-test");
 
 describe("typescript template tests - .env file configuration", function () {
   let devProcess: ChildProcess | null = null;
@@ -86,11 +89,14 @@ describe("typescript template tests - .env file configuration", function () {
     );
 
     // Start dev server
-    console.log("Starting dev server for .env configuration tests...");
+    testLogger.info("Starting dev server for .env configuration tests...");
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: TEST_PROJECT_DIR,
-      env: { ...process.env },
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      },
     });
 
     // Wait for server to start
@@ -102,7 +108,7 @@ describe("typescript template tests - .env file configuration", function () {
       "http://localhost:9992",
     );
 
-    console.log("Server started successfully!");
+    testLogger.info("Server started successfully!");
     // Brief wait to ensure server is fully ready
     await setTimeoutAsync(5000);
   });
@@ -134,7 +140,7 @@ describe("typescript template tests - .env file configuration", function () {
     expect(health).to.have.property("healthy");
     expect(health).to.have.property("unhealthy");
 
-    console.log(
+    testLogger.info(
       "✓ Server is running on port 9992 from .env.local (correct precedence)",
     );
   });
@@ -150,7 +156,7 @@ describe("typescript template tests - .env file configuration", function () {
     expect(health).to.have.property("healthy");
     expect(health).to.have.property("unhealthy");
 
-    console.log("✓ .env.local configuration is active");
+    testLogger.info("✓ .env.local configuration is active");
   });
 });
 
@@ -198,7 +204,9 @@ describe("python template tests - .env file configuration", function () {
     );
 
     // Start dev server
-    console.log("Starting dev server for Python .env configuration tests...");
+    testLogger.info(
+      "Starting dev server for Python .env configuration tests...",
+    );
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: TEST_PROJECT_DIR,
@@ -206,6 +214,7 @@ describe("python template tests - .env file configuration", function () {
         ...process.env,
         VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
         PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
       },
     });
 
@@ -218,7 +227,7 @@ describe("python template tests - .env file configuration", function () {
       "http://localhost:9982",
     );
 
-    console.log("Python server started successfully!");
+    testLogger.info("Python server started successfully!");
     // Brief wait to ensure server is fully ready
     await setTimeoutAsync(5000);
   });
@@ -250,7 +259,7 @@ describe("python template tests - .env file configuration", function () {
     expect(health).to.have.property("healthy");
     expect(health).to.have.property("unhealthy");
 
-    console.log(
+    testLogger.info(
       "✓ Python server is running on port 9982 from .env.local (correct precedence)",
     );
   });
@@ -266,6 +275,6 @@ describe("python template tests - .env file configuration", function () {
     expect(health).to.have.property("healthy");
     expect(health).to.have.property("unhealthy");
 
-    console.log("✓ Python .env.local configuration is active");
+    testLogger.info("✓ Python .env.local configuration is active");
   });
 });

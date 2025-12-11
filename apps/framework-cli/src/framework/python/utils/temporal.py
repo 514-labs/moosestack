@@ -2,7 +2,10 @@ from temporalio.client import Client, TLSConfig
 from typing import Dict, Any
 import os
 
-async def create_temporal_connection(temporal_url: str, namespace: str, client_cert: str, client_key: str, api_key: str) -> Client:
+
+async def create_temporal_connection(
+    temporal_url: str, namespace: str, client_cert: str, client_key: str, api_key: str
+) -> Client:
     """
     Create a connection to the Temporal server with appropriate authentication.
     """

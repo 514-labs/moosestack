@@ -6,6 +6,7 @@ of various Moose resources (tables, streams/topics, APIs) and functions
 to convert the user-defined resources (from `dmv2.py`) into a serializable
 JSON format expected by the Moose infrastructure management system.
 """
+
 from importlib import import_module
 from typing import Literal, Optional, List, Any, Dict, Union, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
@@ -24,15 +25,17 @@ from moose_lib.dmv2 import (
     get_custom_views,
     OlapTable,
     OlapConfig,
-    SqlResource
+    SqlResource,
 )
 from moose_lib.dmv2.stream import KafkaSchemaConfig
 from pydantic.alias_generators import to_camel
 from pydantic.json_schema import JsonSchemaValue
 
-model_config = ConfigDict(alias_generator=AliasGenerator(
-    serialization_alias=to_camel,
-))
+model_config = ConfigDict(
+    alias_generator=AliasGenerator(
+        serialization_alias=to_camel,
+    )
+)
 
 
 class Target(BaseModel):
@@ -44,6 +47,7 @@ class Target(BaseModel):
         version: Optional version of the target stream configuration.
         metadata: Optional metadata for the target stream.
     """
+
     kind: Literal["stream"]
     name: str
     version: Optional[str] = None
@@ -56,22 +60,26 @@ class Consumer(BaseModel):
     Attributes:
         version: Optional version of the consumer configuration.
     """
+
     version: Optional[str] = None
 
 
 class BaseEngineConfigDict(BaseModel):
     """Base engine configuration for all ClickHouse table engines."""
+
     model_config = model_config
     engine: str
 
 
 class MergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for MergeTree engine."""
+
     engine: Literal["MergeTree"] = "MergeTree"
 
 
 class ReplacingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplacingMergeTree engine."""
+
     engine: Literal["ReplacingMergeTree"] = "ReplacingMergeTree"
     ver: Optional[str] = None
     is_deleted: Optional[str] = None
@@ -79,23 +87,27 @@ class ReplacingMergeTreeConfigDict(BaseEngineConfigDict):
 
 class AggregatingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for AggregatingMergeTree engine."""
+
     engine: Literal["AggregatingMergeTree"] = "AggregatingMergeTree"
 
 
 class SummingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for SummingMergeTree engine."""
+
     engine: Literal["SummingMergeTree"] = "SummingMergeTree"
     columns: Optional[List[str]] = None
 
 
 class CollapsingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for CollapsingMergeTree engine."""
+
     engine: Literal["CollapsingMergeTree"] = "CollapsingMergeTree"
     sign: str
 
 
 class VersionedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for VersionedCollapsingMergeTree engine."""
+
     engine: Literal["VersionedCollapsingMergeTree"] = "VersionedCollapsingMergeTree"
     sign: str
     ver: str
@@ -103,6 +115,7 @@ class VersionedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
 
 class ReplicatedMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplicatedMergeTree engine."""
+
     engine: Literal["ReplicatedMergeTree"] = "ReplicatedMergeTree"
     keeper_path: Optional[str] = None
     replica_name: Optional[str] = None
@@ -110,6 +123,7 @@ class ReplicatedMergeTreeConfigDict(BaseEngineConfigDict):
 
 class ReplicatedReplacingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplicatedReplacingMergeTree engine."""
+
     engine: Literal["ReplicatedReplacingMergeTree"] = "ReplicatedReplacingMergeTree"
     keeper_path: Optional[str] = None
     replica_name: Optional[str] = None
@@ -119,6 +133,7 @@ class ReplicatedReplacingMergeTreeConfigDict(BaseEngineConfigDict):
 
 class ReplicatedAggregatingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplicatedAggregatingMergeTree engine."""
+
     engine: Literal["ReplicatedAggregatingMergeTree"] = "ReplicatedAggregatingMergeTree"
     keeper_path: Optional[str] = None
     replica_name: Optional[str] = None
@@ -126,6 +141,7 @@ class ReplicatedAggregatingMergeTreeConfigDict(BaseEngineConfigDict):
 
 class ReplicatedSummingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplicatedSummingMergeTree engine."""
+
     engine: Literal["ReplicatedSummingMergeTree"] = "ReplicatedSummingMergeTree"
     keeper_path: Optional[str] = None
     replica_name: Optional[str] = None
@@ -134,6 +150,7 @@ class ReplicatedSummingMergeTreeConfigDict(BaseEngineConfigDict):
 
 class ReplicatedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplicatedCollapsingMergeTree engine."""
+
     engine: Literal["ReplicatedCollapsingMergeTree"] = "ReplicatedCollapsingMergeTree"
     keeper_path: Optional[str] = None
     replica_name: Optional[str] = None
@@ -142,7 +159,10 @@ class ReplicatedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
 
 class ReplicatedVersionedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
     """Configuration for ReplicatedVersionedCollapsingMergeTree engine."""
-    engine: Literal["ReplicatedVersionedCollapsingMergeTree"] = "ReplicatedVersionedCollapsingMergeTree"
+
+    engine: Literal["ReplicatedVersionedCollapsingMergeTree"] = (
+        "ReplicatedVersionedCollapsingMergeTree"
+    )
     keeper_path: Optional[str] = None
     replica_name: Optional[str] = None
     sign: str
@@ -151,6 +171,7 @@ class ReplicatedVersionedCollapsingMergeTreeConfigDict(BaseEngineConfigDict):
 
 class S3QueueConfigDict(BaseEngineConfigDict):
     """Configuration for S3Queue engine with all specific fields."""
+
     engine: Literal["S3Queue"] = "S3Queue"
     s3_path: str
     format: str
@@ -162,6 +183,7 @@ class S3QueueConfigDict(BaseEngineConfigDict):
 
 class S3ConfigDict(BaseEngineConfigDict):
     """Configuration for S3 engine."""
+
     engine: Literal["S3"] = "S3"
     path: str
     format: str
@@ -174,6 +196,7 @@ class S3ConfigDict(BaseEngineConfigDict):
 
 class BufferConfigDict(BaseEngineConfigDict):
     """Configuration for Buffer engine."""
+
     engine: Literal["Buffer"] = "Buffer"
     target_database: str
     target_table: str
@@ -191,6 +214,7 @@ class BufferConfigDict(BaseEngineConfigDict):
 
 class DistributedConfigDict(BaseEngineConfigDict):
     """Configuration for Distributed engine."""
+
     engine: Literal["Distributed"] = "Distributed"
     cluster: str
     target_database: str
@@ -201,6 +225,7 @@ class DistributedConfigDict(BaseEngineConfigDict):
 
 class IcebergS3ConfigDict(BaseEngineConfigDict):
     """Configuration for IcebergS3 engine."""
+
     engine: Literal["IcebergS3"] = "IcebergS3"
     path: str
     format: str
@@ -217,6 +242,7 @@ class KafkaConfigDict(BaseEngineConfigDict):
 
     Reference: https://clickhouse.com/docs/engines/table-engines/integrations/kafka
     """
+
     engine: Literal["Kafka"] = "Kafka"
     broker_list: str
     topic_list: str
@@ -243,7 +269,7 @@ EngineConfigDict = Union[
     BufferConfigDict,
     DistributedConfigDict,
     IcebergS3ConfigDict,
-    KafkaConfigDict
+    KafkaConfigDict,
 ]
 
 
@@ -264,6 +290,7 @@ class TableConfig(BaseModel):
         table_settings: Optional table-level settings that can be modified with ALTER TABLE MODIFY SETTING.
         cluster: Optional cluster name for ON CLUSTER support in ClickHouse.
     """
+
     model_config = model_config
 
     name: str
@@ -272,7 +299,7 @@ class TableConfig(BaseModel):
     partition_by: Optional[str]
     sample_by_expression: Optional[str] = None
     primary_key_expression: Optional[str] = None
-    engine_config: Optional[EngineConfigDict] = Field(None, discriminator='engine')
+    engine_config: Optional[EngineConfigDict] = Field(None, discriminator="engine")
     version: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[str] = None
@@ -300,6 +327,7 @@ class TopicConfig(BaseModel):
         metadata: Optional metadata for the topic.
         life_cycle: Lifecycle management setting for the topic.
     """
+
     model_config = model_config
 
     name: str
@@ -331,6 +359,7 @@ class IngestApiConfig(BaseModel):
         allow_extra_fields: Whether this API allows extra fields beyond the defined columns.
             When true, extra fields in payloads are passed through to streaming functions.
     """
+
     model_config = model_config
 
     name: str
@@ -355,6 +384,7 @@ class InternalApiConfig(BaseModel):
         path: Optional custom path for the API endpoint.
         metadata: Optional metadata for the API.
     """
+
     model_config = model_config
 
     name: str
@@ -374,6 +404,7 @@ class WorkflowJson(BaseModel):
         timeout: Optional timeout string for the entire workflow.
         schedule: Optional cron-like schedule string for recurring execution.
     """
+
     model_config = model_config
 
     name: str
@@ -388,6 +419,7 @@ class WebAppMetadataJson(BaseModel):
     Attributes:
         description: Optional description of the WebApp.
     """
+
     model_config = model_config
 
     description: Optional[str] = None
@@ -401,6 +433,7 @@ class WebAppJson(BaseModel):
         mount_path: The URL path where the WebApp is mounted.
         metadata: Optional metadata for documentation purposes.
     """
+
     model_config = model_config
 
     name: str
@@ -417,8 +450,16 @@ class InfrastructureSignatureJson(BaseModel):
         id: A unique identifier for the resource instance (often name + version).
         kind: The type of the infrastructure component.
     """
+
     id: str
-    kind: Literal["Table", "Topic", "ApiEndpoint", "TopicToTableSyncProcess", "View", "SqlResource"]
+    kind: Literal[
+        "Table",
+        "Topic",
+        "ApiEndpoint",
+        "TopicToTableSyncProcess",
+        "View",
+        "SqlResource",
+    ]
 
 
 class SqlResourceConfig(BaseModel):
@@ -433,6 +474,7 @@ class SqlResourceConfig(BaseModel):
         source_file: Optional path to the source file where this resource is defined.
         metadata: Optional metadata for the resource.
     """
+
     model_config = model_config
 
     name: str
@@ -502,6 +544,7 @@ class InfrastructureMap(BaseModel):
         materialized_views: Dictionary mapping MV names to their structured configurations.
         custom_views: Dictionary mapping custom view names to their structured configurations.
     """
+
     model_config = model_config
 
     tables: dict[str, TableConfig]
@@ -530,11 +573,15 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
     Raises:
         TypeError: If the input object is not a recognized SQL resource type.
     """
-    if hasattr(r, 'kind'):
+    if hasattr(r, "kind"):
         if r.kind == "OlapTable":
             # Explicitly cast for type hint checking if needed, though Python is dynamic
             table = r  # type: OlapTable
-            res_id = f"{table.name}_{table.config.version}" if table.config.version else table.name
+            res_id = (
+                f"{table.name}_{table.config.version}"
+                if table.config.version
+                else table.name
+            )
             return InfrastructureSignatureJson(id=res_id, kind="Table")
         elif r.kind == "SqlResource":
             # Explicitly cast for type hint checking if needed
@@ -547,27 +594,31 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
         raise TypeError(f"Object {r} lacks a 'kind' attribute for dependency mapping.")
 
 
-def _convert_basic_engine_instance(engine: "EngineConfig") -> Optional[EngineConfigDict]:
+def _convert_basic_engine_instance(
+    engine: "EngineConfig",
+) -> Optional[EngineConfigDict]:
     """Convert basic MergeTree engine instances to config dict.
-    
+
     Args:
         engine: An EngineConfig instance
-        
+
     Returns:
         EngineConfigDict if matched, None otherwise
     """
     from moose_lib.blocks import (
-        MergeTreeEngine, ReplacingMergeTreeEngine,
-        AggregatingMergeTreeEngine, SummingMergeTreeEngine,
-        CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine
+        MergeTreeEngine,
+        ReplacingMergeTreeEngine,
+        AggregatingMergeTreeEngine,
+        SummingMergeTreeEngine,
+        CollapsingMergeTreeEngine,
+        VersionedCollapsingMergeTreeEngine,
     )
 
     if isinstance(engine, MergeTreeEngine):
         return MergeTreeConfigDict()
     elif isinstance(engine, ReplacingMergeTreeEngine):
         return ReplacingMergeTreeConfigDict(
-            ver=engine.ver,
-            is_deleted=engine.is_deleted
+            ver=engine.ver, is_deleted=engine.is_deleted
         )
     elif isinstance(engine, AggregatingMergeTreeEngine):
         return AggregatingMergeTreeConfigDict()
@@ -576,77 +627,84 @@ def _convert_basic_engine_instance(engine: "EngineConfig") -> Optional[EngineCon
     elif isinstance(engine, CollapsingMergeTreeEngine):
         return CollapsingMergeTreeConfigDict(sign=engine.sign)
     elif isinstance(engine, VersionedCollapsingMergeTreeEngine):
-        return VersionedCollapsingMergeTreeConfigDict(
-            sign=engine.sign,
-            ver=engine.ver
-        )
+        return VersionedCollapsingMergeTreeConfigDict(sign=engine.sign, ver=engine.ver)
     return None
 
 
-def _convert_replicated_engine_instance(engine: "EngineConfig") -> Optional[EngineConfigDict]:
+def _convert_replicated_engine_instance(
+    engine: "EngineConfig",
+) -> Optional[EngineConfigDict]:
     """Convert replicated MergeTree engine instances to config dict.
-    
+
     Args:
         engine: An EngineConfig instance
-        
+
     Returns:
         EngineConfigDict if matched, None otherwise
     """
     from moose_lib.blocks import (
-        ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine,
-        ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine,
-        ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine
+        ReplicatedMergeTreeEngine,
+        ReplicatedReplacingMergeTreeEngine,
+        ReplicatedAggregatingMergeTreeEngine,
+        ReplicatedSummingMergeTreeEngine,
+        ReplicatedCollapsingMergeTreeEngine,
+        ReplicatedVersionedCollapsingMergeTreeEngine,
     )
 
     if isinstance(engine, ReplicatedMergeTreeEngine):
         return ReplicatedMergeTreeConfigDict(
-            keeper_path=engine.keeper_path,
-            replica_name=engine.replica_name
+            keeper_path=engine.keeper_path, replica_name=engine.replica_name
         )
     elif isinstance(engine, ReplicatedReplacingMergeTreeEngine):
         return ReplicatedReplacingMergeTreeConfigDict(
             keeper_path=engine.keeper_path,
             replica_name=engine.replica_name,
             ver=engine.ver,
-            is_deleted=engine.is_deleted
+            is_deleted=engine.is_deleted,
         )
     elif isinstance(engine, ReplicatedAggregatingMergeTreeEngine):
         return ReplicatedAggregatingMergeTreeConfigDict(
-            keeper_path=engine.keeper_path,
-            replica_name=engine.replica_name
+            keeper_path=engine.keeper_path, replica_name=engine.replica_name
         )
     elif isinstance(engine, ReplicatedSummingMergeTreeEngine):
         return ReplicatedSummingMergeTreeConfigDict(
             keeper_path=engine.keeper_path,
             replica_name=engine.replica_name,
-            columns=engine.columns
+            columns=engine.columns,
         )
     elif isinstance(engine, ReplicatedCollapsingMergeTreeEngine):
         return ReplicatedCollapsingMergeTreeConfigDict(
             keeper_path=engine.keeper_path,
             replica_name=engine.replica_name,
-            sign=engine.sign
+            sign=engine.sign,
         )
     elif isinstance(engine, ReplicatedVersionedCollapsingMergeTreeEngine):
         return ReplicatedVersionedCollapsingMergeTreeConfigDict(
             keeper_path=engine.keeper_path,
             replica_name=engine.replica_name,
             sign=engine.sign,
-            ver=engine.ver
+            ver=engine.ver,
         )
     return None
 
 
 def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineConfigDict:
     """Convert an EngineConfig instance to config dict format.
-    
+
     Args:
         engine: An EngineConfig instance
-        
+
     Returns:
         EngineConfigDict with engine-specific configuration
     """
-    from moose_lib.blocks import S3QueueEngine, S3Engine, BufferEngine, DistributedEngine, IcebergS3Engine, KafkaEngine
+    from moose_lib.blocks import (
+        S3QueueEngine,
+        S3Engine,
+        BufferEngine,
+        DistributedEngine,
+        IcebergS3Engine,
+        KafkaEngine,
+    )
 
     # Try S3Queue first
     if isinstance(engine, S3QueueEngine):
@@ -656,9 +714,9 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             aws_access_key_id=engine.aws_access_key_id,
             aws_secret_access_key=engine.aws_secret_access_key,
             compression=engine.compression,
-            headers=engine.headers
+            headers=engine.headers,
         )
-    
+
     # Try S3
     if isinstance(engine, S3Engine):
         return S3ConfigDict(
@@ -668,9 +726,9 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             aws_secret_access_key=engine.aws_secret_access_key,
             compression=engine.compression,
             partition_strategy=engine.partition_strategy,
-            partition_columns_in_data_file=engine.partition_columns_in_data_file
+            partition_columns_in_data_file=engine.partition_columns_in_data_file,
         )
-    
+
     # Try Buffer
     if isinstance(engine, BufferEngine):
         return BufferConfigDict(
@@ -685,9 +743,9 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             max_bytes=engine.max_bytes,
             flush_time=engine.flush_time,
             flush_rows=engine.flush_rows,
-            flush_bytes=engine.flush_bytes
+            flush_bytes=engine.flush_bytes,
         )
-    
+
     # Try Distributed
     if isinstance(engine, DistributedEngine):
         return DistributedConfigDict(
@@ -695,7 +753,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             target_database=engine.target_database,
             target_table=engine.target_table,
             sharding_key=engine.sharding_key,
-            policy_name=engine.policy_name
+            policy_name=engine.policy_name,
         )
 
     # Try IcebergS3
@@ -705,7 +763,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             format=engine.format,
             aws_access_key_id=engine.aws_access_key_id,
             aws_secret_access_key=engine.aws_secret_access_key,
-            compression=engine.compression
+            compression=engine.compression,
         )
 
     # Try Kafka
@@ -714,7 +772,7 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
             broker_list=engine.broker_list,
             topic_list=engine.topic_list,
             group_name=engine.group_name,
-            format=engine.format
+            format=engine.format,
         )
 
     # Try basic engines
@@ -731,14 +789,15 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
 
 
-def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig],
-                                   table: OlapTable) -> EngineConfigDict:
+def _convert_engine_to_config_dict(
+    engine: Union[ClickHouseEngines, EngineConfig], table: OlapTable
+) -> EngineConfigDict:
     """Convert engine enum or EngineConfig instance to new engine config format.
-    
+
     Args:
         engine: Either a ClickHouseEngines enum value or an EngineConfig instance
         table: The OlapTable instance with configuration
-        
+
     Returns:
         EngineConfigDict with engine-specific configuration
     """
@@ -757,7 +816,7 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
         engine_name = str(engine)
 
     # For S3Queue with legacy configuration, check for s3_queue_engine_config
-    if engine_name == "S3Queue" and hasattr(table.config, 's3_queue_engine_config'):
+    if engine_name == "S3Queue" and hasattr(table.config, "s3_queue_engine_config"):
         s3_config = table.config.s3_queue_engine_config
         if s3_config:
             logger = Logger(action="S3QueueConfig")
@@ -771,7 +830,7 @@ def _convert_engine_to_config_dict(engine: Union[ClickHouseEngines, EngineConfig
                 aws_access_key_id=s3_config.aws_access_key_id,
                 aws_secret_access_key=s3_config.aws_secret_access_key,
                 compression=s3_config.compression,
-                headers=s3_config.headers
+                headers=s3_config.headers,
             )
 
     # Map engine names to specific config classes
@@ -831,16 +890,24 @@ def to_infra_map() -> dict:
                 table_settings["mode"] = "unordered"
 
         id_key = (
-            f"{table.name}_{table.config.version}" if table.config.version else table.name
+            f"{table.name}_{table.config.version}"
+            if table.config.version
+            else table.name
         )
 
         # Determine ORDER BY: list of fields or single expression
         has_fields = bool(table.config.order_by_fields)
         has_expr = table.config.order_by_expression is not None
         if has_fields and has_expr:
-            raise ValueError(f"Table {table.name}: Provide either order_by_fields or order_by_expression, not both.")
+            raise ValueError(
+                f"Table {table.name}: Provide either order_by_fields or order_by_expression, not both."
+            )
 
-        order_by_value = table.config.order_by_expression if has_expr else table.config.order_by_fields
+        order_by_value = (
+            table.config.order_by_expression
+            if has_expr
+            else table.config.order_by_fields
+        )
 
         tables[id_key] = TableConfig(
             name=table.name,
@@ -852,7 +919,9 @@ def to_infra_map() -> dict:
             engine_config=engine_config,
             version=table.config.version,
             metadata=getattr(table, "metadata", None),
-            life_cycle=table.config.life_cycle.value if table.config.life_cycle else None,
+            life_cycle=(
+                table.config.life_cycle.value if table.config.life_cycle else None
+            ),
             # Map 'settings' to 'table_settings' for internal use
             table_settings=table_settings if table_settings else None,
             indexes=table.config.indexes,
@@ -874,15 +943,20 @@ def to_infra_map() -> dict:
         ]
 
         consumers = [
-            Consumer(version=consumer.config.version)
-            for consumer in stream.consumers
+            Consumer(version=consumer.config.version) for consumer in stream.consumers
         ]
 
         topics[name] = TopicConfig(
             name=name,
             columns=_to_columns(stream._t),
-            target_table=stream.config.destination.name if stream.config.destination else None,
-            target_table_version=stream.config.destination.config.version if stream.config.destination else None,
+            target_table=(
+                stream.config.destination.name if stream.config.destination else None
+            ),
+            target_table_version=(
+                stream.config.destination.config.version
+                if stream.config.destination
+                else None
+            ),
             retention_period=stream.config.retention_period,
             partition_count=stream.config.parallelism,
             version=stream.config.version,
@@ -890,7 +964,9 @@ def to_infra_map() -> dict:
             has_multi_transform=stream._multipleTransformations is not None,
             consumers=consumers,
             metadata=getattr(stream, "metadata", None),
-            life_cycle=stream.config.life_cycle.value if stream.config.life_cycle else None,
+            life_cycle=(
+                stream.config.life_cycle.value if stream.config.life_cycle else None
+            ),
             schema_config=stream.config.schema_config,
         )
 
@@ -904,15 +980,16 @@ def to_infra_map() -> dict:
             columns=_to_columns(api._t),
             version=api.config.version,
             path=api.config.path,
-            write_to=Target(
-                kind="stream",
-                name=api.config.destination.name
-            ),
+            write_to=Target(kind="stream", name=api.config.destination.name),
             metadata=getattr(api, "metadata", None),
             json_schema=api._t.model_json_schema(
-                ref_template='#/components/schemas/{model}'
+                ref_template="#/components/schemas/{model}"
             ),
-            dead_letter_queue=api.config.dead_letter_queue.name if api.config.dead_letter_queue else None,
+            dead_letter_queue=(
+                api.config.dead_letter_queue.name
+                if api.config.dead_letter_queue
+                else None
+            ),
             allow_extra_fields=model_allows_extra,
         )
 
@@ -931,8 +1008,12 @@ def to_infra_map() -> dict:
             name=resource.name,
             setup=resource.setup,
             teardown=resource.teardown,
-            pulls_data_from=[_map_sql_resource_ref(dep) for dep in resource.pulls_data_from],
-            pushes_data_to=[_map_sql_resource_ref(dep) for dep in resource.pushes_data_to],
+            pulls_data_from=[
+                _map_sql_resource_ref(dep) for dep in resource.pulls_data_from
+            ],
+            pushes_data_to=[
+                _map_sql_resource_ref(dep) for dep in resource.pushes_data_to
+            ],
             source_file=getattr(resource, "source_file", None),
             metadata=getattr(resource, "metadata", None),
         )
@@ -1007,6 +1088,7 @@ def load_models():
        calling system uses to extract the configuration.
     """
     import os
+
     source_dir = os.environ.get("MOOSE_SOURCE_DIR", "app")
     import_module(f"{source_dir}.main")
 

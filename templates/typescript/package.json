@@ -23,7 +23,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "@confluentinc/kafka-javascript"
+      "@514labs/kafka-javascript"
     ]
   }
 }

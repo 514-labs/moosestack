@@ -4,7 +4,8 @@ Global registries for Moose Data Model v2 (dmv2) resources.
 This module provides functions to access the registered resources.
 The actual registry dictionaries are maintained in _registry.py to avoid circular dependencies.
 """
-from typing import Optional, Dict, TYPE_CHECKING
+
+from typing import Optional, Dict
 from .olap_table import OlapTable
 from .stream import Stream
 from .ingest_api import IngestApi
@@ -25,38 +26,43 @@ from ._registry import (
     _materialized_views,
     _custom_views,
 )
-
-if TYPE_CHECKING:
-    from .materialized_view import MaterializedView
-    from .view import View
+from .materialized_view import MaterializedView
+from .view import View
 
 def get_tables() -> Dict[str, OlapTable]:
     """Get all registered OLAP tables."""
     return _tables
 
+
 def get_table(name: str) -> Optional[OlapTable]:
     """Get a registered OLAP table by name."""
     return _tables.get(name)
+
 
 def get_streams() -> Dict[str, Stream]:
     """Get all registered streams."""
     return _streams
 
+
 def get_stream(name: str) -> Optional[Stream]:
     """Get a registered stream by name."""
     return _streams.get(name)
+
 
 def get_ingest_apis() -> Dict[str, IngestApi]:
     """Get all registered ingestion APIs."""
     return _ingest_apis
 
+
 def get_ingest_api(name: str) -> Optional[IngestApi]:
     """Get a registered ingestion API by name."""
     return _ingest_apis.get(name)
 
+
 def get_apis() -> Dict[str, Api]:
     """Get all registered APIs."""
     return _apis
+
 
 def get_api(name: str) -> Optional[Api]:
     """Get a registered API by name or path.
@@ -70,34 +76,40 @@ def get_api(name: str) -> Optional[Api]:
     api = _apis.get(name)
     if api:
         return api
-    
+
     # Try alias lookup
     api = _api_name_aliases.get(name)
     if api:
         return api
-    
+
     # Try path-based lookup
     return _api_path_map.get(name)
+
 
 def get_sql_resources() -> Dict[str, SqlResource]:
     """Get all registered SQL resources."""
     return _sql_resources
 
+
 def get_sql_resource(name: str) -> Optional[SqlResource]:
     """Get a registered SQL resource by name."""
     return _sql_resources.get(name)
+
 
 def get_workflows() -> Dict[str, Workflow]:
     """Get all registered workflows."""
     return _workflows
 
+
 def get_workflow(name: str) -> Optional[Workflow]:
     """Get a registered workflow by name."""
     return _workflows.get(name)
 
+
 def get_web_apps() -> Dict[str, WebApp]:
     """Get all registered WebApps."""
     return _web_apps
+
 
 def get_web_app(name: str) -> Optional[WebApp]:
     """Get a registered WebApp by name."""

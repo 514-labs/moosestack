@@ -4,16 +4,14 @@ View definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining standard SQL Views,
 including their SQL statements and dependencies.
 """
-from typing import Union, List, Optional, Any, TYPE_CHECKING
+
+from typing import Union, Optional, Any
+from pydantic import BaseModel
 
 from .olap_table import OlapTable
 from ._registry import _custom_views
 from .source_location import get_source_file_from_stack
-from .client_mode import is_client_only_mode
-
-if TYPE_CHECKING:
-    from .materialized_view import MaterializedView
-
+from .materialized_view import MaterializedView
 
 class View:
     """Represents a standard SQL database View.
@@ -31,13 +29,13 @@ class View:
     Attributes:
         name (str): The name of the view.
         select_sql (str): The SELECT SQL statement.
-        source_tables (List[str]): Names of source tables the SELECT reads from.
+        source_tables (list[str]): Names of source tables the SELECT reads from.
         source_file (Optional[str]): Path to source file where defined.
     """
     kind: str = "CustomView"
     name: str
     select_sql: str
-    source_tables: List[str]
+    source_tables: list[str]
     source_file: Optional[str] = None
     metadata: Optional[dict] = None
 
@@ -45,7 +43,7 @@ class View:
         self,
         name: str,
         select_statement: str,
-        base_tables: List[Union[OlapTable, "View", "MaterializedView", Any]],
+        base_tables: list[Union[OlapTable, "View", "MaterializedView", Any]],
         metadata: dict = None
     ):
         self.name = name
@@ -56,6 +54,6 @@ class View:
 
         # Register in the custom_views registry
         # In client-only mode, allow duplicate registrations for HMR support
-        if not is_client_only_mode() and self.name in _custom_views:
+        if self.name in _custom_views:
             raise ValueError(f"View with name {self.name} already exists")
         _custom_views[self.name] = self

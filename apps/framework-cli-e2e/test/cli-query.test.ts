@@ -24,6 +24,7 @@ import {
   createTempTestDirectory,
   cleanupTestSuite,
   setupTypeScriptProject,
+  logger,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -34,6 +35,8 @@ const MOOSE_TS_LIB_PATH = path.resolve(
   "../../../packages/ts-moose-lib",
 );
 
+const testLogger = logger.scope("cli-query-test");
+
 describe("moose query command", () => {
   let devProcess: ChildProcess;
   let testProjectDir: string;
@@ -41,11 +44,11 @@ describe("moose query command", () => {
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-    console.log("\n=== Starting Query Command Test ===");
+    testLogger.info("\n=== Starting Query Command Test ===");
 
     // Create temp test directory
     testProjectDir = createTempTestDirectory("query-cmd-test");
-    console.log("Test project dir:", testProjectDir);
+    testLogger.info("Test project dir:", testProjectDir);
 
     // Setup TypeScript project
     await setupTypeScriptProject(
@@ -58,10 +61,14 @@ describe("moose query command", () => {
     );
 
     // Start moose dev
-    console.log("\nStarting moose dev...");
+    testLogger.info("\nStarting moose dev...");
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: testProjectDir,
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      },
     });
 
     await waitForServerStart(
@@ -71,12 +78,12 @@ describe("moose query command", () => {
       "http://localhost:4000",
     );
 
-    console.log("✓ Infrastructure ready");
+    testLogger.info("✓ Infrastructure ready");
   });
 
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
-    console.log("\n=== Cleaning up Query Command Test ===");
+    testLogger.info("\n=== Cleaning up Query Command Test ===");
 
     await cleanupTestSuite(devProcess, testProjectDir, "query-cmd-test", {
       logPrefix: "Query Command Test",
@@ -86,7 +93,7 @@ describe("moose query command", () => {
   it("should execute simple SELECT query from argument", async function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    console.log("\n--- Testing query from argument ---");
+    testLogger.info("\n--- Testing query from argument ---");
 
     const { stdout } = await execAsync(
       `"${CLI_PATH}" query "SELECT 1 as num"`,
@@ -95,18 +102,18 @@ describe("moose query command", () => {
       },
     );
 
-    console.log("Query output:", stdout);
+    testLogger.info("Query output:", stdout);
 
     expect(stdout).to.include('{"num":1}');
     expect(stdout).to.include("1 rows");
 
-    console.log("✓ Query from argument works");
+    testLogger.info("✓ Query from argument works");
   });
 
   it("should execute query with multiple rows", async function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    console.log("\n--- Testing query with multiple rows ---");
+    testLogger.info("\n--- Testing query with multiple rows ---");
 
     const { stdout } = await execAsync(
       `"${CLI_PATH}" query "SELECT number FROM system.numbers LIMIT 5"`,
@@ -125,13 +132,13 @@ describe("moose query command", () => {
       expect(parsed.number).to.equal(idx);
     });
 
-    console.log("✓ Multiple rows returned correctly");
+    testLogger.info("✓ Multiple rows returned correctly");
   });
 
   it("should execute query from file", async function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    console.log("\n--- Testing query from file ---");
+    testLogger.info("\n--- Testing query from file ---");
 
     const queryFile = path.join(testProjectDir, "test-query.sql");
     fs.writeFileSync(queryFile, "SELECT 'hello' as greeting, 42 as answer");
@@ -141,35 +148,35 @@ describe("moose query command", () => {
       { cwd: testProjectDir },
     );
 
-    console.log("Query output:", stdout);
+    testLogger.info("Query output:", stdout);
 
     expect(stdout).to.include('"greeting":"hello"');
     expect(stdout).to.include('"answer":42');
 
-    console.log("✓ Query from file works");
+    testLogger.info("✓ Query from file works");
   });
 
   it("should execute query from stdin", async function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    console.log("\n--- Testing query from stdin ---");
+    testLogger.info("\n--- Testing query from stdin ---");
 
     const { stdout } = await execAsync(
       `echo "SELECT 'stdin' as source" | "${CLI_PATH}" query`,
       { cwd: testProjectDir, shell: "/bin/bash" },
     );
 
-    console.log("Query output:", stdout);
+    testLogger.info("Query output:", stdout);
 
     expect(stdout).to.include('"source":"stdin"');
 
-    console.log("✓ Query from stdin works");
+    testLogger.info("✓ Query from stdin works");
   });
 
   it("should respect limit parameter", async function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    console.log("\n--- Testing limit parameter ---");
+    testLogger.info("\n--- Testing limit parameter ---");
 
     const { stdout } = await execAsync(
       `"${CLI_PATH}" query "SELECT number FROM system.numbers" --limit 3`,
@@ -183,13 +190,13 @@ describe("moose query command", () => {
     expect(lines.length).to.equal(3);
     expect(stdout).to.include("3 rows");
 
-    console.log("✓ Limit parameter works");
+    testLogger.info("✓ Limit parameter works");
   });
 
   it("should handle query errors gracefully", async function () {
     this.timeout(TIMEOUTS.MIGRATION_MS);
 
-    console.log("\n--- Testing error handling ---");
+    testLogger.info("\n--- Testing error handling ---");
 
     try {
       await execAsync(
@@ -199,7 +206,7 @@ describe("moose query command", () => {
       expect.fail("Should have thrown an error");
     } catch (error: any) {
       expect(error.message).to.include("ClickHouse query error");
-      console.log("✓ Query errors handled gracefully");
+      testLogger.info("✓ Query errors handled gracefully");
     }
   });
 
@@ -207,14 +214,14 @@ describe("moose query command", () => {
     it("should format query as Python code", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing Python formatting ---");
+      testLogger.info("\n--- Testing Python formatting ---");
 
       const { stdout } = await execAsync(
         `"${CLI_PATH}" query -c python "SELECT * FROM users WHERE email REGEXP '[a-z]+'"`,
         { cwd: testProjectDir },
       );
 
-      console.log("Format output:", stdout);
+      testLogger.info("Format output:", stdout);
 
       expect(stdout).to.include('r"""');
       expect(stdout).to.include(
@@ -223,32 +230,32 @@ describe("moose query command", () => {
       expect(stdout).to.include('"""');
       expect(stdout).not.to.include("{"); // Should not have JSON output
 
-      console.log("✓ Python formatting works");
+      testLogger.info("✓ Python formatting works");
     });
 
     it("should format query as TypeScript code", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing TypeScript formatting ---");
+      testLogger.info("\n--- Testing TypeScript formatting ---");
 
       const { stdout } = await execAsync(
         `"${CLI_PATH}" query -c typescript "SELECT * FROM users"`,
         { cwd: testProjectDir },
       );
 
-      console.log("Format output:", stdout);
+      testLogger.info("Format output:", stdout);
 
       expect(stdout).to.include("`");
       expect(stdout).to.include("SELECT * FROM users");
       expect(stdout).not.to.include("{"); // Should not have JSON output
 
-      console.log("✓ TypeScript formatting works");
+      testLogger.info("✓ TypeScript formatting works");
     });
 
     it("should format query from file", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing format from file ---");
+      testLogger.info("\n--- Testing format from file ---");
 
       const queryFile = path.join(testProjectDir, "format-test.sql");
       fs.writeFileSync(queryFile, "SELECT count(*) as total FROM events");
@@ -258,18 +265,18 @@ describe("moose query command", () => {
         { cwd: testProjectDir },
       );
 
-      console.log("Format output:", stdout);
+      testLogger.info("Format output:", stdout);
 
       expect(stdout).to.include('r"""');
       expect(stdout).to.include("SELECT count(*) as total FROM events");
 
-      console.log("✓ Format from file works");
+      testLogger.info("✓ Format from file works");
     });
 
     it("should reject invalid language", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing invalid language ---");
+      testLogger.info("\n--- Testing invalid language ---");
 
       try {
         await execAsync(`"${CLI_PATH}" query -c java "SELECT 1"`, {
@@ -278,14 +285,14 @@ describe("moose query command", () => {
         expect.fail("Should have thrown an error");
       } catch (error: any) {
         expect(error.message).to.include("Unsupported language");
-        console.log("✓ Invalid language rejected");
+        testLogger.info("✓ Invalid language rejected");
       }
     });
 
     it("should accept language aliases", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing language aliases ---");
+      testLogger.info("\n--- Testing language aliases ---");
 
       const pyResult = await execAsync(`"${CLI_PATH}" query -c py "SELECT 1"`, {
         cwd: testProjectDir,
@@ -297,13 +304,13 @@ describe("moose query command", () => {
       });
       expect(tsResult.stdout).to.include("`");
 
-      console.log("✓ Language aliases work");
+      testLogger.info("✓ Language aliases work");
     });
 
     it("should format multi-line SQL with proper indentation", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing multi-line SQL ---");
+      testLogger.info("\n--- Testing multi-line SQL ---");
 
       const queryFile = path.join(testProjectDir, "multiline-query.sql");
       const multilineSQL = `SELECT
@@ -320,20 +327,20 @@ ORDER BY created_at DESC`;
         { cwd: testProjectDir },
       );
 
-      console.log("Format output:", stdout);
+      testLogger.info("Format output:", stdout);
 
       expect(stdout).to.include('r"""');
       expect(stdout).to.include("    user_id,");
       expect(stdout).to.include("ORDER BY created_at DESC");
       expect(stdout).to.include('"""');
 
-      console.log("✓ Multi-line SQL preserved correctly");
+      testLogger.info("✓ Multi-line SQL preserved correctly");
     });
 
     it("should format SQL with complex regex patterns", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing complex regex patterns ---");
+      testLogger.info("\n--- Testing complex regex patterns ---");
 
       const complexQuery = `SELECT * FROM logs WHERE message REGEXP '\\\\d{4}-\\\\d{2}-\\\\d{2}\\\\s+\\\\w+'`;
 
@@ -342,20 +349,20 @@ ORDER BY created_at DESC`;
         { cwd: testProjectDir },
       );
 
-      console.log("Format output:", stdout);
+      testLogger.info("Format output:", stdout);
 
       expect(stdout).to.include('r"""');
       // Raw strings should preserve backslashes
       expect(stdout).to.include("\\d{4}");
       expect(stdout).to.include("REGEXP");
 
-      console.log("✓ Complex regex patterns preserved");
+      testLogger.info("✓ Complex regex patterns preserved");
     });
 
     it("should format SQL with email regex pattern", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing email regex pattern ---");
+      testLogger.info("\n--- Testing email regex pattern ---");
 
       const emailQuery = `SELECT * FROM users WHERE email REGEXP '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}$'`;
 
@@ -375,13 +382,13 @@ ORDER BY created_at DESC`;
       expect(tsResult.stdout).to.include("`");
       expect(tsResult.stdout).to.include("[a-zA-Z0-9._%+-]+");
 
-      console.log("✓ Email regex pattern preserved");
+      testLogger.info("✓ Email regex pattern preserved");
     });
 
     it("should handle queries with single quotes and backslashes", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing quotes and backslashes ---");
+      testLogger.info("\n--- Testing quotes and backslashes ---");
 
       const queryFile = path.join(testProjectDir, "complex-pattern.sql");
       const complexSQL = `SELECT * FROM data WHERE pattern REGEXP '\\\\b(foo|bar)\\\\b' AND name = 'test'`;
@@ -392,19 +399,19 @@ ORDER BY created_at DESC`;
         { cwd: testProjectDir },
       );
 
-      console.log("Format output:", stdout);
+      testLogger.info("Format output:", stdout);
 
       expect(stdout).to.include('r"""');
       expect(stdout).to.include("name = 'test'");
       expect(stdout).to.include("\\b(foo|bar)\\b");
 
-      console.log("✓ Quotes and backslashes preserved");
+      testLogger.info("✓ Quotes and backslashes preserved");
     });
 
     it("should prettify SQL when --prettify flag is used", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing prettify functionality ---");
+      testLogger.info("\n--- Testing prettify functionality ---");
 
       const messyQuery =
         "SELECT id, name FROM users WHERE active = 1 ORDER BY name LIMIT 10";
@@ -414,7 +421,7 @@ ORDER BY created_at DESC`;
         { cwd: testProjectDir },
       );
 
-      console.log("Format output:", stdout);
+      testLogger.info("Format output:", stdout);
 
       expect(stdout).to.include('r"""');
       expect(stdout).to.include("SELECT");
@@ -425,13 +432,13 @@ ORDER BY created_at DESC`;
       const lines = stdout.split("\n");
       expect(lines.length).to.be.greaterThan(3);
 
-      console.log("✓ Prettify works");
+      testLogger.info("✓ Prettify works");
     });
 
     it("should prettify complex SQL with TypeScript", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing prettify with TypeScript ---");
+      testLogger.info("\n--- Testing prettify with TypeScript ---");
 
       const complexQuery =
         "SELECT u.id, u.name, o.total FROM users u LEFT JOIN orders o ON u.id = o.user_id WHERE u.active = 1 AND o.total > 100 ORDER BY o.total DESC";
@@ -441,7 +448,7 @@ ORDER BY created_at DESC`;
         { cwd: testProjectDir },
       );
 
-      console.log("Format output:", stdout);
+      testLogger.info("Format output:", stdout);
 
       expect(stdout).to.include("`");
       expect(stdout).to.include("SELECT");
@@ -449,13 +456,13 @@ ORDER BY created_at DESC`;
       expect(stdout).to.include("WHERE");
       expect(stdout).to.include("ORDER BY");
 
-      console.log("✓ Prettify with TypeScript works");
+      testLogger.info("✓ Prettify with TypeScript works");
     });
 
     it("should require format-query flag when using prettify", async function () {
       this.timeout(TIMEOUTS.MIGRATION_MS);
 
-      console.log("\n--- Testing prettify requires format-query ---");
+      testLogger.info("\n--- Testing prettify requires format-query ---");
 
       try {
         await execAsync(`"${CLI_PATH}" query -p "SELECT 1"`, {
@@ -467,7 +474,7 @@ ORDER BY created_at DESC`;
         expect(error.message).to.match(
           /requires.*format-query|required argument/i,
         );
-        console.log("✓ Prettify requires format-query flag");
+        testLogger.info("✓ Prettify requires format-query flag");
       }
     });
   });

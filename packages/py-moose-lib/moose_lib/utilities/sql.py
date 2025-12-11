@@ -31,4 +31,3 @@ def clickhouse_param_type_for_value(value: Any) -> str:
     if not isinstance(value, str):
         print(f"unhandled type {type(value)}", file=sys.stderr)
     return "String"
-

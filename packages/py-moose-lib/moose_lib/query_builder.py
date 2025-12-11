@@ -15,7 +15,9 @@ class Params:
         self._counter = 0
         self.bindings: dict[str, object] = {}
 
-    def bind(self, value: object, name: str | None = None, ch_type: str | None = None) -> sge.Expression:
+    def bind(
+        self, value: object, name: str | None = None, ch_type: str | None = None
+    ) -> sge.Expression:
         if name is None:
             name = f"p{self._counter}"
             self._counter += 1
@@ -56,7 +58,9 @@ class ColumnRef:
 
     def _binary_op(self, op_name: str, value: object) -> Predicate:
         def resolve(query: "Query") -> sge.Expression:
-            table_name = query._from_table.name if query._from_table is not None else None
+            table_name = (
+                query._from_table.name if query._from_table is not None else None
+            )
             left = to_column(self._column, table_name)
             right = query.params.bind(value)
             op = getattr(left, op_name)
@@ -84,7 +88,9 @@ class ColumnRef:
 
     def in_(self, values: list[object]) -> Predicate:
         def resolve(query: "Query") -> sge.Expression:
-            table_name = query._from_table.name if query._from_table is not None else None
+            table_name = (
+                query._from_table.name if query._from_table is not None else None
+            )
             left = to_column(self._column, table_name)
             rights = [query.params.bind(v) for v in values]
             return left.isin(*rights)
@@ -93,7 +99,9 @@ class ColumnRef:
 
     def is_null(self) -> Predicate:
         def resolve(query: "Query") -> sge.Expression:
-            table_name = query._from_table.name if query._from_table is not None else None
+            table_name = (
+                query._from_table.name if query._from_table is not None else None
+            )
             left = to_column(self._column, table_name)
             return left.is_(sge.Null())
 
@@ -116,7 +124,12 @@ class Query:
         return self
 
     def select(self, *cols: Column) -> "Query":
-        sge_cols = [to_column(c, self._from_table.name if self._from_table is not None else None) for c in cols]
+        sge_cols = [
+            to_column(
+                c, self._from_table.name if self._from_table is not None else None
+            )
+            for c in cols
+        ]
         self.inner = self.inner.select(*sge_cols)
         return self
 

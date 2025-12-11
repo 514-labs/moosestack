@@ -1,16 +1,28 @@
-from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig, OlapTable, InsertOptions, Key, TaskContext
+from moose_lib import (
+    Task,
+    TaskConfig,
+    Workflow,
+    WorkflowConfig,
+    OlapTable,
+    InsertOptions,
+    Key,
+    TaskContext,
+)
 from pydantic import BaseModel
 from datetime import datetime
 from faker import Faker
 from src.ingest.models import Foo, Baz, fooModel
 import requests
 
+
 class FooWorkflow(BaseModel):
     id: Key[str]
     success: bool
     message: str
 
+
 workflow_table = OlapTable[FooWorkflow]("foo_workflow")
+
 
 def run_task(ctx: TaskContext[None]) -> None:
     fake = Faker()
@@ -47,27 +59,53 @@ def run_task(ctx: TaskContext[None]) -> None:
         try:
             req = requests.post(
                 "http://localhost:4000/ingest/Foo",
-                data=foo_http.model_dump_json().encode('utf-8'),
-                headers={'Content-Type': 'application/json'}
+                data=foo_http.model_dump_json().encode("utf-8"),
+                headers={"Content-Type": "application/json"},
             )
             if req.status_code == 200:
-                workflow_table.insert([{"id": "1", "success": True, "message": f"HTTP inserted: {foo_http.primary_key}"}])
+                workflow_table.insert(
+                    [
+                        {
+                            "id": "1",
+                            "success": True,
+                            "message": f"HTTP inserted: {foo_http.primary_key}",
+                        }
+                    ]
+                )
             else:
-                workflow_table.insert([{"id": "1", "success": False, "message": f"HTTP failed: {req.status_code}"}])
+                workflow_table.insert(
+                    [
+                        {
+                            "id": "1",
+                            "success": False,
+                            "message": f"HTTP failed: {req.status_code}",
+                        }
+                    ]
+                )
         except Exception as e:
-            workflow_table.insert([{"id": "1", "success": False, "message": f"HTTP error: {e}"}])
+            workflow_table.insert(
+                [{"id": "1", "success": False, "message": f"HTTP error: {e}"}]
+            )
 
         # Direct stream send path
         try:
             fooModel.get_stream().send(foo_send)
-            workflow_table.insert([{"id": "1", "success": True, "message": f"SEND inserted: {foo_send.primary_key}"}])
+            workflow_table.insert(
+                [
+                    {
+                        "id": "1",
+                        "success": True,
+                        "message": f"SEND inserted: {foo_send.primary_key}",
+                    }
+                ]
+            )
         except Exception as e:
-            workflow_table.insert([{"id": "1", "success": False, "message": f"SEND error: {e}"}])
+            workflow_table.insert(
+                [{"id": "1", "success": False, "message": f"SEND error: {e}"}]
+            )
 
-ingest_task = Task[None, None](
-    name="task",
-    config=TaskConfig(run=run_task)
-)
+
+ingest_task = Task[None, None](name="task", config=TaskConfig(run=run_task))
 
 ingest_workflow = Workflow(
     name="generator",
@@ -77,5 +115,5 @@ ingest_workflow = Workflow(
         timeout="30s",
         # uncomment if you want to run it automatically on a schedule
         # schedule="@every 5s",
-    )
+    ),
 )

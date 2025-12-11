@@ -4,15 +4,15 @@ Materialized View definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining Materialized Views,
 including their SQL statements, target tables, and dependencies.
 """
-from typing import Any, Optional, Union, Generic, List, TYPE_CHECKING
-from pydantic import BaseModel, ConfigDict
+
+from typing import Any, Optional, Union, Generic, TypeVar
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from ..blocks import ClickHouseEngines
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
 from ._registry import _materialized_views
 from .source_location import get_source_file_from_stack
-from .client_mode import is_client_only_mode
 
 if TYPE_CHECKING:
     from .view import View
@@ -34,8 +34,9 @@ class MaterializedViewOptions(BaseModel):
                          engines like ReplacingMergeTree).
         model_config: ConfigDict for Pydantic validation
     """
+
     select_statement: str
-    select_tables: List[Union[OlapTable, "View", Any]]
+    select_tables: list[Union[OlapTable, "View", Any]]
     # Backward-compatibility: allow specifying just the table_name and engine
     table_name: Optional[str] = None
     materialized_view_name: str
@@ -63,21 +64,22 @@ class MaterializedView(BaseTypedResource, Generic[T]):
         name (str): The name of the MATERIALIZED VIEW object.
         model_type (type[T]): The Pydantic model associated with the target table.
         select_sql (str): The SELECT SQL statement.
-        source_tables (List[str]): Names of source tables the SELECT reads from.
+        source_tables (list[str]): Names of source tables the SELECT reads from.
     """
+
     kind: str = "MaterializedView"
     target_table: OlapTable[T]
     config: MaterializedViewOptions
     name: str
     select_sql: str
-    source_tables: List[str]
+    source_tables: list[str]
     source_file: Optional[str] = None
 
     def __init__(
-            self,
-            options: MaterializedViewOptions,
-            target_table: Optional[OlapTable[T]] = None,
-            **kwargs
+        self,
+        options: MaterializedViewOptions,
+        target_table: Optional[OlapTable[T]] = None,
+        **kwargs,
     ):
         self._set_type(options.materialized_view_name, self._get_type(kwargs))
 
@@ -85,22 +87,27 @@ class MaterializedView(BaseTypedResource, Generic[T]):
         if target_table:
             self.target_table = target_table
             if self._t != target_table._t:
-                raise ValueError("Target table must have the same type as the materialized view")
+                raise ValueError(
+                    "Target table must have the same type as the materialized view"
+                )
         else:
             # Backward-compatibility path using table_name/engine/order_by_fields
             if not options.table_name:
-                raise ValueError("Name of target table is not specified. Provide 'target_table' or 'table_name'.")
+                raise ValueError(
+                    "Name of target table is not specified. Provide 'target_table' or 'table_name'."
+                )
             target_table = OlapTable(
                 name=options.table_name,
                 config=OlapConfig(
-                    order_by_fields=options.order_by_fields or [],
-                    engine=options.engine
+                    order_by_fields=options.order_by_fields or [], engine=options.engine
                 ),
-                t=self._t
+                t=self._t,
             )
-        
+
         if target_table.name == options.materialized_view_name:
-            raise ValueError("Target table name cannot be the same as the materialized view name")
+            raise ValueError(
+                "Target table name cannot be the same as the materialized view name"
+            )
 
         self.name = options.materialized_view_name
         self.target_table = target_table
@@ -111,6 +118,6 @@ class MaterializedView(BaseTypedResource, Generic[T]):
 
         # Register in the materialized_views registry
         # In client-only mode, allow duplicate registrations for HMR support
-        if not is_client_only_mode() and self.name in _materialized_views:
+        if self.name in _materialized_views:
             raise ValueError(f"MaterializedView with name {self.name} already exists")
         _materialized_views[self.name] = self

@@ -1,7 +1,7 @@
 import http from "http";
 import { createClient } from "@clickhouse/client";
-import { KafkaJS } from "@confluentinc/kafka-javascript";
-import { SASLOptions } from "@confluentinc/kafka-javascript/types/kafkajs";
+import { KafkaJS } from "@514labs/kafka-javascript";
+import { SASLOptions } from "@514labs/kafka-javascript/types/kafkajs";
 const { Kafka } = KafkaJS;
 type Kafka = KafkaJS.Kafka;
 type Consumer = KafkaJS.Consumer;

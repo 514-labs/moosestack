@@ -7,7 +7,6 @@ from pydantic import BaseModel, BeforeValidator
 from enum import IntEnum, auto
 
 
-
 class Baz(StringToEnumMixin, IntEnum):
     QUX = auto()
     QUUX = auto()
@@ -28,16 +27,16 @@ class Bar(BaseModel):
     text_length: int
 
 
-fooModel = IngestPipeline[Foo]("Foo", IngestPipelineConfig(
-    ingest_api=True,
-    stream=True,
-    table=False,
-    dead_letter_queue=True
-))
+fooModel = IngestPipeline[Foo](
+    "Foo",
+    IngestPipelineConfig(
+        ingest_api=True, stream=True, table=False, dead_letter_queue=True
+    ),
+)
 
-barModel = IngestPipeline[Bar]("Bar", IngestPipelineConfig(
-    ingest_api=False,
-    stream=True,
-    table=True,
-    dead_letter_queue=True
-))
+barModel = IngestPipeline[Bar](
+    "Bar",
+    IngestPipelineConfig(
+        ingest_api=False, stream=True, table=True, dead_letter_queue=True
+    ),
+)

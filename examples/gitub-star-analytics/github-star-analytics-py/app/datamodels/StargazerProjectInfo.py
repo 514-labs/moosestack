@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime
 
+
 @moose_data_model
 @dataclass
 class StargazerProjectInfo:
@@ -18,7 +19,3 @@ class StargazerProjectInfo:
     repo_size_kb: int
     created_at: datetime
     updated_at: datetime
-
-
-    
-    

@@ -5,13 +5,13 @@ from datetime import datetime
 
 def foo_to_bar(foo: Foo):
     """Transform Foo events to Bar events with error handling and caching.
-    
+
     Normal flow:
     1. Check cache for previously processed events
     2. Transform Foo to Bar
     3. Cache the result
     4. Return transformed Bar event
-    
+
     Alternate flow (DLQ):
     - If errors occur during transformation, the event is sent to DLQ
     - This enables separate error handling, monitoring, and retry strategies
@@ -33,7 +33,7 @@ def foo_to_bar(foo: Foo):
         baz=foo.baz,
         utc_timestamp=datetime.fromtimestamp(foo.timestamp),
         has_text=foo.optional_text is not None,
-        text_length=len(foo.optional_text) if foo.optional_text else 0
+        text_length=len(foo.optional_text) if foo.optional_text else 0,
     )
 
     # Store the result in cache
@@ -69,7 +69,12 @@ def print_messages(dead_letter: DeadLetterModel[Foo]):
 fooModel.get_dead_letter_queue().add_consumer(print_messages)
 
 # Test transform that returns a list - each element should be sent as a separate Kafka message
-from src.ingest.models import array_input_model, array_output_stream, ArrayInput, ArrayOutput
+from src.ingest.models import (
+    array_input_model,
+    array_output_stream,
+    ArrayInput,
+    ArrayOutput,
+)
 
 
 def array_transform(input_data: ArrayInput) -> list[ArrayOutput]:
@@ -82,10 +87,7 @@ def array_transform(input_data: ArrayInput) -> list[ArrayOutput]:
     # Each item in input_data.data becomes a separate Kafka message
     return [
         ArrayOutput(
-            input_id=input_data.id,
-            value=value,
-            index=index,
-            timestamp=datetime.now()
+            input_id=input_data.id, value=value, index=index, timestamp=datetime.now()
         )
         for index, value in enumerate(input_data.data)
     ]
@@ -104,35 +106,53 @@ from src.ingest.models import (
 )
 
 
-def datetime_precision_transform(input_data: DateTimePrecisionTestData) -> DateTimePrecisionTestData:
+def datetime_precision_transform(
+    input_data: DateTimePrecisionTestData,
+) -> DateTimePrecisionTestData:
     """Transform that verifies Python datetime objects preserve microsecond precision.
-    
+
     Unlike JavaScript, Python's datetime natively supports microsecond precision,
     so all datetime fields should be datetime objects with microseconds preserved.
     """
 
     print("DateTime precision transform (Python) - input types and values:")
-    print(f"  created_at: {type(input_data.created_at)} = {input_data.created_at} (µs: {input_data.created_at.microsecond})")
-    print(f"  timestamp_ms: {type(input_data.timestamp_ms)} = {input_data.timestamp_ms} (µs: {input_data.timestamp_ms.microsecond})")
-    print(f"  timestamp_us: {type(input_data.timestamp_us)} = {input_data.timestamp_us} (µs: {input_data.timestamp_us.microsecond})")
-    print(f"  timestamp_ns: {type(input_data.timestamp_ns)} = {input_data.timestamp_ns} (µs: {input_data.timestamp_ns.microsecond})")
+    print(
+        f"  created_at: {type(input_data.created_at)} = {input_data.created_at} (µs: {input_data.created_at.microsecond})"
+    )
+    print(
+        f"  timestamp_ms: {type(input_data.timestamp_ms)} = {input_data.timestamp_ms} (µs: {input_data.timestamp_ms.microsecond})"
+    )
+    print(
+        f"  timestamp_us: {type(input_data.timestamp_us)} = {input_data.timestamp_us} (µs: {input_data.timestamp_us.microsecond})"
+    )
+    print(
+        f"  timestamp_ns: {type(input_data.timestamp_ns)} = {input_data.timestamp_ns} (µs: {input_data.timestamp_ns.microsecond})"
+    )
 
     # Verify all are datetime objects
     if not isinstance(input_data.created_at, datetime):
-        raise TypeError(f"Expected created_at to be datetime, got {type(input_data.created_at)}")
+        raise TypeError(
+            f"Expected created_at to be datetime, got {type(input_data.created_at)}"
+        )
     if not isinstance(input_data.timestamp_ms, datetime):
-        raise TypeError(f"Expected timestamp_ms to be datetime, got {type(input_data.timestamp_ms)}")
+        raise TypeError(
+            f"Expected timestamp_ms to be datetime, got {type(input_data.timestamp_ms)}"
+        )
     if not isinstance(input_data.timestamp_us, datetime):
-        raise TypeError(f"Expected timestamp_us to be datetime, got {type(input_data.timestamp_us)}")
+        raise TypeError(
+            f"Expected timestamp_us to be datetime, got {type(input_data.timestamp_us)}"
+        )
     if not isinstance(input_data.timestamp_ns, datetime):
-        raise TypeError(f"Expected timestamp_ns to be datetime, got {type(input_data.timestamp_ns)}")
+        raise TypeError(
+            f"Expected timestamp_ns to be datetime, got {type(input_data.timestamp_ns)}"
+        )
 
     # Verify microseconds are present
     if input_data.timestamp_us.microsecond == 0:
         print(f"WARNING: timestamp_us has no microseconds: {input_data.timestamp_us}")
     else:
         print(f"✓ timestamp_us has microseconds: {input_data.timestamp_us.microsecond}")
-    
+
     if input_data.timestamp_ns.microsecond == 0:
         print(f"WARNING: timestamp_ns has no microseconds: {input_data.timestamp_ns}")
     else:
@@ -163,10 +183,10 @@ from src.ingest.models import (
 
 def user_event_transform(input_data: UserEventInput) -> UserEventOutput:
     """Transform for extra fields types.
-    
+
     KEY POINT: The streaming function receives ALL fields from the input,
     including extra fields allowed by Pydantic's `model_config = ConfigDict(extra='allow')`.
-    
+
     Since OlapTable requires a fixed schema, we extract known fields and store
     extra fields in a JSON column (`properties`).
     """
@@ -178,17 +198,20 @@ def user_event_transform(input_data: UserEventInput) -> UserEventOutput:
         "org_id": input_data.org_id,
         "project_id": input_data.project_id,
     }
-    
+
     # Get extra fields using model_extra (Pydantic v2)
     # This contains all fields that were not defined in the model schema
     extra_fields = input_data.model_extra or {}
-    
+
     # Log to demonstrate that extra fields ARE received by the streaming function
-    print("Extra fields transform received:", {
-        "known_fields": known_fields,
-        "extra_fields": extra_fields,  # These came through extra='allow'!
-    })
-    
+    print(
+        "Extra fields transform received:",
+        {
+            "known_fields": known_fields,
+            "extra_fields": extra_fields,  # These came through extra='allow'!
+        },
+    )
+
     return UserEventOutput(
         timestamp=input_data.timestamp,
         event_name=input_data.event_name,

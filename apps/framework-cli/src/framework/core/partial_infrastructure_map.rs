@@ -51,7 +51,7 @@ use super::{
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
-        table::{Column, ColumnType, Metadata, Table, TableIndex},
+        table::{Column, Metadata, Table, TableIndex},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
@@ -96,6 +96,34 @@ impl LifeCycle {
     // not implementing the Default trait to avoid accidentally setting this value
     pub fn default_for_deserialization() -> LifeCycle {
         LifeCycle::FullyManaged
+    }
+
+    /// Returns true if this lifecycle protects the table from being dropped.
+    ///
+    /// Protected lifecycles: `DeletionProtected`, `ExternallyManaged`
+    #[inline]
+    pub fn is_drop_protected(self) -> bool {
+        matches!(self, Self::DeletionProtected | Self::ExternallyManaged)
+    }
+
+    /// Returns true if this lifecycle protects columns from being removed.
+    ///
+    /// Protected lifecycles: `DeletionProtected`, `ExternallyManaged`
+    #[inline]
+    pub fn is_column_removal_protected(self) -> bool {
+        matches!(self, Self::DeletionProtected | Self::ExternallyManaged)
+    }
+
+    /// Returns true if this lifecycle protects the table from ANY modifications.
+    ///
+    /// When true, Moose should not attempt to change the table in any way -
+    /// no column additions, no column removals, no TTL changes, no settings changes.
+    /// The table is managed externally and Moose only reads from it.
+    ///
+    /// Protected lifecycles: `ExternallyManaged`
+    #[inline]
+    pub fn is_any_modification_protected(self) -> bool {
+        self == Self::ExternallyManaged
     }
 }
 
@@ -726,64 +754,20 @@ impl PartialInfrastructureMap {
                     // Because they are modifiable and won't cause issues if not set
                 }
 
-                // Buffer, S3Queue, Distributed, and other non-MergeTree engines don't support PRIMARY KEY
-                let supports_primary_key = engine.supports_order_by();
-
-                // Normalize columns:
-                // 1. Clear primary_key flag if engine doesn't support it
-                // 2. Force arrays to be required=true (ClickHouse doesn't support nullable arrays)
-                let columns: Vec<Column> = partial_table
-                    .columns
-                    .iter()
-                    .map(|col| {
-                        let mut normalized_col = col.clone();
-
-                        // Clear primary_key if engine doesn't support it
-                        if !supports_primary_key {
-                            normalized_col.primary_key = false;
-                        }
-
-                        // ClickHouse doesn't support Nullable(Array(...))
-                        // Arrays must always be NOT NULL (required=true)
-                        if matches!(col.data_type, ColumnType::Array { .. }) {
-                            normalized_col.required = true;
-                        }
-
-                        normalized_col
-                    })
-                    .collect();
-
                 // Extract table-level TTL from partial table
                 let table_ttl_setting = partial_table.ttl.clone();
 
-                // Fall back to primary key columns if order_by is empty for MergeTree engines
-                // This ensures backward compatibility when order_by isn't explicitly set
-                // We only do this for MergeTree family to avoid breaking S3 tables
-                let order_by = if partial_table.order_by.is_empty() && engine.is_merge_tree_family()
-                {
-                    let primary_key_columns: Vec<String> = columns
-                        .iter()
-                        .filter_map(|c| {
-                            if c.primary_key {
-                                Some(c.name.clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    OrderBy::Fields(primary_key_columns)
-                } else {
-                    partial_table.order_by.clone()
-                };
-
+                // Construct the table with raw values from partial_table.
+                // Canonicalization (order_by fallback, array nullability, primary_key clearing)
+                // is handled by Table::canonicalize() below.
                 let table = Table {
                     name: version
                         .as_ref()
                         .map_or(partial_table.name.clone(), |version| {
                             format!("{}_{}", partial_table.name, version.as_suffix())
                         }),
-                    columns,
-                    order_by,
+                    columns: partial_table.columns.clone(),
+                    order_by: partial_table.order_by.clone(),
                     partition_by: partial_table.partition_by.clone(),
                     sample_by: partial_table.sample_by.clone(),
                     engine,
@@ -808,9 +792,10 @@ impl PartialInfrastructureMap {
                     primary_key_expression: partial_table.primary_key_expression.clone(),
                 };
 
-                // Compute table_settings_hash for change detection
+                // Compute table_settings_hash for change detection, then canonicalize
                 let mut table = table;
                 table.table_settings_hash = table.compute_table_settings_hash();
+                let table = table.canonicalize();
 
                 Ok((table.id(default_database), table))
             })

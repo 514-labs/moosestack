@@ -7,30 +7,25 @@ from typing import Optional, Literal
 from app.views.bar_aggregated import barAggregatedMV
 from datetime import datetime, timezone
 
+
 # Query params are defined as Pydantic models and are validated automatically
 class QueryParams(BaseModel):
-    order_by: Optional[Literal["total_rows", "rows_with_text", "max_text_length", "total_text_length"]] = Field(
+    order_by: Optional[
+        Literal["total_rows", "rows_with_text", "max_text_length", "total_text_length"]
+    ] = Field(
         default="total_rows",
-        description="Must be one of: total_rows, rows_with_text, max_text_length, total_text_length"
+        description="Must be one of: total_rows, rows_with_text, max_text_length, total_text_length",
     )
     limit: Optional[int] = Field(
-        default=5,
-        gt=0,
-        le=100,
-        description="Must be between 1 and 100"
+        default=5, gt=0, le=100, description="Must be between 1 and 100"
     )
     start_day: Optional[int] = Field(
-        default=1,
-        gt=0,
-        le=31,
-        description="Must be between 1 and 31"
+        default=1, gt=0, le=31, description="Must be between 1 and 31"
     )
     end_day: Optional[int] = Field(
-        default=31,
-        gt=0,
-        le=31,
-        description="Must be between 1 and 31"
+        default=31, gt=0, le=31, description="Must be between 1 and 31"
     )
+
 
 class QueryResult(BaseModel):
     day_of_month: int
@@ -38,14 +33,16 @@ class QueryResult(BaseModel):
     rows_with_text: int
     max_text_length: int
     total_text_length: int
-    
-    
+
+
 ## The run function is where you can define your API logic
 def run(client: MooseClient, params: QueryParams):
 
     # Create a cache
     cache = MooseCache()
-    cache_key = f"bar:{params.order_by}:{params.limit}:{params.start_day}:{params.end_day}"
+    cache_key = (
+        f"bar:{params.order_by}:{params.limit}:{params.start_day}:{params.end_day}"
+    )
 
     # Check for cached query results
     cached_result = cache.get(cache_key, type_hint=list)
@@ -64,15 +61,18 @@ def run(client: MooseClient, params: QueryParams):
     AND day_of_month <= {end_day} 
     ORDER BY {order_by} DESC
     LIMIT {limit}
-    """    
+    """
 
-    result = client.query.execute(query, {
-        "table": barAggregatedMV.target_table,
-        "order_by": barAggregatedMV.target_table.cols[params.order_by],
-        "start_day": params.start_day,
-        "end_day": params.end_day,
-        "limit": params.limit
-    })
+    result = client.query.execute(
+        query,
+        {
+            "table": barAggregatedMV.target_table,
+            "order_by": barAggregatedMV.target_table.cols[params.order_by],
+            "start_day": params.start_day,
+            "end_day": params.end_day,
+            "limit": params.limit,
+        },
+    )
 
     # Cache query results
     cache.set(cache_key, result, 3600)  # Cache for 1 hour
@@ -84,30 +84,38 @@ def run_v1(client: MooseClient, params: QueryParams):
 
     # Create a cache
     cache = MooseCache()
-    cache_key = f"bar:v1:{params.order_by}:{params.limit}:{params.start_day}:{params.end_day}"
+    cache_key = (
+        f"bar:v1:{params.order_by}:{params.limit}:{params.start_day}:{params.end_day}"
+    )
 
     # Check for cached query results
     cached_result = cache.get(cache_key, type_hint=list)
     if cached_result and len(cached_result) > 0:
         return cached_result
 
-    query = Query() \
+    query = (
+        Query()
         .select(
             barAggregatedMV.target_table.cols.day_of_month,
             barAggregatedMV.target_table.cols.total_rows,
             barAggregatedMV.target_table.cols.rows_with_text,
             barAggregatedMV.target_table.cols.max_text_length,
             barAggregatedMV.target_table.cols.total_text_length,
-        ) \
-        .from_(barAggregatedMV.target_table) \
+        )
+        .from_(barAggregatedMV.target_table)
         .where(
             and_(
-                barAggregatedMV.target_table.cols.day_of_month.to_expr().ge(params.start_day),
-                barAggregatedMV.target_table.cols.day_of_month.to_expr().le(params.end_day),
+                barAggregatedMV.target_table.cols.day_of_month.to_expr().ge(
+                    params.start_day
+                ),
+                barAggregatedMV.target_table.cols.day_of_month.to_expr().le(
+                    params.end_day
+                ),
             )
-        ) \
-        .order_by((barAggregatedMV.target_table.cols[params.order_by], "desc")) \
+        )
+        .order_by((barAggregatedMV.target_table.cols[params.order_by], "desc"))
         .limit(params.limit)
+    )
     result = client.query.execute(query)
 
     # V1 specific: Add metadata
@@ -119,13 +127,14 @@ def run_v1(client: MooseClient, params: QueryParams):
                 "limit": params.limit,
                 "start_day": params.start_day,
                 "end_day": params.end_day,
-            }
+            },
         }
 
     # Cache query results
     cache.set(cache_key, result, 3600)  # Cache for 1 hour
 
     return result
+
 
 bar = Api[QueryParams, QueryResult](name="bar", query_function=run)
 bar_v1 = Api[QueryParams, QueryResult](name="bar", query_function=run_v1, version="1")

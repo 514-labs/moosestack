@@ -369,6 +369,10 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
     /// exist in reality but not in the map, tables that are in the map but don't exist
     /// in reality, and tables that exist in both but have structural differences.
     ///
+    /// TODO add support for kafka reality check
+    /// TODO this is too big of a function, we should split it into smaller functions, there
+    ///      some magic strings in the code that should be extracted to constants (like "_moose")
+    ///
     /// # Arguments
     ///
     /// * `project` - The project configuration

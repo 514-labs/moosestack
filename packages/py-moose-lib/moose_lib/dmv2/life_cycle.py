@@ -4,7 +4,9 @@ Lifecycle management definitions for Moose Data Model v2 (dmv2).
 This module defines how Moose manages the lifecycle of database resources
 when your code changes.
 """
+
 from enum import Enum
+
 
 class LifeCycle(Enum):
     """Defines how Moose manages the lifecycle of database resources when your code changes.
@@ -29,4 +31,4 @@ class LifeCycle(Enum):
     """External management - no automatic changes.
     Moose will not modify the database resources. You are responsible for managing
     the schema and ensuring it matches your code definitions manually.
-    """ 
+    """
