@@ -39,7 +39,9 @@ function shouldSkipStackLine(line: string): boolean {
     line.includes("internal/modules") || // Skip Node.js internals (older format)
     line.includes("ts-node") || // Skip TypeScript execution
     line.includes("/ts-moose-lib/src/") || // Skip dev/linked moose-lib src (Unix)
-    line.includes("\\ts-moose-lib\\src\\") // Skip dev/linked moose-lib src (Windows)
+    line.includes("\\ts-moose-lib\\src\\") || // Skip dev/linked moose-lib src (Windows)
+    line.includes("/ts-moose-lib/dist/") || // Skip dev/linked moose-lib dist (Unix)
+    line.includes("\\ts-moose-lib\\dist\\") // Skip dev/linked moose-lib dist (Windows)
   );
 }
 
