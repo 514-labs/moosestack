@@ -4,6 +4,7 @@ Utilities for capturing source file information from the call stack.
 This module provides functions to extract source file paths from Python's
 call stack, filtering out internal library paths.
 """
+
 from typing import Optional
 import inspect
 
@@ -34,4 +35,3 @@ def get_source_file_from_stack() -> Optional[str]:
         # If anything goes wrong, just return None
         pass
     return None
-
