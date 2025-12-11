@@ -13,10 +13,12 @@ log = getLogger(logger_name)
 log.setLevel(INFO)
 log.handlers = [handler]
 
+
 class ForwardingHandler(StreamHandler):
     def emit(self, record):
         record.name = logger_name
         log.handle(record)
+
 
 # Temporal already has a named logger.
 # This is how we route log lines from temporal to moose.

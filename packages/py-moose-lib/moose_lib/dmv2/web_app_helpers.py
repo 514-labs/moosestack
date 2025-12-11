@@ -4,6 +4,7 @@ Helper utilities for WebApp integration with FastAPI.
 This module provides utilities to access Moose services (ClickHouse, Temporal)
 from within FastAPI request handlers.
 """
+
 from typing import Optional, Any, Dict
 from dataclasses import dataclass
 
@@ -17,6 +18,7 @@ class ApiUtil:
         sql: SQL template function for building safe queries.
         jwt: JWT payload if authentication is enabled, None otherwise.
     """
+
     client: Any  # MooseClient, typed as Any to avoid circular import
     sql: Any  # sql function from moose_lib.main
     jwt: Optional[Dict[str, Any]] = None
@@ -55,7 +57,7 @@ def get_moose_utils(request: Any) -> Optional[ApiUtil]:
         ```
     """
     # FastAPI uses request.state for storing custom data
-    if hasattr(request, 'state') and hasattr(request.state, 'moose'):
+    if hasattr(request, "state") and hasattr(request.state, "moose"):
         return request.state.moose
     return None
 
@@ -83,10 +85,12 @@ def get_moose_dependency():
             return result
         ```
     """
+
     def moose_dependency(request: Any) -> ApiUtil:
         moose = get_moose_utils(request)
         if moose is None:
             # This should rarely happen if inject_moose_utils=True
             raise RuntimeError("Moose utilities not available in request")
         return moose
+
     return moose_dependency

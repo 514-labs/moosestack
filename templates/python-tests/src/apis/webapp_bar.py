@@ -4,6 +4,7 @@ Example BYOF (Bring Your Own Framework) FastAPI app for python-tests template
 This file demonstrates how to use FastAPI with MooseStack for consumption
 APIs using the WebApp class.
 """
+
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from moose_lib.dmv2 import WebApp, WebAppConfig, WebAppMetadata
@@ -29,10 +30,7 @@ async def require_auth(request: Request):
     """Require JWT authentication for protected endpoints"""
     moose = get_moose_utils(request)
     if not moose or not moose.jwt:
-        raise HTTPException(
-            status_code=401,
-            detail="Unauthorized - JWT token required"
-        )
+        raise HTTPException(status_code=401, detail="Unauthorized - JWT token required")
     return moose
 
 
@@ -61,8 +59,7 @@ async def query(request: Request, limit: int = 10):
     moose = get_moose_utils(request)
     if not moose:
         raise HTTPException(
-            status_code=500,
-            detail="MooseStack utilities not available"
+            status_code=500, detail="MooseStack utilities not available"
         )
 
     try:
@@ -76,9 +73,7 @@ async def query(request: Request, limit: int = 10):
             LIMIT {limit}
         """
 
-        result = moose.client.query.execute(query_str, {
-            "limit": limit
-        })
+        result = moose.client.query.execute(query_str, {"limit": limit})
 
         return {
             "success": True,
@@ -87,37 +82,21 @@ async def query(request: Request, limit: int = 10):
         }
     except Exception as error:
         print(f"Query error: {error}")
-        raise HTTPException(
-            status_code=500,
-            detail=str(error)
-        )
+        raise HTTPException(status_code=500, detail=str(error))
 
 
 # POST endpoint with request body validation
 class DataRequest(BaseModel):
     """Request body for /data endpoint"""
-    order_by: Literal["total_rows", "rows_with_text", "max_text_length", "total_text_length"] = Field(
-        default="total_rows",
-        description="Column to order by"
-    )
+
+    order_by: Literal[
+        "total_rows", "rows_with_text", "max_text_length", "total_text_length"
+    ] = Field(default="total_rows", description="Column to order by")
     limit: int = Field(
-        default=5,
-        gt=0,
-        le=100,
-        description="Number of records to return"
+        default=5, gt=0, le=100, description="Number of records to return"
     )
-    start_day: int = Field(
-        default=1,
-        gt=0,
-        le=31,
-        description="Start day of month"
-    )
-    end_day: int = Field(
-        default=31,
-        gt=0,
-        le=31,
-        description="End day of month"
-    )
+    start_day: int = Field(default=1, gt=0, le=31, description="Start day of month")
+    end_day: int = Field(default=31, gt=0, le=31, description="End day of month")
 
 
 @app.post("/data")
@@ -133,8 +112,7 @@ async def data(request: Request, body: DataRequest):
     moose = get_moose_utils(request)
     if not moose:
         raise HTTPException(
-            status_code=500,
-            detail="MooseStack utilities not available"
+            status_code=500, detail="MooseStack utilities not available"
         )
 
     try:
@@ -151,13 +129,16 @@ async def data(request: Request, body: DataRequest):
             LIMIT {limit}
         """
 
-        result = moose.client.query.execute(query_str, {
-            "select_column": body.order_by,
-            "order_by": body.order_by,
-            "start_day": body.start_day,
-            "end_day": body.end_day,
-            "limit": body.limit
-        })
+        result = moose.client.query.execute(
+            query_str,
+            {
+                "select_column": body.order_by,
+                "order_by": body.order_by,
+                "start_day": body.start_day,
+                "end_day": body.end_day,
+                "limit": body.limit,
+            },
+        )
 
         return {
             "success": True,
@@ -172,10 +153,7 @@ async def data(request: Request, body: DataRequest):
         }
     except Exception as error:
         print(f"Query error: {error}")
-        raise HTTPException(
-            status_code=500,
-            detail=str(error)
-        )
+        raise HTTPException(status_code=500, detail=str(error))
 
 
 # Protected endpoint requiring JWT authentication
@@ -204,7 +182,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={
             "error": "Internal Server Error",
             "message": str(exc),
-        }
+        },
     )
 
 
@@ -217,5 +195,5 @@ bar_fastapi_app = WebApp(
         metadata=WebAppMetadata(
             description="FastAPI WebApp with middleware demonstrating WebApp integration"
         ),
-    )
+    ),
 )

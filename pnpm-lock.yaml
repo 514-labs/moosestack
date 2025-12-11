@@ -759,15 +759,15 @@ importers:
 
   packages/ts-moose-lib:
     dependencies:
+      '@514labs/kafka-javascript':
+        specifier: 1.7.1-patch
+        version: 1.7.1-patch
       '@clickhouse/client':
         specifier: 1.8.1
         version: 1.8.1
       '@clickhouse/client-web':
         specifier: 1.5.0
         version: 1.5.0
-      '@confluentinc/kafka-javascript':
-        specifier: 1.7.0
-        version: 1.7.0
       '@kafkajs/confluent-schema-registry':
         specifier: 3.9.0
         version: 3.9.0
@@ -877,6 +877,10 @@ importers:
         version: 3.0.0
 
 packages:
+
+  '@514labs/kafka-javascript@1.7.1-patch':
+    resolution: {integrity: sha512-wE9zNdx39tcXOlMN4RGQEkuwGPUIJ+4xVQ4WRMFOjVN9Ixndat89jTUIBQSlCOc4B3RrRcn4VTz13pJo9tESMg==}
+    engines: {node: '>=18.0.0'}
 
   '@514labs/moose-cli-darwin-arm64@0.3.205':
     resolution: {integrity: sha512-F3SRx1u0HaLAu4sZbQcZaFEwTg9mxWvSUJeAjMOVuoU58fzF1pVIPUhFW+N+r2NK8h4AY0LZ+1qUXfa0o8DM9w==}
@@ -1329,10 +1333,6 @@ packages:
   '@clickhouse/client@1.8.1':
     resolution: {integrity: sha512-Ec0pCdwftIPD7hCxhOukHS0Zxr2tDc5mNAHBqkT3c0c6GO2WQdZkME9+EcfGcoF7+foUp82F5a0bPfSDDjfWmg==}
     engines: {node: '>=16'}
-
-  '@confluentinc/kafka-javascript@1.7.0':
-    resolution: {integrity: sha512-nmb7+TYjokCFOX2qUgSqhSW7dCy6/raYYneqR/dLDQwUPak4yuRLGfrvGHTvoH0VC4BUUiRu8niJS//5c3SC/A==}
-    engines: {node: '>=18.0.0'}
 
   '@corex/deepmerge@4.0.43':
     resolution: {integrity: sha512-N8uEMrMPL0cu/bdboEWpQYb/0i2K5Qn8eCsxzOmxSggJbbQte7ljMRoXm917AbntqTGOzdTu+vP3KOOzoC70HQ==}
@@ -9391,6 +9391,15 @@ packages:
 
 snapshots:
 
+  '@514labs/kafka-javascript@1.7.1-patch':
+    dependencies:
+      '@mapbox/node-pre-gyp': 1.0.11
+      bindings: 1.5.0
+      nan: 2.23.0
+    transitivePeerDependencies:
+      - encoding
+      - supports-color
+
   '@514labs/moose-cli-darwin-arm64@0.3.205':
     optional: true
 
@@ -10156,15 +10165,6 @@ snapshots:
   '@clickhouse/client@1.8.1':
     dependencies:
       '@clickhouse/client-common': 1.8.1
-
-  '@confluentinc/kafka-javascript@1.7.0':
-    dependencies:
-      '@mapbox/node-pre-gyp': 1.0.11
-      bindings: 1.5.0
-      nan: 2.23.0
-    transitivePeerDependencies:
-      - encoding
-      - supports-color
 
   '@corex/deepmerge@4.0.43': {}
 

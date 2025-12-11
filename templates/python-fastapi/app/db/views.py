@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 class BarAggregated(BaseModel):
     """Aggregated metrics from Bar table, grouped by day of month"""
+
     day_of_month: int
     total_rows: int
     rows_with_text: int
@@ -27,10 +28,12 @@ FROM Bar
 GROUP BY toDayOfMonth(utc_timestamp)
 """
 
-bar_aggregated_mv = MaterializedView[BarAggregated](MaterializedViewOptions(
-    select_statement=select_query,
-    select_tables=[bar_pipeline.table],
-    table_name="BarAggregated",
-    materialized_view_name="BarAggregated_mv",
-    order_by_fields=["day_of_month"]
-))
+bar_aggregated_mv = MaterializedView[BarAggregated](
+    MaterializedViewOptions(
+        select_statement=select_query,
+        select_tables=[bar_pipeline.table],
+        table_name="BarAggregated",
+        materialized_view_name="BarAggregated_mv",
+        order_by_fields=["day_of_month"],
+    )
+)

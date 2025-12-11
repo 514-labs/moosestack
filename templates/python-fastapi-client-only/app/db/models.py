@@ -27,6 +27,7 @@ class BarModel(BaseModel):
     has_text: bool
     text_length: int
 
+
 class BarAggregated(BaseModel):
     day_of_month: int
     total_rows: int
@@ -34,15 +35,12 @@ class BarAggregated(BaseModel):
     total_text_length: int
     max_text_length: int
 
-FooTable = OlapTable[FooModel]("Foo", OlapConfig(
-    engine=MergeTreeEngine()
-))
 
-BarTable = OlapTable[BarModel]("Bar", OlapConfig(
-    engine=MergeTreeEngine()
-))
+FooTable = OlapTable[FooModel]("Foo", OlapConfig(engine=MergeTreeEngine()))
 
-BarAggregatedTable = OlapTable[BarAggregated]("BarAggregated", OlapConfig(
-    engine=MergeTreeEngine(),
-    order_by_fields=["day_of_month"]  
-))
+BarTable = OlapTable[BarModel]("Bar", OlapConfig(engine=MergeTreeEngine()))
+
+BarAggregatedTable = OlapTable[BarAggregated](
+    "BarAggregated",
+    OlapConfig(engine=MergeTreeEngine(), order_by_fields=["day_of_month"]),
+)

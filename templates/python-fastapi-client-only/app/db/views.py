@@ -14,9 +14,11 @@ FROM {BarTable.name}
 GROUP BY day_of_month
 """
 
-BarAggregatedMV = MaterializedView[BarAggregatedTable.model_type](MaterializedViewOptions(
-    select_statement=select_query,
-    select_tables=[BarTable],
-    materialized_view_name="mv_bar_to_bar_aggregated",
-), target_table=BarAggregatedTable)
-
+BarAggregatedMV = MaterializedView[BarAggregatedTable.model_type](
+    MaterializedViewOptions(
+        select_statement=select_query,
+        select_tables=[BarTable],
+        materialized_view_name="mv_bar_to_bar_aggregated",
+    ),
+    target_table=BarAggregatedTable,
+)

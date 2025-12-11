@@ -4,6 +4,7 @@ Runtime configuration management for Moose.
 This module provides a singleton registry for managing runtime configuration settings,
 particularly for ClickHouse connections.
 """
+
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -12,6 +13,7 @@ from typing import Optional
 @dataclass
 class RuntimeClickHouseConfig:
     """Runtime ClickHouse configuration settings."""
+
     host: str
     port: str
     username: str
@@ -23,6 +25,7 @@ class RuntimeClickHouseConfig:
 @dataclass
 class RuntimeKafkaConfig:
     """Runtime Kafka configuration settings."""
+
     broker: str
     message_timeout_ms: int
     sasl_username: Optional[str]
@@ -39,12 +42,13 @@ class ConfigurationRegistry:
     This class provides a centralized way to manage and access runtime configuration
     settings, with fallback to file-based configuration when runtime settings are not set.
     """
-    _instance: Optional['ConfigurationRegistry'] = None
+
+    _instance: Optional["ConfigurationRegistry"] = None
     _clickhouse_config: Optional[RuntimeClickHouseConfig] = None
     _kafka_config: Optional[RuntimeKafkaConfig] = None
 
     @classmethod
-    def get_instance(cls) -> 'ConfigurationRegistry':
+    def get_instance(cls) -> "ConfigurationRegistry":
         """Get the singleton instance of ConfigurationRegistry.
 
         Returns:
@@ -62,7 +66,7 @@ class ConfigurationRegistry:
         """
         self._clickhouse_config = config
 
-    def set_kafka_config(self, config: 'RuntimeKafkaConfig') -> None:
+    def set_kafka_config(self, config: "RuntimeKafkaConfig") -> None:
         """Set the runtime Kafka configuration.
 
         Args:
@@ -117,12 +121,16 @@ class ConfigurationRegistry:
                 username=env_user or config.clickhouse_config.user,
                 password=env_password or config.clickhouse_config.password,
                 database=env_db or config.clickhouse_config.db_name,
-                use_ssl=(env_use_ssl if env_use_ssl is not None else config.clickhouse_config.use_ssl),
+                use_ssl=(
+                    env_use_ssl
+                    if env_use_ssl is not None
+                    else config.clickhouse_config.use_ssl
+                ),
             )
         except Exception as e:
             raise RuntimeError(f"Failed to get ClickHouse configuration: {e}")
 
-    def get_kafka_config(self) -> 'RuntimeKafkaConfig':
+    def get_kafka_config(self) -> "RuntimeKafkaConfig":
         """Get the current Kafka configuration.
 
         If runtime configuration is not set, falls back to reading from moose.config.toml
@@ -147,22 +155,30 @@ class ConfigurationRegistry:
             config = read_project_config()
 
             # Prefer Redpanda-prefixed env vars; fallback to Kafka-prefixed
-            broker = _env("MOOSE_REDPANDA_CONFIG__BROKER") or \
-                     _env("MOOSE_KAFKA_CONFIG__BROKER")
-            message_timeout_ms = _env("MOOSE_REDPANDA_CONFIG__MESSAGE_TIMEOUT_MS") or \
-                                 _env("MOOSE_KAFKA_CONFIG__MESSAGE_TIMEOUT_MS")
-            sasl_username = _env("MOOSE_REDPANDA_CONFIG__SASL_USERNAME") or \
-                            _env("MOOSE_KAFKA_CONFIG__SASL_USERNAME")
-            sasl_password = _env("MOOSE_REDPANDA_CONFIG__SASL_PASSWORD") or \
-                            _env("MOOSE_KAFKA_CONFIG__SASL_PASSWORD")
-            sasl_mechanism = _env("MOOSE_REDPANDA_CONFIG__SASL_MECHANISM") or \
-                             _env("MOOSE_KAFKA_CONFIG__SASL_MECHANISM")
-            security_protocol = _env("MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL") or \
-                                _env("MOOSE_KAFKA_CONFIG__SECURITY_PROTOCOL")
-            namespace = _env("MOOSE_REDPANDA_CONFIG__NAMESPACE") or \
-                        _env("MOOSE_KAFKA_CONFIG__NAMESPACE")
-            schema_registry_url = _env("MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL") or \
-                                  _env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL")
+            broker = _env("MOOSE_REDPANDA_CONFIG__BROKER") or _env(
+                "MOOSE_KAFKA_CONFIG__BROKER"
+            )
+            message_timeout_ms = _env(
+                "MOOSE_REDPANDA_CONFIG__MESSAGE_TIMEOUT_MS"
+            ) or _env("MOOSE_KAFKA_CONFIG__MESSAGE_TIMEOUT_MS")
+            sasl_username = _env("MOOSE_REDPANDA_CONFIG__SASL_USERNAME") or _env(
+                "MOOSE_KAFKA_CONFIG__SASL_USERNAME"
+            )
+            sasl_password = _env("MOOSE_REDPANDA_CONFIG__SASL_PASSWORD") or _env(
+                "MOOSE_KAFKA_CONFIG__SASL_PASSWORD"
+            )
+            sasl_mechanism = _env("MOOSE_REDPANDA_CONFIG__SASL_MECHANISM") or _env(
+                "MOOSE_KAFKA_CONFIG__SASL_MECHANISM"
+            )
+            security_protocol = _env(
+                "MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL"
+            ) or _env("MOOSE_KAFKA_CONFIG__SECURITY_PROTOCOL")
+            namespace = _env("MOOSE_REDPANDA_CONFIG__NAMESPACE") or _env(
+                "MOOSE_KAFKA_CONFIG__NAMESPACE"
+            )
+            schema_registry_url = _env(
+                "MOOSE_REDPANDA_CONFIG__SCHEMA_REGISTRY_URL"
+            ) or _env("MOOSE_KAFKA_CONFIG__SCHEMA_REGISTRY_URL")
 
             file_kafka = config.kafka_config
 
@@ -173,19 +189,42 @@ class ConfigurationRegistry:
                     return fallback
 
             return RuntimeKafkaConfig(
-                broker=broker or (file_kafka.broker if file_kafka else "localhost:19092"),
-                message_timeout_ms=_to_int(message_timeout_ms, file_kafka.message_timeout_ms if file_kafka else 1000),
-                sasl_username=sasl_username if sasl_username is not None else (
-                    file_kafka.sasl_username if file_kafka else None),
-                sasl_password=sasl_password if sasl_password is not None else (
-                    file_kafka.sasl_password if file_kafka else None),
-                sasl_mechanism=sasl_mechanism if sasl_mechanism is not None else (
-                    file_kafka.sasl_mechanism if file_kafka else None),
-                security_protocol=security_protocol if security_protocol is not None else (
-                    file_kafka.security_protocol if file_kafka else None),
-                namespace=namespace if namespace is not None else (file_kafka.namespace if file_kafka else None),
-                schema_registry_url=schema_registry_url if schema_registry_url is not None else (
-                    file_kafka.schema_registry_url if file_kafka else None),
+                broker=broker
+                or (file_kafka.broker if file_kafka else "localhost:19092"),
+                message_timeout_ms=_to_int(
+                    message_timeout_ms,
+                    file_kafka.message_timeout_ms if file_kafka else 1000,
+                ),
+                sasl_username=(
+                    sasl_username
+                    if sasl_username is not None
+                    else (file_kafka.sasl_username if file_kafka else None)
+                ),
+                sasl_password=(
+                    sasl_password
+                    if sasl_password is not None
+                    else (file_kafka.sasl_password if file_kafka else None)
+                ),
+                sasl_mechanism=(
+                    sasl_mechanism
+                    if sasl_mechanism is not None
+                    else (file_kafka.sasl_mechanism if file_kafka else None)
+                ),
+                security_protocol=(
+                    security_protocol
+                    if security_protocol is not None
+                    else (file_kafka.security_protocol if file_kafka else None)
+                ),
+                namespace=(
+                    namespace
+                    if namespace is not None
+                    else (file_kafka.namespace if file_kafka else None)
+                ),
+                schema_registry_url=(
+                    schema_registry_url
+                    if schema_registry_url is not None
+                    else (file_kafka.schema_registry_url if file_kafka else None)
+                ),
             )
         except Exception as e:
             raise RuntimeError(f"Failed to get Kafka configuration: {e}")

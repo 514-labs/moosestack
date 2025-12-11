@@ -4,6 +4,7 @@ Stream definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining and configuring data streams,
 including stream transformations, consumers, and dead letter queues.
 """
+
 import dataclasses
 import datetime
 import json
@@ -50,6 +51,7 @@ class StreamConfig(BaseModel):
         life_cycle: Determines how changes in code will propagate to the resources.
         default_dead_letter_queue: default dead letter queue used by transforms/consumers
     """
+
     parallelism: int = 1
     retention_period: int = 60 * 60 * 24 * 7  # 7 days
     destination: Optional[OlapTable] = None
@@ -69,6 +71,7 @@ class TransformConfig(BaseModel):
         version: Optional version string to identify a specific transformation.
                  Allows multiple transformations to the same destination if versions differ.
     """
+
     version: Optional[str] = None
     dead_letter_queue: "Optional[DeadLetterQueue]" = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -82,6 +85,7 @@ class ConsumerConfig(BaseModel):
         version: Optional version string to identify a specific consumer.
                  Allows multiple consumers if versions differ.
     """
+
     version: Optional[str] = None
     dead_letter_queue: "Optional[DeadLetterQueue]" = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -90,6 +94,7 @@ class ConsumerConfig(BaseModel):
 @dataclasses.dataclass
 class _RoutedMessage:
     """Internal class representing a message routed to a specific stream."""
+
     destination: "Stream[Any]"
     values: ZeroOrMany[Any]
 
@@ -97,6 +102,7 @@ class _RoutedMessage:
 @dataclasses.dataclass
 class ConsumerEntry(Generic[T]):
     """Internal class representing a consumer with its configuration."""
+
     consumer: Callable[[T], None]
     config: ConsumerConfig
 
@@ -104,6 +110,7 @@ class ConsumerEntry(Generic[T]):
 @dataclasses.dataclass
 class TransformEntry(Generic[T]):
     """Internal class representing a transformation with its configuration."""
+
     destination: "Stream[Any]"
     transformation: Callable[[T], ZeroOrMany[Any]]
     config: TransformConfig
@@ -128,6 +135,7 @@ class Stream(TypedMooseResource, Generic[T]):
         name (str): The name of the stream.
         model_type (type[T]): The Pydantic model associated with this stream.
     """
+
     config: StreamConfig
     transformations: dict[str, list[TransformEntry[T]]]
     consumers: list[ConsumerEntry[T]]
@@ -146,8 +154,12 @@ class Stream(TypedMooseResource, Generic[T]):
         self.default_dead_letter_queue = self.config.default_dead_letter_queue
         _streams[name] = self
 
-    def add_transform(self, destination: "Stream[U]", transformation: Callable[[T], ZeroOrMany[U]],
-                      config: TransformConfig = None):
+    def add_transform(
+        self,
+        destination: "Stream[U]",
+        transformation: Callable[[T], ZeroOrMany[U]],
+        config: TransformConfig = None,
+    ):
         """Adds a transformation step from this stream to a destination stream.
 
         The transformation function receives a record of type `T` and should return
@@ -160,23 +172,37 @@ class Stream(TypedMooseResource, Generic[T]):
         """
         config = config or TransformConfig()
         if (
-                self.default_dead_letter_queue is not None
-                and config.dead_letter_queue is None
+            self.default_dead_letter_queue is not None
+            and config.dead_letter_queue is None
         ):
             config = config.model_copy()
             config.dead_letter_queue = self.default_dead_letter_queue
         if destination.name in self.transformations:
             existing_transforms = self.transformations[destination.name]
             # Check if a transform with this version already exists
-            has_version = any(t.config.version == config.version for t in existing_transforms)
+            has_version = any(
+                t.config.version == config.version for t in existing_transforms
+            )
             if not has_version:
                 existing_transforms.append(
-                    TransformEntry(destination=destination, transformation=transformation, config=config))
+                    TransformEntry(
+                        destination=destination,
+                        transformation=transformation,
+                        config=config,
+                    )
+                )
         else:
             self.transformations[destination.name] = [
-                TransformEntry(destination=destination, transformation=transformation, config=config)]
+                TransformEntry(
+                    destination=destination,
+                    transformation=transformation,
+                    config=config,
+                )
+            ]
 
-    def add_consumer(self, consumer: Callable[[T], None], config: ConsumerConfig = None):
+    def add_consumer(
+        self, consumer: Callable[[T], None], config: ConsumerConfig = None
+    ):
         """Adds a consumer function to be executed for each record in the stream.
 
         Consumers are typically used for side effects like logging or triggering external actions.
@@ -187,8 +213,8 @@ class Stream(TypedMooseResource, Generic[T]):
         """
         config = config or ConsumerConfig()
         if (
-                self.default_dead_letter_queue is not None
-                and config.dead_letter_queue is None
+            self.default_dead_letter_queue is not None
+            and config.dead_letter_queue is None
         ):
             config = config.model_copy()
             config.dead_letter_queue = self.default_dead_letter_queue
@@ -243,12 +269,15 @@ class Stream(TypedMooseResource, Generic[T]):
 
     def _build_full_topic_name(self, namespace: Optional[str]) -> str:
         """Build full topic name with optional namespace and version suffix."""
-        version_suffix = f"_{self.config.version.replace('.', '_')}" if self.config.version else ""
+        version_suffix = (
+            f"_{self.config.version.replace('.', '_')}" if self.config.version else ""
+        )
         base = f"{self.name}{version_suffix}"
         return f"{namespace}.{base}" if namespace else base
 
     def _create_kafka_config_hash(self, cfg: RuntimeKafkaConfig) -> str:
         import hashlib
+
         config_string = ":".join(
             str(x)
             for x in (
@@ -273,11 +302,17 @@ class Stream(TypedMooseResource, Generic[T]):
         cfg: RuntimeKafkaConfig = config_registry.get_kafka_config()
         current_hash = self._create_kafka_config_hash(cfg)
 
-        if self._memoized_producer is not None and self._kafka_config_hash == current_hash:
+        if (
+            self._memoized_producer is not None
+            and self._kafka_config_hash == current_hash
+        ):
             return self._memoized_producer, cfg
 
         # Close previous producer if config changed
-        if self._memoized_producer is not None and self._kafka_config_hash != current_hash:
+        if (
+            self._memoized_producer is not None
+            and self._kafka_config_hash != current_hash
+        ):
             try:
                 self._memoized_producer.flush()
                 self._memoized_producer.close()
@@ -296,7 +331,7 @@ class Stream(TypedMooseResource, Generic[T]):
             sasl_password=cfg.sasl_password,
             sasl_mechanism=cfg.sasl_mechanism,
             security_protocol=cfg.security_protocol,
-            value_serializer=lambda v: v.model_dump_json().encode('utf-8'),
+            value_serializer=lambda v: v.model_dump_json().encode("utf-8"),
             acks="all",
         )
 
@@ -371,7 +406,9 @@ class Stream(TypedMooseResource, Generic[T]):
             elif isinstance(sr.reference, SubjectLatest):
                 schema = client.get_latest_version(sr.reference.name).schema
             else:
-                schema = client.get_version(sr.reference.subject, sr.reference.version).schema
+                schema = client.get_version(
+                    sr.reference.subject, sr.reference.version
+                ).schema
 
             serializer = JSONSerializer(schema, client)
 
@@ -395,9 +432,12 @@ class DeadLetterModel(BaseModel, Generic[T]):
         failed_at: Timestamp when the error occurred.
         source: Source of the error ("api", "transform", or "table").
     """
-    model_config = ConfigDict(alias_generator=AliasGenerator(
-        serialization_alias=to_camel,
-    ))
+
+    model_config = ConfigDict(
+        alias_generator=AliasGenerator(
+            serialization_alias=to_camel,
+        )
+    )
     original_record: Any
     error_message: str
     error_type: str
@@ -429,10 +469,16 @@ class DeadLetterQueue(Stream, Generic[T]):
         """
         self._model_type = self._get_type(kwargs)
         kwargs["t"] = DeadLetterModel[self._model_type]
-        super().__init__(name, config if config is not None else StreamConfig(), **kwargs)
+        super().__init__(
+            name, config if config is not None else StreamConfig(), **kwargs
+        )
 
-    def add_transform(self, destination: Stream[U], transformation: Callable[[DeadLetterModel[T]], ZeroOrMany[U]],
-                      config: TransformConfig = None):
+    def add_transform(
+        self,
+        destination: Stream[U],
+        transformation: Callable[[DeadLetterModel[T]], ZeroOrMany[U]],
+        config: TransformConfig = None,
+    ):
         def wrapped_transform(record: DeadLetterModel[T]):
             record._t = self._model_type
             return transformation(record)
@@ -440,7 +486,11 @@ class DeadLetterQueue(Stream, Generic[T]):
         config = config or TransformConfig()
         super().add_transform(destination, wrapped_transform, config)
 
-    def add_consumer(self, consumer: Callable[[DeadLetterModel[T]], None], config: ConsumerConfig = None):
+    def add_consumer(
+        self,
+        consumer: Callable[[DeadLetterModel[T]], None],
+        config: ConsumerConfig = None,
+    ):
         def wrapped_consumer(record: DeadLetterModel[T]):
             record._t = self._model_type
             return consumer(record)
@@ -448,7 +498,9 @@ class DeadLetterQueue(Stream, Generic[T]):
         config = config or ConsumerConfig()
         super().add_consumer(wrapped_consumer, config)
 
-    def set_multi_transform(self, transformation: Callable[[DeadLetterModel[T]], list[_RoutedMessage]]):
+    def set_multi_transform(
+        self, transformation: Callable[[DeadLetterModel[T]], list[_RoutedMessage]]
+    ):
         def wrapped_transform(record: DeadLetterModel[T]):
             record._t = self._model_type
             return transformation(record)

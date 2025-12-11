@@ -4,9 +4,8 @@ from moose_lib import Key, moose_data_model, DataModelConfig
 
 # Configuration for batch loading stargazer data from JSON
 # Specifies that the input will be in JSON array format
-batch_load_config = DataModelConfig(
-    ingestion=True
-)
+batch_load_config = DataModelConfig(ingestion=True)
+
 
 @moose_data_model(batch_load_config)  # Apply the batch loading config to this model
 @dataclass

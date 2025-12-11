@@ -679,9 +679,9 @@ class OlapTable(TypedMooseResource, Generic[T]):
         # Base settings for all inserts
         base_settings = {
             "date_time_input_format": "best_effort",
-            "max_insert_block_size": 100000
-            if is_stream
-            else min(len(validated_data), 100000),
+            "max_insert_block_size": (
+                100000 if is_stream else min(len(validated_data), 100000)
+            ),
             "max_block_size": 65536,
             "async_insert": 1 if len(validated_data) > 1000 else 0,
             "wait_for_async_insert": 1,
