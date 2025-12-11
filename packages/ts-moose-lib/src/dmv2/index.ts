@@ -98,4 +98,8 @@ export {
   getWorkflow,
   getWebApps,
   getWebApp,
+  getMaterializedViews,
+  getMaterializedView,
+  getCustomViews,
+  getCustomView,
 } from "./registry";
