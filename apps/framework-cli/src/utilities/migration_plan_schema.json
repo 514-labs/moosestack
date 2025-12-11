@@ -194,40 +194,6 @@
           "additionalProperties": false
         },
         {
-          "description": "Modify or remove table-level TTL",
-          "type": "object",
-          "properties": {
-            "ModifyTableTtl": {
-              "type": "object",
-              "properties": {
-                "table": {
-                  "description": "The table to modify TTL for",
-                  "type": "string"
-                },
-                "before": {
-                  "description": "TTL before modification",
-                  "type": ["string", "null"]
-                },
-                "after": {
-                  "description": "TTL after modification",
-                  "type": ["string", "null"]
-                },
-                "database": {
-                  "description": "The database containing the table",
-                  "type": ["string", "null"]
-                },
-                "cluster_name": {
-                  "description": "Optional cluster name for ON CLUSTER support",
-                  "type": ["string", "null"]
-                }
-              },
-              "required": ["table"]
-            }
-          },
-          "required": ["ModifyTableTtl"],
-          "additionalProperties": false
-        },
-        {
           "description": "Add an index to a table",
           "type": "object",
           "properties": {
