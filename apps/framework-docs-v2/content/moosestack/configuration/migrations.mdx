@@ -1,0 +1,19 @@
+---
+title: Migration Configuration
+description: Configure database migration and schema change behavior
+order: 61
+---
+
+# Migration Configuration
+
+Control how Moose handles database migrations and schema changes.
+
+```toml filename="moose.config.toml"
+[migration_config]
+# Operations to ignore during migration plan generation and drift detection
+# ignore_operations = ["ModifyTableTtl", "ModifyColumnTtl"]
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `ignore_operations` | `MOOSE_MIGRATION_CONFIG__IGNORE_OPERATIONS` | [] | List of migration operations to ignore during plan generation. |

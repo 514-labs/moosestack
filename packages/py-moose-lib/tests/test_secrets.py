@@ -46,17 +46,23 @@ class TestMooseRuntimeEnvGet:
 
     def test_raises_error_for_empty_string(self):
         """Should raise ValueError for empty string."""
-        with pytest.raises(ValueError, match="Environment variable name cannot be empty"):
+        with pytest.raises(
+            ValueError, match="Environment variable name cannot be empty"
+        ):
             moose_runtime_env.get("")
 
     def test_raises_error_for_whitespace_only(self):
         """Should raise ValueError for whitespace-only string."""
-        with pytest.raises(ValueError, match="Environment variable name cannot be empty"):
+        with pytest.raises(
+            ValueError, match="Environment variable name cannot be empty"
+        ):
             moose_runtime_env.get("   ")
 
     def test_raises_error_for_tabs_only(self):
         """Should raise ValueError for string with only tabs."""
-        with pytest.raises(ValueError, match="Environment variable name cannot be empty"):
+        with pytest.raises(
+            ValueError, match="Environment variable name cannot be empty"
+        ):
             moose_runtime_env.get("\t\t")
 
     def test_allows_underscores_in_variable_names(self):
@@ -116,7 +122,9 @@ class TestModuleLevelGetFunction:
 
     def test_module_level_get_raises_error_for_empty(self):
         """Module-level get should raise ValueError for empty string."""
-        with pytest.raises(ValueError, match="Environment variable name cannot be empty"):
+        with pytest.raises(
+            ValueError, match="Environment variable name cannot be empty"
+        ):
             get("")
 
 
@@ -168,10 +176,7 @@ class TestMarkerFormatValidation:
         """Should work correctly with dictionary serialization."""
         marker = moose_runtime_env.get("DATABASE_PASSWORD")
 
-        config = {
-            "password": marker,
-            "other_field": "value"
-        }
+        config = {"password": marker, "other_field": "value"}
 
         # Verify the marker is preserved in the dict
         assert config["password"] == marker
@@ -194,7 +199,10 @@ class TestIntegrationScenarios:
 
         # Verify markers were set correctly
         assert engine.aws_access_key_id == "__MOOSE_RUNTIME_ENV__:AWS_ACCESS_KEY_ID"
-        assert engine.aws_secret_access_key == "__MOOSE_RUNTIME_ENV__:AWS_SECRET_ACCESS_KEY"
+        assert (
+            engine.aws_secret_access_key
+            == "__MOOSE_RUNTIME_ENV__:AWS_SECRET_ACCESS_KEY"
+        )
 
     def test_multiple_secrets_in_same_config(self):
         """Should handle multiple secrets in the same configuration."""

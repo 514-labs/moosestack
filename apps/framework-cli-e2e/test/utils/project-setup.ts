@@ -2,6 +2,13 @@ import { spawn } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
+import { logger, ScopedLogger } from "./logger";
+
+const projectSetupLogger = logger.scope("utils:project-setup");
+
+export interface ProjectSetupOptions {
+  logger?: ScopedLogger;
+}
 
 const execAsync = promisify(require("child_process").exec);
 
@@ -15,42 +22,41 @@ export const setupTypeScriptProject = async (
   mooseLibPath: string,
   appName: string,
   packageManager: "npm" | "pnpm" = "npm",
+  options: ProjectSetupOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? projectSetupLogger;
+
   // Initialize project
-  console.log(
-    `Initializing TypeScript project with ${templateName} template...`,
-  );
+  log.info(`Initializing TypeScript project with ${templateName} template`);
   try {
     const result = await execAsync(
       `"${cliPath}" init ${appName} ${templateName} --location "${projectDir}"`,
     );
-    console.log("CLI init stdout:", result.stdout);
+    log.debug("CLI init stdout", { stdout: result.stdout });
     if (result.stderr) {
-      console.log("CLI init stderr:", result.stderr);
+      log.debug("CLI init stderr", { stderr: result.stderr });
     }
   } catch (error: any) {
-    console.error("CLI init failed:", error.message);
-    if (error.stdout) console.error("stdout:", error.stdout);
-    if (error.stderr) console.error("stderr:", error.stderr);
+    log.error("CLI init failed", error);
     throw error;
   }
 
   // Update package.json to use local moose-lib
-  console.log("Updating package.json to use local moose-lib...");
+  log.debug("Updating package.json to use local moose-lib", { mooseLibPath });
   const packageJsonPath = path.join(projectDir, "package.json");
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
   packageJson.dependencies["@514labs/moose-lib"] = `file:${mooseLibPath}`;
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
 
   // Install dependencies
-  console.log(`Installing dependencies with ${packageManager}...`);
+  log.info(`Installing dependencies with ${packageManager}`);
   await new Promise<void>((resolve, reject) => {
     const installCmd = spawn(packageManager, ["install"], {
       stdio: "inherit",
       cwd: projectDir,
     });
     installCmd.on("close", (code) => {
-      console.log(`${packageManager} install exited with code ${code}`);
+      log.debug(`${packageManager} install completed`, { exitCode: code });
       if (code === 0) {
         resolve();
       } else {
@@ -69,28 +75,27 @@ export const setupPythonProject = async (
   cliPath: string,
   moosePyLibPath: string,
   appName: string,
+  options: ProjectSetupOptions = {},
 ): Promise<void> => {
+  const log = options.logger ?? projectSetupLogger;
+
   // Initialize project
-  console.log(`Initializing Python project with ${templateName} template...`);
+  log.info(`Initializing Python project with ${templateName} template`);
   try {
     const result = await execAsync(
       `"${cliPath}" init ${appName} ${templateName} --location "${projectDir}"`,
     );
-    console.log("CLI init stdout:", result.stdout);
+    log.debug("CLI init stdout", { stdout: result.stdout });
     if (result.stderr) {
-      console.log("CLI init stderr:", result.stderr);
+      log.debug("CLI init stderr", { stderr: result.stderr });
     }
   } catch (error: any) {
-    console.error("CLI init failed:", error.message);
-    if (error.stdout) console.error("stdout:", error.stdout);
-    if (error.stderr) console.error("stderr:", error.stderr);
+    log.error("CLI init failed", error);
     throw error;
   }
 
   // Set up Python environment and install dependencies
-  console.log(
-    "Setting up Python virtual environment and installing dependencies...",
-  );
+  log.info("Setting up Python virtual environment and installing dependencies");
   await new Promise<void>((resolve, reject) => {
     const setupCmd = process.platform === "win32" ? "python" : "python3";
     const venvCmd = spawn(setupCmd, ["-m", "venv", ".venv"], {

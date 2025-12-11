@@ -1,0 +1,39 @@
+---
+title: Redpanda (Kafka) Configuration
+description: Configure the streaming platform
+order: 42
+---
+
+import { Callout } from "@/components/mdx";
+
+# Redpanda (Kafka) Configuration
+
+Configure the streaming platform.
+
+<Callout type="warning" title="Security Warning">
+**NEVER put production credentials in `moose.config.toml`**. For production environments or when connecting to external infrastructure, **ALWAYS use environment variables** and/or secrets to securely inject credentials.
+</Callout>
+
+```toml filename="moose.config.toml"
+[redpanda_config]
+# Broker connection string (e.g., "host:port") (Default: "localhost:19092")
+broker = "localhost:19092"
+# Message timeout in milliseconds (Default: 1000)
+message_timeout_ms = 1000
+# SASL username for authentication (Default: None)
+# sasl_username = "user"
+# SASL password for authentication (Default: None)
+# sasl_password = "password"
+# SASL mechanism (e.g., "PLAIN", "SCRAM-SHA-256") (Default: None)
+# sasl_mechanism = "PLAIN"
+# Security protocol (e.g., "SASL_SSL", "PLAINTEXT") (Default: None)
+# security_protocol = "SASL_SSL"
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `broker` | `MOOSE_REDPANDA_CONFIG__BROKER` | "localhost:19092" | Kafka broker address (and Docker bind address in dev). |
+| `sasl_username` | `MOOSE_REDPANDA_CONFIG__SASL_USERNAME` | - | SASL username. |
+| `sasl_password` | `MOOSE_REDPANDA_CONFIG__SASL_PASSWORD` | - | **SECRET**. SASL password. |
+| `sasl_mechanism` | `MOOSE_REDPANDA_CONFIG__SASL_MECHANISM` | - | e.g., "PLAIN", "SCRAM-SHA-256". |
+| `security_protocol`| `MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL`| - | e.g., "SASL_SSL". |

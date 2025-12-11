@@ -4,6 +4,7 @@ This module provides foundational classes, enums, and functions used across the 
 including configuration objects, clients for interacting with services (ClickHouse, Temporal),
 and utilities for defining data models and SQL queries.
 """
+
 from clickhouse_connect.driver.client import Client as ClickhouseClient
 from clickhouse_connect import get_client
 from moose_lib.dmv2 import OlapTable
@@ -18,7 +19,11 @@ import hashlib
 import asyncio
 from string import Formatter
 from temporalio.client import Client as TemporalClient, TLSConfig
-from temporalio.common import RetryPolicy, WorkflowIDConflictPolicy, WorkflowIDReusePolicy
+from temporalio.common import (
+    RetryPolicy,
+    WorkflowIDConflictPolicy,
+    WorkflowIDReusePolicy,
+)
 from datetime import timedelta, datetime
 from time import perf_counter
 from humanfriendly import format_timespan
@@ -37,6 +42,7 @@ class StreamingFunction:
     Attributes:
         run: The callable function that performs the streaming logic.
     """
+
     run: Callable
 
 
@@ -49,6 +55,7 @@ class StorageConfig:
         order_by_fields: List of fields to use for ordering in the storage layer.
         deduplicate: Whether to enable deduplication based on the order_by_fields.
     """
+
     enabled: Optional[bool] = None
     order_by_fields: Optional[list[str]] = None
     deduplicate: Optional[bool] = None
@@ -63,6 +70,7 @@ class DataModelConfig:
     Attributes:
         storage: Configuration for how data is stored.
     """
+
     storage: Optional[StorageConfig] = None
 
 
@@ -112,21 +120,22 @@ def moose_data_model(arg: Any = None) -> Any:
     def get_file(t: type) -> Optional[str]:
         """Helper to get the file path of a type's definition."""
         module = sys.modules.get(t.__module__)
-        if module and hasattr(module, '__file__'):
+        if module and hasattr(module, "__file__"):
             return module.__file__
         return None
 
     def remove_null(d: dict) -> dict:
         """Recursively removes keys with None values from a dictionary."""
-        return {key: remove_null(value) if isinstance(value, dict) else value for key, value in d.items() if
-                not (value is None)}
+        return {
+            key: remove_null(value) if isinstance(value, dict) else value
+            for key, value in d.items()
+            if not (value is None)
+        }
 
     def decorator(data_class: type) -> type:
         expected_file_name = os.environ.get("MOOSE_PYTHON_DM_DUMP")
         if expected_file_name and expected_file_name == get_file(data_class):
-            output: dict[str, str | dict] = {
-                'class_name': data_class.__name__
-            }
+            output: dict[str, str | dict] = {"class_name": data_class.__name__}
             if arg:
                 output["config"] = remove_null(asdict(arg))
             output_json = json.dumps(output, cls=CustomEncoder, indent=4)
@@ -149,6 +158,7 @@ class ApiResult:
         status: The HTTP status code for the response.
         body: The response body, which should be JSON serializable.
     """
+
     status: int
     body: Any
 
@@ -165,11 +175,13 @@ class QueryClient:
         ch_client_or_config: Either an instance of the ClickHouse client or a RuntimeClickHouseConfig.
     """
 
-    def __init__(self, ch_client_or_config: Union[ClickhouseClient, RuntimeClickHouseConfig]):
+    def __init__(
+        self, ch_client_or_config: Union[ClickhouseClient, RuntimeClickHouseConfig]
+    ):
         if isinstance(ch_client_or_config, RuntimeClickHouseConfig):
             # Create ClickHouse client from configuration
             config = ch_client_or_config
-            interface = 'https' if config.use_ssl else 'http'
+            interface = "https" if config.use_ssl else "http"
             self.ch_client = get_client(
                 interface=interface,
                 host=config.host,
@@ -185,7 +197,9 @@ class QueryClient:
     def __call__(self, input, variables):
         return self.execute(input, variables)
 
-    def execute(self, input: Union[str, Query], variables=None, row_type: Type[BaseModel] = None):
+    def execute(
+        self, input: Union[str, Query], variables=None, row_type: Type[BaseModel] = None
+    ):
         """
         Execute a query.
 
@@ -222,34 +236,35 @@ class QueryClient:
 
                 if isinstance(value, Column) or isinstance(value, OlapTable):
                     if isinstance(value, OlapTable) and value.config.database:
-                        params[variable_name] = f'{{p{i}: Identifier}}.{{p{i + 1}: Identifier}}'
-                        values[f'p{i}'] = value.config.database
-                        values[f'p{i + 1}'] = value.name
+                        params[variable_name] = (
+                            f"{{p{i}: Identifier}}.{{p{i + 1}: Identifier}}"
+                        )
+                        values[f"p{i}"] = value.config.database
+                        values[f"p{i + 1}"] = value.name
                         i += 2
                     else:
-                        params[variable_name] = f'{{p{i}: Identifier}}'
-                        values[f'p{i}'] = value.name
+                        params[variable_name] = f"{{p{i}: Identifier}}"
+                        values[f"p{i}"] = value.name
                         i += 1
                 else:
                     from moose_lib.utilities.sql import clickhouse_param_type_for_value
+
                     ch_type = clickhouse_param_type_for_value(value)
-                    params[variable_name] = f'{{p{i}: {ch_type}}}'
-                    values[f'p{i}'] = value
+                    params[variable_name] = f"{{p{i}: {ch_type}}}"
+                    values[f"p{i}"] = value
                     i += 1
                 preview_params[variable_name] = self._format_value_for_preview(value)
 
         clickhouse_query = input.format_map(params)
         preview_query = input.format_map(preview_params)
         print(f"[QueryClient] | Query: {' '.join(preview_query.split())}")
-        return self.execute_raw(
-            clickhouse_query, values, row_type
-        )
+        return self.execute_raw(clickhouse_query, values, row_type)
 
     def execute_raw(
-            self,
-            clickhouse_query: str,
-            parameters: Optional[dict[str, Any]],
-            row_type: Type[BaseModel] = None
+        self,
+        clickhouse_query: str,
+        parameters: Optional[dict[str, Any]],
+        row_type: Type[BaseModel] = None,
     ):
         """
         Uses raw clickhouse SQL syntax.
@@ -279,11 +294,11 @@ class QueryClient:
         """
         # NULL handling
         if value is None:
-            return 'NULL'
+            return "NULL"
 
         # Booleans (ClickHouse accepts true/false)
         if isinstance(value, bool):
-            return 'true' if value else 'false'
+            return "true" if value else "false"
 
         # Numbers
         if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -292,7 +307,7 @@ class QueryClient:
         # Strings
         if isinstance(value, str):
             # Escape backslashes and single quotes for ClickHouse single-quoted strings
-            escaped = value.replace('\\', '\\\\').replace("'", "\\'")
+            escaped = value.replace("\\", "\\\\").replace("'", "\\'")
             return f"'{escaped}'"
 
         # DateTime
@@ -307,12 +322,14 @@ class QueryClient:
 
         # Lists / tuples (format as [item1, item2, ...])
         if isinstance(value, (list, tuple)):
-            formatted_items = ', '.join(self._format_value_for_preview(v) for v in value)
+            formatted_items = ", ".join(
+                self._format_value_for_preview(v) for v in value
+            )
             return f"[{formatted_items}]"
 
         # Fallback: stringify and single-quote
         fallback = str(value)
-        escaped_fallback = fallback.replace('\\', '\\\\').replace("'", "\\'")
+        escaped_fallback = fallback.replace("\\", "\\\\").replace("'", "\\'")
         return f"'{escaped_fallback}'"
 
     def close(self):
@@ -337,33 +354,26 @@ class WorkflowClient:
     # Test workflow executor in rust if this changes significantly
     def execute(self, name: str, input_data: Any) -> Dict[str, Any]:
         try:
-            workflow_id, run_id = asyncio.run(self._start_workflow_async(name, input_data))
+            workflow_id, run_id = asyncio.run(
+                self._start_workflow_async(name, input_data)
+            )
             print(f"WorkflowClient - started workflow: {name}")
             return {
                 "status": 200,
-                "body": f"Workflow started: {name}. View it in the Temporal dashboard: http://localhost:8080/namespaces/default/workflows/{workflow_id}/{run_id}/history"
+                "body": f"Workflow started: {name}. View it in the Temporal dashboard: http://localhost:8080/namespaces/default/workflows/{workflow_id}/{run_id}/history",
             }
         except Exception as e:
             print(f"WorkflowClient - error while starting workflow: {e}")
-            return {
-                "status": 400,
-                "body": str(e)
-            }
+            return {"status": 400, "body": str(e)}
 
     def terminate(self, workflow_id: str) -> Dict[str, Any]:
         try:
             asyncio.run(self._terminate_workflow_async(workflow_id))
             print(f"WorkflowClient - terminated workflow: {workflow_id}")
-            return {
-                "status": 200,
-                "body": f"Workflow terminated: {workflow_id}"
-            }
+            return {"status": 200, "body": f"Workflow terminated: {workflow_id}"}
         except Exception as e:
             print(f"WorkflowClient - error while terminating workflow: {e}")
-            return {
-                "status": 400,
-                "body": str(e)
-            }
+            return {"status": 400, "body": str(e)}
 
     async def _terminate_workflow_async(self, workflow_id: str):
         workflow_handle = self.temporal_client.get_workflow_handle(workflow_id)
@@ -377,11 +387,12 @@ class WorkflowClient:
         processed_input, workflow_id = self._process_input_data(name, input_data)
 
         # Create retry policy and timeout (common logic)
-        retry_policy = RetryPolicy(maximum_attempts=config['retry_count'])
-        run_timeout = self.parse_timeout_to_timedelta(config['timeout_str'])
+        retry_policy = RetryPolicy(maximum_attempts=config["retry_count"])
+        run_timeout = self.parse_timeout_to_timedelta(config["timeout_str"])
 
         print(
-            f"WorkflowClient - starting DMv2 workflow: {name} with retry policy: {retry_policy} and timeout: {run_timeout}")
+            f"WorkflowClient - starting DMv2 workflow: {name} with retry policy: {retry_policy} and timeout: {run_timeout}"
+        )
 
         # Start workflow with appropriate args
         workflow_args = self._build_workflow_args(name, processed_input)
@@ -400,8 +411,7 @@ class WorkflowClient:
             workflow_kwargs["run_timeout"] = run_timeout
 
         workflow_handle = await self.temporal_client.start_workflow(
-            "ScriptWorkflow",
-            **workflow_kwargs
+            "ScriptWorkflow", **workflow_kwargs
         )
 
         return workflow_id, workflow_handle.result_run_id
@@ -415,8 +425,8 @@ class WorkflowClient:
             raise ValueError(f"DMv2 workflow '{name}' not found")
 
         return {
-            'retry_count': dmv2_workflow.config.retries or 3,
-            'timeout_str': dmv2_workflow.config.timeout or "1h",
+            "retry_count": dmv2_workflow.config.retries or 3,
+            "timeout_str": dmv2_workflow.config.timeout or "1h",
         }
 
     def _process_input_data(self, name: str, input_data: Any) -> tuple[Any, str]:
@@ -450,11 +460,11 @@ class WorkflowClient:
     def parse_timeout_to_timedelta(self, timeout_str: str) -> Optional[timedelta]:
         if timeout_str == "never":
             return None  # Unlimited execution timeout
-        elif timeout_str.endswith('h'):
+        elif timeout_str.endswith("h"):
             return timedelta(hours=int(timeout_str[:-1]))
-        elif timeout_str.endswith('m'):
+        elif timeout_str.endswith("m"):
             return timedelta(minutes=int(timeout_str[:-1]))
-        elif timeout_str.endswith('s'):
+        elif timeout_str.endswith("s"):
             return timedelta(seconds=int(timeout_str[:-1]))
         else:
             raise ValueError(f"Unsupported timeout format: {timeout_str}")
@@ -475,7 +485,11 @@ class MooseClient:
         workflow (Optional[WorkflowClient]): Client for workflow operations (if configured).
     """
 
-    def __init__(self, ch_client: ClickhouseClient, temporal_client: Optional[TemporalClient] = None):
+    def __init__(
+        self,
+        ch_client: ClickhouseClient,
+        temporal_client: Optional[TemporalClient] = None,
+    ):
         self.query = QueryClient(ch_client)
         self.temporal_client = temporal_client
         if temporal_client:
@@ -520,15 +534,20 @@ class Sql:
                             between the strings.
     """
 
-    def __init__(self, raw_strings: list[str], raw_values: list['RawValue']):
+    def __init__(self, raw_strings: list[str], raw_values: list["RawValue"]):
         if len(raw_strings) - 1 != len(raw_values):
             if len(raw_strings) == 0:
                 raise TypeError("Expected at least 1 string")
-            raise TypeError(f"Expected {len(raw_strings)} strings to have {len(raw_strings) - 1} values")
+            raise TypeError(
+                f"Expected {len(raw_strings)} strings to have {len(raw_strings) - 1} values"
+            )
 
-        values_length = sum(1 if not isinstance(value, Sql) else len(value.values) for value in raw_values)
+        values_length = sum(
+            1 if not isinstance(value, Sql) else len(value.values)
+            for value in raw_values
+        )
 
-        self.values: list['Value'] = [None] * values_length
+        self.values: list["Value"] = [None] * values_length
         self.strings: list[str] = [None] * (values_length + 1)
 
         self.strings[0] = raw_strings[0]

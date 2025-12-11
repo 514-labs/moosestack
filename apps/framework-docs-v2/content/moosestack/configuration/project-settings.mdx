@@ -1,0 +1,37 @@
+---
+title: Project Settings
+description: Configure top-level project settings
+order: 31
+---
+
+import { Callout } from "@/components/mdx";
+
+# Project Settings
+
+These settings control the fundamental behavior of your Moose project, including language settings and directory structure.
+
+<Callout type="info" title="Environment Variable Syntax">
+Top-level settings do not have a section prefix. Use `MOOSE_<KEY_NAME>` (e.g., `MOOSE_LANGUAGE`, `MOOSE_SOURCE_DIR`).
+</Callout>
+
+```toml filename="moose.config.toml"
+# Programming language used in the project (`Typescript` or `Python`)
+language = "Typescript"
+
+# Custom source directory path (Default: "app")
+# source_dir = "app"
+
+# Whether to load infrastructure containers (ClickHouse, Redpanda, Redis, etc.) in dev mode
+# Set to false if you are connecting to external infrastructure exclusively
+# load_infra = true
+
+# Map of supported old versions and their locations (Default: {})
+# supported_old_versions = { "0.1.0" = "path/to/old/version" }
+```
+
+| Key | Env Variable | Type | Default | Description |
+|:----|:-------------|:-----|:--------|:------------|
+| `language` | `MOOSE_LANGUAGE` | String | "Typescript" | The programming language used for your data models and flows. |
+| `source_dir` | `MOOSE_SOURCE_DIR` | String | "app" | The directory containing your Moose application code. |
+| `load_infra` | `MOOSE_LOAD_INFRA` | Boolean | true | If `true`, `moose dev` spins up local Docker containers using the settings in [Infrastructure](/moosestack/configuration/infrastructure). If `false`, no containers are created, allowing you to connect to external infra. |
+| `supported_old_versions` | N/A | Map | {} | Mapping of older project versions to their paths for backward compatibility. |

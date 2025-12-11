@@ -1,0 +1,19 @@
+---
+title: State Storage Configuration
+description: Configure where migration state is stored
+order: 46
+---
+
+# State Storage Configuration
+
+Configure where migration state is stored.
+
+```toml filename="moose.config.toml"
+[state_config]
+# Storage backend: "clickhouse" (default) or "redis"
+storage = "clickhouse"
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `storage` | `MOOSE_STATE_CONFIG__STORAGE` | "clickhouse" | Backend for state storage. |

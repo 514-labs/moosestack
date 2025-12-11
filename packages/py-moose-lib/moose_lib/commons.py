@@ -15,8 +15,12 @@ class CliLogData:
     ERROR = "Error"
     HIGHLIGHT = "Highlight"
 
-    def __init__(self, action: str, message: str,
-                 message_type: Optional[Literal[INFO, SUCCESS, ERROR, HIGHLIGHT]] = INFO):
+    def __init__(
+        self,
+        action: str,
+        message: str,
+        message_type: Optional[Literal[INFO, SUCCESS, ERROR, HIGHLIGHT]] = INFO,
+    ):
         self.message_type = message_type
         self.action = action
         self.message = message
@@ -33,7 +37,7 @@ def cli_log(log: CliLogData) -> None:
         # tries to send logs when moose hasn't fully started, the requests will fail.
         # The try catch is to ignore those errors.
         url = f"http://localhost:{moose_management_port}/logs"
-        headers = {'Content-Type': 'application/json'}
+        headers = {"Content-Type": "application/json"}
         requests.post(url, data=json.dumps(log.__dict__), headers=headers)
     except:
         pass
@@ -60,7 +64,11 @@ class Logger:
             elif message_type == CliLogData.HIGHLIGHT:
                 moose_scripts_logger.warning(message)
         else:
-            cli_log(CliLogData(action=self.action, message=message, message_type=message_type))
+            cli_log(
+                CliLogData(
+                    action=self.action, message=message, message_type=message_type
+                )
+            )
 
     def info(self, message: str) -> None:
         self._log(message, CliLogData.INFO)
@@ -104,11 +112,11 @@ class EnhancedJSONEncoder(json.JSONEncoder):
 
 
 def _build_kafka_kwargs(
-        broker: Union[str, list[str]],
-        sasl_username: Optional[str] = None,
-        sasl_password: Optional[str] = None,
-        sasl_mechanism: Optional[str] = None,
-        security_protocol: Optional[str] = None,
+    broker: Union[str, list[str]],
+    sasl_username: Optional[str] = None,
+    sasl_password: Optional[str] = None,
+    sasl_mechanism: Optional[str] = None,
+    security_protocol: Optional[str] = None,
 ) -> dict[str, Any]:
     """Builds common Kafka client kwargs from provided parameters."""
     kwargs: dict[str, Any] = {
@@ -126,16 +134,16 @@ def _build_kafka_kwargs(
 
 
 def get_kafka_consumer(
-        *,
-        broker: Union[str, list[str]],
-        client_id: str,
-        group_id: str,
-        sasl_username: Optional[str] = None,
-        sasl_password: Optional[str] = None,
-        sasl_mechanism: Optional[str] = None,
-        security_protocol: Optional[str] = None,
-        value_deserializer=lambda m: json.loads(m.decode("utf-8")),
-        **extra_kwargs: Any,
+    *,
+    broker: Union[str, list[str]],
+    client_id: str,
+    group_id: str,
+    sasl_username: Optional[str] = None,
+    sasl_password: Optional[str] = None,
+    sasl_mechanism: Optional[str] = None,
+    security_protocol: Optional[str] = None,
+    value_deserializer=lambda m: json.loads(m.decode("utf-8")),
+    **extra_kwargs: Any,
 ) -> KafkaConsumer:
     """Creates a configured KafkaConsumer with optional SASL/security settings."""
     kwargs = _build_kafka_kwargs(
@@ -155,18 +163,17 @@ def get_kafka_consumer(
 
 
 def get_kafka_producer(
-        *,
-        broker: Union[str, list[str]],
-        sasl_username: Optional[str] = None,
-        sasl_password: Optional[str] = None,
-        sasl_mechanism: Optional[str] = None,
-        security_protocol: Optional[str] = None,
-        max_request_size: Optional[int] = None,
-        value_serializer: Optional[Callable[[Any], bytes]] = None,
-        **extra_kwargs: Any,
+    *,
+    broker: Union[str, list[str]],
+    sasl_username: Optional[str] = None,
+    sasl_password: Optional[str] = None,
+    sasl_mechanism: Optional[str] = None,
+    security_protocol: Optional[str] = None,
+    max_request_size: Optional[int] = None,
+    value_serializer: Optional[Callable[[Any], bytes]] = None,
+    **extra_kwargs: Any,
 ) -> KafkaProducer:
-    """Creates a configured KafkaProducer with optional SASL/security settings.
-    """
+    """Creates a configured KafkaProducer with optional SASL/security settings."""
     kwargs = _build_kafka_kwargs(
         broker,
         sasl_username=sasl_username,

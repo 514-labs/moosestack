@@ -4,6 +4,7 @@ Base SQL resource definitions for Moose Data Model v2 (dmv2).
 This module provides the base class for SQL resources like Views and Materialized Views,
 handling common functionality like setup/teardown SQL commands and dependency tracking.
 """
+
 from typing import Any, Optional, Union, List
 from pydantic import BaseModel
 import inspect
@@ -48,6 +49,7 @@ class SqlResource:
         kind: The kind of the SQL resource (e.g., "SqlResource").
         source_file: Optional path to the source file where this resource was defined.
     """
+
     setup: list[str]
     teardown: list[str]
     name: str
@@ -57,13 +59,13 @@ class SqlResource:
     source_file: Optional[str]
 
     def __init__(
-            self,
-            name: str,
-            setup: list[str],
-            teardown: list[str],
-            pulls_data_from: Optional[list[Union[OlapTable, "SqlResource"]]] = None,
-            pushes_data_to: Optional[list[Union[OlapTable, "SqlResource"]]] = None,
-            metadata: dict = None
+        self,
+        name: str,
+        setup: list[str],
+        teardown: list[str],
+        pulls_data_from: Optional[list[Union[OlapTable, "SqlResource"]]] = None,
+        pushes_data_to: Optional[list[Union[OlapTable, "SqlResource"]]] = None,
+        metadata: dict = None,
     ):
         self.name = name
         self.setup = setup

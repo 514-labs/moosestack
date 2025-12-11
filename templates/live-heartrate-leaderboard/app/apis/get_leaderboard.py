@@ -10,13 +10,13 @@ class LeaderboardQueryParams(BaseModel):
         default=300,
         gt=0,
         le=86400,  # Max 24 hours
-        description="Time window in seconds to calculate stats (default 5 minutes)"
+        description="Time window in seconds to calculate stats (default 5 minutes)",
     )
     limit: int = Field(
         default=10,
         gt=0,
         le=100,  # Max 100 users
-        description="Number of users to return (default 10)"
+        description="Number of users to return (default 10)",
     )
 
 
@@ -45,11 +45,11 @@ class LeaderboardResponse(BaseModel):
 def run(client: MooseClient, params: LeaderboardQueryParams) -> LeaderboardResponse:
     """
     Retrieves a leaderboard of users ranked by their heart rate metrics, power output, and calories burned.
-    
+
     Args:
         client: The MooseClient instance for executing queries
         params: The query parameters including time window and limit
-        
+
     Returns:
         A LeaderboardResponse containing the ranked list of users with their metrics
     """
@@ -103,10 +103,10 @@ def run(client: MooseClient, params: LeaderboardQueryParams) -> LeaderboardRespo
     """
 
     # Execute the query with parameterized values
-    result = client.query.execute(query, {
-        "time_window_seconds": params.time_window_seconds,
-        "limit": params.limit
-    })
+    result = client.query.execute(
+        query,
+        {"time_window_seconds": params.time_window_seconds, "limit": params.limit},
+    )
 
     # Convert the result to our response model
     entries = [LeaderboardEntry(**row) for row in result]
@@ -115,6 +115,5 @@ def run(client: MooseClient, params: LeaderboardQueryParams) -> LeaderboardRespo
 
 # Create the API endpoint
 get_leaderboard_api = Api[LeaderboardQueryParams, LeaderboardResponse](
-    name="getLeaderboard",
-    query_function=run
+    name="getLeaderboard", query_function=run
 )

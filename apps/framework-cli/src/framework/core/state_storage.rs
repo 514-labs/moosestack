@@ -64,6 +64,8 @@ impl StateStorage for RedisStateStorage {
     }
 
     async fn load_infrastructure_map(&self) -> Result<Option<InfrastructureMap>> {
+        // Note: load_from_last_redis_prefix internally canonicalizes tables
+        // for backward compatibility with data saved by older CLI versions
         InfrastructureMap::load_from_last_redis_prefix(&self.client).await
     }
 
@@ -260,9 +262,11 @@ impl StateStorage for ClickHouseStateStorage {
             base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &value_str)
                 .context("Failed to decode base64 state value")?;
 
-        // Deserialize from protobuf
+        // Deserialize from protobuf and canonicalize tables to handle backward compatibility
+        // with data saved by older CLI versions (e.g., missing order_by)
         let infra_map = InfrastructureMap::from_proto(encoded)
-            .context("Failed to deserialize infrastructure map from protobuf")?;
+            .context("Failed to deserialize infrastructure map from protobuf")?
+            .canonicalize_tables();
 
         info!("Loaded infrastructure map from ClickHouse");
 

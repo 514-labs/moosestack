@@ -18,7 +18,7 @@ from .dmv2.materialized_view import MaterializedView, MaterializedViewOptions
 from .blocks import (
     # All engine classes
     MergeTreeEngine,
-    ReplacingMergeTreeEngine, 
+    ReplacingMergeTreeEngine,
     AggregatingMergeTreeEngine,
     SummingMergeTreeEngine,
     CollapsingMergeTreeEngine,
@@ -34,7 +34,7 @@ from .blocks import (
     KafkaEngine,
     EngineConfig,
     # Legacy enum (already exported via .blocks import, but explicit for clarity)
-    ClickHouseEngines
+    ClickHouseEngines,
 )
 from .data_models import (
     Key,

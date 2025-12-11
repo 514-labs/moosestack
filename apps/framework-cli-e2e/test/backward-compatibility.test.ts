@@ -38,6 +38,7 @@ import {
   cleanupDocker,
   removeTestProject,
   createTempTestDirectory,
+  logger,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -58,25 +59,27 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 let LATEST_CLI_PATH: string;
 let CLI_INSTALL_DIR: string;
 
+const testLogger = logger.scope("backward-compatibility-test");
+
 /**
  * Install and check the latest published version of moose-cli
  * Uses pnpm for consistency with the monorepo
  */
 async function checkLatestPublishedCLI(): Promise<void> {
-  console.log("Installing latest published moose-cli from npm...");
+  testLogger.info("Installing latest published moose-cli from npm...");
 
   try {
     // Create a temp directory for CLI install
     const os = require("os");
     CLI_INSTALL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "moose-cli-"));
-    console.log(`Installing CLI to temp directory: ${CLI_INSTALL_DIR}`);
+    testLogger.info(`Installing CLI to temp directory: ${CLI_INSTALL_DIR}`);
 
     // Install CLI using pnpm (consistent with monorepo)
     const installResult = await execAsync(
       "pnpm add @514labs/moose-cli@latest",
       { cwd: CLI_INSTALL_DIR },
     );
-    console.log("pnpm install output:", installResult.stdout);
+    testLogger.info("pnpm install output:", installResult.stdout);
 
     // Find the installed CLI binary in pnpm's structure
     LATEST_CLI_PATH = path.join(
@@ -94,11 +97,11 @@ async function checkLatestPublishedCLI(): Promise<void> {
     const { stdout: version } = await execAsync(
       `"${LATEST_CLI_PATH}" --version`,
     );
-    console.log("Latest published CLI version:", version.trim());
+    testLogger.info("Latest published CLI version:", version.trim());
   } catch (error: any) {
-    console.error("Failed to install latest CLI:", error.message);
-    if (error.stdout) console.error("stdout:", error.stdout);
-    if (error.stderr) console.error("stderr:", error.stderr);
+    testLogger.error("Failed to install latest CLI:", error.message);
+    if (error.stdout) testLogger.error("stdout:", error.stdout);
+    if (error.stderr) testLogger.error("stderr:", error.stderr);
     throw new Error(
       "Cannot install latest published CLI for backward compatibility test",
     );
@@ -113,35 +116,48 @@ async function setupTypeScriptProjectWithLatestNpm(
   templateName: string,
   appName: string,
 ): Promise<void> {
-  console.log(`Initializing TypeScript project with latest npm moose-cli...`);
+  testLogger.info(
+    `Initializing TypeScript project with latest npm moose-cli...`,
+  );
 
   try {
     // Use npm-installed CLI instead of npx for consistent registry behavior
     const result = await execAsync(
       `"${LATEST_CLI_PATH}" init ${appName} ${templateName} --location "${projectDir}"`,
     );
-    console.log("CLI init stdout:", result.stdout);
+    testLogger.info("CLI init stdout:", result.stdout);
     if (result.stderr) {
-      console.log("CLI init stderr:", result.stderr);
+      testLogger.info("CLI init stderr:", result.stderr);
     }
   } catch (error: any) {
-    console.error("CLI init failed:", error.message);
-    if (error.stdout) console.error("stdout:", error.stdout);
-    if (error.stderr) console.error("stderr:", error.stderr);
+    testLogger.error("CLI init failed:", error.message);
+    if (error.stdout) testLogger.error("stdout:", error.stdout);
+    if (error.stderr) testLogger.error("stderr:", error.stderr);
     throw error;
   }
 
   // Install dependencies with latest moose-lib using pnpm
-  console.log(
+  testLogger.info(
     "Installing dependencies with pnpm (using latest @514labs/moose-lib)...",
   );
+
+  let packageJson = path.join(projectDir, "package.json");
+  let content = fs.readFileSync(packageJson, "utf-8");
+  fs.writeFileSync(
+    packageJson,
+    content.replace(
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript",
+    ),
+  );
+
   await new Promise<void>((resolve, reject) => {
     const installCmd = spawn("pnpm", ["install"], {
       stdio: "inherit",
       cwd: projectDir,
     });
     installCmd.on("close", (code) => {
-      console.log(`pnpm install exited with code ${code}`);
+      testLogger.info(`pnpm install exited with code ${code}`);
       if (code === 0) {
         resolve();
       } else {
@@ -159,26 +175,26 @@ async function setupPythonProjectWithLatestPypi(
   templateName: string,
   appName: string,
 ): Promise<void> {
-  console.log(`Initializing Python project with latest pypi moose-cli...`);
+  testLogger.info(`Initializing Python project with latest pypi moose-cli...`);
 
   // Initialize project with latest CLI (npm-installed, not npx)
   try {
     const result = await execAsync(
       `"${LATEST_CLI_PATH}" init ${appName} ${templateName} --location "${projectDir}"`,
     );
-    console.log("CLI init stdout:", result.stdout);
+    testLogger.info("CLI init stdout:", result.stdout);
     if (result.stderr) {
-      console.log("CLI init stderr:", result.stderr);
+      testLogger.info("CLI init stderr:", result.stderr);
     }
   } catch (error: any) {
-    console.error("CLI init failed:", error.message);
-    if (error.stdout) console.error("stdout:", error.stdout);
-    if (error.stderr) console.error("stderr:", error.stderr);
+    testLogger.error("CLI init failed:", error.message);
+    if (error.stdout) testLogger.error("stdout:", error.stdout);
+    if (error.stderr) testLogger.error("stderr:", error.stderr);
     throw error;
   }
 
   // Set up Python environment and install dependencies with latest moose-lib from pypi
-  console.log(
+  testLogger.info(
     "Setting up Python virtual environment and installing dependencies (using latest moose-lib)...",
   );
   await new Promise<void>((resolve, reject) => {
@@ -255,7 +271,7 @@ describe("Backward Compatibility Tests", function () {
     try {
       await fs.promises.access(CLI_PATH, fs.constants.F_OK);
     } catch (err) {
-      console.error(
+      testLogger.error(
         `CLI not found at ${CLI_PATH}. It should be built in the pretest step.`,
       );
       throw err;
@@ -266,12 +282,12 @@ describe("Backward Compatibility Tests", function () {
     // Clean up temporary CLI install directory
     if (CLI_INSTALL_DIR) {
       try {
-        console.log(
+        testLogger.info(
           `Cleaning up temporary CLI install directory: ${CLI_INSTALL_DIR}`,
         );
         fs.rmSync(CLI_INSTALL_DIR, { recursive: true, force: true });
       } catch (error) {
-        console.error(`Failed to clean up CLI install directory: ${error}`);
+        testLogger.error(`Failed to clean up CLI install directory: ${error}`);
       }
     }
   });
@@ -310,27 +326,27 @@ describe("Backward Compatibility Tests", function () {
         const TEST_ADMIN_HASH = "445fd4696cfc5c49e28995c4aba05de44303a112";
 
         // Configure admin API key in moose.config.toml
-        console.log("Configuring admin API key in moose.config.toml...");
+        testLogger.info("Configuring admin API key in moose.config.toml...");
         const mooseConfigPath = path.join(
           TEST_PROJECT_DIR,
           "moose.config.toml",
         );
         let mooseConfig = fs.readFileSync(mooseConfigPath, "utf-8");
         // Check if [authentication] section exists
-        if (mooseConfig.includes("[authentication]")) {
+        if (!mooseConfig.includes("[authentication]")) {
+          // Append the [authentication] section if it doesn't exist
+          mooseConfig += `\n[authentication]\nadmin_api_key = "${TEST_ADMIN_HASH}"\n`;
+        } else if (!mooseConfig.includes("admin_api_key =")) {
           // Replace the empty [authentication] section with one that includes admin_api_key
           mooseConfig = mooseConfig.replace(
             /\[authentication\]\s*$/m,
             `[authentication]\nadmin_api_key = "${TEST_ADMIN_HASH}"`,
           );
-        } else {
-          // Append the [authentication] section if it doesn't exist
-          mooseConfig += `\n[authentication]\nadmin_api_key = "${TEST_ADMIN_HASH}"\n`;
         }
         fs.writeFileSync(mooseConfigPath, mooseConfig);
 
         // Start dev server with LATEST published CLI (npm-installed)
-        console.log(
+        testLogger.info(
           "Starting dev server with LATEST published CLI (npm-installed)...",
         );
         const devEnv =
@@ -342,12 +358,14 @@ describe("Backward Compatibility Tests", function () {
               // Add test credentials for S3Queue tests
               TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+              MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
             }
           : {
               ...process.env,
               // Add test credentials for S3Queue tests
               TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
               TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+              MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
             };
 
         devProcess = spawn(LATEST_CLI_PATH, ["dev"], {
@@ -362,33 +380,35 @@ describe("Backward Compatibility Tests", function () {
           SERVER_CONFIG.startupMessage,
           SERVER_CONFIG.url,
         );
-        console.log("Server started with latest CLI, infrastructure is ready");
+        testLogger.info(
+          "Server started with latest CLI, infrastructure is ready",
+        );
         // Brief wait to ensure everything is fully settled
         await setTimeoutAsync(5000);
 
         // Keep the server running so the new CLI can query its state
-        console.log("Keeping dev server running for moose plan test...");
+        testLogger.info("Keeping dev server running for moose plan test...");
       });
 
       after(async function () {
         this.timeout(TIMEOUTS.CLEANUP_MS);
         try {
-          console.log(`Starting cleanup for ${config.displayName} test...`);
+          testLogger.info(`Starting cleanup for ${config.displayName} test...`);
           if (devProcess) {
             await stopDevProcess(devProcess);
           }
           await cleanupDocker(TEST_PROJECT_DIR, config.appName);
           removeTestProject(TEST_PROJECT_DIR);
-          console.log(`Cleanup completed for ${config.displayName} test`);
+          testLogger.info(`Cleanup completed for ${config.displayName} test`);
         } catch (error) {
-          console.error("Error during cleanup:", error);
+          testLogger.error("Error during cleanup:", error);
           // Force cleanup even if some steps fail
           try {
             if (devProcess && !devProcess.killed) {
               devProcess.kill("SIGKILL");
             }
           } catch (killError) {
-            console.error("Error killing process:", killError);
+            testLogger.error("Error killing process:", killError);
           }
           removeTestProject(TEST_PROJECT_DIR);
         }
@@ -473,25 +493,27 @@ describe("Backward Compatibility Tests", function () {
               /^\s*~\s+(\w+(?:\s+\w+)*?):/gm,
             );
             if (updatedItems) {
-              console.warn(
+              testLogger.warn(
                 `Plan shows infrastructure updates (~ prefix). These may be acceptable if they're metadata-only changes.`,
               );
-              console.log(`Updated items:\n${updatedItems.join("\n")}`);
-              console.log(
+              testLogger.info(`Updated items:\n${updatedItems.join("\n")}`);
+              testLogger.info(
                 "⚠️  Infrastructure updates detected - review the changes to ensure they are backward compatible.",
               );
             } else {
-              console.warn(`Plan output shows some changes:\n${cleanOutput}`);
+              testLogger.warn(
+                `Plan output shows some changes:\n${cleanOutput}`,
+              );
             }
           } else {
-            console.log(
+            testLogger.info(
               "✅ No changes detected - backward compatibility verified!",
             );
           }
         } catch (error: any) {
-          console.error("moose plan failed:", error.message);
-          if (error.stdout) console.error("stdout:", error.stdout);
-          if (error.stderr) console.error("stderr:", error.stderr);
+          testLogger.error("moose plan failed:", error.message);
+          if (error.stdout) testLogger.error("stdout:", error.stdout);
+          if (error.stderr) testLogger.error("stderr:", error.stderr);
           throw error;
         }
       });

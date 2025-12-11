@@ -28,6 +28,7 @@ import {
   setupPythonProject,
   removeTestProject,
   cleanupTestSuite,
+  logger,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -39,6 +40,8 @@ const MOOSE_PY_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/py-moose-lib",
 );
+
+const testLogger = logger.scope("s3-secrets-test");
 
 describe("typescript template tests - S3Queue Runtime Environment Variable Resolution", () => {
   describe("With Environment Variables", () => {
@@ -71,6 +74,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
@@ -81,9 +85,9 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         "http://localhost:4000",
       );
 
-      console.log("Server started, waiting for streaming functions...");
+      testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions();
-      console.log("All components ready");
+      testLogger.info("All components ready");
     });
 
     after(async function () {
@@ -135,7 +139,10 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
 
       // Start dev server WITHOUT the required environment variables
       // Create a clean environment without the test credentials
-      const envWithoutCredentials = { ...process.env };
+      const envWithoutCredentials: NodeJS.ProcessEnv = {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      };
       delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
       delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
 
@@ -162,7 +169,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         const timeout = setTimeout(() => {
           devProcess?.kill("SIGKILL");
           reject(new Error("Process did not exit within timeout"));
-        }, 30000); // 30 second timeout
+        }, TIMEOUTS.PROCESS_EXIT_MS);
 
         devProcess!.on("exit", (code) => {
           clearTimeout(timeout);
@@ -180,10 +187,10 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         const output = stdoutOutput + stderrOutput;
 
         // Log captured output for debugging
-        console.log("=== Captured stdout ===");
-        console.log(stdoutOutput);
-        console.log("=== Captured stderr ===");
-        console.log(stderrOutput);
+        testLogger.info("=== Captured stdout ===");
+        testLogger.info(stdoutOutput);
+        testLogger.info("=== Captured stderr ===");
+        testLogger.info(stderrOutput);
 
         // Verify error message includes table name, field name, and env var name
         expect(output).to.include("S3QueueWithSecrets");
@@ -192,13 +199,13 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
           /TEST_AWS_ACCESS_KEY_ID|TEST_AWS_SECRET_ACCESS_KEY/,
         );
 
-        console.log("Process exited with expected error message");
+        testLogger.info("Process exited with expected error message");
       } catch (error) {
         // Log captured output even on timeout
-        console.log("=== Process timed out - captured stdout ===");
-        console.log(stdoutOutput);
-        console.log("=== Process timed out - captured stderr ===");
-        console.log(stderrOutput);
+        testLogger.info("=== Process timed out - captured stdout ===");
+        testLogger.info(stdoutOutput);
+        testLogger.info("=== Process timed out - captured stderr ===");
+        testLogger.info(stderrOutput);
         throw error;
       } finally {
         // Cleanup
@@ -243,6 +250,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
@@ -253,9 +261,9 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         "http://localhost:4000",
       );
 
-      console.log("Server started, waiting for streaming functions...");
+      testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions();
-      console.log("All components ready");
+      testLogger.info("All components ready");
     });
 
     after(async function () {
@@ -310,6 +318,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         ...process.env,
         VIRTUAL_ENV: path.join(TEST_PROJECT_DIR, ".venv"),
         PATH: `${path.join(TEST_PROJECT_DIR, ".venv", "bin")}:${process.env.PATH}`,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
       };
       delete envWithoutCredentials.TEST_AWS_ACCESS_KEY_ID;
       delete envWithoutCredentials.TEST_AWS_SECRET_ACCESS_KEY;
@@ -337,7 +346,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         const timeout = setTimeout(() => {
           devProcess?.kill("SIGKILL");
           reject(new Error("Process did not exit within timeout"));
-        }, 30000); // 30 second timeout
+        }, TIMEOUTS.PROCESS_EXIT_MS);
 
         devProcess!.on("exit", (code) => {
           clearTimeout(timeout);
@@ -355,10 +364,10 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         const output = stdoutOutput + stderrOutput;
 
         // Log captured output for debugging
-        console.log("=== Captured stdout ===");
-        console.log(stdoutOutput);
-        console.log("=== Captured stderr ===");
-        console.log(stderrOutput);
+        testLogger.info("=== Captured stdout ===");
+        testLogger.info(stdoutOutput);
+        testLogger.info("=== Captured stderr ===");
+        testLogger.info(stderrOutput);
 
         // Verify error message includes table name, field name, and env var name
         expect(output).to.include("S3QueueWithSecrets");
@@ -367,13 +376,13 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
           /TEST_AWS_ACCESS_KEY_ID|TEST_AWS_SECRET_ACCESS_KEY/,
         );
 
-        console.log("Process exited with expected error message");
+        testLogger.info("Process exited with expected error message");
       } catch (error) {
         // Log captured output even on timeout
-        console.log("=== Process timed out - captured stdout ===");
-        console.log(stdoutOutput);
-        console.log("=== Process timed out - captured stderr ===");
-        console.log(stderrOutput);
+        testLogger.info("=== Process timed out - captured stdout ===");
+        testLogger.info(stdoutOutput);
+        testLogger.info("=== Process timed out - captured stderr ===");
+        testLogger.info(stderrOutput);
         throw error;
       } finally {
         // Cleanup

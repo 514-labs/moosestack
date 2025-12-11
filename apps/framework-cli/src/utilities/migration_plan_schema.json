@@ -158,6 +158,40 @@
           "additionalProperties": false
         },
         {
+          "description": "Modify or remove table-level TTL",
+          "type": "object",
+          "properties": {
+            "ModifyTableTtl": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "description": "The table to modify TTL for",
+                  "type": "string"
+                },
+                "before": {
+                  "description": "Previous TTL expression (null if no TTL existed)",
+                  "type": ["string", "null"]
+                },
+                "after": {
+                  "description": "New TTL expression (null to remove TTL)",
+                  "type": ["string", "null"]
+                },
+                "database": {
+                  "description": "The database containing the table (null means use primary database)",
+                  "type": ["string", "null"]
+                },
+                "cluster_name": {
+                  "description": "Optional cluster name for ON CLUSTER support",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["table"]
+            }
+          },
+          "required": ["ModifyTableTtl"],
+          "additionalProperties": false
+        },
+        {
           "type": "object",
           "properties": {
             "RawSql": {

@@ -1,4 +1,3 @@
-
 from setuptools import setup
 import os
 
@@ -7,7 +6,7 @@ with open(requirements_path, "r") as f:
     requirements = f.read().splitlines()
 
 setup(
-    name='python-fastapi',
-    version='0.0',
+    name="python-fastapi",
+    version="0.0",
     install_requires=requirements,
 )

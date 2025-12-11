@@ -329,12 +329,60 @@ impl Table {
             format!("{}_{}", self.name, v.as_suffix())
         });
 
-        // Only include database prefix if name doesn't already contain a dot (fully qualified name)
-        if self.name.contains('.') {
-            base_id
-        } else {
-            format!("{}_{}", db, base_id)
+        format!("{}_{}", db, base_id)
+    }
+
+    /// Returns a human-readable display name for the table.
+    ///
+    /// Returns "database.name" if database is set, otherwise just "name".
+    /// Used for logging and error messages.
+    pub fn display_name(&self) -> String {
+        match &self.database {
+            Some(db) => format!("{}.{}", db, self.name),
+            None => self.name.clone(),
         }
+    }
+
+    /// Ensures table is in canonical form with all invariants satisfied.
+    ///
+    /// This method applies ClickHouse-specific invariants that must always hold:
+    /// 1. MergeTree tables must have an ORDER BY clause (falls back to primary key)
+    /// 2. Arrays cannot be nullable in ClickHouse (sets required=true)
+    /// 3. Engines that don't support PRIMARY KEY should not have primary_key flags on columns
+    ///
+    /// This method is idempotent - calling it multiple times produces the same result.
+    /// It should be called whenever a Table is loaded from external sources (storage,
+    /// database introspection) to ensure consistent comparisons.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let table = Table::from_proto(proto_table).canonicalize();
+    /// ```
+    pub fn canonicalize(mut self) -> Self {
+        // Invariant 1: MergeTree tables must have order_by
+        // Old CLI versions didn't persist order_by when derived from primary key
+        if self.order_by.is_empty() && self.engine.is_merge_tree_family() {
+            self.order_by = self.order_by_with_fallback();
+        }
+
+        // Check if engine supports primary key / order by
+        let supports_primary_key = self.engine.supports_order_by();
+
+        for col in &mut self.columns {
+            // Invariant 2: Arrays cannot be nullable in ClickHouse
+            // ClickHouse doesn't support Nullable(Array(...))
+            if matches!(col.data_type, ColumnType::Array { .. }) {
+                col.required = true;
+            }
+
+            // Invariant 3: Clear primary_key flag if engine doesn't support it
+            // Buffer, S3Queue, Distributed don't support PRIMARY KEY
+            if !supports_primary_key {
+                col.primary_key = false;
+            }
+        }
+
+        self
     }
 
     /// Computes a hash of non-alterable parameters including engine params and database
@@ -525,12 +573,16 @@ impl Table {
         // S3 supports ORDER BY but does not auto set ORDER BY from PRIMARY KEY
         // Buffer, S3Queue, and Distributed don't support ORDER BY
         if self.order_by.is_empty() && self.engine.is_merge_tree_family() {
-            OrderBy::Fields(
-                self.primary_key_columns()
-                    .iter()
-                    .map(|c| c.to_string())
-                    .collect(),
-            )
+            if let Some(key_expr) = &self.primary_key_expression {
+                OrderBy::SingleExpr(key_expr.clone())
+            } else {
+                OrderBy::Fields(
+                    self.primary_key_columns()
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect(),
+                )
+            }
         } else {
             self.order_by.clone()
         }
@@ -1811,55 +1863,23 @@ mod tests {
         };
         assert_eq!(table2b.id(DEFAULT_DATABASE_NAME), "analytics_users");
 
-        // Test 3: Legacy format - table name contains database prefix (backward compatibility)
+        // Test 3: With version - database should be included
         let table3 = Table {
-            name: "analytics.users".to_string(),
-            database: None,
+            name: "users".to_string(),
+            version: Some(Version::from_string("1.0".to_string())),
+            database: Some("analytics".to_string()),
             ..table1.clone()
         };
-        assert_eq!(table3.id(DEFAULT_DATABASE_NAME), "analytics.users");
+        assert_eq!(table3.id(DEFAULT_DATABASE_NAME), "analytics_users_1_0");
 
-        // Test 4: CRITICAL - Adding database field to legacy format should NOT change ID
+        // Test 4: With version and default database
         let table4 = Table {
-            name: "analytics.users".to_string(),
-            database: Some("analytics".to_string()),
-            ..table1.clone()
-        };
-        assert_eq!(
-            table4.id(DEFAULT_DATABASE_NAME),
-            "analytics.users",
-            "ID should remain stable when database field is added to legacy table name format"
-        );
-
-        // Test 5: Even with mismatched database, ID should remain stable (name takes precedence)
-        let table5 = Table {
-            name: "analytics.users".to_string(),
-            database: Some("other_db".to_string()),
-            ..table1.clone()
-        };
-        assert_eq!(
-            table5.id(DEFAULT_DATABASE_NAME),
-            "analytics.users",
-            "ID should use name (which contains dot) even if database field differs"
-        );
-
-        // Test 6: With version - database should be included
-        let table6 = Table {
-            name: "users".to_string(),
-            version: Some(Version::from_string("1.0".to_string())),
-            database: Some("analytics".to_string()),
-            ..table1.clone()
-        };
-        assert_eq!(table6.id(DEFAULT_DATABASE_NAME), "analytics_users_1_0");
-
-        // Test 7: With version and default database
-        let table7 = Table {
             name: "users".to_string(),
             version: Some(Version::from_string("1.0".to_string())),
             database: None,
             ..table1.clone()
         };
-        assert_eq!(table7.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
+        assert_eq!(table4.id(DEFAULT_DATABASE_NAME), "local_users_1_0");
     }
 
     #[test]
@@ -2007,6 +2027,293 @@ mod tests {
         assert!(
             !actual_s3.order_by_equals(&target_s3),
             "S3 engine should not infer order_by from primary key"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_order_by_fallback() {
+        use crate::framework::core::infrastructure_map::PrimitiveSignature;
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+
+        // MergeTree table with empty order_by should get order_by from primary key
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+                Column {
+                    name: "ts".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec![]), // Empty - should be filled by canonicalize
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let canonicalized = table.canonicalize();
+
+        // order_by should now be filled with primary key columns
+        assert_eq!(
+            canonicalized.order_by,
+            OrderBy::Fields(vec!["id".to_string(), "ts".to_string()]),
+            "order_by should be filled with primary key columns"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_array_required() {
+        use crate::framework::core::infrastructure_map::PrimitiveSignature;
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+
+        // Table with nullable array column should become required
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+                Column {
+                    name: "tags".to_string(),
+                    data_type: ColumnType::Array {
+                        element_type: Box::new(ColumnType::String),
+                        element_nullable: false,
+                    },
+                    required: false, // Nullable array - should become required
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let canonicalized = table.canonicalize();
+
+        // Array column should now be required
+        let array_col = canonicalized.columns.iter().find(|c| c.name == "tags");
+        assert!(array_col.is_some(), "tags column should exist");
+        assert!(
+            array_col.unwrap().required,
+            "Array column should be required=true after canonicalization"
+        );
+
+        // Non-array column should be unchanged
+        let id_col = canonicalized.columns.iter().find(|c| c.name == "id");
+        assert!(id_col.is_some(), "id column should exist");
+        assert!(
+            id_col.unwrap().required,
+            "id column should remain required=true"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_primary_key_clearing() {
+        use crate::framework::core::infrastructure_map::PrimitiveSignature;
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+
+        // S3Queue table with primary_key flag should have it cleared
+        // S3Queue doesn't support ORDER BY or PRIMARY KEY (unlike S3 which does support them)
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true, // S3Queue doesn't support primary key
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::S3Queue {
+                s3_path: "s3://bucket/path".to_string(),
+                format: "Parquet".to_string(),
+                aws_access_key_id: None,
+                aws_secret_access_key: None,
+                compression: None,
+                headers: None,
+            },
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let canonicalized = table.canonicalize();
+
+        // primary_key should be cleared for S3Queue engine
+        assert!(
+            !canonicalized.columns[0].primary_key,
+            "primary_key should be false for S3Queue engine after canonicalization"
+        );
+
+        // order_by should remain empty for S3Queue (no fallback, not a MergeTree engine)
+        assert!(
+            canonicalized.order_by.is_empty(),
+            "order_by should remain empty for S3Queue engine"
+        );
+    }
+
+    #[test]
+    fn test_canonicalize_idempotent() {
+        use crate::framework::core::infrastructure_map::PrimitiveSignature;
+        use crate::framework::core::infrastructure_map::PrimitiveTypes;
+
+        // Table that already satisfies all invariants
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+                Column {
+                    name: "tags".to_string(),
+                    data_type: ColumnType::Array {
+                        element_type: Box::new(ColumnType::String),
+                        element_nullable: false,
+                    },
+                    required: true, // Already required
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None,
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]), // Already set
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        let first_canonicalize = table.clone().canonicalize();
+        let second_canonicalize = first_canonicalize.clone().canonicalize();
+
+        // Columns should be identical after multiple canonicalize calls
+        assert_eq!(
+            first_canonicalize.columns, second_canonicalize.columns,
+            "Columns should be identical after multiple canonicalize calls"
+        );
+
+        // Order_by should be identical
+        assert_eq!(
+            first_canonicalize.order_by, second_canonicalize.order_by,
+            "order_by should be identical after multiple canonicalize calls"
         );
     }
 }
