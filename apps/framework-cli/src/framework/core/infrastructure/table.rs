@@ -12,6 +12,7 @@ use crate::proto::infrastructure_map::SimpleColumnType;
 use crate::proto::infrastructure_map::Table as ProtoTable;
 use crate::proto::infrastructure_map::{column_type, DateType};
 use crate::proto::infrastructure_map::{ColumnType as ProtoColumnType, Map, Tuple};
+use crate::utilities::normalize_path_string;
 use num_traits::ToPrimitive;
 use protobuf::well_known_types::wrappers::StringValue;
 use protobuf::MessageField;
@@ -22,6 +23,7 @@ use serde_json::Value;
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Debug;
+use std::path::Path;
 use tracing::warn;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
@@ -34,6 +36,16 @@ pub struct Metadata {
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub source: Option<SourceLocation>,
+}
+
+impl Metadata {
+    /// Normalizes the source file path to be relative to the project root.
+    /// This ensures that metadata doesn't contain developer-specific absolute paths.
+    pub fn normalize_source_path(&mut self, project_root: &Path) {
+        if let Some(source) = &mut self.source {
+            source.file = normalize_path_string(&source.file, project_root);
+        }
+    }
 }
 
 /// Prefix for Moose-managed metadata in column comments.
@@ -2548,5 +2560,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_metadata_normalize_source_path() {
+        use std::path::PathBuf;
+
+        let project_root = PathBuf::from("/home/user/project");
+
+        // Test with absolute path inside project root
+        let mut metadata = Metadata {
+            description: Some("Test table".to_string()),
+            source: Some(SourceLocation {
+                file: "/home/user/project/app/datamodels/models.py".to_string(),
+            }),
+        };
+
+        metadata.normalize_source_path(&project_root);
+
+        assert_eq!(
+            metadata.source.as_ref().unwrap().file,
+            "app/datamodels/models.py"
+        );
+
+        // Test with no source location
+        let mut metadata_no_source = Metadata {
+            description: Some("Test table".to_string()),
+            source: None,
+        };
+
+        metadata_no_source.normalize_source_path(&project_root);
+        assert!(metadata_no_source.source.is_none());
     }
 }
