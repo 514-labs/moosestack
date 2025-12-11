@@ -338,6 +338,12 @@ fn validate_table_databases_and_clusters(
             SerializableOlapOperation::RawSql { .. } => {
                 // RawSql doesn't reference specific tables/databases/clusters, skip validation
             }
+            SerializableOlapOperation::CreateMaterializedView { .. }
+            | SerializableOlapOperation::DropMaterializedView { .. }
+            | SerializableOlapOperation::CreateCustomView { .. }
+            | SerializableOlapOperation::DropCustomView { .. } => {
+                // MV/View operations don't have cluster support, skip validation
+            }
         }
     }
 

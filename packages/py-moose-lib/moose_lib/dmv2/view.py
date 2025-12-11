@@ -5,39 +5,57 @@ This module provides classes for defining standard SQL Views,
 including their SQL statements and dependencies.
 """
 
-from typing import Union, List, Optional
+from typing import Union, Optional, Any
 from pydantic import BaseModel
 
-from .sql_resource import SqlResource
 from .olap_table import OlapTable
+from ._registry import _custom_views
+from .source_location import get_source_file_from_stack
+from .materialized_view import MaterializedView
 
 
-class View(SqlResource):
+class View:
     """Represents a standard SQL database View.
+
+    Emits structured data for the Moose infrastructure system.
 
     Args:
         name: The name of the view to be created.
         select_statement: The SQL SELECT statement defining the view.
-        base_tables: A list of `OlapTable`, `View`, or `MaterializedView` objects
-                     that this view depends on.
+        base_tables: A list of objects with a `name` attribute (OlapTable, View,
+                     MaterializedView) that this view depends on. Used for
+                     dependency tracking.
         metadata: Optional metadata for the view.
 
     Attributes:
         name (str): The name of the view.
-        setup (list[str]): SQL command to create the view.
-        teardown (list[str]): SQL command to drop the view.
-        pulls_data_from (list[SqlObject]): Source tables/views.
+        select_sql (str): The SELECT SQL statement.
+        source_tables (list[str]): Names of source tables the SELECT reads from.
+        source_file (Optional[str]): Path to source file where defined.
     """
+
+    kind: str = "CustomView"
+    name: str
+    select_sql: str
+    source_tables: list[str]
+    source_file: Optional[str] = None
+    metadata: Optional[dict] = None
 
     def __init__(
         self,
         name: str,
         select_statement: str,
-        base_tables: list[Union[OlapTable, SqlResource]],
+        base_tables: list[Union[OlapTable, "View", "MaterializedView", Any]],
         metadata: dict = None,
     ):
-        setup = [f"CREATE VIEW IF NOT EXISTS {name} AS {select_statement}".strip()]
-        teardown = [f"DROP VIEW IF EXISTS {name}"]
-        super().__init__(
-            name, setup, teardown, pulls_data_from=base_tables, metadata=metadata
-        )
+        self.name = name
+        self.select_sql = select_statement
+        self.source_tables = [t.name for t in base_tables]
+        self.metadata = metadata
+        self.source_file = get_source_file_from_stack()
+
+        # Register in the custom_views registry
+        # In client-only mode, allow duplicate registrations for HMR support
+        if self.name in _custom_views:
+            raise ValueError(f"View with name {self.name} already exists")
+        _custom_views[self.name] = self

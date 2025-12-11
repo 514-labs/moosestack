@@ -310,6 +310,100 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
         }
     }
 
+    // Handle Materialized Views reconciliation
+    debug!("Reconciling Materialized Views");
+
+    // Remove missing MVs (in map but don't exist in reality)
+    for missing_mv_id in discrepancies.missing_materialized_views {
+        debug!(
+            "Removing missing materialized view from infrastructure map: {}",
+            missing_mv_id
+        );
+        reconciled_map.materialized_views.remove(&missing_mv_id);
+    }
+
+    // Add unmapped MVs (exist in database but not in current infrastructure map)
+    for unmapped_mv in discrepancies.unmapped_materialized_views {
+        let name = &unmapped_mv.name;
+        debug!(
+            "Adding unmapped materialized view found in reality to infrastructure map: {}",
+            name
+        );
+        reconciled_map
+            .materialized_views
+            .insert(name.clone(), unmapped_mv);
+    }
+
+    // Update mismatched MVs (exist in both but differ)
+    for change in discrepancies.mismatched_materialized_views {
+        match change {
+            OlapChange::MaterializedView(Change::Updated { before, .. }) => {
+                // We use 'before' (the actual MV from reality) because we want the
+                // reconciled map to reflect the current state of the database.
+                let name = &before.name;
+                debug!(
+                    "Updating mismatched materialized view in infrastructure map to match reality: {}",
+                    name
+                );
+                reconciled_map
+                    .materialized_views
+                    .insert(name.clone(), *before);
+            }
+            _ => {
+                tracing::warn!(
+                    "Unexpected change type in mismatched_materialized_views: {:?}",
+                    change
+                );
+            }
+        }
+    }
+
+    // Handle Custom Views reconciliation
+    debug!("Reconciling Custom Views");
+
+    // Remove missing custom views (in map but don't exist in reality)
+    for missing_view_id in discrepancies.missing_custom_views {
+        debug!(
+            "Removing missing custom view from infrastructure map: {}",
+            missing_view_id
+        );
+        reconciled_map.custom_views.remove(&missing_view_id);
+    }
+
+    // Add unmapped custom views (exist in database but not in current infrastructure map)
+    for unmapped_view in discrepancies.unmapped_custom_views {
+        let name = &unmapped_view.name;
+        debug!(
+            "Adding unmapped custom view found in reality to infrastructure map: {}",
+            name
+        );
+        reconciled_map
+            .custom_views
+            .insert(name.clone(), unmapped_view);
+    }
+
+    // Update mismatched custom views (exist in both but differ)
+    for change in discrepancies.mismatched_custom_views {
+        match change {
+            OlapChange::CustomView(Change::Updated { before, .. }) => {
+                // We use 'before' (the actual view from reality) because we want the
+                // reconciled map to reflect the current state of the database.
+                let name = &before.name;
+                debug!(
+                    "Updating mismatched custom view in infrastructure map to match reality: {}",
+                    name
+                );
+                reconciled_map.custom_views.insert(name.clone(), *before);
+            }
+            _ => {
+                tracing::warn!(
+                    "Unexpected change type in mismatched_custom_views: {:?}",
+                    change
+                );
+            }
+        }
+    }
+
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
 }

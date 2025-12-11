@@ -23,6 +23,7 @@ use std::hash::Hash;
 pub mod api_endpoint;
 pub mod consumption_webserver;
 pub mod function_process;
+pub mod materialized_view;
 pub mod olap_process;
 pub mod orchestration_worker;
 pub mod sql_resource;
@@ -50,10 +51,14 @@ pub enum InfrastructureSignature {
     ApiEndpoint { id: String },
     /// Process that synchronizes data from a topic to a table
     TopicToTableSyncProcess { id: String },
-    /// View infrastructure component
+    /// View infrastructure component (for internal alias views)
     View { id: String },
-    /// SQL resource infrastructure component
+    /// SQL resource infrastructure component (legacy, for raw SQL)
     SqlResource { id: String },
+    /// Materialized view infrastructure component
+    MaterializedView { id: String },
+    /// Custom view infrastructure component (user-defined SELECT views)
+    CustomView { id: String },
 }
 
 impl InfrastructureSignature {
@@ -65,7 +70,9 @@ impl InfrastructureSignature {
             | Self::ApiEndpoint { id }
             | Self::TopicToTableSyncProcess { id }
             | Self::View { id }
-            | Self::SqlResource { id } => id,
+            | Self::SqlResource { id }
+            | Self::MaterializedView { id }
+            | Self::CustomView { id } => id,
         }
     }
 
@@ -101,6 +108,16 @@ impl InfrastructureSignature {
                 proto.set_sql_resource_id(id.clone());
                 proto
             }
+            InfrastructureSignature::MaterializedView { id } => {
+                let mut proto = ProtoInfrastructureSignature::new();
+                proto.set_materialized_view_id(id.clone());
+                proto
+            }
+            InfrastructureSignature::CustomView { id } => {
+                let mut proto = ProtoInfrastructureSignature::new();
+                proto.set_custom_view_id(id.clone());
+                proto
+            }
         }
     }
 
@@ -123,6 +140,12 @@ impl InfrastructureSignature {
             }
             Some(infrastructure_signature::Signature::SqlResourceId(id)) => {
                 InfrastructureSignature::SqlResource { id }
+            }
+            Some(infrastructure_signature::Signature::MaterializedViewId(id)) => {
+                InfrastructureSignature::MaterializedView { id }
+            }
+            Some(infrastructure_signature::Signature::CustomViewId(id)) => {
+                InfrastructureSignature::CustomView { id }
             }
             None => {
                 panic!("Invalid infrastructure signature");

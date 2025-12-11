@@ -164,6 +164,34 @@ pub enum AtomicOlapOperation {
         /// Dependency information
         dependency_info: DependencyInfo,
     },
+    /// Create a structured materialized view
+    CreateMaterializedView {
+        /// The materialized view to create
+        mv: crate::framework::core::infrastructure::materialized_view::MaterializedView,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a structured materialized view
+    DropMaterializedView {
+        /// The materialized view to drop
+        mv: crate::framework::core::infrastructure::materialized_view::MaterializedView,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Create a structured custom view
+    CreateCustomView {
+        /// The custom view to create
+        view: crate::framework::core::infrastructure::view::CustomView,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a structured custom view
+    DropCustomView {
+        /// The custom view to drop
+        view: crate::framework::core::infrastructure::view::CustomView,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
 }
 
 impl AtomicOlapOperation {
@@ -352,6 +380,34 @@ impl AtomicOlapOperation {
                 sql: resource.teardown.clone(),
                 description: format!("Running teardown SQL for resource {}", resource.name),
             },
+            AtomicOlapOperation::CreateMaterializedView { mv, .. } => {
+                SerializableOlapOperation::CreateMaterializedView {
+                    name: mv.name.clone(),
+                    database: mv.database.clone(),
+                    target_table: mv.target_table.clone(),
+                    target_database: mv.target_database.clone(),
+                    select_sql: mv.select_sql.clone(),
+                }
+            }
+            AtomicOlapOperation::DropMaterializedView { mv, .. } => {
+                SerializableOlapOperation::DropMaterializedView {
+                    name: mv.name.clone(),
+                    database: mv.database.clone(),
+                }
+            }
+            AtomicOlapOperation::CreateCustomView { view, .. } => {
+                SerializableOlapOperation::CreateCustomView {
+                    name: view.name.clone(),
+                    database: view.database.clone(),
+                    select_sql: view.select_sql.clone(),
+                }
+            }
+            AtomicOlapOperation::DropCustomView { view, .. } => {
+                SerializableOlapOperation::DropCustomView {
+                    name: view.name.clone(),
+                    database: view.database.clone(),
+                }
+            }
         }
     }
 
@@ -416,6 +472,26 @@ impl AtomicOlapOperation {
                     id: resource.name.clone(),
                 }
             }
+            AtomicOlapOperation::CreateMaterializedView { mv, .. } => {
+                InfrastructureSignature::MaterializedView {
+                    id: mv.id(default_database),
+                }
+            }
+            AtomicOlapOperation::DropMaterializedView { mv, .. } => {
+                InfrastructureSignature::MaterializedView {
+                    id: mv.id(default_database),
+                }
+            }
+            AtomicOlapOperation::CreateCustomView { view, .. } => {
+                InfrastructureSignature::CustomView {
+                    id: view.id(default_database),
+                }
+            }
+            AtomicOlapOperation::DropCustomView { view, .. } => {
+                InfrastructureSignature::CustomView {
+                    id: view.id(default_database),
+                }
+            }
         }
     }
 
@@ -468,6 +544,18 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::RunTeardownSql {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::CreateMaterializedView {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropMaterializedView {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::CreateCustomView {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropCustomView {
                 dependency_info, ..
             } => Some(dependency_info),
         }
@@ -989,6 +1077,108 @@ fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> Oper
     plan
 }
 
+use crate::framework::core::infrastructure::materialized_view::MaterializedView;
+use crate::framework::core::infrastructure::view::CustomView;
+
+/// Handles adding a materialized view operation
+fn handle_materialized_view_add(mv: &MaterializedView) -> OperationPlan {
+    let pulls_from = mv.pulls_data_from();
+    let pushes_to = mv.pushes_data_to();
+
+    let setup_op = AtomicOlapOperation::CreateMaterializedView {
+        mv: mv.clone(),
+        dependency_info: create_dependency_info(pulls_from, pushes_to),
+    };
+
+    OperationPlan::setup(vec![setup_op])
+}
+
+/// Handles removing a materialized view operation
+fn handle_materialized_view_remove(mv: &MaterializedView) -> OperationPlan {
+    let pulls_from = mv.pulls_data_from();
+    let pushes_to = mv.pushes_data_to();
+
+    let teardown_op = AtomicOlapOperation::DropMaterializedView {
+        mv: mv.clone(),
+        dependency_info: create_dependency_info(pulls_from, pushes_to),
+    };
+
+    OperationPlan::teardown(vec![teardown_op])
+}
+
+/// Handles updating a materialized view operation
+fn handle_materialized_view_update(
+    before: &MaterializedView,
+    after: &MaterializedView,
+) -> OperationPlan {
+    let before_pulls = before.pulls_data_from();
+    let before_pushes = before.pushes_data_to();
+    let teardown_op = AtomicOlapOperation::DropMaterializedView {
+        mv: before.clone(),
+        dependency_info: create_dependency_info(before_pulls, before_pushes),
+    };
+
+    let after_pulls = after.pulls_data_from();
+    let after_pushes = after.pushes_data_to();
+    let setup_op = AtomicOlapOperation::CreateMaterializedView {
+        mv: after.clone(),
+        dependency_info: create_dependency_info(after_pulls, after_pushes),
+    };
+
+    let mut plan = OperationPlan::new();
+    plan.teardown_ops.push(teardown_op);
+    plan.setup_ops.push(setup_op);
+    plan
+}
+
+/// Handles adding a custom view operation
+fn handle_custom_view_add(view: &CustomView) -> OperationPlan {
+    let pulls_from = view.pulls_data_from();
+    let pushes_to = view.pushes_data_to();
+
+    let setup_op = AtomicOlapOperation::CreateCustomView {
+        view: view.clone(),
+        dependency_info: create_dependency_info(pulls_from, pushes_to),
+    };
+
+    OperationPlan::setup(vec![setup_op])
+}
+
+/// Handles removing a custom view operation
+fn handle_custom_view_remove(view: &CustomView) -> OperationPlan {
+    let pulls_from = view.pulls_data_from();
+    let pushes_to = view.pushes_data_to();
+
+    let teardown_op = AtomicOlapOperation::DropCustomView {
+        view: view.clone(),
+        dependency_info: create_dependency_info(pulls_from, pushes_to),
+    };
+
+    OperationPlan::teardown(vec![teardown_op])
+}
+
+/// Handles updating a custom view operation
+fn handle_custom_view_update(before: &CustomView, after: &CustomView) -> OperationPlan {
+    let before_pulls = before.pulls_data_from();
+    let before_pushes = before.pushes_data_to();
+    let teardown_op = AtomicOlapOperation::DropCustomView {
+        view: before.clone(),
+        dependency_info: create_dependency_info(before_pulls, before_pushes),
+    };
+
+    let after_pulls = after.pulls_data_from();
+    let after_pushes = after.pushes_data_to();
+    let setup_op = AtomicOlapOperation::CreateCustomView {
+        view: after.clone(),
+        dependency_info: create_dependency_info(after_pulls, after_pushes),
+    };
+
+    let mut plan = OperationPlan::new();
+    plan.teardown_ops.push(teardown_op);
+    plan.setup_ops.push(setup_op);
+    plan
+}
+
 /// Orders OLAP changes based on dependencies to ensure proper execution sequence.
 ///
 /// This function takes a list of OLAP changes and orders them according to their
@@ -1127,6 +1317,18 @@ pub fn order_olap_changes(
             }
             OlapChange::SqlResource(Change::Updated { before, after }) => {
                 handle_sql_resource_update(before, after)
+            }
+            OlapChange::MaterializedView(Change::Added(mv)) => handle_materialized_view_add(mv),
+            OlapChange::MaterializedView(Change::Removed(mv)) => {
+                handle_materialized_view_remove(mv)
+            }
+            OlapChange::MaterializedView(Change::Updated { before, after }) => {
+                handle_materialized_view_update(before, after)
+            }
+            OlapChange::CustomView(Change::Added(view)) => handle_custom_view_add(view),
+            OlapChange::CustomView(Change::Removed(view)) => handle_custom_view_remove(view),
+            OlapChange::CustomView(Change::Updated { before, after }) => {
+                handle_custom_view_update(before, after)
             }
         };
 
