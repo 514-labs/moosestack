@@ -3,7 +3,7 @@ name: Release CLI
 on:
   push:
     branches:
-      - '**'  # All branches
+      - "**" # All branches
     paths:
       - ".github/workflows/release-cli.yaml"
       - "apps/moose-cli-npm/**"
@@ -38,7 +38,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Need full history for git describe
+          fetch-depth: 0 # Need full history for git describe
           fetch-tags: true
 
       - name: Generate Version
@@ -307,19 +307,16 @@ jobs:
           - {
               NAME: linux-x64-glibc,
               OS: ubuntu-22-8-core,
-              TOOLCHAIN: stable,
               TARGET: x86_64-unknown-linux-gnu,
             }
           - {
               NAME: linux-arm64-glibc,
               OS: ubuntu-22-8-core,
-              TOOLCHAIN: stable,
               TARGET: aarch64-unknown-linux-gnu,
             }
           - {
               NAME: darwin-arm64,
               OS: macos-14-large,
-              TOOLCHAIN: stable,
               TARGET: aarch64-apple-darwin,
             }
     steps:
@@ -330,7 +327,6 @@ jobs:
         if: ${{ matrix.build.OS != 'ubuntu-22-8-core' }}
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: ${{ matrix.build.TOOLCHAIN }}
           target: ${{ matrix.build.TARGET }}
 
       - name: Run sccache-cache
@@ -636,7 +632,6 @@ jobs:
       - name: Publish the NPM Moose create app package
         shell: bash
         run: ./apps/create-moose-app/scripts/release.sh ${{ needs.version.outputs.version }}
-
 
   build-and-publish-fullstack-image:
     name: Moose Production images
