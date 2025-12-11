@@ -281,16 +281,20 @@ class OlapTable(TypedMooseResource, Generic[T]):
         self.config = config
 
         if config.metadata:
-            self.metadata = config.metadata.copy() if isinstance(config.metadata, dict) else config.metadata
+            self.metadata = (
+                config.metadata.copy()
+                if isinstance(config.metadata, dict)
+                else config.metadata
+            )
         else:
             self.metadata = {}
 
         if not isinstance(self.metadata, dict):
             self.metadata = {}
-        if 'source' not in self.metadata:
+        if "source" not in self.metadata:
             source_file = get_source_file_from_stack()
             if source_file:
-                self.metadata['source'] = {'file': source_file}
+                self.metadata["source"] = {"file": source_file}
 
         self._column_list = _to_columns(self._t)
 
