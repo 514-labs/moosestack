@@ -140,6 +140,17 @@ async function setupTypeScriptProjectWithLatestNpm(
   testLogger.info(
     "Installing dependencies with pnpm (using latest @514labs/moose-lib)...",
   );
+
+  let packageJson = path.join(projectDir, "package.json");
+  let content = fs.readFileSync(packageJson, "utf-8");
+  fs.writeFileSync(
+    packageJson,
+    content.replace(
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript",
+    ),
+  );
+
   await new Promise<void>((resolve, reject) => {
     const installCmd = spawn("pnpm", ["install"], {
       stdio: "inherit",
@@ -294,14 +305,6 @@ describe("Backward Compatibility Tests", function () {
 
         // Setup project with LATEST published version
         if (config.language === "typescript") {
-          let packageJson = path.join(TEST_PROJECT_DIR, "package.json");
-          let content = fs.readFileSync(packageJson, "utf-8");
-          content.replace(
-            "@confluentinc/kafka-javascript",
-            "@514labs/kafka-javascript",
-          );
-          fs.writeFileSync(packageJson, content);
-
           await setupTypeScriptProjectWithLatestNpm(
             TEST_PROJECT_DIR,
             config.templateName,
