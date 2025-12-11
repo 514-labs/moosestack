@@ -45,6 +45,8 @@ pub fn run_local_infrastructure(
 
     if project.features.olap {
         validate_clickhouse_run(project, docker_client)?.show();
+
+        // Show connection for primary database
         show_message_wrapper(
             MessageType::Info,
             Message {
@@ -52,6 +54,18 @@ pub fn run_local_infrastructure(
                 details: project.clickhouse_config.display_url(),
             },
         );
+
+        // Show connections for additional databases
+        for db in &project.clickhouse_config.additional_databases {
+            show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "".to_string(),
+                    details: project.clickhouse_config.display_url_for_database(db),
+                },
+            );
+        }
+
         show_message_wrapper(
             MessageType::Info,
             Message {
