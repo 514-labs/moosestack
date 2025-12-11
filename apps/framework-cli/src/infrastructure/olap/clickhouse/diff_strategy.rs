@@ -591,40 +591,37 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         // This allows detecting actual changes without comparing masked credential values.
         // When comparing directly, treat missing readonly settings as having their default values
         // (e.g., {"index_granularity": "8192"} is equivalent to {}).
-        let settings_changed: bool = {
-            if let (Some(before_hash), Some(after_hash)) =
-                (&before.table_settings_hash, &after.table_settings_hash)
-            {
-                before_hash != after_hash
-            } else {
-                let empty = HashMap::new();
-                let before_settings = before.table_settings.as_ref().unwrap_or(&empty);
-                let after_settings = after.table_settings.as_ref().unwrap_or(&empty);
+        let settings_changed: bool = if let (Some(before_hash), Some(after_hash)) =
+            (&before.table_settings_hash, &after.table_settings_hash)
+        {
+            before_hash != after_hash
+        } else {
+            let empty = HashMap::new();
+            let before_settings = before.table_settings.as_ref().unwrap_or(&empty);
+            let after_settings = after.table_settings.as_ref().unwrap_or(&empty);
 
-                let all_keys: std::collections::HashSet<&String> = before_settings
-                    .keys()
-                    .chain(after_settings.keys())
-                    .collect();
+            let all_keys: std::collections::HashSet<&String> = before_settings
+                .keys()
+                .chain(after_settings.keys())
+                .collect();
 
-                all_keys.into_iter().any(|key| {
-                    let before_val = before_settings.get(key);
-                    let after_val = after_settings.get(key);
+            all_keys.into_iter().any(|key| {
+                let before_val = before_settings.get(key);
+                let after_val = after_settings.get(key);
 
-                    before_val != after_val
-                        && READONLY_SETTINGS
-                            .iter()
-                            .find(|(setting, _)| *setting == key.as_str())
-                            // it is not readonly, or they *actually* differ
-                            .map_or(true, |(_, default)| {
-                                // Treat missing as default value
-                                let before_effective =
-                                    before_val.map(|s| s.as_str()).unwrap_or(default);
-                                let after_effective =
-                                    after_val.map(|s| s.as_str()).unwrap_or(default);
-                                before_effective != after_effective
-                            })
-                })
-            }
+                before_val != after_val
+                    && READONLY_SETTINGS
+                        .iter()
+                        .find(|(setting, _)| *setting == key.as_str())
+                        // it is not readonly, or they *actually* differ
+                        .is_none_or(|(_, default)| {
+                            // Treat missing as default value
+                            let before_effective =
+                                before_val.map(|s| s.as_str()).unwrap_or(default);
+                            let after_effective = after_val.map(|s| s.as_str()).unwrap_or(default);
+                            before_effective != after_effective
+                        })
+            })
         };
 
         // Check if only table settings have changed
