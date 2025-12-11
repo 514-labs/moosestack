@@ -576,35 +576,58 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
         let mut changes = Vec::new();
 
+        // List of readonly settings that cannot be modified after table creation
+        // Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
+        const READONLY_SETTINGS: &[(&str, &str)] = &[
+            ("index_granularity", "8192"),
+            ("index_granularity_bytes", "10485760"),
+            ("enable_mixed_granularity_parts", "1"),
+            ("add_minmax_index_for_numeric_columns", "0"),
+            ("add_minmax_index_for_string_columns", "0"),
+            ("table_disk", "0"),
+        ];
+
         // Compare table_settings using hashes when available (for tables with sensitive settings).
         // This allows detecting actual changes without comparing masked credential values.
-        let settings_changed = || -> bool {
+        // When comparing directly, treat missing readonly settings as having their default values
+        // (e.g., {"index_granularity": "8192"} is equivalent to {}).
+        let settings_changed: bool = {
             if let (Some(before_hash), Some(after_hash)) =
                 (&before.table_settings_hash, &after.table_settings_hash)
             {
-                return before_hash != after_hash;
-            }
+                before_hash != after_hash
+            } else {
+                let empty = HashMap::new();
+                let before_settings = before.table_settings.as_ref().unwrap_or(&empty);
+                let after_settings = after.table_settings.as_ref().unwrap_or(&empty);
 
-            match (&before.table_settings, &after.table_settings) {
-                (None, None) => false,
-                (None, Some(map)) | (Some(map), None) => !map.is_empty(),
-                (Some(before_map), Some(after_map)) => before_map != after_map,
+                let all_keys: std::collections::HashSet<&String> = before_settings
+                    .keys()
+                    .chain(after_settings.keys())
+                    .collect();
+
+                all_keys.into_iter().any(|key| {
+                    let before_val = before_settings.get(key);
+                    let after_val = after_settings.get(key);
+
+                    before_val != after_val
+                        && READONLY_SETTINGS
+                            .iter()
+                            .find(|(setting, _)| *setting == key.as_str())
+                            .map_or(true, |(_, default)| {
+                                // Treat missing as default value
+                                let before_effective =
+                                    before_val.map(|s| s.as_str()).unwrap_or(default);
+                                let after_effective =
+                                    after_val.map(|s| s.as_str()).unwrap_or(default);
+                                before_effective != after_effective
+                            })
+                })
             }
         };
 
         // Check if only table settings have changed
-        if settings_changed() {
-            // List of readonly settings that cannot be modified after table creation
-            // Source: ClickHouse/src/Storages/MergeTree/MergeTreeSettings.cpp::isReadonlySetting
-            const READONLY_SETTINGS: &[(&str, &str)] = &[
-                ("index_granularity", "8192"),
-                ("index_granularity_bytes", "10485760"),
-                ("enable_mixed_granularity_parts", "1"),
-                ("add_minmax_index_for_numeric_columns", "0"),
-                ("add_minmax_index_for_string_columns", "0"),
-                ("table_disk", "0"),
-            ];
-
+        if settings_changed {
             // Check if any readonly settings have changed
             let empty_settings = HashMap::new();
             let before_settings = before.table_settings.as_ref().unwrap_or(&empty_settings);
