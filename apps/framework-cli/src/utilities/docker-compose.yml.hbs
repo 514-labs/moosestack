@@ -154,7 +154,7 @@ services:
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "${CLICKHOUSE_HOST_PORT:-18123}:8123"
-      - "9000:9000"
+      - "{{native_port}}:{{native_port}}"
     networks:
       - clickhouse-network
     healthcheck:
@@ -187,7 +187,7 @@ services:
           <macros>
             <shard>01</shard>
             <replica>replica_1</replica>
-            <database>local</database>
+            <database>{{database_name}}</database>
           </macros>
           <!-- Macros are used for ReplicatedMergeTree default paths -->
           <!-- Default path: /clickhouse/tables/{uuid}/{shard} works with Atomic database (default) -->
@@ -199,7 +199,7 @@ services:
   {{#if has_clusters}}
   clickhousedb-2:
     hostname: clickhousedb-2
-    image: docker.io/clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.6}
+    image: docker.io/clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.8}
     depends_on:
       clickhouse-keeper:
         condition: service_healthy
@@ -215,7 +215,7 @@ services:
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "28123:8123"
-      - "29000:9000"
+      - "{{native_port_node2}}:{{native_port}}"
     networks:
       - clickhouse-network
     healthcheck:
@@ -248,7 +248,7 @@ services:
           <macros>
             <shard>01</shard>
             <replica>replica_2</replica>
-            <database>local</database>
+            <database>{{database_name}}</database>
           </macros>
         </clickhouse>
         EOF
