@@ -400,19 +400,20 @@ impl DockerClient {
                        <shard>\n\
                          <replica>\n\
                            <host>clickhousedb</host>\n\
-                           <port>9000</port>\n\
+                           <port>{port}</port>\n\
                            <user>{user}</user>\n\
                            <password>{password}</password>\n\
                          </replica>\n\
                          <replica>\n\
                            <host>clickhousedb-2</host>\n\
-                           <port>9000</port>\n\
+                           <port>{port}</port>\n\
                            <user>{user}</user>\n\
                            <password>{password}</password>\n\
                          </replica>\n\
                        </shard>\n\
                      </{name}>\n",
                 name = cluster.name,
+                port = project.clickhouse_config.native_port,
                 user = project.clickhouse_config.user,
                 password = project.clickhouse_config.password
             ));
@@ -487,6 +488,19 @@ impl DockerClient {
 
         if let Some(obj) = data.as_object_mut() {
             obj.insert("has_clusters".to_string(), json!(has_clusters));
+            obj.insert(
+                "database_name".to_string(),
+                json!(project.clickhouse_config.db_name),
+            );
+            obj.insert(
+                "native_port".to_string(),
+                json!(project.clickhouse_config.native_port),
+            );
+            // Node 2 uses native_port + 20000 for external access to avoid conflicts
+            obj.insert(
+                "native_port_node2".to_string(),
+                json!(project.clickhouse_config.native_port + 20000),
+            );
         }
 
         // Generate and write ClickHouse clusters config if clusters are defined
