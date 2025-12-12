@@ -47,6 +47,13 @@ class TableE(BaseModel):
     timestamp: float
 
 
+# Table in additional database with cluster (tests database creation bug)
+class TableF(BaseModel):
+    id: Key[str]
+    metric: int
+    timestamp: float
+
+
 # OLAP Tables
 
 # table_a: Uses cluster_a with ReplicatedMergeTree
@@ -97,5 +104,16 @@ table_e = OlapTable[TableE](
         order_by_fields=["id"],
         engine=ReplicatedMergeTreeEngine(),
         # No cluster, no keeper_path, no replica_name - Moose will auto-inject in dev
+    ),
+)
+
+# TableF: In additional database with cluster
+table_f = OlapTable[TableF](
+    "TableF",
+    OlapConfig(
+        order_by_fields=["id"],
+        engine=ReplicatedMergeTreeEngine(),
+        cluster="cluster_a",
+        database="analytics",
     ),
 )

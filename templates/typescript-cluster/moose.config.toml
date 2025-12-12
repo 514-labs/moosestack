@@ -18,6 +18,7 @@ use_ssl = false
 host = "localhost"
 host_port = 18123
 native_port = 9000
+additional_databases = ["analytics"]
 
 # Define two clusters for testing ON CLUSTER support
 [[clickhouse_config.clusters]]
