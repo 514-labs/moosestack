@@ -154,7 +154,7 @@ services:
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "${CLICKHOUSE_HOST_PORT:-18123}:8123"
-      - "{{native_port}}:{{native_port}}"
+      - "9000:9000"
     networks:
       - clickhouse-network
     healthcheck:
@@ -215,7 +215,7 @@ services:
       - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
     ports:
       - "28123:8123"
-      - "{{native_port_node2}}:{{native_port}}"
+      - "29000:9000"
     networks:
       - clickhouse-network
     healthcheck:
