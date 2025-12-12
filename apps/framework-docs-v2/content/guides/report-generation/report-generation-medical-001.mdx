@@ -1,0 +1,1124 @@
+# Document Processing Automation with MooseStack
+
+Build a production-grade document processing and retrieval automation system using MooseStack, Temporal workflows, and OLAP analytics.
+
+## What You'll Build
+
+A full-stack document retrieval system that:
+- Monitors source queues for document requests
+- Searches networked file shares (SMB mounts) for document folders
+- Aggregates multi-format documents (PDF, TIFF, images) into single consolidated PDFs
+- Tracks retrieval status in PostgreSQL with idempotency guarantees
+- Notifies downstream systems via webhooks
+- Queries ClickHouse OLAP indexes for indexed sources
+- Orchestrates long-running, retry-able workflows via Temporal
+
+**Tech stack**: Python, MooseStack (DMv2), Temporal, PostgreSQL, ClickHouse, Redpanda, Docker
+
+## Why Moose?
+
+Traditional data engineering requires stitching together disparate tools:
+- **Kafka/Redpanda** for streaming
+- **Airflow/Prefect** for orchestration
+- **dbt** for transformations
+- **Custom glue code** holding it together
+
+**MooseStack consolidates this complexity** into a single, type-safe Python framework:
+
+### Infrastructure from Code
+Define data models once in Python → Moose auto-provisions:
+- ClickHouse tables (OLAP)
+- Redpanda topics (streaming)
+- REST APIs (ingest/consume)
+- Type validation
+
+### Built-in Workflow Orchestration
+Temporal integration means:
+- Durable execution survives crashes
+- Automatic retries with backoff
+- Timeout management
+- Workflow versioning
+
+### Developer Experience
+- Hot reload in development
+- Type-safe data models (Pydantic/SQLModel)
+- Single `moose.config.toml` configuration
+- Docker-based local dev matching production
+
+### Cost & Operational Benefits
+- Fewer moving parts = less operational overhead
+- ClickHouse's columnar storage = 10-100x query performance vs row-based DBs
+- Redpanda's Kafka compatibility without JVM overhead
+- Deploy to managed Boreal or self-host
+
+**When to use Moose**: Document processing pipelines, event-driven systems, real-time analytics, workflow automation with data persistence requirements.
+
+## Setup
+
+### Install Moose CLI
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+### Initialize your project
+
+```bash
+moose init <project-name> --language python
+cd <project-name>
+```
+
+### Set up development environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+
+pip install -r requirements.txt
+pip install -r requirements-dev.txt  # testing
+```
+
+### Configure Moose platform
+
+Edit `moose.config.toml`:
+
+```toml
+[project]
+language = "python"
+name = "<project-name>"
+
+[datamodels]
+version = "2"  # Enable DMv2
+
+[temporal]
+host = "localhost"
+port = 7233
+namespace = "moose-workflows"
+
+[databases.olap]
+host = "clickhouse-0"
+user = "moose"
+database = "moose"
+
+[databases.oltp]
+host = "postgres-app"
+user = "app_user"
+database = "app_db"
+```
+
+### Set environment variables
+
+```bash
+cp env.example .env.local
+```
+
+Key environment variables:
+
+```bash
+# PostgreSQL
+POSTGRES_PASSWORD=<strong-password>
+
+# ClickHouse
+MOOSE_CLICKHOUSE_PASSWORD=<clickhouse-password>
+
+# Temporal
+TEMPORAL_PORT=7233
+
+# Application
+DOCUMENT_MOUNT=/path/to/test-data
+WEBHOOK_URL=https://hooks.slack.com/services/...
+PDF_SERVER_IP=host.docker.internal  # optional
+```
+
+### Start the stack
+
+```bash
+# Build Moose image
+moose build --docker --arm64  # or without --arm64 for x86_64
+docker tag moose-df-deployment-*:latest doc-automation-moose:latest
+
+# Start services
+./startup.sh
+```
+
+Verify:
+
+```bash
+./dc.sh ps
+curl -s http://localhost:4000/health | jq
+```
+
+**Note**: Use `./dc.sh` wrapper (loads `.env.local`) instead of `docker compose` directly.
+
+## Model Your Data
+
+### Create operational storage models
+
+The system tracks document retrievals and source queues in PostgreSQL.
+
+Create `app/helpers/automation_storage/tables.py`:
+
+```python
+from sqlmodel import Field, SQLModel
+from datetime import datetime
+from typing import Optional
+from enum import Enum
+
+class RetrievalStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    SUCCESS = "SUCCESS"
+    NOT_FOUND = "NOT_FOUND"
+    FAILED_TO_CONVERT = "FAILED_TO_CONVERT"
+    ERROR = "ERROR"
+
+class DocumentRetrieval(SQLModel, table=True):
+    __tablename__ = "document_retrievals"
+
+    request_id: str = Field(primary_key=True)
+    source_id: int
+    entity_first_name: str
+    entity_last_name: str
+    entity_dob: str
+
+    source_file_path: str
+    processed_output_path: str
+
+    status: RetrievalStatus = Field(default=RetrievalStatus.PENDING)
+    error_message: Optional[str] = None
+    processed_file_path: Optional[str] = None
+
+    last_updated: datetime = Field(default_factory=datetime.utcnow)
+    completed_time: Optional[datetime] = None
+
+class SourceQueueMonitor(SQLModel, table=True):
+    __tablename__ = "source_queue_monitors"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    source_id: int = Field(unique=True)
+    data_file_path: str
+    source_name: str
+    source_type: str  # MAPPED or INDEXED
+    is_mapped: bool = Field(default=False)
+    last_retrieval_date: Optional[datetime] = None
+```
+
+### Create repository pattern for database access
+
+Create `app/helpers/automation_storage/repositories.py`:
+
+```python
+from sqlmodel import Session, select, create_engine
+from typing import List, Optional
+from contextlib import contextmanager
+import os
+
+from .tables import DocumentRetrieval, SourceQueueMonitor, RetrievalStatus
+
+class DocumentRetrievalRepo:
+    def __init__(self, engine):
+        self.engine = engine
+
+    @contextmanager
+    def get_session(self):
+        with Session(self.engine) as session:
+            yield session
+
+    def create_or_update(self, retrieval: DocumentRetrieval) -> DocumentRetrieval:
+        with self.get_session() as session:
+            existing = session.get(DocumentRetrieval, retrieval.request_id)
+            if existing:
+                for key, value in retrieval.dict(exclude_unset=True).items():
+                    setattr(existing, key, value)
+                session.add(existing)
+            else:
+                session.add(retrieval)
+            session.commit()
+            session.refresh(retrieval)
+            return retrieval
+
+    def get_by_id(self, request_id: str) -> Optional[DocumentRetrieval]:
+        with self.get_session() as session:
+            return session.get(DocumentRetrieval, request_id)
+
+    def get_by_status(self, status: RetrievalStatus) -> List[DocumentRetrieval]:
+        with self.get_session() as session:
+            statement = select(DocumentRetrieval).where(
+                DocumentRetrieval.status == status
+            )
+            return session.exec(statement).all()
+
+class SourceQueueRepo:
+    def __init__(self, engine):
+        self.engine = engine
+
+    @contextmanager
+    def get_session(self):
+        with Session(self.engine) as session:
+            yield session
+
+    def get_all_monitored(self) -> List[SourceQueueMonitor]:
+        with self.get_session() as session:
+            return session.exec(select(SourceQueueMonitor)).all()
+
+    def upsert(self, source: SourceQueueMonitor) -> SourceQueueMonitor:
+        with self.get_session() as session:
+            statement = select(SourceQueueMonitor).where(
+                SourceQueueMonitor.source_id == source.source_id
+            )
+            existing = session.exec(statement).first()
+            if existing:
+                for key, value in source.dict(exclude_unset=True).items():
+                    setattr(existing, key, value)
+                session.add(existing)
+            else:
+                session.add(source)
+            session.commit()
+            session.refresh(source)
+            return source
+```
+
+### Create unified storage service
+
+Create `app/helpers/automation_storage/service.py`:
+
+```python
+from sqlmodel import create_engine
+import os
+
+from .repositories import DocumentRetrievalRepo, SourceQueueRepo
+from .tables import SQLModel
+
+class AutomationStorage:
+    def __init__(self):
+        postgres_url = (
+            f"postgresql://{os.getenv('POSTGRES_USER')}:"
+            f"{os.getenv('POSTGRES_PASSWORD')}@"
+            f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/"
+            f"{os.getenv('POSTGRES_DB')}"
+        )
+        self.engine = create_engine(postgres_url, pool_pre_ping=True)
+        SQLModel.metadata.create_all(self.engine)
+
+        self.document_retrieval = DocumentRetrievalRepo(self.engine)
+        self.source_queue = SourceQueueRepo(self.engine)
+
+# Singleton
+storage = AutomationStorage()
+```
+
+### Create OLAP models for indexed data
+
+Indexed sources store entity and document data in ClickHouse.
+
+Create `app/datamodels/entity_index.py`:
+
+```python
+from moose_lib import Key, moose_data_model
+from datetime import datetime
+from typing import Optional
+
+@moose_data_model
+class EntityIndex:
+    eventId: Key[str]
+    source_id: int
+    entity_id: str
+    entity_first_name: str
+    entity_last_name: str
+    entity_dob: str
+    entity_folder_path: Optional[str]
+    indexed_at: datetime
+```
+
+Create `app/datamodels/document_index.py`:
+
+```python
+from moose_lib import Key, moose_data_model
+from datetime import datetime
+
+@moose_data_model
+class DocumentIndex:
+    eventId: Key[str]
+    source_id: int
+    entity_id: str
+    document_path: str
+    document_type: str  # PDF, TIFF, etc.
+    document_date: datetime
+    indexed_at: datetime
+```
+
+**Note**: MooseStack auto-provisions ClickHouse tables, Redpanda topics, and ingest APIs.
+
+Verify:
+
+```bash
+./dc.sh exec clickhouse-0 clickhouse-client --database moose \
+  --query "SELECT name, engine FROM system.tables WHERE database = 'moose'"
+```
+
+## Implement Core Business Logic
+
+### Document folder search
+
+Documents follow naming convention: `Last, First - YYYY-MM-DD`
+
+Create `app/automation/fs_search.py`:
+
+```python
+import os
+from typing import Optional
+from rapidfuzz import fuzz
+import logging
+
+logger = logging.getLogger(__name__)
+
+def normalize_name(name: str) -> str:
+    return " ".join(name.lower().split())
+
+def normalize_dob(dob: str) -> str:
+    """Convert MM-DD-YYYY or MM/DD/YYYY to YYYY-MM-DD"""
+    parts = dob.replace("/", "-").split("-")
+    if len(parts) == 3:
+        if len(parts[2]) == 4:  # MM-DD-YYYY
+            return f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+        elif len(parts[0]) == 4:  # YYYY-MM-DD
+            return dob
+    return dob
+
+def build_expected_folder_name(last: str, first: str, dob: str) -> str:
+    normalized_dob = normalize_dob(dob)
+    return f"{last.strip()}, {first.strip()} - {normalized_dob}"
+
+def find_directory_by_convention(
+    root_path: str,
+    last_name: str,
+    first_name: str,
+    dob: str,
+    fuzzy_threshold: int = 85
+) -> Optional[str]:
+    """
+    Search for folder using naming convention.
+    Falls back to case-insensitive and fuzzy matching.
+    """
+    if not os.path.exists(root_path):
+        logger.error(f"Root path does not exist: {root_path}")
+        return None
+
+    expected_name = build_expected_folder_name(last_name, first_name, dob)
+
+    # Exact match
+    exact_path = os.path.join(root_path, expected_name)
+    if os.path.isdir(exact_path):
+        logger.info(f"Found exact match: {exact_path}")
+        return exact_path
+
+    # Case-insensitive
+    try:
+        for entry in os.listdir(root_path):
+            full_path = os.path.join(root_path, entry)
+            if os.path.isdir(full_path) and entry.lower() == expected_name.lower():
+                logger.info(f"Found case-insensitive match: {full_path}")
+                return full_path
+    except PermissionError:
+        logger.error(f"Permission denied: {root_path}")
+        return None
+
+    # Fuzzy matching
+    matches = []
+    for entry in os.listdir(root_path):
+        full_path = os.path.join(root_path, entry)
+        if os.path.isdir(full_path):
+            score = fuzz.ratio(normalize_name(entry), normalize_name(expected_name))
+            if score >= fuzzy_threshold:
+                matches.append((score, full_path))
+
+    if matches:
+        matches.sort(reverse=True, key=lambda x: x[0])
+        best_match = matches[0][1]
+        logger.info(f"Found fuzzy match (score={matches[0][0]}): {best_match}")
+        return best_match
+
+    logger.warning(f"No match found for {expected_name}")
+    return None
+```
+
+### PDF aggregation
+
+Create `app/automation/pdf.py`:
+
+```python
+import os
+import requests
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+def aggregate_folder_to_pdf(
+    folder_path: str,
+    output_pdf_path: str,
+    server_ip: Optional[str] = None
+) -> bool:
+    """
+    Aggregate all documents in folder to single PDF.
+    Uses external server if available, else Python fallback.
+    """
+    if not os.path.exists(folder_path):
+        logger.error(f"Folder not found: {folder_path}")
+        return False
+
+    # Try external PDF server
+    if server_ip:
+        try:
+            response = requests.post(
+                f"http://{server_ip}:5000/convert",
+                json={"source_path": folder_path, "output_path": output_pdf_path},
+                timeout=300
+            )
+            if response.status_code == 200:
+                logger.info("PDF aggregation via external server")
+                return True
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"External PDF server unavailable: {e}")
+
+    # Python fallback
+    try:
+        from .python2pdf import convert_directory_to_pdf
+        convert_directory_to_pdf(folder_path, output_pdf_path)
+        logger.info("PDF aggregation via Python")
+        return True
+    except Exception as e:
+        logger.error(f"PDF aggregation failed: {e}")
+        return False
+```
+
+### ClickHouse integration
+
+Create `app/automation/clickhouse.py`:
+
+```python
+import clickhouse_connect
+import os
+from typing import List, Dict, Optional
+
+class ClickHouseClient:
+    def __init__(self):
+        self.client = clickhouse_connect.get_client(
+            host=os.getenv("MOOSE_CLICKHOUSE_CONFIG__HOST"),
+            port=int(os.getenv("MOOSE_CLICKHOUSE_CONFIG__HOST_PORT")),
+            username=os.getenv("MOOSE_CLICKHOUSE_CONFIG__USER"),
+            password=os.getenv("MOOSE_CLICKHOUSE_CONFIG__PASSWORD"),
+            database=os.getenv("MOOSE_CLICKHOUSE_CONFIG__DB_NAME")
+        )
+
+    def find_entity_id(
+        self, source_id: int, first_name: str, last_name: str, dob: str
+    ) -> Optional[str]:
+        """Query entity_index for entity_id"""
+        query = """
+        SELECT entity_id, entity_folder_path FROM entity_index
+        WHERE source_id = {source_id:Int32}
+          AND lower(entity_first_name) = lower({first_name:String})
+          AND lower(entity_last_name) = lower({last_name:String})
+          AND entity_dob = {dob:String}
+        LIMIT 1
+        """
+        result = self.client.query(query, parameters={
+            "source_id": source_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "dob": dob
+        })
+        return result.first_row[0] if result.row_count > 0 else None
+
+    def get_entity_documents(self, source_id: int, entity_id: str) -> List[Dict]:
+        """Get all documents for entity"""
+        query = """
+        SELECT document_path, document_type, document_date FROM document_index
+        WHERE source_id = {source_id:Int32} AND entity_id = {entity_id:String}
+        ORDER BY document_date ASC
+        """
+        result = self.client.query(query, parameters={
+            "source_id": source_id,
+            "entity_id": entity_id
+        })
+        return [
+            {"path": row[0], "type": row[1], "date": row[2]}
+            for row in result.result_rows
+        ]
+
+clickhouse_client = ClickHouseClient()
+```
+
+### Notification integrations
+
+Create `app/automation/notifications.py`:
+
+```python
+import requests
+import logging
+import os
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+def send_webhook_notification(
+    title: str, message: str, status: str,
+    source_name: str, entity_name: str, file_path: Optional[str] = None
+):
+    """Send webhook notification (Slack, etc.)"""
+    webhook_url = os.getenv("WEBHOOK_URL")
+    if not webhook_url:
+        logger.warning("Webhook not configured")
+        return
+
+    payload = {
+        "text": f"{title}: {message}",
+        "attachments": [{
+            "color": "good" if status == "SUCCESS" else "danger",
+            "fields": [
+                {"title": "Entity", "value": entity_name, "short": True},
+                {"title": "Source", "value": source_name, "short": True},
+                {"title": "Status", "value": status, "short": True},
+                {"title": "File Path", "value": file_path or "N/A", "short": False}
+            ]
+        }]
+    }
+
+    try:
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        response.raise_for_status()
+        logger.info("Webhook notification sent")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to send webhook: {e}")
+```
+
+## Build Temporal Workflows
+
+### Create document retrieval workflow
+
+Create `app/workflows/document_retrieval_workflow.py`:
+
+```python
+from temporalio import workflow, activity
+from datetime import timedelta
+import logging
+import os
+
+from app.helpers.automation_storage.service import storage
+from app.helpers.automation_storage.tables import DocumentRetrieval, RetrievalStatus
+from app.automation.fs_search import find_directory_by_convention
+from app.automation.pdf import aggregate_folder_to_pdf
+from app.automation.notifications import send_webhook_notification
+
+logger = logging.getLogger(__name__)
+
+@activity.defn
+async def search_for_folder(
+    root_path: str, last_name: str, first_name: str, dob: str
+) -> str | None:
+    """Activity: Search filesystem for document folder"""
+    return find_directory_by_convention(root_path, last_name, first_name, dob)
+
+@activity.defn
+async def convert_folder_to_pdf(folder_path: str, output_pdf_path: str) -> bool:
+    """Activity: Aggregate documents to PDF"""
+    return aggregate_folder_to_pdf(
+        folder_path, output_pdf_path,
+        server_ip=os.getenv("PDF_SERVER_IP")
+    )
+
+@activity.defn
+async def update_retrieval_status(
+    request_id: str, status: str,
+    error_message: str | None = None, pdf_path: str | None = None
+):
+    """Activity: Update database"""
+    retrieval = storage.document_retrieval.get_by_id(request_id)
+    if retrieval:
+        retrieval.status = RetrievalStatus(status)
+        retrieval.error_message = error_message
+        retrieval.processed_file_path = pdf_path
+        storage.document_retrieval.create_or_update(retrieval)
+
+@activity.defn
+async def send_completion_notification(
+    source_name: str, entity_name: str, status: str, file_path: str | None = None
+):
+    """Activity: Send webhook"""
+    send_webhook_notification(
+        title="Document Retrieval Complete",
+        message=f"Retrieval {status.lower()}",
+        status=status,
+        source_name=source_name,
+        entity_name=entity_name,
+        file_path=file_path
+    )
+
+@workflow.defn
+class DocumentRetrievalWorkflow:
+    @workflow.run
+    async def run(
+        self, request_id: str, source_id: int, source_name: str,
+        entity_first_name: str, entity_last_name: str, entity_dob: str,
+        source_file_path: str, processed_output_path: str
+    ) -> dict:
+        """Main workflow for document retrieval"""
+        workflow.logger.info(
+            f"Starting retrieval: request_id={request_id}, "
+            f"source_id={source_id}, entity={entity_last_name}, {entity_first_name}"
+        )
+
+        # Phase 1: Update status
+        await workflow.execute_activity(
+            update_retrieval_status,
+            args=[request_id, "PROCESSING"],
+            start_to_close_timeout=timedelta(seconds=30)
+        )
+
+        # Phase 2: Search for folder
+        folder_path = await workflow.execute_activity(
+            search_for_folder,
+            args=[source_file_path, entity_last_name, entity_first_name, entity_dob],
+            start_to_close_timeout=timedelta(minutes=5),
+            retry_policy={"maximum_attempts": 3}
+        )
+
+        if not folder_path:
+            await workflow.execute_activity(
+                update_retrieval_status,
+                args=[request_id, "NOT_FOUND", "Document folder not found"],
+                start_to_close_timeout=timedelta(seconds=30)
+            )
+            await workflow.execute_activity(
+                send_completion_notification,
+                args=[source_name, f"{entity_last_name}, {entity_first_name}", "NOT_FOUND"],
+                start_to_close_timeout=timedelta(seconds=30)
+            )
+            return {"status": "NOT_FOUND"}
+
+        # Phase 3: Convert to PDF
+        output_filename = f"{entity_last_name}_{entity_first_name}_{request_id}.pdf"
+        output_pdf_path = os.path.join(processed_output_path, output_filename)
+
+        conversion_success = await workflow.execute_activity(
+            convert_folder_to_pdf,
+            args=[folder_path, output_pdf_path],
+            start_to_close_timeout=timedelta(minutes=10),
+            retry_policy={"maximum_attempts": 2}
+        )
+
+        if not conversion_success:
+            await workflow.execute_activity(
+                update_retrieval_status,
+                args=[request_id, "FAILED_TO_CONVERT", "PDF conversion failed"],
+                start_to_close_timeout=timedelta(seconds=30)
+            )
+            return {"status": "FAILED_TO_CONVERT"}
+
+        # Phase 4: Success
+        await workflow.execute_activity(
+            update_retrieval_status,
+            args=[request_id, "SUCCESS", None, output_pdf_path],
+            start_to_close_timeout=timedelta(seconds=30)
+        )
+        await workflow.execute_activity(
+            send_completion_notification,
+            args=[
+                source_name,
+                f"{entity_last_name}, {entity_first_name}",
+                "SUCCESS",
+                output_pdf_path
+            ],
+            start_to_close_timeout=timedelta(seconds=30)
+        )
+
+        return {"status": "SUCCESS", "pdf_path": output_pdf_path, "folder_path": folder_path}
+```
+
+## Create Consumption APIs
+
+### Document retrieval trigger API
+
+Create `app/apis/retrieval.py`:
+
+```python
+from moose_lib import MooseApp
+from temporalio.client import Client
+import os
+
+app = MooseApp()
+
+@app.get("/api/retrieval_trigger")
+async def retrieval_trigger(
+    request_id: str, source_id: int, source_name: str,
+    entity_first_name: str, entity_last_name: str, entity_dob: str,
+    source_file_path: str, processed_output_path: str
+):
+    """Trigger document retrieval workflow"""
+    temporal_client = await Client.connect(
+        f"{os.getenv('TEMPORAL_HOST', 'localhost')}:"
+        f"{os.getenv('TEMPORAL_PORT', '7233')}"
+    )
+
+    workflow_id = f"doc-retrieval-{request_id}"
+    handle = await temporal_client.start_workflow(
+        "DocumentRetrievalWorkflow",
+        args=[
+            request_id, source_id, source_name,
+            entity_first_name, entity_last_name, entity_dob,
+            source_file_path, processed_output_path
+        ],
+        id=workflow_id,
+        task_queue="moose-workflows"
+    )
+
+    return {
+        "status": "workflow_started",
+        "workflow_id": workflow_id,
+        "run_id": handle.id
+    }
+```
+
+### Source queue management API
+
+Create `app/apis/source_queue.py`:
+
+```python
+from moose_lib import MooseApp
+from app.helpers.automation_storage.service import storage
+from app.helpers.automation_storage.tables import SourceQueueMonitor
+
+app = MooseApp()
+
+@app.get("/api/add_source_to_queue")
+async def add_source_to_queue(
+    source_id: int, data_file_path: str, source_name: str,
+    source_type: str, is_mapped: bool = False
+):
+    """Add source to monitoring queue"""
+    source = SourceQueueMonitor(
+        source_id=source_id,
+        data_file_path=data_file_path,
+        source_name=source_name,
+        source_type=source_type,
+        is_mapped=is_mapped
+    )
+    result = storage.source_queue.upsert(source)
+    return {"status": "success", "source": result.dict()}
+
+@app.get("/api/list_monitored_sources")
+async def list_monitored_sources():
+    """List all monitored sources"""
+    sources = storage.source_queue.get_all_monitored()
+    return {"count": len(sources), "sources": [s.dict() for s in sources]}
+```
+
+## Test Your Workflows
+
+### Seed test data
+
+Create `scripts/seed-postgres.sql`:
+
+```sql
+INSERT INTO source_queue_monitors (
+    source_id, data_file_path, source_name, source_type, is_mapped
+) VALUES (
+    42, '/mnt/documents/demo', 'Demo Source', 'MAPPED', true
+) ON CONFLICT (source_id) DO NOTHING;
+```
+
+Load:
+
+```bash
+./dc.sh exec -T postgres-app psql -U app_user -d app_db < scripts/seed-postgres.sql
+```
+
+### Create test folders
+
+```bash
+mkdir -p ${DOCUMENT_MOUNT}/demo/Documents
+mkdir -p ${DOCUMENT_MOUNT}/demo/Output
+mkdir -p "${DOCUMENT_MOUNT}/demo/Documents/Doe, Jane - 1980-08-26"
+
+cp sample-doc1.pdf "${DOCUMENT_MOUNT}/demo/Documents/Doe, Jane - 1980-08-26/"
+cp sample-doc2.pdf "${DOCUMENT_MOUNT}/demo/Documents/Doe, Jane - 1980-08-26/"
+```
+
+### Test retrieval API
+
+```bash
+curl -sS -G 'http://localhost:4000/api/retrieval_trigger' \
+  --data-urlencode 'request_id=test-123' \
+  --data-urlencode 'source_id=42' \
+  --data-urlencode 'source_name=Demo Source' \
+  --data-urlencode 'entity_first_name=Jane' \
+  --data-urlencode 'entity_last_name=Doe' \
+  --data-urlencode 'entity_dob=08-26-1980' \
+  --data-urlencode 'source_file_path=/mnt/documents/demo/Documents' \
+  --data-urlencode 'processed_output_path=/mnt/documents/demo/Output' | jq
+```
+
+Expected response:
+
+```json
+{
+  "status": "workflow_started",
+  "workflow_id": "doc-retrieval-test-123",
+  "run_id": "..."
+}
+```
+
+### Monitor execution
+
+View Temporal UI: http://localhost:8081
+
+Check logs:
+
+```bash
+./dc.sh logs moose --since 5m -f
+```
+
+Query status:
+
+```bash
+./dc.sh exec postgres-app psql -U app_user -d app_db \
+  -c "SELECT request_id, status FROM document_retrievals WHERE request_id='test-123'"
+```
+
+Verify output:
+
+```bash
+ls -lh "${DOCUMENT_MOUNT}/demo/Output/"
+# Should show: Doe_Jane_test-123.pdf
+```
+
+## Deploy to Production
+
+### Build for production
+
+Update `.env`:
+
+```bash
+POSTGRES_PASSWORD=<strong-password>
+MOOSE_CLICKHOUSE_PASSWORD=<strong-password>
+EXTERNAL_API_BASE_URL=https://api.yourdomain.com
+WEBHOOK_URL=<production-webhook>
+```
+
+### Deploy with Docker Compose
+
+```bash
+moose build --docker
+docker tag moose-df-deployment-*:latest doc-automation-moose:production
+docker compose -f docker-compose.yaml up -d
+```
+
+### Deploy to Boreal
+
+1. Create account at boreal.cloud
+2. Import project from Git
+3. Configure environment variables
+4. Deploy (Boreal provisions ClickHouse, Redpanda)
+5. Verify: `curl https://your-project.boreal.cloud/health`
+
+## Advanced Features
+
+### Add idempotency
+
+```python
+@workflow.defn
+class DocumentRetrievalWorkflow:
+    @workflow.run
+    async def run(self, request_id: str, ...):
+        # Check if already processed
+        existing = storage.document_retrieval.get_by_id(request_id)
+        if existing and existing.status == RetrievalStatus.SUCCESS:
+            return {"status": "ALREADY_PROCESSED"}
+        # Continue...
+```
+
+### Add indexed source integration
+
+```python
+@activity.defn
+async def search_indexed_entity(
+    source_id: int, first_name: str, last_name: str, dob: str
+) -> dict | None:
+    """Search ClickHouse indexes"""
+    from app.automation.clickhouse import clickhouse_client
+    entity_id = clickhouse_client.find_entity_id(source_id, first_name, last_name, dob)
+    if not entity_id:
+        return None
+    documents = clickhouse_client.get_entity_documents(source_id, entity_id)
+    return {"entity_id": entity_id, "documents": documents}
+```
+
+### Add retry policies
+
+```python
+folder_path = await workflow.execute_activity(
+    search_for_folder,
+    args=[...],
+    start_to_close_timeout=timedelta(minutes=5),
+    retry_policy={
+        "maximum_attempts": 3,
+        "initial_interval": timedelta(seconds=1),
+        "maximum_interval": timedelta(seconds=10),
+        "backoff_coefficient": 2.0
+    }
+)
+```
+
+### Add structured logging
+
+```python
+workflow.logger.info(
+    "folder_found",
+    extra={
+        "event": "folder_found",
+        "request_id": request_id,
+        "source_id": source_id,
+        "folder_path": folder_path,
+        "processing_time_ms": elapsed_ms
+    }
+)
+```
+
+Query logs:
+
+```bash
+./dc.sh logs moose --since 1h | grep folder_found | jq -r '[.event, .request_id] | @tsv'
+```
+
+## Troubleshooting
+
+### Workflow stuck
+
+Check Temporal:
+
+```bash
+./dc.sh exec temporal-admin-tools tctl --namespace moose-workflows \
+  workflow describe --workflow_id doc-retrieval-test-123
+```
+
+Query database:
+
+```bash
+./dc.sh exec postgres-app psql -U app_user -d app_db \
+  -c "SELECT request_id, status FROM document_retrievals WHERE status='PROCESSING'"
+```
+
+### Folder not found
+
+Verify mount:
+
+```bash
+./dc.sh exec moose ls -la /mnt/documents/
+```
+
+Test search:
+
+```bash
+./dc.sh exec moose python3 -c "
+from app.automation.fs_search import find_directory_by_convention
+result = find_directory_by_convention('/mnt/documents/demo/Documents', 'Doe', 'Jane', '08-26-1980')
+print(result)
+"
+```
+
+### PDF conversion failing
+
+Check server:
+
+```bash
+curl -v http://host.docker.internal:5000/health
+```
+
+Test fallback:
+
+```bash
+./dc.sh exec moose python3 -c "
+from app.automation.pdf import aggregate_folder_to_pdf
+result = aggregate_folder_to_pdf('/mnt/documents/demo/Documents/Doe, Jane - 1980-08-26', '/tmp/test.pdf')
+print('Success' if result else 'Failed')
+"
+```
+
+### ClickHouse slow
+
+Analyze:
+
+```bash
+./dc.sh exec clickhouse-0 clickhouse-client --query "
+SELECT query, query_duration_ms FROM system.query_log
+WHERE type = 'QueryFinish' AND query LIKE '%entity_index%'
+ORDER BY query_duration_ms DESC LIMIT 5"
+```
+
+### Connection pool exhausted
+
+Check connections:
+
+```bash
+./dc.sh exec postgres-app psql -U app_user -d app_db \
+  -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state"
+```
+
+Increase pool:
+
+```python
+self.engine = create_engine(
+    postgres_url, pool_pre_ping=True, pool_size=20, max_overflow=10
+)
+```
+
+## Conclusion
+
+You now have a production-grade document processing automation system with:
+
+- **Temporal workflows** for durable orchestration
+- **PostgreSQL** for operational status tracking
+- **ClickHouse** for OLAP-powered document indexing
+- **Redpanda** for event streaming
+- **Multi-format PDF aggregation**
+- **Webhook integrations**
+- **Comprehensive observability**
+
+The system processes document requests, searches file shares or OLAP indexes, aggregates documents, and notifies downstream systems - all with robust error handling, retries, and status tracking.
+
+## Next Steps
+
+### Batch processing
+
+```python
+@workflow.defn
+class BatchRetrievalWorkflow:
+    @workflow.run
+    async def run(self, source_id: int, request_ids: list[str]):
+        tasks = [
+            workflow.execute_child_workflow(
+                DocumentRetrievalWorkflow.run, args=[request_id, ...]
+            )
+            for request_id in request_ids[:100]
+        ]
+        results = await asyncio.gather(*tasks)
+        return {"processed": len(results), "results": results}
+```
+
+### SLA monitoring
+
+```python
+start_time = workflow.now()
+# ... process retrieval ...
+duration_ms = (workflow.now() - start_time).total_seconds() * 1000
+
+if duration_ms > SLA_THRESHOLD_MS:
+    await workflow.execute_activity(
+        send_sla_violation_alert, args=[request_id, duration_ms]
+    )
+```
+
+### Machine learning
+
+Train ML model on historical matches to improve fuzzy matching accuracy for non-standard naming conventions.

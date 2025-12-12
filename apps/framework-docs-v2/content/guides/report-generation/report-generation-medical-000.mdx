@@ -1,0 +1,1467 @@
+---
+title: Report Generation for Medical Data using moose stack
+description: A comprehensive guide on generating medical reports using the moose stack, covering data integration, processing, and visualization techniques.
+---
+
+# Medical Record Retrieval Automation with MooseStack
+
+Build a production-grade document processing and retrieval automation system for healthcare practices using MooseStack, Temporal workflows, and OLAP analytics.
+
+## What You'll Build
+
+A full-stack medical record retrieval system that:
+- Monitors practice queues for patient record requests
+- Searches networked file shares (SMB mounts) for patient folders
+- Aggregates multi-format documents (PDF, TIFF, DICOM, images) into single PDFs
+- Tracks retrieval status in PostgreSQL with idempotency guarantees
+- Notifies downstream systems (DAMCO ticketing, Microsoft Teams) of completion
+- Queries ClickHouse OLAP indexes for unmapped practices (ECW3 integration)
+- Orchestrates long-running, retry-able workflows via Temporal
+
+**Tech stack**: Python, MooseStack (DMv2), Temporal, PostgreSQL, ClickHouse, Redpanda, Docker
+
+## Setup
+
+### Install Moose CLI
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+### Initialize your project
+
+```bash
+moose init <project-name> --language python  # create project
+cd <project-name>
+```
+
+### Set up development environment
+
+```bash
+# Create Python virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+pip install -r requirements-dev.txt  # testing dependencies
+```
+
+### Configure Moose platform
+
+Edit `moose.config.toml`:
+
+```toml
+[project]
+language = "python"
+name = "<project-name>"
+
+[datamodels]
+version = "2"  # Enable DMv2 for Python
+
+[temporal]
+host = "localhost"
+port = 7233
+namespace = "moose-workflows"
+
+[databases.olap]
+host = "clickhouse-0"
+port = 8123
+user = "moose"
+database = "moose"
+
+[databases.oltp]
+host = "postgres-mrm"
+port = 5432
+user = "mrm_automations"
+database = "mrm_automations"
+
+[logging]
+level = "INFO"
+```
+
+### Set environment variables
+
+Copy and configure environment file:
+
+```bash
+cp env.example .env.local
+```
+
+Edit `.env.local` - set these critical values:
+
+**PostgreSQL**:
+```bash
+POSTGRES_HOST=postgres-mrm
+POSTGRES_PORT=5432
+POSTGRES_USER=mrm_automations
+POSTGRES_DB=mrm_automations
+POSTGRES_MRM_AUTOMATION_PASSWORD=<strong-password>  # triggers auto-init
+```
+
+**ClickHouse client** (Moose container):
+```bash
+MOOSE_CLICKHOUSE_CONFIG__HOST=clickhouse-0
+MOOSE_CLICKHOUSE_CONFIG__HOST_PORT=8123
+MOOSE_CLICKHOUSE_CONFIG__USER=moose
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=<clickhouse-password>
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=moose
+```
+
+**ClickHouse server** (compose):
+```bash
+MOOSE_CLICKHOUSE_PASSWORD=<clickhouse-password>  # must match above
+```
+
+**Temporal**:
+```bash
+TEMPORAL_PORT=7233
+TEMPORAL_VERSION=1.22.3
+TEMPORAL_UI_VERSION=2.21.3
+POSTGRESQL_VERSION=13
+```
+
+**Local mounts** (for development):
+```bash
+PRACTICE_MOUNT=/path/to/test-data  # base path for bind mounts
+```
+
+**Optional integrations**:
+```bash
+MICROSOFT_TEAMS_WEBHOOK=https://outlook.office.com/webhook/...
+WINDOWS_HOST_IP=host.docker.internal  # PDF aggregation server
+```
+
+### Create Docker volumes
+
+```bash
+# PostgreSQL persistence
+docker volume create automation_infra_postgres_data
+
+# ClickHouse persistence
+docker volume create automation_infra_clickhouse_data
+```
+
+### Build Moose image
+
+```bash
+# For ARM64 (Mac Silicon)
+moose build --docker --arm64
+docker tag moose-df-deployment-aarch64-unknown-linux-gnu:latest mrm-automation-moose:latest
+
+# For x86_64 (Intel/AMD)
+moose build --docker
+docker tag moose-df-deployment-x86_64-unknown-linux-gnu:latest mrm-automation-moose:latest
+```
+
+### Start the stack
+
+```bash
+./startup.sh  # starts all services with proper config loading
+```
+
+Verify services are healthy:
+
+```bash
+./dc.sh ps  # check service status
+curl -s http://localhost:4000/health | jq  # Moose health check
+```
+
+**Note**: Always use `./dc.sh` instead of `docker compose` directly - it ensures `.env.local` is loaded properly.
+
+## Model Your Data
+
+### Create operational storage models
+
+The system tracks two core entities in PostgreSQL: record retrievals and practice queue monitors.
+
+Create `app/helpers/automation_storage/tables.py`:
+
+```python
+from sqlmodel import Field, SQLModel
+from datetime import datetime
+from typing import Optional
+from enum import Enum
+
+class RetrievalStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    SUCCESS = "SUCCESS"
+    NOT_FOUND = "NOT_FOUND"
+    FAILED_TO_CONVERT = "FAILED_TO_CONVERT"
+    ERROR = "ERROR"
+
+class RecordRetrieval(SQLModel, table=True):
+    __tablename__ = "record_retrievals"
+
+    patient_request_id: str = Field(primary_key=True)
+    practice_id: int
+    patient_first_name: str
+    patient_last_name: str
+    patient_dob: str  # format: MM-DD-YYYY
+
+    practice_file_path: str
+    processed_pdf_output_root_path: str
+
+    status: RetrievalStatus = Field(default=RetrievalStatus.PENDING)
+    error_message: Optional[str] = None
+    record_metadata: Optional[str] = None
+    processed_patient_data_file_path: Optional[str] = None
+
+    last_updated_status: datetime = Field(default_factory=datetime.utcnow)
+    completed_time: Optional[datetime] = None
+
+class PracticeQueueMonitor(SQLModel, table=True):
+    __tablename__ = "practice_queue_monitors"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    practice_id: int = Field(unique=True)
+    patient_data_file_path: str
+    practice_name: str
+    practice_type: str  # PREMAPPED or ECW3
+    is_mapped: bool = Field(default=False)
+    last_retrieval_date: Optional[datetime] = None
+```
+
+### Create repository pattern for database access
+
+Create `app/helpers/automation_storage/repositories.py`:
+
+```python
+from sqlmodel import Session, select, create_engine
+from typing import List, Optional
+from contextlib import contextmanager
+import os
+
+from .tables import RecordRetrieval, PracticeQueueMonitor, RetrievalStatus
+
+class RecordRetrievalTable:
+    def __init__(self, engine):
+        self.engine = engine
+
+    @contextmanager
+    def get_session(self):
+        with Session(self.engine) as session:
+            yield session
+
+    def create_or_update(self, retrieval: RecordRetrieval) -> RecordRetrieval:
+        with self.get_session() as session:
+            existing = session.get(RecordRetrieval, retrieval.patient_request_id)
+            if existing:
+                for key, value in retrieval.dict(exclude_unset=True).items():
+                    setattr(existing, key, value)
+                session.add(existing)
+            else:
+                session.add(retrieval)
+            session.commit()
+            session.refresh(retrieval)
+            return retrieval
+
+    def get_by_id(self, patient_request_id: str) -> Optional[RecordRetrieval]:
+        with self.get_session() as session:
+            return session.get(RecordRetrieval, patient_request_id)
+
+    def get_by_status(self, status: RetrievalStatus) -> List[RecordRetrieval]:
+        with self.get_session() as session:
+            statement = select(RecordRetrieval).where(RecordRetrieval.status == status)
+            return session.exec(statement).all()
+
+class PracticeQueueTable:
+    def __init__(self, engine):
+        self.engine = engine
+
+    @contextmanager
+    def get_session(self):
+        with Session(self.engine) as session:
+            yield session
+
+    def get_all_monitored(self) -> List[PracticeQueueMonitor]:
+        with self.get_session() as session:
+            return session.exec(select(PracticeQueueMonitor)).all()
+
+    def upsert(self, practice: PracticeQueueMonitor) -> PracticeQueueMonitor:
+        with self.get_session() as session:
+            statement = select(PracticeQueueMonitor).where(
+                PracticeQueueMonitor.practice_id == practice.practice_id
+            )
+            existing = session.exec(statement).first()
+            if existing:
+                for key, value in practice.dict(exclude_unset=True).items():
+                    setattr(existing, key, value)
+                session.add(existing)
+            else:
+                session.add(practice)
+            session.commit()
+            session.refresh(practice)
+            return practice
+```
+
+### Create unified storage service
+
+Create `app/helpers/automation_storage/service.py`:
+
+```python
+from sqlmodel import create_engine
+import os
+
+from .repositories import RecordRetrievalTable, PracticeQueueTable
+from .tables import SQLModel
+
+class AutomationStorage:
+    def __init__(self):
+        postgres_url = (
+            f"postgresql://{os.getenv('POSTGRES_USER')}:"
+            f"{os.getenv('POSTGRES_MRM_AUTOMATION_PASSWORD')}@"
+            f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/"
+            f"{os.getenv('POSTGRES_DB')}"
+        )
+        self.engine = create_engine(postgres_url, pool_pre_ping=True)
+
+        # Create tables if they don't exist
+        SQLModel.metadata.create_all(self.engine)
+
+        self.record_retrieval = RecordRetrievalTable(self.engine)
+        self.practice_queue = PracticeQueueTable(self.engine)
+
+# Singleton instance
+storage = AutomationStorage()
+```
+
+### Create OLAP models for ECW3 data
+
+ECW3 practices store patient and document data in ClickHouse for fast analytical queries.
+
+Create `app/datamodels/ecw3_patient_index.py`:
+
+```python
+from moose_lib import Key, moose_data_model
+from datetime import datetime
+from typing import Optional
+
+@moose_data_model
+class Ecw3PatientIndex:
+    eventId: Key[str]
+    practice_id: int
+    patient_id: str  # ECW3 internal ID
+    patient_first_name: str
+    patient_last_name: str
+    patient_dob: str  # YYYY-MM-DD
+    patient_folder_path: Optional[str]
+    indexed_at: datetime
+```
+
+Create `app/datamodels/ecw3_document_index.py`:
+
+```python
+from moose_lib import Key, moose_data_model
+from datetime import datetime
+
+@moose_data_model
+class Ecw3DocumentIndex:
+    eventId: Key[str]
+    practice_id: int
+    patient_id: str
+    document_path: str
+    document_type: str  # PDF, TIFF, DICOM, etc.
+    document_date: datetime
+    indexed_at: datetime
+```
+
+**Note**: MooseStack will auto-provision ClickHouse tables, Redpanda topics, and ingest APIs from these models.
+
+Verify tables were created:
+
+```bash
+./dc.sh exec clickhouse-0 clickhouse-client --database moose \
+  --query "SELECT name, engine, total_rows FROM system.tables WHERE database = 'moose'"
+```
+
+## Implement Core Business Logic
+
+### Patient folder search
+
+Medical records follow naming conventions: `Last, First - YYYY-MM-DD`
+
+Create `app/mrm_automation/fs_search.py`:
+
+```python
+import os
+from pathlib import Path
+from typing import Optional, List
+from rapidfuzz import fuzz
+import logging
+
+logger = logging.getLogger(__name__)
+
+def normalize_name(name: str) -> str:
+    """Normalize name for matching: lowercase, remove extra spaces"""
+    return " ".join(name.lower().split())
+
+def normalize_dob(dob: str) -> str:
+    """Convert MM-DD-YYYY or MM/DD/YYYY to YYYY-MM-DD"""
+    parts = dob.replace("/", "-").split("-")
+    if len(parts) == 3:
+        if len(parts[2]) == 4:  # MM-DD-YYYY
+            return f"{parts[2]}-{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+        elif len(parts[0]) == 4:  # YYYY-MM-DD
+            return dob
+    return dob
+
+def build_expected_folder_name(last: str, first: str, dob: str) -> str:
+    """Build expected folder name: Last, First - YYYY-MM-DD"""
+    normalized_dob = normalize_dob(dob)
+    return f"{last.strip()}, {first.strip()} - {normalized_dob}"
+
+def find_directory_by_convention_exact_search(
+    root_path: str,
+    patient_last_name: str,
+    patient_first_name: str,
+    patient_dob: str
+) -> Optional[str]:
+    """
+    Search for patient folder using exact naming convention.
+    Falls back to case-insensitive and fuzzy matching if needed.
+    """
+    if not os.path.exists(root_path):
+        logger.error(f"Root path does not exist: {root_path}")
+        return None
+
+    expected_name = build_expected_folder_name(
+        patient_last_name, patient_first_name, patient_dob
+    )
+
+    # Try exact match first
+    exact_path = os.path.join(root_path, expected_name)
+    if os.path.isdir(exact_path):
+        logger.info(f"Found exact match: {exact_path}")
+        return exact_path
+
+    # Case-insensitive fallback
+    try:
+        for entry in os.listdir(root_path):
+            full_path = os.path.join(root_path, entry)
+            if os.path.isdir(full_path) and entry.lower() == expected_name.lower():
+                logger.info(f"Found case-insensitive match: {full_path}")
+                return full_path
+    except PermissionError:
+        logger.error(f"Permission denied accessing {root_path}")
+        return None
+
+    # Fuzzy matching fallback (configurable threshold)
+    threshold = int(os.getenv("FUZZY_NAME_THRESHOLD", "85"))
+    matches = []
+
+    for entry in os.listdir(root_path):
+        full_path = os.path.join(root_path, entry)
+        if os.path.isdir(full_path):
+            score = fuzz.ratio(normalize_name(entry), normalize_name(expected_name))
+            if score >= threshold:
+                matches.append((score, full_path))
+
+    if matches:
+        matches.sort(reverse=True, key=lambda x: x[0])
+        best_match = matches[0][1]
+        logger.info(f"Found fuzzy match (score={matches[0][0]}): {best_match}")
+        return best_match
+
+    logger.warning(f"No match found for {expected_name} in {root_path}")
+    return None
+```
+
+### PDF aggregation
+
+Create `app/mrm_automation/pdf.py`:
+
+```python
+import os
+import requests
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+def aggregate_patient_folder_to_pdf(
+    patient_folder_path: str,
+    output_pdf_path: str,
+    windows_host_ip: Optional[str] = None
+) -> bool:
+    """
+    Aggregate all documents in patient folder to single PDF.
+    Uses Windows PDF server if available, falls back to Python implementation.
+    """
+    if not os.path.exists(patient_folder_path):
+        logger.error(f"Patient folder not found: {patient_folder_path}")
+        return False
+
+    # Try Windows PDF server first
+    if windows_host_ip:
+        try:
+            response = requests.post(
+                f"http://{windows_host_ip}:5000/convert",
+                json={
+                    "source_path": patient_folder_path,
+                    "output_path": output_pdf_path
+                },
+                timeout=300  # 5 minute timeout for large folders
+            )
+            if response.status_code == 200:
+                logger.info(f"PDF aggregation successful via Windows server")
+                return True
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Windows PDF server unavailable: {e}")
+
+    # Fallback to Python implementation
+    try:
+        from .python2pdf import convert_directory_to_pdf
+        convert_directory_to_pdf(patient_folder_path, output_pdf_path)
+        logger.info(f"PDF aggregation successful via Python")
+        return True
+    except Exception as e:
+        logger.error(f"PDF aggregation failed: {e}")
+        return False
+```
+
+### ClickHouse integration for ECW3
+
+Create `app/mrm_automation/clickhouse.py`:
+
+```python
+import clickhouse_connect
+import os
+import logging
+from typing import List, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+class ClickHouseClient:
+    def __init__(self):
+        self.client = clickhouse_connect.get_client(
+            host=os.getenv("MOOSE_CLICKHOUSE_CONFIG__HOST"),
+            port=int(os.getenv("MOOSE_CLICKHOUSE_CONFIG__HOST_PORT")),
+            username=os.getenv("MOOSE_CLICKHOUSE_CONFIG__USER"),
+            password=os.getenv("MOOSE_CLICKHOUSE_CONFIG__PASSWORD"),
+            database=os.getenv("MOOSE_CLICKHOUSE_CONFIG__DB_NAME")
+        )
+
+    def find_patient_id(
+        self,
+        practice_id: int,
+        first_name: str,
+        last_name: str,
+        dob: str
+    ) -> Optional[str]:
+        """Query ecw3_patient_index for patient_id"""
+        query = """
+        SELECT patient_id, patient_folder_path
+        FROM ecw3_patient_index
+        WHERE practice_id = {practice_id:Int32}
+          AND lower(patient_first_name) = lower({first_name:String})
+          AND lower(patient_last_name) = lower({last_name:String})
+          AND patient_dob = {dob:String}
+        LIMIT 1
+        """
+        result = self.client.query(
+            query,
+            parameters={
+                "practice_id": practice_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "dob": dob
+            }
+        )
+        if result.row_count > 0:
+            return result.first_row[0]
+        return None
+
+    def get_patient_documents(
+        self,
+        practice_id: int,
+        patient_id: str
+    ) -> List[Dict[str, str]]:
+        """Get all documents for a patient from ecw3_document_index"""
+        query = """
+        SELECT document_path, document_type, document_date
+        FROM ecw3_document_index
+        WHERE practice_id = {practice_id:Int32}
+          AND patient_id = {patient_id:String}
+        ORDER BY document_date ASC
+        """
+        result = self.client.query(
+            query,
+            parameters={
+                "practice_id": practice_id,
+                "patient_id": patient_id
+            }
+        )
+        return [
+            {
+                "path": row[0],
+                "type": row[1],
+                "date": row[2]
+            }
+            for row in result.result_rows
+        ]
+
+# Singleton instance
+clickhouse_client = ClickHouseClient()
+```
+
+### Notification integrations
+
+Create `app/mrm_automation/notifications.py`:
+
+```python
+import requests
+import logging
+import os
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+def send_teams_notification(
+    title: str,
+    message: str,
+    status: str,
+    practice_name: str,
+    patient_name: str,
+    file_path: Optional[str] = None
+):
+    """Send Microsoft Teams webhook notification"""
+    webhook_url = os.getenv("MICROSOFT_TEAMS_WEBHOOK")
+    if not webhook_url:
+        logger.warning("Teams webhook not configured, skipping notification")
+        return
+
+    color = "28a745" if status == "SUCCESS" else "dc3545"  # green or red
+
+    payload = {
+        "@type": "MessageCard",
+        "@context": "https://schema.org/extensions",
+        "themeColor": color,
+        "title": title,
+        "summary": message,
+        "sections": [{
+            "activityTitle": f"Patient: {patient_name}",
+            "activitySubtitle": f"Practice: {practice_name}",
+            "facts": [
+                {"name": "Status", "value": status},
+                {"name": "File Path", "value": file_path or "N/A"}
+            ]
+        }]
+    }
+
+    try:
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        response.raise_for_status()
+        logger.info("Teams notification sent successfully")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to send Teams notification: {e}")
+```
+
+## Build Temporal Workflows
+
+### Create premapped retrieval workflow
+
+Create `app/workflows/premapped_record_retrieval_automation.py`:
+
+```python
+from temporalio import workflow, activity
+from datetime import timedelta
+import logging
+
+from app.helpers.automation_storage.service import storage
+from app.helpers.automation_storage.tables import RecordRetrieval, RetrievalStatus
+from app.mrm_automation.fs_search import find_directory_by_convention_exact_search
+from app.mrm_automation.pdf import aggregate_patient_folder_to_pdf
+from app.mrm_automation.notifications import send_teams_notification
+import os
+
+logger = logging.getLogger(__name__)
+
+@activity.defn
+async def search_for_patient_folder(
+    root_path: str,
+    last_name: str,
+    first_name: str,
+    dob: str
+) -> str | None:
+    """Activity: Search filesystem for patient folder"""
+    return find_directory_by_convention_exact_search(
+        root_path, last_name, first_name, dob
+    )
+
+@activity.defn
+async def convert_folder_to_pdf(
+    patient_folder_path: str,
+    output_pdf_path: str
+) -> bool:
+    """Activity: Aggregate documents to PDF"""
+    return aggregate_patient_folder_to_pdf(
+        patient_folder_path,
+        output_pdf_path,
+        windows_host_ip=os.getenv("WINDOWS_HOST_IP")
+    )
+
+@activity.defn
+async def update_retrieval_status(
+    request_id: str,
+    status: str,
+    error_message: str | None = None,
+    pdf_path: str | None = None
+):
+    """Activity: Update database with retrieval status"""
+    retrieval = storage.record_retrieval.get_by_id(request_id)
+    if retrieval:
+        retrieval.status = RetrievalStatus(status)
+        retrieval.error_message = error_message
+        retrieval.processed_patient_data_file_path = pdf_path
+        storage.record_retrieval.create_or_update(retrieval)
+
+@activity.defn
+async def send_completion_notification(
+    practice_name: str,
+    patient_name: str,
+    status: str,
+    file_path: str | None = None
+):
+    """Activity: Send Teams notification"""
+    send_teams_notification(
+        title="Patient Record Retrieval Complete",
+        message=f"Retrieval {status.lower()}",
+        status=status,
+        practice_name=practice_name,
+        patient_name=patient_name,
+        file_path=file_path
+    )
+
+@workflow.defn
+class PremappedRetrievalWorkflow:
+    @workflow.run
+    async def run(
+        self,
+        request_id: str,
+        practice_id: int,
+        practice_name: str,
+        patient_first_name: str,
+        patient_last_name: str,
+        patient_dob: str,
+        practice_file_path: str,
+        processed_pdf_output_root_path: str
+    ) -> dict:
+        """
+        Main workflow for premapped patient record retrieval
+        """
+        workflow.logger.info(
+            f"Starting retrieval workflow for request_id={request_id}, "
+            f"practice_id={practice_id}, patient={patient_last_name}, {patient_first_name}"
+        )
+
+        # Phase 1: Create or update database record
+        await workflow.execute_activity(
+            update_retrieval_status,
+            args=[request_id, "PROCESSING"],
+            start_to_close_timeout=timedelta(seconds=30)
+        )
+
+        # Phase 2: Search for patient folder
+        patient_folder = await workflow.execute_activity(
+            search_for_patient_folder,
+            args=[
+                practice_file_path,
+                patient_last_name,
+                patient_first_name,
+                patient_dob
+            ],
+            start_to_close_timeout=timedelta(minutes=5),
+            retry_policy={"maximum_attempts": 3}
+        )
+
+        if not patient_folder:
+            # Not found - update status and notify
+            await workflow.execute_activity(
+                update_retrieval_status,
+                args=[request_id, "NOT_FOUND", "Patient folder not found"],
+                start_to_close_timeout=timedelta(seconds=30)
+            )
+            await workflow.execute_activity(
+                send_completion_notification,
+                args=[
+                    practice_name,
+                    f"{patient_last_name}, {patient_first_name}",
+                    "NOT_FOUND"
+                ],
+                start_to_close_timeout=timedelta(seconds=30)
+            )
+            return {"status": "NOT_FOUND", "message": "Patient folder not found"}
+
+        # Phase 3: Convert to PDF
+        output_filename = f"{patient_last_name}_{patient_first_name}_{request_id}.pdf"
+        output_pdf_path = os.path.join(processed_pdf_output_root_path, output_filename)
+
+        conversion_success = await workflow.execute_activity(
+            convert_folder_to_pdf,
+            args=[patient_folder, output_pdf_path],
+            start_to_close_timeout=timedelta(minutes=10),
+            retry_policy={"maximum_attempts": 2}
+        )
+
+        if not conversion_success:
+            await workflow.execute_activity(
+                update_retrieval_status,
+                args=[request_id, "FAILED_TO_CONVERT", "PDF conversion failed"],
+                start_to_close_timeout=timedelta(seconds=30)
+            )
+            return {"status": "FAILED_TO_CONVERT", "message": "PDF conversion failed"}
+
+        # Phase 4: Success - update status and notify
+        await workflow.execute_activity(
+            update_retrieval_status,
+            args=[request_id, "SUCCESS", None, output_pdf_path],
+            start_to_close_timeout=timedelta(seconds=30)
+        )
+
+        await workflow.execute_activity(
+            send_completion_notification,
+            args=[
+                practice_name,
+                f"{patient_last_name}, {patient_first_name}",
+                "SUCCESS",
+                output_pdf_path
+            ],
+            start_to_close_timeout=timedelta(seconds=30)
+        )
+
+        return {
+            "status": "SUCCESS",
+            "pdf_path": output_pdf_path,
+            "patient_folder": patient_folder
+        }
+```
+
+### Create cron monitoring workflow
+
+Create `app/workflows/cron_request_queue_monitor.py`:
+
+```python
+from temporalio import workflow, activity
+from datetime import timedelta
+import logging
+
+from app.helpers.automation_storage.service import storage
+from app.mrm_automation.damco import DamcoClient
+
+logger = logging.getLogger(__name__)
+
+@activity.defn
+async def fetch_pending_requests_from_damco(practice_id: int) -> list[dict]:
+    """Activity: Query DAMCO API for RECEIVED status requests"""
+    damco = DamcoClient(
+        base_url=os.getenv("DAMCO_API_BASE_URL"),
+        api_key=os.getenv("DAMCO_API_KEY")
+    )
+    return damco.get_requests_by_status(practice_id, status="RECEIVED")
+
+@activity.defn
+async def enqueue_retrieval_workflow(request_data: dict) -> str:
+    """Activity: Start premapped retrieval workflow"""
+    workflow_id = f"retrieval-{request_data['request_id']}"
+    await workflow.start_workflow(
+        PremappedRetrievalWorkflow.run,
+        args=[
+            request_data['request_id'],
+            request_data['practice_id'],
+            request_data['practice_name'],
+            request_data['patient_first_name'],
+            request_data['patient_last_name'],
+            request_data['patient_dob'],
+            request_data['practice_file_path'],
+            request_data['output_path']
+        ],
+        id=workflow_id,
+        task_queue="moose-workflows"
+    )
+    return workflow_id
+
+@workflow.defn
+class CronRequestQueueMonitor:
+    @workflow.run
+    async def run(self) -> dict:
+        """
+        Periodic workflow to monitor practice queues and enqueue retrievals
+        """
+        workflow.logger.info("Starting cron queue monitor")
+
+        # Get all monitored practices from database
+        practices = storage.practice_queue.get_all_monitored()
+
+        metrics = {
+            "total_practices": len(practices),
+            "successful": 0,
+            "failed": 0,
+            "requests_discovered": 0,
+            "requests_enqueued": 0
+        }
+
+        for practice in practices:
+            try:
+                # Fetch pending requests from DAMCO
+                pending_requests = await workflow.execute_activity(
+                    fetch_pending_requests_from_damco,
+                    args=[practice.practice_id],
+                    start_to_close_timeout=timedelta(minutes=2)
+                )
+
+                metrics["requests_discovered"] += len(pending_requests)
+
+                # Enqueue retrieval workflow for each request
+                for request in pending_requests:
+                    request_data = {
+                        "request_id": request["id"],
+                        "practice_id": practice.practice_id,
+                        "practice_name": practice.practice_name,
+                        "patient_first_name": request["patient_first_name"],
+                        "patient_last_name": request["patient_last_name"],
+                        "patient_dob": request["patient_dob"],
+                        "practice_file_path": practice.patient_data_file_path,
+                        "output_path": f"{practice.patient_data_file_path}/Output"
+                    }
+
+                    await workflow.execute_activity(
+                        enqueue_retrieval_workflow,
+                        args=[request_data],
+                        start_to_close_timeout=timedelta(seconds=30)
+                    )
+                    metrics["requests_enqueued"] += 1
+
+                metrics["successful"] += 1
+
+            except Exception as e:
+                workflow.logger.error(f"Failed to process practice {practice.practice_id}: {e}")
+                metrics["failed"] += 1
+                continue  # Don't let one practice failure abort entire run
+
+        return metrics
+```
+
+## Create Consumption APIs
+
+### Premapped trigger API
+
+Create `app/apis/premapped.py`:
+
+```python
+from moose_lib import MooseApp
+from temporalio.client import Client
+import os
+
+app = MooseApp()
+
+@app.get("/api/premapped_trigger")
+async def premapped_trigger(
+    request_id: str,
+    practice_id: int,
+    practice_name: str,
+    patient_first_name: str,
+    patient_last_name: str,
+    patient_dob: str,
+    practice_file_path: str,
+    processed_pdf_output_root_path: str
+):
+    """
+    Trigger premapped retrieval workflow via Temporal
+    """
+    # Connect to Temporal
+    temporal_client = await Client.connect(
+        f"{os.getenv('TEMPORAL_HOST', 'localhost')}:{os.getenv('TEMPORAL_PORT', '7233')}"
+    )
+
+    # Start workflow
+    workflow_id = f"premapped-retrieval-{request_id}"
+    handle = await temporal_client.start_workflow(
+        "PremappedRetrievalWorkflow",
+        args=[
+            request_id,
+            practice_id,
+            practice_name,
+            patient_first_name,
+            patient_last_name,
+            patient_dob,
+            practice_file_path,
+            processed_pdf_output_root_path
+        ],
+        id=workflow_id,
+        task_queue="moose-workflows"
+    )
+
+    return {
+        "status": "workflow_started",
+        "workflow_id": workflow_id,
+        "run_id": handle.id
+    }
+```
+
+### Practice queue management API
+
+Create `app/apis/practice_queue.py`:
+
+```python
+from moose_lib import MooseApp
+from app.helpers.automation_storage.service import storage
+from app.helpers.automation_storage.tables import PracticeQueueMonitor
+
+app = MooseApp()
+
+@app.get("/api/add_practice_to_queue")
+async def add_practice_to_queue(
+    practice_id: int,
+    patient_data_file_path: str,
+    practice_name: str,
+    practice_type: str,  # PREMAPPED or ECW3
+    is_mapped: bool = False
+):
+    """
+    Add practice to monitoring queue
+    """
+    practice = PracticeQueueMonitor(
+        practice_id=practice_id,
+        patient_data_file_path=patient_data_file_path,
+        practice_name=practice_name,
+        practice_type=practice_type,
+        is_mapped=is_mapped
+    )
+
+    result = storage.practice_queue.upsert(practice)
+
+    return {
+        "status": "success",
+        "practice": result.dict()
+    }
+
+@app.get("/api/list_monitored_practices")
+async def list_monitored_practices():
+    """
+    List all practices in monitoring queue
+    """
+    practices = storage.practice_queue.get_all_monitored()
+
+    return {
+        "count": len(practices),
+        "practices": [p.dict() for p in practices]
+    }
+```
+
+## Test Your Workflows
+
+### Seed test data
+
+Create PostgreSQL seed script `scripts/seed-postgres.sql`:
+
+```sql
+-- Create demo practice for testing
+INSERT INTO practice_queue_monitors (
+    practice_id,
+    patient_data_file_path,
+    practice_name,
+    practice_type,
+    is_mapped
+) VALUES (
+    42,
+    '/Volumes/PRACTICE RECORDS1/Demo',
+    'Demo Practice',
+    'PREMAPPED',
+    true
+) ON CONFLICT (practice_id) DO NOTHING;
+```
+
+Load seed data:
+
+```bash
+./dc.sh exec -T postgres-mrm psql -U mrm_automations -d mrm_automations < scripts/seed-postgres.sql
+```
+
+### Create test patient folders
+
+Set up local test data structure:
+
+```bash
+# Create test directory structure
+mkdir -p ${PRACTICE_MOUNT}/mounts/practice-records1/Demo/Patient\ Folders
+mkdir -p ${PRACTICE_MOUNT}/mounts/practice-records1/Demo/Output
+
+# Create sample patient folder
+mkdir -p "${PRACTICE_MOUNT}/mounts/practice-records1/Demo/Patient Folders/Doe, Jane - 1980-08-26"
+
+# Add sample documents (copy your test PDFs here)
+cp sample-document1.pdf "${PRACTICE_MOUNT}/mounts/practice-records1/Demo/Patient Folders/Doe, Jane - 1980-08-26/"
+cp sample-document2.pdf "${PRACTICE_MOUNT}/mounts/practice-records1/Demo/Patient Folders/Doe, Jane - 1980-08-26/"
+```
+
+### Test premapped retrieval API
+
+```bash
+curl -sS -G 'http://localhost:4000/api/premapped_trigger' \
+  --data-urlencode 'request_id=test-123' \
+  --data-urlencode 'practice_id=42' \
+  --data-urlencode 'practice_name=Demo Practice' \
+  --data-urlencode 'patient_first_name=Jane' \
+  --data-urlencode 'patient_last_name=Doe' \
+  --data-urlencode 'patient_dob=08-26-1980' \
+  --data-urlencode 'practice_file_path=/Volumes/PRACTICE RECORDS1/Demo/Patient Folders' \
+  --data-urlencode 'processed_pdf_output_root_path=/Volumes/PRACTICE RECORDS1/Demo/Output' | jq
+```
+
+Expected response:
+
+```json
+{
+  "status": "workflow_started",
+  "workflow_id": "premapped-retrieval-test-123",
+  "run_id": "..."
+}
+```
+
+### Monitor workflow execution
+
+View workflow in Temporal UI:
+
+```
+http://localhost:8081
+```
+
+Check Moose logs:
+
+```bash
+./dc.sh logs moose --since 5m -f
+```
+
+Query retrieval status:
+
+```bash
+./dc.sh exec postgres-mrm psql -U mrm_automations -d mrm_automations \
+  -c "SELECT patient_request_id, status, error_message FROM record_retrievals WHERE patient_request_id='test-123'"
+```
+
+### Verify PDF output
+
+```bash
+ls -lh "${PRACTICE_MOUNT}/mounts/practice-records1/Demo/Output/"
+# Should show: Doe_Jane_test-123.pdf
+```
+
+## Deploy to Production
+
+### Build for production
+
+Update `.env` for production (do not use `.env.local` in production):
+
+```bash
+# Use strong passwords
+POSTGRES_MRM_AUTOMATION_PASSWORD=<generated-strong-password>
+MOOSE_CLICKHOUSE_PASSWORD=<generated-strong-password>
+
+# Production endpoints
+DAMCO_API_BASE_URL=https://damco.yourdomain.com/api
+DAMCO_API_KEY=<production-key>
+MICROSOFT_TEAMS_WEBHOOK=<production-webhook>
+
+# Production mounts (verify SMB paths)
+PRACTICE_FILE_PATH=/Volumes/PRACTICE RECORDS1
+```
+
+### Deploy with Docker Compose
+
+For production deployment on a VM or cloud instance:
+
+```bash
+# Build production image
+moose build --docker
+docker tag moose-df-deployment-x86_64-unknown-linux-gnu:latest mrm-automation-moose:production
+
+# Use production compose file
+docker compose -f docker-compose.yaml up -d
+```
+
+### Deploy to Boreal (Managed MooseStack)
+
+1. **Create Boreal account**: Visit boreal.cloud and create organization
+
+2. **Import project**: Select "New Project" → "Import from Git"
+
+3. **Configure settings**:
+   - Root path: `/` (for monorepo, specify app directory)
+   - Environment variables: Add all production vars from `.env`
+
+4. **Deploy**: Boreal provisions managed ClickHouse, Redpanda, and runs your Moose app
+
+5. **Verify deployment**:
+```bash
+curl https://your-project.boreal.cloud/health
+```
+
+### Monitor production workflows
+
+Access Temporal UI (configure external access or VPN):
+
+```
+https://temporal.yourdomain.com
+```
+
+Query production database:
+
+```bash
+psql "postgresql://mrm_automations:<password>@production-host:5432/mrm_automations" \
+  -c "SELECT status, COUNT(*) FROM record_retrievals GROUP BY status"
+```
+
+View Grafana dashboards:
+
+```
+https://grafana.yourdomain.com
+```
+
+## Advanced Features
+
+### Add idempotency checking
+
+Prevent duplicate processing by checking existing status before starting workflow:
+
+```python
+@workflow.defn
+class PremappedRetrievalWorkflow:
+    @workflow.run
+    async def run(self, request_id: str, ...):
+        # Check if already processed
+        existing = storage.record_retrieval.get_by_id(request_id)
+        if existing and existing.status == RetrievalStatus.SUCCESS:
+            workflow.logger.info(f"Request {request_id} already processed successfully")
+            return {"status": "ALREADY_PROCESSED", "pdf_path": existing.processed_patient_data_file_path}
+
+        # Continue with normal workflow...
+```
+
+### Add ECW3 ClickHouse integration
+
+For unmapped practices, query OLAP indexes instead of filesystem search:
+
+```python
+@activity.defn
+async def search_ecw3_patient(
+    practice_id: int,
+    first_name: str,
+    last_name: str,
+    dob: str
+) -> dict | None:
+    """Activity: Search ECW3 ClickHouse indexes"""
+    from app.mrm_automation.clickhouse import clickhouse_client
+
+    patient_id = clickhouse_client.find_patient_id(
+        practice_id, first_name, last_name, dob
+    )
+    if not patient_id:
+        return None
+
+    documents = clickhouse_client.get_patient_documents(practice_id, patient_id)
+    return {
+        "patient_id": patient_id,
+        "documents": documents
+    }
+```
+
+### Add retry policies for flaky operations
+
+Configure activity retries for transient failures:
+
+```python
+patient_folder = await workflow.execute_activity(
+    search_for_patient_folder,
+    args=[...],
+    start_to_close_timeout=timedelta(minutes=5),
+    retry_policy={
+        "maximum_attempts": 3,
+        "initial_interval": timedelta(seconds=1),
+        "maximum_interval": timedelta(seconds=10),
+        "backoff_coefficient": 2.0
+    }
+)
+```
+
+### Add structured logging for observability
+
+Use structured logging throughout workflows:
+
+```python
+workflow.logger.info(
+    "patient_folder_found",
+    extra={
+        "event": "patient_folder_found",
+        "request_id": request_id,
+        "practice_id": practice_id,
+        "patient_folder": patient_folder,
+        "processing_time_ms": elapsed_ms
+    }
+)
+```
+
+Query logs with jq:
+
+```bash
+./dc.sh logs moose --since 1h | grep patient_folder_found | jq -r '[.event, .request_id, .processing_time_ms] | @tsv'
+```
+
+## Troubleshooting
+
+### Workflow stuck in PROCESSING
+
+Check Temporal for workflow errors:
+
+```bash
+./dc.sh exec temporal-admin-tools tctl --namespace moose-workflows \
+  workflow describe --workflow_id premapped-retrieval-test-123
+```
+
+Query database for stuck records:
+
+```bash
+./dc.sh exec postgres-mrm psql -U mrm_automations -d mrm_automations \
+  -c "SELECT patient_request_id, status, last_updated_status FROM record_retrievals WHERE status='PROCESSING' AND last_updated_status < NOW() - INTERVAL '1 hour'"
+```
+
+### Patient folder not found
+
+Verify SMB mount accessibility:
+
+```bash
+./dc.sh exec moose ls -la /Volumes/PRACTICE\ RECORDS1/
+```
+
+Test search manually:
+
+```bash
+./dc.sh exec moose python3 -c "
+from app.mrm_automation.fs_search import find_directory_by_convention_exact_search
+result = find_directory_by_convention_exact_search(
+    '/Volumes/PRACTICE RECORDS1/Demo/Patient Folders',
+    'Doe', 'Jane', '08-26-1980'
+)
+print(result)
+"
+```
+
+### PDF conversion failing
+
+Check Windows PDF server connectivity:
+
+```bash
+curl -v http://host.docker.internal:5000/health
+```
+
+Test Python fallback:
+
+```bash
+./dc.sh exec moose python3 -c "
+from app.mrm_automation.pdf import aggregate_patient_folder_to_pdf
+result = aggregate_patient_folder_to_pdf(
+    '/Volumes/PRACTICE RECORDS1/Demo/Patient Folders/Doe, Jane - 1980-08-26',
+    '/tmp/test-output.pdf'
+)
+print('Success' if result else 'Failed')
+"
+```
+
+### ClickHouse queries slow
+
+Analyze query performance:
+
+```bash
+./dc.sh exec clickhouse-0 clickhouse-client --query "
+SELECT
+    query,
+    query_duration_ms,
+    read_rows,
+    memory_usage
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND query LIKE '%ecw3_patient_index%'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT Vertical
+"
+```
+
+### Database connection pool exhausted
+
+Check active connections:
+
+```bash
+./dc.sh exec postgres-mrm psql -U mrm_automations -d mrm_automations \
+  -c "SELECT count(*), state FROM pg_stat_activity GROUP BY state"
+```
+
+Increase pool size in `service.py`:
+
+```python
+self.engine = create_engine(
+    postgres_url,
+    pool_pre_ping=True,
+    pool_size=20,  # increase from default 5
+    max_overflow=10
+)
+```
+
+## Conclusion
+
+You now have a production-grade medical record retrieval automation system built on MooseStack with:
+
+- **Temporal workflows** for durable, retry-able orchestration
+- **PostgreSQL** for operational status tracking with idempotency
+- **ClickHouse** for OLAP-powered ECW3 document indexing
+- **Redpanda** for event streaming and data pipelines
+- **Multi-format PDF aggregation** supporting 10+ document types
+- **External integrations** with DAMCO ticketing and Microsoft Teams
+- **Comprehensive observability** via structured logging and Grafana
+
+The system processes patient record requests from monitored practices, searches networked file shares or OLAP indexes, aggregates documents, and notifies downstream systems - all with robust error handling, retries, and status tracking.
+
+## Next Steps
+
+### Add batch processing optimization
+
+For high-volume practices, batch multiple patient retrievals:
+
+```python
+@workflow.defn
+class BatchRetrievalWorkflow:
+    @workflow.run
+    async def run(self, practice_id: int, request_ids: list[str]):
+        # Process up to 100 requests in parallel
+        tasks = [
+            workflow.execute_child_workflow(
+                PremappedRetrievalWorkflow.run,
+                args=[request_id, ...]
+            )
+            for request_id in request_ids[:100]
+        ]
+        results = await asyncio.gather(*tasks)
+        return {"processed": len(results), "results": results}
+```
+
+### Add SLA monitoring
+
+Track processing times and alert on SLA violations:
+
+```python
+# In workflow
+start_time = workflow.now()
+# ... process retrieval ...
+duration_ms = (workflow.now() - start_time).total_seconds() * 1000
+
+if duration_ms > SLA_THRESHOLD_MS:
+    await workflow.execute_activity(
+        send_sla_violation_alert,
+        args=[request_id, duration_ms]
+    )
+```
+
+### Add machine learning for folder matching
+
+Train ML model on historical successful matches to improve fuzzy matching accuracy for non-standard naming conventions.
