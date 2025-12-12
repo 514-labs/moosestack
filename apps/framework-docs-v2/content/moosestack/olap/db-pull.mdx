@@ -34,7 +34,7 @@ Examples:
 
 ```bash filename="Terminal" copy
 # Native (auto-converted to HTTPS + 8443)
-moose db pull --clickhouse-url "clickhouse://explorer@play.clickhouse.com:9440/default"
+moose db pull --clickhouse-url "clickhouse://explorer@play.clickhouse.com:9440?database=default"
 
 # HTTPS (explicit database via query param)
 moose db pull --clickhouse-url "https://play.clickhouse.com/?user=explorer&database=default"
@@ -103,7 +103,7 @@ When you run `db pull` the CLI does the following:
 moose db pull --clickhouse-url <URL> [--file-path <OUTPUT_PATH>]
 ```
 
-- **--clickhouse-url**: ClickHouse URL (e.g., `clickhouse://user:pass@host:port/database` or `https://user:pass@host:port/database`). Can also be set via `CLICKHOUSE_URL` environment variable.
+- **--clickhouse-url**: ClickHouse URL (e.g., `clickhouse://user:pass@host:port?database=mydb` or `https://user:pass@host:port?database=mydb`). Can also be set via `CLICKHOUSE_URL` environment variable.
 - **--file-path**: Optional. Override the default output file. The file at this path will be regenerated (overwritten) on each run.
 
 ## Typical Use Cases
@@ -118,7 +118,7 @@ moose db pull --clickhouse-url <URL> [--file-path <OUTPUT_PATH>]
 ### Automatically run on dev startup (keep local fresh)
   In active development, schemas can drift faster than you commit updates. Running `db pull` on dev startup helps ensure your local code matches the live schema you depend on.
   ```bash filename="Terminal" copy
-  export CLICKHOUSE_URL="clickhouse://<user>:<password>@<host>:<port>/<database>"
+  export CLICKHOUSE_URL="clickhouse://<user>:<password>@<host>:<port>?database=<database>"
   ```
   Add to `moose.config.toml`:
   ```toml filename="moose.config.toml" copy
