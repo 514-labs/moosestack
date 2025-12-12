@@ -94,7 +94,12 @@ graph LR
     <h2>Configuration</h2>
 
     <pre><code class="language-yaml"># moose-config.yaml
-source: sap-hana-cdc://MARA,MARC,MBEW
+source:
+  hostname: sap.example.com
+  user: username
+  password: password
+  port: 30015
+  tables: [MARA, MARC, MBEW]
 destination: clickhouse://analytics
 streaming: true</code></pre>
 
