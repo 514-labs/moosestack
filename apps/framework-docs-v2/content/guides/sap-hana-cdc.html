@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAP Reporting Without the Cost</title>
+    <meta name="description" content="Build SAP reporting in 2 hours with 5 lines of config">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            color: #333;
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: #000;
+        }
+        h2 {
+            font-size: 1.75rem;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            color: #111;
+        }
+        p {
+            margin-bottom: 1rem;
+        }
+        pre {
+            background: #f6f8fa;
+            border-radius: 6px;
+            padding: 1rem;
+            overflow-x: auto;
+        }
+        code {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        .mermaid {
+            text-align: center;
+            margin: 2rem 0;
+        }
+        ol {
+            margin: 1rem 0;
+            padding-left: 1.5rem;
+        }
+        li {
+            margin-bottom: 0.5rem;
+        }
+        strong {
+            font-weight: 600;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #e1e4e8;
+            margin: 2rem 0;
+        }
+        .get-started {
+            margin-top: 2rem;
+        }
+        .get-started p {
+            margin: 0.5rem 0;
+        }
+        .annotation {
+            font-style: italic;
+            color: #666;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>SAP Reporting Without the Cost</h1>
+
+    <p>SAP custom reporting costs $10K-50K per engagement. Data integration requires expensive proprietary ETL tools.</p>
+
+    <p>Build the same infrastructure in 2 hours on your local machine: MooseStack + ClickHouse.</p>
+
+    <h2>Architecture</h2>
+
+    <div class="mermaid">
+graph LR
+    A[SAP HANA] --> B[MooseStack]
+    B --> C[ClickHouse]
+    C --> D[BI Tool]
+    </div>
+
+    <h2>Configuration</h2>
+
+    <pre><code class="language-yaml"># moose-config.yaml
+source: sap-hana-cdc://MARA,MARC,MBEW
+destination: clickhouse://analytics
+streaming: true</code></pre>
+
+    <p class="annotation">That's it. MooseStack handles CDC, schema, and streaming.</p>
+
+    <h2>Implementation</h2>
+
+    <ol>
+        <li><strong>Deploy CDC</strong> (30 min) - Capture SAP changes in real-time</li>
+        <li><strong>Run Pipeline</strong> (30 min) - Stream to ClickHouse warehouse</li>
+        <li><strong>Connect BI</strong> (1 hour) - Build dashboards in Superset/Tableau/Power BI</li>
+    </ol>
+
+    <p><strong>2 hours total</strong> vs. 12 weeks with traditional consulting.</p>
+
+    <hr>
+
+    <p>[INSERT: Used by X manufacturing companies to reduce SAP reporting costs by 85%]</p>
+
+    <div class="get-started">
+        <h2>Get Started</h2>
+
+        <p>→ Install: <code>pip install moosestack</code></p>
+        <p>→ Plugin: [sap-hana-cdc-to-clickhouse]</p>
+        <p>→ Tutorials: [Coming soon]</p>
+    </div>
+
+    <!-- Designer: This content fits on 1 page -->
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+    </script>
+</body>
+</html>
