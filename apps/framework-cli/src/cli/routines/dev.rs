@@ -5,9 +5,10 @@ use super::{
     },
     RoutineFailure, RoutineSuccess,
 };
-use crate::cli::{display::with_spinner_completion, settings::Settings};
+use crate::cli::display::{show_message_wrapper, with_spinner_completion, Message, MessageType};
+use crate::cli::settings::Settings;
+use crate::project::Project;
 use crate::utilities::constants::CLI_PROJECT_INTERNAL_DIR;
-use crate::{cli::display::Message, project::Project};
 use crate::{cli::routines::util::ensure_docker_running, utilities::docker::DockerClient};
 use lazy_static::lazy_static;
 
@@ -44,6 +45,34 @@ pub fn run_local_infrastructure(
 
     if project.features.olap {
         validate_clickhouse_run(project, docker_client)?.show();
+
+        // Show connection for primary database
+        show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "ClickHouse Connection:".to_string(),
+                details: project.clickhouse_config.display_url(),
+            },
+        );
+
+        // Show connections for additional databases
+        for db in &project.clickhouse_config.additional_databases {
+            show_message_wrapper(
+                MessageType::Info,
+                Message {
+                    action: "".to_string(),
+                    details: project.clickhouse_config.display_url_for_database(db),
+                },
+            );
+        }
+
+        show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "".to_string(),
+                details: "See moose.config.toml for complete connection details".to_string(),
+            },
+        );
     }
     if project.features.streaming_engine {
         validate_redpanda_run(project, docker_client)?.show();

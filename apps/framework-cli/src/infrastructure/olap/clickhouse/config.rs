@@ -64,6 +64,29 @@ impl Default for ClickHouseConfig {
     }
 }
 
+impl ClickHouseConfig {
+    /// Returns a display-safe connection URL with the password masked for a specific database.
+    pub fn display_url_for_database(&self, database: &str) -> String {
+        let protocol = if self.use_ssl { "https" } else { "http" };
+        if self.password.is_empty() {
+            format!(
+                "{}://{}@{}:{}/?database={}",
+                protocol, self.user, self.host, self.host_port, database
+            )
+        } else {
+            format!(
+                "{}://{}:******@{}:{}/?database={}",
+                protocol, self.user, self.host, self.host_port, database
+            )
+        }
+    }
+
+    /// Returns a display-safe connection URL with the password masked.
+    pub fn display_url(&self) -> String {
+        self.display_url_for_database(&self.db_name)
+    }
+}
+
 /// Result of parsing a ClickHouse connection string, including conversion metadata
 #[derive(Debug, Clone)]
 pub struct ParsedConnectionString {
