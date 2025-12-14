@@ -27,6 +27,7 @@ export const TIMEOUTS = {
   DOCKER_COMPOSE_DOWN_MS: 30_000,
   DOCKER_VOLUME_LIST_MS: 10_000,
   DOCKER_VOLUME_REMOVE_MS: 5_000,
+  DOCKER_BUILD_MS: 900_000, // 15 minutes for Docker build
 
   // Wait time before tests (30 seconds - allows Kafka to fully initialize after Docker restart)
   PRE_TEST_WAIT_MS: 30_000,
