@@ -101,11 +101,10 @@ fn init_with_location_flag_uses_name_in_setup_py() -> Result<(), Box<dyn std::er
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("moose-cli"));
 
     cmd.arg("init")
+        .arg("MyProject23")
+        .arg("python")
         .arg("-l")
         .arg("MyProject1")
-        .arg("--language")
-        .arg("python")
-        .arg("MyProject23")
         .arg("--no-fail-already-exists")
         .current_dir(temp_path);
 
