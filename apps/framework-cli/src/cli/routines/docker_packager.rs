@@ -438,7 +438,7 @@ pub fn create_dockerfile(
 # Use package manager to install only production dependencies
 RUN pnpm --filter "./{}" deploy /temp-deploy{}
 
-# Fix: pnpm deploy --legacy doesn't copy native bindings, so rebuild them from source
+# Fix: When using pnpm deploy --legacy, native bindings aren't copied, so rebuild them from source
 # Generic solution: Find and rebuild all packages with native bindings (those with binding.gyp)
 RUN echo "=== Rebuilding native modules ===" && \
     cd /temp-deploy && \
