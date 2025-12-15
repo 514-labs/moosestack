@@ -5,6 +5,8 @@ interface MDXFigureProps extends React.HTMLAttributes<HTMLElement> {
   children?: React.ReactNode;
 }
 
+type ElementWithProps = React.ReactElement<Record<string, unknown>>;
+
 /**
  * Extracts text content from a React node (for figcaption titles)
  */
@@ -26,6 +28,45 @@ function extractTextFromNode(node: React.ReactNode): string {
 }
 
 /**
+ * Find elements in children array by type or condition
+ */
+function findElements(
+  childrenArray: ReturnType<typeof React.Children.toArray>,
+): {
+  figcaption: ElementWithProps | null;
+  preElement: ElementWithProps | null;
+} {
+  let figcaption: ElementWithProps | null = null;
+  let preElement: ElementWithProps | null = null;
+
+  for (const child of childrenArray) {
+    if (React.isValidElement(child)) {
+      const childType = child.type;
+      const childProps = (child.props as Record<string, unknown>) || {};
+
+      if (typeof childType === "string") {
+        if (childType === "figcaption") {
+          figcaption = child as ElementWithProps;
+        } else if (childType === "pre") {
+          preElement = child as ElementWithProps;
+        }
+      } else {
+        const hasCodeBlockAttrs =
+          childProps["data-rehype-pretty-code-fragment"] !== undefined ||
+          childProps["data-language"] !== undefined ||
+          childProps["data-theme"] !== undefined;
+
+        if (hasCodeBlockAttrs || !preElement) {
+          preElement = child as ElementWithProps;
+        }
+      }
+    }
+  }
+
+  return { figcaption, preElement };
+}
+
+/**
  * Server-side component that handles figure wrapper from rehype-pretty-code
  * Extracts the title from figcaption and passes it to the pre element
  */
@@ -41,56 +82,17 @@ export function ServerFigure({
 
   // For code blocks, extract figcaption title and pass to pre
   const childrenArray = React.Children.toArray(children);
-
-  // Find figcaption and pre elements
-  let figcaption: React.ReactElement | null = null;
-  let preElement: React.ReactElement | null = null;
-
-  childrenArray.forEach((child) => {
-    if (React.isValidElement(child)) {
-      const childType = child.type;
-      const childProps = (child.props as Record<string, unknown>) || {};
-
-      // Check if it's a native HTML element by checking if type is a string
-      if (typeof childType === "string") {
-        if (childType === "figcaption") {
-          figcaption = child;
-        } else if (childType === "pre") {
-          preElement = child;
-        }
-      } else {
-        // For React components (like ServerCodeBlock)
-        // Check if it has code block attributes
-        const hasCodeBlockAttrs =
-          childProps["data-rehype-pretty-code-fragment"] !== undefined ||
-          childProps["data-language"] !== undefined ||
-          childProps["data-theme"] !== undefined;
-
-        // If it has code block attributes, it's the pre element
-        if (hasCodeBlockAttrs || !preElement) {
-          preElement = child;
-        }
-      }
-    }
-  });
+  const { figcaption, preElement } = findElements(childrenArray);
 
   // Extract filename from figcaption (title from markdown)
   let figcaptionTitle: string | undefined;
   if (figcaption) {
-    const figcaptionProps = (figcaption as React.ReactElement).props as Record<
-      string,
-      unknown
-    >;
     figcaptionTitle = extractTextFromNode(
-      figcaptionProps.children as React.ReactNode,
+      figcaption.props.children as React.ReactNode,
     ).trim();
   }
 
-  const preProps =
-    preElement ?
-      ((preElement as React.ReactElement).props as Record<string, unknown>) ||
-      {}
-    : {};
+  const preProps = preElement?.props || {};
 
   // Prioritize figcaption title (from markdown title="...") over any existing attributes
   const filename =
@@ -109,7 +111,7 @@ export function ServerFigure({
       : hasCodeBlockAttrs ? ""
       : undefined;
 
-    const updatedPre = React.cloneElement(preElement as React.ReactElement, {
+    const updatedPre = React.cloneElement(preElement, {
       ...preProps,
       "data-filename": filename || undefined,
       "data-rehype-pretty-code-title": filename || undefined,

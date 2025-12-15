@@ -106,7 +106,7 @@ export function TemplatesSideNav() {
                 <Label className="text-xs text-muted-foreground">Type</Label>
                 <RadioGroup
                   value={typeFilter || ""}
-                  onValueChange={(value) => {
+                  onValueChange={(value: string) => {
                     if (value === "") {
                       updateFilters({ type: null });
                     } else {
@@ -149,7 +149,7 @@ export function TemplatesSideNav() {
                 </Label>
                 <RadioGroup
                   value={languageFilter || ""}
-                  onValueChange={(value) => {
+                  onValueChange={(value: string) => {
                     if (value === "") {
                       updateFilters({ language: null });
                     } else {
