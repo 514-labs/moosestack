@@ -562,7 +562,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
     .unwrap();
     writeln!(
         output,
-        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine"
+        "from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine, BufferEngine, DistributedEngine"
     )
     .unwrap();
     writeln!(output).unwrap();
@@ -1090,63 +1090,42 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{Column, ColumnType, Nested, OrderBy};
+    use crate::framework::core::infrastructure::table::{
+        Column, ColumnType, IntType, Nested, OrderBy,
+    };
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
-    #[test]
-    fn test_tables_to_python() {
-        let tables = vec![Table {
-            name: "Foo".to_string(),
-            columns: vec![
-                Column {
-                    name: "primary_key".to_string(),
-                    data_type: ColumnType::String,
-                    required: true,
-                    unique: false,
-                    primary_key: true,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-                Column {
-                    name: "timestamp".to_string(),
-                    data_type: ColumnType::Float(FloatType::Float64),
-                    required: true,
-                    unique: false,
-                    primary_key: false,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-                Column {
-                    name: "optional_text".to_string(),
-                    data_type: ColumnType::String,
-                    required: false,
-                    unique: false,
-                    primary_key: false,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-            ],
-            order_by: OrderBy::Fields(vec!["primary_key".to_string()]),
+    /// Helper to create a basic Column with defaults
+    fn test_column(name: &str, data_type: ColumnType) -> Column {
+        Column {
+            name: name.to_string(),
+            data_type,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }
+    }
+
+    /// Helper to create a basic Table with defaults
+    fn test_table(name: &str, columns: Vec<Column>, engine: ClickhouseEngine) -> Table {
+        Table {
+            name: name.to_string(),
+            columns,
+            order_by: OrderBy::Fields(vec![]),
             partition_by: None,
             sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
+            engine,
             version: None,
             source_primitive: PrimitiveSignature {
-                name: "Foo".to_string(),
+                name: name.to_string(),
                 primitive_type: PrimitiveTypes::DataModel,
             },
             metadata: None,
@@ -1159,6 +1138,25 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+        }
+    }
+
+    #[test]
+    fn test_tables_to_python() {
+        let tables = vec![Table {
+            columns: vec![
+                Column {
+                    primary_key: true,
+                    ..test_column("primary_key", ColumnType::String)
+                },
+                test_column("timestamp", ColumnType::Float(FloatType::Float64)),
+                Column {
+                    required: false,
+                    ..test_column("optional_text", ColumnType::String)
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["primary_key".to_string()]),
+            ..test_table("Foo", vec![], ClickhouseEngine::MergeTree)
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1174,7 +1172,7 @@ from moose_lib import Key, IngestPipeline, IngestPipelineConfig, OlapTable, Olap
 from moose_lib.data_models import ClickHouseJson
 from moose_lib import Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, FixedString
 from moose_lib import clickhouse_default, ClickHouseCodec, ClickHouseMaterialized, LifeCycle, ClickHouseTTL
-from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine
+from moose_lib.blocks import MergeTreeEngine, ReplacingMergeTreeEngine, AggregatingMergeTreeEngine, SummingMergeTreeEngine, CollapsingMergeTreeEngine, VersionedCollapsingMergeTreeEngine, S3QueueEngine, KafkaEngine, ReplicatedMergeTreeEngine, ReplicatedReplacingMergeTreeEngine, ReplicatedAggregatingMergeTreeEngine, ReplicatedSummingMergeTreeEngine, ReplicatedCollapsingMergeTreeEngine, ReplicatedVersionedCollapsingMergeTreeEngine, BufferEngine, DistributedEngine
 
 class Foo(BaseModel):
     primary_key: Key[str]
@@ -1417,68 +1415,28 @@ user_table = OlapTable[User]("User", OlapConfig(
 
     #[test]
     fn test_s3queue_engine() {
-        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-
         let tables = vec![Table {
-            name: "Events".to_string(),
-            columns: vec![
-                Column {
-                    name: "id".to_string(),
-                    data_type: ColumnType::String,
-                    required: true,
-                    unique: false,
-                    primary_key: true,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-                Column {
-                    name: "data".to_string(),
-                    data_type: ColumnType::String,
-                    required: true,
-                    unique: false,
-                    primary_key: false,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-            ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::S3Queue {
-                s3_path: "s3://bucket/path".to_string(),
-                format: "JSONEachRow".to_string(),
-                compression: Some("gzip".to_string()),
-                headers: None,
-                aws_access_key_id: None,
-                aws_secret_access_key: None,
-            },
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "Events".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
             table_settings: Some(
                 vec![("mode".to_string(), "unordered".to_string())]
                     .into_iter()
                     .collect(),
             ),
-            indexes: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
+            ..test_table(
+                "Events",
+                vec![
+                    test_column("id", ColumnType::String),
+                    test_column("data", ColumnType::String),
+                ],
+                ClickhouseEngine::S3Queue {
+                    s3_path: "s3://bucket/path".to_string(),
+                    format: "JSONEachRow".to_string(),
+                    compression: Some("gzip".to_string()),
+                    headers: None,
+                    aws_access_key_id: None,
+                    aws_secret_access_key: None,
+                },
+            )
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1493,38 +1451,81 @@ user_table = OlapTable[User]("User", OlapConfig(
     }
 
     #[test]
+    fn test_buffer_engine() {
+        use crate::infrastructure::olap::clickhouse::queries::BufferEngine;
+
+        let tables = vec![test_table(
+            "BufferTest",
+            vec![
+                test_column("id", ColumnType::String),
+                test_column("value", ColumnType::Int(IntType::Int64)),
+            ],
+            ClickhouseEngine::Buffer(BufferEngine {
+                target_database: "local".to_string(),
+                target_table: "DestinationTable".to_string(),
+                num_layers: 16,
+                min_time: 10,
+                max_time: 100,
+                min_rows: 10000,
+                max_rows: 1000000,
+                min_bytes: 10485760,
+                max_bytes: 104857600,
+                flush_time: None,
+                flush_rows: None,
+                flush_bytes: None,
+            }),
+        )];
+
+        let result = tables_to_python(&tables, None);
+
+        assert!(result.contains("from moose_lib.blocks import"));
+        assert!(result.contains("BufferEngine"));
+
+        assert!(result.contains("engine=BufferEngine("));
+        assert!(result.contains("target_database=\"local\""));
+        assert!(result.contains("target_table=\"DestinationTable\""));
+        assert!(result.contains("num_layers=16"));
+        assert!(result.contains("min_time=10"));
+        assert!(result.contains("max_time=100"));
+        assert!(result.contains("min_rows=10000"));
+        assert!(result.contains("max_rows=1000000"));
+        assert!(result.contains("min_bytes=10485760"));
+        assert!(result.contains("max_bytes=104857600"));
+    }
+
+    #[test]
+    fn test_distributed_engine() {
+        let tables = vec![test_table(
+            "DistributedTest",
+            vec![
+                test_column("id", ColumnType::String),
+                test_column("data", ColumnType::String),
+            ],
+            ClickhouseEngine::Distributed {
+                cluster: "my_cluster".to_string(),
+                target_database: "default".to_string(),
+                target_table: "local_table".to_string(),
+                sharding_key: Some("rand()".to_string()),
+                policy_name: None,
+            },
+        )];
+
+        let result = tables_to_python(&tables, None);
+
+        assert!(result.contains("from moose_lib.blocks import"));
+        assert!(result.contains("DistributedEngine"));
+
+        assert!(result.contains("engine=DistributedEngine("));
+        assert!(result.contains("cluster=\"my_cluster\""));
+        assert!(result.contains("target_database=\"default\""));
+        assert!(result.contains("target_table=\"local_table\""));
+        assert!(result.contains("sharding_key=\"rand()\""));
+    }
+
+    #[test]
     fn test_table_settings_all_engines() {
         let tables = vec![Table {
-            name: "UserData".to_string(),
-            columns: vec![Column {
-                name: "id".to_string(),
-                data_type: ColumnType::String,
-                required: true,
-                unique: false,
-                primary_key: true,
-                default: None,
-                annotations: vec![],
-                comment: None,
-                ttl: None,
-                codec: None,
-                materialized: None,
-            }],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::ReplacingMergeTree {
-                ver: None,
-                is_deleted: None,
-            },
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "UserData".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
             table_settings: Some(
                 vec![
                     ("index_granularity".to_string(), "4096".to_string()),
@@ -1536,11 +1537,14 @@ user_table = OlapTable[User]("User", OlapConfig(
                 .into_iter()
                 .collect(),
             ),
-            indexes: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
+            ..test_table(
+                "UserData",
+                vec![test_column("id", ColumnType::String)],
+                ClickhouseEngine::ReplacingMergeTree {
+                    ver: None,
+                    is_deleted: None,
+                },
+            )
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1554,70 +1558,19 @@ user_table = OlapTable[User]("User", OlapConfig(
     #[test]
     fn test_replacing_merge_tree_with_parameters() {
         let tables = vec![Table {
-            name: "UserData".to_string(),
-            columns: vec![
-                Column {
-                    name: "id".to_string(),
-                    data_type: ColumnType::String,
-                    required: true,
-                    unique: false,
-                    primary_key: true,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-                Column {
-                    name: "version".to_string(),
-                    data_type: ColumnType::DateTime { precision: None },
-                    required: true,
-                    unique: false,
-                    primary_key: false,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-                Column {
-                    name: "is_deleted".to_string(),
-                    data_type: ColumnType::Int(IntType::UInt8),
-                    required: true,
-                    unique: false,
-                    primary_key: false,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-            ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::ReplacingMergeTree {
-                ver: Some("version".to_string()),
-                is_deleted: Some("is_deleted".to_string()),
-            },
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "UserData".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
+            ..test_table(
+                "UserData",
+                vec![
+                    test_column("id", ColumnType::String),
+                    test_column("version", ColumnType::DateTime { precision: None }),
+                    test_column("is_deleted", ColumnType::Int(IntType::UInt8)),
+                ],
+                ClickhouseEngine::ReplacingMergeTree {
+                    ver: Some("version".to_string()),
+                    is_deleted: Some("is_deleted".to_string()),
+                },
+            )
         }];
 
         let result = tables_to_python(&tables, None);
@@ -1631,73 +1584,31 @@ user_table = OlapTable[User]("User", OlapConfig(
     #[test]
     fn test_named_tuple_types() {
         let tables = vec![Table {
-            name: "Location".to_string(),
-            columns: vec![
-                Column {
-                    name: "id".to_string(),
-                    data_type: ColumnType::String,
-                    required: true,
-                    unique: false,
-                    primary_key: true,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-                Column {
-                    name: "coordinates".to_string(),
-                    data_type: ColumnType::NamedTuple(vec![
-                        ("lat".to_string(), ColumnType::Float(FloatType::Float64)),
-                        ("lng".to_string(), ColumnType::Float(FloatType::Float64)),
-                    ]),
-                    required: true,
-                    unique: false,
-                    primary_key: false,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-                Column {
-                    name: "metadata".to_string(),
-                    data_type: ColumnType::NamedTuple(vec![
-                        ("name".to_string(), ColumnType::String),
-                        ("value".to_string(), ColumnType::Int(IntType::Int32)),
-                    ]),
-                    required: false,
-                    unique: false,
-                    primary_key: false,
-                    default: None,
-                    annotations: vec![],
-                    comment: None,
-                    ttl: None,
-                    codec: None,
-                    materialized: None,
-                },
-            ],
             order_by: OrderBy::Fields(vec!["id".to_string()]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "Location".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
+            ..test_table(
+                "Location",
+                vec![
+                    test_column("id", ColumnType::String),
+                    test_column(
+                        "coordinates",
+                        ColumnType::NamedTuple(vec![
+                            ("lat".to_string(), ColumnType::Float(FloatType::Float64)),
+                            ("lng".to_string(), ColumnType::Float(FloatType::Float64)),
+                        ]),
+                    ),
+                    Column {
+                        required: false,
+                        ..test_column(
+                            "metadata",
+                            ColumnType::NamedTuple(vec![
+                                ("name".to_string(), ColumnType::String),
+                                ("value".to_string(), ColumnType::Int(IntType::Int32)),
+                            ]),
+                        )
+                    },
+                ],
+                ClickhouseEngine::MergeTree,
+            )
         }];
 
         let result = tables_to_python(&tables, None);
