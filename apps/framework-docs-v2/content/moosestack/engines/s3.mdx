@@ -1,0 +1,63 @@
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+#### Direct S3 Access (`S3`)
+Use the `S3` engine for direct read/write access to S3 storage without streaming semantics:
+
+<TypeScript>
+```ts filename="S3Table.ts" copy
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+// S3 table with credentials (recommended with mooseRuntimeEnv)
+export const s3Data = new OlapTable<DataRecord>("s3_data", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://my-bucket/data/file.json",
+  format: "JSONEachRow",
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  compression: "gzip"
+});
+
+// Public S3 bucket (no authentication)
+export const publicS3 = new OlapTable<DataRecord>("public_s3", {
+  engine: ClickHouseEngines.S3,
+  path: "s3://public-bucket/data/*.parquet",
+  format: "Parquet",
+  noSign: true  // Use NOSIGN for public buckets
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="S3Table.py" copy
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import S3Engine
+
+# S3 table with credentials (recommended with moose_runtime_env)
+s3_data = OlapTable[DataRecord]("s3_data", OlapConfig(
+    engine=S3Engine(
+        path="s3://my-bucket/data/file.json",
+        format="JSONEachRow",
+        aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY"),
+        compression="gzip"
+    )
+))
+
+# Public S3 bucket (no authentication needed - just omit credentials)
+public_s3 = OlapTable[DataRecord]("public_s3", OlapConfig(
+    engine=S3Engine(
+        path="s3://public-bucket/data/*.parquet",
+        format="Parquet"
+    )
+))
+```
+</Python>
+
+<Callout type="info" title="S3 vs S3Queue">
+- **S3**: Direct read/write access to S3 files. Use for batch processing or querying static data.
+- **S3Queue**: Streaming engine that automatically processes new files as they arrive. Use for continuous data ingestion.
+
+Both engines support the same credential management and format options.
+</Callout>
+

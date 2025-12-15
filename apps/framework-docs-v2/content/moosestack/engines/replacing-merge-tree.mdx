@@ -1,180 +1,74 @@
----
-title: ReplacingMergeTree
-description: ClickHouse table engine with automatic deduplication
-order: 3
-category: reference
----
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
 
-import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+#### Deduplication (`ReplacingMergeTree`)
+Use the `ReplacingMergeTree` engine to keep only the latest record for your designated sort key:
 
-# ReplacingMergeTree
-
-`ReplacingMergeTree` extends MergeTree with automatic deduplication. During background merges, ClickHouse keeps only one row per unique ORDER BY key—useful for mutable data that receives updates.
-
-## When to Use
-
-- Data with updates (user profiles, product catalogs, entity state)
-- Upsert patterns where you want the latest version
-- CDC (Change Data Capture) pipelines
-- Any data that needs deduplication by a unique key
-
-## Usage
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript
-import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  updated_at: Date;
-}
-
-const users = new OlapTable<User>("users", {
+<TypeScript>
+```ts filename="DeduplicatedTable.ts" copy
+// Basic deduplication
+const table = new OlapTable<Record>("table", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"]
 });
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python
-from moose_lib import OlapTable, OlapConfig
-from moose_lib.blocks import ReplacingMergeTreeEngine
-from pydantic import BaseModel
-from datetime import datetime
 
-class User(BaseModel):
-    id: str
-    name: str
-    email: str
-    updated_at: datetime
-
-users = OlapTable[User]("users", OlapConfig(
-    engine=ReplacingMergeTreeEngine(),
-    order_by_fields=["id"]
-))
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-## Configuration Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `orderByFields` | `string[]` | Columns that define uniqueness (required) |
-| `ver` | `string` | Version column—keeps the row with the highest value during merges |
-| `isDeleted` | `string` | Soft delete column (`UInt8`)—removes rows where value is `1` (requires `ver`) |
-
-## Example: Upserts and Soft Deletes
-
-Use the `ver` parameter to control which row survives during deduplication. The row with the highest version value is kept:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript
-const users = new OlapTable<User>("users", {
+// With version column (keeps record with highest version)
+const versionedTable = new OlapTable<Record>("table", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
-  ver: "updated_at"  // Keep row with latest updated_at
+  ver: "updated_at"  // Column that determines which version to keep
 });
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python
-users = OlapTable[User]("users", OlapConfig(
-    engine=ReplacingMergeTreeEngine(ver="updated_at"),
-    order_by_fields=["id"]
-))
-```
-  </LanguageTabContent>
-</LanguageTabs>
 
-Use `isDeleted` (requires `ver`) to mark rows for deletion. Rows with `isDeleted=1` are removed during merges:
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript
-interface User {
-  id: string;
-  name: string;
-  updated_at: Date;
-  deleted: number;  // UInt8: 0 = active, 1 = deleted
-}
-
-const users = new OlapTable<User>("users", {
+// With soft deletes (requires ver parameter)
+const softDeleteTable = new OlapTable<Record>("table", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "updated_at",
-  isDeleted: "deleted"
+  isDeleted: "deleted"  // UInt8 column: 1 marks row for deletion
 });
 ```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python
-class User(BaseModel):
-    id: str
-    name: str
-    updated_at: datetime
-    deleted: int = 0  # 0 = active, 1 = deleted
+</TypeScript>
 
-users = OlapTable[User]("users", OlapConfig(
-    engine=ReplacingMergeTreeEngine(
-        ver="updated_at",
-        is_deleted="deleted"
-    ),
-    order_by_fields=["id"]
+<Python>
+```py filename="DeduplicatedTable.py" copy
+from moose_lib import Key, OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+
+class Record(BaseModel):
+    id: Key[str]
+    updated_at: str  # Version column
+    deleted: int = 0  # Soft delete marker (UInt8)
+
+# Basic deduplication
+table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine()
+))
+
+# With version column (keeps record with highest version)
+versioned_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine(ver="updated_at")
+))
+
+# With soft deletes (requires ver parameter)
+soft_delete_table = OlapTable[Record]("table", OlapConfig(
+  order_by_fields=["id"],
+  engine=ReplacingMergeTreeEngine(
+    ver="updated_at",
+    is_deleted="deleted"  # UInt8 column: 1 marks row for deletion
+  )
 ))
 ```
-  </LanguageTabContent>
-</LanguageTabs>
+</Python>
 
-## Supported Behavior
+<Callout type="warning" title="Deduplication Caveats">
+ClickHouse's ReplacingMergeTree engine runs deduplication in the background AFTER data is inserted into the table. This means that duplicate records may not be removed immediately.
 
-Merge behavior is as described in the ClickHouse docs:
+**Version Column (`ver`)**: When specified, ClickHouse keeps the row with the maximum version value for each unique sort key.
 
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```typescript
-import { sql } from "@514labs/moose-lib";
+**Soft Deletes (`is_deleted`)**: When specified along with `ver`, rows where this column equals 1 are deleted during merges. This column must be UInt8 type.
 
-// Force deduplication at query time
-const deduped = sql`SELECT * FROM ${users} FINAL WHERE ${users.columns.id} = '123'`;
-
-// Or use aggregation to pick the latest values
-const latest = sql`
-  SELECT
-    argMax(${users.columns.name}, ${users.columns.updated_at}) AS name
-  FROM ${users}
-  WHERE ${users.columns.id} = '123'
-`;
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```python
-# Force deduplication at query time
-DEDUPED_SQL = """
-  SELECT *
-  FROM {users} FINAL
-  WHERE {users.cols.id} = '123'
-"""
-
-# Or use aggregation to pick the latest values
-LATEST_SQL = """
-  SELECT argMax({users.cols.name}, {users.cols.updated_at}) AS name
-  FROM {users}
-  WHERE {users.cols.id} = '123'
-"""
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-- [ClickHouse ReplacingMergeTree docs](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
-
-## See Also
-
-- [MergeTree](/moosestack/engines/merge-tree) — For append-only data without deduplication
-- [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) — For pre-aggregated rollups
-- [Replicated Engines](/moosestack/engines/replicated) — For high availability
+For more details, see the [ClickHouse documentation](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree).
+</Callout>
 

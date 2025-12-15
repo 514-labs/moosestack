@@ -1,0 +1,59 @@
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+#### Versioned Collapsing (`VersionedCollapsingMergeTree`)
+Use `VersionedCollapsingMergeTree` when you need collapsing with out-of-order inserts. The version column ensures correct collapse ordering regardless of insertion order:
+
+<TypeScript>
+```ts filename="VersionedCollapsingTable.ts" copy
+import { OlapTable, ClickHouseEngines, Int8 } from "@514labs/moose-lib";
+
+interface UserState {
+  userId: Key<string>;
+  pageViews: number;
+  duration: number;
+  sign: Int8;     // Required: 1 = state row, -1 = cancel row
+  version: number; // Required: version for ordering state changes
+}
+
+// Track user state with versioned collapsing
+const stateTable = new OlapTable<UserState>("user_state", {
+  engine: ClickHouseEngines.VersionedCollapsingMergeTree,
+  sign: "sign",
+  ver: "version",
+  orderByFields: ["userId"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="VersionedCollapsingTable.py" copy
+from moose_lib import Key, Int8, OlapTable, OlapConfig
+from moose_lib.blocks import VersionedCollapsingMergeTreeEngine
+from pydantic import BaseModel
+
+class UserState(BaseModel):
+    user_id: Key[str]
+    page_views: int
+    duration: int
+    sign: Int8      # Required: 1 = state row, -1 = cancel row
+    version: int    # Required: version for ordering state changes
+
+# Track user state with versioned collapsing
+state_table = OlapTable[UserState]("user_state", OlapConfig(
+    order_by_fields=["user_id"],
+    engine=VersionedCollapsingMergeTreeEngine(sign="sign", ver="version")
+))
+```
+</Python>
+
+<Callout type="warning" title="CollapsingMergeTree vs VersionedCollapsingMergeTree">
+**CollapsingMergeTree**: Requires strictly consecutive insertion order. Use when you control insertion order (e.g., single writer).
+
+**VersionedCollapsingMergeTree**: Uses a version column to handle out-of-order inserts. Use when multiple threads/sources insert data or order isn't guaranteed.
+
+Both engines require the `sign` column to be `Int8` type.
+
+For more details, see the ClickHouse documentation on [CollapsingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/collapsingmergetree) and [VersionedCollapsingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/versionedcollapsingmergetree).
+</Callout>
+

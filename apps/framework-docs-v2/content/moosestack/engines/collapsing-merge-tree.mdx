@@ -1,0 +1,63 @@
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+#### Collapsing State Changes (`CollapsingMergeTree`)
+Use the `CollapsingMergeTree` engine to efficiently track object state changes by collapsing insert/cancel row pairs:
+
+<TypeScript>
+```ts filename="CollapsingTable.ts" copy
+import { OlapTable, ClickHouseEngines, Int8 } from "@514labs/moose-lib";
+
+interface UserActivity {
+  userId: Key<string>;
+  pageViews: number;
+  duration: number;
+  sign: Int8;  // Required: 1 = state row, -1 = cancel row
+}
+
+// Track user activity with state collapsing
+const activityTable = new OlapTable<UserActivity>("user_activity", {
+  engine: ClickHouseEngines.CollapsingMergeTree,
+  sign: "sign",
+  orderByFields: ["userId"]
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="CollapsingTable.py" copy
+from moose_lib import Key, Int8, OlapTable, OlapConfig
+from moose_lib.blocks import CollapsingMergeTreeEngine
+from pydantic import BaseModel
+
+class UserActivity(BaseModel):
+    user_id: Key[str]
+    page_views: int
+    duration: int
+    sign: Int8  # Required: 1 = state row, -1 = cancel row
+
+# Track user activity with state collapsing
+activity_table = OlapTable[UserActivity]("user_activity", OlapConfig(
+    order_by_fields=["user_id"],
+    engine=CollapsingMergeTreeEngine(sign="sign")
+))
+```
+</Python>
+
+<Callout type="info" title="How Collapsing Works">
+To update a record, insert two rows:
+1. A cancel row (`sign = -1`) with the old values
+2. A state row (`sign = 1`) with the new values
+
+During background merges, ClickHouse collapses matching pairs, keeping only the latest state.
+
+**Important**: Use aggregation in queries to get accurate results:
+```sql
+SELECT userId, sum(pageViews * sign) as pageViews
+FROM user_activity
+GROUP BY userId
+HAVING sum(sign) > 0
+```
+</Callout>
+
+

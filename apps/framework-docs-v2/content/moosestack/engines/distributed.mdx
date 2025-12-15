@@ -1,0 +1,48 @@
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+#### Distributed Tables (`Distributed`)
+The `Distributed` engine creates a distributed table across a ClickHouse cluster for horizontal scaling:
+
+<TypeScript>
+```ts filename="DistributedTable.ts" copy
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+// Distributed table across cluster
+export const distributedTable = new OlapTable<Record>("distributed_data", {
+  engine: ClickHouseEngines.Distributed,
+  cluster: "my_cluster",
+  targetDatabase: "default",
+  targetTable: "local_table",
+  shardingKey: "cityHash64(id)"  // Optional: how to distribute data
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="DistributedTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import DistributedEngine
+
+# Distributed table across cluster
+distributed_table = OlapTable[Record]("distributed_data", OlapConfig(
+    engine=DistributedEngine(
+        cluster="my_cluster",
+        target_database="default",
+        target_table="local_table",
+        sharding_key="cityHash64(id)"  # Optional: how to distribute data
+    )
+))
+```
+</Python>
+
+<Callout type="info" title="Distributed Table Requirements">
+- Requires a configured ClickHouse cluster with remote_servers configuration
+- The local table must exist on all cluster nodes
+- Distributed tables are virtual - data is stored in local tables
+- Cannot use `orderByFields`, `partitionBy`, or `sampleByExpression` on distributed tables
+- The `cluster` name must match a cluster defined in your ClickHouse configuration
+
+For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed).
+</Callout>
+

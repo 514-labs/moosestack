@@ -1,0 +1,120 @@
+import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
+import { Tabs } from "nextra/components";
+
+#### Streaming from S3 (`S3Queue`)
+Use the `S3Queue` engine to automatically ingest data from S3 buckets as files are added:
+
+<Callout type="info" title="S3Queue with Materialized Views" compact>
+S3Queue tables only process **new files** added to S3 after table creation. When used as a source for materialized views, **no backfill occurs** - the MV will only start populating as new files arrive. See the [Materialized Views documentation](./model-materialized-view#backfill-destination-tables) for more details.
+</Callout>
+
+<TypeScript>
+```ts filename="S3StreamingTable.ts" copy
+import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
+
+// Use direct configuration (S3Queue does not support orderByFields)
+export const s3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/data/*.json",
+  format: "JSONEachRow",
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
+  }
+});
+```
+<Callout type="warning" title="S3Queue ORDER BY not supported">
+S3Queue is a streaming engine and does not support `orderByFields` or ORDER BY clauses. Configure only engine-specific parameters like `s3Path`, `format`, and `settings`.
+</Callout>
+</TypeScript>
+
+<Python>
+```py filename="S3StreamingTable.py" copy
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import S3QueueEngine
+
+class S3Event(BaseModel):
+    id: str
+    timestamp: datetime
+    data: dict
+
+# Modern API using engine configuration
+s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
+    engine=S3QueueEngine(
+        s3_path="s3://my-bucket/data/*.json",
+        format="JSONEachRow",
+        # ⚠️ WARNING: See security callout below about credentials
+        aws_access_key_id="AKIA...",
+        aws_secret_access_key="secret..."
+    ),
+    settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/events"
+    }
+))
+```
+</Python>
+
+<Callout type="danger" title="⚠️ NEVER hardcode AWS credentials!">
+**Security Risk**: Hardcoding credentials in your code embeds them in Docker images and deployment artifacts, creating serious security vulnerabilities.
+
+**Solution**: Use `mooseRuntimeEnv` for runtime credential resolution:
+
+<TypeScript>
+```ts filename="SecureS3Streaming.ts" copy
+import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
+
+// ✅ RECOMMENDED: Runtime environment variable resolution
+export const secureS3Events = new OlapTable<S3Event>("s3_events", {
+  engine: ClickHouseEngines.S3Queue,
+  s3Path: "s3://my-bucket/data/*.json",
+  format: "JSONEachRow",
+  awsAccessKeyId: mooseRuntimeEnv.get("AWS_ACCESS_KEY_ID"),
+  awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
+  settings: {
+    mode: "unordered",
+    keeper_path: "/clickhouse/s3queue/events"
+  }
+});
+```
+</TypeScript>
+
+<Python>
+```py filename="SecureS3Streaming.py" copy
+from moose_lib import OlapTable, OlapConfig, moose_runtime_env
+from moose_lib.blocks import S3QueueEngine
+
+# ✅ RECOMMENDED: Runtime environment variable resolution
+secure_s3_events = OlapTable[S3Event]("s3_events", OlapConfig(
+    engine=S3QueueEngine(
+        s3_path="s3://my-bucket/data/*.json",
+        format="JSONEachRow",
+        aws_access_key_id=moose_runtime_env.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=moose_runtime_env.get("AWS_SECRET_ACCESS_KEY")
+    ),
+    settings={
+        "mode": "unordered",
+        "keeper_path": "/clickhouse/s3queue/events"
+    }
+))
+```
+</Python>
+
+**Then set environment variables:**
+```bash filename="Terminal" copy
+export AWS_ACCESS_KEY_ID="AKIA..."
+export AWS_SECRET_ACCESS_KEY="your-secret-key"
+moose prod up
+```
+
+**Benefits:**
+- Credentials never embedded in Docker images
+- Supports credential rotation (changing passwords triggers table recreation)
+- Different credentials per environment (dev/staging/prod)
+- Clear error messages if environment variables are missing
+</Callout>
+
+<Callout type="info" title="S3Queue Requirements">
+S3Queue requires ClickHouse 24.7+ and proper ZooKeeper/ClickHouse Keeper configuration for coordination between replicas. Files are processed exactly once across all replicas.
+</Callout>
+
