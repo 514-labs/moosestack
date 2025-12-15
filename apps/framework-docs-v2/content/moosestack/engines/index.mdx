@@ -21,8 +21,7 @@ MooseOLAP selects the engine in the `OlapTable` config:
 ```ts
 import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
 
-// Shared placeholder type for all examples below
-type EngineExampleRow = {
+interface EngineExampleRow {
   id: string;
   timestamp: Date;
   updated_at: Date;
@@ -33,8 +32,8 @@ type EngineExampleRow = {
   click_sum: number;
 };
 
-// MergeTree is the default (omit engine)
-const DefaultMergeTree = new OlapTable<EngineExampleRow>("merge_tree_table", {
+// MergeTree (default, can omit engine property)
+const MergeTree = new OlapTable<EngineExampleRow>("merge_tree_table", {
   orderByFields: ["timestamp", "id"],
 });
 
@@ -62,7 +61,6 @@ from moose_lib import OlapTable, OlapConfig
 from moose_lib.blocks import ReplacingMergeTreeEngine, SummingMergeTreeEngine
 from pydantic import BaseModel
 
-# Shared placeholder model for proven copy/paste
 class EngineExampleRow(BaseModel):
     id: str
     timestamp: datetime
@@ -73,6 +71,12 @@ class EngineExampleRow(BaseModel):
     views: int
     click_sum: int
 
+## MergeTree (default, can omit engine property)
+MergeTree = OlapTable[EngineExampleRow]("merge_tree_table", OlapConfig(
+  order_by_fields=["timestamp", "id"], 
+));
+
+## ReplacingMergeTree (deduplicate by key, optional version + soft delete)
 ReplacingMergeTree = OlapTable[EngineExampleRow]("replacing_merge_tree_table", OlapConfig(
   engine=ReplacingMergeTreeEngine(),
   order_by_fields=["id"],
@@ -80,6 +84,7 @@ ReplacingMergeTree = OlapTable[EngineExampleRow]("replacing_merge_tree_table", O
   is_deleted="deleted",
 ));
 
+## SummingMergeTree (sum numeric columns for the same key)
 SummingMergeTree = OlapTable[EngineExampleRow]("summing_merge_tree_table", OlapConfig(
   engine=SummingMergeTreeEngine(),
   order_by_fields=["date", "page"],
