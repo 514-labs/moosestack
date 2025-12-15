@@ -25,7 +25,7 @@ pub fn prompt_user_for_remote_ch_http() -> Result<String, RoutineFailure> {
     let base = prompt_user(
         "Enter ClickHouse host and port",
         None,
-        Some("Format: https://your-service-id.region.clickhouse.cloud:8443\n  🔗 Get your URL: https://clickhouse.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
+        Some("Format: https://your-instance.boreal.cloud:8443\n  🔗 Get your URL: https://boreal.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
     )?.trim_end_matches('/').trim_start_matches("https://").to_string();
     let user = prompt_user("Enter username", Some("default"), None)?;
     let pass = prompt_user("Enter password", None, None)?;
