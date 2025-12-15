@@ -8,7 +8,9 @@ use crate::utilities::constants::{
 };
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
-use crate::utilities::package_managers::get_lock_file_path;
+use crate::utilities::package_managers::{
+    detect_pnpm_deploy_mode, get_lock_file_path, legacy_deploy_warning_message, PnpmDeployMode,
+};
 use crate::utilities::{constants, system};
 use crate::{cli::display::Message, project::Project};
 
@@ -415,10 +417,25 @@ pub fn create_dockerfile(
                     None => "# No lock file found".to_string(),
                 };
 
+                // Detect whether to use modern or legacy pnpm deploy
+                let deploy_mode = detect_pnpm_deploy_mode(&workspace_root);
+
+                // Log warning if using legacy mode
+                if let PnpmDeployMode::Legacy(reason) = &deploy_mode {
+                    let warning_msg = legacy_deploy_warning_message(reason);
+                    tracing::warn!("{}", warning_msg);
+                }
+
+                // Generate appropriate deploy command
+                let deploy_flag = match &deploy_mode {
+                    PnpmDeployMode::Modern => "",
+                    PnpmDeployMode::Legacy(_) => " --legacy",
+                };
+
                 let deploy_install_command = format!(
                     r#"
 # Use package manager to install only production dependencies
-RUN pnpm --filter "./{}" deploy /temp-deploy --legacy
+RUN pnpm --filter "./{}" deploy /temp-deploy{}
 
 # Fix: pnpm deploy --legacy doesn't copy native bindings, so rebuild them from source
 # Generic solution: Find and rebuild all packages with native bindings (those with binding.gyp)
@@ -439,7 +456,8 @@ RUN echo "=== Rebuilding native modules ===" && \
         echo "No native modules found (this is normal if your deps don't have native bindings)"; \
     fi && \
     echo "=== Native modules rebuild complete ===""#,
-                    relative_project_path.to_string_lossy()
+                    relative_project_path.to_string_lossy(),
+                    deploy_flag
                 );
 
                 // Modify the copy commands to copy from the build stage
