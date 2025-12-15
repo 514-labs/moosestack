@@ -5,11 +5,13 @@ order: 1
 category: reference
 ---
 
-import { Callout } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Table Engines
 
 ClickHouse table engines determine how data is stored, indexed, queried, and replicated. Moose supports the MergeTree family of engines, which are optimized for high-volume analytical workloads.
+
+
 
 ## Engine Overview
 
@@ -25,35 +27,37 @@ ClickHouse table engines determine how data is stored, indexed, queried, and rep
 
 | If you need… | Choose… |
 |---|---|
-| Default engine for append-only analytics | [`MergeTree`](/moosestack/engines/merge-tree) |
+| Sane defaults for simple append-only analytics | [`MergeTree`](/moosestack/engines/merge-tree) |
 | Deduplication / upserts by key | [`ReplacingMergeTree`](/moosestack/engines/replacing-merge-tree) |
 | Sum-only counters (e.g., views, clicks) | [`SummingMergeTree`](/moosestack/engines/summing-merge-tree) |
 | Pre-aggregated rollups / aggregate-state tables | [`AggregatingMergeTree`](/moosestack/engines/aggregating-merge-tree) |
 | High availability via replication | Use a replicated variant (see [`Replicated Engines`](/moosestack/engines/replicated)) |
 
-## Quick Start
+## Example
 
-Most tables should use `MergeTree` (the default) or `ReplacingMergeTree` (for upserts):
-
-```typescript
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+```ts
 import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
 
-// Default: MergeTree (omit engine parameter)
-const events = new OlapTable<Event>("events", {
-  orderByFields: ["timestamp", "id"]
-});
-
-// Deduplication: ReplacingMergeTree
 const users = new OlapTable<User>("users", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
-  ver: "updated_at"
 });
 ```
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+```py
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
 
-<Callout type="info" title="Default engine">
-When you don't specify an engine, Moose uses `MergeTree`—the fastest option for append-only analytical data.
-</Callout>
+users = OlapTable[User]("users", OlapConfig(
+    engine=ReplacingMergeTreeEngine(),
+    order_by_fields=["id"],
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
 
 ## Available Engines
 
