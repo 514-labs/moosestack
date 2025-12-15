@@ -481,6 +481,41 @@ pub fn detect_pnpm_deploy_mode(project_dir: &Path) -> PnpmDeployMode {
     }
 }
 
+/// Generates a diagnostic warning message for legacy pnpm deploy mode.
+///
+/// Returns a multi-line message explaining what was detected and how to fix it.
+///
+/// # Arguments
+///
+/// * `reason` - The reason legacy mode is being used
+///
+/// # Returns
+///
+/// * `String` - Formatted warning message
+pub fn legacy_deploy_warning_message(reason: &LegacyReason) -> String {
+    let detected = match reason {
+        LegacyReason::NpmrcMissingSetting => ".npmrc missing `inject-workspace-packages=true`",
+        LegacyReason::LockfileMissingSetting => {
+            ".npmrc has `inject-workspace-packages=true` but lockfile was not regenerated"
+        }
+        LegacyReason::LockfileHasButNpmrcMissing => {
+            "lockfile has inject setting but .npmrc doesn't - inconsistent state"
+        }
+        LegacyReason::NotPnpmWorkspace => "not in a pnpm workspace (no pnpm-workspace.yaml found)",
+    };
+
+    format!(
+        r#"Using legacy pnpm deploy - Docker builds may not respect your lockfile.
+
+Detected: {}
+
+To fix:
+  1. Add `inject-workspace-packages=true` to your .npmrc
+  2. Run `pnpm install` to regenerate your lockfile"#,
+        detected
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -719,6 +754,25 @@ importers:
             result,
             PnpmDeployMode::Legacy(LegacyReason::LockfileHasButNpmrcMissing)
         );
+    }
+
+    #[test]
+    fn test_legacy_deploy_warning_message() {
+        use super::*;
+
+        // Test each reason produces appropriate message
+        let msg1 = legacy_deploy_warning_message(&LegacyReason::NpmrcMissingSetting);
+        assert!(msg1.contains(".npmrc missing"));
+        assert!(msg1.contains("inject-workspace-packages=true"));
+
+        let msg2 = legacy_deploy_warning_message(&LegacyReason::LockfileMissingSetting);
+        assert!(msg2.contains("lockfile was not regenerated"));
+
+        let msg3 = legacy_deploy_warning_message(&LegacyReason::LockfileHasButNpmrcMissing);
+        assert!(msg3.contains("inconsistent"));
+
+        let msg4 = legacy_deploy_warning_message(&LegacyReason::NotPnpmWorkspace);
+        assert!(msg4.contains("not in a pnpm workspace"));
     }
 
     #[test]
