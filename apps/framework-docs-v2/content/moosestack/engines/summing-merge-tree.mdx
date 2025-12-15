@@ -62,22 +62,27 @@ metrics = OlapTable[DailyMetrics]("daily_metrics", OlapConfig(
 
 ## How It Works
 
-1. **Insert**: Rows are written with their numeric values
-2. **Background Merge**: Rows with the same ORDER BY key are combined—numeric columns are summed, non-numeric columns take the first value
-3. **Query**: Read summed results directly
+1. **Insert**: Rows are written with their numeric values.
+2. **Background Merge**: Rows with the same ORDER BY key are combined—numeric columns are summed, non-numeric columns keep one value.
+3. **Query**: Read summed results directly (duplicates may exist until merges complete).
 
-```
-// Two inserts with same (date, page):
-{ date: "2025-01-01", page: "/home", views: 100, clicks: 5 }
-{ date: "2025-01-01", page: "/home", views: 150, clicks: 8 }
-
-// After merge:
-{ date: "2025-01-01", page: "/home", views: 250, clicks: 13 }
+```json
+[
+  { "date": "2025-01-01", "page": "/home", "views": 100, "clicks": 5 },
+  { "date": "2025-01-01", "page": "/home", "views": 150, "clicks": 8 }
+]
 ```
 
-## Specifying Columns to Sum
+## Configuration Options
 
-By default, all numeric columns are summed. You can specify which columns to sum:
+| Option | Type | Description |
+|--------|------|-------------|
+| `orderByFields` | `string[]` | Columns that define the merge key (required) |
+| `columns` | `string[]` | Optional allowlist of numeric columns to sum (defaults to all numeric columns) |
+
+## Example: Choosing Columns to Sum
+
+By default, all numeric columns are summed. You can restrict which columns are summed:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -103,16 +108,15 @@ metrics = OlapTable[DailyMetrics]("daily_metrics", OlapConfig(
 SummingMergeTree only supports summation. For other aggregations (max, min, count distinct), use [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) instead.
 </Callout>
 
-## SummingMergeTree vs AggregatingMergeTree
+## Supported Behavior
 
-| Feature | SummingMergeTree | AggregatingMergeTree |
-|---------|------------------|----------------------|
-| Aggregations | SUM only | Any (sum, max, min, etc.) |
-| Setup | Simpler—just use numeric columns | Requires `SimpleAggregateFunction` types |
-| Use case | Simple counters | Complex rollups |
+Moose does not define its own merge behavior—this engine behaves according to ClickHouse’s `SummingMergeTree` implementation.
+
+- [ClickHouse SummingMergeTree docs](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/summingmergetree)
 
 ## See Also
 
-- [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) — For multiple aggregate functions
+- [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) — For non-sum aggregations / aggregate states
+- [Aggregate Types](/moosestack/data-types/aggregates) — `SimpleAggregateFunction` and `AggregateFunction` modeling
 - [Replicated Engines](/moosestack/engines/replicated) — For high availability
 

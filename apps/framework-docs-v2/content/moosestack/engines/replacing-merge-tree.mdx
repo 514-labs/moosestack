@@ -9,7 +9,7 @@ import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 # ReplacingMergeTree
 
-`ReplacingMergeTree` extends MergeTree with automatic deduplication. During background merges, it keeps only one row per unique ORDER BY key—useful for mutable data that receives updates.
+`ReplacingMergeTree` extends MergeTree with automatic deduplication. During background merges, ClickHouse keeps only one row per unique ORDER BY key—useful for mutable data that receives updates.
 
 ## When to Use
 
@@ -18,7 +18,7 @@ import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 - CDC (Change Data Capture) pipelines
 - Any data that needs deduplication by a unique key
 
-## Basic Usage
+## Usage
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -59,7 +59,32 @@ users = OlapTable[User]("users", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-## Version Column
+## How It Works
+
+1. **Insert**: All rows (including duplicates) are written immediately.
+2. **Background Merge**: ClickHouse periodically merges parts and deduplicates rows by the ORDER BY key.
+3. **Query**: Before merges complete, queries may still observe duplicates.
+
+```json
+[
+  { "id": "123", "name": "Ada", "email": "ada@example.com", "updated_at": "2025-01-01T00:00:00Z" },
+  { "id": "123", "name": "Ada", "email": "ada@new.example.com", "updated_at": "2025-01-02T00:00:00Z" }
+]
+```
+
+<Callout type="warning" title="Eventual deduplication">
+Deduplication happens during background merges, not at insert time. To force deduplication at query time, use `FINAL` (or Moose’s `final=true` option, if available in your client).
+</Callout>
+
+## Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `orderByFields` | `string[]` | Columns that define uniqueness (required) |
+| `ver` | `string` | Version column—keeps the row with the highest value during merges |
+| `isDeleted` | `string` | Soft delete column (`UInt8`)—removes rows where value is `1` (requires `ver`) |
+
+## Example: Upserts and Soft Deletes
 
 Use the `ver` parameter to control which row survives during deduplication. The row with the highest version value is kept:
 
@@ -82,8 +107,6 @@ users = OlapTable[User]("users", OlapConfig(
 ```
   </LanguageTabContent>
 </LanguageTabs>
-
-## Soft Deletes
 
 Use `isDeleted` (requires `ver`) to mark rows for deletion. Rows with `isDeleted=1` are removed during merges:
 
@@ -124,24 +147,14 @@ users = OlapTable[User]("users", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-## How It Works
+## Supported Behavior
 
-1. **Insert**: All rows (including duplicates) are written immediately
-2. **Background Merge**: ClickHouse periodically merges parts, keeping only the latest row per ORDER BY key
-3. **Query**: Before merges complete, queries may see duplicates
-
-<Callout type="warning" title="Eventual deduplication">
-Deduplication happens during background merges, not at insert time. To get deduplicated results immediately, use `FINAL` in queries or the `final=true` option in Moose reads.
-</Callout>
-
-## Querying with FINAL
-
-To force deduplication at query time:
+Moose does not define its own deduplication semantics—this engine behaves according to ClickHouse’s `ReplacingMergeTree` implementation:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```typescript
-// In raw SQL
+// Force deduplication at query time (raw SQL)
 const result = await client.query("SELECT * FROM users FINAL WHERE id = '123'");
 
 // Or use aggregation to get latest
@@ -154,7 +167,7 @@ const latest = await client.query(`
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python
-# In raw SQL
+# Force deduplication at query time (raw SQL)
 result = client.query("SELECT * FROM users FINAL WHERE id = '123'")
 
 # Or use aggregation to get latest
@@ -167,13 +180,7 @@ latest = client.query("""
   </LanguageTabContent>
 </LanguageTabs>
 
-## Configuration Options
-
-| Option | Type | Description |
-|--------|------|-------------|
-| `orderByFields` | `string[]` | Columns that define uniqueness (required) |
-| `ver` | `string` | Version column—keeps row with highest value |
-| `isDeleted` | `string` | Soft delete column (UInt8)—removes rows where value is 1 |
+- [ClickHouse ReplacingMergeTree docs](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
 
 ## See Also
 

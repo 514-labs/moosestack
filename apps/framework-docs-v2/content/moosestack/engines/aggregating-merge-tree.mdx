@@ -115,13 +115,11 @@ metrics_by_id = OlapTable[MetricsById]("metrics_by_id", OlapConfig(
 2. **Background Merge**: Rows with the same ORDER BY key are combined using their aggregate functions
 3. **Query**: Read pre-computed aggregates directly—no GROUP BY needed for simple queries
 
-```
-// Two inserts with same (date, user_id):
-{ date: "2025-01-01", user_id: "u1", total_views: 10, max_score: 85 }
-{ date: "2025-01-01", user_id: "u1", total_views: 15, max_score: 92 }
-
-// After merge:
-{ date: "2025-01-01", user_id: "u1", total_views: 25, max_score: 92 }
+```json
+[
+  { "date": "2025-01-01", "user_id": "u1", "total_views": 10, "max_score": 85 },
+  { "date": "2025-01-01", "user_id": "u1", "total_views": 15, "max_score": 92 }
+]
 ```
 
 ## Supported Aggregate Functions
