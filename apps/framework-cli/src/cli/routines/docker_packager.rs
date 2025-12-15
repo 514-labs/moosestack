@@ -9,7 +9,8 @@ use crate::utilities::constants::{
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
 use crate::utilities::package_managers::{
-    detect_pnpm_deploy_mode, get_lock_file_path, legacy_deploy_warning_message, PnpmDeployMode,
+    detect_pnpm_deploy_mode, find_pnpm_workspace_root, get_lock_file_path,
+    legacy_deploy_warning_message, PnpmDeployMode,
 };
 use crate::utilities::{constants, system};
 use crate::{cli::display::Message, project::Project};
@@ -876,26 +877,6 @@ pub fn build_dockerfile(
         "Successfully".to_string(),
         "created docker image for deployment".to_string(),
     )))
-}
-
-/// Detects if the project is part of a pnpm workspace by looking for pnpm-workspace.yaml
-fn find_pnpm_workspace_root(start_dir: &Path) -> Option<PathBuf> {
-    let mut current_dir = start_dir.to_path_buf();
-
-    loop {
-        let workspace_file = current_dir.join("pnpm-workspace.yaml");
-        if workspace_file.exists() {
-            debug!("Found pnpm-workspace.yaml at: {:?}", current_dir);
-            return Some(current_dir);
-        }
-
-        match current_dir.parent() {
-            Some(parent) => current_dir = parent.to_path_buf(),
-            None => break,
-        }
-    }
-
-    None
 }
 
 /// Reads and parses pnpm-workspace.yaml to get package patterns
