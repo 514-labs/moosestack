@@ -330,6 +330,73 @@ pub fn has_inject_workspace_packages_in_npmrc(workspace_root: &Path) -> bool {
     }
 }
 
+/// Checks if pnpm-lock.yaml has injectWorkspacePackages: true in settings.
+///
+/// The lockfile stores the settings that were active when it was generated.
+/// If .npmrc has inject-workspace-packages=true but the lockfile doesn't
+/// have this setting, the lockfile needs to be regenerated.
+///
+/// # Arguments
+///
+/// * `workspace_root` - Path to the workspace root directory
+///
+/// # Returns
+///
+/// * `bool` - True if the lockfile has injectWorkspacePackages: true
+pub fn has_inject_workspace_packages_in_lockfile(workspace_root: &Path) -> bool {
+    let lockfile_path = workspace_root.join(PNPM_LOCK);
+
+    if !lockfile_path.exists() {
+        debug!("No pnpm-lock.yaml found at {:?}", lockfile_path);
+        return false;
+    }
+
+    match std::fs::read_to_string(&lockfile_path) {
+        Ok(content) => {
+            // Simple line-based parsing to find injectWorkspacePackages: true
+            // in the settings section. This avoids adding a YAML parsing dependency.
+            let mut in_settings = false;
+
+            for line in content.lines() {
+                let trimmed = line.trim();
+
+                // Track when we enter/exit settings section
+                if trimmed == "settings:" {
+                    in_settings = true;
+                    continue;
+                }
+
+                // Exit settings section when we hit another top-level key
+                if in_settings
+                    && !line.starts_with(' ')
+                    && !line.starts_with('\t')
+                    && !trimmed.is_empty()
+                {
+                    in_settings = false;
+                }
+
+                // Look for the setting within settings section
+                if in_settings && trimmed.starts_with("injectWorkspacePackages:") {
+                    if let Some(value) = trimmed.split(':').nth(1) {
+                        let value = value.trim().to_lowercase();
+                        if value == "true" {
+                            debug!("Found injectWorkspacePackages: true in pnpm-lock.yaml");
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            debug!("injectWorkspacePackages: true not found in pnpm-lock.yaml settings");
+            false
+        }
+        Err(e) => {
+            debug!("Failed to read pnpm-lock.yaml: {}", e);
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -368,6 +435,53 @@ mod tests {
         // Test with no .npmrc file
         let dir3 = tempdir().unwrap();
         assert!(!has_inject_workspace_packages_in_npmrc(dir3.path()));
+    }
+
+    #[test]
+    fn test_has_inject_workspace_packages_in_lockfile() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Test with setting present in lockfile
+        let dir = tempdir().unwrap();
+        let lockfile_path = dir.path().join("pnpm-lock.yaml");
+        let mut file = std::fs::File::create(&lockfile_path).unwrap();
+        writeln!(
+            file,
+            r#"lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
+
+importers:
+  .: {{}}"#
+        )
+        .unwrap();
+
+        assert!(has_inject_workspace_packages_in_lockfile(dir.path()));
+
+        // Test with setting absent
+        let dir2 = tempdir().unwrap();
+        let lockfile_path2 = dir2.path().join("pnpm-lock.yaml");
+        let mut file2 = std::fs::File::create(&lockfile_path2).unwrap();
+        writeln!(
+            file2,
+            r#"lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+
+importers:
+  .: {{}}"#
+        )
+        .unwrap();
+
+        assert!(!has_inject_workspace_packages_in_lockfile(dir2.path()));
+
+        // Test with no lockfile
+        let dir3 = tempdir().unwrap();
+        assert!(!has_inject_workspace_packages_in_lockfile(dir3.path()));
     }
 
     #[test]
