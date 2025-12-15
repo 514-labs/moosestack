@@ -432,6 +432,55 @@ pub fn find_pnpm_workspace_root(start_dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Detects whether to use modern or legacy pnpm deploy for Docker builds.
+///
+/// Modern `pnpm deploy` respects the lockfile but requires:
+/// 1. `inject-workspace-packages=true` in .npmrc
+/// 2. The lockfile to be generated with that setting active
+///
+/// If either condition is not met, falls back to legacy mode which
+/// re-resolves dependencies (non-deterministic).
+///
+/// # Arguments
+///
+/// * `project_dir` - Path to the project directory (will search up for workspace root)
+///
+/// # Returns
+///
+/// * `PnpmDeployMode` - Modern or Legacy with reason
+pub fn detect_pnpm_deploy_mode(project_dir: &Path) -> PnpmDeployMode {
+    // First check if we're in a pnpm workspace
+    let workspace_root = match find_pnpm_workspace_root(project_dir) {
+        Some(root) => root,
+        None => {
+            debug!("Not in a pnpm workspace");
+            return PnpmDeployMode::Legacy(LegacyReason::NotPnpmWorkspace);
+        }
+    };
+
+    let npmrc_has_setting = has_inject_workspace_packages_in_npmrc(&workspace_root);
+    let lockfile_has_setting = has_inject_workspace_packages_in_lockfile(&workspace_root);
+
+    match (npmrc_has_setting, lockfile_has_setting) {
+        (true, true) => {
+            debug!("Both .npmrc and lockfile have inject-workspace-packages - using modern deploy");
+            PnpmDeployMode::Modern
+        }
+        (true, false) => {
+            debug!(".npmrc has setting but lockfile doesn't - lockfile needs regeneration");
+            PnpmDeployMode::Legacy(LegacyReason::LockfileMissingSetting)
+        }
+        (false, true) => {
+            debug!("Lockfile has setting but .npmrc doesn't - inconsistent state");
+            PnpmDeployMode::Legacy(LegacyReason::LockfileHasButNpmrcMissing)
+        }
+        (false, false) => {
+            debug!("Neither .npmrc nor lockfile have inject-workspace-packages setting");
+            PnpmDeployMode::Legacy(LegacyReason::NpmrcMissingSetting)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -552,6 +601,124 @@ importers:
         let unrelated_dir = tempdir().unwrap();
         let not_found = find_pnpm_workspace_root(unrelated_dir.path());
         assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_not_workspace() {
+        use super::*;
+        use tempfile::tempdir;
+
+        // No workspace = NotPnpmWorkspace
+        let dir = tempdir().unwrap();
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(
+            result,
+            PnpmDeployMode::Legacy(LegacyReason::NotPnpmWorkspace)
+        );
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_npmrc_missing() {
+        use super::*;
+        use tempfile::tempdir;
+
+        // Workspace exists but no .npmrc
+        let dir = tempdir().unwrap();
+        let workspace_yaml = dir.path().join("pnpm-workspace.yaml");
+        std::fs::File::create(&workspace_yaml).unwrap();
+
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(
+            result,
+            PnpmDeployMode::Legacy(LegacyReason::NpmrcMissingSetting)
+        );
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_lockfile_missing_setting() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Workspace + .npmrc with setting, but lockfile without setting
+        let dir = tempdir().unwrap();
+
+        let workspace_yaml = dir.path().join("pnpm-workspace.yaml");
+        std::fs::File::create(&workspace_yaml).unwrap();
+
+        let npmrc = dir.path().join(".npmrc");
+        let mut file = std::fs::File::create(&npmrc).unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+
+        let lockfile = dir.path().join("pnpm-lock.yaml");
+        let mut file = std::fs::File::create(&lockfile).unwrap();
+        writeln!(file, "lockfileVersion: '9.0'\nimporters:\n  .: {{}}").unwrap();
+
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(
+            result,
+            PnpmDeployMode::Legacy(LegacyReason::LockfileMissingSetting)
+        );
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_modern() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Full proper configuration
+        let dir = tempdir().unwrap();
+
+        let workspace_yaml = dir.path().join("pnpm-workspace.yaml");
+        std::fs::File::create(&workspace_yaml).unwrap();
+
+        let npmrc = dir.path().join(".npmrc");
+        let mut file = std::fs::File::create(&npmrc).unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+
+        let lockfile = dir.path().join("pnpm-lock.yaml");
+        let mut file = std::fs::File::create(&lockfile).unwrap();
+        writeln!(
+            file,
+            "lockfileVersion: '9.0'\nsettings:\n  injectWorkspacePackages: true\nimporters:\n  .: {{}}"
+        )
+        .unwrap();
+
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(result, PnpmDeployMode::Modern);
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_lockfile_has_but_npmrc_missing() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Edge case: lockfile has setting but .npmrc doesn't
+        let dir = tempdir().unwrap();
+
+        let workspace_yaml = dir.path().join("pnpm-workspace.yaml");
+        std::fs::File::create(&workspace_yaml).unwrap();
+
+        // .npmrc without the setting
+        let npmrc = dir.path().join(".npmrc");
+        let mut file = std::fs::File::create(&npmrc).unwrap();
+        writeln!(file, "some-other=setting").unwrap();
+
+        let lockfile = dir.path().join("pnpm-lock.yaml");
+        let mut file = std::fs::File::create(&lockfile).unwrap();
+        writeln!(
+            file,
+            "lockfileVersion: '9.0'\nsettings:\n  injectWorkspacePackages: true\nimporters:\n  .: {{}}"
+        )
+        .unwrap();
+
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(
+            result,
+            PnpmDeployMode::Legacy(LegacyReason::LockfileHasButNpmrcMissing)
+        );
     }
 
     #[test]
