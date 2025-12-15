@@ -141,6 +141,8 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
           rehypePlugins: [
             rehypeSlug,
             [rehypeAutolinkHeadings, { behavior: "wrap" }],
+            // Extract meta attributes BEFORE rehype-pretty-code consumes them
+            rehypeCodeMeta,
             [
               rehypePrettyCode,
               {
@@ -148,8 +150,6 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
                 keepBackground: false,
               },
             ],
-            // Generic plugin to extract all meta attributes as data-* props
-            rehypeCodeMeta,
           ],
         },
       }}
