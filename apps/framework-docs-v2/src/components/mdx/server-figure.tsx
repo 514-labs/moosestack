@@ -87,7 +87,10 @@ export function ServerFigure({
   }
 
   const preProps =
-    preElement ? (preElement.props as Record<string, unknown>) || {} : {};
+    preElement ?
+      ((preElement as React.ReactElement).props as Record<string, unknown>) ||
+      {}
+    : {};
 
   // Prioritize figcaption title (from markdown title="...") over any existing attributes
   const filename =
@@ -106,7 +109,7 @@ export function ServerFigure({
       : hasCodeBlockAttrs ? ""
       : undefined;
 
-    const updatedPre = React.cloneElement(preElement, {
+    const updatedPre = React.cloneElement(preElement as React.ReactElement, {
       ...preProps,
       "data-filename": filename || undefined,
       "data-rehype-pretty-code-title": filename || undefined,
