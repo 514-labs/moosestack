@@ -1,0 +1,81 @@
+---
+title: Named Tuple Types
+description: Named tuple column types for structured data in Moose
+order: 13
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Named Tuple Types
+
+Named tuples provide structured data with named fields, similar to lightweight nested objects.
+
+## Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseNamedTuple } from "@514labs/moose-lib";
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface Shape {
+  center: Point & ClickHouseNamedTuple;    // Named tuple
+  radius: number;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+
+class Point(BaseModel):
+    x: float
+    y: float
+
+class Shape(BaseModel):
+    center: Annotated[Point, "ClickHouseNamedTuple"]    # Named tuple
+    radius: float
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Arrays of Tuples
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseNamedTuple } from "@514labs/moose-lib";
+
+interface Coordinate {
+  x: number;
+  y: number;
+}
+
+interface Path {
+  points: (Coordinate & ClickHouseNamedTuple)[];    // Array(Tuple(x Float64, y Float64))
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import List, Annotated
+
+class Coordinate(BaseModel):
+    x: float
+    y: float
+
+class Path(BaseModel):
+    points: List[Annotated[Coordinate, "ClickHouseNamedTuple"]]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="Tuples vs Nested">
+Named tuples are more lightweight than nested types and are stored inline. Use tuples for simple structures with a few fields; use [nested types](/moosestack/data-types/nested) for more complex hierarchies.
+</Callout>
+

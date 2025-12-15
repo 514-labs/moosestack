@@ -1,0 +1,125 @@
+---
+title: MergeTree
+description: The default ClickHouse table engine for analytical workloads
+order: 2
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# MergeTree
+
+`MergeTree` is the default and most commonly used ClickHouse table engine. It's optimized for high-volume inserts and fast analytical queries on append-only data.
+
+## When to Use
+
+- Append-only event data (logs, analytics, time series)
+- Data that doesn't need updates or deduplication
+- Maximum insert and query performance
+
+## Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface Event {
+  id: string;
+  timestamp: Date;
+  user_id: string;
+  action: string;
+  properties: Record<string, any>;
+}
+
+// MergeTree is the default—no engine parameter needed
+const events = new OlapTable<Event>("events", {
+  orderByFields: ["timestamp", "user_id", "id"]
+});
+
+// Or explicitly specify
+const explicitEvents = new OlapTable<Event>("events", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["timestamp", "user_id", "id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import MergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Dict, Any
+
+class Event(BaseModel):
+    id: str
+    timestamp: datetime
+    user_id: str
+    action: str
+    properties: Dict[str, Any]
+
+# MergeTree is the default—no engine parameter needed
+events = OlapTable[Event]("events", OlapConfig(
+    order_by_fields=["timestamp", "user_id", "id"]
+))
+
+# Or explicitly specify
+explicit_events = OlapTable[Event]("events", OlapConfig(
+    engine=MergeTreeEngine(),
+    order_by_fields=["timestamp", "user_id", "id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## How It Works
+
+1. **Insert**: Data is written to in-memory buffers, then flushed to disk as "parts"
+2. **Background Merge**: ClickHouse periodically merges smaller parts into larger ones
+3. **Query**: Sparse primary index enables efficient filtering by ORDER BY columns
+
+## Configuration Options
+
+| Option | Description |
+|--------|-------------|
+| `orderByFields` | Columns for sorting and primary index (critical for query performance) |
+| `partitionBy` | Partition expression (e.g., `toYYYYMM(timestamp)`) |
+| `settings` | Engine-specific settings as key-value pairs |
+
+<Callout type="info" title="ORDER BY matters">
+The `orderByFields` determines both the sort order and the primary index. Place your most common filter columns first for best query performance.
+</Callout>
+
+## Example: Time-Series Events
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+const timeSeriesEvents = new OlapTable<Event>("events", {
+  orderByFields: ["timestamp", "user_id"],
+  partitionBy: "toYYYYMM(timestamp)",
+  settings: {
+    "index_granularity": "8192"
+  }
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+time_series_events = OlapTable[Event]("events", OlapConfig(
+    order_by_fields=["timestamp", "user_id"],
+    partition_by="toYYYYMM(timestamp)",
+    settings={
+        "index_granularity": "8192"
+    }
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## See Also
+
+- [ReplacingMergeTree](/moosestack/engines/replacing-merge-tree) — When you need deduplication
+- [Tables](/moosestack/olap/model-table) — Full table configuration reference
+

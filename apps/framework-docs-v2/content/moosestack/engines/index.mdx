@@ -1,0 +1,96 @@
+---
+title: Table Engines
+description: Reference for ClickHouse table engines supported in Moose
+order: 1
+category: reference
+---
+
+import { Callout } from "@/components/mdx";
+
+# Table Engines
+
+ClickHouse table engines determine how data is stored, indexed, queried, and replicated. Moose supports the MergeTree family of engines, which are optimized for high-volume analytical workloads.
+
+## Engine Overview
+
+| Engine | Use Case | Key Feature |
+|--------|----------|-------------|
+| [**MergeTree**](/moosestack/engines/merge-tree) | General analytics | Default, fast inserts and queries |
+| [**ReplacingMergeTree**](/moosestack/engines/replacing-merge-tree) | Mutable data | Deduplication by primary key |
+| [**AggregatingMergeTree**](/moosestack/engines/aggregating-merge-tree) | Pre-aggregation | Real-time rollups with `SimpleAggregateFunction` |
+| [**SummingMergeTree**](/moosestack/engines/summing-merge-tree) | Counters/metrics | Auto-sums numeric columns |
+| [**Replicated Engines**](/moosestack/engines/replicated) | High availability | Multi-node replication |
+
+## Choosing an Engine
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   Need deduplication?                        │
+│                                                              │
+│     No ──────────┬────────── Yes                            │
+│                  │                                           │
+│                  ▼                                           │
+│            MergeTree          ReplacingMergeTree            │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│                   Need pre-aggregation?                      │
+│                                                              │
+│     Simple sums ────┬──── Complex aggregates                │
+│                     │                                        │
+│                     ▼                                        │
+│          SummingMergeTree    AggregatingMergeTree           │
+│                                                              │
+├─────────────────────────────────────────────────────────────┤
+│                   Need replication?                          │
+│                                                              │
+│     Add "Replicated" prefix to any engine above             │
+│     e.g., ReplicatedReplacingMergeTree                      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Quick Start
+
+Most tables should use `MergeTree` (the default) or `ReplacingMergeTree` (for upserts):
+
+```typescript
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+// Default: MergeTree (omit engine parameter)
+const events = new OlapTable<Event>("events", {
+  orderByFields: ["timestamp", "id"]
+});
+
+// Deduplication: ReplacingMergeTree
+const users = new OlapTable<User>("users", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "updated_at"
+});
+```
+
+<Callout type="info" title="Default engine">
+When you don't specify an engine, Moose uses `MergeTree`—the fastest option for append-only analytical data.
+</Callout>
+
+## Available Engines
+
+### Standard Engines
+- `MergeTree` — Default, optimized for fast inserts and analytical queries
+- `ReplacingMergeTree` — Deduplicates rows by ORDER BY key during background merges
+- `AggregatingMergeTree` — Stores pre-aggregated states for real-time rollups
+- `SummingMergeTree` — Automatically sums numeric columns during merges
+
+### Replicated Engines
+- `ReplicatedMergeTree` — MergeTree with multi-node replication
+- `ReplicatedReplacingMergeTree` — ReplacingMergeTree with replication
+- `ReplicatedAggregatingMergeTree` — AggregatingMergeTree with replication
+- `ReplicatedSummingMergeTree` — SummingMergeTree with replication
+
+### Special Engines
+- `S3Queue` — Stream data from S3 buckets
+
+## See Also
+
+- [Tables](/moosestack/olap/model-table) — Full table configuration reference
+- [Aggregate Types](/moosestack/data-types/aggregates) — Using `SimpleAggregateFunction` with AggregatingMergeTree
+

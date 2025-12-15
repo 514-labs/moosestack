@@ -1,0 +1,98 @@
+---
+title: Enum Types
+description: Enum column types for categorical values in Moose
+order: 14
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Enum Types
+
+Enums map to ClickHouse enums, storing categorical values efficiently.
+
+## String Enums
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+enum UserRole {
+  ADMIN = "admin",
+  USER = "user",
+  GUEST = "guest"
+}
+
+enum Status {
+  PENDING = "pending",
+  ACTIVE = "active",
+  INACTIVE = "inactive"
+}
+
+interface User {
+  role: UserRole;
+  status: Status;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from enum import Enum
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    USER = "user"
+    GUEST = "guest"
+
+class Status(str, Enum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+class User(BaseModel):
+    role: UserRole
+    status: Status
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Numeric Enums
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+enum Priority {
+  LOW = 1,
+  MEDIUM = 2,
+  HIGH = 3,
+  CRITICAL = 4
+}
+
+interface Task {
+  priority: Priority;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from enum import IntEnum
+
+class Priority(IntEnum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    CRITICAL = 4
+
+class Task(BaseModel):
+    priority: Priority
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="Storage efficiency">
+Enums are stored as integers internally, making them more storage-efficient than strings while maintaining readability in queries.
+</Callout>
+
+<Callout type="warning" title="Enum modifications">
+Adding new enum values is safe, but removing or renaming values requires careful migration planning as it affects existing data.
+</Callout>
+

@@ -1,0 +1,197 @@
+---
+title: JSON Type
+description: Dynamic and typed JSON column types in Moose
+order: 15
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# JSON Type
+
+The JSON type stores arbitrary JSON data, supporting both unstructured and typed configurations for performance and type safety.
+
+## Basic JSON (Unstructured)
+
+For completely dynamic JSON data without a fixed schema:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface Event {
+  metadata: Record<string, any>;    // Basic JSON - accepts any structure
+  config: any;                      // Basic JSON - fully dynamic
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Any, Dict
+
+class Event(BaseModel):
+    metadata: Dict[str, Any]    # Basic JSON - accepts any structure
+    config: Any                 # Basic JSON - fully dynamic
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Typed JSON with ClickHouseJson
+
+For better performance and validation, define typed fields within your JSON using `ClickHouseJson`. This creates a ClickHouse `JSON` column with explicit type hints for specific paths while still allowing additional dynamic fields.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseJson } from "@514labs/moose-lib";
+
+// Define the structure for your JSON payload
+interface PayloadStructure {
+  name: string;
+  count: number;
+  timestamp?: Date;
+}
+
+interface Event {
+  id: string;
+  // JSON with typed paths - better performance, allows extra fields
+  payload: PayloadStructure & ClickHouseJson;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated, Optional
+from pydantic import BaseModel, ConfigDict
+from moose_lib.data_models import ClickHouseJson
+from datetime import datetime
+
+# Define the structure for your JSON payload
+class PayloadStructure(BaseModel):
+    model_config = ConfigDict(extra='allow')    # Required for JSON types
+    name: str
+    count: int
+    timestamp: Optional[datetime] = None
+
+class Event(BaseModel):
+    id: str
+    # JSON with typed paths - better performance, allows extra fields
+    payload: Annotated[PayloadStructure, ClickHouseJson()]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Performance Tuning Options
+
+Configure `ClickHouseJson` with options to control resource usage:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { ClickHouseJson, Key, DateTime } from "@514labs/moose-lib";
+
+interface ProductProperties {
+  category: string;
+  price: number;
+  inStock: boolean;
+}
+
+interface ProductEvent {
+  eventId: Key<string>;
+  timestamp: DateTime;
+  properties: ProductProperties & ClickHouseJson<
+    128,                    // max_dynamic_paths: limit tracked paths
+    8,                      // max_dynamic_types: limit type variations
+    ["_internal"],          // skip_paths: exclude specific paths
+    ["^debug_"]             // skip_regexps: exclude paths matching regex
+  >;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated, Optional
+from pydantic import BaseModel, ConfigDict
+from moose_lib import Key, ClickHouseJson
+from datetime import datetime
+
+class ProductProperties(BaseModel):
+    model_config = ConfigDict(extra='allow')
+    category: str
+    price: float
+    in_stock: bool
+
+class ProductEvent(BaseModel):
+    event_id: Key[str]
+    timestamp: datetime
+    properties: Annotated[ProductProperties, ClickHouseJson(
+        max_dynamic_paths=128,           # Limit tracked paths
+        max_dynamic_types=8,             # Limit type variations
+        skip_paths=("_internal",),       # Exclude specific paths
+        skip_regexes=(r"^debug_",)       # Exclude paths matching regex
+    )]
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `max_dynamic_paths` | `number` | Maximum unique JSON paths to track. Controls memory for variable structures. |
+| `max_dynamic_types` | `number` | Maximum type variations per path. Useful when paths may contain different types. |
+| `skip_paths` | `string[]` | Exact JSON paths to ignore (e.g., `["temp", "debug.info"]`). |
+| `skip_regexps` | `string[]` | Regex patterns for paths to exclude (e.g., `["^tmp\\.", ".*_internal$"]`). |
+
+## Example: Flexible Event Data
+
+With typed JSON, you get the best of both worlds—type safety for known fields and flexibility for dynamic data:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+// This data is valid:
+{
+  "eventId": "evt_123",
+  "timestamp": "2025-10-22T12:00:00Z",
+  "properties": {
+    "category": "electronics",      // Typed field ✓
+    "price": 99.99,                 // Typed field ✓
+    "inStock": true,                // Typed field ✓
+    "customTag": "holiday-sale",    // Extra field - accepted ✓
+    "brandId": 42,                  // Extra field - accepted ✓
+    "_internal": "ignored"          // Skipped by skip_paths ✓
+  }
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+# This data is valid:
+{
+    "event_id": "evt_123",
+    "timestamp": "2025-10-22T12:00:00Z",
+    "properties": {
+        "category": "electronics",      # Typed field ✓
+        "price": 99.99,                 # Typed field ✓
+        "in_stock": True,               # Typed field ✓
+        "custom_tag": "holiday-sale",   # Extra field - accepted ✓
+        "brand_id": 42,                 # Extra field - accepted ✓
+        "_internal": "ignored"          # Skipped by skip_paths ✓
+    }
+}
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Benefits of Typed JSON
+
+- **Better Performance**: ClickHouse optimizes storage and queries for known paths
+- **Type Safety**: Validates that specified paths match expected types
+- **Flexible Schema**: Allows additional fields beyond typed paths
+- **Memory Control**: Configure limits to prevent unbounded resource usage
+
+<Callout type="info" title="When to use each approach">
+- **Basic JSON** (`any`, `Dict[str, Any]`): Use when JSON structure is completely unknown or rarely queried
+- **Typed JSON** (`ClickHouseJson`): Use when you have known fields that need indexing/querying, but want to allow additional dynamic fields
+</Callout>
+

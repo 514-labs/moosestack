@@ -1,0 +1,74 @@
+---
+title: Network Types
+description: IPv4 and IPv6 column types in Moose
+order: 8
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Network Types
+
+ClickHouse provides native IP address types for efficient storage and querying.
+
+## IPv4
+
+Stores IPv4 addresses in 4 bytes.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { tags } from "typia";
+
+interface NetworkEvent {
+  source_ip: string & tags.Format<"ipv4">;    // IPv4
+  client_ip: string & tags.Format<"ipv4">;    // IPv4
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from ipaddress import IPv4Address
+
+class NetworkEvent(BaseModel):
+    source_ip: IPv4Address    # IPv4
+    client_ip: IPv4Address    # IPv4
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## IPv6
+
+Stores IPv6 addresses in 16 bytes. Also handles IPv4-mapped IPv6 addresses.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { tags } from "typia";
+
+interface NetworkEvent {
+  dest_ip: string & tags.Format<"ipv6">;    // IPv6
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from ipaddress import IPv6Address
+
+class NetworkEvent(BaseModel):
+    dest_ip: IPv6Address    # IPv6
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript | Python |
+|-----------------|------------|--------|
+| `IPv4` | `string & tags.Format<"ipv4">` | `IPv4Address` |
+| `IPv6` | `string & tags.Format<"ipv6">` | `IPv6Address` |
+
+<Callout type="info" title="Why use native IP types?">
+Native IP types are more storage-efficient than strings and enable IP-specific functions like range queries, subnet matching, and CIDR operations directly in ClickHouse.
+</Callout>
+
