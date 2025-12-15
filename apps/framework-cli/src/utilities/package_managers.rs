@@ -397,6 +397,41 @@ pub fn has_inject_workspace_packages_in_lockfile(workspace_root: &Path) -> bool 
     }
 }
 
+/// Finds the pnpm workspace root by searching up the directory tree.
+///
+/// Looks for pnpm-workspace.yaml file starting from the given directory
+/// and traversing up to parent directories.
+///
+/// # Arguments
+///
+/// * `start_dir` - Directory to start searching from
+///
+/// # Returns
+///
+/// * `Option<PathBuf>` - Path to workspace root if found
+pub fn find_pnpm_workspace_root(start_dir: &Path) -> Option<PathBuf> {
+    let mut current_dir = start_dir.to_path_buf();
+
+    loop {
+        let workspace_file = current_dir.join("pnpm-workspace.yaml");
+        if workspace_file.exists() {
+            debug!("Found pnpm-workspace.yaml at: {:?}", current_dir);
+            return Some(current_dir);
+        }
+
+        match current_dir.parent() {
+            Some(parent) => current_dir = parent.to_path_buf(),
+            None => break,
+        }
+    }
+
+    debug!(
+        "No pnpm-workspace.yaml found starting from: {:?}",
+        start_dir
+    );
+    None
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -482,6 +517,41 @@ importers:
         // Test with no lockfile
         let dir3 = tempdir().unwrap();
         assert!(!has_inject_workspace_packages_in_lockfile(dir3.path()));
+    }
+
+    #[test]
+    fn test_find_pnpm_workspace_root() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Create a mock monorepo structure
+        let dir = tempdir().unwrap();
+        let workspace_root = dir.path();
+
+        // Create pnpm-workspace.yaml at root
+        let workspace_yaml = workspace_root.join("pnpm-workspace.yaml");
+        let mut file = std::fs::File::create(&workspace_yaml).unwrap();
+        writeln!(file, "packages:\n  - 'apps/*'").unwrap();
+
+        // Create a nested project directory
+        let project_dir = workspace_root.join("apps").join("my-project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        // Should find workspace root from project dir
+        let found = find_pnpm_workspace_root(&project_dir);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap(), workspace_root);
+
+        // Should find workspace root from root itself
+        let found_from_root = find_pnpm_workspace_root(workspace_root);
+        assert!(found_from_root.is_some());
+        assert_eq!(found_from_root.unwrap(), workspace_root);
+
+        // Should return None for directory without workspace
+        let unrelated_dir = tempdir().unwrap();
+        let not_found = find_pnpm_workspace_root(unrelated_dir.path());
+        assert!(not_found.is_none());
     }
 
     #[test]
