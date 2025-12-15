@@ -9,7 +9,12 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Table Engines
 
-ClickHouse table engines determine how data is stored, indexed, queried, and replicated. Moose uses `ClickHouseEngines` in the `OlapTable` config to select the engine.
+ClickHouse table engines determine how data is stored, indexed, queried, and replicated.
+
+MooseOLAP selects the engine in the `OlapTable` config:
+
+- **TypeScript**: `engine: ClickHouseEngines.<EngineName>`
+- **Python**: `engine=<EngineName>Engine()`
 
 ## Example
 
@@ -38,6 +43,8 @@ users = OlapTable[User]("users", OlapConfig(
 </LanguageTabs>
 
 ## Options
+
+`ClickHouseEngines` includes the following categories:
 
 ### Standard
 
