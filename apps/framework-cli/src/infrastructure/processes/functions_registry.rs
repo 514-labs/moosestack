@@ -10,7 +10,7 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::info;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FunctionRegistryError {

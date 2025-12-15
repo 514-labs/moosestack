@@ -167,7 +167,6 @@ pub enum InfraMapError {
     #[error("Table {table_id} not found in the infrastructure map")]
     TableNotFound { table_id: String },
 }
-
 /// Types of primitives that can be represented in the infrastructure
 ///
 /// These represent the core building blocks of the system that can be
@@ -3223,6 +3222,7 @@ impl InfrastructureMap {
             project.language,
             &project.main_file(),
             &project.clickhouse_config.db_name,
+            &project.project_location,
         )?;
 
         // Resolve runtime credentials at runtime if requested
