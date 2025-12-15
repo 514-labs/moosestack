@@ -1,25 +1,40 @@
+---
+title: CollapsingMergeTree
+description: ClickHouse table engine for collapsing state-change rows
+order: 7
+category: reference
+---
+
 import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
-#### CollapsingMergeTree
-Use the `CollapsingMergeTree` engine to efficiently track object state changes by collapsing insert/cancel row pairs:
+# CollapsingMergeTree
+
+`CollapsingMergeTree` is a MergeTree-family engine that collapses pairs of rows during background merges using a required `sign` column (where `1` is a “state” row and `-1` is a “cancel” row). The merge behavior is defined by ClickHouse.
+
+## When to Use
+
+- Track object state changes without running ClickHouse UPDATEs
+- Model “current state” from a stream of changes (append-only writes)
+- Reduce storage by collapsing old states during merges
+
+## Usage
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="CollapsingTable.ts" copy
-import { OlapTable, ClickHouseEngines, Int8 } from "@514labs/moose-lib";
+import { Key, OlapTable, ClickHouseEngines, Int8 } from "@514labs/moose-lib";
 
 interface UserActivity {
   userId: Key<string>;
   pageViews: number;
   duration: number;
-  sign: Int8;  // Required: 1 = state row, -1 = cancel row
+  sign: Int8; // Required: 1 = state row, -1 = cancel row
 }
 
-// Track user activity with state collapsing
-const activityTable = new OlapTable<UserActivity>("user_activity", {
+const userActivity = new OlapTable<UserActivity>("user_activity", {
   engine: ClickHouseEngines.CollapsingMergeTree,
   sign: "sign",
-  orderByFields: ["userId"]
+  orderByFields: ["userId"],
 });
 ```
   </LanguageTabContent>
@@ -35,27 +50,73 @@ class UserActivity(BaseModel):
     duration: int
     sign: Int8  # Required: 1 = state row, -1 = cancel row
 
-# Track user activity with state collapsing
-activity_table = OlapTable[UserActivity]("user_activity", OlapConfig(
+user_activity = OlapTable[UserActivity]("user_activity", OlapConfig(
     order_by_fields=["user_id"],
-    engine=CollapsingMergeTreeEngine(sign="sign")
+    engine=CollapsingMergeTreeEngine(sign="sign"),
 ))
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-<Callout type="info" title="How Collapsing Works">
-To update a record, insert two rows:
-1. A cancel row (`sign = -1`) with the old values
-2. A state row (`sign = 1`) with the new values
+## Configuration Options
 
-During background merges, ClickHouse collapses matching pairs, keeping only the latest state.
+| Option | Type | Description |
+|--------|------|-------------|
+| `orderByFields` | `string[]` | Sorting key used by ClickHouse for grouping rows |
+| `sign` | `string` | Name of the `Int8` sign column (`1` = state, `-1` = cancel) |
 
-**Important**: Use aggregation in queries to get accurate results:
-```sql
-SELECT userId, sum(pageViews * sign) as pageViews
-FROM user_activity
-GROUP BY userId
-HAVING sum(sign) > 0
+## Example: Modeling State Changes
+
+To update an object, write two rows:
+
+1. A **cancel** row (`sign = -1`) that matches the prior state’s sorting key
+2. A **state** row (`sign = 1`) with the new state
+
+## Collapsing Behavior
+
+By default, collapsing happens during ClickHouse background merges. To return fully-collapsed results, ClickHouse documents two common approaches:
+
+- Aggregate with sign (recommended for analytics queries)
+- Use `FINAL` at read time (less efficient; typically avoid on large scans)
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts
+import { sql } from "@514labs/moose-lib";
+
+// Example: compute fully-collapsed metrics via sign-aware aggregation
+const collapsed = sql`
+  SELECT
+    userId,
+    sum(pageViews * sign) AS pageViews,
+    sum(duration * sign)  AS duration
+  FROM user_activity
+  GROUP BY userId
+  HAVING sum(sign) > 0
+`;
 ```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py
+COLLAPSED_SQL = """
+  SELECT
+    user_id,
+    sum(page_views * sign) AS page_views,
+    sum(duration * sign)   AS duration
+  FROM {user_activity}
+  GROUP BY user_id
+  HAVING sum(sign) > 0
+"""
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="ClickHouse behavior">
+For full details (including the required `Sign` column, algorithm, and `FINAL` semantics), see the ClickHouse docs: [CollapsingMergeTree table engine](https://clickhouse.com/docs/engines/table-engines/mergetree-family/collapsingmergetree).
 </Callout>
+
+## See Also
+
+- [VersionedCollapsingMergeTree](/moosestack/engines/versioned-collapsing-merge-tree) — Collapsing with an explicit version column
+- [MergeTree](/moosestack/engines/merge-tree) — Append-only baseline engine
+- [Replicated Engines](/moosestack/engines/replicated) — High availability variants
