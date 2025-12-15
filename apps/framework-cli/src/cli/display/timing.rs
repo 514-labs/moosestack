@@ -27,7 +27,6 @@
 //! ```
 
 use crate::cli::display::{Message, MessageType};
-use crate::show_message;
 use crate::utilities::constants::SHOW_TIMING;
 use std::future::Future;
 use std::sync::atomic::Ordering;
