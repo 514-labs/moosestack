@@ -132,7 +132,7 @@ users = OlapTable[User]("users", OlapConfig(
 
 ## Supported Behavior
 
-Moose does not define its own deduplication semantics—this engine behaves according to ClickHouse’s `ReplacingMergeTree` implementation:
+MooseStack does not define its own deduplication semantics—`ReplacingMergeTree` behavior is defined by ClickHouse and is identical to ClickHouse’s implementation:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">

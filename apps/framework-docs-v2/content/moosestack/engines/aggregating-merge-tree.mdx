@@ -111,12 +111,7 @@ metrics_by_id = OlapTable[MetricsById]("metrics_by_id", OlapConfig(
 
 ## Supported Aggregate Functions
 
-Moose does not define its own aggregation functions—use **ClickHouse aggregate functions**.
-
-- For `SimpleAggregateFunction`, use ClickHouse-supported functions for `SimpleAggregateFunction` columns. See the ClickHouse docs: [SimpleAggregateFunction](https://clickhouse.com/docs/en/sql-reference/data-types/simpleaggregatefunction).
-- For `AggregateFunction`, you can model aggregate states for ClickHouse aggregate functions (e.g. `avg`, `sum`, `uniqExact`, `argMax`, `quantiles`, …) and write them with `...State()` / read them with `...Merge()`. See the ClickHouse docs:
-  - [Aggregate functions](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/)
-  - [AggregateFunction data type](https://clickhouse.com/docs/en/sql-reference/data-types/aggregatefunction)
+Review the [ClickHouse aggregate functions](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/) documentation for the complete list of supported functions.
 
 ## Example: Materialized View Rollup
 
@@ -129,7 +124,7 @@ import {
   OlapTable, 
   MaterializedView,
   ClickHouseEngines,
-  ClickHouseInt,
+  UInt64,
   SimpleAggregated,
   DateTime,
   sql
@@ -151,21 +146,20 @@ const pageViews = new OlapTable<PageView>("page_views", {
 interface DailyPageStats {
   date: DateTime;
   user_id: string;
-  view_count: number &
-    ClickHouseInt<"uint64"> &
-    SimpleAggregated<"sum", number & ClickHouseInt<"uint64">>;
+  view_count: UInt64 & SimpleAggregated<"sum", UInt64>;
   total_duration: number & SimpleAggregated<"sum", number>;
   max_duration: number & SimpleAggregated<"max", number>;
 }
 
-new MaterializedView<DailyPageStats>({
+const targetTable = new OlapTable<DailyPageStats>("daily_page_stats", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["date", "user_id"],
+});
+
+const mv = new MaterializedView<DailyPageStats>({
   materializedViewName: "mv_daily_page_stats",
   selectTables: [pageViews],
-  targetTable: {
-    name: "daily_page_stats",
-    engine: ClickHouseEngines.AggregatingMergeTree,
-    orderByFields: ["date", "user_id"],
-  },
+  targetTable: targetTable,
   selectStatement: sql`
     SELECT
       toStartOfDay(${pageViews.columns.timestamp}) AS date,
