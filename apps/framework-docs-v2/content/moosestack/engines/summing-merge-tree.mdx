@@ -94,10 +94,6 @@ metrics = OlapTable[DailyMetrics]("daily_metrics", OlapConfig(
 SummingMergeTree only supports summation. For other aggregations (max, min, count distinct), use [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) instead.
 </Callout>
 
-## Supported Behavior
-
-Merge behavior is as described in the ClickHouse docs.
-
 - [ClickHouse SummingMergeTree docs](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/summingmergetree)
 
 ## See Also

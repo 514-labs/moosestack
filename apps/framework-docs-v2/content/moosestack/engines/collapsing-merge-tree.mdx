@@ -103,7 +103,7 @@ COLLAPSED_SQL = """
     user_id,
     sum(page_views * sign) AS page_views,
     sum(duration * sign)   AS duration
-  FROM {user_activity}
+  FROM user_activity
   GROUP BY user_id
   HAVING sum(sign) > 0
 """

@@ -156,15 +156,15 @@ const latest = sql`
 # Force deduplication at query time
 DEDUPED_SQL = """
   SELECT *
-  FROM {users} FINAL
-  WHERE {users.cols.id} = '123'
+  FROM users FINAL
+  WHERE users.id = '123'
 """
 
 # Or use aggregation to pick the latest values
 LATEST_SQL = """
-  SELECT argMax({users.cols.name}, {users.cols.updated_at}) AS name
-  FROM {users}
-  WHERE {users.cols.id} = '123'
+  SELECT argMax(name, updated_at) AS name
+  FROM users
+  WHERE id = '123'
 """
 ```
   </LanguageTabContent>
