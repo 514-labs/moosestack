@@ -13,23 +13,37 @@ ClickHouse table engines determine how data is stored, indexed, queried, and rep
 
 MooseOLAP selects the engine in the `OlapTable` config:
 
-- **TypeScript**: `engine: ClickHouseEngines.<EngineName>`
-- **Python**: `engine=<EngineName>Engine()`
-
 ## Example
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
+  You set the engine in the `OlapTable` config with the `engine` property:
 ```ts
 import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
 
+// MergeTree is the default (omit engine)
+const events = new OlapTable<Event>("events", {
+  orderByFields: ["timestamp", "id"],
+});
+
+// ReplacingMergeTree (deduplicate by key, optional version + soft delete)
 const users = new OlapTable<User>("users", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
+  ver: "updated_at",
+  isDeleted: "deleted",
+});
+
+// SummingMergeTree (sum numeric columns for the same key)
+const dailyMetrics = new OlapTable<DailyMetrics>("daily_metrics", {
+  engine: ClickHouseEngines.SummingMergeTree,
+  orderByFields: ["date", "page"],
+  columns: ["views", "clicks"],
 });
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python" label="Python">
+  You set the engine in the `OlapTable` config with the `engine` property:
 ```py
 from moose_lib import OlapTable, OlapConfig
 from moose_lib.blocks import ReplacingMergeTreeEngine
