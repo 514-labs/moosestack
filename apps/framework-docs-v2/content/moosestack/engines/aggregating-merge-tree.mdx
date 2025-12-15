@@ -109,19 +109,6 @@ metrics_by_id = OlapTable[MetricsById]("metrics_by_id", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-## How It Works
-
-1. **Insert**: Rows are written with initial aggregate values
-2. **Background Merge**: Rows with the same ORDER BY key are combined using their aggregate functions
-3. **Query**: Read pre-computed aggregates directly—no GROUP BY needed for simple queries
-
-```json
-[
-  { "date": "2025-01-01", "user_id": "u1", "total_views": 10, "max_score": 85 },
-  { "date": "2025-01-01", "user_id": "u1", "total_views": 15, "max_score": 92 }
-]
-```
-
 ## Supported Aggregate Functions
 
 Moose does not define its own aggregation functions—use **ClickHouse aggregate functions**.

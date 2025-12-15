@@ -59,23 +59,6 @@ users = OlapTable[User]("users", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-## How It Works
-
-1. **Insert**: All rows (including duplicates) are written immediately.
-2. **Background Merge**: ClickHouse periodically merges parts and deduplicates rows by the ORDER BY key.
-3. **Query**: Before merges complete, queries may still observe duplicates.
-
-```json
-[
-  { "id": "123", "name": "Ada", "email": "ada@example.com", "updated_at": "2025-01-01T00:00:00Z" },
-  { "id": "123", "name": "Ada", "email": "ada@new.example.com", "updated_at": "2025-01-02T00:00:00Z" }
-]
-```
-
-<Callout type="warning" title="Eventual deduplication">
-Deduplication happens during background merges, not at insert time. To force deduplication at query time, use `FINAL` (or Moose’s `final=true` option, if available in your client).
-</Callout>
-
 ## Configuration Options
 
 | Option | Type | Description |

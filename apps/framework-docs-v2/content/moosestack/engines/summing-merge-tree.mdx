@@ -59,19 +59,6 @@ metrics = OlapTable[DailyMetrics]("daily_metrics", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-## How It Works
-
-1. **Insert**: Rows are written with their numeric values.
-2. **Background Merge**: Rows with the same ORDER BY key are combined—numeric columns are summed, non-numeric columns keep one value.
-3. **Query**: Read summed results directly (duplicates may exist until merges complete).
-
-```json
-[
-  { "date": "2025-01-01", "page": "/home", "views": 100, "clicks": 5 },
-  { "date": "2025-01-01", "page": "/home", "views": 150, "clicks": 8 }
-]
-```
-
 ## Configuration Options
 
 | Option | Type | Description |

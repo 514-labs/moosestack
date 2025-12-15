@@ -73,12 +73,6 @@ explicit_events = OlapTable[Event]("events", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-## How It Works
-
-1. **Insert**: Data is written to in-memory buffers, then flushed to disk as "parts"
-2. **Background Merge**: ClickHouse periodically merges smaller parts into larger ones
-3. **Query**: Sparse primary index enables efficient filtering by ORDER BY columns
-
 ## Configuration Options
 
 | Option | Description |
