@@ -23,30 +23,13 @@ ClickHouse table engines determine how data is stored, indexed, queried, and rep
 
 ## Choosing an Engine
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   Need deduplication?                        │
-│                                                              │
-│     No ──────────┬────────── Yes                            │
-│                  │                                           │
-│                  ▼                                           │
-│            MergeTree          ReplacingMergeTree            │
-│                                                              │
-├─────────────────────────────────────────────────────────────┤
-│                   Need pre-aggregation?                      │
-│                                                              │
-│     Simple sums ────┬──── Complex aggregates                │
-│                     │                                        │
-│                     ▼                                        │
-│          SummingMergeTree    AggregatingMergeTree           │
-│                                                              │
-├─────────────────────────────────────────────────────────────┤
-│                   Need replication?                          │
-│                                                              │
-│     Add "Replicated" prefix to any engine above             │
-│     e.g., ReplicatedReplacingMergeTree                      │
-└─────────────────────────────────────────────────────────────┘
-```
+| If you need… | Choose… |
+|---|---|
+| Default engine for append-only analytics | [`MergeTree`](/moosestack/engines/merge-tree) |
+| Deduplication / upserts by key | [`ReplacingMergeTree`](/moosestack/engines/replacing-merge-tree) |
+| Sum-only counters (e.g., views, clicks) | [`SummingMergeTree`](/moosestack/engines/summing-merge-tree) |
+| Pre-aggregated rollups / aggregate-state tables | [`AggregatingMergeTree`](/moosestack/engines/aggregating-merge-tree) |
+| High availability via replication | Use a replicated variant (see [`Replicated Engines`](/moosestack/engines/replicated)) |
 
 ## Quick Start
 
