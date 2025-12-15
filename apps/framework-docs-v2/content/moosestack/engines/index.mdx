@@ -21,13 +21,25 @@ MooseOLAP selects the engine in the `OlapTable` config:
 ```ts
 import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
 
+// Shared placeholder type for all examples below
+type EngineExampleRow = {
+  id: string;
+  timestamp: Date;
+  updated_at: Date;
+  deleted: number;
+  date: Date;
+  page: string;
+  views: number;
+  click_sum: number;
+};
+
 // MergeTree is the default (omit engine)
-const events = new OlapTable<Event>("events", {
+const DefaultMergeTree = new OlapTable<EngineExampleRow>("merge_tree_table", {
   orderByFields: ["timestamp", "id"],
 });
 
 // ReplacingMergeTree (deduplicate by key, optional version + soft delete)
-const users = new OlapTable<User>("users", {
+const ReplacingMergeTree = new OlapTable<EngineExampleRow>("replacing_merge_tree_table", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "updated_at",
@@ -35,23 +47,44 @@ const users = new OlapTable<User>("users", {
 });
 
 // SummingMergeTree (sum numeric columns for the same key)
-const dailyMetrics = new OlapTable<DailyMetrics>("daily_metrics", {
+const SummingMergeTree = new OlapTable<EngineExampleRow>("summing_merge_tree_table", {
   engine: ClickHouseEngines.SummingMergeTree,
   orderByFields: ["date", "page"],
-  columns: ["views", "clicks"],
+  columns: ["views", "click_sum"],
 });
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python" label="Python">
   You set the engine in the `OlapTable` config with the `engine` property:
 ```py
+from datetime import date, datetime
 from moose_lib import OlapTable, OlapConfig
-from moose_lib.blocks import ReplacingMergeTreeEngine
+from moose_lib.blocks import ReplacingMergeTreeEngine, SummingMergeTreeEngine
+from pydantic import BaseModel
 
-users = OlapTable[User]("users", OlapConfig(
-    engine=ReplacingMergeTreeEngine(),
-    order_by_fields=["id"],
-))
+# Shared placeholder model for proven copy/paste
+class EngineExampleRow(BaseModel):
+    id: str
+    timestamp: datetime
+    updated_at: datetime
+    deleted: int = 0
+    date: date
+    page: str
+    views: int
+    click_sum: int
+
+ReplacingMergeTree = OlapTable[EngineExampleRow]("replacing_merge_tree_table", OlapConfig(
+  engine=ReplacingMergeTreeEngine(),
+  order_by_fields=["id"],
+  ver="updated_at",
+  is_deleted="deleted",
+));
+
+SummingMergeTree = OlapTable[EngineExampleRow]("summing_merge_tree_table", OlapConfig(
+  engine=SummingMergeTreeEngine(),
+  order_by_fields=["date", "page"],
+  columns=["views", "click_sum"],
+));
 ```
   </LanguageTabContent>
 </LanguageTabs>
