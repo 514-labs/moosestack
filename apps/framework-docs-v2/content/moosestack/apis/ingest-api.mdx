@@ -171,10 +171,12 @@ ingest_api = IngestApi[UserEventInput]("user-events", IngestConfigWithDestinatio
 ```
 
 **How it works:**
+
 - `model_config = ConfigDict(extra='allow')` tells Pydantic to accept undeclared fields
 - The API accepts payloads with extra fields without validation errors
 - Known fields are validated and passed through to streaming functions
-  </LanguageTabContent>
+
+</LanguageTabContent>
 </LanguageTabs>
 
 <Tabs>
