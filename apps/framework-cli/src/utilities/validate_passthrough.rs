@@ -699,7 +699,6 @@ impl<'de, S: SerializeValue> Visitor<'de> for &mut ValueVisitor<'_, S> {
                             };
                             map.next_value_seed(&mut value_visitor)
                                 .map_err(S::Error::custom)?;
-                            value_visitor.context.field_name = Either::Left("");
                         }
                         inner.end().map_err(S::Error::custom)
                     }
