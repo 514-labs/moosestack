@@ -12,6 +12,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { IconX } from "@tabler/icons-react";
 
@@ -25,9 +26,14 @@ export function TemplatesSideNav() {
   const searchParams = useSearchParams();
 
   // Get filter values from URL params
-  const typeFilter = (searchParams.get("type") as TypeFilter) || null;
-  const languageFilter =
-    (searchParams.get("language") as LanguageFilter) || null;
+  const typeParam = searchParams.get("type");
+  const typeFilter: TypeFilter =
+    typeParam === "template" || typeParam === "app" ? typeParam : null;
+  const languageParam = searchParams.get("language");
+  const languageFilter: LanguageFilter =
+    languageParam === "typescript" || languageParam === "python" ?
+      languageParam
+    : null;
   const categoryFilter = React.useMemo(() => {
     const categoryParam = searchParams.get("category");
     if (!categoryParam) return [];
@@ -98,19 +104,23 @@ export function TemplatesSideNav() {
             <SidebarMenuItem>
               <div className="px-2 py-1.5 space-y-2">
                 <Label className="text-xs text-muted-foreground">Type</Label>
-                <div className="space-y-2">
+                <RadioGroup
+                  value={typeFilter || ""}
+                  onValueChange={(value) => {
+                    if (value === "") {
+                      updateFilters({ type: null });
+                    } else {
+                      updateFilters({
+                        type:
+                          value === "template" || value === "app" ?
+                            value
+                          : null,
+                      });
+                    }
+                  }}
+                >
                   <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="type-template"
-                      checked={typeFilter === "template"}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          updateFilters({ type: "template" });
-                        } else {
-                          updateFilters({ type: null });
-                        }
-                      }}
-                    />
+                    <RadioGroupItem value="template" id="type-template" />
                     <Label
                       htmlFor="type-template"
                       className="text-sm font-normal cursor-pointer"
@@ -119,17 +129,7 @@ export function TemplatesSideNav() {
                     </Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="type-app"
-                      checked={typeFilter === "app"}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          updateFilters({ type: "app" });
-                        } else {
-                          updateFilters({ type: null });
-                        }
-                      }}
-                    />
+                    <RadioGroupItem value="app" id="type-app" />
                     <Label
                       htmlFor="type-app"
                       className="text-sm font-normal cursor-pointer"
@@ -137,7 +137,7 @@ export function TemplatesSideNav() {
                       Apps
                     </Label>
                   </div>
-                </div>
+                </RadioGroup>
               </div>
             </SidebarMenuItem>
 
@@ -147,18 +147,25 @@ export function TemplatesSideNav() {
                 <Label className="text-xs text-muted-foreground">
                   Language
                 </Label>
-                <div className="space-y-2">
+                <RadioGroup
+                  value={languageFilter || ""}
+                  onValueChange={(value) => {
+                    if (value === "") {
+                      updateFilters({ language: null });
+                    } else {
+                      updateFilters({
+                        language:
+                          value === "typescript" || value === "python" ?
+                            value
+                          : null,
+                      });
+                    }
+                  }}
+                >
                   <div className="flex items-center space-x-2">
-                    <Checkbox
+                    <RadioGroupItem
+                      value="typescript"
                       id="language-typescript"
-                      checked={languageFilter === "typescript"}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          updateFilters({ language: "typescript" });
-                        } else {
-                          updateFilters({ language: null });
-                        }
-                      }}
                     />
                     <Label
                       htmlFor="language-typescript"
@@ -168,17 +175,7 @@ export function TemplatesSideNav() {
                     </Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="language-python"
-                      checked={languageFilter === "python"}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          updateFilters({ language: "python" });
-                        } else {
-                          updateFilters({ language: null });
-                        }
-                      }}
-                    />
+                    <RadioGroupItem value="python" id="language-python" />
                     <Label
                       htmlFor="language-python"
                       className="text-sm font-normal cursor-pointer"
@@ -186,7 +183,7 @@ export function TemplatesSideNav() {
                       Python
                     </Label>
                   </div>
-                </div>
+                </RadioGroup>
               </div>
             </SidebarMenuItem>
 

@@ -51,8 +51,16 @@ export function TemplateGrid({ items, className }: TemplateGridProps) {
   const filteredItems = React.useMemo(() => {
     return items.filter((item) => {
       // Type filter (template vs app)
-      if (typeFilter !== null && item.type !== typeFilter) {
-        return false;
+      if (typeFilter !== null) {
+        // Only filter if item has a type property that matches
+        // Items without type property will pass through (shouldn't happen, but defensive)
+        if (item.type && item.type !== typeFilter) {
+          return false;
+        }
+        // If typeFilter is set but item doesn't have type, exclude it
+        if (!item.type) {
+          return false;
+        }
       }
 
       // Language filter
