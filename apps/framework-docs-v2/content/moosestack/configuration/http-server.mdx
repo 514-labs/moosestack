@@ -1,0 +1,25 @@
+---
+title: HTTP Server Configuration
+description: Configure the local development server
+order: 45
+---
+
+# HTTP Server Configuration
+
+Configure the local development server.
+
+```toml filename="moose.config.toml"
+[http_server_config]
+# Host to bind the webserver to (Default: "localhost")
+host = "localhost"
+# Port for the main API server (Default: 4000)
+port = 4000
+# Port for the management server (Default: 5001)
+management_port = 5001
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `host` | `MOOSE_HTTP_SERVER_CONFIG__HOST` | "localhost" | Server bind address. |
+| `port` | `MOOSE_HTTP_SERVER_CONFIG__PORT` | 4000 | Main API port. |
+| `management_port`| `MOOSE_HTTP_SERVER_CONFIG__MANAGEMENT_PORT` | 5001 | Internal management port. |

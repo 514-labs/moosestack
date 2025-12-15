@@ -27,6 +27,7 @@ import {
   setupTypeScriptProject,
   setupPythonProject,
   cleanupTestSuite,
+  logger,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -38,6 +39,8 @@ const MOOSE_PY_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/py-moose-lib",
 );
+
+const testLogger = logger.scope("s3-engine-test");
 
 describe("typescript template tests - S3 Engine Runtime Environment Variable Resolution", () => {
   describe("With Environment Variables", () => {
@@ -70,6 +73,7 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
@@ -80,9 +84,9 @@ describe("typescript template tests - S3 Engine Runtime Environment Variable Res
         "http://localhost:4000",
       );
 
-      console.log("Server started, waiting for streaming functions...");
+      testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions();
-      console.log("All components ready");
+      testLogger.info("All components ready");
     });
 
     after(async function () {
@@ -145,6 +149,7 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
           // Both use the same env vars for consistency
           TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
           TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
@@ -155,9 +160,9 @@ describe("python template tests - S3 Engine Runtime Environment Variable Resolut
         "http://localhost:4000",
       );
 
-      console.log("Server started, waiting for streaming functions...");
+      testLogger.info("Server started, waiting for streaming functions...");
       await waitForStreamingFunctions();
-      console.log("All components ready");
+      testLogger.info("All components ready");
     });
 
     after(async function () {

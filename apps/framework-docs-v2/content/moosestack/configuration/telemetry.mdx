@@ -1,0 +1,25 @@
+---
+title: Telemetry Configuration
+description: Configure how Moose collects usage data
+order: 33
+---
+
+# Telemetry Configuration
+
+Configure how Moose collects usage data.
+
+```toml filename="moose.config.toml"
+[telemetry]
+# Whether telemetry collection is enabled
+enabled = true
+# Whether to export metrics to external systems
+export_metrics = true
+# Flag indicating if the user is a Moose developer
+is_moose_developer = false
+```
+
+| Key | Env Variable | Default | Description |
+|:----|:-------------|:--------|:------------|
+| `enabled` | `MOOSE_TELEMETRY__ENABLED` | true | Enable/disable telemetry collection. |
+| `export_metrics` | `MOOSE_TELEMETRY__EXPORT_METRICS` | true | Enable/disable exporting metrics. |
+| `is_moose_developer` | `MOOSE_TELEMETRY__IS_MOOSE_DEVELOPER` | false | Internal flag for Moose developers. |

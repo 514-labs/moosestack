@@ -169,17 +169,6 @@ export const ReplicatedMergeTreeTable = new OlapTable<EngineTestData>(
   },
 );
 
-// Test ReplicatedMergeTree engine (Cloud-compatible - no keeper params)
-// In dev mode, Moose automatically injects default parameters
-// In production, ClickHouse uses its automatic configuration
-export const ReplicatedMergeTreeCloudTable = new OlapTable<EngineTestData>(
-  "ReplicatedMergeTreeCloudTest",
-  {
-    engine: ClickHouseEngines.ReplicatedMergeTree,
-    orderByFields: ["id", "timestamp"],
-  },
-);
-
 // Test ReplicatedReplacingMergeTree engine with version column
 export const ReplicatedReplacingMergeTreeTable = new OlapTable<EngineTestData>(
   "ReplicatedReplacingMergeTreeTest",
@@ -309,7 +298,6 @@ export const allEngineTestTables = [
   CollapsingMergeTreeTable,
   VersionedCollapsingMergeTreeTable,
   ReplicatedMergeTreeTable,
-  ReplicatedMergeTreeCloudTable,
   ReplicatedReplacingMergeTreeTable,
   ReplicatedReplacingSoftDeleteTable,
   ReplicatedAggregatingMergeTreeTable,

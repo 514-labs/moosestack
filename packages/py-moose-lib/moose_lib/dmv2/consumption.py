@@ -4,6 +4,7 @@ API definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining and configuring APIs
 that allow querying data through user-defined functions.
 """
+
 import os
 from typing import Any, Callable, Optional, Tuple, Generic
 
@@ -17,13 +18,14 @@ from ._registry import _apis, _api_name_aliases, _api_path_map
 # Global base URL configuration
 _global_base_url: Optional[str] = None
 
+
 def _generate_api_key(name: str, version: Optional[str] = None) -> str:
     return f"{name}:{version}" if version else name
 
 
 def set_moose_base_url(url: str) -> None:
     """Set the global base URL for API calls.
-    
+
     Args:
         url: The base URL to use for API calls
     """
@@ -33,14 +35,14 @@ def set_moose_base_url(url: str) -> None:
 
 def get_moose_base_url() -> Optional[str]:
     """Get the configured base URL from global setting or environment variable.
-    
+
     Returns:
         The base URL if configured, None otherwise
     """
     # Priority: programmatically set > environment variable
     if _global_base_url:
         return _global_base_url
-    return os.getenv('MOOSE_BASE_URL')
+    return os.getenv("MOOSE_BASE_URL")
 
 
 class ApiConfig(BaseModel):
@@ -51,6 +53,7 @@ class ApiConfig(BaseModel):
         path: Optional custom path for the API endpoint. If not specified, defaults to the API name.
         metadata: Optional metadata for the API.
     """
+
     version: Optional[str] = None
     path: Optional[str] = None
     metadata: Optional[dict] = None
@@ -78,6 +81,7 @@ class Api(BaseTypedResource, Generic[U]):
         model_type (type[T]): The Pydantic model for the input/query parameters.
         return_type (type[U]): The Pydantic model for the response body.
     """
+
     config: ApiConfig
     query_function: Callable[..., U]
     _u: type[U]
@@ -85,7 +89,9 @@ class Api(BaseTypedResource, Generic[U]):
     def __class_getitem__(cls, items):
         # Handle two type parameters
         if not isinstance(items, tuple) or len(items) != 2:
-            raise ValueError(f"Use `{cls.__name__}[T, U](name='...')` to supply both input and output types")
+            raise ValueError(
+                f"Use `{cls.__name__}[T, U](name='...')` to supply both input and output types"
+            )
         input_type, output_type = items
 
         def curried_constructor(*args, **kwargs):
@@ -93,19 +99,23 @@ class Api(BaseTypedResource, Generic[U]):
 
         return curried_constructor
 
-    def __init__(self, name: str, query_function: Callable[..., U], config: ApiConfig = None, version: str = None, **kwargs):
+    def __init__(
+        self,
+        name: str,
+        query_function: Callable[..., U],
+        config: ApiConfig = None,
+        version: str = None,
+        **kwargs,
+    ):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
-        
+
         # Handle config and version parameters properly
         if config is not None:
             # If config is provided, use it as base
             if version is not None:
                 # If version is also provided, update the config's version
-                self.config = ApiConfig(
-                    version=version,
-                    metadata=config.metadata
-                )
+                self.config = ApiConfig(version=version, metadata=config.metadata)
             else:
                 # Use the provided config as-is
                 self.config = config
@@ -117,7 +127,7 @@ class Api(BaseTypedResource, Generic[U]):
             self.config = ApiConfig()
 
         self.query_function = query_function
-        self.metadata = getattr(self.config, 'metadata', {}) or {}
+        self.metadata = getattr(self.config, "metadata", {}) or {}
         key = _generate_api_key(name, self.config.version)
 
         # Check for duplicate registration
@@ -143,13 +153,15 @@ class Api(BaseTypedResource, Generic[U]):
             else:
                 # For versioned APIs, check if version is already in the path
                 path_ends_with_version = (
-                    self.config.path.endswith(f"/{self.config.version}") or
-                    self.config.path == self.config.version or
-                    (self.config.path.endswith(self.config.version) and 
-                     len(self.config.path) > len(self.config.version) and
-                     self.config.path[-(len(self.config.version) + 1)] == '/')
+                    self.config.path.endswith(f"/{self.config.version}")
+                    or self.config.path == self.config.version
+                    or (
+                        self.config.path.endswith(self.config.version)
+                        and len(self.config.path) > len(self.config.version)
+                        and self.config.path[-(len(self.config.version) + 1)] == "/"
+                    )
                 )
-                
+
                 if path_ends_with_version:
                     # Path already contains version, check for collision
                     if self.config.path in _api_path_map:
@@ -161,8 +173,10 @@ class Api(BaseTypedResource, Generic[U]):
                     _api_path_map[self.config.path] = self
                 else:
                     # Path doesn't contain version, register with version appended
-                    path_with_version = f"{self.config.path.rstrip('/')}/{self.config.version}"
-                    
+                    path_with_version = (
+                        f"{self.config.path.rstrip('/')}/{self.config.version}"
+                    )
+
                     # Check for collision on versioned path
                     if path_with_version in _api_path_map:
                         existing = _api_path_map[path_with_version]
@@ -171,7 +185,7 @@ class Api(BaseTypedResource, Generic[U]):
                             f'this path is already used by API "{existing.name}"'
                         )
                     _api_path_map[path_with_version] = self
-                    
+
                     # Also register the unversioned path if not already claimed
                     # (This is intentionally more permissive - first API gets the unversioned path)
                     if self.config.path not in _api_path_map:
@@ -209,9 +223,11 @@ class Api(BaseTypedResource, Generic[U]):
 
     @classmethod
     def _get_type(cls, keyword_args: dict):
-        t = keyword_args.get('t')
+        t = keyword_args.get("t")
         if not isinstance(t, tuple) or len(t) != 2:
-            raise ValueError(f"Use `{cls.__name__}[T, U](name='...')` to supply both input and output types")
+            raise ValueError(
+                f"Use `{cls.__name__}[T, U](name='...')` to supply both input and output types"
+            )
 
         input_type, output_type = t
         if not isinstance(input_type, type) or not issubclass(input_type, BaseModel):
@@ -237,21 +253,22 @@ class Api(BaseTypedResource, Generic[U]):
             A dictionary representing the JSON schema.
         """
         from pydantic.type_adapter import TypeAdapter
+
         return TypeAdapter(self.return_type()).json_schema(
-            ref_template='#/components/schemas/{model}'
+            ref_template="#/components/schemas/{model}"
         )
 
     def call(self, params: T, base_url: Optional[str] = None) -> U:
         """Call the API with the given parameters.
-        
+
         Args:
             params: Parameters matching the input model T
             base_url: Optional base URL override. If not provided, uses the global
                      base URL set via set_base_url() or MOOSE_BASE_URL environment variable.
-            
+
         Returns:
             Response data matching the output model U
-            
+
         Raises:
             ValueError: If no base URL is configured
         """
@@ -268,11 +285,13 @@ class Api(BaseTypedResource, Generic[U]):
             # Check if the custom path already contains the version
             if self.config.version:
                 path_ends_with_version = (
-                    self.config.path.endswith(f"/{self.config.version}") or
-                    self.config.path == self.config.version or
-                    (self.config.path.endswith(self.config.version) and 
-                     len(self.config.path) > len(self.config.version) and
-                     self.config.path[-(len(self.config.version) + 1)] == '/')
+                    self.config.path.endswith(f"/{self.config.version}")
+                    or self.config.path == self.config.version
+                    or (
+                        self.config.path.endswith(self.config.version)
+                        and len(self.config.path) > len(self.config.version)
+                        and self.config.path[-(len(self.config.version) + 1)] == "/"
+                    )
                 )
                 if path_ends_with_version:
                     path = self.config.path
@@ -282,7 +301,11 @@ class Api(BaseTypedResource, Generic[U]):
                 path = self.config.path
         else:
             # Default to name with optional version
-            path = self.name if not self.config.version else f"{self.name}/{self.config.version}"
+            path = (
+                self.name
+                if not self.config.version
+                else f"{self.name}/{self.config.version}"
+            )
         url = f"{effective_base_url.rstrip('/')}/api/{path}"
 
         # Convert Pydantic model to dictionary

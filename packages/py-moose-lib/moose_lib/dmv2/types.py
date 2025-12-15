@@ -5,6 +5,7 @@ This module provides the core type definitions and base classes used across
 the dmv2 package, including generic type parameters, type aliases, and base
 resource classes.
 """
+
 from typing import Any, Generic, TypeVar, Union
 
 import typing_extensions
@@ -12,10 +13,10 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 from ..data_models import Column
 
-T = TypeVar('T', bound=BaseModel)
-U = TypeVar('U', bound=BaseModel)
-T_none = TypeVar('T_none', bound=Union[BaseModel, None])
-U_none = TypeVar('U_none', bound=Union[BaseModel, None])
+T = TypeVar("T", bound=BaseModel)
+U = TypeVar("U", bound=BaseModel)
+T_none = TypeVar("T_none", bound=Union[BaseModel, None])
+U_none = TypeVar("U_none", bound=Union[BaseModel, None])
 type ZeroOrMany[T] = Union[T, list[T], None]
 
 
@@ -33,6 +34,7 @@ class Cols:
         >>> print(table.cols.user_id)  # Output: a column object
         >>> print(table.cols.non_existent) # Raises AttributeError
     """
+
     _columns: dict[str, Column]
 
     def __init__(self, columns: list[Column]):
@@ -52,7 +54,7 @@ class Cols:
         return self.__getattr__(item)
 
 
-@typing_extensions.deprecated('use cols in OlapTable instead')
+@typing_extensions.deprecated("use cols in OlapTable instead")
 class Columns(Generic[T]):
     """Provides runtime checked column name access for Moose resources.
 
@@ -70,6 +72,7 @@ class Columns(Generic[T]):
     Args:
         model: The Pydantic model type whose fields represent the columns.
     """
+
     _fields: dict[str, FieldInfo]
 
     def __init__(self, model: type[T]):
@@ -90,14 +93,17 @@ class BaseTypedResource(Generic[T]):
     Attributes:
         name (str): The name of the Moose resource.
     """
+
     _t: type[T]
     name: str
 
     @classmethod
     def _get_type(cls, keyword_args: dict):
-        t = keyword_args.get('t')
+        t = keyword_args.get("t")
         if t is None:
-            raise ValueError(f"Use `{cls.__name__}[T](name='...')` to supply the Pydantic model type`")
+            raise ValueError(
+                f"Use `{cls.__name__}[T](name='...')` to supply the Pydantic model type`"
+            )
         if not isinstance(t, type) or not issubclass(t, BaseModel):
             raise ValueError(f"{t} is not a Pydantic model")
         return t
@@ -130,7 +136,7 @@ class TypedMooseResource(BaseTypedResource, Generic[T]):
     """
 
     @property
-    @typing_extensions.deprecated('use cols in OlapTable instead', category=None)
+    @typing_extensions.deprecated("use cols in OlapTable instead", category=None)
     def columns(self):
         return Columns[T](self._t)
 

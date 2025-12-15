@@ -31,7 +31,7 @@ use super::terminal::{write_styled_line, StyledText, ACTION_WIDTH};
 use crate::framework::core::{
     infrastructure::table::{ColumnType, EnumValue},
     infrastructure_map::{
-        ApiChange, Change, OlapChange, ProcessChange, StreamingChange, TableChange,
+        ApiChange, Change, FilteredChange, OlapChange, ProcessChange, StreamingChange, TableChange,
     },
     plan::InfraPlan,
 };
@@ -201,6 +201,8 @@ fn format_table_display(
     table: &crate::framework::core::infrastructure::table::Table,
 ) -> (String, Vec<String>) {
     let mut details = Vec::new();
+
+    // TODO: handle table.database for unambiguous identification
 
     // Table header
     let title = if let Some(ref version) = table.version {
@@ -732,6 +734,86 @@ pub fn show_api_changes(api_changes: &[ApiChange]) {
     });
 }
 
+/// Displays changes that were filtered out due to lifecycle policies.
+///
+/// This function shows infrastructure changes that were blocked from being applied
+/// because of lifecycle protection policies (DeletionProtected, ExternallyManaged).
+/// This provides visibility into what changes were requested but not executed.
+///
+/// # Arguments
+///
+/// * `filtered_changes` - A slice of filtered changes with their blocking reasons
+/// * `default_database` - The default database name used to compute unambiguous table IDs
+///
+/// # Examples
+///
+/// ```rust
+/// # use crate::cli::display::infrastructure::show_filtered_changes;
+/// show_filtered_changes(&infrastructure_plan.changes.filtered_olap_changes, "local");
+/// ```
+pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_database: &str) {
+    if filtered_changes.is_empty() {
+        return;
+    }
+
+    for filtered in filtered_changes {
+        match &filtered.change {
+            OlapChange::Table(TableChange::Removed(table)) => {
+                // Use table ID (includes database) for unambiguous identification
+                let table_id = table.id(default_database);
+                infra_updated_detailed(
+                    &format!("Table: {} (protected)", table_id),
+                    &[format!("  ⚠ {}", filtered.reason)],
+                );
+            }
+            OlapChange::Table(TableChange::Updated {
+                column_changes,
+                after,
+                ..
+            }) => {
+                // Use after table's ID for unambiguous identification in multi-database scenarios
+                let table_id = after.id(default_database);
+                let mut details = vec![format!("  ⚠ {}", filtered.reason)];
+                if !column_changes.is_empty() {
+                    details.push("  Blocked column changes:".to_string());
+                    for change in column_changes {
+                        use crate::framework::core::infrastructure_map::ColumnChange;
+                        match change {
+                            ColumnChange::Added { column, .. } => {
+                                details.push(format!(
+                                    "    + {}: {} (add blocked)",
+                                    column.name,
+                                    format_column_type(&column.data_type)
+                                ));
+                            }
+                            ColumnChange::Removed(col) => {
+                                details.push(format!(
+                                    "    - {}: {} (removal blocked)",
+                                    col.name,
+                                    format_column_type(&col.data_type)
+                                ));
+                            }
+                            ColumnChange::Updated { before, after } => {
+                                details.push(format!(
+                                    "    ~ {}: {} → {} (modification blocked)",
+                                    before.name,
+                                    format_column_type(&before.data_type),
+                                    format_column_type(&after.data_type)
+                                ));
+                            }
+                        }
+                    }
+                }
+                infra_updated_detailed(&format!("Table: {} (protected)", table_id), &details);
+            }
+            _ => {
+                // For other change types, just show the reason
+                infra_updated(&format!("Change blocked: {}", filtered.reason));
+            }
+        }
+    }
+}
+
 /// Displays all infrastructure changes from an InfraPlan.
 ///
 /// This function provides a comprehensive display of all infrastructure changes
@@ -760,6 +842,10 @@ pub fn show_changes(infra_plan: &InfraPlan) {
     show_olap_changes(&infra_plan.changes.olap_changes);
     show_process_changes(&infra_plan.changes.processes_changes);
     show_api_changes(&infra_plan.changes.api_changes);
+    show_filtered_changes(
+        &infra_plan.changes.filtered_olap_changes,
+        &infra_plan.target_infra_map.default_database,
+    );
 }
 
 #[cfg(test)]

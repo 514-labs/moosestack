@@ -69,7 +69,7 @@ services:
   {{/if}}
   {{#if storage}}
   clickhouse-keeper:
-    image: docker.io/clickhouse/clickhouse-keeper:${CLICKHOUSE_VERSION:-25.6}
+    image: docker.io/clickhouse/clickhouse-keeper:${CLICKHOUSE_VERSION:-25.8}
     volumes:
       - clickhouse-keeper-data:/var/lib/clickhouse-keeper
       - clickhouse-keeper-lib:/var/lib/clickhouse
@@ -127,7 +127,7 @@ services:
         exec /entrypoint.sh
 
   clickhousedb:
-    image: docker.io/clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.6}
+    image: docker.io/clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.8}
     depends_on:
       clickhouse-keeper:
         condition: service_healthy

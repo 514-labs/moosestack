@@ -4,6 +4,7 @@ Ingestion Pipeline definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining and configuring complete ingestion pipelines,
 which combine tables, streams, and ingestion APIs into a single cohesive unit.
 """
+
 import warnings
 from typing import Any, Optional, Generic, TypeVar
 from pydantic import BaseModel, model_validator
@@ -13,6 +14,7 @@ from .olap_table import OlapTable, OlapConfig
 from .stream import Stream, StreamConfig, DeadLetterQueue
 from .ingest_api import IngestApi, IngestConfig, IngestConfigWithDestination
 from .life_cycle import LifeCycle
+
 
 class IngestPipelineConfig(BaseModel):
     """Configuration for creating a complete ingestion pipeline.
@@ -31,6 +33,7 @@ class IngestPipelineConfig(BaseModel):
         metadata: Optional metadata for the ingestion pipeline.
         life_cycle: Determines how changes in code will propagate to the resources.
     """
+
     table: bool | OlapConfig = True
     stream: bool | StreamConfig = True
     ingest_api: bool | IngestConfig = True
@@ -39,29 +42,30 @@ class IngestPipelineConfig(BaseModel):
     path: Optional[str] = None
     metadata: Optional[dict] = None
     life_cycle: Optional[LifeCycle] = None
-    
+
     # Legacy support - will be removed in future version
     ingest: Optional[bool | IngestConfig] = None
-    
-    @model_validator(mode='before')
+
+    @model_validator(mode="before")
     @classmethod
     def handle_legacy_ingest_param(cls, data):
         """Handle backwards compatibility for the deprecated 'ingest' parameter."""
-        if isinstance(data, dict) and 'ingest' in data:
+        if isinstance(data, dict) and "ingest" in data:
             warnings.warn(
                 "The 'ingest' parameter is deprecated and will be removed in a future version. "
                 "Please use 'ingest_api' instead.",
                 DeprecationWarning,
-                stacklevel=3
+                stacklevel=3,
             )
             # Make a copy first to avoid mutating the original dictionary
             data = data.copy()
             # If ingest_api is not explicitly set, use the ingest value
-            if 'ingest_api' not in data:
-                data['ingest_api'] = data['ingest']
+            if "ingest_api" not in data:
+                data["ingest_api"] = data["ingest"]
             # Remove the legacy parameter
-            del data['ingest']
+            del data["ingest"]
         return data
+
 
 class IngestPipeline(TypedMooseResource, Generic[T]):
     """Creates and configures a linked Table, Stream, and Ingest API pipeline.
@@ -84,6 +88,7 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
         name (str): The base name of the pipeline.
         model_type (type[T]): The Pydantic model associated with this pipeline.
     """
+
     table: Optional[OlapTable[T]] = None
     stream: Optional[Stream[T]] = None
     ingest_api: Optional[IngestApi[T]] = None
@@ -150,23 +155,37 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
         stream_metadata = config.metadata
         ingest_metadata = config.metadata
         if config.table:
-            table_config = (config.table if isinstance(config.table, OlapConfig) else 
-                          OlapConfig(life_cycle=config.life_cycle))
+            table_config = (
+                config.table
+                if isinstance(config.table, OlapConfig)
+                else OlapConfig(life_cycle=config.life_cycle)
+            )
             if config.version:
                 table_config.version = config.version
             table_config.metadata = table_metadata
             self.table = OlapTable(name, table_config, t=self._t)
         if config.dead_letter_queue:
-            dlq_stream_config = StreamConfig() if config.dead_letter_queue is True else config.dead_letter_queue
+            dlq_stream_config = (
+                StreamConfig()
+                if config.dead_letter_queue is True
+                else config.dead_letter_queue
+            )
             if config.version:
                 dlq_stream_config.version = config.version
             dlq_stream_config.metadata = stream_metadata
-            self.dead_letter_queue = DeadLetterQueue(f"{name}DeadLetterQueue", dlq_stream_config, t=self._t)
+            self.dead_letter_queue = DeadLetterQueue(
+                f"{name}DeadLetterQueue", dlq_stream_config, t=self._t
+            )
         if config.stream:
-            stream_config = (config.stream if isinstance(config.stream, StreamConfig) else 
-                           StreamConfig(life_cycle=config.life_cycle))
+            stream_config = (
+                config.stream
+                if isinstance(config.stream, StreamConfig)
+                else StreamConfig(life_cycle=config.life_cycle)
+            )
             if config.table and stream_config.destination is not None:
-                raise ValueError("The destination of the stream should be the table created in the IngestPipeline")
+                raise ValueError(
+                    "The destination of the stream should be the table created in the IngestPipeline"
+                )
             stream_config.destination = self.table
             if self.dead_letter_queue is not None:
                 stream_config.default_dead_letter_queue = self.dead_letter_queue

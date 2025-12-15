@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  format:
+  format-typescript:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,8 +26,20 @@ jobs:
       - name: Check prettier compliance
         run: pnpm exec prettier --check './apps/**/*.{ts,tsx}'
 
+  format-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      - name: Install black
+        run: pip install black
+      - name: Check black compliance
+        run: black --check .
+
   notify-slack-on-failure:
-    needs: [format]
+    needs: [format-typescript, format-python]
     runs-on: ubuntu-latest
     # Add permissions required for this job
     permissions:

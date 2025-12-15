@@ -3,9 +3,16 @@ from typing import Annotated
 from pydantic import BaseModel
 from moose_lib import (
     Key,
-    Int8, Int16, Int32, Int64,
-    UInt8, UInt16, UInt32, UInt64,
-    Float32, Float64,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    Float32,
+    Float64,
 )
 from moose_lib.data_models import _to_columns
 

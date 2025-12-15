@@ -33,6 +33,7 @@ import {
   setupTypeScriptProject,
   setupPythonProject,
   getTableDDL,
+  logger,
 } from "./utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
@@ -50,6 +51,8 @@ const TEST_PACKAGE_MANAGER = (process.env.TEST_PACKAGE_MANAGER || "npm") as
   | "pnpm"
   | "pip";
 
+const testLogger = logger.scope("collapsing-merge-tree-test");
+
 describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", function () {
   describe("TypeScript Template - CollapsingMergeTree Engines", function () {
     let devProcess: ChildProcess | null = null;
@@ -58,12 +61,14 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
 
     before(async function () {
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
-      console.log("\n🚀 Setting up TypeScript CollapsingMergeTree test...\n");
+      testLogger.info(
+        "\n🚀 Setting up TypeScript CollapsingMergeTree test...\n",
+      );
 
       testDir = createTempTestDirectory("ts-collapsing-mt");
-      console.log(`Created temporary directory: ${testDir}`);
+      testLogger.info(`Created temporary directory: ${testDir}`);
 
-      console.log("Setting up TypeScript project...");
+      testLogger.info("Setting up TypeScript project...");
       await setupTypeScriptProject(
         testDir,
         TEMPLATE_NAMES.TYPESCRIPT_TESTS,
@@ -73,14 +78,17 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         TEST_PACKAGE_MANAGER as "npm" | "pnpm",
       );
 
-      console.log("Starting dev server...");
+      testLogger.info("Starting dev server...");
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: testDir,
-        env: process.env,
+        env: {
+          ...process.env,
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+        },
       });
 
-      console.log("Waiting for server to start...");
+      testLogger.info("Waiting for server to start...");
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
@@ -88,13 +96,13 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         SERVER_CONFIG.url,
       );
 
-      console.log("Waiting for streaming functions...");
+      testLogger.info("Waiting for streaming functions...");
       await waitForStreamingFunctions();
 
-      console.log("Waiting for infrastructure to be ready...");
+      testLogger.info("Waiting for infrastructure to be ready...");
       await waitForInfrastructureReady();
 
-      console.log("✅ TypeScript test setup completed successfully\n");
+      testLogger.info("✅ TypeScript test setup completed successfully\n");
     });
 
     after(async function () {
@@ -108,12 +116,12 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL("CollapsingMergeTreeTest", "local");
-      console.log("CollapsingMergeTreeTest DDL:", ddl);
+      testLogger.info("CollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has CollapsingMergeTree engine
       expect(ddl).to.include("CollapsingMergeTree");
       expect(ddl).to.include("`sign`");
-      console.log("✅ CollapsingMergeTree table created successfully");
+      testLogger.info("✅ CollapsingMergeTree table created successfully");
     });
 
     it("should create VersionedCollapsingMergeTree table with correct engine configuration", async function () {
@@ -123,13 +131,15 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         "VersionedCollapsingMergeTreeTest",
         "local",
       );
-      console.log("VersionedCollapsingMergeTreeTest DDL:", ddl);
+      testLogger.info("VersionedCollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has VersionedCollapsingMergeTree engine
       expect(ddl).to.include("VersionedCollapsingMergeTree");
       expect(ddl).to.include("`sign`");
       expect(ddl).to.include("`version`");
-      console.log("✅ VersionedCollapsingMergeTree table created successfully");
+      testLogger.info(
+        "✅ VersionedCollapsingMergeTree table created successfully",
+      );
     });
 
     it("should create ReplicatedCollapsingMergeTree table with correct engine configuration", async function () {
@@ -139,7 +149,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         "ReplicatedCollapsingMergeTreeTest",
         "local",
       );
-      console.log("ReplicatedCollapsingMergeTreeTest DDL:", ddl);
+      testLogger.info("ReplicatedCollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has ReplicatedCollapsingMergeTree engine
       expect(ddl).to.include("ReplicatedCollapsingMergeTree");
@@ -148,7 +158,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       expect(ddl).to.match(
         /ReplicatedCollapsingMergeTree\([^)]*replicated_collapsing_test[^)]*\)/,
       );
-      console.log(
+      testLogger.info(
         "✅ ReplicatedCollapsingMergeTree table created successfully",
       );
     });
@@ -160,7 +170,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         "ReplicatedVersionedCollapsingMergeTreeTest",
         "local",
       );
-      console.log("ReplicatedVersionedCollapsingMergeTreeTest DDL:", ddl);
+      testLogger.info("ReplicatedVersionedCollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has ReplicatedVersionedCollapsingMergeTree engine
       expect(ddl).to.include("ReplicatedVersionedCollapsingMergeTree");
@@ -170,7 +180,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       expect(ddl).to.match(
         /ReplicatedVersionedCollapsingMergeTree\([^)]*replicated_versioned_collapsing_test[^)]*\)/,
       );
-      console.log(
+      testLogger.info(
         "✅ ReplicatedVersionedCollapsingMergeTree table created successfully",
       );
     });
@@ -183,12 +193,12 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
 
     before(async function () {
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
-      console.log("\n🚀 Setting up Python CollapsingMergeTree test...\n");
+      testLogger.info("\n🚀 Setting up Python CollapsingMergeTree test...\n");
 
       testDir = createTempTestDirectory("py-collapsing-mt");
-      console.log(`Created temporary directory: ${testDir}`);
+      testLogger.info(`Created temporary directory: ${testDir}`);
 
-      console.log("Setting up Python project...");
+      testLogger.info("Setting up Python project...");
       await setupPythonProject(
         testDir,
         TEMPLATE_NAMES.PYTHON_TESTS,
@@ -197,7 +207,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         appName,
       );
 
-      console.log("Starting dev server...");
+      testLogger.info("Starting dev server...");
       devProcess = spawn(CLI_PATH, ["dev"], {
         stdio: "pipe",
         cwd: testDir,
@@ -205,10 +215,11 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
           ...process.env,
           VIRTUAL_ENV: path.join(testDir, ".venv"),
           PATH: `${path.join(testDir, ".venv", "bin")}:${process.env.PATH}`,
+          MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
         },
       });
 
-      console.log("Waiting for server to start...");
+      testLogger.info("Waiting for server to start...");
       await waitForServerStart(
         devProcess,
         TIMEOUTS.SERVER_STARTUP_MS,
@@ -216,13 +227,13 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         SERVER_CONFIG.url,
       );
 
-      console.log("Waiting for streaming functions...");
+      testLogger.info("Waiting for streaming functions...");
       await waitForStreamingFunctions();
 
-      console.log("Waiting for infrastructure to be ready...");
+      testLogger.info("Waiting for infrastructure to be ready...");
       await waitForInfrastructureReady();
 
-      console.log("✅ Python test setup completed successfully\n");
+      testLogger.info("✅ Python test setup completed successfully\n");
     });
 
     after(async function () {
@@ -236,12 +247,12 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
       const ddl = await getTableDDL("CollapsingMergeTreeTest", "local");
-      console.log("CollapsingMergeTreeTest DDL:", ddl);
+      testLogger.info("CollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has CollapsingMergeTree engine
       expect(ddl).to.include("CollapsingMergeTree");
       expect(ddl).to.include("`sign`");
-      console.log("✅ CollapsingMergeTree table created successfully");
+      testLogger.info("✅ CollapsingMergeTree table created successfully");
     });
 
     it("should create VersionedCollapsingMergeTree table with correct engine configuration", async function () {
@@ -251,13 +262,15 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         "VersionedCollapsingMergeTreeTest",
         "local",
       );
-      console.log("VersionedCollapsingMergeTreeTest DDL:", ddl);
+      testLogger.info("VersionedCollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has VersionedCollapsingMergeTree engine
       expect(ddl).to.include("VersionedCollapsingMergeTree");
       expect(ddl).to.include("`sign`");
       expect(ddl).to.include("`version`");
-      console.log("✅ VersionedCollapsingMergeTree table created successfully");
+      testLogger.info(
+        "✅ VersionedCollapsingMergeTree table created successfully",
+      );
     });
 
     it("should create ReplicatedCollapsingMergeTree table with correct engine configuration", async function () {
@@ -267,7 +280,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         "ReplicatedCollapsingMergeTreeTest",
         "local",
       );
-      console.log("ReplicatedCollapsingMergeTreeTest DDL:", ddl);
+      testLogger.info("ReplicatedCollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has ReplicatedCollapsingMergeTree engine
       expect(ddl).to.include("ReplicatedCollapsingMergeTree");
@@ -276,7 +289,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       expect(ddl).to.match(
         /ReplicatedCollapsingMergeTree\([^)]*replicated_collapsing_test[^)]*\)/,
       );
-      console.log(
+      testLogger.info(
         "✅ ReplicatedCollapsingMergeTree table created successfully",
       );
     });
@@ -288,7 +301,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
         "ReplicatedVersionedCollapsingMergeTreeTest",
         "local",
       );
-      console.log("ReplicatedVersionedCollapsingMergeTreeTest DDL:", ddl);
+      testLogger.info("ReplicatedVersionedCollapsingMergeTreeTest DDL:", ddl);
 
       // Verify the table exists and has ReplicatedVersionedCollapsingMergeTree engine
       expect(ddl).to.include("ReplicatedVersionedCollapsingMergeTree");
@@ -298,7 +311,7 @@ describe("CollapsingMergeTree and VersionedCollapsingMergeTree Engine Tests", fu
       expect(ddl).to.match(
         /ReplicatedVersionedCollapsingMergeTree\([^)]*replicated_versioned_collapsing_test[^)]*\)/,
       );
-      console.log(
+      testLogger.info(
         "✅ ReplicatedVersionedCollapsingMergeTree table created successfully",
       );
     });

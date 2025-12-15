@@ -1,7 +1,11 @@
 from pydantic import BaseModel
 from moose_lib import Key, OlapTable, OlapConfig, Stream, IngestApi
 from moose_lib.blocks import KafkaEngine
-from moose_lib.dmv2 import MaterializedView, MaterializedViewOptions, IngestConfigWithDestination
+from moose_lib.dmv2 import (
+    MaterializedView,
+    MaterializedViewOptions,
+    IngestConfigWithDestination,
+)
 
 
 class KafkaTestEvent(BaseModel):
@@ -17,8 +21,7 @@ KAFKA_TOPIC_NAME = "kafka_test_input"
 kafka_test_input_stream = Stream[KafkaTestEvent](KAFKA_TOPIC_NAME)
 
 kafka_test_ingest_api = IngestApi[KafkaTestEvent](
-    "kafka-test",
-    IngestConfigWithDestination(destination=kafka_test_input_stream)
+    "kafka-test", IngestConfigWithDestination(destination=kafka_test_input_stream)
 )
 
 kafka_test_source_table = OlapTable[KafkaTestEvent](
@@ -28,7 +31,7 @@ kafka_test_source_table = OlapTable[KafkaTestEvent](
             broker_list="redpanda:9092",
             topic_list=KAFKA_TOPIC_NAME,
             group_name="e2e_kafka_test_consumer_py",
-            format="JSONEachRow"
+            format="JSONEachRow",
         ),
         settings={
             "kafka_num_consumers": "1",

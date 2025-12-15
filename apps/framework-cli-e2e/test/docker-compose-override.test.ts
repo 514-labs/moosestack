@@ -22,6 +22,7 @@ import {
   setupTypeScriptProject,
   cleanupClickhouseData,
   cleanupTestSuite,
+  logger,
 } from "./utils";
 
 const execAsync = promisify(require("child_process").exec);
@@ -33,6 +34,8 @@ const MOOSE_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/ts-moose-lib",
 );
+
+const testLogger = logger.scope("docker-compose-override-test");
 
 describe("Docker Compose Override", () => {
   let devProcess: ChildProcess | null = null;
@@ -72,14 +75,17 @@ services:
       "docker-compose.dev.override.yaml",
     );
     fs.writeFileSync(overrideFilePath, overrideContent);
-    console.log(`Created override file at ${overrideFilePath}`);
+    testLogger.info(`Created override file at ${overrideFilePath}`);
 
     // Start dev server
-    console.log("Starting dev server with override file...");
+    testLogger.info("Starting dev server with override file...");
     devProcess = spawn(CLI_PATH, ["dev"], {
       stdio: "pipe",
       cwd: TEST_PROJECT_DIR,
-      env: process.env,
+      env: {
+        ...process.env,
+        MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+      },
     });
 
     await waitForServerStart(
@@ -89,11 +95,11 @@ services:
       "http://localhost:4000",
     );
 
-    console.log("Server started, cleaning up old data...");
+    testLogger.info("Server started, cleaning up old data...");
     await cleanupClickhouseData();
-    console.log("Waiting for streaming functions...");
+    testLogger.info("Waiting for streaming functions...");
     await waitForStreamingFunctions();
-    console.log("Waiting before running tests...");
+    testLogger.info("Waiting before running tests...");
     await setTimeoutAsync(TIMEOUTS.PRE_TEST_WAIT_MS);
   });
 
@@ -117,7 +123,7 @@ services:
     );
 
     const runningContainers = stdout.trim().split("\n").filter(Boolean);
-    console.log("Found containers:", runningContainers);
+    testLogger.info("Found containers:", runningContainers);
 
     expect(
       runningContainers,
