@@ -115,9 +115,7 @@ PR: [#3055](https://github.com/514-labs/moosestack/pull/3055) | Docs: [OlapTable
 
 ### Bug fixes
 
-- **Deployment issues from pull requests** – Fixed an issue where deployments initiated from pull requests were failing to complete properly. This ensures that PR-based deployments now work reliably in the project management interface.
 - **Hosting telemetry crash** – Fixed a crash in the hosting telemetry system that could cause application instability. This improves the reliability of the platform's monitoring and data collection capabilities.
-- **First-time project deployments** – Fixed an issue where first-time project deployments would fail due to an error when no previous production deployment existed. Users can now successfully deploy new projects without encountering deployment errors.
 - **Deployment error handling when no production deploy exists** – Improved deployment reliability by properly handling cases where no previous production deployment exists. This prevents deployment failures and provides better error tracking for project setup scenarios.
 - **Deployment redeployment production status** – Fixed an issue where redeploying a production deployment would incorrectly mark it as non-production, potentially causing confusion about which deployment is currently live. Also improved error handling when no production deployment is found.
 - **Deployment status filtering** – Fixed an issue where the deployment dashboard was using incorrect status filtering, which could cause production deployments to display incorrectly or not appear when they should. Users will now see accurate deployment status information in their project dashboard.
