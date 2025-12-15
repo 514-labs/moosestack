@@ -303,7 +303,7 @@ function applySubstringHighlighting(
           !occurrences || occurrences.includes(occurrenceCount);
 
         if (shouldHighlight) {
-          return `>${prefix}<span class="highlighted-word">${pattern}</span>`;
+          return `${prefix}<span class="highlighted-word">${pattern}</span>`;
         }
         return match;
       },
