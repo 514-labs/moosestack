@@ -1,6 +1,6 @@
 //! Utilities for interacting with npm.
 
-use std::{fmt, path::PathBuf, process::Command};
+use std::{fmt, path::Path, path::PathBuf, process::Command};
 
 use home::home_dir;
 use tracing::{debug, error};
@@ -280,6 +280,56 @@ pub fn get_lock_file_path(project_dir: &PathBuf) -> Option<PathBuf> {
     None
 }
 
+/// Checks if .npmrc has inject-workspace-packages=true setting.
+///
+/// This setting is required for modern `pnpm deploy` to work correctly
+/// with lockfile respect in monorepo builds.
+///
+/// # Arguments
+///
+/// * `workspace_root` - Path to the workspace root directory
+///
+/// # Returns
+///
+/// * `bool` - True if the setting is present and set to true
+pub fn has_inject_workspace_packages_in_npmrc(workspace_root: &Path) -> bool {
+    let npmrc_path = workspace_root.join(".npmrc");
+
+    if !npmrc_path.exists() {
+        debug!("No .npmrc found at {:?}", npmrc_path);
+        return false;
+    }
+
+    match std::fs::read_to_string(&npmrc_path) {
+        Ok(content) => {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                // Skip comments
+                if trimmed.starts_with('#') || trimmed.starts_with(';') {
+                    continue;
+                }
+                // Check for the setting (handle various formats)
+                if trimmed.starts_with("inject-workspace-packages") {
+                    // Parse the value - could be =true, = true, =TRUE, etc.
+                    if let Some(value) = trimmed.split('=').nth(1) {
+                        let value = value.trim().to_lowercase();
+                        if value == "true" {
+                            debug!("Found inject-workspace-packages=true in .npmrc");
+                            return true;
+                        }
+                    }
+                }
+            }
+            debug!("inject-workspace-packages=true not found in .npmrc");
+            false
+        }
+        Err(e) => {
+            debug!("Failed to read .npmrc: {}", e);
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -291,6 +341,33 @@ mod tests {
 
         assert_eq!(modern, PnpmDeployMode::Modern);
         assert!(matches!(legacy, PnpmDeployMode::Legacy(_)));
+    }
+
+    #[test]
+    fn test_has_inject_workspace_packages_in_npmrc() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Test with setting present
+        let dir = tempdir().unwrap();
+        let npmrc_path = dir.path().join(".npmrc");
+        let mut file = std::fs::File::create(&npmrc_path).unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+
+        assert!(has_inject_workspace_packages_in_npmrc(dir.path()));
+
+        // Test with setting absent
+        let dir2 = tempdir().unwrap();
+        let npmrc_path2 = dir2.path().join(".npmrc");
+        let mut file2 = std::fs::File::create(&npmrc_path2).unwrap();
+        writeln!(file2, "some-other-setting=value").unwrap();
+
+        assert!(!has_inject_workspace_packages_in_npmrc(dir2.path()));
+
+        // Test with no .npmrc file
+        let dir3 = tempdir().unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir3.path()));
     }
 
     #[test]
