@@ -141,9 +141,11 @@ A common pattern is populating an `AggregatingMergeTree` table from a materializ
 import { 
   OlapTable, 
   MaterializedView,
-  ClickHouseEngines, 
+  ClickHouseEngines,
+  ClickHouseInt,
   SimpleAggregated,
-  DateTime
+  DateTime,
+  sql
 } from "@514labs/moose-lib";
 
 // Source: raw events
@@ -154,35 +156,39 @@ interface PageView {
   duration_ms: number;
 }
 
+const pageViews = new OlapTable<PageView>("page_views", {
+  orderByFields: ["timestamp", "user_id"],
+});
+
 // Target: daily aggregates
 interface DailyPageStats {
   date: DateTime;
   user_id: string;
-  view_count: number & SimpleAggregated<"sum", number>;
+  view_count: number &
+    ClickHouseInt<"uint64"> &
+    SimpleAggregated<"sum", number & ClickHouseInt<"uint64">>;
   total_duration: number & SimpleAggregated<"sum", number>;
   max_duration: number & SimpleAggregated<"max", number>;
 }
 
-const pageViews = new OlapTable<PageView>("page_views", {
-  orderByFields: ["timestamp", "user_id"]
-});
-
-const dailyStats = new OlapTable<DailyPageStats>("daily_page_stats", {
-  engine: ClickHouseEngines.AggregatingMergeTree,
-  orderByFields: ["date", "user_id"]
-});
-
-const rollupView = new MaterializedView<PageView, DailyPageStats>({
-  selectExpression: `
-    toDate(timestamp) as date,
-    user_id,
-    count() as view_count,
-    sum(duration_ms) as total_duration,
-    max(duration_ms) as max_duration
+new MaterializedView<DailyPageStats>({
+  materializedViewName: "mv_daily_page_stats",
+  selectTables: [pageViews],
+  targetTable: {
+    name: "daily_page_stats",
+    engine: ClickHouseEngines.AggregatingMergeTree,
+    orderByFields: ["date", "user_id"],
+  },
+  selectStatement: sql`
+    SELECT
+      toStartOfDay(${pageViews.columns.timestamp}) AS date,
+      ${pageViews.columns.user_id}                AS user_id,
+      count()                                     AS view_count,
+      sum(${pageViews.columns.duration_ms})       AS total_duration,
+      max(${pageViews.columns.duration_ms})       AS max_duration
+    FROM ${pageViews}
+    GROUP BY date, user_id
   `,
-  groupByExpression: "date, user_id",
-  sourceTable: pageViews,
-  destinationTable: dailyStats
 });
 ```
   </LanguageTabContent>
@@ -192,10 +198,12 @@ from moose_lib import (
     OlapTable, 
     OlapConfig, 
     MaterializedView,
-    MaterializedViewConfig,
-    simple_aggregated
+    MaterializedViewOptions,
+    AggregatingMergeTreeEngine,
+    simple_aggregated,
 )
-from moose_lib.blocks import AggregatingMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
 
 # Source: raw events
 class PageView(BaseModel):
@@ -221,19 +229,22 @@ daily_stats = OlapTable[DailyPageStats]("daily_page_stats", OlapConfig(
     order_by_fields=["date", "user_id"]
 ))
 
-rollup_view = MaterializedView[PageView, DailyPageStats](
-    MaterializedViewConfig(
-        select_expression="""
-            toDate(timestamp) as date,
-            user_id,
-            count() as view_count,
-            sum(duration_ms) as total_duration,
-            max(duration_ms) as max_duration
+rollup_view = MaterializedView[DailyPageStats](
+    MaterializedViewOptions(
+        materialized_view_name="mv_daily_page_stats",
+        select_tables=[page_views],
+        select_statement="""
+            SELECT
+                toStartOfDay(timestamp) AS date,
+                user_id,
+                count()                AS view_count,
+                sum(duration_ms)       AS total_duration,
+                max(duration_ms)       AS max_duration
+            FROM {page_views}
+            GROUP BY date, user_id
         """,
-        group_by_expression="date, user_id",
-        source_table=page_views,
-        destination_table=daily_stats
-    )
+    ),
+    target_table=daily_stats,
 )
 ```
   </LanguageTabContent>

@@ -40,8 +40,7 @@ const metrics = new OlapTable<DailyMetrics>("daily_metrics", {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python
-from moose_lib import OlapTable, OlapConfig
-from moose_lib.blocks import SummingMergeTreeEngine
+from moose_lib import OlapTable, OlapConfig, SummingMergeTreeEngine
 from pydantic import BaseModel
 from datetime import date
 

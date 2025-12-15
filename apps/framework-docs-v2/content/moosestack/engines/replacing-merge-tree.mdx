@@ -154,28 +154,35 @@ Moose does not define its own deduplication semantics—this engine behaves acco
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```typescript
-// Force deduplication at query time (raw SQL)
-const result = await client.query("SELECT * FROM users FINAL WHERE id = '123'");
+import { sql } from "@514labs/moose-lib";
 
-// Or use aggregation to get latest
-const latest = await client.query(`
-  SELECT argMax(name, updated_at) as name
-  FROM users
-  WHERE id = '123'
-`);
+// Force deduplication at query time
+const deduped = sql`SELECT * FROM ${users} FINAL WHERE ${users.columns.id} = '123'`;
+
+// Or use aggregation to pick the latest values
+const latest = sql`
+  SELECT
+    argMax(${users.columns.name}, ${users.columns.updated_at}) AS name
+  FROM ${users}
+  WHERE ${users.columns.id} = '123'
+`;
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python
-# Force deduplication at query time (raw SQL)
-result = client.query("SELECT * FROM users FINAL WHERE id = '123'")
+# Force deduplication at query time
+DEDUPED_SQL = """
+  SELECT *
+  FROM {users} FINAL
+  WHERE {users.cols.id} = '123'
+"""
 
-# Or use aggregation to get latest
-latest = client.query("""
-    SELECT argMax(name, updated_at) as name
-    FROM users
-    WHERE id = '123'
-""")
+# Or use aggregation to pick the latest values
+LATEST_SQL = """
+  SELECT argMax({users.cols.name}, {users.cols.updated_at}) AS name
+  FROM {users}
+  WHERE {users.cols.id} = '123'
+"""
 ```
   </LanguageTabContent>
 </LanguageTabs>
