@@ -276,12 +276,6 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/olap/supported-types",
-        title: "Supported Types",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
         slug: "moosestack/olap/ttl",
         title: "TTL (Time-to-Live)",
         languages: ["typescript", "python"],
@@ -610,6 +604,20 @@ const moosestackNavigationConfig: NavigationConfig = [
     slug: "moosestack/reference",
     title: "API Reference",
     icon: IconBook,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/data-types",
+    title: "Data Types",
+    icon: IconAtom,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/engines",
+    title: "Table Engines",
+    icon: IconServer,
     languages: ["typescript", "python"],
   },
   {
