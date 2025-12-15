@@ -1,10 +1,10 @@
-import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
-import { Tabs } from "nextra/components";
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 #### Versioned Collapsing (`VersionedCollapsingMergeTree`)
 Use `VersionedCollapsingMergeTree` when you need collapsing with out-of-order inserts. The version column ensures correct collapse ordering regardless of insertion order:
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```ts filename="VersionedCollapsingTable.ts" copy
 import { OlapTable, ClickHouseEngines, Int8 } from "@514labs/moose-lib";
 
@@ -24,9 +24,8 @@ const stateTable = new OlapTable<UserState>("user_state", {
   orderByFields: ["userId"]
 });
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```py filename="VersionedCollapsingTable.py" copy
 from moose_lib import Key, Int8, OlapTable, OlapConfig
 from moose_lib.blocks import VersionedCollapsingMergeTreeEngine
@@ -45,7 +44,8 @@ state_table = OlapTable[UserState]("user_state", OlapConfig(
     engine=VersionedCollapsingMergeTreeEngine(sign="sign", ver="version")
 ))
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
 <Callout type="warning" title="CollapsingMergeTree vs VersionedCollapsingMergeTree">
 **CollapsingMergeTree**: Requires strictly consecutive insertion order. Use when you control insertion order (e.g., single writer).
@@ -56,4 +56,3 @@ Both engines require the `sign` column to be `Int8` type.
 
 For more details, see the ClickHouse documentation on [CollapsingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/collapsingmergetree) and [VersionedCollapsingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/versionedcollapsingmergetree).
 </Callout>
-

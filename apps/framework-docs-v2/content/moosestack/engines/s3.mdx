@@ -1,10 +1,10 @@
-import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
-import { Tabs } from "nextra/components";
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 #### Direct S3 Access (`S3`)
 Use the `S3` engine for direct read/write access to S3 storage without streaming semantics:
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```ts filename="S3Table.ts" copy
 import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
 
@@ -26,9 +26,8 @@ export const publicS3 = new OlapTable<DataRecord>("public_s3", {
   noSign: true  // Use NOSIGN for public buckets
 });
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```py filename="S3Table.py" copy
 from moose_lib import OlapTable, OlapConfig, moose_runtime_env
 from moose_lib.blocks import S3Engine
@@ -52,7 +51,8 @@ public_s3 = OlapTable[DataRecord]("public_s3", OlapConfig(
     )
 ))
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
 <Callout type="info" title="S3 vs S3Queue">
 - **S3**: Direct read/write access to S3 files. Use for batch processing or querying static data.
@@ -60,4 +60,3 @@ public_s3 = OlapTable[DataRecord]("public_s3", OlapConfig(
 
 Both engines support the same credential management and format options.
 </Callout>
-

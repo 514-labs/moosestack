@@ -1,8 +1,7 @@
-import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
-import { Tabs } from "nextra/components";
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 #### Replicated Engines
-Replicated engines provide high availability and data replication across multiple ClickHouse nodes. Moose supports all standard replicated MergeTree variants:
+Replicated engines provide high availability and data replication across multiple ClickHouse nodes. MooseStack supports all standard replicated MergeTree variants:
 
 - `ReplicatedMergeTree` - Replicated version of MergeTree
 - `ReplicatedReplacingMergeTree` - Replicated with deduplication
@@ -11,7 +10,8 @@ Replicated engines provide high availability and data replication across multipl
 - `ReplicatedCollapsingMergeTree` - Replicated with state collapsing
 - `ReplicatedVersionedCollapsingMergeTree` - Replicated with versioned collapsing
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```ts filename="ReplicatedEngines.ts" copy
 import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
 
@@ -39,9 +39,8 @@ const cloudReplicated = new OlapTable<Record>("cloud_records", {
   orderByFields: ["id"]
 });
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```py filename="ReplicatedEngines.py" copy
 from moose_lib import OlapTable, OlapConfig
 from moose_lib.blocks import (
@@ -82,7 +81,8 @@ cloud_replicated = OlapTable[Record]("cloud_records", OlapConfig(
     engine=ReplicatedMergeTreeEngine()
 ))
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
 ##### Configuring Replication
 
@@ -92,7 +92,8 @@ Replicated engines support three configuration approaches. Choose the one that f
 
 Omit all replication parameters. Moose uses smart defaults that work in both ClickHouse Cloud and self-managed environments:
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```ts filename="DefaultReplication.ts" copy
 const table = new OlapTable<Record>("my_table", {
   engine: ClickHouseEngines.ReplicatedMergeTree,
@@ -100,16 +101,16 @@ const table = new OlapTable<Record>("my_table", {
   // No keeper_path, replica_name, or cluster needed
 });
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```py filename="DefaultReplication.py" copy
 table = OlapTable[Record]("my_table", OlapConfig(
     engine=ReplicatedMergeTreeEngine(),  # No parameters
     order_by_fields=["id"]
 ))
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
 Moose auto-injects: `/clickhouse/tables/{database}/{shard}/{table_name}` and `{replica}` in local development. ClickHouse Cloud uses its own patterns automatically.
 
@@ -117,7 +118,8 @@ Moose auto-injects: `/clickhouse/tables/{database}/{shard}/{table_name}` and `{r
 
 For multi-node deployments, specify a cluster name to use `ON CLUSTER` DDL operations:
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```ts filename="ClusterReplication.ts" copy
 const table = new OlapTable<Record>("my_table", {
   engine: ClickHouseEngines.ReplicatedMergeTree,
@@ -125,9 +127,8 @@ const table = new OlapTable<Record>("my_table", {
   cluster: "default"  // References cluster from moose.config.toml
 });
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```py filename="ClusterReplication.py" copy
 table = OlapTable[Record]("my_table", OlapConfig(
     engine=ReplicatedMergeTreeEngine(),
@@ -135,7 +136,8 @@ table = OlapTable[Record]("my_table", OlapConfig(
     cluster="default"  # References cluster from moose.config.toml
 ))
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
 **Configuration in `moose.config.toml`:**
 ```toml
@@ -151,7 +153,8 @@ name = "default"
 
 For custom replication topology, specify both `keeper_path` and `replica_name`:
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```ts filename="ExplicitReplication.ts" copy
 const table = new OlapTable<Record>("my_table", {
   engine: ClickHouseEngines.ReplicatedMergeTree,
@@ -160,9 +163,8 @@ const table = new OlapTable<Record>("my_table", {
   orderByFields: ["id"]
 });
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```py filename="ExplicitReplication.py" copy
 table = OlapTable[Record]("my_table", OlapConfig(
     engine=ReplicatedMergeTreeEngine(
@@ -172,7 +174,8 @@ table = OlapTable[Record]("my_table", OlapConfig(
     order_by_fields=["id"]
 ))
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
 **Use when:**
 - Need custom replication paths for advanced configurations
@@ -185,4 +188,3 @@ table = OlapTable[Record]("my_table", OlapConfig(
 </Callout>
 
 For more details, see the [ClickHouse documentation on data replication](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication).
-

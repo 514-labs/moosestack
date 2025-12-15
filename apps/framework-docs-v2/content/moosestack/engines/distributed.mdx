@@ -1,10 +1,10 @@
-import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
-import { Tabs } from "nextra/components";
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 #### Distributed Tables (`Distributed`)
 The `Distributed` engine creates a distributed table across a ClickHouse cluster for horizontal scaling:
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```ts filename="DistributedTable.ts" copy
 import { OlapTable, ClickHouseEngines } from '@514labs/moose-lib';
 
@@ -17,9 +17,8 @@ export const distributedTable = new OlapTable<Record>("distributed_data", {
   shardingKey: "cityHash64(id)"  // Optional: how to distribute data
 });
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```py filename="DistributedTable.py" copy
 from moose_lib import OlapTable, OlapConfig
 from moose_lib.blocks import DistributedEngine
@@ -34,7 +33,8 @@ distributed_table = OlapTable[Record]("distributed_data", OlapConfig(
     )
 ))
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
 <Callout type="info" title="Distributed Table Requirements">
 - Requires a configured ClickHouse cluster with remote_servers configuration
@@ -45,4 +45,3 @@ distributed_table = OlapTable[Record]("distributed_data", OlapConfig(
 
 For more details, see the [ClickHouse Distributed documentation](https://clickhouse.com/docs/en/engines/table-engines/special/distributed).
 </Callout>
-

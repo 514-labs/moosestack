@@ -1,10 +1,10 @@
-import { Callout, BulletPointsCard, CheckmarkBullets, LanguageSwitcher, TypeScript, Python } from "@/components";
-import { Tabs } from "nextra/components";
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 #### Iceberg
 The `IcebergS3` engine provides read-only access to Iceberg tables stored in S3:
 
-<TypeScript>
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
 ```ts filename="IcebergTable.ts" copy
 import { OlapTable, ClickHouseEngines, mooseRuntimeEnv } from '@514labs/moose-lib';
 
@@ -17,9 +17,8 @@ export const icebergEvents = new OlapTable<Event>("iceberg_events", {
   awsSecretAccessKey: mooseRuntimeEnv.get("AWS_SECRET_ACCESS_KEY"),
 });
 ```
-</TypeScript>
-
-<Python>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
 ```py filename="IcebergTable.py" copy
 from moose_lib import OlapTable, OlapConfig, moose_runtime_env
 from moose_lib.blocks import IcebergS3Engine
@@ -34,7 +33,8 @@ iceberg_events = OlapTable[Event]("iceberg_events", OlapConfig(
     )
 ))
 ```
-</Python>
+  </LanguageTabContent>
+</LanguageTabs>
 
 <Callout type="warning" title="IcebergS3 is read-only">
 - IcebergS3 tables are **read-only** and provide access to the latest state of your Iceberg table
@@ -42,4 +42,3 @@ iceberg_events = OlapTable[Event]("iceberg_events", OlapConfig(
 - The table automatically reflects the current state of the Iceberg table in S3
 - Supported formats: **Parquet** and **ORC** only
 </Callout>
-
