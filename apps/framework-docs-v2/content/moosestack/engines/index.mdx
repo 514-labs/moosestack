@@ -9,29 +9,7 @@ import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Table Engines
 
-ClickHouse table engines determine how data is stored, indexed, queried, and replicated. Moose supports the MergeTree family of engines, which are optimized for high-volume analytical workloads.
-
-
-
-## Engine Overview
-
-| Engine | Use Case | Key Feature |
-|--------|----------|-------------|
-| [**MergeTree**](/moosestack/engines/merge-tree) | General analytics | Default, fast inserts and queries |
-| [**ReplacingMergeTree**](/moosestack/engines/replacing-merge-tree) | Mutable data | Deduplication by primary key |
-| [**AggregatingMergeTree**](/moosestack/engines/aggregating-merge-tree) | Pre-aggregation | Real-time rollups with `SimpleAggregateFunction` |
-| [**SummingMergeTree**](/moosestack/engines/summing-merge-tree) | Counters/metrics | Auto-sums numeric columns |
-| [**Replicated Engines**](/moosestack/engines/replicated) | High availability | Multi-node replication |
-
-## Choosing an Engine
-
-| If you need… | Choose… |
-|---|---|
-| Sane defaults for simple append-only analytics | [`MergeTree`](/moosestack/engines/merge-tree) |
-| Deduplication / upserts by key | [`ReplacingMergeTree`](/moosestack/engines/replacing-merge-tree) |
-| Sum-only counters (e.g., views, clicks) | [`SummingMergeTree`](/moosestack/engines/summing-merge-tree) |
-| Pre-aggregated rollups / aggregate-state tables | [`AggregatingMergeTree`](/moosestack/engines/aggregating-merge-tree) |
-| High availability via replication | Use a replicated variant (see [`Replicated Engines`](/moosestack/engines/replicated)) |
+ClickHouse table engines determine how data is stored, indexed, queried, and replicated. Moose uses `ClickHouseEngines` in the `OlapTable` config to select the engine.
 
 ## Example
 
@@ -59,22 +37,27 @@ users = OlapTable[User]("users", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-## Available Engines
+## Options
 
-### Standard Engines
-- `MergeTree` — Default, optimized for fast inserts and analytical queries
-- `ReplacingMergeTree` — Deduplicates rows by ORDER BY key during background merges
-- `AggregatingMergeTree` — Stores pre-aggregated states for real-time rollups
-- `SummingMergeTree` — Automatically sums numeric columns during merges
+### Standard
 
-### Replicated Engines
-- `ReplicatedMergeTree` — MergeTree with multi-node replication
-- `ReplicatedReplacingMergeTree` — ReplacingMergeTree with replication
-- `ReplicatedAggregatingMergeTree` — AggregatingMergeTree with replication
-- `ReplicatedSummingMergeTree` — SummingMergeTree with replication
+- [`MergeTree`](/moosestack/engines/merge-tree)
+- [`ReplacingMergeTree`](/moosestack/engines/replacing-merge-tree)
+- [`SummingMergeTree`](/moosestack/engines/summing-merge-tree)
+- [`AggregatingMergeTree`](/moosestack/engines/aggregating-merge-tree)
 
-### Special Engines
-- `S3Queue` — Stream data from S3 buckets
+### Replicated
+
+- See [`Replicated Engines`](/moosestack/engines/replicated)
+
+### Special
+
+- [`S3Queue`](/moosestack/engines/s3queue)
+- [`S3`](/moosestack/engines/s3)
+- [`IcebergS3`](/moosestack/engines/iceberg-s3)
+- [`Buffer`](/moosestack/engines/buffer)
+- [`Distributed`](/moosestack/engines/distributed)
+- [`Kafka`](/moosestack/engines/kafka)
 
 ## See Also
 
