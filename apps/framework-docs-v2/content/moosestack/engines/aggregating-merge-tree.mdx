@@ -9,7 +9,12 @@ import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 # AggregatingMergeTree
 
-`AggregatingMergeTree` stores pre-aggregated states that are automatically merged during background compaction. Use with `SimpleAggregateFunction` columns for real-time rollups.
+`AggregatingMergeTree` stores pre-aggregated values and/or aggregate states that are automatically merged during background compaction.
+
+Use it with:
+
+- `SimpleAggregateFunction` for simple rollups (store merged values directly)
+- `AggregateFunction` for complex aggregations (store aggregate states and merge them at read time)
 
 ## When to Use
 
@@ -27,14 +32,18 @@ import {
   OlapTable, 
   ClickHouseEngines, 
   SimpleAggregated,
+  Aggregated,
   DateTime
 } from "@514labs/moose-lib";
 
 interface DailyStats {
   date: DateTime;
   user_id: string;
+  // SimpleAggregateFunction(sum, UInt64)
   total_views: number & SimpleAggregated<"sum", number>;
+  // SimpleAggregateFunction(max, Float64)
   max_score: number & SimpleAggregated<"max", number>;
+  // SimpleAggregateFunction(anyLast, DateTime)
   last_activity: DateTime & SimpleAggregated<"anyLast", DateTime>;
 }
 
@@ -42,11 +51,31 @@ const dailyStats = new OlapTable<DailyStats>("daily_stats", {
   engine: ClickHouseEngines.AggregatingMergeTree,
   orderByFields: ["date", "user_id"]
 });
+
+interface MetricsById {
+  id: string;
+  /**
+   * AggregateFunction(avg, Float64)
+   * Stores the result of avgState(rating) and is merged with avgMerge(...)
+   */
+  avg_rating: number & Aggregated<"avg", [number]>;
+  /**
+   * AggregateFunction(uniqExact, String)
+   * Stores the result of uniqExactState(user_id) and is merged with uniqExactMerge(...)
+   */
+  daily_uniques: number & Aggregated<"uniqExact", [string]>;
+}
+
+const metricsById = new OlapTable<MetricsById>("metrics_by_id", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["id"],
+});
 ```
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python
-from moose_lib import OlapTable, OlapConfig, simple_aggregated
+from typing import Annotated
+from moose_lib import OlapTable, OlapConfig, simple_aggregated, AggregateFunction
 from moose_lib.blocks import AggregatingMergeTreeEngine
 from pydantic import BaseModel
 from datetime import datetime
@@ -54,13 +83,27 @@ from datetime import datetime
 class DailyStats(BaseModel):
     date: datetime
     user_id: str
+    # SimpleAggregateFunction(sum, UInt64)
     total_views: simple_aggregated('sum', int)
+    # SimpleAggregateFunction(max, Float64)
     max_score: simple_aggregated('max', float)
+    # SimpleAggregateFunction(anyLast, DateTime)
     last_activity: simple_aggregated('anyLast', datetime)
 
 daily_stats = OlapTable[DailyStats]("daily_stats", OlapConfig(
     engine=AggregatingMergeTreeEngine(),
     order_by_fields=["date", "user_id"]
+))
+
+# AggregateFunction types model aggregate *states* (written via ...State() and read via ...Merge()).
+class MetricsById(BaseModel):
+    id: str
+    avg_rating: Annotated[float, AggregateFunction(agg_func="avg", param_types=[float])]
+    daily_uniques: Annotated[int, AggregateFunction(agg_func="uniqExact", param_types=[str])]
+
+metrics_by_id = OlapTable[MetricsById]("metrics_by_id", OlapConfig(
+    engine=AggregatingMergeTreeEngine(),
+    order_by_fields=["id"]
 ))
 ```
   </LanguageTabContent>
@@ -83,13 +126,12 @@ daily_stats = OlapTable[DailyStats]("daily_stats", OlapConfig(
 
 ## Supported Aggregate Functions
 
-| Function | Description | Use Case |
-|----------|-------------|----------|
-| `sum` | Sum of values | Totals, counts |
-| `max` | Maximum value | Peak metrics, high scores |
-| `min` | Minimum value | Minimum thresholds |
-| `any` | Any single value | Non-deterministic pick |
-| `anyLast` | Last inserted value | Latest timestamp, status |
+Moose does not define its own aggregation functions—use **ClickHouse aggregate functions**.
+
+- For `SimpleAggregateFunction`, use ClickHouse-supported functions for `SimpleAggregateFunction` columns. See the ClickHouse docs: [SimpleAggregateFunction](https://clickhouse.com/docs/en/sql-reference/data-types/simpleaggregatefunction).
+- For `AggregateFunction`, you can model aggregate states for ClickHouse aggregate functions (e.g. `avg`, `sum`, `uniqExact`, `argMax`, `quantiles`, …) and write them with `...State()` / read them with `...Merge()`. See the ClickHouse docs:
+  - [Aggregate functions](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/)
+  - [AggregateFunction data type](https://clickhouse.com/docs/en/sql-reference/data-types/aggregatefunction)
 
 ## Example: Materialized View Rollup
 
@@ -206,6 +248,7 @@ Pre-aggregating with AggregatingMergeTree can reduce query latency by orders of 
 ## See Also
 
 - [Aggregate Types](/moosestack/data-types/aggregates) — `SimpleAggregateFunction` column types
+- [Materialized Views](/moosestack/olap/model-materialized-view#target-tables-with-aggregatingmergetree) — modeling `AggregateFunction` / aggregate states
 - [Materialized Views](/moosestack/olap/model-materialized-view) — Populating aggregate tables
 - [SummingMergeTree](/moosestack/engines/summing-merge-tree) — Simpler option for sum-only aggregations
 
