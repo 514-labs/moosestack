@@ -530,30 +530,132 @@ mod tests {
     }
 
     #[test]
-    fn test_has_inject_workspace_packages_in_npmrc() {
+    fn test_npmrc_no_file() {
+        use super::*;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_empty_file() {
+        use super::*;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_present() {
         use super::*;
         use std::io::Write;
         use tempfile::tempdir;
 
-        // Test with setting present
         let dir = tempdir().unwrap();
-        let npmrc_path = dir.path().join(".npmrc");
-        let mut file = std::fs::File::create(&npmrc_path).unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
         writeln!(file, "inject-workspace-packages=true").unwrap();
-
         assert!(has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
 
-        // Test with setting absent
+    #[test]
+    fn test_npmrc_setting_case_insensitive() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // TRUE
+        let dir1 = tempdir().unwrap();
+        let mut file1 = std::fs::File::create(dir1.path().join(".npmrc")).unwrap();
+        writeln!(file1, "inject-workspace-packages=TRUE").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir1.path()));
+
+        // True
         let dir2 = tempdir().unwrap();
-        let npmrc_path2 = dir2.path().join(".npmrc");
-        let mut file2 = std::fs::File::create(&npmrc_path2).unwrap();
-        writeln!(file2, "some-other-setting=value").unwrap();
+        let mut file2 = std::fs::File::create(dir2.path().join(".npmrc")).unwrap();
+        writeln!(file2, "inject-workspace-packages=True").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir2.path()));
+    }
 
-        assert!(!has_inject_workspace_packages_in_npmrc(dir2.path()));
+    #[test]
+    fn test_npmrc_setting_explicit_false() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
 
-        // Test with no .npmrc file
-        let dir3 = tempdir().unwrap();
-        assert!(!has_inject_workspace_packages_in_npmrc(dir3.path()));
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "inject-workspace-packages=false").unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_absent() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "some-other-setting=value").unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_hash_comment_ignored() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Per npmrc docs: Lines beginning with # are comments
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "# inject-workspace-packages=true").unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_semicolon_comment_ignored() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Per npmrc docs: Lines beginning with ; are comments
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "; inject-workspace-packages=true").unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_after_comments() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Real-world .npmrc with comments followed by settings
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "# last modified: 01 Jan 2024").unwrap();
+        writeln!(file, "; Enable workspace package injection").unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_among_multiple_settings() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "shamefully-hoist=true").unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+        writeln!(file, "strict-peer-dependencies=false").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir.path()));
     }
 
     #[test]
