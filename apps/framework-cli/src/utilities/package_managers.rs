@@ -49,6 +49,28 @@ impl fmt::Display for PackageManager {
     }
 }
 
+/// Determines how pnpm deploy should be invoked for Docker builds.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PnpmDeployMode {
+    /// Use modern `pnpm deploy` which respects the lockfile
+    Modern,
+    /// Use `pnpm deploy --legacy` which re-resolves dependencies
+    Legacy(LegacyReason),
+}
+
+/// Reason why legacy pnpm deploy mode is required.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LegacyReason {
+    /// .npmrc doesn't have inject-workspace-packages=true
+    NpmrcMissingSetting,
+    /// .npmrc has the setting, but lockfile wasn't regenerated with it
+    LockfileMissingSetting,
+    /// Lockfile has the setting but .npmrc doesn't (inconsistent state)
+    LockfileHasButNpmrcMissing,
+    /// Not in a pnpm workspace at all
+    NotPnpmWorkspace,
+}
+
 pub fn install_packages(
     directory: &PathBuf,
     package_manager: &PackageManager,
@@ -260,6 +282,17 @@ pub fn get_lock_file_path(project_dir: &PathBuf) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_pnpm_deploy_mode_default() {
+        use super::*;
+        // Test that we can create the enum variants
+        let modern = PnpmDeployMode::Modern;
+        let legacy = PnpmDeployMode::Legacy(LegacyReason::NpmrcMissingSetting);
+
+        assert_eq!(modern, PnpmDeployMode::Modern);
+        assert!(matches!(legacy, PnpmDeployMode::Legacy(_)));
+    }
+
     #[test]
     fn test_output_of_command() -> Result<(), std::io::Error> {
         //! Test to demonstrate the use of command and output handling
