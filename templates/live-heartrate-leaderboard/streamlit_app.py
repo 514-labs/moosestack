@@ -6,20 +6,22 @@ from datetime import datetime, timezone
 
 from moose_lib import set_moose_base_url
 
-from app.main import get_leaderboard_api, get_user_live_heart_rate_stats, LeaderboardQueryParams, LiveHeartRateParams, \
-    HeartRateStats
+from app.main import (
+    get_leaderboard_api,
+    get_user_live_heart_rate_stats,
+    LeaderboardQueryParams,
+    LiveHeartRateParams,
+    HeartRateStats,
+)
 
 set_moose_base_url("http://localhost:4000")
 
 # Page config
-st.set_page_config(
-    page_title="Live Heart Rate Monitor",
-    page_icon="❤️",
-    layout="wide"
-)
+st.set_page_config(page_title="Live Heart Rate Monitor", page_icon="❤️", layout="wide")
 
 # Modern animated banner
-st.markdown("""
+st.markdown(
+    """
     <style>
         .modern-banner {
             background: linear-gradient(135deg, #7f00ff, #e100ff);
@@ -65,20 +67,24 @@ st.markdown("""
             Learn More: docs.fiveonefour.com/moose
         Download: bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose)
     </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # Initialize session state and constants
-if 'selected_user' not in st.session_state:
+if "selected_user" not in st.session_state:
     st.session_state.selected_user = None
-if 'hr_data' not in st.session_state:
+if "hr_data" not in st.session_state:
     # Initialize with explicit dtypes to ensure consistency
-    st.session_state.hr_data = pd.DataFrame({
-        'timestamp': pd.Series(dtype='datetime64[ns, UTC]'),
-        'heart_rate': pd.Series(dtype='float64'),
-        'hr_zone': pd.Series(dtype='int64'),
-        'estimated_power': pd.Series(dtype='float64'),
-        'cumulative_calories_burned': pd.Series(dtype='float64')
-    })
+    st.session_state.hr_data = pd.DataFrame(
+        {
+            "timestamp": pd.Series(dtype="datetime64[ns, UTC]"),
+            "heart_rate": pd.Series(dtype="float64"),
+            "hr_zone": pd.Series(dtype="int64"),
+            "estimated_power": pd.Series(dtype="float64"),
+            "cumulative_calories_burned": pd.Series(dtype="float64"),
+        }
+    )
 
 # Constants
 LEADERBOARD_TIME_WINDOW = 300  # 5 minutes in seconds
@@ -89,37 +95,57 @@ def update_live_graph():
     try:
         if st.session_state.selected_user:
             response = get_user_live_heart_rate_stats.call(
-                LiveHeartRateParams(user_name=st.session_state.selected_user,
-                                    window_seconds=60))
+                LiveHeartRateParams(
+                    user_name=st.session_state.selected_user, window_seconds=60
+                )
+            )
             data: list[HeartRateStats] = response.entries
             if True:
                 if data:
                     # Convert data to DataFrame
-                    new_data = pd.DataFrame([{
-                        'timestamp': d.processed_timestamp.replace(tzinfo=timezone.utc),
-                        'heart_rate': d.heart_rate,
-                        'hr_zone': d.hr_zone,
-                        'estimated_power': d.estimated_power,
-                        'cumulative_calories_burned': d.cumulative_calories_burned
-                    } for d in data])
+                    new_data = pd.DataFrame(
+                        [
+                            {
+                                "timestamp": d.processed_timestamp.replace(
+                                    tzinfo=timezone.utc
+                                ),
+                                "heart_rate": d.heart_rate,
+                                "hr_zone": d.hr_zone,
+                                "estimated_power": d.estimated_power,
+                                "cumulative_calories_burned": d.cumulative_calories_burned,
+                            }
+                            for d in data
+                        ]
+                    )
 
                     # Update session state data
                     if st.session_state.hr_data.empty:
                         st.session_state.hr_data = new_data
                     else:
-                        st.session_state.hr_data = pd.concat([st.session_state.hr_data, new_data], ignore_index=True)
+                        st.session_state.hr_data = pd.concat(
+                            [st.session_state.hr_data, new_data], ignore_index=True
+                        )
 
                     # Drop duplicates and sort by timestamp
-                    st.session_state.hr_data = st.session_state.hr_data.drop_duplicates(subset=['timestamp'])
-                    st.session_state.hr_data = st.session_state.hr_data.sort_values('timestamp')
+                    st.session_state.hr_data = st.session_state.hr_data.drop_duplicates(
+                        subset=["timestamp"]
+                    )
+                    st.session_state.hr_data = st.session_state.hr_data.sort_values(
+                        "timestamp"
+                    )
 
                     # Keep only last 60 seconds of data
                     cutoff_time = datetime.now(timezone.utc) - pd.Timedelta(seconds=60)
                     st.session_state.hr_data = st.session_state.hr_data[
-                        st.session_state.hr_data['timestamp'] > cutoff_time]
+                        st.session_state.hr_data["timestamp"] > cutoff_time
+                    ]
 
                     # Return the most recent data point
-                    return st.session_state.hr_data.iloc[-1] if not st.session_state.hr_data.empty else None
+                    return (
+                        st.session_state.hr_data.iloc[-1]
+                        if not st.session_state.hr_data.empty
+                        else None
+                    )
     except Exception as e:
         st.error(f"Failed to update graph: {str(e)}")
     return None
@@ -129,21 +155,30 @@ def update_live_graph():
 def update_leaderboard():
     try:
         data = get_leaderboard_api.call(
-            LeaderboardQueryParams(time_window_seconds=LEADERBOARD_TIME_WINDOW,
-                                   limit=10)
-        ).model_dump()["entries"] # convert to dicts to load into pandas
+            LeaderboardQueryParams(
+                time_window_seconds=LEADERBOARD_TIME_WINDOW, limit=10
+            )
+        ).model_dump()[
+            "entries"
+        ]  # convert to dicts to load into pandas
         if True:
             df = pd.DataFrame(data)
 
             # Display only relevant columns
-            display_cols = ['rank', 'user_name', 'avg_heart_rate', 'avg_power', 'total_calories']
+            display_cols = [
+                "rank",
+                "user_name",
+                "avg_heart_rate",
+                "avg_power",
+                "total_calories",
+            ]
             df_display = df[display_cols].copy()
 
             # Add styling to highlight selected user
             def highlight_selected_user(row):
-                if row['user_name'] == st.session_state.selected_user:
-                    return ['background-color: #FF4B4B30'] * len(row)
-                return [''] * len(row)
+                if row["user_name"] == st.session_state.selected_user:
+                    return ["background-color: #FF4B4B30"] * len(row)
+                return [""] * len(row)
 
             styled_df = df_display.style.apply(highlight_selected_user, axis=1)
             return styled_df
@@ -160,22 +195,27 @@ with title_col:
 with select_col:
     try:
         leaderboard_result = get_leaderboard_api.call(
-            LeaderboardQueryParams(time_window_seconds=LEADERBOARD_TIME_WINDOW,
-                                   limit=100)
+            LeaderboardQueryParams(
+                time_window_seconds=LEADERBOARD_TIME_WINDOW, limit=100
+            )
         )
         if True:
             users = [user.user_name for user in leaderboard_result.entries]
             st.write("")
-            selected_user = st.selectbox("Select User", users, label_visibility="collapsed")
+            selected_user = st.selectbox(
+                "Select User", users, label_visibility="collapsed"
+            )
             if selected_user != st.session_state.selected_user:
                 st.session_state.selected_user = selected_user
-                st.session_state.hr_data = pd.DataFrame({
-                    'timestamp': pd.Series(dtype='datetime64[ns, UTC]'),
-                    'heart_rate': pd.Series(dtype='float64'),
-                    'hr_zone': pd.Series(dtype='int64'),
-                    'estimated_power': pd.Series(dtype='float64'),
-                    'cumulative_calories_burned': pd.Series(dtype='float64')
-                })
+                st.session_state.hr_data = pd.DataFrame(
+                    {
+                        "timestamp": pd.Series(dtype="datetime64[ns, UTC]"),
+                        "heart_rate": pd.Series(dtype="float64"),
+                        "hr_zone": pd.Series(dtype="int64"),
+                        "estimated_power": pd.Series(dtype="float64"),
+                        "cumulative_calories_burned": pd.Series(dtype="float64"),
+                    }
+                )
     except Exception as e:
         st.error(f"Failed to fetch users: {str(e)}")
         users = []
@@ -188,25 +228,11 @@ latest_data = update_live_graph()
 
 # Display metrics
 if latest_data is not None:
-    metrics_cols[0].metric(
-        "Heart Rate",
-        f"{latest_data['heart_rate']} BPM",
-        delta=None
-    )
-    metrics_cols[1].metric(
-        "Zone",
-        f"Zone {latest_data['hr_zone']}",
-        delta=None
-    )
-    metrics_cols[2].metric(
-        "Power",
-        f"{latest_data['estimated_power']}W",
-        delta=None
-    )
+    metrics_cols[0].metric("Heart Rate", f"{latest_data['heart_rate']} BPM", delta=None)
+    metrics_cols[1].metric("Zone", f"Zone {latest_data['hr_zone']}", delta=None)
+    metrics_cols[2].metric("Power", f"{latest_data['estimated_power']}W", delta=None)
     metrics_cols[3].metric(
-        "Calories",
-        f"{latest_data['cumulative_calories_burned']:.1f} kcal",
-        delta=None
+        "Calories", f"{latest_data['cumulative_calories_burned']:.1f} kcal", delta=None
     )
 
 # Create and update graph
@@ -214,18 +240,20 @@ if not st.session_state.hr_data.empty:
     fig = go.Figure()
 
     # Add heart rate trace
-    fig.add_trace(go.Scatter(
-        x=st.session_state.hr_data['timestamp'],
-        y=st.session_state.hr_data['heart_rate'],
-        mode='lines+markers',
-        name='Heart Rate',
-        line=dict(color='#FF4B4B', width=2),
-        fill='tozeroy'
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=st.session_state.hr_data["timestamp"],
+            y=st.session_state.hr_data["heart_rate"],
+            mode="lines+markers",
+            name="Heart Rate",
+            line=dict(color="#FF4B4B", width=2),
+            fill="tozeroy",
+        )
+    )
 
     # Add zone lines
-    zone_colors = ['rgba(255,255,255,0.3)'] * 4
-    zone_labels = ['Zone 1-2', 'Zone 2-3', 'Zone 3-4', 'Zone 4-5']
+    zone_colors = ["rgba(255,255,255,0.3)"] * 4
+    zone_labels = ["Zone 1-2", "Zone 2-3", "Zone 3-4", "Zone 4-5"]
     zone_values = [120, 140, 160, 180]
 
     for value, label, color in zip(zone_values, zone_labels, zone_colors):
@@ -234,7 +262,7 @@ if not st.session_state.hr_data.empty:
             line_dash="dash",
             line_color=color,
             annotation_text=label,
-            annotation_position="right"
+            annotation_position="right",
         )
 
     # Update layout
@@ -244,24 +272,24 @@ if not st.session_state.hr_data.empty:
         showlegend=False,
         height=400,
         margin=dict(l=0, r=0, t=20, b=0),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(
             showgrid=True,
-            gridcolor='rgba(255,255,255,0.1)',
+            gridcolor="rgba(255,255,255,0.1)",
             range=[
-                st.session_state.hr_data['timestamp'].min(),
-                st.session_state.hr_data['timestamp'].max()
-            ]
+                st.session_state.hr_data["timestamp"].min(),
+                st.session_state.hr_data["timestamp"].max(),
+            ],
         ),
         yaxis=dict(
             showgrid=True,
-            gridcolor='rgba(255,255,255,0.1)',
+            gridcolor="rgba(255,255,255,0.1)",
             range=[
-                max(0, st.session_state.hr_data['heart_rate'].min() - 10),
-                st.session_state.hr_data['heart_rate'].max() + 10
-            ]
-        )
+                max(0, st.session_state.hr_data["heart_rate"].min() - 10),
+                st.session_state.hr_data["heart_rate"].max() + 10,
+            ],
+        ),
     )
 
     # Display the graph
@@ -283,11 +311,14 @@ else:
 
 # Footer
 st.markdown("---")
-st.markdown("""
+st.markdown(
+    """
 <div style='text-align: center'>
     Built with Streamlit ❤️ | Monitoring heart rates in real-time
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # Update frequency
 time.sleep(1)

@@ -4,8 +4,10 @@ from decimal import Decimal
 from uuid import UUID
 from typing import Any
 
+
 class MooseJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder that handles common Python types."""
+
     def default(self, obj: Any) -> Any:
         if isinstance(obj, (datetime, date)):
             return {"__type": "datetime", "value": obj.isoformat()}
@@ -26,14 +28,15 @@ class MooseJSONEncoder(json.JSONEncoder):
             pass
         return super().default(obj)
 
+
 def moose_json_decode(dct: dict) -> Any:
     """Custom JSON decoder that restores special types."""
     if "__type" not in dct:
         return dct
-        
+
     obj_type = dct["__type"]
     value = dct["value"]
-    
+
     if obj_type == "datetime":
         return datetime.fromisoformat(value)
     if obj_type == "time":
@@ -46,5 +49,5 @@ def moose_json_decode(dct: dict) -> Any:
         return set(value)
     if obj_type == "bytes":
         return bytes.fromhex(value)
-    
-    return dct 
+
+    return dct

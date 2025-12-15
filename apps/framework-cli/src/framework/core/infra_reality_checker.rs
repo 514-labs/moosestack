@@ -26,7 +26,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Represents errors that can occur during infrastructure reality checking.
 #[derive(Debug, Error)]
@@ -93,19 +93,59 @@ pub fn find_table_from_infra_map(
     // Generate ID with local database prefix for comparison
     let table_id = table.id(default_database);
 
+    debug!(
+        "Looking for table '{}' (db: {:?}) with generated ID '{}' in infra map",
+        table.name, table.database, table_id
+    );
+
     // Try exact ID match first (fast path)
     if infra_map_tables.contains_key(&table_id) {
+        debug!("Found exact ID match for table '{}'", table.name);
         return Some(table_id);
     }
 
+    debug!(
+        "No exact ID match for '{}'. Infra map keys: {:?}",
+        table_id,
+        infra_map_tables.keys().collect::<Vec<_>>()
+    );
+
     // handles the case where `infra_map_tables` has keys with a different db prefix, or not at all
-    infra_map_tables.iter().find_map(|(table_id, t)| {
-        if t.name == table.name && t.database.is_none() && t.version == table.version {
-            Some(table_id.clone())
-        } else {
-            None
+    // FIX for ENG-1689: Also match tables where database fields are equal
+    let fallback_match = infra_map_tables.iter().find_map(|(infra_table_id, t)| {
+        if t.name == table.name && t.version == table.version {
+            // Match if:
+            // 1. infra_map entry has no database (matches any), OR
+            // 2. databases are equal
+            let db_matches = match (&t.database, &table.database) {
+                (None, _) => true, // infra_map has no DB, matches any
+                (Some(t_db), Some(table_db)) => t_db == table_db,
+                (Some(_), None) => false, // infra_map has DB but table doesn't
+            };
+            if db_matches {
+                debug!(
+                    "Fallback match found: table '{}' matched infra map entry with ID '{}' (database: {:?})",
+                    table.name, infra_table_id, t.database
+                );
+                return Some(infra_table_id.clone());
+            }
         }
-    })
+        None
+    });
+
+    if fallback_match.is_none() && table.database.is_some() {
+        // Log a warning for tables in custom databases that couldn't be matched
+        warn!(
+            "Table '{}' in database '{:?}' could not be matched to any entry in the infrastructure map. \
+            Generated ID '{}' not found, and no fallback match available. \
+            This may cause the table to appear as unmapped and use stale engine information.",
+            table.name,
+            table.database,
+            table_id
+        );
+    }
+
+    fallback_match
 }
 
 impl<T: OlapOperations> InfraRealityChecker<T> {
@@ -819,6 +859,88 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_reality_checker_replicated_vs_mergetree_mismatch() {
+        // This test simulates the user's bug report:
+        // - ClickHouse actually has ReplicatedReplacingMergeTree
+        // - Stored infra map has MergeTree
+        // - We should detect a mismatch
+        let mut actual_table = create_base_table("test_table");
+        let mut infra_table = create_base_table("test_table");
+
+        // ClickHouse has ReplicatedReplacingMergeTree (with empty params - cloud mode)
+        actual_table.engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            ver: None,
+            is_deleted: None,
+        };
+        // Stored infra map has MergeTree (potentially from older deployment)
+        infra_table.engine = ClickhouseEngine::MergeTree;
+
+        let mock_client = MockOlapClient {
+            tables: vec![Table {
+                database: Some(DEFAULT_DATABASE_NAME.to_string()),
+                ..actual_table.clone()
+            }],
+            sql_resources: vec![],
+        };
+
+        let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables: HashMap::new(),
+            views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: OlapProcess {},
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        };
+
+        infra_map
+            .tables
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let project = create_test_project();
+
+        let discrepancies = checker.check_reality(&project, &infra_map).await.unwrap();
+
+        assert!(discrepancies.unmapped_tables.is_empty());
+        assert!(discrepancies.missing_tables.is_empty());
+        assert_eq!(
+            discrepancies.mismatched_tables.len(),
+            1,
+            "Should detect engine mismatch between ReplicatedReplacingMergeTree and MergeTree"
+        );
+
+        // Verify the change shows reality has ReplicatedReplacingMergeTree
+        match &discrepancies.mismatched_tables[0] {
+            OlapChange::Table(TableChange::Updated { before, after, .. }) => {
+                assert!(
+                    matches!(
+                        &before.engine,
+                        ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
+                    ),
+                    "before (reality) should have ReplicatedReplacingMergeTree, got {:?}",
+                    before.engine
+                );
+                assert!(
+                    matches!(&after.engine, ClickhouseEngine::MergeTree),
+                    "after (infra map) should have MergeTree, got {:?}",
+                    after.engine
+                );
+            }
+            _ => panic!("Expected TableChange::Updated variant"),
+        }
+    }
+
+    #[tokio::test]
     async fn test_reality_checker_sql_resource_mismatch() {
         let actual_resource = SqlResource {
             name: "test_view".to_string(),
@@ -887,6 +1009,291 @@ mod tests {
                 assert_eq!(after.setup[0], "CREATE VIEW test_view AS SELECT 2");
             }
             _ => panic!("Expected SqlResource Updated variant"),
+        }
+    }
+
+    // Unit tests for find_table_from_infra_map function
+    // These test the fix for ENG-1689: database matching in fallback path
+
+    #[test]
+    fn test_find_table_exact_id_match() {
+        let table = Table {
+            database: Some("custom_db".to_string()),
+            ..create_base_table("test_table")
+        };
+
+        let mut infra_map_tables = HashMap::new();
+        let infra_table = Table {
+            database: Some("custom_db".to_string()),
+            ..create_base_table("test_table")
+        };
+        let table_id = infra_table.id(DEFAULT_DATABASE_NAME);
+        infra_map_tables.insert(table_id.clone(), infra_table);
+
+        let result = find_table_from_infra_map(&table, &infra_map_tables, DEFAULT_DATABASE_NAME);
+        assert_eq!(result, Some(table_id));
+    }
+
+    #[test]
+    fn test_find_table_fallback_infra_map_no_database() {
+        // When infra_map entry has no database, it should match any table
+        let table = Table {
+            database: Some("custom_db".to_string()),
+            ..create_base_table("test_table")
+        };
+
+        let mut infra_map_tables = HashMap::new();
+        let infra_table = Table {
+            database: None, // No database in infra_map
+            ..create_base_table("test_table")
+        };
+        let infra_table_id = infra_table.id(DEFAULT_DATABASE_NAME);
+        infra_map_tables.insert(infra_table_id.clone(), infra_table);
+
+        let result = find_table_from_infra_map(&table, &infra_map_tables, DEFAULT_DATABASE_NAME);
+        assert_eq!(result, Some(infra_table_id));
+    }
+
+    #[test]
+    fn test_find_table_fallback_matching_databases() {
+        // FIX for ENG-1689: When both have matching databases, should match
+        let table = Table {
+            database: Some("custom_db".to_string()),
+            ..create_base_table("test_table")
+        };
+
+        let mut infra_map_tables = HashMap::new();
+        // Use a different key to force fallback path
+        let infra_table = Table {
+            database: Some("custom_db".to_string()),
+            ..create_base_table("test_table")
+        };
+        let wrong_key = "wrong_key_custom_db_test_table_1_0_0".to_string();
+        infra_map_tables.insert(wrong_key.clone(), infra_table);
+
+        let result = find_table_from_infra_map(&table, &infra_map_tables, DEFAULT_DATABASE_NAME);
+        assert_eq!(
+            result,
+            Some(wrong_key),
+            "Should match via fallback when databases are equal"
+        );
+    }
+
+    #[test]
+    fn test_find_table_fallback_mismatching_databases() {
+        // Tables in different databases should NOT match
+        let table = Table {
+            database: Some("custom_db".to_string()),
+            ..create_base_table("test_table")
+        };
+
+        let mut infra_map_tables = HashMap::new();
+        let infra_table = Table {
+            database: Some("other_db".to_string()), // Different database
+            ..create_base_table("test_table")
+        };
+        let wrong_key = "wrong_key_other_db_test_table_1_0_0".to_string();
+        infra_map_tables.insert(wrong_key, infra_table);
+
+        let result = find_table_from_infra_map(&table, &infra_map_tables, DEFAULT_DATABASE_NAME);
+        assert_eq!(
+            result, None,
+            "Should NOT match when databases are different"
+        );
+    }
+
+    #[test]
+    fn test_find_table_fallback_infra_has_db_table_has_none() {
+        // When infra_map has database but table doesn't, should NOT match
+        let table = Table {
+            database: None,
+            ..create_base_table("test_table")
+        };
+
+        let mut infra_map_tables = HashMap::new();
+        let infra_table = Table {
+            database: Some("custom_db".to_string()),
+            ..create_base_table("test_table")
+        };
+        let wrong_key = "wrong_key_custom_db_test_table_1_0_0".to_string();
+        infra_map_tables.insert(wrong_key, infra_table);
+
+        let result = find_table_from_infra_map(&table, &infra_map_tables, DEFAULT_DATABASE_NAME);
+        assert_eq!(
+            result, None,
+            "Should NOT match when infra has DB but table doesn't"
+        );
+    }
+
+    #[test]
+    fn test_find_table_version_mismatch_no_match() {
+        // Different versions should NOT match
+        let mut table = create_base_table("test_table");
+        table.database = Some("custom_db".to_string());
+        table.version = Some(Version::from_string("2.0.0".to_string()));
+
+        let mut infra_map_tables = HashMap::new();
+        let mut infra_table = create_base_table("test_table");
+        infra_table.database = Some("custom_db".to_string());
+        infra_table.version = Some(Version::from_string("1.0.0".to_string()));
+        let wrong_key = "wrong_key_custom_db_test_table_1_0_0".to_string();
+        infra_map_tables.insert(wrong_key, infra_table);
+
+        let result = find_table_from_infra_map(&table, &infra_map_tables, DEFAULT_DATABASE_NAME);
+        assert_eq!(result, None, "Should NOT match when versions are different");
+    }
+
+    #[tokio::test]
+    async fn test_reality_checker_custom_database_engine_mismatch() {
+        // This test verifies the ENG-1689 fix:
+        // Tables in custom databases should properly match and detect engine mismatches
+        let mut actual_table = create_base_table("test_table");
+        let mut infra_table = create_base_table("test_table");
+
+        // Both tables are in a custom database
+        actual_table.database = Some("custom_db".to_string());
+        infra_table.database = Some("custom_db".to_string());
+
+        // ClickHouse has ReplicatedReplacingMergeTree
+        actual_table.engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            ver: None,
+            is_deleted: None,
+        };
+        // Infra map has the correct engine too
+        infra_table.engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            ver: None,
+            is_deleted: None,
+        };
+
+        let mock_client = MockOlapClient {
+            tables: vec![actual_table.clone()],
+            sql_resources: vec![],
+        };
+
+        let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables: HashMap::new(),
+            views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: OlapProcess {},
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        };
+
+        infra_map
+            .tables
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let mut project = create_test_project();
+        project.clickhouse_config.additional_databases = vec!["custom_db".to_string()];
+
+        let discrepancies = checker.check_reality(&project, &infra_map).await.unwrap();
+
+        // Should find no discrepancies since engines match
+        assert!(
+            discrepancies.unmapped_tables.is_empty(),
+            "Should not have unmapped tables - the fix should allow matching tables in custom databases"
+        );
+        assert!(discrepancies.missing_tables.is_empty());
+        assert!(
+            discrepancies.mismatched_tables.is_empty(),
+            "Should not have mismatched tables since engines are the same"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reality_checker_custom_database_detects_engine_difference() {
+        // This test verifies that after the ENG-1689 fix, we properly detect
+        // engine differences in custom database tables
+        let mut actual_table = create_base_table("test_table");
+        let mut infra_table = create_base_table("test_table");
+
+        // Both tables are in a custom database
+        actual_table.database = Some("custom_db".to_string());
+        infra_table.database = Some("custom_db".to_string());
+
+        // ClickHouse has ReplicatedReplacingMergeTree
+        actual_table.engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            ver: None,
+            is_deleted: None,
+        };
+        // Infra map incorrectly has MergeTree (the bug scenario)
+        infra_table.engine = ClickhouseEngine::MergeTree;
+
+        let mock_client = MockOlapClient {
+            tables: vec![actual_table.clone()],
+            sql_resources: vec![],
+        };
+
+        let mut infra_map = InfrastructureMap {
+            default_database: DEFAULT_DATABASE_NAME.to_string(),
+            topics: HashMap::new(),
+            api_endpoints: HashMap::new(),
+            tables: HashMap::new(),
+            views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: OlapProcess {},
+            consumption_api_web_server: ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        };
+
+        infra_map
+            .tables
+            .insert(infra_table.id(DEFAULT_DATABASE_NAME), infra_table);
+
+        let checker = InfraRealityChecker::new(mock_client);
+        let mut project = create_test_project();
+        project.clickhouse_config.additional_databases = vec!["custom_db".to_string()];
+
+        let discrepancies = checker.check_reality(&project, &infra_map).await.unwrap();
+
+        // Should properly match the table and detect the engine mismatch
+        assert!(
+            discrepancies.unmapped_tables.is_empty(),
+            "Should not have unmapped tables - the fix allows matching"
+        );
+        assert!(discrepancies.missing_tables.is_empty());
+        assert_eq!(
+            discrepancies.mismatched_tables.len(),
+            1,
+            "Should detect the engine mismatch in custom database table"
+        );
+
+        // Verify the mismatch is about the engine
+        match &discrepancies.mismatched_tables[0] {
+            OlapChange::Table(TableChange::Updated { before, after, .. }) => {
+                assert!(
+                    matches!(
+                        &before.engine,
+                        ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
+                    ),
+                    "before (reality) should have ReplicatedReplacingMergeTree"
+                );
+                assert!(
+                    matches!(&after.engine, ClickhouseEngine::MergeTree),
+                    "after (infra map) should have MergeTree"
+                );
+            }
+            _ => panic!("Expected TableChange::Updated variant"),
         }
     }
 }

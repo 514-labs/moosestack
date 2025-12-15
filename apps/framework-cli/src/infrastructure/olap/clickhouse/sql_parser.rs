@@ -2070,4 +2070,93 @@ pub mod tests {
         assert!(tables.contains(&(Some("schema1".to_string()), "table1".to_string())));
         assert!(tables.contains(&(Some("default_db".to_string()), "table2".to_string())));
     }
+
+    #[test]
+    fn test_extract_engine_replicated_replacing_merge_tree_empty_params() {
+        // ClickHouse Cloud mode - ReplicatedReplacingMergeTree with empty params
+        let sql = r#"CREATE TABLE test_db.my_table
+        (
+            id Int64,
+            name String
+        )
+        ENGINE = ReplicatedReplacingMergeTree()
+        ORDER BY id"#;
+
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(result, Some("ReplicatedReplacingMergeTree()".to_string()));
+    }
+
+    #[test]
+    fn test_extract_engine_replicated_replacing_merge_tree_with_paths() {
+        // Self-hosted mode - ReplicatedReplacingMergeTree with keeper paths
+        let sql = r#"CREATE TABLE test_db.my_table ON CLUSTER clickhouse
+        (
+            id Int64,
+            name String
+        )
+        ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+        ORDER BY id"#;
+
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some(
+                "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_extract_engine_replicated_replacing_merge_tree_with_version_column() {
+        // ReplicatedReplacingMergeTree with version column
+        let sql = r#"CREATE TABLE test_db.my_table
+        (
+            id Int64,
+            version_col Int64
+        )
+        ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version_col)
+        ORDER BY id"#;
+
+        let result = extract_engine_from_create_table(sql);
+        assert_eq!(
+            result,
+            Some("ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version_col)".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_engine_and_parse_roundtrip() {
+        // Test that engine extraction produces something the parser can handle
+        use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+
+        let sql = r#"CREATE TABLE test_db.my_table
+        (
+            id Int64
+        )
+        ENGINE = ReplicatedReplacingMergeTree()
+        ORDER BY id"#;
+
+        let extracted =
+            extract_engine_from_create_table(sql).expect("Should extract engine from CREATE TABLE");
+        println!("Extracted engine string: {}", extracted);
+
+        let parsed: Result<ClickhouseEngine, _> = extracted.as_str().try_into();
+        assert!(
+            parsed.is_ok(),
+            "Extracted engine '{}' should be parseable, but got error: {:?}",
+            extracted,
+            parsed.err()
+        );
+
+        let engine = parsed.unwrap();
+        assert!(
+            matches!(
+                engine,
+                ClickhouseEngine::ReplicatedReplacingMergeTree { .. }
+            ),
+            "Should parse as ReplicatedReplacingMergeTree, got {:?}",
+            engine
+        );
+    }
 }

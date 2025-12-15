@@ -4,6 +4,7 @@ Ingestion API definitions for Moose Data Model v2 (dmv2).
 This module provides classes for defining and configuring ingestion APIs
 that receive data and send it to streams.
 """
+
 import dataclasses
 from typing import Any, Optional, Generic
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ from pydantic import BaseModel
 from .types import TypedMooseResource, T
 from .stream import Stream, DeadLetterQueue
 from ._registry import _ingest_apis
+
 
 class IngestConfig(BaseModel):
     """Basic configuration for an ingestion point.
@@ -20,9 +22,11 @@ class IngestConfig(BaseModel):
         path: Optional custom path for the ingestion endpoint.
         metadata: Optional metadata for the ingestion point.
     """
+
     version: Optional[str] = None
     path: Optional[str] = None
     metadata: Optional[dict] = None
+
 
 @dataclasses.dataclass
 class IngestConfigWithDestination[T: BaseModel]:
@@ -35,11 +39,13 @@ class IngestConfigWithDestination[T: BaseModel]:
         path: Optional custom path for the ingestion endpoint.
         metadata: Optional metadata for the ingestion configuration.
     """
+
     destination: Stream[T]
     dead_letter_queue: Optional[DeadLetterQueue[T]] = None
     version: Optional[str] = None
     path: Optional[str] = None
     metadata: Optional[dict] = None
+
 
 class IngestApi(TypedMooseResource, Generic[T]):
     """Represents an Ingestion API endpoint typed with a Pydantic model.
@@ -59,11 +65,12 @@ class IngestApi(TypedMooseResource, Generic[T]):
         name (str): The name of the API.
         model_type (type[T]): The Pydantic model associated with this API's input.
     """
+
     config: IngestConfigWithDestination[T]
 
     def __init__(self, name: str, config: IngestConfigWithDestination[T], **kwargs):
         super().__init__()
         self._set_type(name, self._get_type(kwargs))
         self.config = config
-        self.metadata = getattr(config, 'metadata', None)
+        self.metadata = getattr(config, "metadata", None)
         _ingest_apis[name] = self

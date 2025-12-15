@@ -13,7 +13,7 @@ class QueryParams(BaseModel):
         default=60,
         gt=0,
         le=3600,  # Max 1 hour of data
-        description="The number of seconds of history to return (default 60, max 3600)"
+        description="The number of seconds of history to return (default 60, max 3600)",
     )
 
 
@@ -36,11 +36,11 @@ def run(client: MooseClient, params: QueryParams) -> HeartRateStatsResponse:
     """
     Retrieves a user's live heart rate data including heart rate, heart rate zone,
     estimated power output, and calories burned.
-    
+
     Args:
         client: The MooseClient instance for executing queries
         params: The query parameters containing user_name and window_seconds
-        
+
     Returns:
         Heart rate statistics for the specified user
     """
@@ -89,16 +89,14 @@ def run(client: MooseClient, params: QueryParams) -> HeartRateStatsResponse:
     """
 
     # Execute the query with parameterized values to prevent SQL injection
-    result = client.query.execute(query, {
-        "user_name": params.user_name,
-        "window_seconds": params.window_seconds
-    })
+    result = client.query.execute(
+        query, {"user_name": params.user_name, "window_seconds": params.window_seconds}
+    )
     # print(result)
     return HeartRateStatsResponse(entries=result)
 
 
 # Create the API endpoint
 get_user_live_heart_rate_stats = Api[QueryParams, HeartRateStatsResponse](
-    name="getUserLiveHeartRateStats",
-    query_function=run
+    name="getUserLiveHeartRateStats", query_function=run
 )

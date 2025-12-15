@@ -12,10 +12,7 @@ class SampleData(BaseModel):
 
 def test_iceberg_engine_basic_creation():
     """Test basic IcebergS3Engine creation with required fields"""
-    engine = IcebergS3Engine(
-        path="s3://bucket/warehouse/table/",
-        format="Parquet"
-    )
+    engine = IcebergS3Engine(path="s3://bucket/warehouse/table/", format="Parquet")
     assert engine.path == "s3://bucket/warehouse/table/"
     assert engine.format == "Parquet"
     assert engine.aws_access_key_id is None
@@ -30,7 +27,7 @@ def test_iceberg_engine_with_all_options():
         format="ORC",
         aws_access_key_id="AKIATEST",
         aws_secret_access_key="secret123",
-        compression="zstd"
+        compression="zstd",
     )
     assert engine.path == "s3://bucket/table/"
     assert engine.format == "ORC"
@@ -59,28 +56,34 @@ def test_iceberg_engine_invalid_format():
 
 def test_iceberg_rejects_order_by():
     """Test that IcebergS3 engine rejects ORDER BY clauses (read-only external table)"""
-    with pytest.raises(ValueError, match="IcebergS3Engine does not support ORDER BY clauses"):
+    with pytest.raises(
+        ValueError, match="IcebergS3Engine does not support ORDER BY clauses"
+    ):
         OlapConfig(
             engine=IcebergS3Engine(path="s3://bucket/table/", format="Parquet"),
-            order_by_fields=["id"]
+            order_by_fields=["id"],
         )
 
 
 def test_iceberg_rejects_partition_by():
     """Test that IcebergS3 engine rejects PARTITION BY clauses (read-only external table)"""
-    with pytest.raises(ValueError, match="IcebergS3Engine does not support PARTITION BY clause"):
+    with pytest.raises(
+        ValueError, match="IcebergS3Engine does not support PARTITION BY clause"
+    ):
         OlapConfig(
             engine=IcebergS3Engine(path="s3://bucket/table/", format="Parquet"),
-            partition_by="toYYYYMM(timestamp)"
+            partition_by="toYYYYMM(timestamp)",
         )
 
 
 def test_iceberg_rejects_sample_by():
     """Test that IcebergS3 engine rejects SAMPLE BY clauses (read-only external table)"""
-    with pytest.raises(ValueError, match="IcebergS3Engine does not support SAMPLE BY clause"):
+    with pytest.raises(
+        ValueError, match="IcebergS3Engine does not support SAMPLE BY clause"
+    ):
         OlapConfig(
             engine=IcebergS3Engine(path="s3://bucket/table/", format="Parquet"),
-            sample_by_expression="cityHash64(id)"
+            sample_by_expression="cityHash64(id)",
         )
 
 
@@ -93,11 +96,10 @@ def test_iceberg_table_in_olap_table():
                 path="s3://datalake/events/",
                 format="Parquet",
                 aws_access_key_id="AKIATEST",
-                aws_secret_access_key="secret123"
+                aws_secret_access_key="secret123",
             )
-        )
+        ),
     )
     assert table.name == "lake_events"
     assert isinstance(table.config.engine, IcebergS3Engine)
     assert table.config.engine.path == "s3://datalake/events/"
-

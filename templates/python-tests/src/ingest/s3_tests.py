@@ -40,4 +40,3 @@ s3_parquet = OlapTable[S3TestData](
         ),
     ),
 )
-

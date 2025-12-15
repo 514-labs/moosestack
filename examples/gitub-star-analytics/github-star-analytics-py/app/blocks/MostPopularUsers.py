@@ -5,7 +5,7 @@ from moose_lib import (
     AggregationCreateOptions,
     create_aggregation,
     AggregationDropOptions,
-    drop_aggregation
+    drop_aggregation,
 )
 
 TABLE_NAME = "MostPopularUsers"
@@ -19,13 +19,13 @@ TABLE_OPTIONS = TableCreateOptions(
         "total_repo_stars": "AggregateFunction(sum, Int64)",
         "avg_repo_stars": "AggregateFunction(avg, Int64)",
         "total_repo_watchers": "AggregateFunction(sum, Int64)",
-        "avg_repo_watchers": "AggregateFunction(avg, Int64)"
+        "avg_repo_watchers": "AggregateFunction(avg, Int64)",
     },
     engine=ClickHouseEngines.AggregatingMergeTree,
     order_by="stargazer_login",
 )
 
-SQL = f'''
+SQL = f"""
 SELECT
     stargazer_login,
     countState(*) AS total_projects,
@@ -36,17 +36,18 @@ SELECT
 FROM StargazerProjectsDeduped
 GROUP BY
     stargazer_login
-'''
+"""
 
 
-setup_queries = create_aggregation(AggregationCreateOptions(
-    materialized_view_name=MV_NAME,
-    select=SQL,
-    table_create_options=TABLE_OPTIONS,
-))
-
-teardown_queries = drop_aggregation(AggregationDropOptions(view_name=MV_NAME, table_name=TABLE_NAME))
-block = Blocks(
-    setup=setup_queries,
-    teardown=teardown_queries
+setup_queries = create_aggregation(
+    AggregationCreateOptions(
+        materialized_view_name=MV_NAME,
+        select=SQL,
+        table_create_options=TABLE_OPTIONS,
+    )
 )
+
+teardown_queries = drop_aggregation(
+    AggregationDropOptions(view_name=MV_NAME, table_name=TABLE_NAME)
+)
+block = Blocks(setup=setup_queries, teardown=teardown_queries)
