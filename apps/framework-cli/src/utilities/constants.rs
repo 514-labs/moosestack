@@ -119,10 +119,11 @@ pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
 pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json";
 
 pub const STORE_CRED_PROMPT: &str = r#"You have externally managed tables in your code base.
-Ensure your code is up to date with `moose pull`.
+Ensure your code is up to date with `moose db pull`.
 You can also configure `moose dev` to automatically check each time you start the dev server,
 so you're not developing with out-of-date data models/schemas.
 
-In order to set this up we will need:
-1. The production URL of your moose deployment
-2. The Admin authentication token"#;
+In order to set this up we will need your ClickHouse connection details:
+1. Host and port (e.g., from Boreal)
+2. Username and password
+3. Database name"#;
