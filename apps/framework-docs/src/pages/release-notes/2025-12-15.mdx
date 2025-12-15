@@ -41,14 +41,8 @@ else
   echo "No infrastructure changes needed"
 fi
 
-# Parse specific change types for automation
-moose plan --json | jq -r '.changes[] | select(.operation == "CREATE") | .table_name'
-
 # Save plan to file for review or audit trail
 moose plan --json > infrastructure-plan.json
-
-# Compare with remote ClickHouse instance
-moose plan --json --clickhouse-url "clickhouse://user:pass@host:9000/db"
 
 # Use with remote Moose server
 moose plan --json --url "https://api.mymoose.app" --token "$MOOSE_TOKEN"
