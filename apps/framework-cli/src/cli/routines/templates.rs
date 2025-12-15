@@ -338,6 +338,7 @@ pub async fn create_project_from_template(
     name: &str,
     dir_path: &Path,
     no_fail_already_exists: bool,
+    custom_dockerfile: bool,
 ) -> Result<String, RoutineFailure> {
     let template_config = get_template_config(template, CLI_VERSION).await?;
 
@@ -466,6 +467,11 @@ pub async fn create_project_from_template(
         }
     }
 
+    // Handle custom Dockerfile setup if requested
+    if custom_dockerfile {
+        setup_custom_dockerfile(dir_path, &language)?;
+    }
+
     maybe_create_git_repo(dir_path, project_arc, is_current_dir);
 
     Ok(template_config
@@ -511,6 +517,214 @@ fn maybe_create_git_repo(dir_path: &Path, project_arc: Arc<Project>, is_current_
                 details: "\n".to_string(),
             }
         );
+    }
+}
+
+/// Sets up custom Dockerfile configuration for a new project
+/// - Updates moose.config.toml to enable custom_dockerfile
+/// - Generates a starter Dockerfile at the project root
+fn setup_custom_dockerfile(
+    dir_path: &Path,
+    language: &SupportedLanguages,
+) -> Result<(), RoutineFailure> {
+    // Update moose.config.toml to enable custom_dockerfile
+    let config_path = dir_path.join("moose.config.toml");
+    if config_path.exists() {
+        let config_content = std::fs::read_to_string(&config_path).map_err(|e| {
+            RoutineFailure::error(Message {
+                action: "Init".to_string(),
+                details: format!("Failed to read moose.config.toml: {e}"),
+            })
+        })?;
+
+        // Append docker config section (will be parsed correctly by TOML even if there's an existing empty section)
+        let updated_content = if config_content.contains("[docker_config]") {
+            // docker_config section already exists, don't modify
+            // This preserves any existing settings
+            config_content
+        } else {
+            format!(
+                "{}\n[docker_config]\ncustom_dockerfile = true\ndockerfile_path = \"./Dockerfile\"\n",
+                config_content.trim_end()
+            )
+        };
+
+        std::fs::write(&config_path, updated_content).map_err(|e| {
+            RoutineFailure::error(Message {
+                action: "Init".to_string(),
+                details: format!("Failed to write moose.config.toml: {e}"),
+            })
+        })?;
+    }
+
+    // Generate starter Dockerfile
+    let dockerfile_path = dir_path.join("Dockerfile");
+    let dockerfile_content = generate_starter_dockerfile(language);
+
+    std::fs::write(&dockerfile_path, dockerfile_content).map_err(|e| {
+        RoutineFailure::error(Message {
+            action: "Init".to_string(),
+            details: format!("Failed to write Dockerfile: {e}"),
+        })
+    })?;
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Created".to_string(),
+            details: "custom Dockerfile at ./Dockerfile".to_string(),
+        }
+    );
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Enabled".to_string(),
+            details: "docker_config.custom_dockerfile in moose.config.toml".to_string(),
+        }
+    );
+
+    Ok(())
+}
+
+/// Generates a starter Dockerfile for the given language
+/// This is a simplified template that users can customize
+fn generate_starter_dockerfile(language: &SupportedLanguages) -> String {
+    match language {
+        SupportedLanguages::Typescript => r#"# Moose TypeScript Dockerfile
+# This is a customizable Dockerfile for your Moose project.
+# Modify as needed, then run: moose build --docker
+
+FROM node:20-bookworm-slim
+
+# Disable npm update notifications
+RUN npm config set update-notifier false
+
+# Install pnpm
+RUN npm install -g pnpm@latest
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Update packages and install dependencies
+RUN apt-get update && apt-get upgrade -y
+RUN apt-get install -y ca-certificates locales coreutils curl && update-ca-certificates
+
+# Install newer libc (moose requires 2.40+)
+RUN echo "deb http://deb.debian.org/debian/ unstable main" >> /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y libc6 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Generate locale files
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+ENV TZ=UTC
+ENV DOCKER_IMAGE=true
+
+# Install Moose CLI
+ARG FRAMEWORK_VERSION="0.0.0"
+ARG DOWNLOAD_URL
+RUN curl -Lo /usr/local/bin/moose ${DOWNLOAD_URL}
+RUN chmod +x /usr/local/bin/moose
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD curl -f http://localhost:4000/health || exit 1
+
+# Create non-root user
+RUN groupadd --gid 1001 moose \
+  && useradd --uid 1001 --gid moose --shell /bin/bash --create-home moose
+
+WORKDIR /application
+RUN chown -R moose:moose /application
+
+# Copy project files
+COPY --chown=moose:moose ./package.json ./package.json
+COPY --chown=moose:moose ./tsconfig.json ./tsconfig.json
+COPY --chown=moose:moose ./app ./app
+COPY --chown=moose:moose ./project.tom[l] ./project.toml
+COPY --chown=moose:moose ./moose.config.tom[l] ./moose.config.toml
+COPY --chown=moose:moose ./versions .moose/versions
+
+# Install dependencies
+RUN npm install
+
+USER moose:moose
+
+# Validate project
+RUN moose check --write-infra-map || (echo "Error running moose check" && exit 1)
+
+EXPOSE 4000
+
+CMD ["moose", "prod"]
+"#
+        .to_string(),
+        SupportedLanguages::Python => r#"# Moose Python Dockerfile
+# This is a customizable Dockerfile for your Moose project.
+# Modify as needed, then run: moose build --docker
+
+FROM python:3.12-slim-bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Update packages and install dependencies
+RUN apt-get update && apt-get upgrade -y
+RUN apt-get install -y ca-certificates locales coreutils curl && update-ca-certificates
+
+# Install newer libc (moose requires 2.40+)
+RUN echo "deb http://deb.debian.org/debian/ unstable main" >> /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y libc6 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Generate locale files
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+ENV TZ=UTC
+ENV DOCKER_IMAGE=true
+
+# Install Moose CLI
+ARG FRAMEWORK_VERSION="0.0.0"
+ARG DOWNLOAD_URL
+RUN curl -Lo /usr/local/bin/moose ${DOWNLOAD_URL}
+RUN chmod +x /usr/local/bin/moose
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD curl -f http://localhost:4000/health || exit 1
+
+# Create non-root user
+RUN groupadd --gid 1001 moose \
+  && useradd --uid 1001 --gid moose --shell /bin/bash --create-home moose
+
+WORKDIR /application
+RUN chown -R moose:moose /application
+
+# Copy project files
+COPY --chown=moose:moose ./setup.py ./setup.py
+COPY --chown=moose:moose ./requirements.txt ./requirements.txt
+COPY --chown=moose:moose ./app ./app
+COPY --chown=moose:moose ./project.tom[l] ./project.toml
+COPY --chown=moose:moose ./moose.config.tom[l] ./moose.config.toml
+COPY --chown=moose:moose ./versions .moose/versions
+
+# Install dependencies
+RUN pip install -r requirements.txt
+
+USER moose:moose
+
+# Validate project
+RUN moose check --write-infra-map || (echo "Error running moose check" && exit 1)
+
+EXPOSE 4000
+
+CMD ["moose", "prod"]
+"#
+        .to_string(),
     }
 }
 

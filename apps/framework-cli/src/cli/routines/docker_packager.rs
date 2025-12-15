@@ -316,55 +316,32 @@ CMD ["moose", "prod"]
 /// If monorepo detection fails or path analysis encounters errors, gracefully falls back
 /// to standard single-project Docker build to ensure robustness.
 ///
-/// Determines the Dockerfile location based on settings and project state
-fn resolve_dockerfile_path(
-    project: &Project,
-    settings: &Settings,
-    expose_flag: Option<bool>,
-) -> Result<PathBuf, RoutineFailure> {
+/// Determines the Dockerfile location based on project's docker_config
+fn resolve_dockerfile_path(project: &Project) -> Result<PathBuf, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
-    let custom_path = custom_dockerfile_path(project);
 
-    // Priority 1: Check for explicit CLI flag
-    if let Some(expose) = expose_flag {
-        return Ok(if expose {
-            custom_path
-        } else {
-            managed_dockerfile_path(&internal_dir)
-        });
-    }
-
-    // Priority 2: Check if custom Dockerfile already exists in project root
-    if custom_path.exists() {
-        info!("Found existing Dockerfile at project root, using custom mode");
+    // Check if custom_dockerfile is enabled in moose.config.toml
+    if project.docker_config.custom_dockerfile {
+        // Use the configured dockerfile_path (defaults to "./Dockerfile")
+        let custom_path = project
+            .project_location
+            .join(&project.docker_config.dockerfile_path);
+        info!(
+            "Using custom Dockerfile at: {:?}",
+            project.docker_config.dockerfile_path
+        );
         return Ok(custom_path);
     }
 
-    // Priority 3: Check settings from config file
-    Ok(if settings.dev.expose_dockerfile {
-        custom_path
-    } else {
-        managed_dockerfile_path(&internal_dir)
-    })
+    // Default: use managed Dockerfile in .moose/packager/
+    Ok(managed_dockerfile_path(&internal_dir))
 }
 
 /// Checks if we should skip Dockerfile generation to preserve user customizations
-fn should_skip_dockerfile_generation(
-    project: &Project,
-    target_path: &Path,
-    expose_flag: Option<bool>,
-) -> bool {
-    let custom_path = custom_dockerfile_path(project);
-
-    // If --no-expose-dockerfile is explicitly set, never skip (force regeneration)
-    if expose_flag == Some(false) {
-        info!("Forcing managed Dockerfile regeneration (--no-expose-dockerfile)");
-        return false;
-    }
-
-    // If custom Dockerfile exists at project root, preserve it when targeting it
-    // This ensures "generate once, preserve forever" behavior
-    if custom_path.exists() && target_path == custom_path {
+fn should_skip_dockerfile_generation(project: &Project, target_path: &Path) -> bool {
+    // If custom_dockerfile is enabled and the target file already exists,
+    // preserve it to avoid overwriting user customizations
+    if project.docker_config.custom_dockerfile && target_path.exists() {
         info!("Custom Dockerfile exists, skipping generation to preserve customizations");
         return true;
     }
@@ -432,8 +409,6 @@ fn create_dockerfile_with_content(
 pub fn create_dockerfile(
     project: &Project,
     docker_client: &DockerClient,
-    settings: &Settings,
-    expose_flag: Option<bool>,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
 
@@ -462,42 +437,11 @@ pub fn create_dockerfile(
         )
     })?;
 
-    // If --no-expose-dockerfile is set, delete any existing custom Dockerfile
-    if expose_flag == Some(false) {
-        let custom_path = custom_dockerfile_path(project);
-        if custom_path.exists() {
-            fs::remove_file(&custom_path).map_err(|err| {
-                error!("Failed to remove custom Dockerfile: {}", err);
-                RoutineFailure::new(
-                    Message::new(
-                        "Failed".to_string(),
-                        "to remove custom Dockerfile".to_string(),
-                    ),
-                    err,
-                )
-            })?;
-
-            show_message!(
-                crate::cli::display::MessageType::Info,
-                Message::new(
-                    "Removed".to_string(),
-                    "custom Dockerfile from project root".to_string(),
-                )
-            );
-
-            // Also remove marker file
-            let marker_file = custom_dockerfile_marker_path(&internal_dir);
-            if marker_file.exists() {
-                fs::remove_file(&marker_file).ok();
-            }
-        }
-    }
-
-    // Determine Dockerfile path based on settings and project state
-    let file_path = resolve_dockerfile_path(project, settings, expose_flag)?;
+    // Determine Dockerfile path based on project's docker_config
+    let file_path = resolve_dockerfile_path(project)?;
 
     // Check if we should skip generation to preserve user customizations
-    if should_skip_dockerfile_generation(project, &file_path, expose_flag) {
+    if should_skip_dockerfile_generation(project, &file_path) {
         show_custom_dockerfile_message();
         info!("Skipping Dockerfile generation to preserve user customizations");
         return Ok(RoutineSuccess::success(Message::new(

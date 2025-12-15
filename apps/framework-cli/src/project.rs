@@ -167,6 +167,34 @@ fn default_package_manager() -> String {
     "npm".to_string()
 }
 
+fn default_dockerfile_path() -> String {
+    "./Dockerfile".to_string()
+}
+
+/// Docker configuration for custom Dockerfile support
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DockerConfig {
+    /// Whether to use a custom Dockerfile instead of the managed one
+    /// When true, Moose uses the Dockerfile at dockerfile_path
+    /// When false (default), Moose manages the Dockerfile in .moose/packager/
+    #[serde(default)]
+    pub custom_dockerfile: bool,
+
+    /// Path to the custom Dockerfile (relative to project root)
+    /// Defaults to "./Dockerfile"
+    #[serde(default = "default_dockerfile_path")]
+    pub dockerfile_path: String,
+}
+
+impl Default for DockerConfig {
+    fn default() -> Self {
+        Self {
+            custom_dockerfile: false,
+            dockerfile_path: default_dockerfile_path(),
+        }
+    }
+}
+
 fn default_state_storage() -> String {
     "redis".to_string()
 }
@@ -296,6 +324,9 @@ pub struct Project {
     /// TypeScript-specific configuration
     #[serde(default)]
     pub typescript_config: TypescriptConfig,
+    /// Docker configuration for custom Dockerfile support
+    #[serde(default)]
+    pub docker_config: DockerConfig,
 }
 
 pub fn default_source_dir() -> String {
@@ -375,6 +406,7 @@ impl Project {
             load_infra: None,
             typescript_config: TypescriptConfig::default(),
             source_dir: default_source_dir(),
+            docker_config: DockerConfig::default(),
         }
     }
 

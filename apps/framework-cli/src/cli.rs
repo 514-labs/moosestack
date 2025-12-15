@@ -331,10 +331,11 @@ pub async fn top_command_handler(
             no_fail_already_exists,
             from_remote,
             language,
+            custom_dockerfile,
         } => {
             info!(
-                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}",
-                name, location, template, language
+                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}, custom_dockerfile: {}",
+                name, location, template, language, custom_dockerfile
             );
 
             // Determine template, prompting for language if needed (especially for --from-remote)
@@ -384,9 +385,14 @@ pub async fn top_command_handler(
 
             check_project_name(name)?;
 
-            let post_install_message =
-                create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
-                    .await?;
+            let post_install_message = create_project_from_template(
+                &template,
+                name,
+                dir_path,
+                *no_fail_already_exists,
+                *custom_dockerfile,
+            )
+            .await?;
 
             let normalized_url = match from_remote {
                 None => {
@@ -530,8 +536,6 @@ pub async fn top_command_handler(
             docker,
             amd64,
             arm64,
-            expose_dockerfile,
-            no_expose_dockerfile,
         } => {
             info!("Running build command");
             let project_arc = Arc::new(load_project(commands)?);
@@ -550,50 +554,19 @@ pub async fn top_command_handler(
 
                 let docker_client = DockerClient::new(&settings);
 
-                // Determine expose flag
-                let expose_flag = if *expose_dockerfile {
-                    Some(true)
-                } else if *no_expose_dockerfile {
-                    Some(false)
-                } else {
-                    None
-                };
+                // Create dockerfile using project's docker_config
+                create_dockerfile(&project_arc, &docker_client)?.show();
 
-                // Check if custom Dockerfile already exists BEFORE creating
-                let custom_dockerfile_existed =
-                    project_arc.project_location.join("Dockerfile").exists();
+                // Build the docker images
+                let _: RoutineSuccess =
+                    build_dockerfile(&project_arc, &docker_client, &settings, *amd64, *arm64)?;
 
-                // Create dockerfile with settings and expose flag
-                create_dockerfile(&project_arc, &docker_client, &settings, expose_flag)?.show();
+                wait_for_usage_capture(capture_handle).await;
 
-                // Determine if we should skip the build (expose-only mode)
-                // Skip build if: CLI flag is set OR config/env enables expose AND no custom Dockerfile existed before
-                let skip_build_for_expose = *expose_dockerfile
-                    || (expose_flag.is_none()
-                        && settings.dev.expose_dockerfile
-                        && !custom_dockerfile_existed);
-
-                // If in expose-only mode, only generate the Dockerfile, don't build
-                if skip_build_for_expose {
-                    wait_for_usage_capture(capture_handle).await;
-
-                    Ok(RoutineSuccess::success(Message::new(
-                        "Ready".to_string(),
-                        "Customize ./Dockerfile, then run 'moose build --docker' to build"
-                            .to_string(),
-                    )))
-                } else {
-                    // Build the docker images
-                    let _: RoutineSuccess =
-                        build_dockerfile(&project_arc, &docker_client, &settings, *amd64, *arm64)?;
-
-                    wait_for_usage_capture(capture_handle).await;
-
-                    Ok(RoutineSuccess::success(Message::new(
-                        "Built".to_string(),
-                        "Docker image(s)".to_string(),
-                    )))
-                }
+                Ok(RoutineSuccess::success(Message::new(
+                    "Built".to_string(),
+                    "Docker image(s)".to_string(),
+                )))
             } else {
                 let capture_handle = crate::utilities::capture::capture_usage(
                     ActivityType::BuildCommand,
