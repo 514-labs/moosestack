@@ -371,6 +371,6 @@ You'll still get migrations for all other schema changes (adding tables, modifyi
 - Verify object definitions in your main file
 - Ensure all required fields are properly typed
 - **Stuck migration lock**: If you see "Migration already in progress" but no migration is running, wait 5 minutes for automatic expiry or manually clear it:
-  ```sql
+  ```sql copy=false
   DELETE FROM _MOOSE_STATE WHERE key = 'migration_lock';
   ```

@@ -76,6 +76,7 @@ interface MDXCodeProps extends React.HTMLAttributes<HTMLElement> {
   "data-rehype-pretty-code-fragment"?: string;
   "data-rehype-pretty-code-title"?: string;
   "data-filename"?: string;
+  "data-copy"?: string;
   children?: React.ReactNode;
 }
 
@@ -365,7 +366,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
         props["data-rehype-pretty-code-title"] ||
         props["data-filename"] ||
         props["title"];
-      const hasCopy = props["data-copy"] !== undefined;
+      const hasCopy = props["data-copy"] !== "false";
       const isShell = SHELL_LANGUAGES.has(language);
       const isConfigFile = CONFIG_LANGUAGES.has(language);
 
@@ -377,7 +378,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
               code={codeText}
               language={language}
               filename={filename || undefined}
-              copyButton={true}
+              copyButton={hasCopy}
             />
           </div>
         );
@@ -430,7 +431,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
             code={codeText}
             language={language || "typescript"}
             filename={filename || undefined}
-            copyButton={true}
+            copyButton={hasCopy}
           />
         </div>
       );
@@ -453,7 +454,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
     props["data-rehype-pretty-code-title"] ||
     props["data-filename"] ||
     props["title"]; // Also check for title prop directly
-  const hasCopy = props["data-copy"] !== undefined;
+  const hasCopy = props["data-copy"] !== "false";
   const isShell = SHELL_LANGUAGES.has(language);
   const isConfigFile = CONFIG_LANGUAGES.has(language);
 
@@ -473,7 +474,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
           code={codeText}
           language={language}
           filename={filename || undefined}
-          copyButton={true}
+          copyButton={hasCopy}
         />
       </div>
     );
@@ -506,7 +507,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
   }
 
   // If filename is provided and no copy attribute, use animated CodeEditor
-  if (filename && !hasCopy) {
+  if (filename && props["data-copy"] === undefined) {
     // Determine if this is a terminal based on language
     const isTerminalLang = SHELL_LANGUAGES.has(language);
     return (
@@ -531,7 +532,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
         code={codeText}
         language={language || "typescript"}
         filename={filename || undefined}
-        copyButton={true}
+        copyButton={hasCopy}
       />
     </div>
   );
@@ -543,9 +544,15 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
   const isInline = !className?.includes("language-") && !props["data-language"];
 
   if (isInline) {
-    // Inline code - render as normal code element
+    // Inline code - render as normal code element with proper styling
     return (
-      <code className={className} {...props}>
+      <code
+        className={cn(
+          "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm text-foreground not-prose",
+          className,
+        )}
+        {...props}
+      >
         {children}
       </code>
     );
@@ -572,6 +579,7 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
     // Config files use CodeSnippet
     const filename =
       props["data-rehype-pretty-code-title"] || props["data-filename"];
+    const hasCopy = props["data-copy"] !== "false";
 
     return (
       <div className="not-prose">
@@ -579,19 +587,20 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
           code={codeText}
           language={language}
           filename={filename}
-          copyButton={true}
+          copyButton={hasCopy}
         />
       </div>
     );
   }
 
   // Default to CodeSnippet for editable code blocks
+  const hasCopy = props["data-copy"] !== "false";
   return (
     <div className="not-prose">
       <CodeSnippet
         code={codeText}
         language={language || "typescript"}
-        copyButton={true}
+        copyButton={hasCopy}
       />
     </div>
   );

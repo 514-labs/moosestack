@@ -1,0 +1,58 @@
+---
+title: Data Types
+description: Reference for ClickHouse column types supported in Moose
+order: 1
+category: reference
+---
+
+import { Callout } from "@/components/mdx";
+
+# Data Types
+
+Moose supports a comprehensive set of ClickHouse column types across both TypeScript and Python. This section covers all supported types, their syntax, and how they map to ClickHouse.
+
+## Type Categories
+
+### Basic Types
+- [**Strings**](/moosestack/data-types/strings) — `String`, `LowCardinality(String)`, `UUID`
+- [**Integers**](/moosestack/data-types/integers) — `Int8` to `Int64`, `UInt8` to `UInt64`
+- [**Floats**](/moosestack/data-types/floats) — `Float32`, `Float64`
+- [**Decimals**](/moosestack/data-types/decimals) — Fixed-point `Decimal(P,S)`
+- [**Booleans**](/moosestack/data-types/booleans) — `Boolean`
+- [**Date & Time**](/moosestack/data-types/datetime) — `Date`, `DateTime`, `DateTime64`
+- [**Network**](/moosestack/data-types/network) — `IPv4`, `IPv6`
+
+### Complex Types
+- [**Arrays**](/moosestack/data-types/arrays) — `Array(T)`
+- [**Maps**](/moosestack/data-types/maps) — `Map(K, V)`
+- [**Nested**](/moosestack/data-types/nested) — Embedded objects
+- [**Tuples**](/moosestack/data-types/tuples) — Named tuples
+- [**Enums**](/moosestack/data-types/enums) — Enumerated values
+- [**Geometry**](/moosestack/data-types/geometry) — `Point`, `Ring`, `Polygon`, etc.
+
+### Special Types
+- [**JSON**](/moosestack/data-types/json) — Dynamic and typed JSON columns
+- [**Nullable**](/moosestack/data-types/nullable) — Optional fields
+- [**Aggregates**](/moosestack/data-types/aggregates) — `SimpleAggregateFunction` for pre-aggregation
+
+## Quick Reference
+
+| Category | TypeScript | Python |
+|----------|------------|--------|
+| String | `string` | `str` |
+| Integer | `Int32`, `UInt64`, etc. | `Annotated[int, "int32"]` |
+| Float | `Float32`, `Float64`, `number` | `float` |
+| Boolean | `boolean` | `bool` |
+| Date | `Date`, `DateTime` | `date`, `datetime` |
+| Array | `T[]` | `List[T]` |
+| Map | `Record<K, V>` | `Dict[K, V]` |
+| Optional | `field?: T` | `Optional[T]` |
+
+## Best Practices
+
+- **Use specific integer types** when you know the value ranges to save storage
+- **Prefer `Float64`** for most floating-point calculations unless storage is critical
+- **Use `LowCardinality`** for string columns with repeated values (< 10,000 unique)
+- **Choose appropriate DateTime precision** based on your accuracy needs
+- **Order columns by cardinality** (low to high) for better compression
+

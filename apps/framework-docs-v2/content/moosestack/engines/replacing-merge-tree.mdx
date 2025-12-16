@@ -1,0 +1,186 @@
+---
+title: ReplacingMergeTree
+description: ClickHouse table engine with automatic deduplication
+order: 3
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# ReplacingMergeTree
+
+`ReplacingMergeTree` extends MergeTree with automatic deduplication. During background merges, ClickHouse keeps only one row per unique ORDER BY key—useful for mutable data that receives updates.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  updated_at: Date;
+}
+
+const users = new OlapTable<User>("users", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, OlapConfig
+from moose_lib.blocks import ReplacingMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class User(BaseModel):
+    id: str
+    name: str
+    email: str
+    updated_at: datetime
+
+users = OlapTable[User]("users", OlapConfig(
+    engine=ReplacingMergeTreeEngine(),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `orderByFields` | `string[]` | Columns that define uniqueness (required) |
+| `ver` | `string` | Version column—keeps the row with the highest value during merges |
+| `isDeleted` | `string` | Soft delete column (`UInt8`)—removes rows where value is `1` (requires `ver`) |
+
+## Version Column (`ver`)
+
+Use the `ver` parameter to specify the column that determines which row survives during deduplication. The row with the highest version value is kept:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+const users = new OlapTable<User>("users", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "updated_at"  // Keep row with latest updated_at
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+users = OlapTable[User]("users", OlapConfig(
+    engine=ReplacingMergeTreeEngine(ver="updated_at"),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Soft Delete Column (`isDeleted`)
+
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Use `isDeleted` (requires `ver`) to specify the column that marks rows for deletion. Rows with `isDeleted=1` are removed during merges:
+```typescript
+import { OlapTable, ClickHouseEngines, UInt8 } from "@514labs/moose-lib";
+
+interface ExampleModel {
+  id: string;
+  name: string;
+  updated_at: Date;
+  deleted: UInt8;  // 0 = active, 1 = deleted
+}
+
+const table_with_soft_deletes = new OlapTable<ExampleModel>("table_with_soft_deletes", {
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  orderByFields: ["id"],
+  ver: "updated_at",
+  isDeleted: "deleted"
+});
+```
+<Callout type="warning" title="Soft Delete Column (`isDeleted`)">
+The `isDeleted` column must be a `UInt8` type. See [Unsigned Integers](/moosestack/data-types/integers#unsigned-integers) for more information.
+</Callout>
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Use `isDeleted` (requires `ver`) to specify the column that marks rows for deletion. Rows with `isDeleted=1` are removed during merges:
+```python
+from pydantic import BaseModel
+from datetime import datetime
+from moose_lib import OlapTable, OlapConfig, ReplacingMergeTreeEngine
+
+class ExampleModel(BaseModel):
+    id: str
+    name: str
+    updated_at: datetime
+    deleted: int # 0 = active, 1 = deleted
+
+table_with_soft_deletes = OlapTable[ExampleModel]("table_with_soft_deletes", OlapConfig(
+    engine=ReplacingMergeTreeEngine(
+        ver="updated_at",
+        is_deleted="deleted"
+    ),
+    order_by_fields=["id"]
+))
+```
+<Callout type="warning" title="Soft Delete Column (`isDeleted`)">
+The `is_deleted` column must be a `UInt8` type. See [Unsigned Integers](/moosestack/data-types/integers#unsigned-integers) for more information.
+</Callout>
+  </LanguageTabContent>
+</LanguageTabs>
+
+
+
+## Deduplication Behavior
+
+By default, [deduplication happens automatically in the background](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree#replacingmergetree-deduplication) after data is written into the table. If you need to guarantee deduplication at read time, you can use the `FINAL` modifier or the `argMax` function like this:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { sql } from "@514labs/moose-lib";
+
+// Force deduplication at query time
+const deduped = sql`SELECT * FROM ${users} FINAL WHERE ${users.columns.id} = '123'`;
+
+// Or use aggregation to pick the latest values
+const latest = sql`
+  SELECT
+    argMax(${users.columns.name}, ${users.columns.updated_at}) AS name
+  FROM ${users}
+  WHERE ${users.columns.id} = '123'
+`;
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+# Force deduplication at query time
+DEDUPED_SQL = """
+  SELECT *
+  FROM users FINAL
+  WHERE users.id = '123'
+"""
+
+# Or use aggregation to pick the latest values
+LATEST_SQL = """
+  SELECT argMax(name, updated_at) AS name
+  FROM users
+  WHERE id = '123'
+"""
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## See Also
+
+- [MergeTree](/moosestack/engines/merge-tree) — For append-only data without deduplication
+- [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) — For pre-aggregated rollups
+- [Replicated Engines](/moosestack/engines/replicated) — For high availability
