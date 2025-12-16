@@ -1,4 +1,3 @@
-import { React } from "react";
 import type { Language } from "@/lib/content-types";
 import {
   IconChartArea,
