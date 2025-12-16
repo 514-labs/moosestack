@@ -95,7 +95,22 @@ interface Event {
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python filename="app/tables/events.py" copy
-# Python example would go here
+from moose_lib import Key
+from enum import Enum
+from pydantic import BaseModel
+from datetime import datetime
+
+class StatusEnum(str, Enum):
+    active = "active"
+    inactive = "inactive"
+
+class Event(BaseModel):
+    id: Key[str]
+    name: str
+    created_at: datetime
+    status: str
+    status_v2: StatusEnum  # New field - will trigger migration
+
 ```
   </LanguageTabContent>
 </LanguageTabs>
