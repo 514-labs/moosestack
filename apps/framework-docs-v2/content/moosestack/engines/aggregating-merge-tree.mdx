@@ -1,0 +1,235 @@
+---
+title: AggregatingMergeTree
+description: ClickHouse table engine for pre-aggregated rollups
+order: 4
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# AggregatingMergeTree
+
+`AggregatingMergeTree` stores pre-aggregated values and/or aggregate states that are automatically merged during background compaction.
+
+Use it with:
+
+- `SimpleAggregateFunction` for simple rollups (store merged values directly)
+- `AggregateFunction` for complex aggregations (store aggregate states and merge them at read time)
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { 
+  OlapTable, 
+  ClickHouseEngines, 
+  SimpleAggregated,
+  Aggregated,
+  DateTime
+} from "@514labs/moose-lib";
+
+interface DailyStats {
+  date: DateTime;
+  user_id: string;
+  // SimpleAggregateFunction(sum, UInt64)
+  total_views: number & SimpleAggregated<"sum", number>;
+  // SimpleAggregateFunction(max, Float64)
+  max_score: number & SimpleAggregated<"max", number>;
+  // SimpleAggregateFunction(anyLast, DateTime)
+  last_activity: DateTime & SimpleAggregated<"anyLast", DateTime>;
+}
+
+const dailyStats = new OlapTable<DailyStats>("daily_stats", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["date", "user_id"]
+});
+
+interface MetricsById {
+  id: string;
+  /**
+   * AggregateFunction(avg, Float64)
+   * Stores the result of avgState(rating) and is merged with avgMerge(...)
+   */
+  avg_rating: number & Aggregated<"avg", [number]>;
+  /**
+   * AggregateFunction(uniqExact, String)
+   * Stores the result of uniqExactState(user_id) and is merged with uniqExactMerge(...)
+   */
+  daily_uniques: number & Aggregated<"uniqExact", [string]>;
+}
+
+const metricsById = new OlapTable<MetricsById>("metrics_by_id", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["id"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+from moose_lib import OlapTable, OlapConfig, simple_aggregated, AggregateFunction
+from moose_lib.blocks import AggregatingMergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class DailyStats(BaseModel):
+    date: datetime
+    user_id: str
+    # SimpleAggregateFunction(sum, UInt64)
+    total_views: simple_aggregated('sum', int)
+    # SimpleAggregateFunction(max, Float64)
+    max_score: simple_aggregated('max', float)
+    # SimpleAggregateFunction(anyLast, DateTime)
+    last_activity: simple_aggregated('anyLast', datetime)
+
+daily_stats = OlapTable[DailyStats]("daily_stats", OlapConfig(
+    engine=AggregatingMergeTreeEngine(),
+    order_by_fields=["date", "user_id"]
+))
+
+# AggregateFunction types model aggregate *states* (written via ...State() and read via ...Merge()).
+class MetricsById(BaseModel):
+    id: str
+    avg_rating: Annotated[float, AggregateFunction(agg_func="avg", param_types=[float])]
+    daily_uniques: Annotated[int, AggregateFunction(agg_func="uniqExact", param_types=[str])]
+
+metrics_by_id = OlapTable[MetricsById]("metrics_by_id", OlapConfig(
+    engine=AggregatingMergeTreeEngine(),
+    order_by_fields=["id"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Supported Aggregate Functions
+
+Review the [ClickHouse aggregate functions](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/) documentation for the complete list of supported functions.
+
+## Example: Materialized View Rollup
+
+<Callout type="info" title="Performance benefit">
+Pre-aggregating with AggregatingMergeTree can reduce query latency by orders of magnitude for dashboard queries, since aggregation happens at insert time rather than query time.
+</Callout>
+
+A common pattern is populating an `AggregatingMergeTree` table from a materialized view:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { 
+  OlapTable, 
+  MaterializedView,
+  ClickHouseEngines,
+  UInt64,
+  SimpleAggregated,
+  DateTime,
+  sql
+} from "@514labs/moose-lib";
+
+// Source: raw events
+interface PageView {
+  timestamp: DateTime;
+  user_id: string;
+  page: string;
+  duration_ms: number;
+}
+
+const pageViews = new OlapTable<PageView>("page_views", {
+  orderByFields: ["timestamp", "user_id"],
+});
+
+// Target: daily aggregates
+interface DailyPageStats {
+  date: DateTime;
+  user_id: string;
+  view_count: UInt64 & SimpleAggregated<"sum", UInt64>;
+  total_duration: number & SimpleAggregated<"sum", number>;
+  max_duration: number & SimpleAggregated<"max", number>;
+}
+
+const targetTable = new OlapTable<DailyPageStats>("daily_page_stats", {
+  engine: ClickHouseEngines.AggregatingMergeTree,
+  orderByFields: ["date", "user_id"],
+});
+
+const mv = new MaterializedView<DailyPageStats>({
+  materializedViewName: "mv_daily_page_stats",
+  selectTables: [pageViews],
+  targetTable: targetTable,
+  selectStatement: sql`
+    SELECT
+      toStartOfDay(${pageViews.columns.timestamp}) AS date,
+      ${pageViews.columns.user_id}                AS user_id,
+      count()                                     AS view_count,
+      sum(${pageViews.columns.duration_ms})       AS total_duration,
+      max(${pageViews.columns.duration_ms})       AS max_duration
+    FROM ${pageViews}
+    GROUP BY date, user_id
+  `,
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import (
+    OlapTable, 
+    OlapConfig, 
+    MaterializedView,
+    MaterializedViewOptions,
+    AggregatingMergeTreeEngine,
+    simple_aggregated,
+)
+from pydantic import BaseModel
+from datetime import datetime
+
+# Source: raw events
+class PageView(BaseModel):
+    timestamp: datetime
+    user_id: str
+    page: str
+    duration_ms: int
+
+# Target: daily aggregates
+class DailyPageStats(BaseModel):
+    date: datetime
+    user_id: str
+    view_count: simple_aggregated('sum', int)
+    total_duration: simple_aggregated('sum', int)
+    max_duration: simple_aggregated('max', int)
+
+page_views = OlapTable[PageView]("page_views", OlapConfig(
+    order_by_fields=["timestamp", "user_id"]
+))
+
+daily_stats = OlapTable[DailyPageStats]("daily_page_stats", OlapConfig(
+    engine=AggregatingMergeTreeEngine(),
+    order_by_fields=["date", "user_id"]
+))
+
+rollup_view = MaterializedView[DailyPageStats](
+    MaterializedViewOptions(
+        materialized_view_name="mv_daily_page_stats",
+        select_tables=[page_views],
+        select_statement="""
+            SELECT
+                toStartOfDay(timestamp) AS date,
+                user_id,
+                count()                AS view_count,
+                sum(duration_ms)       AS total_duration,
+                max(duration_ms)       AS max_duration
+            FROM {page_views}
+            GROUP BY date, user_id
+        """,
+    ),
+    target_table=daily_stats,
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## See Also
+
+- [Aggregate Types](/moosestack/data-types/aggregates) — `SimpleAggregateFunction` column types
+- [Materialized Views](/moosestack/olap/model-materialized-view#target-tables-with-aggregatingmergetree) — modeling `AggregateFunction` / aggregate states
+- [Materialized Views](/moosestack/olap/model-materialized-view) — Populating aggregate tables
+- [SummingMergeTree](/moosestack/engines/summing-merge-tree) — Simpler option for sum-only aggregations
+
