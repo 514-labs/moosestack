@@ -1544,7 +1544,7 @@ pub async fn check_ready(
 /// * `db_name` - The database name to check
 ///
 /// # Returns
-/// * `Ok(count)` - Number of active parts across all tables in the database
+/// * `Ok(count)` - Number of active merge operations in the database
 /// * `Err` - If the query fails
 pub async fn get_pending_parts(
     configured_client: &ConfiguredDBClient,
@@ -1552,9 +1552,8 @@ pub async fn get_pending_parts(
 ) -> Result<u64, clickhouse::error::Error> {
     let client = &configured_client.client;
 
-    // Count active parts in the database - high counts may indicate pending merges
-    let query =
-        "SELECT count() FROM system.parts WHERE active = 1 AND database = ? FORMAT TabSeparated";
+    // Count active merges in the database - indicates ongoing background operations
+    let query = "SELECT count() FROM system.merges WHERE database = ? FORMAT TabSeparated";
 
     let result = client.query(query).bind(db_name).fetch_one::<u64>().await?;
 

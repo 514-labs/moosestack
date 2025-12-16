@@ -5,7 +5,7 @@
     "standalone/**/*.test.ts",
     "release-gates/**/*.test.ts"
   ],
-  "loader": "tsx",
+  "node-option": ["--import=tsx"],
   "timeout": 240000,
   "slow": 60000,
   "jobs": 1,
