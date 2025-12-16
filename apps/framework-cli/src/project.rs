@@ -171,6 +171,31 @@ fn default_state_storage() -> String {
     "redis".to_string()
 }
 
+fn default_dockerfile_path() -> String {
+    "./Dockerfile".to_string()
+}
+
+/// Docker configuration for custom Dockerfile support
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DockerConfig {
+    /// When true, Moose uses the user's Dockerfile instead of generating one
+    #[serde(default)]
+    pub custom_dockerfile: bool,
+
+    /// Path to custom Dockerfile (relative to project root)
+    #[serde(default = "default_dockerfile_path")]
+    pub dockerfile_path: String,
+}
+
+impl Default for DockerConfig {
+    fn default() -> Self {
+        Self {
+            custom_dockerfile: false,
+            dockerfile_path: default_dockerfile_path(),
+        }
+    }
+}
+
 /// State storage configuration
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StateConfig {
@@ -296,6 +321,9 @@ pub struct Project {
     /// TypeScript-specific configuration
     #[serde(default)]
     pub typescript_config: TypescriptConfig,
+    /// Docker configuration for custom Dockerfile support
+    #[serde(default)]
+    pub docker_config: DockerConfig,
 }
 
 pub fn default_source_dir() -> String {
@@ -375,6 +403,7 @@ impl Project {
             load_infra: None,
             typescript_config: TypescriptConfig::default(),
             source_dir: default_source_dir(),
+            docker_config: DockerConfig::default(),
         }
     }
 
