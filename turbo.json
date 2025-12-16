@@ -16,6 +16,11 @@
         "NEXT_PUBLIC_RELEASE_VERSION"
       ]
     },
+    "docs-v2#build": {
+      "dependsOn": [],
+      "outputs": [".next/**", "!.next/cache/**", "public/pagefind/**"],
+      "env": ["NODE_ENV", "FLAGS_SECRET", "GITHUB_TOKEN"]
+    },
     "@514labs/moose-proto#build": {
       "dependsOn": ["@514labs/moose-proto#gen"]
     },

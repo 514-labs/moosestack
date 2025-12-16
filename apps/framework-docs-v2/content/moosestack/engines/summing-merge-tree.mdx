@@ -1,0 +1,104 @@
+---
+title: SummingMergeTree
+description: ClickHouse table engine that automatically sums numeric columns
+order: 5
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# SummingMergeTree
+
+`SummingMergeTree` automatically sums numeric columns when merging rows with the same ORDER BY key. It's a simpler alternative to `AggregatingMergeTree` when you only need sum aggregations.
+
+## When to Use
+
+- Simple counters and metrics (page views, clicks, totals)
+- Incrementing values by key
+- When you only need SUM operations (not MAX, MIN, etc.)
+
+## Usage
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+
+interface DailyMetrics {
+  date: Date;
+  page: string;
+  views: number;
+  clicks: number;
+  revenue: number;
+}
+
+const metrics = new OlapTable<DailyMetrics>("daily_metrics", {
+  engine: ClickHouseEngines.SummingMergeTree,
+  orderByFields: ["date", "page"]
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import OlapTable, OlapConfig, SummingMergeTreeEngine
+from pydantic import BaseModel
+from datetime import date
+
+class DailyMetrics(BaseModel):
+    date: date
+    page: str
+    views: int
+    clicks: int
+    revenue: float
+
+metrics = OlapTable[DailyMetrics]("daily_metrics", OlapConfig(
+    engine=SummingMergeTreeEngine(),
+    order_by_fields=["date", "page"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Configuration Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `orderByFields` | `string[]` | Columns that define the merge key (required) |
+| `columns` | `string[]` | Optional allowlist of numeric columns to sum (defaults to all numeric columns) |
+
+## Example: Choosing Columns to Sum
+
+By default, all numeric columns are summed. You can restrict which columns are summed:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+const metrics = new OlapTable<DailyMetrics>("daily_metrics", {
+  engine: ClickHouseEngines.SummingMergeTree,
+  orderByFields: ["date", "page"],
+  columns: ["views", "clicks"]  // Only sum these columns
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+metrics = OlapTable[DailyMetrics]("daily_metrics", OlapConfig(
+    engine=SummingMergeTreeEngine(columns=["views", "clicks"]),
+    order_by_fields=["date", "page"]
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="warning" title="Sum-only limitation">
+SummingMergeTree only supports summation. For other aggregations (max, min, count distinct), use [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) instead.
+</Callout>
+
+- [ClickHouse SummingMergeTree docs](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/summingmergetree)
+
+## See Also
+
+- [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) — For non-sum aggregations / aggregate states
+- [Aggregate Types](/moosestack/data-types/aggregates) — `SimpleAggregateFunction` and `AggregateFunction` modeling
+- [Replicated Engines](/moosestack/engines/replicated) — For high availability
+

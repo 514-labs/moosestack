@@ -3,7 +3,7 @@ User-agent: *
 Allow: /
 
 # Host
-Host: https://docs.moosestack.com
+Host: https://docs.fiveonefour.com
 
 # Sitemaps
-Sitemap: https://docs.moosestack.com/sitemap.xml
+Sitemap: https://docs.fiveonefour.com/sitemap.xml

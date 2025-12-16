@@ -1,0 +1,80 @@
+---
+title: Setup Connection
+description: Configure connection to your existing OLTP database
+---
+
+import { LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Step 1: Setup Connection
+
+In this step, you'll configure MooseStack to connect to your existing OLTP database.
+
+## Overview
+
+MooseStack needs to connect to your existing database to read data and create materialized views. This connection is configured securely and doesn't require any changes to your production database.
+
+## Configuration
+
+<LanguageTabs items={["TypeScript", "Python"]}>
+  <LanguageTabContent value="typescript">
+```typescript filename="moose.config.ts"
+import { defineConfig } from "@514labs/moose-cli";
+
+export default defineConfig({
+  dataSources: {
+    postgres: {
+      type: "postgres",
+      host: process.env.DB_HOST || "localhost",
+      port: parseInt(process.env.DB_PORT || "5432"),
+      database: process.env.DB_NAME || "mydb",
+      user: process.env.DB_USER || "postgres",
+      password: process.env.DB_PASSWORD || "",
+    },
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="moose.config.py"
+from moose_cli import define_config
+
+config = define_config(
+    data_sources={
+        "postgres": {
+            "type": "postgres",
+            "host": "localhost",
+            "port": 5432,
+            "database": "mydb",
+            "user": "postgres",
+            "password": "",
+        }
+    }
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Environment Variables
+
+For security, store sensitive credentials in environment variables:
+
+```bash filename=".env"
+DB_HOST=your-db-host
+DB_PORT=5432
+DB_NAME=your-database
+DB_USER=your-username
+DB_PASSWORD=your-password
+```
+
+## Verify Connection
+
+After configuring the connection, verify it works:
+
+```bash
+moose db ping
+```
+
+## Next Steps
+
+Once your connection is configured, proceed to the next step to create materialized views.
+

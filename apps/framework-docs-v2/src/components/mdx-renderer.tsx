@@ -27,40 +27,32 @@ import {
   Security,
   BreakingChanges,
   TemplatesGridServer,
+  CommandSnippet,
 } from "@/components/mdx";
 import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import { IconTerminal, IconFileCode } from "@tabler/icons-react";
 import {
-  IconTerminal,
-  IconFileCode,
-  IconRocket,
-  IconDatabase,
-  IconDeviceLaptop,
-  IconBrandGithub,
-  IconInfoCircle,
-  IconCheck,
-  IconClock,
-} from "@tabler/icons-react";
-import {
-  MDXPre,
-  MDXCode,
-  MDXFigure,
-} from "@/components/mdx/code-block-wrapper";
-import { PathConfig } from "@/lib/path-config";
+  ServerCodeBlock,
+  ServerInlineCode,
+} from "@/components/mdx/server-code-block";
+import { ServerFigure } from "@/components/mdx/server-figure";
 import Link from "next/link";
 import remarkGfm from "remark-gfm";
 import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypePrettyCode from "rehype-pretty-code";
+import { rehypeCodeMeta } from "@/lib/rehype-code-meta";
 
 interface MDXRendererProps {
   source: string;
 }
 
 export async function MDXRenderer({ source }: MDXRendererProps) {
+  "use cache";
   // Create FileTree with nested components
   const FileTreeWithSubcomponents = Object.assign(FileTree, {
     Folder: FileTreeFolder,
@@ -120,6 +112,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     Security,
     BreakingChanges,
     TemplatesGridServer,
+    CommandSnippet,
     CodeEditor,
     Separator,
     Tabs,
@@ -132,10 +125,10 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     SourceCodeLink,
     Link,
 
-    figure: MDXFigure,
-    // wrap with not-prose class
-    pre: MDXPre,
-    code: MDXCode,
+    // Code block handling - server-side rendered
+    figure: ServerFigure,
+    pre: ServerCodeBlock,
+    code: ServerInlineCode,
   };
 
   return (
@@ -148,13 +141,13 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
           rehypePlugins: [
             rehypeSlug,
             [rehypeAutolinkHeadings, { behavior: "wrap" }],
+            // Extract meta attributes BEFORE rehype-pretty-code consumes them
+            rehypeCodeMeta,
             [
               rehypePrettyCode,
               {
                 theme: "github-dark",
                 keepBackground: false,
-                // Keep rehype-pretty-code for now to mark code blocks,
-                // but our components will handle the actual rendering
               },
             ],
           ],
