@@ -1,6 +1,6 @@
 import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
-#### Iceberg
+# Iceberg
 The `IcebergS3` engine provides read-only access to Iceberg tables stored in S3:
 
 <LanguageTabs>
@@ -42,3 +42,6 @@ iceberg_events = OlapTable[Event]("iceberg_events", OlapConfig(
 - The table automatically reflects the current state of the Iceberg table in S3
 - Supported formats: **Parquet** and **ORC** only
 </Callout>
+
+## See Also
+- [ClickHouse Iceberg Engine](https://clickhouse.com/docs/en/engines/table-engines/special/iceberg) — ClickHouse official documentation

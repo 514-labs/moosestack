@@ -11,6 +11,10 @@ import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 All types support nullable variants using optional syntax. Nullable columns can store `NULL` values.
 
+<Callout type="warning" title="Nullable performance impact">
+Nullable columns require a separate null bitmap that ClickHouse checks on every row access. This overhead applies even if only one row contains `NULL`. For frequently-queried columns, prefer using default values (e.g., `0`, `""`, or a sentinel value) instead of `Nullable`.
+</Callout>
+
 ## Basic Optional Fields
 
 <LanguageTabs>
@@ -88,11 +92,10 @@ class User(BaseModel):
 | Optional | `field?: T` | `Optional[T] = None` | `Nullable(T)` |
 | Optional + Default | `field?: T & ClickHouseDefault<"val">` | `Annotated[Optional[T], clickhouse_default("val")]` | `T DEFAULT val` |
 
-<Callout type="info" title="Nullable performance">
-Nullable columns have a small storage overhead (1 extra byte per row for the null bitmap). When possible, use defaults instead of nulls for frequently-queried columns.
-</Callout>
-
 <Callout type="warning" title="Default value syntax">
 ClickHouse defaults are SQL expressions. String defaults must include quotes: `"'active'"` not `"active"`. Numeric defaults are bare: `"18"` not `"'18'"`.
 </Callout>
+
+## See Also
+- [ClickHouse Nullable](https://clickhouse.com/docs/en/sql-reference/data-types/nullable) — ClickHouse official documentation
 

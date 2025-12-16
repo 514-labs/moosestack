@@ -16,15 +16,6 @@ Use it with:
 - `SimpleAggregateFunction` for simple rollups (store merged values directly)
 - `AggregateFunction` for complex aggregations (store aggregate states and merge them at read time)
 
-## When to Use
-
-- Real-time dashboards with high-cardinality dimensions
-- Pre-computed metrics (daily totals, running counts)
-- Reducing query-time computation on large datasets
-- Time-series aggregations at multiple granularities
-
-## Usage
-
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```typescript
@@ -114,6 +105,10 @@ metrics_by_id = OlapTable[MetricsById]("metrics_by_id", OlapConfig(
 Review the [ClickHouse aggregate functions](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/) documentation for the complete list of supported functions.
 
 ## Example: Materialized View Rollup
+
+<Callout type="info" title="Performance benefit">
+Pre-aggregating with AggregatingMergeTree can reduce query latency by orders of magnitude for dashboard queries, since aggregation happens at insert time rather than query time.
+</Callout>
 
 A common pattern is populating an `AggregatingMergeTree` table from a materialized view:
 
@@ -230,10 +225,6 @@ rollup_view = MaterializedView[DailyPageStats](
 ```
   </LanguageTabContent>
 </LanguageTabs>
-
-<Callout type="info" title="Performance benefit">
-Pre-aggregating with AggregatingMergeTree can reduce query latency by orders of magnitude for dashboard queries, since aggregation happens at insert time rather than query time.
-</Callout>
 
 ## See Also
 

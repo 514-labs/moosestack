@@ -621,6 +621,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/data-types/low-cardinality",
+        title: "LowCardinality",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/data-types/integers",
         title: "Integers",
         languages: ["typescript", "python"],

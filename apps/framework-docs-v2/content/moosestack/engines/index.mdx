@@ -13,8 +13,6 @@ ClickHouse table engines determine how data is stored, indexed, queried, and rep
 
 MooseOLAP selects the engine in the `OlapTable` config:
 
-## Example
-
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
   You set the engine in the `OlapTable` config with the `engine` property:
@@ -98,7 +96,7 @@ SummingMergeTree = OlapTable[EngineExampleRow]("summing_merge_tree_table", OlapC
 
 `ClickHouseEngines` includes the following categories:
 
-### Standard
+### MergeTree Family
 
 - [`MergeTree`](/moosestack/engines/merge-tree)
 - [`ReplacingMergeTree`](/moosestack/engines/replacing-merge-tree)
@@ -111,7 +109,7 @@ SummingMergeTree = OlapTable[EngineExampleRow]("summing_merge_tree_table", OlapC
 
 - See [`Replicated Engines`](/moosestack/engines/replicated)
 
-### Special
+### Special Purpose
 
 - [`S3Queue`](/moosestack/engines/s3queue)
 - [`S3`](/moosestack/engines/s3)

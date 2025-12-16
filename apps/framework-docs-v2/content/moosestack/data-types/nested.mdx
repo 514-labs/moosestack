@@ -9,7 +9,7 @@ import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 # Nested Types
 
-Nested types allow embedding complex objects within table rows.
+Nested types allow embedding complex objects within table rows. Nested types store each field as a separate array column, which can impact query performance for high-throughput paths. Consider [Named Tuples](/moosestack/data-types/tuples) for simpler structures stored inline.
 
 ## Usage
 
@@ -93,4 +93,9 @@ class User(BaseModel):
 <Callout type="info" title="Nested vs JSON">
 Use nested types when the structure is known and fixed. Use [JSON](/moosestack/data-types/json) for dynamic or variable structures.
 </Callout>
+
+## See Also
+- [Tuples](/moosestack/data-types/tuples) — Lightweight inline structured data
+- [JSON](/moosestack/data-types/json) — Dynamic or semi-structured data
+- [ClickHouse Nested](https://clickhouse.com/docs/en/sql-reference/data-types/nested-data-structures/nested) — ClickHouse official documentation
 

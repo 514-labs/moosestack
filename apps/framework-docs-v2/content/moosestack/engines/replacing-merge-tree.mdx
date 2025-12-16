@@ -11,15 +11,6 @@ import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 `ReplacingMergeTree` extends MergeTree with automatic deduplication. During background merges, ClickHouse keeps only one row per unique ORDER BY key—useful for mutable data that receives updates.
 
-## When to Use
-
-- Data with updates (user profiles, product catalogs, entity state)
-- Upsert patterns where you want the latest version
-- CDC (Change Data Capture) pipelines
-- Any data that needs deduplication by a unique key
-
-## Usage
-
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```typescript
@@ -67,9 +58,9 @@ users = OlapTable[User]("users", OlapConfig(
 | `ver` | `string` | Version column—keeps the row with the highest value during merges |
 | `isDeleted` | `string` | Soft delete column (`UInt8`)—removes rows where value is `1` (requires `ver`) |
 
-## Example: Upserts and Soft Deletes
+## Version Column (`ver`)
 
-Use the `ver` parameter to control which row survives during deduplication. The row with the highest version value is kept:
+Use the `ver` parameter to specify the column that determines which row survives during deduplication. The row with the highest version value is kept:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -91,35 +82,48 @@ users = OlapTable[User]("users", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-Use `isDeleted` (requires `ver`) to mark rows for deletion. Rows with `isDeleted=1` are removed during merges:
+## Soft Delete Column (`isDeleted`)
+
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
+Use `isDeleted` (requires `ver`) to specify the column that marks rows for deletion. Rows with `isDeleted=1` are removed during merges:
 ```typescript
-interface User {
+import { OlapTable, ClickHouseEngines, UInt8 } from "@514labs/moose-lib";
+
+interface ExampleModel {
   id: string;
   name: string;
   updated_at: Date;
-  deleted: number;  // UInt8: 0 = active, 1 = deleted
+  deleted: UInt8;  // 0 = active, 1 = deleted
 }
 
-const users = new OlapTable<User>("users", {
+const table_with_soft_deletes = new OlapTable<ExampleModel>("table_with_soft_deletes", {
   engine: ClickHouseEngines.ReplacingMergeTree,
   orderByFields: ["id"],
   ver: "updated_at",
   isDeleted: "deleted"
 });
 ```
+<Callout type="warning" title="Soft Delete Column (`isDeleted`)">
+The `isDeleted` column must be a `UInt8` type. See [Unsigned Integers](/moosestack/data-types/integers#unsigned-integers) for more information.
+</Callout>
+
   </LanguageTabContent>
   <LanguageTabContent value="python">
+Use `isDeleted` (requires `ver`) to specify the column that marks rows for deletion. Rows with `isDeleted=1` are removed during merges:
 ```python
-class User(BaseModel):
+from pydantic import BaseModel
+from datetime import datetime
+from moose_lib import OlapTable, OlapConfig, ReplacingMergeTreeEngine
+
+class ExampleModel(BaseModel):
     id: str
     name: str
     updated_at: datetime
-    deleted: int = 0  # 0 = active, 1 = deleted
+    deleted: int # 0 = active, 1 = deleted
 
-users = OlapTable[User]("users", OlapConfig(
+table_with_soft_deletes = OlapTable[ExampleModel]("table_with_soft_deletes", OlapConfig(
     engine=ReplacingMergeTreeEngine(
         ver="updated_at",
         is_deleted="deleted"
@@ -127,8 +131,13 @@ users = OlapTable[User]("users", OlapConfig(
     order_by_fields=["id"]
 ))
 ```
+<Callout type="warning" title="Soft Delete Column (`isDeleted`)">
+The `is_deleted` column must be a `UInt8` type. See [Unsigned Integers](/moosestack/data-types/integers#unsigned-integers) for more information.
+</Callout>
   </LanguageTabContent>
 </LanguageTabs>
+
+
 
 ## Deduplication Behavior
 
@@ -175,4 +184,3 @@ LATEST_SQL = """
 - [MergeTree](/moosestack/engines/merge-tree) — For append-only data without deduplication
 - [AggregatingMergeTree](/moosestack/engines/aggregating-merge-tree) — For pre-aggregated rollups
 - [Replicated Engines](/moosestack/engines/replicated) — For high availability
-

@@ -8,20 +8,20 @@ Use `VersionedCollapsingMergeTree` when you need collapsing with out-of-order in
 ```ts filename="VersionedCollapsingTable.ts" copy
 import { OlapTable, ClickHouseEngines, Int8 } from "@514labs/moose-lib";
 
-interface UserState {
-  userId: Key<string>;
-  pageViews: number;
-  duration: number;
+interface ExampleSchema {
+  id: Key<string>;
+  value: float;
+  timestamp: datetime;
   sign: Int8;     // Required: 1 = state row, -1 = cancel row
   version: number; // Required: version for ordering state changes
 }
 
 // Track user state with versioned collapsing
-const stateTable = new OlapTable<UserState>("user_state", {
+const exampleTable = new OlapTable<ExampleSchema>("versioned_collapsing_merge_tree_table", {
   engine: ClickHouseEngines.VersionedCollapsingMergeTree,
+  orderByFields: ["id"],
   sign: "sign",
-  ver: "version",
-  orderByFields: ["userId"]
+  ver: "version"
 });
 ```
   </LanguageTabContent>
@@ -30,17 +30,18 @@ const stateTable = new OlapTable<UserState>("user_state", {
 from moose_lib import Key, Int8, OlapTable, OlapConfig
 from moose_lib.blocks import VersionedCollapsingMergeTreeEngine
 from pydantic import BaseModel
+from datetime import datetime
 
-class UserState(BaseModel):
-    user_id: Key[str]
-    page_views: int
-    duration: int
+class ExampleSchema(BaseModel):
+    id: str
+    value: float
+    timestamp: datetime
     sign: Int8      # Required: 1 = state row, -1 = cancel row
     version: int    # Required: version for ordering state changes
 
-# Track user state with versioned collapsing
-state_table = OlapTable[UserState]("user_state", OlapConfig(
-    order_by_fields=["user_id"],
+# Create a versioned collapsing merge tree table
+example_table = OlapTable[ExampleSchema]("versioned_collapsing_merge_tree_table", OlapConfig(
+    order_by_fields=["id"],
     engine=VersionedCollapsingMergeTreeEngine(sign="sign", ver="version")
 ))
 ```
@@ -56,3 +57,6 @@ Both engines require the `sign` column to be `Int8` type.
 
 For more details, see the ClickHouse documentation on [CollapsingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/collapsingmergetree) and [VersionedCollapsingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/versionedcollapsingmergetree).
 </Callout>
+
+## See Also
+- [CollapsingMergeTree](/moosestack/engines/collapsing-merge-tree)
