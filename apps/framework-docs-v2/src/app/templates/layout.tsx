@@ -1,31 +1,21 @@
 import type { ReactNode } from "react";
 import { Suspense } from "react";
-import { SideNav } from "@/components/navigation/side-nav";
+import { TemplatesSideNav } from "./templates-side-nav";
 import { AnalyticsProvider } from "@/components/analytics-provider";
 import { SidebarInset } from "@/components/ui/sidebar";
-import { showDataSourcesPage } from "@/flags";
 
-interface DocLayoutProps {
+interface TemplatesLayoutProps {
   children: ReactNode;
-  params: Promise<{
-    slug?: string[];
-  }>;
 }
 
-async function FilteredSideNav() {
-  // Evaluate feature flag
-  const showDataSources = await showDataSourcesPage().catch(() => false);
-
-  // Pass flag to SideNav, which will filter navigation items after language filtering
-  return <SideNav flags={{ showDataSourcesPage: showDataSources }} />;
-}
-
-export default async function DocLayout({ children, params }: DocLayoutProps) {
+export default async function TemplatesLayout({
+  children,
+}: TemplatesLayoutProps) {
   return (
     <AnalyticsProvider>
       <div className="flex flex-1">
         <Suspense fallback={<div className="w-64" />}>
-          <FilteredSideNav />
+          <TemplatesSideNav />
         </Suspense>
         <SidebarInset>
           <div className="container flex-1 pt-6 pb-12 lg:pt-8">
