@@ -1476,8 +1476,26 @@ external_table = OlapTable[UserData]("external_users", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
+<Callout type="info" title="Development Mode Configuration for External Tables">
+When working with EXTERNALLY_MANAGED tables (especially as sources for MaterializedViews), configure automatic local mirroring in `moose.config.toml`:
+
+```toml
+[dev.remote_clickhouse]
+host = "prod.clickhouse.boreal.cloud"
+database = "production"
+user = "readonly_user"
+use_ssl = true
+
+[dev.externally_managed.tables]
+create_local_mirrors = true
+sample_size = 1000
+```
+
+This creates local copies with sample data, enabling MaterializedViews to work in development. See [External Tables](/moosestack/olap/external-tables#development-mode-configuration) for complete details.
+</Callout>
+
 <Callout type="info" title="Learn More About LifeCycle Management">
-Learn more about the different lifecycle options and how to use them in the [LifeCycle Management](/moosestack/olap/lifecycle) documentation.
+Learn more about the different lifecycle options and how to use them in the [LifeCycle Management](/moosestack/migrate/lifecycle-externally-managed) documentation.
 </Callout>
 
 ## Invalid Configurations

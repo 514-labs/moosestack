@@ -640,6 +640,90 @@ You can see the SQL that Moose will run to backfill the destination table when y
 
 During dev mode, as soon as you save the MaterializedView, Moose will run the backfill and you can see the results in the destination table by querying it in your local ClickHouse instance.
 
+## Using EXTERNALLY_MANAGED Tables as Sources
+
+MaterializedViews can reference `EXTERNALLY_MANAGED` tables as source tables. To enable this in development mode, configure Moose to automatically create local mirrors:
+
+```toml filename="moose.config.toml" copy
+[dev.remote_clickhouse]
+host = "prod.clickhouse.boreal.cloud"
+database = "production"
+user = "readonly_user"
+use_ssl = true
+# Password prompted once, stored in keychain
+
+[dev.externally_managed.tables]
+create_local_mirrors = true
+sample_size = 1000  # Copy sample data for testing
+```
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts filename="ExternalMaterializedView.ts" copy
+import { MaterializedView, OlapTable, LifeCycle, sql } from "@514labs/moose-lib";
+
+// External CDC table (managed by ClickPipes/Debezium/etc)
+const cdcUsersTable = new OlapTable<CdcUser>("cdc_users", {
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED
+});
+
+// MaterializedView that transforms external data
+const userSummary = new MaterializedView<UserSummary>({
+  selectStatement: sql`
+    SELECT 
+      user_id,
+      count(*) as event_count,
+      max(updated_at) as last_activity
+    FROM ${cdcUsersTable}
+    GROUP BY user_id
+  `,
+  selectTables: [cdcUsersTable],
+  targetTable: {
+    name: "user_summary",
+    orderByFields: ["user_id"]
+  },
+  materializedViewName: "user_summary_mv"
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="ExternalMaterializedView.py" copy
+from moose_lib import MaterializedView, OlapTable, OlapConfig, LifeCycle, MaterializedViewOptions
+
+# External CDC table (managed by ClickPipes/Debezium/etc)
+cdc_users_table = OlapTable[CdcUser]("cdc_users", OlapConfig(
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED
+))
+
+# MaterializedView that transforms external data
+user_summary = MaterializedView[UserSummary](MaterializedViewOptions(
+    select_statement=f"""
+        SELECT 
+            user_id,
+            count(*) as event_count,
+            max(updated_at) as last_activity
+        FROM {cdc_users_table}
+        GROUP BY user_id
+    """,
+    select_tables=[cdc_users_table],
+    table_name="user_summary",
+    order_by_fields=["user_id"],
+    materialized_view_name="user_summary_mv"
+))
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+**How it works in development:**
+
+1. **With remote access:** External table is mirrored with sample data → MaterializedView populates with real data
+2. **Without remote access:** External table created from code schema (empty) → MaterializedView works but starts empty
+3. **Fallback is automatic:** Developers without production credentials can still develop and test MaterializedView logic
+
+<Callout type="info" title="Learn more about external tables" href="/moosestack/olap/external-tables#development-mode-configuration">
+See the [External Tables documentation](/moosestack/olap/external-tables#development-mode-configuration) for complete configuration options including sample data size and refresh behavior.
+</Callout>
+
 ## Query Destination Tables
 
 You can query the destination table like any other table.

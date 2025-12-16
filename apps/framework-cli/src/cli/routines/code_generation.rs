@@ -11,8 +11,8 @@ use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient}
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
 use crate::utilities::constants::{
-    KEY_REMOTE_CLICKHOUSE_PASSWORD, KEY_REMOTE_CLICKHOUSE_URL, PYTHON_EXTERNAL_FILE,
-    PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
+    KEY_REMOTE_CLICKHOUSE_URL, PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE,
+    TYPESCRIPT_MAIN_FILE,
 };
 use crate::utilities::git::create_code_generation_commit;
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
@@ -65,11 +65,14 @@ pub fn prompt_user_for_remote_ch_password(
     use crate::cli::display;
 
     display::show_message_wrapper(
-        MessageType::Info,
+        MessageType::Highlight,
         Message::new(
-            "RemotePassword".to_string(),
+            "Password".to_string(),
             format!(
-                "Password required for remote ClickHouse:\n  Host: {}\n  User: {}\n  Database: {}",
+                "Remote ClickHouse password required:\n\
+                         Host:     {}\n\
+                         User:     {}\n\
+                         Database: {}",
                 host, user, database
             ),
         ),
@@ -83,6 +86,87 @@ pub fn prompt_user_for_remote_ch_password(
             "Password cannot be empty".to_string(),
         )));
     }
+
+    Ok(password)
+}
+
+/// Checks if a stored URL matches the remote config
+fn url_matches_remote_config(
+    url: &reqwest::Url,
+    config: &crate::infrastructure::olap::clickhouse::config::RemoteClickHouseConfig,
+) -> bool {
+    url.host_str() == Some(&config.host)
+        && url.username() == config.user
+        && url
+            .query_pairs()
+            .find(|(k, _)| k == "database")
+            .map(|(_, v)| v == config.database.as_str())
+            .unwrap_or(false)
+}
+
+/// Retrieves and validates stored remote URL from keychain
+fn get_stored_remote_url(
+    repo: &KeyringSecretRepository,
+    project_name: &str,
+    config: &crate::infrastructure::olap::clickhouse::config::RemoteClickHouseConfig,
+) -> Result<Option<String>, RoutineFailure> {
+    let Some(stored_url) = repo
+        .get(project_name, KEY_REMOTE_CLICKHOUSE_URL)
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Keychain".to_string(),
+                format!("Failed to read from keychain: {e:?}"),
+            ))
+        })?
+    else {
+        return Ok(None);
+    };
+
+    let Ok(parsed_url) = reqwest::Url::parse(&stored_url) else {
+        debug!("Stored URL is malformed, will prompt for new password");
+        return Ok(None);
+    };
+
+    if url_matches_remote_config(&parsed_url, config) {
+        debug!("Found matching stored URL in keychain");
+        Ok(Some(stored_url))
+    } else {
+        debug!("Stored URL doesn't match current config (host/user/database changed)");
+        Ok(None)
+    }
+}
+
+/// Prompts for password and stores complete URL in keychain
+fn prompt_and_store_remote_credentials(
+    repo: &KeyringSecretRepository,
+    project_name: &str,
+    config: &crate::infrastructure::olap::clickhouse::config::RemoteClickHouseConfig,
+) -> Result<String, RoutineFailure> {
+    let password =
+        prompt_user_for_remote_ch_password(&config.host, &config.user, &config.database)?;
+
+    let complete_url = config
+        .build_url_with_password(&password)
+        .map_err(|e| RoutineFailure::error(Message::new("URL".to_string(), e)))?;
+
+    repo.store(project_name, KEY_REMOTE_CLICKHOUSE_URL, &complete_url)
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Keychain".to_string(),
+                format!("Failed to store URL in keychain: {e:?}"),
+            ))
+        })?;
+
+    display::show_message_wrapper(
+        MessageType::Success,
+        Message::new(
+            "Keychain".to_string(),
+            format!(
+                "Stored remote ClickHouse credentials securely for project '{}'",
+                project_name
+            ),
+        ),
+    );
 
     Ok(password)
 }
@@ -128,55 +212,26 @@ pub fn resolve_remote_clickhouse_config(
         return Ok(Some(config));
     }
 
-    // Priority 2: Check dev.remote_clickhouse in config + keychain password
+    // Priority 2: Check dev.remote_clickhouse in config + keychain URL
     if let Some(remote_config) = &project.dev.remote_clickhouse {
-        debug!("Using remote ClickHouse config from moose.config.toml");
+        debug!(
+            "Using remote ClickHouse config from moose.config.toml for project '{}'",
+            project_name
+        );
 
-        // Try to get password from keychain
-        let password = match repo
-            .get(&project_name, KEY_REMOTE_CLICKHOUSE_PASSWORD)
-            .map_err(|e| {
+        // Try to get matching stored URL from keychain
+        if let Some(stored_url) = get_stored_remote_url(&repo, &project_name, remote_config)? {
+            let config = parse_clickhouse_connection_string(&stored_url).map_err(|e| {
                 RoutineFailure::error(Message::new(
-                    "Keychain".to_string(),
-                    format!("Failed to read password from keychain: {e:?}"),
+                    "RemoteURL".to_string(),
+                    format!("Failed to parse stored URL: {}", e),
                 ))
-            })? {
-            Some(pass) => {
-                debug!("Retrieved remote ClickHouse password from keychain");
-                pass
-            }
-            None => {
-                // Prompt user with context
-                let pass = prompt_user_for_remote_ch_password(
-                    &remote_config.host,
-                    &remote_config.user,
-                    &remote_config.database,
-                )?;
+            })?;
+            return Ok(Some(config));
+        }
 
-                // Store in keychain for next time
-                repo.store(&project_name, KEY_REMOTE_CLICKHOUSE_PASSWORD, &pass)
-                    .map_err(|e| {
-                        RoutineFailure::error(Message::new(
-                            "Keychain".to_string(),
-                            format!("Failed to store password in keychain: {e:?}"),
-                        ))
-                    })?;
-
-                display::show_message_wrapper(
-                    MessageType::Success,
-                    Message::new(
-                        "Keychain".to_string(),
-                        format!(
-                            "Stored remote ClickHouse password securely for project '{}'",
-                            project_name
-                        ),
-                    ),
-                );
-
-                pass
-            }
-        };
-
+        // No matching URL, prompt and store
+        let password = prompt_and_store_remote_credentials(&repo, &project_name, remote_config)?;
         return Ok(Some(remote_config.to_clickhouse_config(password)));
     }
 

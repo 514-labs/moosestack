@@ -798,6 +798,73 @@ interface KafkaSettings {
 - **No ALTER TABLE**: Column or settings changes require DROP and CREATE (Moose handles this automatically)
 - **No direct SELECT**: Query data from the MaterializedView destination table, not the Kafka table
 
+## Externally Managed Tables
+
+Use `EXTERNALLY_MANAGED` tables when connecting to database tables managed outside your Moose application (e.g., CDC services like ClickPipes, legacy tables, third-party data sources).
+
+### Configuration
+
+```typescript
+import { OlapTable, LifeCycle } from '@514labs/moose-lib';
+
+interface CdcUserData {
+  id: string;
+  name: string;
+  email: string;
+  updated_at: Date;
+}
+
+// Table managed by CDC service
+const cdcUserTable = new OlapTable<CdcUserData>("cdc_users", {
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED  // Moose won't modify this table
+});
+```
+
+### Development Mode: Local Mirrors
+
+For EXTERNALLY_MANAGED tables (especially when used as sources for MaterializedViews), configure Moose to automatically create local copies:
+
+```toml
+# moose.config.toml
+
+[dev.remote_clickhouse]
+host = "prod-analytics.clickhouse.boreal.cloud"
+native_port = 9440
+database = "production"
+user = "readonly_user"
+use_ssl = true
+# Password prompted once, stored in keychain
+
+[dev.externally_managed.tables]
+create_local_mirrors = true
+sample_size = 1000  # Copy sample production data
+refresh_on_startup = false
+```
+
+**How it works:**
+1. First run: Prompts for password showing host/user/database context
+2. Stores password securely in system keychain
+3. Creates local mirrors with sample data
+4. MaterializedViews can reference these tables
+
+**Fallback for developers without remote access:**
+- If no remote connection configured, tables created from local code schema (empty)
+- MaterializedViews still work (source tables exist)
+- Clear warning shown about missing production data
+
+**Configuration methods** (priority order):
+1. `MOOSE_REMOTE_CLICKHOUSE_URL` environment variable (complete URL)
+2. `[dev.remote_clickhouse]` in config + keychain password (recommended)
+3. Per-machine keychain storage
+
+### Staying in Sync
+
+Use `moose db pull` to update your external table definitions from the remote database:
+
+```bash
+moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
+```
+
 ## Best Practices
 
 1. **Sorting Key Fields**:
@@ -809,6 +876,12 @@ interface KafkaSettings {
    - Mark fields as optional (`?`) only when they truly can be missing
    - Use non-nullable fields for important indexing and sorting columns
    - Consider the query patterns when choosing sorting keys
+
+3. **External Tables**:
+   - Mark CDC/legacy tables as EXTERNALLY_MANAGED
+   - Configure dev mirrors for MaterializedView development
+   - Keep schemas in sync with `moose db pull`
+   - Use fallback mode for developers without production access
 
 ## How It Works
 

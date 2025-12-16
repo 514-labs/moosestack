@@ -359,6 +359,35 @@ workflows = false
 olap = true
 # Enable Analytics APIs server (Default: true)
 apis = true
+
+# Development mode configuration
+[dev]
+
+# Remote ClickHouse connection for externally managed tables (optional)
+# Used for schema drift detection and local mirroring
+# Password is stored separately in system keychain for security
+[dev.remote_clickhouse]
+# Remote ClickHouse host (Default: None)
+# host = "prod-analytics.clickhouse.boreal.cloud"
+# Remote native protocol port (Default: 9000)
+# native_port = 9440
+# Remote database name (Default: None)
+# database = "production"
+# Remote user (Default: None)
+# user = "readonly_user"
+# Use SSL for connection (Default: false)
+# use_ssl = true
+# Note: Password is NOT stored in config - prompted once and saved to keychain
+
+# Configuration for EXTERNALLY_MANAGED tables in development
+[dev.externally_managed.tables]
+# Automatically create local mirrors of EXTERNALLY_MANAGED tables (Default: false)
+# Enables MaterializedViews to reference external tables in dev mode
+# create_local_mirrors = true
+# Number of sample rows to copy from production (Default: 0 = schema only)
+# sample_size = 1000
+# Refresh mirrors on every startup vs only if missing (Default: false)
+# refresh_on_startup = false
 ```
 
 ## Common Environment Variables
@@ -403,6 +432,22 @@ MOOSE_FEATURES__WORKFLOWS=false
 MOOSE_FEATURES__OLAP=true
 MOOSE_FEATURES__APIS=true
 ```
+
+### Development Mode (EXTERNALLY_MANAGED Tables)
+```bash
+# Remote ClickHouse connection (complete URL with password)
+# Alternative to [dev.remote_clickhouse] config file approach
+MOOSE_REMOTE_CLICKHOUSE_URL=https://user:pass@prod.clickhouse.boreal.cloud:8443?database=production
+
+# Enable local mirrors of EXTERNALLY_MANAGED tables
+MOOSE_DEV__EXTERNALLY_MANAGED__TABLES__CREATE_LOCAL_MIRRORS=true
+MOOSE_DEV__EXTERNALLY_MANAGED__TABLES__SAMPLE_SIZE=1000
+MOOSE_DEV__EXTERNALLY_MANAGED__TABLES__REFRESH_ON_STARTUP=false
+```
+
+<Callout type="info" title="Security Best Practice">
+For team collaboration, use `[dev.remote_clickhouse]` in `moose.config.toml` (without password) instead of `MOOSE_REMOTE_CLICKHOUSE_URL`. Passwords are prompted once per developer and stored securely in the system keychain.
+</Callout>
 
 ### Logging
 ```bash

@@ -200,6 +200,70 @@ Moose will **not** apply schema changes to `EXTERNALLY_MANAGED` tables in produc
 For more on how migration plans are generated and what shows up in `plan.yaml`, see [/moosestack/olap/planned-migrations](/moosestack/olap/planned-migrations).
 </Callout>
 
+## Development Mode Configuration
+
+### Local Mirrors for External Tables
+
+When working with `EXTERNALLY_MANAGED` tables in development, you can configure Moose to automatically create local copies. This is especially useful for:
+
+- **MaterializedViews** that reference external tables
+- **Testing** with sample production data
+- **Development** without constant remote database access
+
+Add this to your `moose.config.toml`:
+
+```toml filename="moose.config.toml" copy
+[dev.externally_managed.tables]
+# Automatically create local mirrors of EXTERNALLY_MANAGED tables
+create_local_mirrors = true
+
+# Number of sample rows to copy (0 = schema only, no data)
+sample_size = 1000
+
+# Refresh mirrors on every startup (false = only create if missing)
+refresh_on_startup = false
+```
+
+**Configuration options:**
+- `create_local_mirrors` - Enable automatic mirroring (default: `false`)
+- `sample_size` - Number of rows to copy from production (default: `0` = schema only)
+- `refresh_on_startup` - Refresh data on every `moose dev` start (default: `false`)
+
+### Remote Connection Configuration
+
+To enable automatic mirroring, configure your remote ClickHouse connection:
+
+```toml filename="moose.config.toml" copy
+[dev.remote_clickhouse]
+host = "prod-analytics.clickhouse.boreal.cloud"
+native_port = 9440
+database = "production"
+user = "readonly_user"
+use_ssl = true
+# Password is NOT stored here - prompted once and saved to keychain
+```
+
+**Security Design:**
+- ✅ Connection details committed to git (team-shareable)
+- ✅ Password stored in system keychain (per-developer, secure)
+- ✅ First run prompts: "Password required for readonly_user@prod-analytics.clickhouse.boreal.cloud"
+- ✅ Subsequent runs: automatic retrieval from keychain
+
+**Alternative configuration methods** (priority order):
+1. `MOOSE_REMOTE_CLICKHOUSE_URL` environment variable (complete URL with password)
+2. `[dev.remote_clickhouse]` in config + keychain password (recommended for teams)
+
+### Fallback Behavior for Developers Without Remote Access
+
+If `create_local_mirrors` is enabled but no remote connection is available, Moose automatically:
+
+1. Creates tables from your **local code schema definitions**
+2. Tables are created **empty** (no production data)
+3. Shows clear warning about schema drift potential
+4. **MaterializedViews work** because source tables exist
+
+This ensures developers can work on features (like MaterializedViews) even without production database access.
+
 ## Staying in sync with remote schema
 
 For `EXTERNALLY_MANAGED` tables, keep your code in sync with the live database by running DB Pull. You can do it manually or automate it in dev.

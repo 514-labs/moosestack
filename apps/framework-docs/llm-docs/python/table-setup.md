@@ -232,6 +232,74 @@ time_series_table = OlapTable[TimeSeriesData](
 )
 ```
 
+## Externally Managed Tables
+
+Use `EXTERNALLY_MANAGED` tables when connecting to database tables managed outside your Moose application (e.g., CDC services like ClickPipes, legacy tables, third-party data sources).
+
+### Configuration
+
+```python
+from moose_lib import OlapTable, OlapConfig, LifeCycle
+from pydantic import BaseModel
+from datetime import datetime
+
+class CdcUserData(BaseModel):
+    id: str
+    name: str
+    email: str
+    updated_at: datetime
+
+# Table managed by CDC service
+cdc_user_table = OlapTable[CdcUserData]("cdc_users", OlapConfig(
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED  # Moose won't modify this table
+))
+```
+
+### Development Mode: Local Mirrors
+
+For EXTERNALLY_MANAGED tables (especially when used as sources for MaterializedViews), configure Moose to automatically create local copies:
+
+```toml
+# moose.config.toml
+
+[dev.remote_clickhouse]
+host = "prod-analytics.clickhouse.boreal.cloud"
+native_port = 9440
+database = "production"
+user = "readonly_user"
+use_ssl = true
+# Password prompted once, stored in keychain
+
+[dev.externally_managed.tables]
+create_local_mirrors = true
+sample_size = 1000  # Copy sample production data
+refresh_on_startup = false
+```
+
+**How it works:**
+1. First run: Prompts for password showing host/user/database context
+2. Stores password securely in system keychain
+3. Creates local mirrors with sample data
+4. MaterializedViews can reference these tables
+
+**Fallback for developers without remote access:**
+- If no remote connection configured, tables created from local code schema (empty)
+- MaterializedViews still work (source tables exist)
+- Clear warning shown about missing production data
+
+**Configuration methods** (priority order):
+1. `MOOSE_REMOTE_CLICKHOUSE_URL` environment variable (complete URL)
+2. `[dev.remote_clickhouse]` in config + keychain password (recommended)
+3. Per-machine keychain storage
+
+### Staying in Sync
+
+Use `moose db pull` to update your external table definitions from the remote database:
+
+```bash
+moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
+```
+
 ## Best Practices
 
 1. **Table Design**
@@ -257,6 +325,12 @@ time_series_table = OlapTable[TimeSeriesData](
    - Clean up old data
    - Optimize table settings
    - Back up important data
+
+5. **External Tables**
+   - Mark CDC/legacy tables as EXTERNALLY_MANAGED
+   - Configure dev mirrors for MaterializedView development
+   - Keep schemas in sync with `moose db pull`
+   - Use fallback mode for developers without production access
 
 ## Example Usage
 

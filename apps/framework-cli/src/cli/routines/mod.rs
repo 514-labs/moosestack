@@ -532,6 +532,28 @@ pub async fn start_development_mode(
         .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
         .collect();
     if !externally_managed.is_empty() {
+        // Check if user should be prompted about local mirrors
+        if !project.dev.externally_managed.tables.create_local_mirrors {
+            show_message!(
+                MessageType::Highlight,
+                Message {
+                    action: "ExternalTables".to_string(),
+                    details: format!(
+                        "Detected {} EXTERNALLY_MANAGED table(s) in your code.\n\
+                         \n\
+                         To enable MaterializedViews and local development, add to moose.config.toml:\n\
+                         \n\
+                         [dev.externally_managed.tables]\n\
+                         create_local_mirrors = true\n\
+                         \n\
+                         This creates tables from local schemas. To mirror production data,\n\
+                         see: https://docs.fiveonefour.com/moosestack/olap/external-tables",
+                        externally_managed.len()
+                    ),
+                }
+            );
+        }
+
         show_message!(
             MessageType::Info,
             Message::new(

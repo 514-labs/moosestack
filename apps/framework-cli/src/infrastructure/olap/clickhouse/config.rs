@@ -61,6 +61,36 @@ impl RemoteClickHouseConfig {
             protocol, self.user, self.host, self.native_port, self.database
         )
     }
+
+    /// Builds a complete ClickHouse connection URL with password
+    ///
+    /// This URL can be stored in keychain or used with `parse_clickhouse_connection_string()`
+    ///
+    /// # Arguments
+    /// * `password` - The password to include in the URL
+    ///
+    /// # Returns
+    /// Complete URL string like: `https://user:pass@host:9440?database=dbname`
+    pub fn build_url_with_password(&self, password: &str) -> Result<String, String> {
+        let protocol = if self.use_ssl { "https" } else { "http" };
+
+        let mut url = reqwest::Url::parse(&format!(
+            "{}://{}:{}",
+            protocol, self.host, self.native_port
+        ))
+        .map_err(|e| format!("Failed to construct URL: {e}"))?;
+
+        url.set_username(&self.user)
+            .map_err(|_| "Failed to set username".to_string())?;
+
+        url.set_password(Some(password))
+            .map_err(|_| "Failed to set password".to_string())?;
+
+        url.query_pairs_mut()
+            .append_pair("database", &self.database);
+
+        Ok(url.to_string())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
