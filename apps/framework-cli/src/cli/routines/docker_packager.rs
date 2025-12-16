@@ -9,8 +9,9 @@ use crate::utilities::constants::{
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
 use crate::utilities::package_managers::{
-    detect_pnpm_deploy_mode, find_pnpm_workspace_root, get_lock_file_path, get_pnpm_deploy_flag,
-    legacy_deploy_terminal_message, legacy_deploy_warning_message, PnpmDeployMode,
+    check_local_pnpm_version_warning, detect_pnpm_deploy_mode, find_pnpm_workspace_root,
+    get_lock_file_path, get_pnpm_deploy_flag, legacy_deploy_terminal_message,
+    legacy_deploy_warning_message, PnpmDeployMode,
 };
 use crate::utilities::{constants, system};
 use crate::{
@@ -421,6 +422,11 @@ pub fn create_dockerfile(
                     None => "# No lock file found".to_string(),
                 };
 
+                // Check local pnpm version (informational only - doesn't affect Docker builds)
+                if let Some(warning) = check_local_pnpm_version_warning() {
+                    tracing::info!("{}", warning);
+                }
+
                 // Detect whether to use modern or legacy pnpm deploy
                 let deploy_mode = detect_pnpm_deploy_mode(&workspace_root);
 
@@ -439,8 +445,7 @@ pub fn create_dockerfile(
                     );
                 }
 
-                // Generate appropriate deploy command
-                // Note: --legacy flag only exists in pnpm v10+, so skip it for older versions
+                // Generate appropriate deploy command (Docker uses pnpm@latest which supports --legacy)
                 let deploy_flag = get_pnpm_deploy_flag(&deploy_mode);
 
                 let deploy_install_command = format!(
