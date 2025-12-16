@@ -1,11 +1,75 @@
 //! Utilities for interacting with npm.
 
-use std::{fmt, path::Path, path::PathBuf, process::Command};
+use std::{cmp::Ordering, fmt, path::Path, path::PathBuf, process::Command};
 
 use home::home_dir;
 use tracing::{debug, error};
 
 use crate::utilities::constants::{PACKAGE_LOCK_JSON, PNPM_LOCK, YARN_LOCK};
+
+/// A parsed pnpm version for semantic comparison.
+///
+/// Stores major, minor, and patch components separately to enable
+/// proper version comparisons (e.g., v10 >= v9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PnpmVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+}
+
+impl PnpmVersion {
+    /// The minimum version that supports modern `pnpm deploy` without `--legacy`.
+    pub const V10: PnpmVersion = PnpmVersion {
+        major: 10,
+        minor: 0,
+        patch: 0,
+    };
+
+    /// Creates a new PnpmVersion.
+    pub fn new(major: u32, minor: u32, patch: u32) -> Self {
+        Self {
+            major,
+            minor,
+            patch,
+        }
+    }
+
+    /// Parses a version string like "10.24.0" into a PnpmVersion.
+    ///
+    /// Returns None if the string cannot be parsed.
+    pub fn parse(version: &str) -> Option<Self> {
+        let parts: Vec<&str> = version.trim().split('.').collect();
+
+        let major = parts.first()?.parse().ok()?;
+        let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let patch = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        Some(Self {
+            major,
+            minor,
+            patch,
+        })
+    }
+}
+
+impl PartialOrd for PnpmVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PnpmVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.major, self.minor, self.patch).cmp(&(other.major, other.minor, other.patch))
+    }
+}
+
+impl fmt::Display for PnpmVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
 
 pub fn get_root() -> Result<PathBuf, std::io::Error> {
     let result = Command::new("npm").arg("root").arg("-g").output()?;
@@ -44,8 +108,8 @@ pub enum PackageManager {
 ///
 /// # Returns
 ///
-/// * `Option<String>` - The version string (e.g., "10.24.0") or None if pnpm is not installed
-pub fn get_pnpm_version() -> Option<String> {
+/// * `Option<PnpmVersion>` - The parsed version or None if pnpm is not installed or version cannot be parsed
+pub fn get_pnpm_version() -> Option<PnpmVersion> {
     let output = Command::new("pnpm").arg("--version").output().ok()?;
 
     if !output.status.success() {
@@ -53,8 +117,8 @@ pub fn get_pnpm_version() -> Option<String> {
         return None;
     }
 
-    let version = String::from_utf8(output.stdout).ok()?;
-    let version = version.trim().to_string();
+    let version_str = String::from_utf8(output.stdout).ok()?;
+    let version = PnpmVersion::parse(&version_str)?;
     debug!("Detected pnpm version: {}", version);
     Some(version)
 }
@@ -63,24 +127,13 @@ pub fn get_pnpm_version() -> Option<String> {
 ///
 /// # Arguments
 ///
-/// * `version` - The version string from `pnpm --version`
+/// * `version` - The parsed pnpm version
 ///
 /// # Returns
 ///
 /// * `bool` - True if version is >= 10.0.0
-pub fn is_pnpm_version_supported(version: &str) -> bool {
-    // Parse major version from "10.24.0" or similar
-    if let Some(major_str) = version.split('.').next() {
-        if let Ok(major) = major_str.parse::<u32>() {
-            return major >= 10;
-        }
-    }
-    // If we can't parse, assume it's supported to avoid false negatives
-    debug!(
-        "Could not parse pnpm version '{}', assuming supported",
-        version
-    );
-    true
+pub fn is_pnpm_version_supported(version: &PnpmVersion) -> bool {
+    *version >= PnpmVersion::V10
 }
 
 /// Checks local pnpm version and returns a warning message if < v10.
@@ -989,25 +1042,81 @@ importers:
     }
 
     #[test]
+    fn test_pnpm_version_parse() {
+        use super::*;
+
+        // Standard version strings
+        let v = PnpmVersion::parse("10.24.0").unwrap();
+        assert_eq!(v.major, 10);
+        assert_eq!(v.minor, 24);
+        assert_eq!(v.patch, 0);
+
+        // Version with trailing whitespace (from command output)
+        let v = PnpmVersion::parse("9.15.0\n").unwrap();
+        assert_eq!(v.major, 9);
+        assert_eq!(v.minor, 15);
+        assert_eq!(v.patch, 0);
+
+        // Major only
+        let v = PnpmVersion::parse("10").unwrap();
+        assert_eq!(v.major, 10);
+        assert_eq!(v.minor, 0);
+        assert_eq!(v.patch, 0);
+
+        // Major.minor only
+        let v = PnpmVersion::parse("10.5").unwrap();
+        assert_eq!(v.major, 10);
+        assert_eq!(v.minor, 5);
+        assert_eq!(v.patch, 0);
+
+        // Unparseable versions return None
+        assert!(PnpmVersion::parse("invalid").is_none());
+        assert!(PnpmVersion::parse("").is_none());
+    }
+
+    #[test]
+    fn test_pnpm_version_display() {
+        use super::*;
+
+        let v = PnpmVersion::new(10, 24, 3);
+        assert_eq!(format!("{}", v), "10.24.3");
+
+        assert_eq!(format!("{}", PnpmVersion::V10), "10.0.0");
+    }
+
+    #[test]
+    fn test_pnpm_version_comparison() {
+        use super::*;
+
+        // Equal versions
+        assert_eq!(PnpmVersion::new(10, 0, 0), PnpmVersion::V10);
+
+        // Greater than
+        assert!(PnpmVersion::new(10, 0, 1) > PnpmVersion::V10);
+        assert!(PnpmVersion::new(10, 1, 0) > PnpmVersion::V10);
+        assert!(PnpmVersion::new(11, 0, 0) > PnpmVersion::V10);
+
+        // Less than
+        assert!(PnpmVersion::new(9, 99, 99) < PnpmVersion::V10);
+        assert!(PnpmVersion::new(9, 0, 0) < PnpmVersion::V10);
+    }
+
+    #[test]
     fn test_is_pnpm_version_supported() {
         use super::*;
 
         // v10+ should be supported
-        assert!(is_pnpm_version_supported("10.0.0"));
-        assert!(is_pnpm_version_supported("10.24.0"));
-        assert!(is_pnpm_version_supported("11.0.0"));
-        assert!(is_pnpm_version_supported("15.3.2"));
+        assert!(is_pnpm_version_supported(&PnpmVersion::new(10, 0, 0)));
+        assert!(is_pnpm_version_supported(&PnpmVersion::new(10, 24, 0)));
+        assert!(is_pnpm_version_supported(&PnpmVersion::new(11, 0, 0)));
+        assert!(is_pnpm_version_supported(&PnpmVersion::new(15, 3, 2)));
 
         // v9 and below should not be supported
-        assert!(!is_pnpm_version_supported("9.0.0"));
-        assert!(!is_pnpm_version_supported("9.15.0"));
-        assert!(!is_pnpm_version_supported("8.0.0"));
-        assert!(!is_pnpm_version_supported("7.33.0"));
-        assert!(!is_pnpm_version_supported("1.0.0"));
-
-        // Edge cases - unparseable versions should be assumed supported
-        assert!(is_pnpm_version_supported("invalid"));
-        assert!(is_pnpm_version_supported(""));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(9, 0, 0)));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(9, 15, 0)));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(8, 0, 0)));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(7, 33, 0)));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(1, 0, 0)));
     }
 
     #[test]
