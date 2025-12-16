@@ -139,6 +139,7 @@ impl RestartingProcess {
                                 Ok(exit_status) => {
                                     if exit_status.success() {
                                         info!("Process {} exited successfully after running for {:?}", process_id, process_runtime);
+                                        break 'monitor;
                                     } else {
                                         warn!("Process {} exited with non-zero status: {:?} after running for {:?}", process_id, exit_status, process_runtime);
                                     }
