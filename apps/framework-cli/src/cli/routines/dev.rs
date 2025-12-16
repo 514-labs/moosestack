@@ -11,8 +11,8 @@ use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
 use crate::utilities::constants::CLI_PROJECT_INTERNAL_DIR;
 use crate::utilities::package_managers::{
-    detect_pnpm_deploy_mode, find_pnpm_workspace_root, legacy_deploy_warning_message,
-    PnpmDeployMode,
+    detect_pnpm_deploy_mode, find_pnpm_workspace_root, legacy_deploy_terminal_message,
+    legacy_deploy_warning_message, PnpmDeployMode,
 };
 use crate::{cli::routines::util::ensure_docker_running, utilities::docker::DockerClient};
 use lazy_static::lazy_static;
@@ -43,7 +43,7 @@ pub fn run_local_infrastructure(
                     MessageType::Warning,
                     Message {
                         action: "Warning".to_string(),
-                        details: "Using legacy pnpm deploy - add `inject-workspace-packages=true` to .npmrc and run `pnpm install`".to_string(),
+                        details: legacy_deploy_terminal_message(&reason),
                     },
                 );
             }

@@ -40,6 +40,49 @@ pub enum PackageManager {
     Pnpm,
 }
 
+/// Gets the installed pnpm version by running `pnpm --version`.
+///
+/// # Returns
+///
+/// * `Option<String>` - The version string (e.g., "10.24.0") or None if pnpm is not installed
+pub fn get_pnpm_version() -> Option<String> {
+    let output = Command::new("pnpm").arg("--version").output().ok()?;
+
+    if !output.status.success() {
+        debug!("pnpm --version failed");
+        return None;
+    }
+
+    let version = String::from_utf8(output.stdout).ok()?;
+    let version = version.trim().to_string();
+    debug!("Detected pnpm version: {}", version);
+    Some(version)
+}
+
+/// Checks if the pnpm version supports modern deploy (v10+).
+///
+/// # Arguments
+///
+/// * `version` - The version string from `pnpm --version`
+///
+/// # Returns
+///
+/// * `bool` - True if version is >= 10.0.0
+pub fn is_pnpm_version_supported(version: &str) -> bool {
+    // Parse major version from "10.24.0" or similar
+    if let Some(major_str) = version.split('.').next() {
+        if let Ok(major) = major_str.parse::<u32>() {
+            return major >= 10;
+        }
+    }
+    // If we can't parse, assume it's supported to avoid false negatives
+    debug!(
+        "Could not parse pnpm version '{}', assuming supported",
+        version
+    );
+    true
+}
+
 impl fmt::Display for PackageManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -69,6 +112,8 @@ pub enum LegacyReason {
     LockfileHasButNpmrcMissing,
     /// Not in a pnpm workspace at all
     NotPnpmWorkspace,
+    /// pnpm version is too old (< v10) to support deterministic deploys
+    PnpmVersionTooOld(String),
 }
 
 pub fn install_packages(
@@ -449,7 +494,18 @@ pub fn find_pnpm_workspace_root(start_dir: &Path) -> Option<PathBuf> {
 ///
 /// * `PnpmDeployMode` - Modern or Legacy with reason
 pub fn detect_pnpm_deploy_mode(project_dir: &Path) -> PnpmDeployMode {
-    // First check if we're in a pnpm workspace
+    // First check pnpm version - modern deploy requires v10+
+    if let Some(version) = get_pnpm_version() {
+        if !is_pnpm_version_supported(&version) {
+            debug!(
+                "pnpm version {} is too old for modern deploy (requires v10+)",
+                version
+            );
+            return PnpmDeployMode::Legacy(LegacyReason::PnpmVersionTooOld(version));
+        }
+    }
+
+    // Check if we're in a pnpm workspace
     let workspace_root = match find_pnpm_workspace_root(project_dir) {
         Some(root) => root,
         None => {
@@ -481,6 +537,50 @@ pub fn detect_pnpm_deploy_mode(project_dir: &Path) -> PnpmDeployMode {
     }
 }
 
+/// Generates a condensed single-line warning message for terminal display.
+///
+/// This is a shorter version of `legacy_deploy_warning_message` suitable for
+/// terminal output where multi-line messages would be disruptive.
+///
+/// # Arguments
+///
+/// * `reason` - The reason legacy mode is being used
+///
+/// # Returns
+///
+/// * `String` - Single-line warning message
+pub fn legacy_deploy_terminal_message(reason: &LegacyReason) -> String {
+    match reason {
+        LegacyReason::PnpmVersionTooOld(version) => {
+            format!(
+                "pnpm v{} detected - recommend upgrading to v10+ for deterministic builds",
+                version
+            )
+        }
+        _ => "Using legacy pnpm deploy - add `inject-workspace-packages=true` to .npmrc and run `pnpm install`".to_string(),
+    }
+}
+
+/// Returns the pnpm deploy flag based on deploy mode.
+///
+/// Modern mode uses no flag. Legacy mode uses `--legacy` flag, except for
+/// `PnpmVersionTooOld` where the flag doesn't exist in older pnpm versions.
+///
+/// # Arguments
+///
+/// * `mode` - The detected pnpm deploy mode
+///
+/// # Returns
+///
+/// * `&'static str` - The flag to append to `pnpm deploy` command ("" or " --legacy")
+pub fn get_pnpm_deploy_flag(mode: &PnpmDeployMode) -> &'static str {
+    match mode {
+        PnpmDeployMode::Modern => "",
+        PnpmDeployMode::Legacy(LegacyReason::PnpmVersionTooOld(_)) => "",
+        PnpmDeployMode::Legacy(_) => " --legacy",
+    }
+}
+
 /// Generates a diagnostic warning message for legacy pnpm deploy mode.
 ///
 /// Returns a multi-line message explaining what was detected and how to fix it.
@@ -493,27 +593,46 @@ pub fn detect_pnpm_deploy_mode(project_dir: &Path) -> PnpmDeployMode {
 ///
 /// * `String` - Formatted warning message
 pub fn legacy_deploy_warning_message(reason: &LegacyReason) -> String {
-    let detected = match reason {
-        LegacyReason::NpmrcMissingSetting => ".npmrc missing `inject-workspace-packages=true`",
-        LegacyReason::LockfileMissingSetting => {
-            ".npmrc has `inject-workspace-packages=true` but lockfile was not regenerated"
-        }
-        LegacyReason::LockfileHasButNpmrcMissing => {
-            "lockfile has inject setting but .npmrc doesn't - inconsistent state"
-        }
-        LegacyReason::NotPnpmWorkspace => "not in a pnpm workspace (no pnpm-workspace.yaml found)",
-    };
+    match reason {
+        LegacyReason::PnpmVersionTooOld(version) => {
+            format!(
+                r#"pnpm v{} detected - deterministic Docker builds require pnpm v10+.
 
-    format!(
-        r#"Using legacy pnpm deploy - Docker builds may not respect your lockfile.
+Recommend upgrading: npm install -g pnpm@latest
+
+Continuing with current pnpm version..."#,
+                version
+            )
+        }
+        _ => {
+            let detected = match reason {
+                LegacyReason::NpmrcMissingSetting => {
+                    ".npmrc missing `inject-workspace-packages=true`"
+                }
+                LegacyReason::LockfileMissingSetting => {
+                    ".npmrc has `inject-workspace-packages=true` but lockfile was not regenerated"
+                }
+                LegacyReason::LockfileHasButNpmrcMissing => {
+                    "lockfile has inject setting but .npmrc doesn't - inconsistent state"
+                }
+                LegacyReason::NotPnpmWorkspace => {
+                    "not in a pnpm workspace (no pnpm-workspace.yaml found)"
+                }
+                LegacyReason::PnpmVersionTooOld(_) => unreachable!(),
+            };
+
+            format!(
+                r#"Using legacy pnpm deploy - Docker builds may not respect your lockfile.
 
 Detected: {}
 
 To fix:
   1. Add `inject-workspace-packages=true` to your .npmrc
   2. Run `pnpm install` to regenerate your lockfile"#,
-        detected
-    )
+                detected
+            )
+        }
+    }
 }
 
 #[cfg(test)]
@@ -745,7 +864,21 @@ importers:
         use super::*;
         use tempfile::tempdir;
 
-        // No workspace = NotPnpmWorkspace
+        // Skip test if pnpm version is too old (version check happens first)
+        if let Some(version) = get_pnpm_version() {
+            if !is_pnpm_version_supported(&version) {
+                // pnpm < v10, version check will trigger first - test that behavior
+                let dir = tempdir().unwrap();
+                let result = detect_pnpm_deploy_mode(dir.path());
+                assert!(matches!(
+                    result,
+                    PnpmDeployMode::Legacy(LegacyReason::PnpmVersionTooOld(_))
+                ));
+                return;
+            }
+        }
+
+        // No workspace = NotPnpmWorkspace (only when pnpm >= v10)
         let dir = tempdir().unwrap();
         let result = detect_pnpm_deploy_mode(dir.path());
         assert_eq!(
@@ -758,6 +891,19 @@ importers:
     fn test_detect_pnpm_deploy_mode_npmrc_missing() {
         use super::*;
         use tempfile::tempdir;
+
+        // Skip test if pnpm version is too old (version check happens first)
+        if let Some(version) = get_pnpm_version() {
+            if !is_pnpm_version_supported(&version) {
+                let dir = tempdir().unwrap();
+                let result = detect_pnpm_deploy_mode(dir.path());
+                assert!(matches!(
+                    result,
+                    PnpmDeployMode::Legacy(LegacyReason::PnpmVersionTooOld(_))
+                ));
+                return;
+            }
+        }
 
         // Workspace exists but no .npmrc
         let dir = tempdir().unwrap();
@@ -776,6 +922,19 @@ importers:
         use super::*;
         use std::io::Write;
         use tempfile::tempdir;
+
+        // Skip test if pnpm version is too old (version check happens first)
+        if let Some(version) = get_pnpm_version() {
+            if !is_pnpm_version_supported(&version) {
+                let dir = tempdir().unwrap();
+                let result = detect_pnpm_deploy_mode(dir.path());
+                assert!(matches!(
+                    result,
+                    PnpmDeployMode::Legacy(LegacyReason::PnpmVersionTooOld(_))
+                ));
+                return;
+            }
+        }
 
         // Workspace + .npmrc with setting, but lockfile without setting
         let dir = tempdir().unwrap();
@@ -804,6 +963,19 @@ importers:
         use std::io::Write;
         use tempfile::tempdir;
 
+        // Skip test if pnpm version is too old (version check happens first)
+        if let Some(version) = get_pnpm_version() {
+            if !is_pnpm_version_supported(&version) {
+                let dir = tempdir().unwrap();
+                let result = detect_pnpm_deploy_mode(dir.path());
+                assert!(matches!(
+                    result,
+                    PnpmDeployMode::Legacy(LegacyReason::PnpmVersionTooOld(_))
+                ));
+                return;
+            }
+        }
+
         // Full proper configuration
         let dir = tempdir().unwrap();
 
@@ -831,6 +1003,19 @@ importers:
         use super::*;
         use std::io::Write;
         use tempfile::tempdir;
+
+        // Skip test if pnpm version is too old (version check happens first)
+        if let Some(version) = get_pnpm_version() {
+            if !is_pnpm_version_supported(&version) {
+                let dir = tempdir().unwrap();
+                let result = detect_pnpm_deploy_mode(dir.path());
+                assert!(matches!(
+                    result,
+                    PnpmDeployMode::Legacy(LegacyReason::PnpmVersionTooOld(_))
+                ));
+                return;
+            }
+        }
 
         // Edge case: lockfile has setting but .npmrc doesn't
         let dir = tempdir().unwrap();
@@ -875,6 +1060,122 @@ importers:
 
         let msg4 = legacy_deploy_warning_message(&LegacyReason::NotPnpmWorkspace);
         assert!(msg4.contains("not in a pnpm workspace"));
+
+        let msg5 =
+            legacy_deploy_warning_message(&LegacyReason::PnpmVersionTooOld("9.1.0".to_string()));
+        assert!(msg5.contains("9.1.0"));
+        assert!(msg5.contains("pnpm v10+"));
+    }
+
+    #[test]
+    fn test_is_pnpm_version_supported() {
+        use super::*;
+
+        // v10+ should be supported
+        assert!(is_pnpm_version_supported("10.0.0"));
+        assert!(is_pnpm_version_supported("10.24.0"));
+        assert!(is_pnpm_version_supported("11.0.0"));
+        assert!(is_pnpm_version_supported("15.3.2"));
+
+        // v9 and below should not be supported
+        assert!(!is_pnpm_version_supported("9.0.0"));
+        assert!(!is_pnpm_version_supported("9.15.0"));
+        assert!(!is_pnpm_version_supported("8.0.0"));
+        assert!(!is_pnpm_version_supported("7.33.0"));
+        assert!(!is_pnpm_version_supported("1.0.0"));
+
+        // Edge cases - unparseable versions should be assumed supported
+        assert!(is_pnpm_version_supported("invalid"));
+        assert!(is_pnpm_version_supported(""));
+    }
+
+    #[test]
+    fn test_legacy_deploy_terminal_message() {
+        use super::*;
+
+        // Test PnpmVersionTooOld has specific message with version
+        let msg1 =
+            legacy_deploy_terminal_message(&LegacyReason::PnpmVersionTooOld("9.5.0".to_string()));
+        assert!(msg1.contains("9.5.0"));
+        assert!(msg1.contains("v10+"));
+        assert!(msg1.contains("upgrading"));
+        // Should be single line (no newlines)
+        assert!(!msg1.contains('\n'));
+
+        // All other reasons get the same generic message
+        let msg2 = legacy_deploy_terminal_message(&LegacyReason::NpmrcMissingSetting);
+        assert!(msg2.contains("inject-workspace-packages=true"));
+        assert!(msg2.contains(".npmrc"));
+        assert!(!msg2.contains('\n'));
+
+        let msg3 = legacy_deploy_terminal_message(&LegacyReason::LockfileMissingSetting);
+        assert_eq!(msg3, msg2); // Same message for all non-version reasons
+
+        let msg4 = legacy_deploy_terminal_message(&LegacyReason::LockfileHasButNpmrcMissing);
+        assert_eq!(msg4, msg2);
+
+        let msg5 = legacy_deploy_terminal_message(&LegacyReason::NotPnpmWorkspace);
+        assert_eq!(msg5, msg2);
+    }
+
+    #[test]
+    fn test_get_pnpm_deploy_flag() {
+        use super::*;
+
+        // Modern mode - no flag
+        assert_eq!(get_pnpm_deploy_flag(&PnpmDeployMode::Modern), "");
+
+        // PnpmVersionTooOld - no flag (--legacy doesn't exist in old pnpm)
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(LegacyReason::PnpmVersionTooOld(
+                "9.0.0".to_string()
+            ))),
+            ""
+        );
+
+        // All other legacy reasons - use --legacy flag
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(LegacyReason::NpmrcMissingSetting)),
+            " --legacy"
+        );
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(
+                LegacyReason::LockfileMissingSetting
+            )),
+            " --legacy"
+        );
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(
+                LegacyReason::LockfileHasButNpmrcMissing
+            )),
+            " --legacy"
+        );
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(LegacyReason::NotPnpmWorkspace)),
+            " --legacy"
+        );
+    }
+
+    #[test]
+    fn test_pnpm_version_too_old_reason_preserves_version() {
+        use super::*;
+
+        // Test that PnpmVersionTooOld preserves the exact version string
+        let reason = LegacyReason::PnpmVersionTooOld("8.15.9".to_string());
+        if let LegacyReason::PnpmVersionTooOld(v) = reason {
+            assert_eq!(v, "8.15.9");
+        } else {
+            panic!("Expected PnpmVersionTooOld variant");
+        }
+
+        // Verify it appears in both messages
+        let terminal_msg =
+            legacy_deploy_terminal_message(&LegacyReason::PnpmVersionTooOld("7.33.0".to_string()));
+        assert!(terminal_msg.contains("7.33.0"));
+
+        let full_msg =
+            legacy_deploy_warning_message(&LegacyReason::PnpmVersionTooOld("7.33.0".to_string()));
+        assert!(full_msg.contains("7.33.0"));
     }
 
     #[test]

@@ -9,8 +9,8 @@ use crate::utilities::constants::{
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
 use crate::utilities::package_managers::{
-    detect_pnpm_deploy_mode, find_pnpm_workspace_root, get_lock_file_path,
-    legacy_deploy_warning_message, PnpmDeployMode,
+    detect_pnpm_deploy_mode, find_pnpm_workspace_root, get_lock_file_path, get_pnpm_deploy_flag,
+    legacy_deploy_terminal_message, legacy_deploy_warning_message, PnpmDeployMode,
 };
 use crate::utilities::{constants, system};
 use crate::{
@@ -434,16 +434,14 @@ pub fn create_dockerfile(
                         MessageType::Warning,
                         Message {
                             action: "Warning".to_string(),
-                            details: "Using legacy pnpm deploy - add `inject-workspace-packages=true` to .npmrc and run `pnpm install`".to_string(),
+                            details: legacy_deploy_terminal_message(reason),
                         },
                     );
                 }
 
                 // Generate appropriate deploy command
-                let deploy_flag = match &deploy_mode {
-                    PnpmDeployMode::Modern => "",
-                    PnpmDeployMode::Legacy(_) => " --legacy",
-                };
+                // Note: --legacy flag only exists in pnpm v10+, so skip it for older versions
+                let deploy_flag = get_pnpm_deploy_flag(&deploy_mode);
 
                 let deploy_install_command = format!(
                     r#"
