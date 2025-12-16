@@ -580,13 +580,6 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "moosestack/metrics",
-    title: "Moose Observability",
-    icon: IconChartBar,
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
     slug: "moosestack/deploying",
     title: "Moose Deploy",
     icon: IconCloudUpload,
@@ -917,6 +910,13 @@ const moosestackNavigationConfig: NavigationConfig = [
         languages: ["typescript", "python"],
       },
     ],
+  },
+  {
+    type: "page",
+    slug: "moosestack/metrics",
+    title: "Observability Metrics",
+    icon: IconChartBar,
+    languages: ["typescript", "python"],
   },
   {
     type: "page",
