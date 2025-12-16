@@ -480,8 +480,66 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         }
 
+        // Verify metadata JSON round-trip: the JSON with quotes must survive
+        // the SQL escaping/unescaping cycle through ClickHouse
+        const metadataPrefix = "[MOOSE_METADATA:DO_NOT_MODIFY]";
+        const metadataStart = statusComment.indexOf(metadataPrefix);
+        if (metadataStart === -1) {
+          throw new Error(
+            `Metadata prefix not found in comment: '${statusComment}'`,
+          );
+        }
+
+        const jsonPart = statusComment.substring(
+          metadataStart + metadataPrefix.length,
+        );
+        let parsedMetadata: any;
+        try {
+          parsedMetadata = JSON.parse(jsonPart.trim());
+        } catch (e) {
+          throw new Error(
+            `Metadata JSON failed to parse after round-trip through ClickHouse. ` +
+              `This indicates quotes or special characters were corrupted. ` +
+              `JSON: '${jsonPart}', Error: ${e}`,
+          );
+        }
+
+        // Verify the parsed metadata has expected structure with enum values
+        if (parsedMetadata.version !== 1) {
+          throw new Error(
+            `Expected metadata version 1, got: ${parsedMetadata.version}`,
+          );
+        }
+        if (
+          !parsedMetadata.enum ||
+          !Array.isArray(parsedMetadata.enum.members)
+        ) {
+          throw new Error(
+            `Expected metadata to contain enum.members array. Got: ${JSON.stringify(parsedMetadata)}`,
+          );
+        }
+
+        // Verify enum values survived the round-trip (these contain quotes in JSON)
+        const memberNames = parsedMetadata.enum.members.map((m: any) => m.name);
+        const expectedMembers =
+          config.language === "typescript" ?
+            ["Pending", "Processing", "Shipped", "Delivered", "Cancelled"]
+          : ["PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
+
+        for (const expected of expectedMembers) {
+          if (!memberNames.includes(expected)) {
+            throw new Error(
+              `Expected enum member '${expected}' not found in metadata after round-trip. ` +
+                `Found: ${memberNames.join(", ")}`,
+            );
+          }
+        }
+
         testLogger.info(
           `✅ Enum column metadata safety validation passed for ${config.language}`,
+        );
+        testLogger.info(
+          `✅ Metadata JSON round-trip verified - quotes and special chars preserved`,
         );
       }
     });
