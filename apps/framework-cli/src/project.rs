@@ -263,6 +263,43 @@ pub struct MigrationConfig {
     pub ignore_operations: Vec<IgnorableOperation>,
 }
 
+/// Configuration for development mode behavior with externally managed tables
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DevExternallyManagedConfig {
+    /// Create local mirror tables for EXTERNALLY_MANAGED tables in dev
+    #[serde(default)]
+    pub create_local_mirrors: bool,
+
+    /// Number of sample rows to seed (0 = schema only, no data)
+    #[serde(default)]
+    pub sample_size: usize,
+
+    /// Refresh mirrors on every startup (vs. only if missing)
+    #[serde(default)]
+    pub refresh_on_startup: bool,
+}
+
+/// Configuration for externally managed tables in development mode
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DevExternallyManagedTablesConfig {
+    #[serde(default)]
+    pub tables: DevExternallyManagedConfig,
+}
+
+/// Development mode configuration
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DevConfig {
+    /// Configuration for externally managed tables
+    #[serde(default)]
+    pub externally_managed: DevExternallyManagedTablesConfig,
+
+    /// Optional remote ClickHouse connection (without password)
+    /// Password is stored separately in the system keychain for security
+    #[serde(default)]
+    pub remote_clickhouse:
+        Option<crate::infrastructure::olap::clickhouse::config::RemoteClickHouseConfig>,
+}
+
 /// Represents a user's Moose project
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Project {
@@ -324,6 +361,9 @@ pub struct Project {
     /// Docker configuration for custom Dockerfile support
     #[serde(default)]
     pub docker_config: DockerConfig,
+    /// Development mode configuration
+    #[serde(default)]
+    pub dev: DevConfig,
 }
 
 pub fn default_source_dir() -> String {
@@ -404,6 +444,7 @@ impl Project {
             typescript_config: TypescriptConfig::default(),
             source_dir: default_source_dir(),
             docker_config: DockerConfig::default(),
+            dev: DevConfig::default(),
         }
     }
 
