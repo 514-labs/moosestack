@@ -59,6 +59,7 @@ interface MDXCodeBlockProps extends React.HTMLAttributes<HTMLPreElement> {
   "data-rehype-pretty-code-fragment"?: string;
   "data-rehype-pretty-code-title"?: string;
   "data-filename"?: string;
+  "data-title"?: string;
   "data-copy"?: string;
   children?: React.ReactNode;
 }
@@ -69,6 +70,7 @@ interface MDXCodeProps extends React.HTMLAttributes<HTMLElement> {
   "data-rehype-pretty-code-fragment"?: string;
   "data-rehype-pretty-code-title"?: string;
   "data-filename"?: string;
+  "data-title"?: string;
   "data-copy"?: string;
   children?: React.ReactNode;
 }
@@ -409,10 +411,12 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
   const language = getLanguage(codeElement.props);
   const codeText = extractTextContent(codeElement.props.children).trim();
   // rehype-pretty-code uses "title" in markdown which becomes data-rehype-pretty-code-title
-  // We check for both title and filename for backwards compatibility
+  // rehypeCodeMeta parses code meta like `title="file.ts"` into `data-title="file.ts"`
+  // We check multiple sources for backwards compatibility.
   const filename =
     props["data-rehype-pretty-code-title"] ||
     props["data-filename"] ||
+    props["data-title"] ||
     props["title"]; // Also check for title prop directly
   const hasCopy = props["data-copy"] !== "false";
   const isShell = SHELL_LANGUAGES.has(language);

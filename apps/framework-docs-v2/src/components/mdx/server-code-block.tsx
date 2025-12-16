@@ -50,7 +50,9 @@ export interface ServerCodeBlockProps
   "data-rehype-pretty-code-title"?: string;
 
   // Custom attributes from markdown meta
+  // rehypeCodeMeta parses code meta like `title="file.ts"` into `data-title="file.ts"`
   "data-filename"?: string;
+  "data-title"?: string;
   "data-copy"?: string;
   "data-variant"?: string;
   "data-duration"?: string;
@@ -142,8 +144,8 @@ function parseLineHighlights(spec: string | undefined): number[] {
       if (
         start !== undefined &&
         end !== undefined &&
-        !isNaN(start) &&
-        !isNaN(end)
+        !Number.isNaN(start) &&
+        !Number.isNaN(end)
       ) {
         for (let i = start; i <= end; i++) {
           lines.push(i);
@@ -151,7 +153,7 @@ function parseLineHighlights(spec: string | undefined): number[] {
       }
     } else {
       const num = parseInt(trimmed, 10);
-      if (!isNaN(num)) {
+      if (!Number.isNaN(num)) {
         lines.push(num);
       }
     }
@@ -223,6 +225,7 @@ export function ServerCodeBlock({
   const filename =
     props["data-rehype-pretty-code-title"] ||
     props["data-filename"] ||
+    props["data-title"] ||
     ((props as Record<string, unknown>)["title"] as string | undefined);
 
   // Copy button: defaults to true unless explicitly set to "false"
@@ -234,7 +237,6 @@ export function ServerCodeBlock({
   // Animation settings - explicit animate flag takes precedence
   const animateFlag = props["data-animate"];
   const shouldAnimate = animateFlag === "true";
-  const shouldNotAnimate = animateFlag === "false";
 
   const duration =
     props["data-duration"] ? parseFloat(props["data-duration"]) : undefined;
