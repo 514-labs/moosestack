@@ -1,0 +1,26 @@
+{
+  "name": "e2e-v2",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Next-generation E2E tests for Moose with capability-based template matching",
+  "type": "module",
+  "scripts": {
+    "pretest": "cd ../.. && cargo build && pnpm run build --filter=@514labs/moose-lib && ./scripts/package-templates.js",
+    "test": "mocha --config .mocharc.json",
+    "test:scenarios": "mocha --config .mocharc.json 'scenarios/**/*.test.ts'",
+    "test:standalone": "mocha --config .mocharc.json 'standalone/**/*.test.ts'",
+    "test:release-gates": "mocha --config .mocharc.json 'release-gates/**/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@clickhouse/client": "catalog:",
+    "@types/chai": "catalog:",
+    "@types/mocha": "catalog:",
+    "@types/node": "catalog:",
+    "chai": "catalog:",
+    "mocha": "catalog:",
+    "ts-node": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  }
+}

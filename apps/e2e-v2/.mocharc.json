@@ -1,0 +1,14 @@
+{
+  "extension": ["ts"],
+  "spec": [
+    "scenarios/**/*.test.ts",
+    "standalone/**/*.test.ts",
+    "release-gates/**/*.test.ts"
+  ],
+  "loader": "tsx",
+  "timeout": 240000,
+  "slow": 60000,
+  "jobs": 1,
+  "recursive": true,
+  "exit": true
+}
