@@ -1,0 +1,63 @@
+---
+title: Generating Migrations
+description: Overview of the two schema evolution modes in Moose used for development and production.
+order: 1
+category: migrate
+---
+
+import { Callout } from "@/components/mdx";
+
+# Generating Migrations
+
+Moose Migrate offers two complementary modes for generating migrations. Each is designed for use in different stages of the application lifecycle, and it's best practice to use both in your workflow:
+
+- [Auto-Inferred Migrations](#auto-inferred-migrations) - Changes are instantly applied to your database without any manual review. Designed for local development.
+- [Planned Migrations](#planned-migrations) - Changes are staged in a reviewable and editable plan file. Designed for production deployments.
+
+## Overview
+
+|  | Auto-Inferred Migrations | Planned Migrations |
+| :--- | :--- | :--- |
+| **Primary Use Case** | Local Development | Production Deployment |
+| **Trigger** | File Save / Watcher | `moose generate migration` |
+| **Artifact** | None (Immediate SQL Execution) | Migration Plan (`plan.yaml`) |
+| **Safety** | Low (Optimized for speed) | High (Optimized for safety) |
+| **Reviewable** | No | Yes |
+| **Drift Detection** | No | Yes |
+
+## Auto-Inferred Migrations
+
+Designed for the "inner loop" of development, **Auto-Inferred Migrations** prioritize velocity. As you iterate on your data models in code, Moose automatically applies the necessary changes to your local database in real-time.
+
+*   **Optimized for:** Prototyping, local development, rapid iteration.
+*   **Key Characteristic:** Invisible, instant schema updates.
+*   **Risk:** Can be destructive (e.g., renaming a field drops the column).
+
+[Read the Auto-Inferred Migrations Reference →](/moosestack/migrate/auto-inferred)
+
+## Planned Migrations
+
+Designed for the "outer loop" of deployment, **Planned Migrations** prioritize safety. This mode separates the *generation* of changes from their *execution*, creating a static artifact that can be reviewed, tested, and versioned.
+
+*   **Optimized for:** Production deployments, team collaboration, CI/CD.
+*   **Key Characteristic:** Reviewable, editable migration plans.
+*   **Risk:** Minimal (requires explicit approval and handles drift detection).
+
+[Read the Planned Migrations Reference →](/moosestack/migrate/planned-migrations)
+
+## Use Cases
+
+| Scenario | Recommended Mode | Rationale |
+| :--- | :--- | :--- |
+| **Local Prototyping** | `Auto-Inferred` | You want to iterate quickly on your schema without running commands for every change. |
+| **Production Deployment** | `Planned` | You need to ensure that schema changes are safe and do not accidentally delete user data. |
+| **CI/CD Pipeline** | `Planned` | You need to apply migrations in a deterministic way as part of your deployment process. |
+| **Renaming Columns** | `Planned` | You need to explicitly tell the database to rename a column instead of dropping and re-adding it. |
+| **Team Review** | `Planned` | You want to review schema changes in a Pull Request before they are applied. |
+
+## See Also
+
+- [Auto-Inferred Migrations](/moosestack/migrate/auto-inferred)
+- [Planned Migrations](/moosestack/migrate/planned-migrations)
+- [Lifecycle Management](/moosestack/migrate/lifecycle)
+
