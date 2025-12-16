@@ -700,4 +700,58 @@ mod tests {
             Some("User's description (can contain \"quotes\" and $pecial chars)".to_string())
         );
     }
+
+    #[test]
+    fn test_comment_with_backslashes() {
+        // Test that comments containing backslashes (Windows paths, regex patterns) are preserved
+        // Backslashes need special handling in ClickHouse SQL string literals
+        let column = Column {
+            name: "file_path".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: Some(r"Windows path: C:\Users\data\file.txt".to_string()),
+            ttl: None,
+            codec: None,
+            materialized: None,
+        };
+
+        let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
+
+        // Comment should be preserved as-is through the mapping
+        assert_eq!(
+            clickhouse_column.comment,
+            Some(r"Windows path: C:\Users\data\file.txt".to_string())
+        );
+    }
+
+    #[test]
+    fn test_comment_with_backslashes_and_quotes() {
+        // Test comments containing both backslashes and single quotes
+        // This is the most complex case for SQL string escaping
+        let column = Column {
+            name: "regex_pattern".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: Some(r"Regex: \d+'\w+ matches digits then quote".to_string()),
+            ttl: None,
+            codec: None,
+            materialized: None,
+        };
+
+        let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
+
+        // Comment should be preserved as-is through the mapping
+        assert_eq!(
+            clickhouse_column.comment,
+            Some(r"Regex: \d+'\w+ matches digits then quote".to_string())
+        );
+    }
 }
