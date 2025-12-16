@@ -128,11 +128,12 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "moosestack/quickstart",
-    title: "Quick Start",
+    slug: "moosestack/getting-started",
+    title: "Getting Started",
     icon: IconRocket,
     languages: ["typescript", "python"],
     children: [
+      { type: "label", title: "New Project" },
       {
         type: "page",
         slug: "moosestack/getting-started/quickstart",
@@ -141,21 +142,34 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "templates",
+        title: "Browse Templates →",
+        languages: ["typescript", "python"],
+        external: true,
+      },
+      { type: "separator" },
+      { type: "label", title: "Existing App" },
+      {
+        type: "page",
+        slug: "moosestack/getting-started/existing-app/next-js",
+        title: "Next.js",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/getting-started/existing-app/fastify",
+        title: "Fastify",
+        languages: ["typescript"],
+      },
+      { type: "separator" },
+      {
+        type: "page",
         slug: "moosestack/getting-started/from-clickhouse",
         title: "From Existing ClickHouse",
         languages: ["typescript", "python"],
       },
     ],
   },
-  {
-    type: "page",
-    slug: "templates",
-    title: "Templates",
-    icon: IconCode,
-    languages: ["typescript", "python"],
-    external: true,
-  },
-
   { type: "separator" },
 
   // ===========================================
