@@ -946,3 +946,63 @@ export const fullyManagedSettingsTable = new OlapTable<LifeCycleTestData>(
     // lifeCycle defaults to FULLY_MANAGED
   },
 );
+
+/** =======Column Comments Test========= */
+// Test that TSDoc comments are extracted and propagated to ClickHouse column comments
+
+/**
+ * Test interface with TSDoc comments on fields.
+ * These comments should appear as COMMENT clauses in ClickHouse CREATE TABLE.
+ */
+export interface ColumnCommentsTest {
+  /** Unique identifier for the record */
+  id: Key<string>;
+  /** Timestamp when the event occurred */
+  timestamp: DateTime;
+  /** Email address of the user (must be valid) */
+  email: string;
+  /** Total price in USD ($) */
+  price: number;
+  // This field intentionally has no TSDoc comment
+  status: string;
+}
+
+export const columnCommentsTestTable = new OlapTable<ColumnCommentsTest>(
+  "ColumnCommentsTest",
+  {
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+/** =======Enum Column Comments Test========= */
+// Test that user comments on enum columns don't interfere with enum metadata
+// The system stores enum metadata in column comments with [MOOSE_METADATA:DO_NOT_MODIFY] prefix
+// User comments should be preserved alongside this metadata
+
+export enum OrderStatus {
+  Pending = "pending",
+  Processing = "processing",
+  Shipped = "shipped",
+  Delivered = "delivered",
+  Cancelled = "cancelled",
+}
+
+/**
+ * Test interface with TSDoc comments on enum fields.
+ * Verifies that user comments coexist with enum metadata in ClickHouse column comments.
+ */
+export interface EnumColumnCommentsTest {
+  /** Unique order identifier */
+  id: Key<string>;
+  /** When the order was placed */
+  timestamp: DateTime;
+  /** Current status of the order - updates as order progresses */
+  status: OrderStatus;
+  /** Priority level for fulfillment */
+  priority: OrderStatus;
+}
+
+export const enumColumnCommentsTestTable =
+  new OlapTable<EnumColumnCommentsTest>("EnumColumnCommentsTest", {
+    orderByFields: ["id", "timestamp"],
+  });

@@ -36,6 +36,7 @@ export interface Column {
   ttl: string | null;
   codec: string | null;
   annotations: [string, any][];
+  comment: string | null;
 }
 
 export interface DataModel {

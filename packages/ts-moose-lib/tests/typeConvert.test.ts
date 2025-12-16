@@ -317,4 +317,127 @@ describe("typeConvert mappings for helper types", function () {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("extracts TSDoc comments from interface properties", function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+    try {
+      const source = `
+        export interface TestModel {
+          /** The unique identifier for the record */
+          id: string;
+
+          /** Unix timestamp when the event occurred */
+          timestamp: number;
+
+          /**
+           * Multi-line comment describing the status.
+           * Can be active, inactive, or pending.
+           */
+          status: string;
+
+          // Regular comment - should NOT be extracted
+          regularComment: string;
+
+          noComment: boolean;
+        }
+      `;
+      const { checker, type } = createProgramWithSource(tempDir, source);
+      const columns = toColumns(type, checker);
+      const byName = Object.fromEntries(columns.map((c) => [c.name, c]));
+
+      // TSDoc comments should be extracted
+      expect(byName.id.comment).to.equal(
+        "The unique identifier for the record",
+      );
+      expect(byName.timestamp.comment).to.equal(
+        "Unix timestamp when the event occurred",
+      );
+
+      // Multi-line TSDoc should be preserved
+      expect(byName.status.comment).to.include(
+        "Multi-line comment describing the status",
+      );
+      expect(byName.status.comment).to.include(
+        "Can be active, inactive, or pending",
+      );
+
+      // Regular // comments should NOT be extracted
+      expect(byName.regularComment.comment).to.equal(null);
+
+      // Fields without comments should have null
+      expect(byName.noComment.comment).to.equal(null);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("extracts TSDoc comments with special characters", function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+    try {
+      const source = `
+        export interface TestModel {
+          /** User's email address (must be valid) */
+          email: string;
+
+          /** Price in USD ($) */
+          price: number;
+
+          /** Contains "quoted" text */
+          quoted: string;
+
+          /** SQL expression: SELECT * FROM users WHERE id = 1 */
+          sqlExample: string;
+        }
+      `;
+      const { checker, type } = createProgramWithSource(tempDir, source);
+      const columns = toColumns(type, checker);
+      const byName = Object.fromEntries(columns.map((c) => [c.name, c]));
+
+      expect(byName.email.comment).to.equal(
+        "User's email address (must be valid)",
+      );
+      expect(byName.price.comment).to.equal("Price in USD ($)");
+      expect(byName.quoted.comment).to.equal('Contains "quoted" text');
+      expect(byName.sqlExample.comment).to.equal(
+        "SQL expression: SELECT * FROM users WHERE id = 1",
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("extracts TSDoc comments alongside other column metadata", function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+    try {
+      const source = `
+        import { Key, DateTime, ClickHouseDefault, ClickHouseCodec } from "@514labs/moose-lib";
+
+        export interface TestModel {
+          /** Primary identifier for the record */
+          id: Key<string>;
+
+          /** When the record was created */
+          createdAt: DateTime & ClickHouseDefault<"now()">;
+
+          /** Compressed payload data */
+          payload: string & ClickHouseCodec<"ZSTD(3)">;
+        }
+      `;
+      const { checker, type } = createProgramWithSource(tempDir, source);
+      const columns = toColumns(type, checker);
+      const byName = Object.fromEntries(columns.map((c) => [c.name, c]));
+
+      // Comments should be extracted alongside other metadata
+      expect(byName.id.comment).to.equal("Primary identifier for the record");
+      expect(byName.id.primary_key).to.equal(true);
+
+      expect(byName.createdAt.comment).to.equal("When the record was created");
+      expect(byName.createdAt.default).to.equal("now()");
+
+      expect(byName.payload.comment).to.equal("Compressed payload data");
+      expect(byName.payload.codec).to.equal("ZSTD(3)");
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

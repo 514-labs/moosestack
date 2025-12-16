@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAllItems } from "@/lib/templates";
 
-export const dynamic = "force-static";
+// export const dynamic = "force-static";
 
 export async function GET() {
   try {

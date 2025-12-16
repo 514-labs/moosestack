@@ -3677,8 +3677,13 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
         .map(|column| {
             let field_type = basic_field_type_to_string(&column.column_type)?;
 
-            // Escape single quotes in comments for SQL safety
-            let escaped_comment = column.comment.as_ref().map(|c| c.replace('\'', "''"));
+            // Escape for ClickHouse SQL string literals:
+            // 1. First escape backslashes (\ → \\) to preserve them
+            // 2. Then escape single quotes (' → '') for SQL safety
+            let escaped_comment = column
+                .comment
+                .as_ref()
+                .map(|c| c.replace('\\', "\\\\").replace('\'', "''"));
 
             let field_ttl = column.ttl.as_ref();
             let field_codec = column.codec.as_ref();

@@ -1215,7 +1215,8 @@ fn build_modify_column_sql(
 
     // Build the main MODIFY COLUMN statement
     let main_sql = if let Some(ref comment) = ch_col.comment {
-        let escaped_comment = comment.replace('\'', "''");
+        // Escape for ClickHouse SQL: backslashes first, then single quotes
+        let escaped_comment = comment.replace('\\', "\\\\").replace('\'', "''");
         format!(
             "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN IF EXISTS `{}` {}{}{}{}{} COMMENT '{}'",
             db_name,
@@ -1255,7 +1256,8 @@ fn build_modify_column_comment_sql(
     comment: &str,
     cluster_name: Option<&str>,
 ) -> Result<String, ClickhouseChangesError> {
-    let escaped_comment = comment.replace('\'', "''");
+    // Escape for ClickHouse SQL: backslashes first, then single quotes
+    let escaped_comment = comment.replace('\\', "\\\\").replace('\'', "''");
     let cluster_clause = cluster_name
         .map(|c| format!(" ON CLUSTER {}", c))
         .unwrap_or_default();

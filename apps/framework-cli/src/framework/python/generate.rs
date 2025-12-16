@@ -219,7 +219,7 @@ const PYTHON_IDENTIFIER_REGEX: &str = r"^[^\d\W]\w*$";
 pub static PYTHON_IDENTIFIER_PATTERN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(PYTHON_IDENTIFIER_REGEX).unwrap());
 
-fn sanitize_name(name: &str, required: bool) -> (String, String) {
+fn sanitize_name(name: &str, required: bool, comment: Option<&str>) -> (String, String) {
     // Valid Python identifier: ^[A-Za-z_][A-Za-z0-9_]*$
     // Alias anything that doesn't conform or collides with keywords/builtins
     let mut chars = name.chars();
@@ -233,29 +233,55 @@ fn sanitize_name(name: &str, required: bool) -> (String, String) {
             .skip(1)
             .all(|c| c.is_ascii_alphanumeric() || c == '_');
     let needs_alias = !rest_ok || is_python_keyword(name) || name.starts_with('_');
-    if needs_alias {
+
+    // Compute the mapped field name
+    let mapped_name = if needs_alias {
         let mapped = name
             .trim_start_matches('_')
             .replace([' ', '.', '-', '/', ':', ';', ',', '\\'], "_");
-        let mapped = if mapped.is_empty() {
+        if mapped.is_empty() {
             "field".to_string()
         } else if is_python_keyword(&mapped) {
             format!("field_{}", mapped)
         } else {
             mapped
-        };
-        let default_suffix = if !required {
-            format!(" = Field(default=None, alias=\"{name}\")")
-        } else {
-            format!(" = Field(alias=\"{name}\")")
-        };
-        (mapped, default_suffix)
+        }
     } else {
-        (
-            name.to_string(),
-            (if required { "" } else { " = None" }).to_string(),
-        )
-    }
+        name.to_string()
+    };
+
+    // Determine if we need Field() wrapper
+    // Only use Field() if we have alias or description
+    // For simple optional fields without extra metadata, use plain " = None"
+    let needs_field_wrapper = needs_alias || comment.is_some();
+
+    let default_suffix = if needs_field_wrapper {
+        // Build Field() arguments
+        let mut field_args: Vec<String> = Vec::new();
+
+        if !required {
+            field_args.push("default=None".to_string());
+        }
+
+        if needs_alias {
+            field_args.push(format!("alias={:?}", name));
+        }
+
+        if let Some(desc) = comment {
+            field_args.push(format!("description={:?}", desc));
+        }
+
+        format!(" = Field({})", field_args.join(", "))
+    } else {
+        // No alias or description - use simple syntax
+        if required {
+            String::new()
+        } else {
+            " = None".to_string()
+        }
+    };
+
+    (mapped_name, default_suffix)
 }
 
 fn is_python_keyword(name: &str) -> bool {
@@ -296,7 +322,8 @@ fn generate_nested_model(
             type_str
         };
 
-        let (mapped_name, mapped_default) = sanitize_name(&column.name, column.required);
+        let (mapped_name, mapped_default) =
+            sanitize_name(&column.name, column.required, column.comment.as_deref());
 
         writeln!(model, "    {mapped_name}: {type_str}{mapped_default}").unwrap();
     }
@@ -698,7 +725,8 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 type_str
             };
 
-            let (mapped_name, mapped_default) = sanitize_name(&column.name, column.required);
+            let (mapped_name, mapped_default) =
+                sanitize_name(&column.name, column.required, column.comment.as_deref());
 
             writeln!(output, "    {mapped_name}: {type_str}{mapped_default}").unwrap();
         }
@@ -1991,5 +2019,149 @@ user_table = OlapTable[User]("User", OlapConfig(
 
         let result = tables_to_python(&tables, None);
         assert!(result.contains("database=\"analytics_db\""));
+    }
+
+    #[test]
+    fn test_field_description_output() {
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: Some("Unique identifier for the user".to_string()),
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+                Column {
+                    name: "email".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: Some("User's email address".to_string()),
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+                Column {
+                    name: "status".to_string(),
+                    data_type: ColumnType::String,
+                    required: false,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None, // No comment for this field
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        }];
+
+        let result = tables_to_python(&tables, None);
+        println!("{}", result);
+
+        // Verify Field(description=...) is output for fields with comments
+        assert!(
+            result.contains("Field(description=\"Unique identifier for the user\")"),
+            "Expected Field(description=...) for id field. Result: {}",
+            result
+        );
+        assert!(
+            result.contains("Field(description=\"User's email address\")"),
+            "Expected Field(description=...) for email field. Result: {}",
+            result
+        );
+
+        // Verify status field uses simple = None (no Field wrapper needed since no comment)
+        assert!(
+            result.contains("status: Optional[str] = None"),
+            "Expected status field with simple default. Result: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_field_description_with_alias() {
+        // Test that description works correctly alongside alias
+        let tables = vec![Table {
+            name: "TestData".to_string(),
+            columns: vec![Column {
+                name: "_private_field".to_string(), // Needs alias (starts with _)
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: Some("A private field that needs aliasing".to_string()),
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["_private_field".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        }];
+
+        let result = tables_to_python(&tables, None);
+        println!("{}", result);
+
+        // Should have both alias and description in Field()
+        assert!(
+            result.contains("alias=\"_private_field\""),
+            "Expected alias for _private_field. Result: {}",
+            result
+        );
+        assert!(
+            result.contains("description=\"A private field that needs aliasing\""),
+            "Expected description for _private_field. Result: {}",
+            result
+        );
     }
 }
