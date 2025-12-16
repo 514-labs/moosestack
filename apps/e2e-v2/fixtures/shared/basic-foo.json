@@ -1,0 +1,27 @@
+{
+  "name": "basic-foo",
+  "description": "Basic Foo records for ingestion testing",
+  "data": [
+    {
+      "target": "Foo",
+      "records": [
+        {
+          "primaryKey": "fixture-1",
+          "timestamp": "2024-01-01T00:00:00Z"
+        },
+        {
+          "primaryKey": "fixture-2",
+          "timestamp": "2024-01-01T00:01:00Z"
+        },
+        {
+          "primaryKey": "fixture-3",
+          "timestamp": "2024-01-01T00:02:00Z"
+        }
+      ]
+    }
+  ],
+  "verify": {
+    "table": "Foo_0_0",
+    "minRows": 3
+  }
+}
