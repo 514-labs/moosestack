@@ -1,0 +1,17 @@
+{
+  "$schema": "../../docs/e2e-v2/capabilities.schema.json",
+  "capabilities": [
+    "lang:typescript",
+    "infra:clickhouse",
+    "feature:ingestion",
+    "feature:olap-cluster",
+    "feature:olap-engines",
+    "model:TableA",
+    "model:TableB",
+    "model:TableC",
+    "model:TableD",
+    "model:TableE"
+  ],
+  "testPort": 4019,
+  "skipScenarios": ["ingest-and-query"]
+}

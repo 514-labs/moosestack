@@ -215,6 +215,10 @@ jobs:
           - python-tests
           - typescript
           - python
+          - typescript-express
+          - typescript-fastify
+          - python-experimental
+          - python-fastapi
     services:
       clickhouse:
         image: clickhouse/clickhouse-server:23.8
