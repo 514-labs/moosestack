@@ -1,4 +1,4 @@
-use crate::cli::display::{Message, MessageType};
+use crate::cli::display::{self, Message, MessageType};
 use crate::cli::prompt_user;
 use crate::cli::routines::RoutineFailure;
 use crate::framework::core::infrastructure::table::Table;
@@ -11,9 +11,11 @@ use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient}
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
 use crate::utilities::constants::{
-    PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
+    KEY_REMOTE_CLICKHOUSE_PASSWORD, KEY_REMOTE_CLICKHOUSE_URL, PYTHON_EXTERNAL_FILE,
+    PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
 };
 use crate::utilities::git::create_code_generation_commit;
+use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 use clickhouse::Client;
 use std::borrow::Cow;
 use std::env;
@@ -49,6 +51,158 @@ pub fn prompt_user_for_remote_ch_http() -> Result<String, RoutineFailure> {
 
     url.query_pairs_mut().append_pair("database", &db);
     Ok(url.to_string())
+}
+
+/// Prompts user for remote ClickHouse password with context
+///
+/// Shows the user which host and username the password is for,
+/// providing clear context for security.
+pub fn prompt_user_for_remote_ch_password(
+    host: &str,
+    user: &str,
+    database: &str,
+) -> Result<String, RoutineFailure> {
+    use crate::cli::display;
+
+    display::show_message_wrapper(
+        MessageType::Info,
+        Message::new(
+            "RemotePassword".to_string(),
+            format!(
+                "Password required for remote ClickHouse:\n  Host: {}\n  User: {}\n  Database: {}",
+                host, user, database
+            ),
+        ),
+    );
+
+    let password = prompt_user("Enter password", None, None)?;
+
+    if password.is_empty() {
+        return Err(RoutineFailure::error(Message::new(
+            "Password".to_string(),
+            "Password cannot be empty".to_string(),
+        )));
+    }
+
+    Ok(password)
+}
+
+/// Resolves remote ClickHouse configuration with priority order
+///
+/// Priority (highest to lowest):
+/// 1. MOOSE_REMOTE_CLICKHOUSE_URL environment variable (complete URL with password)
+/// 2. [dev.remote_clickhouse] in moose.config.toml + keychain password (recommended for teams)
+/// 3. Keychain URL storage (legacy - from initial project setup with `moose init --from-remote`)
+/// 4. Returns None (caller can prompt if needed)
+///
+/// For new developers joining a project:
+/// - Team should commit [dev.remote_clickhouse] config (without password)
+/// - Each dev will be prompted for password once (stored in their local keychain)
+///
+/// # Returns
+/// - `Ok(Some(config))` if remote config is available
+/// - `Ok(None)` if no remote configuration found
+/// - `Err` on failure (keychain read errors, etc.)
+pub fn resolve_remote_clickhouse_config(
+    project: &Project,
+) -> Result<Option<crate::infrastructure::olap::clickhouse::config::ClickHouseConfig>, RoutineFailure>
+{
+    use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
+    use crate::utilities::constants::ENV_REMOTE_CLICKHOUSE_URL;
+
+    let project_name = project.name();
+    let repo = KeyringSecretRepository;
+
+    // Priority 1: Check environment variable (complete URL with password)
+    if let Ok(url) = std::env::var(ENV_REMOTE_CLICKHOUSE_URL) {
+        debug!(
+            "Using remote ClickHouse URL from {} environment variable",
+            ENV_REMOTE_CLICKHOUSE_URL
+        );
+        let config = parse_clickhouse_connection_string(&url).map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "RemoteURL".to_string(),
+                format!("Failed to parse {} URL: {}", ENV_REMOTE_CLICKHOUSE_URL, e),
+            ))
+        })?;
+        return Ok(Some(config));
+    }
+
+    // Priority 2: Check dev.remote_clickhouse in config + keychain password
+    if let Some(remote_config) = &project.dev.remote_clickhouse {
+        debug!("Using remote ClickHouse config from moose.config.toml");
+
+        // Try to get password from keychain
+        let password = match repo
+            .get(&project_name, KEY_REMOTE_CLICKHOUSE_PASSWORD)
+            .map_err(|e| {
+                RoutineFailure::error(Message::new(
+                    "Keychain".to_string(),
+                    format!("Failed to read password from keychain: {e:?}"),
+                ))
+            })? {
+            Some(pass) => {
+                debug!("Retrieved remote ClickHouse password from keychain");
+                pass
+            }
+            None => {
+                // Prompt user with context
+                let pass = prompt_user_for_remote_ch_password(
+                    &remote_config.host,
+                    &remote_config.user,
+                    &remote_config.database,
+                )?;
+
+                // Store in keychain for next time
+                repo.store(&project_name, KEY_REMOTE_CLICKHOUSE_PASSWORD, &pass)
+                    .map_err(|e| {
+                        RoutineFailure::error(Message::new(
+                            "Keychain".to_string(),
+                            format!("Failed to store password in keychain: {e:?}"),
+                        ))
+                    })?;
+
+                display::show_message_wrapper(
+                    MessageType::Success,
+                    Message::new(
+                        "Keychain".to_string(),
+                        format!(
+                            "Stored remote ClickHouse password securely for project '{}'",
+                            project_name
+                        ),
+                    ),
+                );
+
+                pass
+            }
+        };
+
+        return Ok(Some(remote_config.to_clickhouse_config(password)));
+    }
+
+    // Priority 3: Check keychain for legacy URL storage (backward compatibility)
+    let keychain_url = repo
+        .get(&project_name, KEY_REMOTE_CLICKHOUSE_URL)
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Keychain".to_string(),
+                format!("Failed to read URL from keychain: {e:?}"),
+            ))
+        })?;
+
+    if let Some(url) = keychain_url {
+        debug!("Using remote ClickHouse URL from keychain (legacy storage)");
+        let config = parse_clickhouse_connection_string(&url).map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "RemoteURL".to_string(),
+                format!("Failed to parse keychain URL: {}", e),
+            ))
+        })?;
+        return Ok(Some(config));
+    }
+
+    // Priority 4: No configuration found
+    Ok(None)
 }
 
 fn should_be_externally_managed(table: &Table) -> bool {

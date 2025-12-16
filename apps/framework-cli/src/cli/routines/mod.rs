@@ -87,7 +87,6 @@
 //!
 
 use crate::cli::local_webserver::{IntegrateChangesRequest, RouteMeta};
-use crate::cli::routines::code_generation::prompt_user_for_remote_ch_http;
 use crate::cli::routines::openapi::openapi;
 use crate::framework::core::execute::{execute_initial_infra_change, ExecutionContext};
 use crate::framework::core::infra_reality_checker::InfraDiscrepancies;
@@ -126,7 +125,9 @@ use crate::infrastructure::orchestration::temporal_client::{
     manager_from_project_if_enabled, probe_temporal,
 };
 use crate::infrastructure::stream::kafka::client::fetch_topics;
-use crate::utilities::constants::{KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT};
+use crate::utilities::constants::{
+    ENV_REMOTE_CLICKHOUSE_URL, KEY_REMOTE_CLICKHOUSE_URL, MIGRATION_FILE, STORE_CRED_PROMPT,
+};
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisClient>) {
@@ -353,6 +354,119 @@ async fn process_pubsub_message(
     Ok(())
 }
 
+/// Shows summary of table creation/mirroring results
+fn show_table_creation_summary(action: &str, summary: Vec<String>) {
+    if summary.is_empty() {
+        return;
+    }
+
+    show_message!(
+        MessageType::Success,
+        Message {
+            action: action.to_string(),
+            details: format!("Created tables:\n{}", summary.join("\n")),
+        }
+    );
+}
+
+/// Shows warning about local schema fallback
+fn show_local_schema_warning() {
+    show_message!(
+        MessageType::Highlight,
+        Message {
+            action: "Note".to_string(),
+            details: format!(
+                "⚠️  Tables created from local code schema (no production data).\n\
+                 Schema may differ from production. To mirror from remote:\n\
+                 • Add [dev.remote_clickhouse] to moose.config.toml\n\
+                 • Or set {} environment variable\n\
+                 Then run `moose dev` again to sync with production.",
+                ENV_REMOTE_CLICKHOUSE_URL
+            ),
+        }
+    );
+}
+
+/// Creates tables from local schema when no remote access
+async fn create_from_local_schema(project: &Project, infra_map: &InfrastructureMap) {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "ExternalTables".to_string(),
+            details:
+                "No remote ClickHouse access. Creating tables from local code schemas (empty)..."
+                    .to_string(),
+        }
+    );
+
+    match seed_data::create_external_tables_from_local_schema(project, infra_map).await {
+        Ok(summary) if !summary.is_empty() => {
+            show_table_creation_summary("ExternalTables", summary);
+            show_local_schema_warning();
+        }
+        Ok(_) => {} // Empty summary, nothing created
+        Err(e) => {
+            show_message!(
+                MessageType::Error,
+                Message {
+                    action: "ExternalTables".to_string(),
+                    details: format!(
+                        "Failed to create tables from local schema: {}",
+                        e.message.details
+                    ),
+                }
+            );
+        }
+    }
+}
+
+/// Creates mirrors from remote when access is available
+async fn create_from_remote(
+    project: &Project,
+    infra_map: &InfrastructureMap,
+    config: &crate::infrastructure::olap::clickhouse::config::ClickHouseConfig,
+) {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "ExternalMirrors".to_string(),
+            details: "Creating local mirror tables for EXTERNALLY_MANAGED tables...".to_string(),
+        }
+    );
+
+    match seed_data::create_external_table_mirrors(project, infra_map, config).await {
+        Ok(summary) if !summary.is_empty() => {
+            show_table_creation_summary("ExternalMirrors", summary);
+        }
+        Ok(_) => {} // Empty summary
+        Err(e) => {
+            show_message!(
+                MessageType::Info,
+                Message {
+                    action: "ExternalMirrors".to_string(),
+                    details: format!("Failed to create some mirror tables: {}", e.message.details),
+                }
+            );
+        }
+    }
+}
+
+/// Creates local mirror tables for EXTERNALLY_MANAGED tables if configured
+async fn maybe_create_external_mirrors(
+    project: &Project,
+    infra_map: &InfrastructureMap,
+    remote_config: Option<&crate::infrastructure::olap::clickhouse::config::ClickHouseConfig>,
+) {
+    if !project.dev.externally_managed.tables.create_local_mirrors {
+        return;
+    }
+
+    match remote_config {
+        Some(config) => create_from_remote(project, infra_map, config).await,
+        None => create_from_local_schema(project, infra_map).await,
+    }
+}
+
 /// Starts the application in development mode.
 /// This mode is optimized for development workflows and includes additional debugging features.
 ///
@@ -421,116 +535,160 @@ pub async fn start_development_mode(
         show_message!(
             MessageType::Info,
             Message::new(
-                "Secret".to_string(),
-                "Fetching stored remote URL, you may see a pop up asking for your authorization."
-                    .to_string()
+                "Remote".to_string(),
+                "Resolving remote ClickHouse connection...".to_string()
             )
         );
-        let repo = KeyringSecretRepository;
-        let project_name = project.name();
-        match repo.get(&project_name, KEY_REMOTE_CLICKHOUSE_URL) {
-            Ok(stored) => {
-                let remote_clickhouse_url = match stored {
-                    Some(url) => Some(url),
-                    None if settings.dev.suppress_dev_setup_prompt => None,
-                    None => {
-                        display::show_message_wrapper(
-                            MessageType::Info,
-                            Message::new("Info".to_string(), STORE_CRED_PROMPT.to_string()),
-                        );
-                        let setup_choice =
-                            prompt_user("Do you want to set this up now (Y/n)?", Some("Y"), None)?;
-                        if matches!(
-                            setup_choice.trim().to_lowercase().as_str(),
-                            "" | "y" | "yes"
-                        ) {
-                            let url = prompt_user_for_remote_ch_http()?;
-                            match repo.store(&project_name, KEY_REMOTE_CLICKHOUSE_URL, &url) {
-                                Ok(()) => display::show_message_wrapper(
-                                    MessageType::Success,
-                                    Message::new(
-                                        "Keychain".to_string(),
-                                        format!(
-                                            "Saved ClickHouse connection string for project '{}'.",
-                                            project_name
-                                        ),
-                                    ),
-                                ),
-                                Err(e) => {
-                                    display::show_message_wrapper(
-                                        MessageType::Error,
-                                        Message::new(
-                                            "Keychain".to_string(),
-                                            format!("Failed to store connection string: {e:?}"),
-                                        ),
-                                    );
-                                    warn!("Failed to store connection string: {e:?}")
-                                }
-                            }
 
-                            Some(url)
-                        } else {
-                            let again_choice =prompt_user(
-                                "Do you want me to ask you this again next time you run `moose dev` (Y/n)",
-                                Some("Y"),
-                                None,
-                            )?;
-                            if !matches!(
-                                again_choice.trim().to_lowercase().as_str(),
-                                "" | "y" | "yes"
-                            ) {
-                                if let Err(e) = set_suppress_dev_setup_prompt(true) {
-                                    show_message!(
-                                        MessageType::Error,
-                                        Message {
-                                            action: "Failed".to_string(),
-                                            details: "to write suppression flag to config"
-                                                .to_string(),
-                                        }
-                                    );
-                                    tracing::warn!(
-                                        "Failed to write suppression flag to config: {e:?}"
-                                    );
-                                }
+        // Resolve remote ClickHouse config (handles env var, config file + keychain, or prompts)
+        match code_generation::resolve_remote_clickhouse_config(&project) {
+            Ok(Some(remote_config)) => {
+                // Use the resolved config for schema drift detection
+                let client =
+                    crate::infrastructure::olap::clickhouse::create_client(remote_config.clone());
+                match client.list_tables(&remote_config.db_name, &project).await {
+                    Ok((tables, _unsupported)) => {
+                        let tables: HashMap<_, _> =
+                            tables.into_iter().map(|t| (t.name.clone(), t)).collect();
+
+                        let changed = externally_managed.iter().any(|t| {
+                            if let Some(remote_table) = tables.get(&t.name) {
+                                !compute_table_columns_diff(t, remote_table).is_empty()
+                                    || !remote_table.order_by_equals(t)
+                                    || t.engine != remote_table.engine
+                            } else {
+                                true
                             }
-                            None
+                        });
+
+                        if changed {
+                            show_message!(
+                                MessageType::Highlight,
+                                Message {
+                                    action: "Remote".to_string(),
+                                    details: "change detected in externally managed tables. Run `moose db pull` to regenerate.".to_string(),
+                                }
+                            );
                         }
+
+                        // Create local mirrors for externally managed tables if configured
+                        maybe_create_external_mirrors(
+                            &project,
+                            &plan.target_infra_map,
+                            Some(&remote_config),
+                        )
+                        .await;
                     }
-                };
-                if let Some(ref remote_url) = remote_clickhouse_url {
-                    let (client, db) = code_generation::create_client_and_db(remote_url).await?;
-                    let (tables, _unsupported) = client.list_tables(&db, &project).await?;
-                    let tables: HashMap<_, _> =
-                        tables.into_iter().map(|t| (t.name.clone(), t)).collect();
-
-                    let changed = externally_managed.iter().any(|t| {
-                        if let Some(remote_table) = tables.get(&t.name) {
-                            !compute_table_columns_diff(t, remote_table).is_empty()
-                                || !remote_table.order_by_equals(t)
-                                || t.engine != remote_table.engine
-                        } else {
-                            true
-                        }
-                    });
-                    if changed {
+                    Err(e) => {
                         show_message!(
-                            MessageType::Highlight,
+                            MessageType::Error,
                             Message {
                                 action: "Remote".to_string(),
-                                details: "change detected in externally managed tables. Run `moose db pull` to regenerate.".to_string(),
+                                details: format!("Failed to connect to remote ClickHouse: {e:?}")
                             }
                         );
+                        // Still try to create mirrors if configured
+                        maybe_create_external_mirrors(
+                            &project,
+                            &plan.target_infra_map,
+                            Some(&remote_config),
+                        )
+                        .await;
                     }
+                }
+            }
+            Ok(None) if settings.dev.suppress_dev_setup_prompt => {
+                // No remote config and prompting suppressed
+                maybe_create_external_mirrors(&project, &plan.target_infra_map, None).await;
+            }
+            Ok(None) => {
+                // No remote config, offer to set up
+                display::show_message_wrapper(
+                    MessageType::Info,
+                    Message::new("Info".to_string(), STORE_CRED_PROMPT.to_string()),
+                );
+                let setup_choice =
+                    prompt_user("Do you want to set this up now (Y/n)?", Some("Y"), None)?;
+                if matches!(
+                    setup_choice.trim().to_lowercase().as_str(),
+                    "" | "y" | "yes"
+                ) {
+                    let url = code_generation::prompt_user_for_remote_ch_http()?;
+                    let repo = KeyringSecretRepository;
+                    let project_name = project.name();
+                    match repo.store(&project_name, KEY_REMOTE_CLICKHOUSE_URL, &url) {
+                        Ok(()) => {
+                            display::show_message_wrapper(
+                                MessageType::Success,
+                                Message::new(
+                                    "Keychain".to_string(),
+                                    format!(
+                                        "Saved ClickHouse connection string for project '{}'.",
+                                        project_name
+                                    ),
+                                ),
+                            );
+                            // Parse and use the newly saved URL
+                            if let Ok(config) =
+                                crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string(&url)
+                            {
+                                maybe_create_external_mirrors(
+                                    &project,
+                                    &plan.target_infra_map,
+                                    Some(&config),
+                                )
+                                .await;
+                            }
+                        }
+                        Err(e) => {
+                            display::show_message_wrapper(
+                                MessageType::Error,
+                                Message::new(
+                                    "Keychain".to_string(),
+                                    format!("Failed to store connection string: {e:?}"),
+                                ),
+                            );
+                            warn!("Failed to store connection string: {e:?}");
+                        }
+                    }
+                } else {
+                    let again_choice = prompt_user(
+                        "Do you want me to ask you this again next time you run `moose dev` (Y/n)",
+                        Some("Y"),
+                        None,
+                    )?;
+                    if !matches!(
+                        again_choice.trim().to_lowercase().as_str(),
+                        "" | "y" | "yes"
+                    ) {
+                        if let Err(e) = set_suppress_dev_setup_prompt(true) {
+                            show_message!(
+                                MessageType::Error,
+                                Message {
+                                    action: "Failed".to_string(),
+                                    details: "to write suppression flag to config".to_string(),
+                                }
+                            );
+                            tracing::warn!("Failed to write suppression flag to config: {e:?}");
+                        }
+                    }
+                    // No config, skip mirrors
+                    maybe_create_external_mirrors(&project, &plan.target_infra_map, None).await;
                 }
             }
             Err(e) => {
                 show_message!(
                     MessageType::Error,
                     Message {
-                        action: "Secret".to_string(),
-                        details: format!("failed to fetch stored remote URL. {e:?}")
+                        action: "Remote".to_string(),
+                        details: format!(
+                            "Failed to resolve remote ClickHouse config: {}",
+                            e.message.details
+                        )
                     }
                 );
+                // Skip mirrors on error
+                maybe_create_external_mirrors(&project, &plan.target_infra_map, None).await;
             }
         };
     }

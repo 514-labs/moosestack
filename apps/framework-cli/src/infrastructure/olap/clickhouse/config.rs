@@ -23,6 +23,46 @@ pub struct ClusterConfig {
     pub name: String,
 }
 
+/// Remote ClickHouse connection configuration (without password)
+/// Password is stored separately in the system keychain for security
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RemoteClickHouseConfig {
+    pub host: String,
+    #[serde(default = "default_native_port")]
+    pub native_port: i32,
+    pub database: String,
+    pub user: String,
+    #[serde(default)]
+    pub use_ssl: bool,
+}
+
+impl RemoteClickHouseConfig {
+    /// Converts to a full ClickHouseConfig by adding the password from keychain
+    pub fn to_clickhouse_config(&self, password: String) -> ClickHouseConfig {
+        ClickHouseConfig {
+            db_name: self.database.clone(),
+            user: self.user.clone(),
+            password,
+            use_ssl: self.use_ssl,
+            host: self.host.clone(),
+            host_port: if self.use_ssl { 8443 } else { 8123 },
+            native_port: self.native_port,
+            host_data_path: None,
+            additional_databases: Vec::new(),
+            clusters: None,
+        }
+    }
+
+    /// Returns a display string for the connection (without password)
+    pub fn display_connection(&self) -> String {
+        let protocol = if self.use_ssl { "https" } else { "http" };
+        format!(
+            "{}://{}@{}:{}?database={}",
+            protocol, self.user, self.host, self.native_port, self.database
+        )
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClickHouseConfig {
     pub db_name: String, // ex. local (primary database)

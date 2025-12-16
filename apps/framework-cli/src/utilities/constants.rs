@@ -108,11 +108,13 @@ pub const PYTHON_TASK_QUEUE: &str = "python-script-queue";
 pub const TYPESCRIPT_TASK_QUEUE: &str = "typescript-script-queue";
 pub const MOOSE_CLI_NAME: &str = "moose-cli";
 pub const KEY_REMOTE_CLICKHOUSE_URL: &str = "remote_clickhouse_url";
+pub const KEY_REMOTE_CLICKHOUSE_PASSWORD: &str = "remote_clickhouse_password";
 pub const KEY_REMOTE_ADMIN_URL: &str = "remote_admin_url";
 pub const KEY_REMOTE_ADMIN_TOKEN: &str = "remote_admin_token";
 
 pub const ENV_CLICKHOUSE_URL: &str = "MOOSE_CLICKHOUSE_CONFIG__URL";
 pub const ENV_REDIS_URL: &str = "MOOSE_REDIS_CONFIG__URL";
+pub const ENV_REMOTE_CLICKHOUSE_URL: &str = "MOOSE_REMOTE_CLICKHOUSE_URL";
 
 pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
@@ -120,10 +122,17 @@ pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json"
 
 pub const STORE_CRED_PROMPT: &str = r#"You have externally managed tables in your code base.
 Ensure your code is up to date with `moose db pull`.
-You can also configure `moose dev` to automatically check each time you start the dev server,
-so you're not developing with out-of-date data models/schemas.
 
-In order to set this up we will need your ClickHouse connection details:
-1. Host and port (e.g., from Boreal)
-2. Username and password
-3. Database name"#;
+To enable automatic schema drift detection, add remote connection details to moose.config.toml:
+
+  [dev.remote_clickhouse]
+  host = "your-instance.clickhouse.cloud"
+  native_port = 9440
+  database = "production"
+  user = "readonly_user"
+  use_ssl = true
+
+You'll be prompted for the password once (stored securely in your keychain).
+This config can be committed to git - passwords are never stored in files.
+
+Alternatively, set up connection for THIS machine only (not team-sharable):"#;
