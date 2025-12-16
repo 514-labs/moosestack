@@ -963,3 +963,27 @@ non_default_db_table = OlapTable[NonDefaultDbRecord](
         order_by_fields=["id", "timestamp"],
     ),
 )
+
+
+# =======Column Comments Test=========
+# Test that Field(description=...) comments are extracted and propagated to ClickHouse column comments
+
+
+class ColumnCommentsTest(BaseModel):
+    """Test model with Field(description=...) for column comments.
+
+    These descriptions should appear as COMMENT clauses in ClickHouse CREATE TABLE.
+    """
+
+    id: Key[str] = Field(description="Unique identifier for the record")
+    timestamp: datetime = Field(description="Timestamp when the event occurred")
+    email: str = Field(description="Email address of the user (must be valid)")
+    price: float = Field(description="Total price in USD ($)")
+    # This field intentionally has no description
+    status: str
+
+
+column_comments_test_table = OlapTable[ColumnCommentsTest](
+    "ColumnCommentsTest",
+    OlapConfig(order_by_fields=["id", "timestamp"]),
+)

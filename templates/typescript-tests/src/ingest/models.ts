@@ -946,3 +946,30 @@ export const fullyManagedSettingsTable = new OlapTable<LifeCycleTestData>(
     // lifeCycle defaults to FULLY_MANAGED
   },
 );
+
+/** =======Column Comments Test========= */
+// Test that TSDoc comments are extracted and propagated to ClickHouse column comments
+
+/**
+ * Test interface with TSDoc comments on fields.
+ * These comments should appear as COMMENT clauses in ClickHouse CREATE TABLE.
+ */
+export interface ColumnCommentsTest {
+  /** Unique identifier for the record */
+  id: Key<string>;
+  /** Timestamp when the event occurred */
+  timestamp: DateTime;
+  /** Email address of the user (must be valid) */
+  email: string;
+  /** Total price in USD ($) */
+  price: number;
+  // This field intentionally has no TSDoc comment
+  status: string;
+}
+
+export const columnCommentsTestTable = new OlapTable<ColumnCommentsTest>(
+  "ColumnCommentsTest",
+  {
+    orderByFields: ["id", "timestamp"],
+  },
+);

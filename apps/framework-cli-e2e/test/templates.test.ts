@@ -381,6 +381,51 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     });
 
+    it("should include column comments in DDL from TSDoc/Field descriptions", async function () {
+      if (config.isTestsVariant) {
+        const ddl = await getTableDDL("ColumnCommentsTest", "local");
+
+        // Verify comments are present in DDL for documented fields
+        // ClickHouse DDL format: `column_name` Type COMMENT 'comment text'
+        if (!ddl.includes("COMMENT 'Unique identifier for the record'")) {
+          throw new Error(
+            `Expected id column to have comment 'Unique identifier for the record'. DDL: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("COMMENT 'Timestamp when the event occurred'")) {
+          throw new Error(
+            `Expected timestamp column to have comment 'Timestamp when the event occurred'. DDL: ${ddl}`,
+          );
+        }
+        if (
+          !ddl.includes("COMMENT 'Email address of the user (must be valid)'")
+        ) {
+          throw new Error(
+            `Expected email column to have comment 'Email address of the user (must be valid)'. DDL: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("COMMENT 'Total price in USD ($)'")) {
+          throw new Error(
+            `Expected price column to have comment 'Total price in USD ($)'. DDL: ${ddl}`,
+          );
+        }
+
+        // Verify status field does NOT have a comment (it has no TSDoc/description)
+        // The status column should appear without a COMMENT clause
+        // Check by verifying the pattern: `status` followed by type but no COMMENT
+        const statusMatch = ddl.match(/`status`\s+\w+(\([^)]+\))?/);
+        if (statusMatch && statusMatch[0].includes("COMMENT")) {
+          throw new Error(
+            `Expected status column to NOT have a comment, but found one. DDL: ${ddl}`,
+          );
+        }
+
+        testLogger.info(
+          `✅ Column comments DDL validation passed for ${config.language}`,
+        );
+      }
+    });
+
     // Add versioned tables test for tests templates
     if (config.isTestsVariant) {
       it("should create versioned OlapTables correctly", async function () {
