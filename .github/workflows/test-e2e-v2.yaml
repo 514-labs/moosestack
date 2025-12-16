@@ -1,0 +1,282 @@
+name: Test E2E v2
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  merge_group:
+    types: [checks_requested]
+
+defaults:
+  run:
+    working-directory: ./apps/e2e-v2
+
+jobs:
+  # Initial check for changes
+  detect-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      should_run: ${{ steps.check-changes.outputs.should_run }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch main branch
+        run: git fetch origin main:main
+
+      - name: Check for relevant changes
+        id: check-changes
+        shell: bash
+        run: |
+          PATTERNS=(
+            "^\.github/workflows/test-e2e-v2\.yaml"
+            "^apps/e2e-v2/"
+            "^apps/framework-cli/"
+            "^templates/"
+            "^packages/"
+            "Cargo.lock"
+            "pnpm-lock.yaml"
+          )
+
+          GREP_PATTERN=$(IFS="|"; echo "${PATTERNS[*]}")
+          git diff --name-only origin/main...HEAD > changes.txt
+
+          if grep -q -E "${GREP_PATTERN}" changes.txt; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Build the CLI first
+  build:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.should_run == 'true'
+    runs-on: ubuntu-22-8-core
+    permissions:
+      contents: read
+    steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-action@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/framework-cli -> target
+
+      - name: Build CLI
+        run: cargo build
+        working-directory: ./apps/framework-cli
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: .
+
+      - name: Build packages
+        run: pnpm run build --filter=@514labs/moose-lib
+        working-directory: .
+
+      - name: Package templates
+        run: ./scripts/package-templates.js
+        working-directory: .
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moose-cli
+          path: target/debug/moose-cli
+
+  # Run standalone tests (no Docker required)
+  standalone-tests:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Download CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: moose-cli
+          path: target/debug
+
+      - name: Make CLI executable
+        run: chmod +x target/debug/moose-cli
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: ./apps/e2e-v2
+
+      - name: Run standalone tests
+        run: pnpm test:standalone
+        working-directory: ./apps/e2e-v2
+        env:
+          MOOSE_BINARY: ${{ github.workspace }}/target/debug/moose-cli
+
+  # Run release gate tests (no Docker required)
+  release-gate-tests:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Download CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: moose-cli
+          path: target/debug
+
+      - name: Make CLI executable
+        run: chmod +x target/debug/moose-cli
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: ./apps/e2e-v2
+
+      - name: Run release gate tests
+        run: pnpm test:release-gates
+        working-directory: ./apps/e2e-v2
+        env:
+          MOOSE_BINARY: ${{ github.workspace }}/target/debug/moose-cli
+
+  # Scenario tests (requires Docker infrastructure)
+  # These are run in parallel per template
+  scenario-tests:
+    needs: build
+    runs-on: ubuntu-22-8-core
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - typescript-tests
+          - python-tests
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:23.8
+        ports:
+          - 18123:8123
+          - 9000:9000
+      redpanda:
+        image: redpandadata/redpanda:v23.3.5
+        ports:
+          - 19092:9092
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download CLI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: moose-cli
+          path: target/debug
+
+      - name: Make CLI executable
+        run: chmod +x target/debug/moose-cli
+
+      - name: Install dependencies
+        run: pnpm install
+        working-directory: ./apps/e2e-v2
+
+      - name: Install template dependencies
+        run: |
+          if [[ "${{ matrix.template }}" == typescript* ]]; then
+            cd templates/${{ matrix.template }}
+            npm install
+          else
+            cd templates/${{ matrix.template }}
+            pip install -r requirements.txt || true
+          fi
+        working-directory: .
+
+      - name: Run scenario tests for ${{ matrix.template }}
+        run: pnpm test:scenarios
+        working-directory: ./apps/e2e-v2
+        env:
+          MOOSE_BINARY: ${{ github.workspace }}/target/debug/moose-cli
+          MOOSE_TEMPLATE: ${{ matrix.template }}
+          MOOSE_DEBUG: "true"
