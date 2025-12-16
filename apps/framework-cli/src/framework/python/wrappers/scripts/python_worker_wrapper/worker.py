@@ -128,7 +128,9 @@ async def start_worker(
     )
 
     if worker is None:
-        log.info("No worker found to start")
+        log.info(
+            "No workflows found. To disable workflow infrastructure, set workflows=false in moose.config.toml"
+        )
         return
 
     shutdown_task = None

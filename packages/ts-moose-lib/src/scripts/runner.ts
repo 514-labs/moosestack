@@ -235,7 +235,9 @@ export async function runScripts(
   const worker = await registerWorkflows(logger, config);
 
   if (!worker) {
-    logger.warn(`No workflows found`);
+    logger.warn(
+      `No workflows found. To disable workflow infrastructure, set workflows=false in moose.config.toml`,
+    );
     process.exit(0);
   }
 
