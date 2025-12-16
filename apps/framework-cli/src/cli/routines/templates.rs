@@ -529,30 +529,68 @@ fn setup_custom_dockerfile(
     // Update moose.config.toml to enable custom_dockerfile
     let config_path = dir_path.join("moose.config.toml");
 
-    if config_path.exists() {
-        let content = std::fs::read_to_string(&config_path).map_err(|e| {
-            RoutineFailure::error(Message {
-                action: "Init".to_string(),
-                details: format!("Failed to read moose.config.toml: {e}"),
-            })
-        })?;
+    if !config_path.exists() {
+        return Err(RoutineFailure::error(Message {
+            action: "Init".to_string(),
+            details:
+                "moose.config.toml not found. Please run 'moose init' first to create a project."
+                    .to_string(),
+        }));
+    }
 
-        // Append docker_config section if not already present
-        if !content.contains("[docker_config]") {
-            let docker_config_section = r#"
+    let content = std::fs::read_to_string(&config_path).map_err(|e| {
+        RoutineFailure::error(Message {
+            action: "Init".to_string(),
+            details: format!("Failed to read moose.config.toml: {e}"),
+        })
+    })?;
+
+    // Add or update docker_config section
+    let new_content = if !content.contains("[docker_config]") {
+        // Append new section
+        let docker_config_section = r#"
 
 [docker_config]
 custom_dockerfile = true
 dockerfile_path = "./Dockerfile"
 "#;
-            let new_content = format!("{content}{docker_config_section}");
-            std::fs::write(&config_path, new_content).map_err(|e| {
-                RoutineFailure::error(Message {
-                    action: "Init".to_string(),
-                    details: format!("Failed to write moose.config.toml: {e}"),
-                })
-            })?;
-        }
+        format!("{content}{docker_config_section}")
+    } else if content.contains("custom_dockerfile = false") {
+        // Update existing section
+        content.replace("custom_dockerfile = false", "custom_dockerfile = true")
+    } else if content.contains("custom_dockerfile = true") {
+        // Already enabled, nothing to do
+        show_message!(
+            MessageType::Info,
+            Message {
+                action: "Info".to_string(),
+                details: "custom Dockerfile mode is already enabled in moose.config.toml"
+                    .to_string(),
+            }
+        );
+        return Ok(());
+    } else {
+        // [docker_config] exists but no custom_dockerfile setting - this shouldn't happen
+        // with valid config, but handle gracefully by informing user
+        show_message!(
+            MessageType::Info,
+            Message {
+                action: "Info".to_string(),
+                details:
+                    "Found [docker_config] section but couldn't parse custom_dockerfile setting. Please manually set custom_dockerfile = true"
+                        .to_string(),
+            }
+        );
+        return Ok(());
+    };
+
+    if new_content != content {
+        std::fs::write(&config_path, new_content).map_err(|e| {
+            RoutineFailure::error(Message {
+                action: "Init".to_string(),
+                details: format!("Failed to write moose.config.toml: {e}"),
+            })
+        })?;
     }
 
     show_message!(
