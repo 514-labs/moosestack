@@ -2,7 +2,7 @@
 //!
 //! This module provides utilities for tracking and displaying elapsed times
 //! for operations when the --timing flag is enabled. Times are shown in
-//! human-readable format ("completed in 234ms" or "completed in 2.3s").
+//! human-readable format ("finished in 234ms" or "finished in 2.3s").
 //!
 //! # Usage
 //!
@@ -22,8 +22,8 @@
 //!
 //! When the SHOW_TIMING flag is enabled, these wrappers will display:
 //! ```text
-//! Planning completed in 234ms
-//! Execution completed in 2.3s
+//! Planning finished in 234ms
+//! Execution finished in 2.3s
 //! ```
 
 use crate::cli::display::{Message, MessageType};
@@ -55,7 +55,7 @@ use std::time::Instant;
 ///     execute_query()
 /// });
 /// // If --timing flag is enabled, displays:
-/// // "Database Query completed in 234ms"
+/// // "Database Query finished in 234ms"
 /// ```
 pub fn with_timing<F, R>(operation_name: &str, f: F) -> R
 where
@@ -69,7 +69,7 @@ where
         show_message!(MessageType::Info, {
             Message {
                 action: operation_name.to_string(),
-                details: format!("completed in {}", humantime::format_duration(elapsed)),
+                details: format!("finished in {}", humantime::format_duration(elapsed)),
             }
         });
     }
@@ -100,7 +100,7 @@ where
 ///     make_api_call().await
 /// }).await;
 /// // If --timing flag is enabled, displays:
-/// // "API Call completed in 1.2s"
+/// // "API Call finished in 1.2s"
 /// ```
 pub async fn with_timing_async<F, R>(operation_name: &str, f: F) -> R
 where
@@ -114,7 +114,7 @@ where
         show_message!(MessageType::Info, {
             Message {
                 action: operation_name.to_string(),
-                details: format!("completed in {}", humantime::format_duration(elapsed)),
+                details: format!("finished in {}", humantime::format_duration(elapsed)),
             }
         });
     }
