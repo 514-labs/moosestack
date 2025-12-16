@@ -77,7 +77,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
