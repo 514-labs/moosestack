@@ -9,7 +9,7 @@ import { Callout } from "@/components/mdx";
 
 # Planned Migrations
 
-**Planned migrations** are the production-grade schema evolution mechanism in Moose. Unlike auto-inferred migrations, this system separates the *generation* of schema changes from their *execution*, introducing a reviewable artifact (the plan) into your deployment lifecycle.
+**Planned migrations** are the production-grade schema evolution mechanism in MooseStack. Unlike [Automatic Migrations](/moosestack/migrate/automatic-migrations), this system separates the *generation* of schema changes from their *execution*, introducing a reviewable artifact (the plan) into your deployment lifecycle.
 
 ## Command
 
@@ -118,5 +118,5 @@ moose generate migration ... --save
 ## See Also
 
 - [Migration Plan Reference](/moosestack/migrate/reference) - Detailed syntax of `plan.yaml`.
-- [Serverless (moose migrate)](/moosestack/migrate/apply-planned-migrations-cli) - Execution guide.
-- [Server Runtime](/moosestack/migrate/apply-planned-migrations-service) - Execution guide.
+- [Manual Execution](/moosestack/migrate/apply-planned-migrations-cli) - Execute migration plans manually via the `moose migrate` command.
+- [Runtime Execution](/moosestack/migrate/apply-planned-migrations-service) - Execute migration plans automatically via the Moose Server Runtime.

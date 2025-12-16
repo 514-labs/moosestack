@@ -1,5 +1,5 @@
 ---
-title: Generating Migrations
+title: Migration Modes
 description: Overview of the two schema evolution modes in Moose used for development and production.
 order: 1
 category: migrate
@@ -7,16 +7,16 @@ category: migrate
 
 import { Callout } from "@/components/mdx";
 
-# Generating Migrations
+# Migration Modes
 
-Moose Migrate offers two complementary modes for generating migrations. Each is designed for use in different stages of the application lifecycle, and it's best practice to use both in your workflow:
+Moose Migrate offers two complementary modes for generating and applying migrations. Each is designed for use in different stages of the application lifecycle, and it's best practice to use both in your workflow:
 
-- [Auto-Inferred Migrations](#auto-inferred-migrations) - Changes are instantly applied to your database without any manual review. Designed for local development.
-- [Planned Migrations](#planned-migrations) - Changes are staged in a reviewable and editable plan file. Designed for production deployments.
+- [Automatic Migrations](#automatic-migrations) - Changes are instantly applied to your database without any manual review. Designed for local development and rapid iteration.
+- [Planned Migrations](#planned-migrations) - Changes are staged in a reviewable and editable plan file. Designed for production deployments and CI/CD pipelines.
 
 ## Overview
 
-|  | Auto-Inferred Migrations | Planned Migrations |
+|  | Automatic Migrations | Planned Migrations |
 | :--- | :--- | :--- |
 | **Primary Use Case** | Local Development | Production Deployment |
 | **Trigger** | File Save / Watcher | `moose generate migration` |
@@ -25,15 +25,15 @@ Moose Migrate offers two complementary modes for generating migrations. Each is 
 | **Reviewable** | No | Yes |
 | **Drift Detection** | No | Yes |
 
-## Auto-Inferred Migrations
+## Automatic Migrations
 
-Designed for the "inner loop" of development, **Auto-Inferred Migrations** prioritize velocity. As you iterate on your data models in code, Moose automatically applies the necessary changes to your local database in real-time.
+Designed for the "inner loop" of development, **Automatic Migrations** prioritize velocity. As you iterate on your data models in code, Moose automatically applies the necessary changes to your local database in real-time.
 
 *   **Optimized for:** Prototyping, local development, rapid iteration.
 *   **Key Characteristic:** Invisible, instant schema updates.
 *   **Risk:** Can be destructive (e.g., renaming a field drops the column).
 
-[Read the Auto-Inferred Migrations Reference →](/moosestack/migrate/auto-inferred)
+[Read the Automatic Migrations Reference →](/moosestack/migrate/automatic-migrations)
 
 ## Planned Migrations
 
@@ -49,7 +49,7 @@ Designed for the "outer loop" of deployment, **Planned Migrations** prioritize s
 
 | Scenario | Recommended Mode | Rationale |
 | :--- | :--- | :--- |
-| **Local Prototyping** | `Auto-Inferred` | You want to iterate quickly on your schema without running commands for every change. |
+| **Local Prototyping** | `Automatic` | You want to iterate quickly on your schema without running commands for every change. |
 | **Production Deployment** | `Planned` | You need to ensure that schema changes are safe and do not accidentally delete user data. |
 | **CI/CD Pipeline** | `Planned` | You need to apply migrations in a deterministic way as part of your deployment process. |
 | **Renaming Columns** | `Planned` | You need to explicitly tell the database to rename a column instead of dropping and re-adding it. |
@@ -57,7 +57,7 @@ Designed for the "outer loop" of deployment, **Planned Migrations** prioritize s
 
 ## See Also
 
-- [Auto-Inferred Migrations](/moosestack/migrate/auto-inferred)
+- [Automatic Migrations](/moosestack/migrate/automatic-migrations)
 - [Planned Migrations](/moosestack/migrate/planned-migrations)
 - [Lifecycle Management](/moosestack/migrate/lifecycle)
 

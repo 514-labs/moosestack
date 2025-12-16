@@ -7,21 +7,24 @@ category: migrate
 
 import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
-# Externally Managed Lifecycle
+# Externally Managed
 
-`LifeCycle.EXTERNALLY_MANAGED` tells Moose to interact with existing resources without managing their schema or lifecycle. In this mode, you are fully responsible for creating and maintaining the database schema outside the context of your code.
+`LifeCycle.EXTERNALLY_MANAGED` tells MooseStack to interact with existing resources without managing their schema or lifecycle. In this mode, you are fully responsible for creating and maintaining the database schema outside the context of your code.
 
-## Use Cases
+## When to Use
 
-- **Existing Infrastructure**: You're connecting to tables managed by another team or process.
-- **Integrations**: You're integrating with external systems like PeerDB or CDC tools that manage the schema.
-- **Strict Governance**: Your organization requires strict, manual database change management.
+Mark a table `EXTERNALLY_MANAGED` when you want to connect to an existing database table where the schema is owned by another team, process, or tool (e.g., PeerDB, Debezium, ClickPipes).
 
-## Syncing Schema
+## Why Model External Tables in MooseStack?
 
-Because Moose doesn't manage the schema, your code definitions must match the database exactly. Mismatches can cause runtime errors.
+Defining the table lets you write type-safe queries, create [Views](/moosestack/olap/model-view), [Materialized Views](/moosestack/olap/model-materialized-view), and [API endpoints](/moosestack/api) against schemas you don't own while still getting full IDE autocompletion.
 
-Use `moose db pull` to generate Moose models from your remote database:
+
+## Syncing External Models
+
+Because MooseStack doesn't manage the schema, your code definitions must match the database exactly. Mismatches can cause runtime errors.
+
+Use `moose db pull` to generate Moose OLAP models from your remote database:
 
 ```bash
 moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>

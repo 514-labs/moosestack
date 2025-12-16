@@ -1,3 +1,4 @@
+import { React } from "react";
 import type { Language } from "@/lib/content-types";
 import {
   IconChartArea,
@@ -519,33 +520,33 @@ const moosestackNavigationConfig: NavigationConfig = [
       {
         type: "page",
         slug: "moosestack/migrate/auto-inferred",
-        title: "Auto-Inferred",
+        title: "Automatic Migrations",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/migrate/planned-migrations",
-        title: "Planned",
+        title: "Planned Migrations",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/migrate/plan-format",
-        title: "Plan Format",
+        title: "Plan Reference",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
-      { type: "label", title: "Applying Migrations" },
+      { type: "label", title: "Executing Migrations" },
       {
         type: "page",
         slug: "moosestack/migrate/apply-planned-migrations-cli",
-        title: "Serverless (moose migrate)",
+        title: "moose migrate (CLI)",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/migrate/apply-planned-migrations-service",
-        title: "Server Runtime",
+        title: "moose prod (Runtime)",
         languages: ["typescript", "python"],
       },
       { type: "separator" },

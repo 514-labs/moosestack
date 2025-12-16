@@ -1,5 +1,5 @@
 ---
-title: Serverless (moose migrate)
+title: moose migrate
 description: Reference documentation for the manual migration CLI command used in serverless deployments.
 order: 7
 category: olap
@@ -7,13 +7,13 @@ category: olap
 
 import { Callout } from "@/components/mdx";
 
-# Serverless (moose migrate)
+# moose migrate
 
-The **Serverless** deployment model relies on the `moose migrate` CLI command to execute planned schema changes. This gives you explicit control over when migrations run, which is essential for architectures where Moose is integrated as a library rather than a standalone server.
+The **CLI** deployment model relies on the `moose migrate` CLI command to execute planned schema changes. This gives you explicit control over when migrations run, which is essential for architectures where Moose OLAP is integrated as a library rather than a standalone server (e.g. as a library in a Python or TypeScript application).
 
 ## Overview
 
-In serverless or library-based deployments, Moose does not control the application runtime. Therefore, migrations must be triggered externally, typically as a step in a CI/CD pipeline or a manual administrative action.
+In serverless or library-based deployments, MooseStack does not control the application runtime. Therefore, migrations must be triggered externally, typically as a step in a CI/CD pipeline or a manual administrative action.
 
 | Feature | Description |
 | :--- | :--- |
@@ -66,5 +66,6 @@ This command is typically used in a deployment pipeline before updating the appl
 
 ## See Also
 
-- [Planned Migrations](/moosestack/migrate/planned-migrations) - Generating the plan files.
-- [Server Runtime](/moosestack/migrate/apply-planned-migrations-service) - The automatic alternative for full server deployments.
+- [Planned Migrations](/moosestack/migrate/planned-migrations) — Generating the plan files
+- [moose prod (Moose Runtime Migrations)](/moosestack/migrate/apply-planned-migrations-service) — Automatic migrations for Moose Runtime deployments
+- [Migration Modes](/moosestack/migrate/modes) — Overview of schema evolution modes
