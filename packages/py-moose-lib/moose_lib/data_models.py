@@ -314,6 +314,7 @@ class Column(BaseModel):
     ttl: str | None = None
     codec: str | None = None
     materialized: str | None = None
+    comment: str | None = None
 
     def to_expr(self):
         # Lazy import to avoid circular dependency at import time
@@ -686,6 +687,10 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
             None,
         )
 
+        # Extract description from Pydantic Field (supports both Field(description=...)
+        # and attribute docstrings with use_attribute_docstrings=True)
+        comment = field_info.description
+
         columns.append(
             Column(
                 name=column_name,
@@ -698,6 +703,7 @@ def _to_columns(model: type[BaseModel]) -> list[Column]:
                 annotations=annotations,
                 ttl=ttl_expr,
                 codec=codec_expr,
+                comment=comment,
             )
         )
     return columns

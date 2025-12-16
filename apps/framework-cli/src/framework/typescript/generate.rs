@@ -274,6 +274,13 @@ fn generate_interface(
     writeln!(interface, "export interface {name} {{").unwrap();
 
     for column in &nested.columns {
+        // Output TSDoc comment if present
+        if let Some(ref comment) = column.comment {
+            // Sanitize comment to prevent breaking TSDoc block
+            let sanitized = comment.replace("*/", "*\\/");
+            writeln!(interface, "    /** {} */", sanitized).unwrap();
+        }
+
         let type_str =
             map_column_type_to_typescript(&column.data_type, enums, nested_models, json_types);
         let type_str = if column.primary_key {
@@ -557,6 +564,13 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         writeln!(output, "export interface {} {{", table.name).unwrap();
 
         for column in &table.columns {
+            // Output TSDoc comment if present
+            if let Some(ref comment) = column.comment {
+                // Sanitize comment to prevent breaking TSDoc block
+                let sanitized = comment.replace("*/", "*\\/");
+                writeln!(output, "    /** {} */", sanitized).unwrap();
+            }
+
             let mut type_str = map_column_type_to_typescript(
                 &column.data_type,
                 &enums,
@@ -1812,5 +1826,95 @@ export const TaskTable = new OlapTable<Task>("Task", {
 
         let result = tables_to_typescript(&tables, None);
         assert!(result.contains("database: \"analytics_db\""));
+    }
+
+    #[test]
+    fn test_tsdoc_comment_output() {
+        let tables = vec![Table {
+            name: "UserData".to_string(),
+            columns: vec![
+                Column {
+                    name: "id".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: true,
+                    default: None,
+                    annotations: vec![],
+                    comment: Some("Unique identifier for the user".to_string()),
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+                Column {
+                    name: "email".to_string(),
+                    data_type: ColumnType::String,
+                    required: true,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: Some("User's email address (must be valid)".to_string()),
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+                Column {
+                    name: "status".to_string(),
+                    data_type: ColumnType::String,
+                    required: false,
+                    unique: false,
+                    primary_key: false,
+                    default: None,
+                    annotations: vec![],
+                    comment: None, // No comment for this field
+                    ttl: None,
+                    codec: None,
+                    materialized: None,
+                },
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "UserData".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        }];
+
+        let result = tables_to_typescript(&tables, None);
+
+        // Verify TSDoc comments are output for fields with comments
+        assert!(
+            result.contains("/** Unique identifier for the user */"),
+            "Expected TSDoc comment for id field. Result: {}",
+            result
+        );
+        assert!(
+            result.contains("/** User's email address (must be valid) */"),
+            "Expected TSDoc comment for email field. Result: {}",
+            result
+        );
+
+        // Verify no spurious TSDoc for field without comment
+        // Count occurrences of "/**" - should be exactly 2 for the two commented fields
+        let tsdoc_count = result.matches("/**").count();
+        assert_eq!(
+            tsdoc_count, 2,
+            "Expected exactly 2 TSDoc comments. Got {}. Result: {}",
+            tsdoc_count, result
+        );
     }
 }
