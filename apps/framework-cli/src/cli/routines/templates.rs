@@ -545,6 +545,11 @@ fn setup_custom_dockerfile(
         })
     })?;
 
+    // Regex patterns for matching uncommented config lines
+    // These patterns match lines that start with optional whitespace, then the setting (not commented)
+    let uncommented_false_re = Regex::new(r"(?m)^(\s*)custom_dockerfile\s*=\s*false").unwrap();
+    let uncommented_true_re = Regex::new(r"(?m)^(\s*)custom_dockerfile\s*=\s*true").unwrap();
+
     // Add or update docker_config section
     let new_content = if !content.contains("[docker_config]") {
         // Append new section
@@ -555,10 +560,12 @@ custom_dockerfile = true
 dockerfile_path = "./Dockerfile"
 "#;
         format!("{content}{docker_config_section}")
-    } else if content.contains("custom_dockerfile = false") {
-        // Update existing section
-        content.replace("custom_dockerfile = false", "custom_dockerfile = true")
-    } else if content.contains("custom_dockerfile = true") {
+    } else if uncommented_false_re.is_match(&content) {
+        // Update existing uncommented setting from false to true
+        uncommented_false_re
+            .replace(&content, "${1}custom_dockerfile = true")
+            .to_string()
+    } else if uncommented_true_re.is_match(&content) {
         // Already enabled, nothing to do
         show_message!(
             MessageType::Info,
@@ -570,18 +577,13 @@ dockerfile_path = "./Dockerfile"
         );
         return Ok(());
     } else {
-        // [docker_config] exists but no custom_dockerfile setting - this shouldn't happen
-        // with valid config, but handle gracefully by informing user
-        show_message!(
-            MessageType::Info,
-            Message {
-                action: "Info".to_string(),
-                details:
-                    "Found [docker_config] section but couldn't parse custom_dockerfile setting. Please manually set custom_dockerfile = true"
-                        .to_string(),
-            }
-        );
-        return Ok(());
+        // [docker_config] exists but no uncommented custom_dockerfile setting
+        // This can happen if user only set dockerfile_path or has it commented out.
+        // Add the setting after the section header.
+        content.replace(
+            "[docker_config]",
+            "[docker_config]\ncustom_dockerfile = true",
+        )
     };
 
     if new_content != content {
