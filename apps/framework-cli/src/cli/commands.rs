@@ -218,6 +218,24 @@ pub enum Commands {
         #[arg(short = 'p', long = "prettify", requires = "format_query")]
         prettify: bool,
     },
+    /// Check readiness of a running Moose instance
+    Ready {
+        /// Wait until services are ready and quiescent (no pending operations)
+        #[arg(short, long)]
+        wait: bool,
+
+        /// Timeout in milliseconds for wait mode (default: 30000)
+        #[arg(short, long, default_value = "30000")]
+        timeout: u64,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Port of the Moose instance (default: 4000)
+        #[arg(short, long, default_value = "4000")]
+        port: u16,
+    },
 }
 
 #[derive(Debug, Args)]

@@ -1425,6 +1425,111 @@ pub async fn top_command_handler(
 
             result
         }
+        Commands::Ready {
+            wait,
+            timeout,
+            json,
+            port,
+        } => {
+            info!("Running ready command");
+
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_millis(*timeout + 5000))
+                .build()
+                .map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Ready".to_string(),
+                            "Failed to create HTTP client".to_string(),
+                        ),
+                        e,
+                    )
+                })?;
+
+            let mut url = format!("http://localhost:{}/ready?detailed=true", port);
+            if *wait {
+                url.push_str(&format!("&wait=true&timeout={}", timeout));
+            }
+
+            let response = client.get(&url).send().await.map_err(|e| {
+                RoutineFailure::new(
+                    Message::new(
+                        "Ready".to_string(),
+                        format!("Failed to connect to Moose instance on port {}", port),
+                    ),
+                    e,
+                )
+            })?;
+
+            let status = response.status();
+            let body: serde_json::Value = response.json().await.map_err(|e| {
+                RoutineFailure::new(
+                    Message::new("Ready".to_string(), "Failed to parse response".to_string()),
+                    e,
+                )
+            })?;
+
+            if *json {
+                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+            } else {
+                let healthy = body["healthy"].as_array();
+                let unhealthy = body["unhealthy"].as_array();
+
+                if let Some(unhealthy) = unhealthy {
+                    if unhealthy.is_empty() {
+                        display::show_message_wrapper(
+                            MessageType::Success,
+                            Message::new("Ready".to_string(), "All services ready".to_string()),
+                        );
+                    } else {
+                        display::show_message_wrapper(
+                            MessageType::Error,
+                            Message::new(
+                                "Ready".to_string(),
+                                "Some services not ready".to_string(),
+                            ),
+                        );
+                    }
+                }
+
+                if let Some(healthy) = healthy {
+                    for service in healthy {
+                        println!("  ✓ {}", service.as_str().unwrap_or("unknown"));
+                    }
+                }
+                if let Some(unhealthy) = unhealthy {
+                    for service in unhealthy {
+                        println!("  ✗ {}", service.as_str().unwrap_or("unknown"));
+                    }
+                }
+
+                // Show details if available
+                if let Some(details) = body.get("details") {
+                    if let Some(kafka) = details.get("kafka") {
+                        if let Some(lag) = kafka.get("consumerLag") {
+                            println!("  Kafka consumer lag: {}", lag);
+                        }
+                    }
+                    if let Some(ch) = details.get("clickhouse") {
+                        if let Some(pending) = ch.get("pendingParts") {
+                            println!("  ClickHouse pending parts: {}", pending);
+                        }
+                    }
+                }
+            }
+
+            if status.is_success() {
+                Ok(RoutineSuccess::success(Message::new(
+                    "Ready".to_string(),
+                    "Services are ready".to_string(),
+                )))
+            } else {
+                Err(RoutineFailure::error(Message::new(
+                    "Ready".to_string(),
+                    "Services not ready".to_string(),
+                )))
+            }
+        }
     }
 }
 
