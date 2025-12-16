@@ -576,7 +576,8 @@ impl ClickhouseEngine {
     }
 
     /// Parse SharedReplacingMergeTree or ReplicatedReplacingMergeTree
-    /// Format: (path, replica [, ver [, is_deleted]]) or () for automatic configuration
+    /// Format: (path, replica [, ver [, is_deleted]]) or ([ver [, is_deleted]]) or () for automatic configuration
+    /// When ClickHouse is configured with server-side replication paths, only the ver/is_deleted columns are provided
     fn parse_distributed_replacing_merge_tree(value: &str) -> Result<Self, &str> {
         let content = Self::extract_engine_content(
             value,
@@ -599,39 +600,78 @@ impl ClickhouseEngine {
                 });
             }
 
-            // Require at least 2 params if any are provided
-            if params.len() < 2 {
-                return Err(value);
+            // Check if the first param looks like a keeper path (contains '/') or a column name
+            // Keeper paths look like: /clickhouse/tables/{uuid}/{shard}
+            // Column names are simple identifiers: version_col, is_deleted, etc.
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+
+            if first_param_is_path {
+                // Format: (path, replica [, ver [, is_deleted]])
+                // Require at least 2 params when path is provided
+                if params.len() < 2 {
+                    return Err(value);
+                }
+
+                // First two params are keeper_path and replica_name
+                let (keeper_path, replica_name) = Self::extract_replication_params(&params);
+
+                // Optional 3rd param is ver, optional 4th is is_deleted
+                let ver = params.get(2).cloned();
+                let is_deleted = params.get(3).cloned();
+
+                Ok(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                    keeper_path,
+                    replica_name,
+                    ver,
+                    is_deleted,
+                })
+            } else {
+                // Format: (ver [, is_deleted]) - server-side replication paths configured
+                // First param is ver column, optional second is is_deleted
+                let ver = params.first().cloned();
+                let is_deleted = params.get(1).cloned();
+
+                Ok(ClickhouseEngine::ReplicatedReplacingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    ver,
+                    is_deleted,
+                })
             }
-
-            // First two params are keeper_path and replica_name
-            let (keeper_path, replica_name) = Self::extract_replication_params(&params);
-
-            // Optional 3rd param is ver, optional 4th is is_deleted
-            let ver = params.get(2).cloned();
-            let is_deleted = params.get(3).cloned();
-
-            Ok(ClickhouseEngine::ReplicatedReplacingMergeTree {
-                keeper_path,
-                replica_name,
-                ver,
-                is_deleted,
-            })
         } else {
-            // For SharedReplacingMergeTree with parentheses, keeper_path and replica_name are required
-            // The 3rd and 4th params (if present) are ver and is_deleted.
-            // Require exactly 2 or more params (can't be empty with parentheses)
-            if params.len() < 2 {
-                return Err(value);
+            // SharedReplacingMergeTree handling
+            // In ClickHouse Cloud, users cannot specify keeper paths - only column params are allowed.
+            // However, ClickHouse Cloud returns internal paths when querying system.tables.
+            // We handle both formats:
+            // - Column-only: SharedReplacingMergeTree([ver [, is_deleted]])
+            // - With internal paths: SharedReplacingMergeTree('/path', '{replica}' [, ver [, is_deleted]])
+
+            if params.is_empty() {
+                // Empty params - automatic configuration
+                return Ok(ClickhouseEngine::ReplacingMergeTree {
+                    ver: None,
+                    is_deleted: None,
+                });
             }
 
-            // Skip the first two params (keeper_path and replica_name) for Shared engines
-            // Optional 3rd param is ver, optional 4th is is_deleted
-            let ver = params.get(2).cloned();
-            let is_deleted = params.get(3).cloned();
+            // Check if first param looks like a path (contains '/') or a column name
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
 
-            // SharedReplacingMergeTree normalizes to ReplacingMergeTree
-            Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
+            if first_param_is_path {
+                // Format: (path, replica [, ver [, is_deleted]]) - ClickHouse Cloud internal format
+                if params.len() < 2 {
+                    return Err(value);
+                }
+                // Skip the first two params (keeper_path and replica_name)
+                let ver = params.get(2).cloned();
+                let is_deleted = params.get(3).cloned();
+                Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
+            } else {
+                // Format: ([ver [, is_deleted]]) - user-specified column-only format
+                let ver = params.first().cloned();
+                let is_deleted = params.get(1).cloned();
+                Ok(ClickhouseEngine::ReplacingMergeTree { ver, is_deleted })
+            }
         }
     }
 
@@ -695,13 +735,29 @@ impl ClickhouseEngine {
                 replica_name,
             })
         } else {
-            // SharedMergeTree with parentheses requires exactly 2 params (keeper_path and replica_name)
-            if params.len() < 2 {
-                return Err(value);
+            // SharedMergeTree handling
+            // In ClickHouse Cloud, users cannot specify keeper paths.
+            // However, ClickHouse Cloud returns internal paths when querying system.tables.
+            // We handle both formats:
+            // - Empty: SharedMergeTree() - automatic configuration
+            // - With internal paths: SharedMergeTree('/path', '{replica}')
+
+            if params.is_empty() {
+                // Empty params - automatic configuration
+                return Ok(ClickhouseEngine::MergeTree);
             }
 
-            // SharedMergeTree normalizes to MergeTree
-            Ok(ClickhouseEngine::MergeTree)
+            // Check if first param looks like a path (contains '/')
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+
+            if first_param_is_path && params.len() >= 2 {
+                // Format: (path, replica) - ClickHouse Cloud internal format
+                // SharedMergeTree normalizes to MergeTree
+                Ok(ClickhouseEngine::MergeTree)
+            } else {
+                // SharedMergeTree has no additional columns, so non-path params are invalid
+                Err(value)
+            }
         }
     }
 
@@ -743,18 +799,35 @@ impl ClickhouseEngine {
                 replica_name,
             })
         } else {
-            // SharedAggregatingMergeTree with parentheses requires exactly 2 params (keeper_path and replica_name)
-            if params.len() < 2 {
-                return Err(value);
+            // SharedAggregatingMergeTree handling
+            // In ClickHouse Cloud, users cannot specify keeper paths.
+            // However, ClickHouse Cloud returns internal paths when querying system.tables.
+            // We handle both formats:
+            // - Empty: SharedAggregatingMergeTree() - automatic configuration
+            // - With internal paths: SharedAggregatingMergeTree('/path', '{replica}')
+
+            if params.is_empty() {
+                // Empty params - automatic configuration
+                return Ok(ClickhouseEngine::AggregatingMergeTree);
             }
 
-            // SharedAggregatingMergeTree normalizes to AggregatingMergeTree
-            Ok(ClickhouseEngine::AggregatingMergeTree)
+            // Check if first param looks like a path (contains '/')
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+
+            if first_param_is_path && params.len() >= 2 {
+                // Format: (path, replica) - ClickHouse Cloud internal format
+                // SharedAggregatingMergeTree normalizes to AggregatingMergeTree
+                Ok(ClickhouseEngine::AggregatingMergeTree)
+            } else {
+                // SharedAggregatingMergeTree has no additional columns, so non-path params are invalid
+                Err(value)
+            }
         }
     }
 
     /// Parse SharedSummingMergeTree or ReplicatedSummingMergeTree
-    /// Format: (path, replica [, columns...]) or () for automatic configuration
+    /// Format: (path, replica [, columns...]) or ([columns...]) or () for automatic configuration
+    /// When ClickHouse is configured with server-side replication paths, only the columns are provided
     fn parse_distributed_summing_merge_tree(value: &str) -> Result<Self, &str> {
         let content = Self::extract_engine_content(
             value,
@@ -776,44 +849,77 @@ impl ClickhouseEngine {
                 });
             }
 
-            // Require at least 2 params if any are provided
-            if params.len() < 2 {
-                return Err(value);
-            }
+            // Check if the first param looks like a keeper path (contains '/') or a column name
+            // Keeper paths look like: /clickhouse/tables/{uuid}/{shard}
+            // Column names are simple identifiers: amount, total_value, etc.
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
 
-            // First two params are keeper_path and replica_name
-            let (keeper_path, replica_name) = Self::extract_replication_params(&params);
+            if first_param_is_path {
+                // Format: (path, replica [, columns...])
+                // Require at least 2 params when path is provided
+                if params.len() < 2 {
+                    return Err(value);
+                }
 
-            // Additional params are column names (if any)
-            let columns = if params.len() > 2 {
-                Some(params[2..].to_vec())
+                // First two params are keeper_path and replica_name
+                let (keeper_path, replica_name) = Self::extract_replication_params(&params);
+
+                // Additional params are column names (if any)
+                let columns = if params.len() > 2 {
+                    Some(params[2..].to_vec())
+                } else {
+                    None
+                };
+
+                Ok(ClickhouseEngine::ReplicatedSummingMergeTree {
+                    keeper_path,
+                    replica_name,
+                    columns,
+                })
             } else {
-                None
-            };
+                // Format: (columns...) - server-side replication paths configured
+                // All params are column names
+                let columns = Some(params);
 
-            Ok(ClickhouseEngine::ReplicatedSummingMergeTree {
-                keeper_path,
-                replica_name,
-                columns,
-            })
+                Ok(ClickhouseEngine::ReplicatedSummingMergeTree {
+                    keeper_path: None,
+                    replica_name: None,
+                    columns,
+                })
+            }
         } else {
-            // For SharedSummingMergeTree with parentheses, keeper_path and replica_name are required
-            // Additional params (if any) are column names.
-            // Require at least 2 params (can't be empty with parentheses)
-            if params.len() < 2 {
-                return Err(value);
+            // SharedSummingMergeTree handling
+            // In ClickHouse Cloud, users cannot specify keeper paths - only column params are allowed.
+            // However, ClickHouse Cloud returns internal paths when querying system.tables.
+            // We handle both formats:
+            // - Column-only: SharedSummingMergeTree([columns...])
+            // - With internal paths: SharedSummingMergeTree('/path', '{replica}' [, columns...])
+
+            if params.is_empty() {
+                // Empty params - automatic configuration
+                return Ok(ClickhouseEngine::SummingMergeTree { columns: None });
             }
 
-            // Skip the first two params (keeper_path and replica_name) for Shared engines
-            // Additional params are column names (if any)
-            let columns = if params.len() > 2 {
-                Some(params[2..].to_vec())
-            } else {
-                None
-            };
+            // Check if first param looks like a path (contains '/') or a column name
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
 
-            // SharedSummingMergeTree normalizes to SummingMergeTree
-            Ok(ClickhouseEngine::SummingMergeTree { columns })
+            if first_param_is_path {
+                // Format: (path, replica [, columns...]) - ClickHouse Cloud internal format
+                if params.len() < 2 {
+                    return Err(value);
+                }
+                // Skip the first two params (keeper_path and replica_name)
+                let columns = if params.len() > 2 {
+                    Some(params[2..].to_vec())
+                } else {
+                    None
+                };
+                Ok(ClickhouseEngine::SummingMergeTree { columns })
+            } else {
+                // Format: ([columns...]) - user-specified column-only format
+                let columns = Some(params);
+                Ok(ClickhouseEngine::SummingMergeTree { columns })
+            }
         }
     }
 
@@ -864,16 +970,36 @@ impl ClickhouseEngine {
                 sign,
             })
         } else {
-            // For SharedCollapsingMergeTree, we need 3 params: keeper_path, replica_name, sign
-            if params.len() != 3 {
-                return Err(value);
+            // SharedCollapsingMergeTree handling
+            // In ClickHouse Cloud, users cannot specify keeper paths - only the sign column.
+            // However, ClickHouse Cloud returns internal paths when querying system.tables.
+            // We handle both formats:
+            // - Column-only: SharedCollapsingMergeTree(sign)
+            // - With internal paths: SharedCollapsingMergeTree('/path', '{replica}', sign)
+
+            if params.is_empty() {
+                return Err(value); // sign is required
             }
 
-            // SharedCollapsingMergeTree normalizes to CollapsingMergeTree
-            // Skip the first two params (keeper_path and replica_name)
-            Ok(ClickhouseEngine::CollapsingMergeTree {
-                sign: params[2].clone(),
-            })
+            if params.len() == 1 {
+                // Column-only format: just sign
+                return Ok(ClickhouseEngine::CollapsingMergeTree {
+                    sign: params[0].clone(),
+                });
+            }
+
+            // Check if first param looks like a path (contains '/')
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+
+            if first_param_is_path && params.len() == 3 {
+                // Format: (path, replica, sign) - ClickHouse Cloud internal format
+                // SharedCollapsingMergeTree normalizes to CollapsingMergeTree
+                Ok(ClickhouseEngine::CollapsingMergeTree {
+                    sign: params[2].clone(),
+                })
+            } else {
+                Err(value)
+            }
         }
     }
 
@@ -895,13 +1021,20 @@ impl ClickhouseEngine {
 
         if is_replicated {
             // For Replicated variant, we need either:
-            // - 2 params: sign, version (cloud mode)
+            // - 2 params: sign, version (cloud mode) - but NOT if first param looks like a path
             // - 4 params: keeper_path, replica_name, sign, version
             if params.is_empty() {
                 return Err(value);
             }
 
+            // Check if first param looks like a path (contains '/')
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+
             if params.len() == 2 {
+                if first_param_is_path {
+                    // Looks like incomplete path format: '/path', '{replica}' without sign/version
+                    return Err(value);
+                }
                 // Cloud mode: only sign and version parameters
                 return Ok(ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
                     keeper_path: None,
@@ -927,17 +1060,42 @@ impl ClickhouseEngine {
                 version,
             })
         } else {
-            // For SharedVersionedCollapsingMergeTree, we need 4 params: keeper_path, replica_name, sign, version
-            if params.len() != 4 {
-                return Err(value);
+            // SharedVersionedCollapsingMergeTree handling
+            // In ClickHouse Cloud, users cannot specify keeper paths - only sign and version columns.
+            // However, ClickHouse Cloud returns internal paths when querying system.tables.
+            // We handle both formats:
+            // - Column-only: SharedVersionedCollapsingMergeTree(sign, version)
+            // - With internal paths: SharedVersionedCollapsingMergeTree('/path', '{replica}', sign, version)
+
+            if params.len() < 2 {
+                return Err(value); // sign and version are required
             }
 
-            // SharedVersionedCollapsingMergeTree normalizes to VersionedCollapsingMergeTree
-            // Skip the first two params (keeper_path and replica_name)
-            Ok(ClickhouseEngine::VersionedCollapsingMergeTree {
-                sign: params[2].clone(),
-                version: params[3].clone(),
-            })
+            // Check if first param looks like a path (contains '/')
+            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+
+            if params.len() == 2 {
+                if first_param_is_path {
+                    // Looks like incomplete path format: '/path', '{replica}' without sign/version
+                    return Err(value);
+                }
+                // Column-only format: sign, version
+                return Ok(ClickhouseEngine::VersionedCollapsingMergeTree {
+                    sign: params[0].clone(),
+                    version: params[1].clone(),
+                });
+            }
+
+            if first_param_is_path && params.len() == 4 {
+                // Format: (path, replica, sign, version) - ClickHouse Cloud internal format
+                // SharedVersionedCollapsingMergeTree normalizes to VersionedCollapsingMergeTree
+                Ok(ClickhouseEngine::VersionedCollapsingMergeTree {
+                    sign: params[2].clone(),
+                    version: params[3].clone(),
+                })
+            } else {
+                Err(value)
+            }
         }
     }
 
@@ -5289,6 +5447,75 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
     }
 
     #[test]
+    fn test_replicated_replacing_merge_tree_ver_only_parsing() {
+        // ENG-1745: Test ReplicatedReplacingMergeTree with only ver column (server-side replication paths)
+        // When ClickHouse is configured with default replication paths via server config,
+        // the engine string only contains the ver column parameter(s)
+        let test_cases = vec![
+            // 1 param: just the ver column
+            (
+                "ReplicatedReplacingMergeTree('column')",
+                Some("column"),
+                None,
+            ),
+            (
+                "ReplicatedReplacingMergeTree('version_col')",
+                Some("version_col"),
+                None,
+            ),
+            // 2 params: ver and is_deleted columns (no path/replica - distinguished by lack of '/')
+            (
+                "ReplicatedReplacingMergeTree('ver', 'is_deleted')",
+                Some("ver"),
+                Some("is_deleted"),
+            ),
+            (
+                "ReplicatedReplacingMergeTree('version_col', 'deleted_col')",
+                Some("version_col"),
+                Some("deleted_col"),
+            ),
+        ];
+
+        for (input, expected_ver, expected_is_deleted) in test_cases {
+            let engine: ClickhouseEngine = input
+                .try_into()
+                .unwrap_or_else(|_| panic!("Failed to parse engine string: {}", input));
+            match engine {
+                ClickhouseEngine::ReplicatedReplacingMergeTree {
+                    keeper_path,
+                    replica_name,
+                    ver,
+                    is_deleted,
+                } => {
+                    assert_eq!(
+                        keeper_path, None,
+                        "keeper_path should be None when only ver column is specified for input: {}",
+                        input
+                    );
+                    assert_eq!(
+                        replica_name, None,
+                        "replica_name should be None when only ver column is specified for input: {}",
+                        input
+                    );
+                    assert_eq!(
+                        ver.as_deref(),
+                        expected_ver,
+                        "ver column mismatch for input: {}",
+                        input
+                    );
+                    assert_eq!(
+                        is_deleted.as_deref(),
+                        expected_is_deleted,
+                        "is_deleted column mismatch for input: {}",
+                        input
+                    );
+                }
+                _ => panic!("Expected ReplicatedReplacingMergeTree for input: {}", input),
+            }
+        }
+    }
+
+    #[test]
     fn test_shared_merge_tree_engine_parsing() {
         // Test SharedMergeTree without parameters
         let engine = ClickhouseEngine::try_from("SharedMergeTree").unwrap();
@@ -5510,6 +5737,57 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
     }
 
     #[test]
+    fn test_replicated_summing_merge_tree_columns_only_parsing() {
+        // ENG-1745: Test ReplicatedSummingMergeTree with only column params (server-side replication paths)
+        // When ClickHouse is configured with default replication paths via server config,
+        // the engine string only contains the column parameter(s)
+        let test_cases: Vec<(&str, Option<Vec<&str>>)> = vec![
+            // 1 param: single column (no path since it doesn't contain '/')
+            ("ReplicatedSummingMergeTree('amount')", Some(vec!["amount"])),
+            (
+                "ReplicatedSummingMergeTree('total_value')",
+                Some(vec!["total_value"]),
+            ),
+            // 2 params: two columns (distinguished from path/replica by lack of '/')
+            (
+                "ReplicatedSummingMergeTree('col1', 'col2')",
+                Some(vec!["col1", "col2"]),
+            ),
+        ];
+
+        for (input, expected_columns) in test_cases {
+            let engine: ClickhouseEngine = input
+                .try_into()
+                .unwrap_or_else(|_| panic!("Failed to parse engine string: {}", input));
+            match engine {
+                ClickhouseEngine::ReplicatedSummingMergeTree {
+                    keeper_path,
+                    replica_name,
+                    columns,
+                } => {
+                    assert_eq!(
+                        keeper_path, None,
+                        "keeper_path should be None when only columns are specified for input: {}",
+                        input
+                    );
+                    assert_eq!(
+                        replica_name, None,
+                        "replica_name should be None when only columns are specified for input: {}",
+                        input
+                    );
+                    assert_eq!(
+                        columns,
+                        expected_columns.map(|cols| cols.iter().map(|s| s.to_string()).collect()),
+                        "columns mismatch for input: {}",
+                        input
+                    );
+                }
+                _ => panic!("Expected ReplicatedSummingMergeTree for input: {}", input),
+            }
+        }
+    }
+
+    #[test]
     fn test_shared_replacing_merge_tree_with_backticks() {
         // Test with backticks in column names
         let input = "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', `version`, `is_deleted`)";
@@ -5558,16 +5836,27 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
     #[test]
     fn test_shared_merge_tree_invalid_params() {
-        // Test invalid SharedReplacingMergeTree with missing parameters
+        // Test invalid Shared* engine configurations
         let invalid_cases = vec![
-            "SharedReplacingMergeTree()",        // No parameters
-            "SharedReplacingMergeTree('/path')", // Only one parameter
-            "SharedMergeTree()",                 // No parameters for SharedMergeTree
+            "SharedReplacingMergeTree('/path')", // Only one path param - incomplete
+            "SharedMergeTree('/path')",          // Only one path param - incomplete
+            "SharedMergeTree('not_a_path')", // Non-path single param is invalid for MergeTree (no columns)
         ];
 
         for input in invalid_cases {
             let result = ClickhouseEngine::try_from(input);
             assert!(result.is_err(), "Should fail for input: {}", input);
+        }
+
+        // These should now be valid (ClickHouse Cloud column-only format)
+        let valid_cloud_cases = vec![
+            "SharedReplacingMergeTree()", // Empty - automatic config
+            "SharedMergeTree()",          // Empty - automatic config
+        ];
+
+        for input in valid_cloud_cases {
+            let result = ClickhouseEngine::try_from(input);
+            assert!(result.is_ok(), "Should succeed for input: {}", input);
         }
     }
 
