@@ -14,9 +14,6 @@ from .olap_table import OlapTable, OlapConfig
 from ._registry import _materialized_views
 from .source_location import get_source_file_from_stack
 
-if TYPE_CHECKING:
-    from .view import View
-
 
 class MaterializedViewOptions(BaseModel):
     """Configuration options for creating a Materialized View.

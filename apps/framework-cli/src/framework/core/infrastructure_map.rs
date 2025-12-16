@@ -395,9 +395,9 @@ pub enum OlapChange {
     /// Change to SQL resource (legacy, for raw SQL)
     SqlResource(Change<SqlResource>),
     /// Change to a structured materialized view
-    MaterializedView(Change<super::infrastructure::materialized_view::MaterializedView>),
+    MaterializedView(Change<MaterializedView>),
     /// Change to a structured custom view (user-defined SELECT views)
-    CustomView(Change<super::infrastructure::view::CustomView>),
+    CustomView(Change<CustomView>),
     /// Explicit operation to populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -577,12 +577,11 @@ pub struct InfrastructureMap {
 
     /// Collection of materialized views indexed by MV name
     #[serde(default)]
-    pub materialized_views:
-        HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+    pub materialized_views: HashMap<String, MaterializedView>,
 
     /// Collection of custom views indexed by view name
     #[serde(default)]
-    pub custom_views: HashMap<String, super::infrastructure::view::CustomView>,
+    pub custom_views: HashMap<String, CustomView>,
 }
 
 impl InfrastructureMap {
@@ -1754,8 +1753,8 @@ impl InfrastructureMap {
     /// * `is_production` - Whether we're in production mode (population only in dev)
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_materialized_views(
-        self_mvs: &HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
-        target_mvs: &HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+        self_mvs: &HashMap<String, MaterializedView>,
+        target_mvs: &HashMap<String, MaterializedView>,
         tables: &HashMap<String, Table>,
         is_production: bool,
         olap_changes: &mut Vec<OlapChange>,
@@ -1830,7 +1829,7 @@ impl InfrastructureMap {
     /// Population is only done in dev mode and when source tables are not S3Queue or Kafka
     /// (since those don't support SELECT queries for backfill).
     fn check_materialized_view_population(
-        mv: &super::infrastructure::materialized_view::MaterializedView,
+        mv: &MaterializedView,
         tables: &HashMap<String, Table>,
         is_new: bool,
         is_production: bool,
@@ -1892,8 +1891,8 @@ impl InfrastructureMap {
     /// * `target_views` - HashMap of target custom views
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_custom_views(
-        self_views: &HashMap<String, super::infrastructure::view::CustomView>,
-        target_views: &HashMap<String, super::infrastructure::view::CustomView>,
+        self_views: &HashMap<String, CustomView>,
+        target_views: &HashMap<String, CustomView>,
         olap_changes: &mut Vec<OlapChange>,
     ) {
         tracing::info!(
@@ -2790,24 +2789,16 @@ impl InfrastructureMap {
             .collect();
 
         // Load existing materialized_views and custom_views from proto
-        let mut materialized_views: HashMap<
-            String,
-            super::infrastructure::materialized_view::MaterializedView,
-        > = proto
+        let mut materialized_views: HashMap<String, MaterializedView> = proto
             .materialized_views
             .into_iter()
-            .map(|(k, v)| {
-                (
-                    k,
-                    super::infrastructure::materialized_view::MaterializedView::from_proto(v),
-                )
-            })
+            .map(|(k, v)| (k, MaterializedView::from_proto(v)))
             .collect();
 
-        let mut custom_views: HashMap<String, super::infrastructure::view::CustomView> = proto
+        let mut custom_views: HashMap<String, CustomView> = proto
             .custom_views
             .into_iter()
-            .map(|(k, v)| (k, super::infrastructure::view::CustomView::from_proto(v)))
+            .map(|(k, v)| (k, CustomView::from_proto(v)))
             .collect();
 
         // Migrate old SqlResources that are actually MVs or Views to new format
@@ -2922,7 +2913,7 @@ impl InfrastructureMap {
     fn try_migrate_sql_resource_to_mv(
         sql_resource: &SqlResource,
         default_database: &str,
-    ) -> Option<super::infrastructure::materialized_view::MaterializedView> {
+    ) -> Option<MaterializedView> {
         use crate::infrastructure::olap::clickhouse::sql_parser::parse_create_materialized_view;
 
         // Must have exactly one setup and one teardown statement
@@ -2956,7 +2947,7 @@ impl InfrastructureMap {
             .map(|t| t.table.clone())
             .collect();
 
-        Some(super::infrastructure::materialized_view::MaterializedView {
+        Some(MaterializedView {
             name: sql_resource.name.clone(),
             database: Some(default_database.to_string()),
             select_sql: parsed.select_statement,
@@ -2972,7 +2963,7 @@ impl InfrastructureMap {
     fn try_migrate_sql_resource_to_custom_view(
         sql_resource: &SqlResource,
         default_database: &str,
-    ) -> Option<super::infrastructure::view::CustomView> {
+    ) -> Option<CustomView> {
         use crate::infrastructure::olap::clickhouse::sql_parser::extract_source_tables_from_query_regex;
 
         // Must have exactly one setup and one teardown statement
@@ -3008,7 +2999,7 @@ impl InfrastructureMap {
                 Err(_) => Vec::new(),
             };
 
-        Some(super::infrastructure::view::CustomView {
+        Some(CustomView {
             name: sql_resource.name.clone(),
             database: Some(default_database.to_string()),
             select_sql,
@@ -3076,6 +3067,28 @@ impl InfrastructureMap {
         }
 
         self
+    }
+
+    /// Normalizes the infrastructure map by converting old-style SqlResource entries
+    /// that are actually materialized views or regular views into structured types.
+    ///
+    /// This handles backward compatibility with older moose-lib versions that emitted
+    /// MVs and views as generic SqlResource objects.
+    ///
+    /// Old moose-lib generated these exact patterns:
+    /// - MV setup: "CREATE MATERIALIZED VIEW IF NOT EXISTS <name> TO <target> AS <select>"
+    /// - View setup: "CREATE VIEW IF NOT EXISTS <name> AS <select>"
+    /// - Both teardown: "DROP VIEW IF EXISTS <name>"
+    /// - Both have exactly 1 setup statement and 1 teardown statement
+    ///
+    /// This method is idempotent - calling it multiple times produces the same result.
+    ///
+    /// # Returns
+    /// A new infrastructure map with SqlResource entries converted to MaterializedView
+    /// or CustomView where applicable
+    pub fn normalize(self) -> Self {
+        // Delegate to canonicalize_tables which contains the conversion logic
+        self.canonicalize_tables()
     }
 
     /// Canonicalizes all tables in the infrastructure map.
