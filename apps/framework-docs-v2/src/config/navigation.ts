@@ -187,9 +187,9 @@ const moosestackNavigationConfig: NavigationConfig = [
   { type: "separator" },
 
   // ===========================================
-  // HOW-TO GUIDES
+  // HOW-TO TUTORIALS
   // ===========================================
-  { type: "label", title: "How-To Guides" },
+  { type: "label", title: "How-To Tutorials" },
 
   // Model Your Data
   {
