@@ -16,6 +16,7 @@ use serde::Deserialize;
 ///
 /// - `Info`: Cyan text with bold formatting for general information
 /// - `Success`: Green text with bold formatting for successful operations
+/// - `Warning`: Yellow text with bold formatting for warnings
 /// - `Error`: Red text with bold formatting for error conditions
 /// - `Highlight`: Text with green background and bold formatting for emphasis
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +25,8 @@ pub enum MessageType {
     Info,
     /// Used for successful actions with green highlighting
     Success,
+    /// Used for warnings with yellow highlighting
+    Warning,
     /// Used for errors with red highlighting
     Error,
     /// Used for important information with green background

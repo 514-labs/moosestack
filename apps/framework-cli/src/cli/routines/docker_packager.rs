@@ -13,7 +13,10 @@ use crate::utilities::package_managers::{
     legacy_deploy_warning_message, PnpmDeployMode,
 };
 use crate::utilities::{constants, system};
-use crate::{cli::display::Message, project::Project};
+use crate::{
+    cli::display::{show_message_wrapper, Message, MessageType},
+    project::Project,
+};
 
 use serde_json::Value as JsonValue;
 use std::fs;
@@ -423,8 +426,17 @@ pub fn create_dockerfile(
 
                 // Log warning if using legacy mode
                 if let PnpmDeployMode::Legacy(reason) = &deploy_mode {
+                    // Full message for logs
                     let warning_msg = legacy_deploy_warning_message(reason);
                     tracing::warn!("{}", warning_msg);
+                    // Condensed message for terminal
+                    show_message_wrapper(
+                        MessageType::Warning,
+                        Message {
+                            action: "Warning".to_string(),
+                            details: "Using legacy pnpm deploy - add `inject-workspace-packages=true` to .npmrc and run `pnpm install`".to_string(),
+                        },
+                    );
                 }
 
                 // Generate appropriate deploy command

@@ -35,8 +35,17 @@ pub fn run_local_infrastructure(
         if let Some(workspace_root) = find_pnpm_workspace_root(&project.project_location) {
             let deploy_mode = detect_pnpm_deploy_mode(&workspace_root);
             if let PnpmDeployMode::Legacy(reason) = deploy_mode {
+                // Full message for logs
                 let warning_msg = legacy_deploy_warning_message(&reason);
                 tracing::warn!("{}", warning_msg);
+                // Condensed message for terminal
+                show_message_wrapper(
+                    MessageType::Warning,
+                    Message {
+                        action: "Warning".to_string(),
+                        details: "Using legacy pnpm deploy - add `inject-workspace-packages=true` to .npmrc and run `pnpm install`".to_string(),
+                    },
+                );
             }
         }
     }
