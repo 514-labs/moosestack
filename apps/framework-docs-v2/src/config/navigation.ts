@@ -116,7 +116,9 @@ export interface SectionNavigationConfig {
  * Order is determined by array position - items appear in the order listed
  */
 const moosestackNavigationConfig: NavigationConfig = [
-  // Overview
+  // ===========================================
+  // GET STARTED
+  // ===========================================
   {
     type: "page",
     slug: "moosestack/index",
@@ -124,13 +126,11 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconChartArea,
     languages: ["typescript", "python"],
   },
-
-  // Quick Start (moved to top level)
   {
     type: "page",
     slug: "moosestack/quickstart",
     title: "Quick Start",
-    icon: IconDatabase,
+    icon: IconRocket,
     languages: ["typescript", "python"],
     children: [
       {
@@ -142,27 +142,26 @@ const moosestackNavigationConfig: NavigationConfig = [
       {
         type: "page",
         slug: "moosestack/getting-started/from-clickhouse",
-        title: "Use with Existing ClickHouse",
+        title: "From Existing ClickHouse",
         languages: ["typescript", "python"],
       },
     ],
   },
-
-  // Templates / Examples (standalone page, shown in MooseStack nav with arrow)
   {
     type: "page",
     slug: "templates",
-    title: "Templates / Examples",
+    title: "Templates",
     icon: IconCode,
     languages: ["typescript", "python"],
     external: true,
   },
 
-  // Separator
   { type: "separator" },
 
-  // Fundamentals section (renamed from Getting Started)
-  { type: "label", title: "Fundamentals" },
+  // ===========================================
+  // CONCEPTS
+  // ===========================================
+  { type: "label", title: "Concepts" },
   {
     type: "page",
     slug: "moosestack/runtime",
@@ -172,38 +171,200 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "moosestack/moosedev-mcp",
-    title: "MooseDev MCP",
-    icon: IconStars,
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
     slug: "moosestack/data-modeling",
     title: "Data Modeling",
     icon: IconDatabase,
     languages: ["typescript", "python"],
   },
-
-  // Separator
-  { type: "separator" },
-
-  // MooseStack in your App section
-  { type: "label", title: "MooseStack in your App" },
   {
     type: "page",
-    slug: "moosestack/data-sources",
-    title: "Data sources",
-    icon: IconGitCompare,
+    slug: "moosestack/moosedev-mcp",
+    title: "MooseDev MCP",
+    icon: IconStars,
     languages: ["typescript", "python"],
   },
+
+  { type: "separator" },
+
+  // ===========================================
+  // HOW-TO GUIDES
+  // ===========================================
+  { type: "label", title: "How-To Guides" },
+
+  // Model Your Data
   {
     type: "page",
-    slug: "moosestack/app-api-frameworks",
-    title: "App / API frameworks",
+    slug: "moosestack/olap/model-table",
+    title: "Model Your Data",
+    icon: IconDatabase,
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/olap/model-table",
+        title: "Define Tables",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/model-view",
+        title: "Create Views",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/model-materialized-view",
+        title: "Create Materialized Views",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Optimize Schema" },
+      {
+        type: "page",
+        slug: "moosestack/olap/schema-optimization",
+        title: "Schema Optimization",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/indexes",
+        title: "Indexes",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/ttl",
+        title: "TTL (Time-to-Live)",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "External Tables" },
+      {
+        type: "page",
+        slug: "moosestack/olap/external-tables",
+        title: "Work with External Tables",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/db-pull",
+        title: "Introspect from Database",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+
+  // Ingest Data
+  {
+    type: "page",
+    slug: "moosestack/apis/ingest-api",
+    title: "Ingest Data",
+    icon: IconDatabaseImport,
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/apis/ingest-api",
+        title: "Via Ingest API",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/streaming/from-your-code",
+        title: "Via Streams",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/streaming/connect-cdc",
+        title: "From CDC Sources",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/insert-data",
+        title: "Batch Insert from Code",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+
+  // Process Data
+  {
+    type: "page",
+    slug: "moosestack/streaming/transform-functions",
+    title: "Process Data",
+    icon: IconBolt,
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/streaming/transform-functions",
+        title: "Transform Streams",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/streaming/consumer-functions",
+        title: "Consume Stream Events",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/streaming/sync-to-table",
+        title: "Sync Streams to Tables",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      {
+        type: "page",
+        slug: "moosestack/workflows/define-workflow",
+        title: "Build ETL Workflows",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/workflows/schedule-workflow",
+        title: "Schedule Background Jobs",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+
+  // Expose Data to Apps
+  {
+    type: "page",
+    slug: "moosestack/apis/analytics-api",
+    title: "Expose Data to Apps",
     icon: IconCode,
     languages: ["typescript", "python"],
     children: [
+      {
+        type: "page",
+        slug: "moosestack/apis/analytics-api",
+        title: "Build Analytics APIs",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/olap/read-data",
+        title: "Query Data from Code",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/apis/openapi-sdk",
+        title: "Generate Client SDKs",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Web Frameworks" },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks",
+        title: "Overview",
+        languages: ["typescript", "python"],
+      },
       {
         type: "page",
         slug: "moosestack/app-api-frameworks/nextjs",
@@ -224,18 +385,6 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/app-api-frameworks/koa",
-        title: "Koa",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/raw-nodejs",
-        title: "Raw Node.js",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
         slug: "moosestack/app-api-frameworks/fastapi",
         title: "FastAPI",
         languages: ["python"],
@@ -243,418 +392,48 @@ const moosestackNavigationConfig: NavigationConfig = [
     ],
   },
 
-  // Separator
   { type: "separator" },
 
-  // Modules section
-  { type: "label", title: "Modules" },
+  // ===========================================
+  // MODULE REFERENCE
+  // ===========================================
+  { type: "label", title: "Module Reference" },
+
+  // OLAP
   {
     type: "page",
     slug: "moosestack/olap",
-    title: "Moose OLAP",
+    title: "OLAP",
     icon: IconDatabase,
     languages: ["typescript", "python"],
     children: [
-      { type: "label", title: "Data Modeling" },
+      { type: "label", title: "Primitives" },
       {
         type: "page",
         slug: "moosestack/olap/model-table",
-        title: "Tables",
+        title: "OlapTable",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/olap/model-view",
-        title: "Views",
+        title: "View",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/olap/model-materialized-view",
-        title: "Materialized Views",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/ttl",
-        title: "TTL (Time-to-Live)",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/materialized-columns",
-        title: "Materialized Columns",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/schema-optimization",
-        title: "Schema Optimization",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/indexes",
-        title: "Secondary & Data-skipping Indexes",
+        title: "MaterializedView",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
-      { type: "label", title: "External Data & Introspection" },
+      { type: "label", title: "Data Types" },
       {
         type: "page",
-        slug: "moosestack/olap/external-tables",
-        title: "External Tables",
+        slug: "moosestack/data-types",
+        title: "Overview",
         languages: ["typescript", "python"],
       },
-      {
-        type: "page",
-        slug: "moosestack/olap/db-pull",
-        title: "Introspecting Tables",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Data Access" },
-      {
-        type: "page",
-        slug: "moosestack/olap/insert-data",
-        title: "Inserting Data",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/read-data",
-        title: "Reading Data",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Performance & Optimization" },
-      {
-        type: "page",
-        slug: "moosestack/olap/schema-optimization",
-        title: "Schema Optimization",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/indexes",
-        title: "Secondary & Data-skipping Indexes",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/ttl",
-        title: "TTL (Time-to-Live)",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/schema-versioning",
-        title: "Schema Versioning",
-        languages: ["typescript", "python"],
-      },
-    ],
-  },
-  {
-    type: "page",
-    slug: "moosestack/streaming",
-    title: "Moose Streaming",
-    icon: IconBolt,
-    languages: ["typescript", "python"],
-    children: [
-      { type: "label", title: "Manage Streams" },
-      {
-        type: "page",
-        slug: "moosestack/streaming/create-stream",
-        title: "Create Streams",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/streaming/sync-to-table",
-        title: "Sync to OLAP",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/streaming/dead-letter-queues",
-        title: "Dead Letter Queues",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Functions" },
-      {
-        type: "page",
-        slug: "moosestack/streaming/consumer-functions",
-        title: "Consumer Functions",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/streaming/transform-functions",
-        title: "Transformation Functions",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Writing to Streams" },
-      {
-        type: "page",
-        slug: "moosestack/streaming/from-your-code",
-        title: "From Your Code",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/streaming/schema-registry",
-        title: "Schema Registry",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/streaming/connect-cdc",
-        title: "From CDC Services",
-        languages: ["typescript", "python"],
-      },
-    ],
-  },
-  {
-    type: "page",
-    slug: "moosestack/workflows",
-    title: "Moose Workflows",
-    icon: IconRoute,
-    languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/workflows/define-workflow",
-        title: "Define Workflows",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/workflows/schedule-workflow",
-        title: "Scheduling",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/workflows/trigger-workflow",
-        title: "Triggers",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/workflows/retries-and-timeouts",
-        title: "Retries and Timeouts",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/workflows/cancel-workflow",
-        title: "Cancelling Running Workflows",
-        languages: ["typescript", "python"],
-      },
-    ],
-  },
-  {
-    type: "page",
-    slug: "moosestack/apis",
-    title: "Moose APIs",
-    icon: IconCode,
-    languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/apis/auth",
-        title: "Auth",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/apis/ingest-api",
-        title: "Ingest New Data",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/apis/analytics-api",
-        title: "Expose Analytics",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/apis/trigger-api",
-        title: "Trigger Workflows",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Client Libraries" },
-      {
-        type: "page",
-        slug: "moosestack/apis/openapi-sdk",
-        title: "OpenAPI SDK",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/apis/admin-api",
-        title: "Admin APIs",
-        languages: ["typescript", "python"],
-      },
-    ],
-  },
-
-  // Separator
-  { type: "separator" },
-
-  // Deployment & Lifecycle section
-  { type: "label", title: "Deployment & Lifecycle" },
-  {
-    type: "page",
-    slug: "moosestack/migrate",
-    title: "Moose Migrate",
-    icon: IconGitMerge,
-    languages: ["typescript", "python"],
-    children: [
-      { type: "label", title: "Migration Modes" },
-      {
-        type: "page",
-        slug: "moosestack/migrate/auto-inferred",
-        title: "Automatic Migrations",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/planned-migrations",
-        title: "Planned Migrations",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/plan-format",
-        title: "Plan Reference",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Executing Migrations" },
-      {
-        type: "page",
-        slug: "moosestack/migrate/apply-planned-migrations-cli",
-        title: "moose migrate (CLI)",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/apply-planned-migrations-service",
-        title: "moose prod (Runtime)",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Lifecycle Management" },
-      {
-        type: "page",
-        slug: "moosestack/migrate/lifecycle-fully-managed",
-        title: "Fully Managed",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/lifecycle-deletion-protected",
-        title: "Deletion Protected",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/migrate/lifecycle-externally-managed",
-        title: "Externally Managed",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Advanced Topics" },
-      {
-        type: "page",
-        slug: "moosestack/migrate/failed-migrations",
-        title: "Failed Migrations",
-        languages: ["typescript", "python"],
-      },
-    ],
-  },
-  {
-    type: "page",
-    slug: "moosestack/deploying",
-    title: "Moose Deploy",
-    icon: IconCloudUpload,
-    languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/deploying/packaging-moose-for-deployment",
-        title: "Packaging Moose for deployment",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/deploying/preparing-clickhouse-redpanda",
-        title: "Preparing Infrastructure",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/deploying/configuring-moose-for-cloud",
-        title: "Cloud Configuration",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/deploying/deploying-on-kubernetes",
-        title: "Kubernetes Deployment",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/deploying/deploying-on-ecs",
-        title: "AWS ECS Deployment",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/deploying/deploying-on-an-offline-server",
-        title: "Offline Deployment",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/deploying/deploying-with-docker-compose",
-        title: "Docker Compose Deployment",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/deploying/monitoring",
-        title: "Monitoring (moved)",
-        languages: ["typescript", "python"],
-      },
-    ],
-  },
-
-  // Separator
-  { type: "separator" },
-
-  // Reference section
-  { type: "label", title: "Reference" },
-  {
-    type: "page",
-    slug: "moosestack/reference",
-    title: "API Reference",
-    icon: IconBook,
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "moosestack/data-types",
-    title: "Data Types",
-    icon: IconAtom,
-    languages: ["typescript", "python"],
-    children: [
       {
         type: "page",
         slug: "moosestack/data-types/strings",
@@ -699,44 +478,8 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/data-types/network",
-        title: "Network",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
         slug: "moosestack/data-types/arrays",
         title: "Arrays",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/data-types/maps",
-        title: "Maps",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/data-types/nested",
-        title: "Nested",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/data-types/tuples",
-        title: "Tuples",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/data-types/enums",
-        title: "Enums",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/data-types/geometry",
-        title: "Geometry",
         languages: ["typescript", "python"],
       },
       {
@@ -753,19 +496,18 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/data-types/aggregates",
-        title: "Aggregates",
+        slug: "moosestack/data-types/enums",
+        title: "Enums",
         languages: ["typescript", "python"],
       },
-    ],
-  },
-  {
-    type: "page",
-    slug: "moosestack/engines",
-    title: "Table Engines",
-    icon: IconServer,
-    languages: ["typescript", "python"],
-    children: [
+      { type: "separator" },
+      { type: "label", title: "Table Engines" },
+      {
+        type: "page",
+        slug: "moosestack/engines",
+        title: "Overview",
+        languages: ["typescript", "python"],
+      },
       {
         type: "page",
         slug: "moosestack/engines/merge-tree",
@@ -796,8 +538,351 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Replicated Engines",
         languages: ["typescript", "python"],
       },
+      { type: "separator" },
+      { type: "label", title: "Lifecycle Modes" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-fully-managed",
+        title: "Fully Managed",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-deletion-protected",
+        title: "Deletion Protected",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/lifecycle-externally-managed",
+        title: "Externally Managed",
+        languages: ["typescript", "python"],
+      },
     ],
   },
+
+  // Streams
+  {
+    type: "page",
+    slug: "moosestack/streaming",
+    title: "Streams",
+    icon: IconBolt,
+    languages: ["typescript", "python"],
+    children: [
+      { type: "label", title: "Primitives" },
+      {
+        type: "page",
+        slug: "moosestack/streaming/create-stream",
+        title: "Stream",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/streaming/consumer-functions",
+        title: "ConsumerFunction",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/streaming/transform-functions",
+        title: "TransformFunction",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Configuration" },
+      {
+        type: "page",
+        slug: "moosestack/streaming/sync-to-table",
+        title: "Sync to OLAP",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/streaming/dead-letter-queues",
+        title: "Dead Letter Queues",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/streaming/schema-registry",
+        title: "Schema Registry",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+
+  // Workflows
+  {
+    type: "page",
+    slug: "moosestack/workflows",
+    title: "Workflows",
+    icon: IconRoute,
+    languages: ["typescript", "python"],
+    children: [
+      { type: "label", title: "Primitives" },
+      {
+        type: "page",
+        slug: "moosestack/workflows/define-workflow",
+        title: "Workflow",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/workflows/define-workflow",
+        title: "Task",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Configuration" },
+      {
+        type: "page",
+        slug: "moosestack/workflows/trigger-workflow",
+        title: "Triggers",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/workflows/schedule-workflow",
+        title: "Scheduling",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/workflows/retries-and-timeouts",
+        title: "Retries & Timeouts",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/workflows/cancel-workflow",
+        title: "Cancellation",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+
+  // APIs
+  {
+    type: "page",
+    slug: "moosestack/apis",
+    title: "APIs",
+    icon: IconCode,
+    languages: ["typescript", "python"],
+    children: [
+      { type: "label", title: "Primitives" },
+      {
+        type: "page",
+        slug: "moosestack/apis/ingest-api",
+        title: "IngestApi",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/apis/analytics-api",
+        title: "Api (Analytics)",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Configuration" },
+      {
+        type: "page",
+        slug: "moosestack/apis/auth",
+        title: "Auth",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/apis/openapi-sdk",
+        title: "OpenAPI SDK",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/apis/admin-api",
+        title: "Admin APIs",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+
+  // Web Apps
+  {
+    type: "page",
+    slug: "moosestack/app-api-frameworks",
+    title: "Web Apps",
+    icon: IconApps,
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/express",
+        title: "Express",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/fastify",
+        title: "Fastify",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/koa",
+        title: "Koa",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/raw-nodejs",
+        title: "Raw Node.js",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/fastapi",
+        title: "FastAPI",
+        languages: ["python"],
+      },
+    ],
+  },
+
+  // Moose Client
+  {
+    type: "page",
+    slug: "moosestack/olap/read-data",
+    title: "Moose Client",
+    icon: IconTerminal,
+    languages: ["typescript", "python"],
+  },
+
+  { type: "separator" },
+
+  // ===========================================
+  // DEPLOYMENT
+  // ===========================================
+  { type: "label", title: "Deployment" },
+
+  // Migrations
+  {
+    type: "page",
+    slug: "moosestack/migrate",
+    title: "Migrations",
+    icon: IconGitMerge,
+    languages: ["typescript", "python"],
+    children: [
+      { type: "label", title: "Generation" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/auto-inferred",
+        title: "Auto-Inferred",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/planned-migrations",
+        title: "Planned",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/plan-format",
+        title: "Plan Format",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Execution" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/apply-planned-migrations-cli",
+        title: "moose migrate",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/apply-planned-migrations-service",
+        title: "moose prod",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      {
+        type: "page",
+        slug: "moosestack/migrate/failed-migrations",
+        title: "Failed Migrations",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+
+  // Deploy
+  {
+    type: "page",
+    slug: "moosestack/deploying",
+    title: "Deploy",
+    icon: IconCloudUpload,
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/deploying/packaging-moose-for-deployment",
+        title: "Packaging",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/deploying/preparing-clickhouse-redpanda",
+        title: "Preparing Infrastructure",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/deploying/configuring-moose-for-cloud",
+        title: "Cloud Configuration",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "Platforms" },
+      {
+        type: "page",
+        slug: "moosestack/deploying/deploying-on-kubernetes",
+        title: "Kubernetes",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/deploying/deploying-on-ecs",
+        title: "AWS ECS",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/deploying/deploying-with-docker-compose",
+        title: "Docker Compose",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/deploying/deploying-on-an-offline-server",
+        title: "Offline Server",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+
+  // Observability
+  {
+    type: "page",
+    slug: "moosestack/metrics",
+    title: "Observability",
+    icon: IconChartBar,
+    languages: ["typescript", "python"],
+  },
+
+  { type: "separator" },
+
+  // ===========================================
+  // REFERENCE
+  // ===========================================
+  { type: "label", title: "Reference" },
   {
     type: "page",
     slug: "moosestack/moose-cli",
@@ -812,29 +897,11 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconSettings,
     languages: ["typescript", "python"],
     children: [
-      { type: "label", title: "Core Settings" },
+      { type: "label", title: "Core" },
       {
         type: "page",
         slug: "moosestack/configuration/project-settings",
         title: "Project Settings",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/configuration/typescript",
-        title: "TypeScript",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/configuration/telemetry",
-        title: "Telemetry",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/configuration/git",
-        title: "Git",
         languages: ["typescript", "python"],
       },
       {
@@ -865,26 +932,20 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/configuration/redis",
-        title: "Redis",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
         slug: "moosestack/configuration/temporal",
         title: "Temporal",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
-        slug: "moosestack/configuration/http-server",
-        title: "HTTP Server",
+        slug: "moosestack/configuration/redis",
+        title: "Redis",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
-        slug: "moosestack/configuration/state-storage",
-        title: "State Storage",
+        slug: "moosestack/configuration/http-server",
+        title: "HTTP Server",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
@@ -901,22 +962,7 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Admin API",
         languages: ["typescript", "python"],
       },
-      { type: "separator" },
-      { type: "label", title: "Development" },
-      {
-        type: "page",
-        slug: "moosestack/configuration/dev-environment",
-        title: "Dev Environment",
-        languages: ["typescript", "python"],
-      },
     ],
-  },
-  {
-    type: "page",
-    slug: "moosestack/metrics",
-    title: "Observability Metrics",
-    icon: IconChartBar,
-    languages: ["typescript", "python"],
   },
   {
     type: "page",
@@ -946,7 +992,12 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconHistory,
     languages: ["typescript", "python"],
   },
+
   { type: "separator" },
+
+  // ===========================================
+  // CONTRIBUTION
+  // ===========================================
   { type: "label", title: "Contribution" },
   {
     type: "page",
