@@ -1137,6 +1137,144 @@ async fn check_service_readiness(
     (healthy, unhealthy, details)
 }
 
+/// Request body for the fixtures load endpoint
+#[derive(Debug, Deserialize)]
+struct FixturesLoadRequest {
+    /// Fixture data to load
+    data: Vec<FixturesLoadData>,
+    /// Optional: wait for data to be queryable
+    #[serde(default)]
+    wait: bool,
+    /// Optional: timeout for wait mode in milliseconds (reserved for future use)
+    #[serde(default)]
+    #[allow(dead_code)]
+    timeout: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct FixturesLoadData {
+    /// Target ingestion endpoint
+    target: String,
+    /// Records to insert
+    records: Vec<serde_json::Value>,
+}
+
+/// POST /moose/fixtures/load - Load test fixtures programmatically
+///
+/// This endpoint allows tests to load fixture data via HTTP instead of the CLI.
+/// It accepts the same format as the fixture JSON files.
+async fn fixtures_load_route(
+    req: Request<hyper::body::Incoming>,
+    project: &Project,
+    redis_client: &Arc<RedisClient>,
+    max_body_size: usize,
+) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    // Parse the request body using Limited to enforce size limit
+    let limited_body = Limited::new(req.into_body(), max_body_size);
+
+    let body = match limited_body.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(format!(
+                    r#"{{"error": "Failed to read request body: {}"}}"#,
+                    e
+                ))));
+        }
+    };
+
+    let fixture_req: FixturesLoadRequest = match serde_json::from_slice(&body) {
+        Ok(req) => req,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(format!(
+                    r#"{{"error": "Invalid JSON: {}"}}"#,
+                    e
+                ))));
+        }
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(format!(
+                    r#"{{"error": "Failed to create HTTP client: {}"}}"#,
+                    e
+                ))));
+        }
+    };
+
+    let port = project.http_server_config.port;
+    let mut records_loaded = 0;
+
+    // Load each data set
+    for data in &fixture_req.data {
+        let target = if data.target.starts_with("ingest/") {
+            data.target.clone()
+        } else {
+            format!("ingest/{}", data.target)
+        };
+
+        let url = format!("http://localhost:{}/{}", port, target);
+
+        for record in &data.records {
+            let response = match client.post(&url).json(record).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    return Response::builder()
+                        .status(StatusCode::BAD_GATEWAY)
+                        .header("Content-Type", "application/json")
+                        .body(Full::new(Bytes::from(format!(
+                            r#"{{"error": "Failed to send to {}: {}"}}"#,
+                            target, e
+                        ))));
+                }
+            };
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                return Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .header("Content-Type", "application/json")
+                    .body(Full::new(Bytes::from(format!(
+                        r#"{{"error": "Target {} returned HTTP {}: {}"}}"#,
+                        target,
+                        status.as_u16(),
+                        body
+                    ))));
+            }
+
+            records_loaded += 1;
+        }
+    }
+
+    // Wait for data to be queryable if requested
+    if fixture_req.wait {
+        let _ = check_service_readiness(project, redis_client, true).await;
+        // Small sleep to allow async processing
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Full::new(Bytes::from(format!(
+            r#"{{"success": true, "recordsLoaded": {}}}"#,
+            records_loaded
+        ))))
+}
+
 async fn admin_reality_check_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,
@@ -1881,6 +2019,15 @@ async fn router(
         }
         (_, &hyper::Method::GET, ["health"]) => health_route(&project, &redis_client).await,
         (_, &hyper::Method::GET, ["ready"]) => ready_route(&req, &project, &redis_client).await,
+        (_, &hyper::Method::POST, ["moose", "fixtures", "load"]) => {
+            fixtures_load_route(
+                req,
+                &project,
+                &redis_client,
+                project.http_server_config.max_request_body_size,
+            )
+            .await
+        }
         (_, &hyper::Method::GET, ["admin", "reality-check"]) => {
             admin_reality_check_route(
                 req,
