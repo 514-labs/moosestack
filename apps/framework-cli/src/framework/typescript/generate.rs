@@ -276,7 +276,9 @@ fn generate_interface(
     for column in &nested.columns {
         // Output TSDoc comment if present
         if let Some(ref comment) = column.comment {
-            writeln!(interface, "    /** {} */", comment).unwrap();
+            // Sanitize comment to prevent breaking TSDoc block
+            let sanitized = comment.replace("*/", "*\\/");
+            writeln!(interface, "    /** {} */", sanitized).unwrap();
         }
 
         let type_str =
@@ -564,7 +566,9 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
         for column in &table.columns {
             // Output TSDoc comment if present
             if let Some(ref comment) = column.comment {
-                writeln!(output, "    /** {} */", comment).unwrap();
+                // Sanitize comment to prevent breaking TSDoc block
+                let sanitized = comment.replace("*/", "*\\/");
+                writeln!(output, "    /** {} */", sanitized).unwrap();
             }
 
             let mut type_str = map_column_type_to_typescript(

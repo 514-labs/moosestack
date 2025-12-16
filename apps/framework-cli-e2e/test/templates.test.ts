@@ -460,8 +460,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Verify both user comment and metadata are in the SAME column comment
         // Extract the status column's full comment from DDL
+        // Use [\s\S] to match any character including newlines, and match up to COMMENT
         const statusCommentMatch = ddl.match(
-          /`status`[^,)]*COMMENT\s*'([^']+)'/,
+          /`status`[^`]*COMMENT\s*'([^']+)'/,
         );
         if (!statusCommentMatch) {
           throw new Error(
