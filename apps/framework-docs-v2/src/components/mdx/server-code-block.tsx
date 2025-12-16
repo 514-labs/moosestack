@@ -277,11 +277,8 @@ export function ServerCodeBlock({
   // Routing logic:
   // 1. Config files → Always static CodeSnippet (never animated unless explicit)
   // 2. Explicit animate flag → Use CodeEditorWrapper
-  // 3. Explicit animate=false → Use CodeSnippet
-  // 4. Shell + filename + copy=false → Animated CodeEditorWrapper (terminal style)
-  // 5. Shell (all other cases) → ShellSnippet (copyable Terminal tab UI)
-  // 6. Non-shell + filename + no copy attr + no animate=false → Animated CodeEditorWrapper
-  // 7. Default → Static CodeSnippet
+  // 3. Shell → ShellSnippet (copyable Terminal tab UI)
+  // 4. Default → Static CodeSnippet
 
   // Config files use static CodeSnippet unless explicitly animated
   if (isConfigFile && !shouldAnimate) {
@@ -317,52 +314,12 @@ export function ServerCodeBlock({
     );
   }
 
-  // Shell commands: Use animated terminal only when explicitly copy=false with filename
-  // and animate flag is not explicitly false
-  // Otherwise, always use ShellSnippet (the Terminal tab UI with copy button)
+  // Shell commands: Always use ShellSnippet (Terminal tab with copy)
+  // Animation is only enabled via explicit animate flag (handled above)
   if (isShell) {
-    // Only use animated terminal when explicitly no copy button wanted
-    if (filename && props["data-copy"] === "false" && !shouldNotAnimate) {
-      return (
-        <div className="not-prose">
-          <CodeEditorWrapper
-            code={codeText}
-            language={language}
-            filename={filename}
-            variant="terminal"
-            writing={writing}
-            duration={duration ?? 3}
-            delay={delay ?? 0.3}
-          />
-        </div>
-      );
-    }
-
-    // All other shell commands use ShellSnippet (Terminal tab with copy)
     return (
       <div className="not-prose">
         <ShellSnippet code={codeText} language={language} />
-      </div>
-    );
-  }
-
-  // Non-shell: animate if filename present and copy not explicitly set
-  // unless animate is explicitly false
-  const legacyAnimate =
-    filename && props["data-copy"] === undefined && !shouldNotAnimate;
-
-  if (legacyAnimate) {
-    return (
-      <div className="not-prose">
-        <CodeEditorWrapper
-          code={codeText}
-          language={language || "typescript"}
-          filename={filename}
-          variant={variant ?? "ide"}
-          writing={writing}
-          duration={duration ?? 5}
-          delay={delay ?? 0.5}
-        />
       </div>
     );
   }
