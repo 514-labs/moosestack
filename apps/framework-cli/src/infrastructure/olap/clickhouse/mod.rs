@@ -1534,6 +1534,33 @@ pub async fn check_ready(
     .await
 }
 
+/// Returns the count of active parts in tables for the given database.
+///
+/// This is used by the /ready endpoint to determine if ClickHouse has finished
+/// processing recent inserts. A higher number indicates more pending merge operations.
+///
+/// # Arguments
+/// * `configured_client` - The configured ClickHouse client
+/// * `db_name` - The database name to check
+///
+/// # Returns
+/// * `Ok(count)` - Number of active parts across all tables in the database
+/// * `Err` - If the query fails
+pub async fn get_pending_parts(
+    configured_client: &ConfiguredDBClient,
+    db_name: &str,
+) -> Result<u64, clickhouse::error::Error> {
+    let client = &configured_client.client;
+
+    // Count active parts in the database - high counts may indicate pending merges
+    let query =
+        "SELECT count() FROM system.parts WHERE active = 1 AND database = ? FORMAT TabSeparated";
+
+    let result = client.query(query).bind(db_name).fetch_one::<u64>().await?;
+
+    Ok(result)
+}
+
 /// Fetches tables matching a specific version pattern
 ///
 /// # Arguments
