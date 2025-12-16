@@ -426,6 +426,65 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     });
 
+    it("should preserve user comments alongside enum metadata in column comments", async function () {
+      if (config.isTestsVariant) {
+        const ddl = await getTableDDL("EnumColumnCommentsTest", "local");
+
+        // Enum columns should have BOTH user comment AND metadata
+        // Format: "User comment [MOOSE_METADATA:DO_NOT_MODIFY] {...}"
+
+        // Check status column has user comment
+        if (
+          !ddl.includes(
+            "Current status of the order - updates as order progresses",
+          )
+        ) {
+          throw new Error(
+            `Expected status enum column to have user comment 'Current status of the order - updates as order progresses'. DDL: ${ddl}`,
+          );
+        }
+
+        // Check status column has metadata prefix (enum metadata)
+        if (!ddl.includes("[MOOSE_METADATA:DO_NOT_MODIFY]")) {
+          throw new Error(
+            `Expected enum columns to have metadata prefix '[MOOSE_METADATA:DO_NOT_MODIFY]'. DDL: ${ddl}`,
+          );
+        }
+
+        // Check priority column has user comment
+        if (!ddl.includes("Priority level for fulfillment")) {
+          throw new Error(
+            `Expected priority enum column to have user comment 'Priority level for fulfillment'. DDL: ${ddl}`,
+          );
+        }
+
+        // Verify both user comment and metadata are in the SAME column comment
+        // Extract the status column's full comment from DDL
+        const statusCommentMatch = ddl.match(
+          /`status`[^,)]*COMMENT\s*'([^']+)'/,
+        );
+        if (!statusCommentMatch) {
+          throw new Error(
+            `Expected status column to have a COMMENT clause. DDL: ${ddl}`,
+          );
+        }
+
+        const statusComment = statusCommentMatch[1];
+        if (
+          !statusComment.includes("Current status of the order") ||
+          !statusComment.includes("[MOOSE_METADATA:DO_NOT_MODIFY]")
+        ) {
+          throw new Error(
+            `Expected status column comment to contain BOTH user comment AND metadata. Got: '${statusComment}'`,
+          );
+        }
+
+        testLogger.info(
+          `✅ Enum column metadata safety validation passed for ${config.language}`,
+        );
+      }
+    });
+
     // Add versioned tables test for tests templates
     if (config.isTestsVariant) {
       it("should create versioned OlapTables correctly", async function () {

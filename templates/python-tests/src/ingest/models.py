@@ -987,3 +987,37 @@ column_comments_test_table = OlapTable[ColumnCommentsTest](
     "ColumnCommentsTest",
     OlapConfig(order_by_fields=["id", "timestamp"]),
 )
+
+
+# =======Enum Column Comments Test=========
+# Test that user comments on enum columns don't interfere with enum metadata
+# The system stores enum metadata in column comments with [MOOSE_METADATA:DO_NOT_MODIFY] prefix
+# User comments should be preserved alongside this metadata
+
+
+class OrderStatus(StringToEnumMixin, IntEnum):
+    PENDING = auto()
+    PROCESSING = auto()
+    SHIPPED = auto()
+    DELIVERED = auto()
+    CANCELLED = auto()
+
+
+class EnumColumnCommentsTest(BaseModel):
+    """Test model with Field(description=...) on enum fields.
+
+    Verifies that user comments coexist with enum metadata in ClickHouse column comments.
+    """
+
+    id: Key[str] = Field(description="Unique order identifier")
+    timestamp: datetime = Field(description="When the order was placed")
+    status: OrderStatus = Field(
+        description="Current status of the order - updates as order progresses"
+    )
+    priority: OrderStatus = Field(description="Priority level for fulfillment")
+
+
+enum_column_comments_test_table = OlapTable[EnumColumnCommentsTest](
+    "EnumColumnCommentsTest",
+    OlapConfig(order_by_fields=["id", "timestamp"]),
+)

@@ -973,3 +973,36 @@ export const columnCommentsTestTable = new OlapTable<ColumnCommentsTest>(
     orderByFields: ["id", "timestamp"],
   },
 );
+
+/** =======Enum Column Comments Test========= */
+// Test that user comments on enum columns don't interfere with enum metadata
+// The system stores enum metadata in column comments with [MOOSE_METADATA:DO_NOT_MODIFY] prefix
+// User comments should be preserved alongside this metadata
+
+export enum OrderStatus {
+  Pending = "pending",
+  Processing = "processing",
+  Shipped = "shipped",
+  Delivered = "delivered",
+  Cancelled = "cancelled",
+}
+
+/**
+ * Test interface with TSDoc comments on enum fields.
+ * Verifies that user comments coexist with enum metadata in ClickHouse column comments.
+ */
+export interface EnumColumnCommentsTest {
+  /** Unique order identifier */
+  id: Key<string>;
+  /** When the order was placed */
+  timestamp: DateTime;
+  /** Current status of the order - updates as order progresses */
+  status: OrderStatus;
+  /** Priority level for fulfillment */
+  priority: OrderStatus;
+}
+
+export const enumColumnCommentsTestTable =
+  new OlapTable<EnumColumnCommentsTest>("EnumColumnCommentsTest", {
+    orderByFields: ["id", "timestamp"],
+  });
