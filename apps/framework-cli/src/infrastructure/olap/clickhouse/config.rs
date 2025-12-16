@@ -23,6 +23,90 @@ pub struct ClusterConfig {
     pub name: String,
 }
 
+/// Remote ClickHouse connection configuration (without password)
+/// Password is stored separately in the system keychain for security
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RemoteClickHouseConfig {
+    pub host: String,
+    #[serde(default = "default_native_port")]
+    pub native_port: i32,
+    pub database: String,
+    pub user: String,
+    #[serde(default)]
+    pub use_ssl: bool,
+}
+
+impl RemoteClickHouseConfig {
+    /// Converts to a full ClickHouseConfig by adding the password from keychain
+    pub fn to_clickhouse_config(&self, password: String) -> ClickHouseConfig {
+        ClickHouseConfig {
+            db_name: self.database.clone(),
+            user: self.user.clone(),
+            password,
+            use_ssl: self.use_ssl,
+            host: self.host.clone(),
+            host_port: if self.use_ssl { 8443 } else { 8123 },
+            native_port: self.native_port,
+            host_data_path: None,
+            additional_databases: Vec::new(),
+            clusters: None,
+        }
+    }
+
+    /// Returns a display string for the connection (without password)
+    pub fn display_connection(&self) -> String {
+        let protocol = if self.use_ssl { "https" } else { "http" };
+        format!(
+            "{}://{}@{}:{}?database={}",
+            protocol, self.user, self.host, self.native_port, self.database
+        )
+    }
+
+    /// Checks if a stored URL matches this configuration
+    ///
+    /// Validates that the URL's host, username, and database match this config.
+    /// Used to determine if a stored keychain URL is still valid for the current config.
+    pub fn matches_url(&self, url: &reqwest::Url) -> bool {
+        url.host_str() == Some(&self.host)
+            && url.username() == self.user
+            && url
+                .query_pairs()
+                .find(|(k, _)| k == "database")
+                .map(|(_, v)| v == self.database.as_str())
+                .unwrap_or(false)
+    }
+
+    /// Builds a complete ClickHouse connection URL with password
+    ///
+    /// This URL can be stored in keychain or used with `parse_clickhouse_connection_string()`
+    ///
+    /// # Arguments
+    /// * `password` - The password to include in the URL
+    ///
+    /// # Returns
+    /// Complete URL string like: `https://user:pass@host:9440?database=dbname`
+    pub fn build_url_with_password(&self, password: &str) -> Result<String, String> {
+        let protocol = if self.use_ssl { "https" } else { "http" };
+
+        let mut url = reqwest::Url::parse(&format!(
+            "{}://{}:{}",
+            protocol, self.host, self.native_port
+        ))
+        .map_err(|e| format!("Failed to construct URL: {e}"))?;
+
+        url.set_username(&self.user)
+            .map_err(|_| "Failed to set username".to_string())?;
+
+        url.set_password(Some(password))
+            .map_err(|_| "Failed to set password".to_string())?;
+
+        url.query_pairs_mut()
+            .append_pair("database", &self.database);
+
+        Ok(url.to_string())
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ClickHouseConfig {
     pub db_name: String, // ex. local (primary database)

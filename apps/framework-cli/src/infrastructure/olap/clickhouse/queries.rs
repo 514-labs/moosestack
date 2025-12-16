@@ -1424,6 +1424,17 @@ impl ClickhouseEngine {
         self.is_merge_tree_family() || matches!(self, ClickhouseEngine::S3 { .. })
     }
 
+    /// Returns true if this engine supports SELECT queries
+    ///
+    /// Some engines like Kafka and S3Queue are write-only and cannot be queried with SELECT.
+    /// This is important for operations like mirroring and seeding that need to read data.
+    pub fn supports_select(&self) -> bool {
+        !matches!(
+            self,
+            ClickhouseEngine::Kafka { .. } | ClickhouseEngine::S3Queue { .. }
+        )
+    }
+
     /// Returns table setting keys that contain sensitive credentials for this engine.
     /// Used for masking credentials in stored state and migration files.
     pub fn sensitive_settings(&self) -> &'static [&'static str] {

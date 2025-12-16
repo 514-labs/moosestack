@@ -604,6 +604,19 @@ impl InfrastructureMap {
         }
     }
 
+    /// Returns EXTERNALLY_MANAGED tables that support SELECT operations
+    ///
+    /// Filters tables to find those marked as EXTERNALLY_MANAGED and have engines
+    /// that support SELECT queries (excludes Kafka, S3Queue which are write-only).
+    /// Useful for operations like mirroring, seeding, and creating local copies.
+    pub fn get_mirrorable_external_tables(&self) -> Vec<&Table> {
+        self.tables
+            .values()
+            .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
+            .filter(|t| t.engine.supports_select())
+            .collect()
+    }
+
     /// Creates a new infrastructure map from a project and primitive map
     ///
     /// This is the primary constructor for creating an infrastructure map. It transforms
