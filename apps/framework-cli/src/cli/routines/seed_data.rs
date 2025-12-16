@@ -447,7 +447,7 @@ pub async fn handle_seed_command(
                         Ok(None) => {
                             return Err(RoutineFailure::error(Message::new(
                                 "SeedClickhouse".to_string(),
-                                "No ClickHouse URL provided and none saved. Pass --clickhouse-url or save one via `moose init --from-remote`.".to_string(),
+                                "No ClickHouse URL provided and none saved. Pass --clickhouse-url or use `moose db pull` to import from a remote database.".to_string(),
                             )))
                         }
                         Err(e) => {
