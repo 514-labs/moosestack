@@ -1,0 +1,12 @@
+{
+  "$schema": "../../docs/e2e-v2/capabilities.schema.json",
+  "capabilities": [
+    "lang:typescript",
+    "infra:clickhouse",
+    "infra:redpanda",
+    "infra:redis",
+    "feature:ingestion"
+  ],
+  "testPort": 4012,
+  "skipScenarios": ["streaming-functions", "workflows"]
+}

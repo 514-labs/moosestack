@@ -1,0 +1,18 @@
+{
+  "$schema": "../../docs/e2e-v2/capabilities.schema.json",
+  "capabilities": [
+    "lang:typescript",
+    "infra:clickhouse",
+    "infra:redpanda",
+    "infra:redis",
+    "infra:temporal",
+    "feature:ingestion",
+    "feature:consumption",
+    "feature:streaming-functions",
+    "feature:workflows",
+    "feature:dmv2",
+    "model:Foo",
+    "model:Bar"
+  ],
+  "testPort": 4014
+}
