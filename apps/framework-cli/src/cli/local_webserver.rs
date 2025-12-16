@@ -1137,6 +1137,11 @@ async fn check_service_readiness(
     (healthy, unhealthy, details)
 }
 
+/// Default timeout for fixtures wait mode (30 seconds)
+fn default_fixtures_timeout() -> u64 {
+    30000
+}
+
 /// Request body for the fixtures load endpoint
 #[derive(Debug, Deserialize)]
 struct FixturesLoadRequest {
@@ -1145,9 +1150,8 @@ struct FixturesLoadRequest {
     /// Optional: wait for data to be queryable
     #[serde(default)]
     wait: bool,
-    /// Optional: timeout for wait mode in milliseconds (reserved for future use)
-    #[serde(default)]
-    #[allow(dead_code)]
+    /// Optional: timeout for wait mode in milliseconds (default: 30000)
+    #[serde(default = "default_fixtures_timeout")]
     timeout: u64,
 }
 
@@ -1261,9 +1265,37 @@ async fn fixtures_load_route(
 
     // Wait for data to be queryable if requested
     if fixture_req.wait {
-        let _ = check_service_readiness(project, redis_client, true).await;
-        // Small sleep to allow async processing
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_millis(fixture_req.timeout);
+
+        loop {
+            let (_, unhealthy, details) =
+                check_service_readiness(project, redis_client, true).await;
+
+            let is_ready = unhealthy.is_empty();
+            let is_quiescent = {
+                // Check if all services have settled (no lag, no pending operations)
+                let kafka_ok = details
+                    .as_ref()
+                    .and_then(|d| d.kafka.as_ref())
+                    .map(|k| k.consumer_lag == 0)
+                    .unwrap_or(true);
+                let ch_ok = details
+                    .as_ref()
+                    .and_then(|d| d.clickhouse.as_ref())
+                    .map(|c| c.pending_parts == 0)
+                    .unwrap_or(true);
+                kafka_ok && ch_ok
+            };
+
+            // If ready and quiescent, or timeout exceeded, exit loop
+            if (is_ready && is_quiescent) || start.elapsed() > timeout {
+                break;
+            }
+
+            // Wait before next check
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
     }
 
     Response::builder()

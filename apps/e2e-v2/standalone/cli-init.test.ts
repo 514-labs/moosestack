@@ -12,7 +12,7 @@ import * as os from "os";
 
 const MOOSE_BINARY =
   process.env.MOOSE_BINARY ||
-  path.join(__dirname, "../../target/debug/moose-cli");
+  path.join(__dirname, "../../../target/debug/moose-cli");
 
 describe("Standalone: CLI Init", function () {
   this.timeout(60000);

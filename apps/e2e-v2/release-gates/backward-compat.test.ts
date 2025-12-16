@@ -13,7 +13,7 @@ import * as os from "os";
 
 const MOOSE_BINARY =
   process.env.MOOSE_BINARY ||
-  path.join(__dirname, "../../target/debug/moose-cli");
+  path.join(__dirname, "../../../target/debug/moose-cli");
 
 describe("Release Gate: Backward Compatibility", function () {
   this.timeout(120000);

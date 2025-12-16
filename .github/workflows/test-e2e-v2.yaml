@@ -88,8 +88,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -138,8 +136,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Download CLI artifact
         uses: actions/download-artifact@v4
@@ -180,8 +176,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Download CLI artifact
         uses: actions/download-artifact@v4
@@ -249,8 +243,6 @@ jobs:
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Setup Python
         uses: actions/setup-python@v5
