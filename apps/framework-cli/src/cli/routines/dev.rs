@@ -5,7 +5,9 @@ use super::{
     },
     RoutineFailure, RoutineSuccess,
 };
-use crate::cli::display::{show_message_wrapper, with_spinner_completion, with_timing, Message, MessageType};
+use crate::cli::display::{
+    show_message_wrapper, with_spinner_completion, with_timing, Message, MessageType,
+};
 use crate::cli::settings::Settings;
 use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
