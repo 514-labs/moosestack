@@ -5,8 +5,12 @@
 import { spawn, ChildProcess, execSync } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
+import { fileURLToPath } from "url";
 import type { TestContext, Template, FixtureFile } from "./types.js";
 import { getTestPort } from "./manifest.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const MOOSE_BINARY =
   process.env.MOOSE_BINARY ||

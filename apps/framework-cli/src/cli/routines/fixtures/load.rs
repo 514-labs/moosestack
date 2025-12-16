@@ -69,11 +69,20 @@ pub async fn load_fixture(
             port, timeout_ms
         );
 
-        client
+        let response = client
             .get(&ready_url)
             .send()
             .await
             .map_err(|e| FixtureError::HttpError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(FixtureError::HttpError(format!(
+                "Ready endpoint returned HTTP {}: {}",
+                status, body
+            )));
+        }
     }
 
     // Verify if specified

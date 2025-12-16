@@ -4,6 +4,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import type {
   CapabilityManifest,
   Template,
@@ -11,6 +12,8 @@ import type {
   MatchResult,
 } from "./types.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const TEMPLATES_DIR = path.join(__dirname, "../../../templates");
 const MANIFEST_FILENAME = "moose.capabilities.json";
 
@@ -34,10 +37,13 @@ export function loadManifest(templatePath: string): CapabilityManifest | null {
 }
 
 /**
- * Discover all templates with capability manifests
+ * Discover all templates with capability manifests.
+ * If MOOSE_TEMPLATE env var is set, only returns that specific template.
+ * This supports CI parallelization where each job handles one template.
  */
 export function discoverTemplates(): Template[] {
   const templates: Template[] = [];
+  const targetTemplate = process.env.MOOSE_TEMPLATE;
 
   if (!fs.existsSync(TEMPLATES_DIR)) {
     console.warn(`Templates directory not found: ${TEMPLATES_DIR}`);
@@ -48,6 +54,11 @@ export function discoverTemplates(): Template[] {
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+
+    // If MOOSE_TEMPLATE is set, only process that specific template
+    if (targetTemplate && entry.name !== targetTemplate) {
+      continue;
+    }
 
     const templatePath = path.join(TEMPLATES_DIR, entry.name);
     const manifest = loadManifest(templatePath);
