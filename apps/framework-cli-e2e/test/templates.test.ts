@@ -412,11 +412,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Verify status field does NOT have a comment (it has no TSDoc/description)
         // The status column should appear without a COMMENT clause
-        // Check by verifying the pattern: `status` followed by type but no COMMENT
-        const statusMatch = ddl.match(/`status`\s+\w+(\([^)]+\))?/);
+        // Match from `status` to the next comma or closing paren to capture the full column definition
+        const statusMatch = ddl.match(/`status`[^,)]+/);
         if (statusMatch && statusMatch[0].includes("COMMENT")) {
           throw new Error(
-            `Expected status column to NOT have a comment, but found one. DDL: ${ddl}`,
+            `Expected status column to NOT have a comment, but found one. Match: ${statusMatch[0]}`,
           );
         }
 
