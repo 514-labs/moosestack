@@ -624,4 +624,80 @@ mod tests {
             _ => panic!("Expected int value"),
         }
     }
+
+    #[test]
+    fn test_non_enum_column_comment_passthrough() {
+        // Test that TSDoc comments on non-enum columns pass through directly
+        let column_with_comment = Column {
+            name: "user_id".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: true,
+            default: None,
+            annotations: vec![],
+            comment: Some("Unique identifier for the user".to_string()),
+            ttl: None,
+            codec: None,
+            materialized: None,
+        };
+
+        let clickhouse_column = std_column_to_clickhouse_column(column_with_comment).unwrap();
+
+        // Comment should pass through unchanged for non-enum columns
+        assert_eq!(
+            clickhouse_column.comment,
+            Some("Unique identifier for the user".to_string())
+        );
+    }
+
+    #[test]
+    fn test_non_enum_column_no_comment() {
+        // Test that columns without comments have None
+        let column_without_comment = Column {
+            name: "count".to_string(),
+            data_type: ColumnType::Int(IntType::Int64),
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        };
+
+        let clickhouse_column = std_column_to_clickhouse_column(column_without_comment).unwrap();
+
+        // Comment should be None
+        assert_eq!(clickhouse_column.comment, None);
+    }
+
+    #[test]
+    fn test_comment_with_special_characters() {
+        // Test that comments with special characters are preserved
+        let column = Column {
+            name: "description".to_string(),
+            data_type: ColumnType::String,
+            required: false,
+            unique: false,
+            primary_key: false,
+            default: None,
+            annotations: vec![],
+            comment: Some(
+                "User's description (can contain \"quotes\" and $pecial chars)".to_string(),
+            ),
+            ttl: None,
+            codec: None,
+            materialized: None,
+        };
+
+        let clickhouse_column = std_column_to_clickhouse_column(column).unwrap();
+
+        assert_eq!(
+            clickhouse_column.comment,
+            Some("User's description (can contain \"quotes\" and $pecial chars)".to_string())
+        );
+    }
 }
