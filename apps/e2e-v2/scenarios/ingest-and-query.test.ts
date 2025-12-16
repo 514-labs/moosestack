@@ -125,20 +125,16 @@ describe(`Scenario: ${scenario.name}`, function () {
       });
 
       it("should reject invalid records", async function () {
-        try {
-          // Send invalid data (missing required fields)
-          const response = await fetch(`${ctx.baseUrl}/ingest/Foo`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ invalid: "data" }),
-          });
+        // Send invalid data (missing required fields)
+        const response = await fetch(`${ctx.baseUrl}/ingest/Foo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ invalid: "data" }),
+        });
 
-          // Should return 4xx error
-          expect(response.status).to.be.gte(400);
-          expect(response.status).to.be.lt(500);
-        } catch (error) {
-          // Connection errors are also acceptable for invalid data
-        }
+        // Should return 4xx error
+        expect(response.status).to.be.gte(400);
+        expect(response.status).to.be.lt(500);
       });
     });
   }

@@ -159,16 +159,17 @@ export function readFixtureFile(fixturePath: string): FixtureFile {
  * Query ClickHouse and return results
  */
 export async function queryClickHouse(
-  baseUrl: string,
+  _baseUrl: string,
   sql: string,
+  clickhouseUrl: string = process.env.CLICKHOUSE_URL ||
+    "http://localhost:18123",
 ): Promise<unknown[]> {
-  // Use Moose's query endpoint if available, or direct CH connection
-  // For now, we'll use direct HTTP to ClickHouse
-  // This could be enhanced to use the Moose consumption API
+  // Use direct HTTP to ClickHouse
+  // The _baseUrl parameter is kept for API compatibility but currently unused
+  // since we need the ClickHouse URL, not the Moose server URL
 
-  const chUrl = "http://localhost:18123";
   const response = await fetch(
-    `${chUrl}/?default_format=JSONEachRow&query=${encodeURIComponent(sql)}`,
+    `${clickhouseUrl}/?default_format=JSONEachRow&query=${encodeURIComponent(sql)}`,
   );
 
   if (!response.ok) {

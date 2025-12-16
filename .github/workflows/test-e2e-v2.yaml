@@ -144,7 +144,7 @@ jobs:
           path: target/debug
 
       - name: Make CLI executable
-        run: chmod +x target/debug/moose-cli
+        run: chmod +x ${{ github.workspace }}/target/debug/moose-cli
 
       - name: Install dependencies
         run: pnpm install
@@ -184,7 +184,7 @@ jobs:
           path: target/debug
 
       - name: Make CLI executable
-        run: chmod +x target/debug/moose-cli
+        run: chmod +x ${{ github.workspace }}/target/debug/moose-cli
 
       - name: Install dependencies
         run: pnpm install
@@ -256,7 +256,7 @@ jobs:
           path: target/debug
 
       - name: Make CLI executable
-        run: chmod +x target/debug/moose-cli
+        run: chmod +x ${{ github.workspace }}/target/debug/moose-cli
 
       - name: Install dependencies
         run: pnpm install
