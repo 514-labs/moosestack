@@ -213,6 +213,8 @@ jobs:
         template:
           - typescript-tests
           - python-tests
+          - typescript
+          - python
     services:
       clickhouse:
         image: clickhouse/clickhouse-server:23.8
