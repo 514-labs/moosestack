@@ -30,7 +30,7 @@ export const showGuidesSection = flag<boolean>({
 export const showAiSection = flag<boolean>({
   key: "show-ai-section",
   adapter: postHogAdapter.isFeatureEnabled(),
-  defaultValue: true,
+  defaultValue: false,
   description: "Show AI section in top navigation",
   origin: "https://us.i.posthog.com",
   identify,

@@ -22,7 +22,7 @@ export default async function HomePage() {
   // Evaluate feature flags
   const [showHosting, showAi] = await Promise.all([
     showHostingSection().catch(() => false),
-    showAiSection().catch(() => true),
+    showAiSection().catch(() => false),
   ]);
 
   // Calculate number of visible cards based on flags
