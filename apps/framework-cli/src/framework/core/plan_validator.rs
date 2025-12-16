@@ -133,6 +133,7 @@ mod tests {
             load_infra: None,
             typescript_config: crate::project::TypescriptConfig::default(),
             source_dir: crate::project::default_source_dir(),
+            docker_config: crate::project::DockerConfig::default(),
         }
     }
 

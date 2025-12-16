@@ -32,6 +32,43 @@ fn ensure_directory_exists(path: &Path) -> Result<(), std::io::Error> {
     }
 }
 
+/// Returns the path to the managed Dockerfile in the internal directory
+fn managed_dockerfile_path(internal_dir: &Path) -> PathBuf {
+    internal_dir.join("packager/Dockerfile")
+}
+
+/// Returns the path to a custom Dockerfile based on project config
+fn custom_dockerfile_path(project: &Project) -> PathBuf {
+    let dockerfile_path = project
+        .docker_config
+        .dockerfile_path
+        .trim_start_matches("./");
+    project.project_location.join(dockerfile_path)
+}
+
+/// Determines the Dockerfile location based on project's docker_config
+fn resolve_dockerfile_path(project: &Project, internal_dir: &Path) -> PathBuf {
+    if project.docker_config.custom_dockerfile {
+        custom_dockerfile_path(project)
+    } else {
+        managed_dockerfile_path(internal_dir)
+    }
+}
+
+/// Checks if we should skip Dockerfile generation to preserve user customizations
+fn should_skip_dockerfile_generation(project: &Project, target_path: &Path) -> bool {
+    // If custom_dockerfile is enabled and the target file already exists,
+    // preserve it to avoid overwriting user customizations
+    if project.docker_config.custom_dockerfile && target_path.exists() {
+        info!(
+            "Custom Dockerfile exists at {:?}, skipping generation to preserve customizations",
+            target_path
+        );
+        return true;
+    }
+    false
+}
+
 /// Helper function to copy config files for monorepo builds
 fn copy_project_config_files(project_root: &Path, build_context: &Path, internal_dir: &Path) {
     let temp_project_toml = build_context.join("project.toml");
@@ -284,7 +321,27 @@ pub fn create_dockerfile(
         )
     })?;
 
-    let file_path = internal_dir.join("packager/Dockerfile");
+    // Determine Dockerfile path based on docker_config
+    let file_path = resolve_dockerfile_path(project, &internal_dir);
+
+    // Check if we should skip generation (custom Dockerfile already exists)
+    if should_skip_dockerfile_generation(project, &file_path) {
+        return Ok(RoutineSuccess::success(Message::new(
+            "Using existing".to_string(),
+            format!(
+                "custom Dockerfile at {} (edit moose.config.toml to disable)",
+                file_path.display()
+            ),
+        )));
+    }
+
+    // Log if creating a custom Dockerfile for the first time
+    if project.docker_config.custom_dockerfile {
+        info!(
+            "Creating custom Dockerfile at project root: {:?}",
+            file_path
+        );
+    }
 
     info!("Creating Dockerfile at: {:?}", file_path);
     ensure_directory_exists(&file_path).map_err(|err| {
@@ -543,9 +600,20 @@ COPY --chown=moose:moose ./{} ./{}"#,
     })?;
 
     info!("Dockerfile created at: {:?}", file_path);
+
+    // Provide appropriate success message based on custom dockerfile mode
+    let message = if project.docker_config.custom_dockerfile {
+        format!(
+            "created custom Dockerfile at {} - you can now customize it",
+            file_path.display()
+        )
+    } else {
+        "created dockerfile".to_string()
+    };
+
     Ok(RoutineSuccess::success(Message::new(
         "Successfully".to_string(),
-        "created dockerfile".to_string(),
+        message,
     )))
 }
 
@@ -571,19 +639,23 @@ pub fn build_dockerfile(
         )
     })?;
 
-    let file_path = internal_dir.join("packager/Dockerfile");
+    // Determine Dockerfile path based on docker_config
+    let file_path = resolve_dockerfile_path(project, &internal_dir);
     info!("Building Dockerfile at: {:?}", file_path);
 
-    fs::create_dir_all(file_path.parent().unwrap()).map_err(|err| {
-        error!("Failed to create directory for project packaging: {}", err);
-        RoutineFailure::new(
-            Message::new(
-                "Failed".to_string(),
-                "to create directory for project packaging".to_string(),
-            ),
-            err,
-        )
-    })?;
+    // Ensure directory exists for the Dockerfile
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            error!("Failed to create directory for project packaging: {}", err);
+            RoutineFailure::new(
+                Message::new(
+                    "Failed".to_string(),
+                    "to create directory for project packaging".to_string(),
+                ),
+                err,
+            )
+        })?;
+    }
 
     // Copy app & etc to packager directory
     let project_root_path = project.project_location.clone();
@@ -752,6 +824,35 @@ pub fn build_dockerfile(
                 (internal_dir.join("packager"), file_path)
             }
         }
+    } else if project.docker_config.custom_dockerfile {
+        // Custom Dockerfile build - use project root as build context
+        info!(
+            "Using custom Dockerfile at {:?} with project root as build context",
+            file_path
+        );
+
+        // For custom Dockerfile builds, copy versions directory to project root
+        // so the Dockerfile can find it at ./versions
+        let versions_src = internal_dir.join("packager/versions");
+        let versions_dest = project.project_location.join("versions");
+        if versions_src.exists() {
+            if let Err(e) = system::copy_directory(&versions_src, &project.project_location) {
+                error!(
+                    "Failed to copy versions directory for custom Dockerfile build: {}",
+                    e
+                );
+                return Err(RoutineFailure::new(
+                    Message::new(
+                        "Failed".to_string(),
+                        "to copy versions directory for custom Dockerfile build".to_string(),
+                    ),
+                    e,
+                ));
+            }
+            info!("Copied versions directory to {:?}", versions_dest);
+        }
+
+        (project.project_location.clone(), file_path)
     } else {
         // Standard build
         (internal_dir.join("packager"), file_path)

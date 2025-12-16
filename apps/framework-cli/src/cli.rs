@@ -331,10 +331,11 @@ pub async fn top_command_handler(
             no_fail_already_exists,
             from_remote,
             language,
+            custom_dockerfile,
         } => {
             info!(
-                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}",
-                name, location, template, language
+                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}, custom_dockerfile: {}",
+                name, location, template, language, custom_dockerfile
             );
 
             // Determine template, prompting for language if needed (especially for --from-remote)
@@ -384,9 +385,14 @@ pub async fn top_command_handler(
 
             check_project_name(name)?;
 
-            let post_install_message =
-                create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
-                    .await?;
+            let post_install_message = create_project_from_template(
+                &template,
+                name,
+                dir_path,
+                *no_fail_already_exists,
+                *custom_dockerfile,
+            )
+            .await?;
 
             let normalized_url = match from_remote {
                 None => {

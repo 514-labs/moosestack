@@ -338,6 +338,7 @@ pub async fn create_project_from_template(
     name: &str,
     dir_path: &Path,
     no_fail_already_exists: bool,
+    custom_dockerfile: bool,
 ) -> Result<String, RoutineFailure> {
     let template_config = get_template_config(template, CLI_VERSION).await?;
 
@@ -466,6 +467,11 @@ pub async fn create_project_from_template(
         }
     }
 
+    // Setup custom Dockerfile if requested
+    if custom_dockerfile {
+        setup_custom_dockerfile(dir_path, language)?;
+    }
+
     maybe_create_git_repo(dir_path, project_arc, is_current_dir);
 
     Ok(template_config
@@ -512,6 +518,60 @@ fn maybe_create_git_repo(dir_path: &Path, project_arc: Arc<Project>, is_current_
             }
         );
     }
+}
+
+/// Sets up custom Dockerfile mode for the project by updating moose.config.toml.
+/// The actual Dockerfile will be generated during `moose build --docker`.
+fn setup_custom_dockerfile(
+    dir_path: &Path,
+    _language: SupportedLanguages,
+) -> Result<(), RoutineFailure> {
+    // Update moose.config.toml to enable custom_dockerfile
+    let config_path = dir_path.join("moose.config.toml");
+
+    if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path).map_err(|e| {
+            RoutineFailure::error(Message {
+                action: "Init".to_string(),
+                details: format!("Failed to read moose.config.toml: {e}"),
+            })
+        })?;
+
+        // Append docker_config section if not already present
+        if !content.contains("[docker_config]") {
+            let docker_config_section = r#"
+
+[docker_config]
+custom_dockerfile = true
+dockerfile_path = "./Dockerfile"
+"#;
+            let new_content = format!("{content}{docker_config_section}");
+            std::fs::write(&config_path, new_content).map_err(|e| {
+                RoutineFailure::error(Message {
+                    action: "Init".to_string(),
+                    details: format!("Failed to write moose.config.toml: {e}"),
+                })
+            })?;
+        }
+    }
+
+    show_message!(
+        MessageType::Success,
+        Message {
+            action: "Enabled".to_string(),
+            details: "custom Dockerfile mode in moose.config.toml".to_string(),
+        }
+    );
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Info".to_string(),
+            details: "Run 'moose build --docker' to generate the Dockerfile at project root for customization".to_string(),
+        }
+    );
+
+    Ok(())
 }
 
 #[cfg(test)]
