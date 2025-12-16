@@ -4,9 +4,6 @@
 //! via ingestion endpoints. They support optional verification to ensure data has
 //! been properly processed.
 
-// These types will be used by the fixtures load command
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -93,6 +90,7 @@ pub enum FixtureError {
     #[error(
         "fixture verification failed: expected at least {expected} rows in `{table}`, found {actual}"
     )]
+    #[allow(dead_code)] // Will be used when verification is fully implemented
     VerificationFailed {
         table: String,
         expected: u64,
@@ -118,6 +116,7 @@ impl FixtureFile {
     }
 
     /// Total number of records across all data sets.
+    #[allow(dead_code)] // Will be used by tests and future features
     pub fn total_records(&self) -> usize {
         self.data.iter().map(|d| d.records.len()).sum()
     }

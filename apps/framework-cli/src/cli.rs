@@ -13,8 +13,8 @@ use super::metrics::Metrics;
 use crate::utilities::docker::DockerClient;
 use clap::Parser;
 use commands::{
-    Commands, DbCommands, GenerateCommand, KafkaArgs, KafkaCommands, TemplateSubCommands,
-    WorkflowCommands,
+    Commands, DbCommands, FixturesCommands, GenerateCommand, KafkaArgs, KafkaCommands,
+    TemplateSubCommands, WorkflowCommands,
 };
 use config::ConfigError;
 use display::with_spinner_completion;
@@ -1530,6 +1530,57 @@ pub async fn top_command_handler(
                 )))
             }
         }
+        Commands::Fixtures(args) => match &args.command {
+            FixturesCommands::Load {
+                path,
+                wait,
+                timeout,
+                port,
+            } => {
+                info!("Running fixtures load command");
+
+                let result = routines::fixtures::load_fixture(path, *port, *wait, *timeout)
+                    .await
+                    .map_err(|e| {
+                        RoutineFailure::new(
+                            Message::new(
+                                "Fixtures".to_string(),
+                                format!("Failed to load fixture: {}", e),
+                            ),
+                            e,
+                        )
+                    })?;
+
+                display::show_message_wrapper(
+                    MessageType::Success,
+                    Message::new(
+                        "Fixtures".to_string(),
+                        format!(
+                            "Loaded {} records from fixture '{}'",
+                            result.records_loaded, result.fixture_name
+                        ),
+                    ),
+                );
+
+                if let Some(verification) = result.verification {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message::new(
+                            "Verify".to_string(),
+                            format!(
+                                "Table '{}' should have at least {} rows",
+                                verification.table, verification.expected_min_rows
+                            ),
+                        ),
+                    );
+                }
+
+                Ok(RoutineSuccess::success(Message::new(
+                    "Fixtures".to_string(),
+                    "loaded successfully".to_string(),
+                )))
+            }
+        },
     }
 }
 

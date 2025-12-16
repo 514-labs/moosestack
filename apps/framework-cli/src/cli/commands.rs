@@ -236,6 +236,36 @@ pub enum Commands {
         #[arg(short, long, default_value = "4000")]
         port: u16,
     },
+    /// Load test fixtures into a running Moose instance
+    Fixtures(FixturesArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(arg_required_else_help = true)]
+pub struct FixturesArgs {
+    #[command(subcommand)]
+    pub command: FixturesCommands,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum FixturesCommands {
+    /// Load a fixture file into Moose
+    Load {
+        /// Path to the fixture JSON file
+        path: PathBuf,
+
+        /// Wait until data is queryable after loading
+        #[arg(short, long)]
+        wait: bool,
+
+        /// Timeout in milliseconds for wait mode (default: 30000)
+        #[arg(short, long, default_value = "30000")]
+        timeout: u64,
+
+        /// Port of the Moose instance (default: 4000)
+        #[arg(short, long, default_value = "4000")]
+        port: u16,
+    },
 }
 
 #[derive(Debug, Args)]
