@@ -145,15 +145,13 @@ impl PythonProject {
                     format!("File not found: {}", path.display())
                 }
                 PythonParserError::InvalidPythonFile => {
-                    format!(
-                        "Invalid Python syntax in setup.py or setup() function not found\n\n\
-                         Common causes:\n\
-                         - setup.py has syntax errors\n\
-                         - setup.py doesn't contain a setup() function call\n\
-                         - setup() call is missing the required 'name' parameter\n\n\
-                         Your setup.py should look similar to:\n\
-                         \n  from setuptools import setup\n  setup(\n      name=\"your-project-name\",\n      version=\"0.0\",\n      install_requires=[...]\n  )"
-                    )
+                    "Invalid Python syntax in setup.py or setup() function not found\n\n\
+                     Common causes:\n\
+                     - setup.py has syntax errors\n\
+                     - setup.py doesn't contain a setup() function call\n\
+                     - setup() call is missing the required 'name' parameter\n\n\
+                     Your setup.py should look similar to:\n\
+                     \n  from setuptools import setup\n  setup(\n      name=\"your-project-name\",\n      version=\"0.0\",\n      install_requires=[...]\n  )".to_string()
                 }
                 PythonParserError::UnsupportedDataTypeError { field_name, type_name } => {
                     format!(
