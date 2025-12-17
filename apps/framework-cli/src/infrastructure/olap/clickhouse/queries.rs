@@ -603,7 +603,7 @@ impl ClickhouseEngine {
             // Check if the first param looks like a keeper path (contains '/') or a column name
             // Keeper paths look like: /clickhouse/tables/{uuid}/{shard}
             // Column names are simple identifiers: version_col, is_deleted, etc.
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
             if first_param_is_path {
                 // Format: (path, replica [, ver [, is_deleted]])
@@ -655,7 +655,7 @@ impl ClickhouseEngine {
             }
 
             // Check if first param looks like a path (contains '/') or a column name
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
             if first_param_is_path {
                 // Format: (path, replica [, ver [, is_deleted]]) - ClickHouse Cloud internal format
@@ -748,9 +748,9 @@ impl ClickhouseEngine {
             }
 
             // Check if first param looks like a path (contains '/')
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
-            if first_param_is_path && params.len() >= 2 {
+            if first_param_is_path && params.len() == 2 {
                 // Format: (path, replica) - ClickHouse Cloud internal format
                 // SharedMergeTree normalizes to MergeTree
                 Ok(ClickhouseEngine::MergeTree)
@@ -812,9 +812,9 @@ impl ClickhouseEngine {
             }
 
             // Check if first param looks like a path (contains '/')
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
-            if first_param_is_path && params.len() >= 2 {
+            if first_param_is_path && params.len() == 2 {
                 // Format: (path, replica) - ClickHouse Cloud internal format
                 // SharedAggregatingMergeTree normalizes to AggregatingMergeTree
                 Ok(ClickhouseEngine::AggregatingMergeTree)
@@ -852,7 +852,7 @@ impl ClickhouseEngine {
             // Check if the first param looks like a keeper path (contains '/') or a column name
             // Keeper paths look like: /clickhouse/tables/{uuid}/{shard}
             // Column names are simple identifiers: amount, total_value, etc.
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
             if first_param_is_path {
                 // Format: (path, replica [, columns...])
@@ -901,7 +901,7 @@ impl ClickhouseEngine {
             }
 
             // Check if first param looks like a path (contains '/') or a column name
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
             if first_param_is_path {
                 // Format: (path, replica [, columns...]) - ClickHouse Cloud internal format
@@ -982,7 +982,7 @@ impl ClickhouseEngine {
             }
 
             // Check if first param looks like a path (contains '/')
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
             if params.len() == 1 {
                 if first_param_is_path {
@@ -1032,7 +1032,7 @@ impl ClickhouseEngine {
             }
 
             // Check if first param looks like a path (contains '/')
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
             if params.len() == 2 {
                 if first_param_is_path {
@@ -1076,7 +1076,7 @@ impl ClickhouseEngine {
             }
 
             // Check if first param looks like a path (contains '/')
-            let first_param_is_path = params.first().map(|p| p.contains('/')).unwrap_or(false);
+            let first_param_is_path = params.first().map(|p| p.starts_with('/')).unwrap_or(false);
 
             if params.len() == 2 {
                 if first_param_is_path {
