@@ -1,11 +1,75 @@
 //! Utilities for interacting with npm.
 
-use std::{fmt, path::PathBuf, process::Command};
+use std::{cmp::Ordering, fmt, path::Path, path::PathBuf, process::Command};
 
 use home::home_dir;
 use tracing::{debug, error};
 
 use crate::utilities::constants::{PACKAGE_LOCK_JSON, PNPM_LOCK, YARN_LOCK};
+
+/// A parsed pnpm version for semantic comparison.
+///
+/// Stores major, minor, and patch components separately to enable
+/// proper version comparisons (e.g., v10 >= v9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PnpmVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+}
+
+impl PnpmVersion {
+    /// The minimum version that supports modern `pnpm deploy` without `--legacy`.
+    pub const V10: PnpmVersion = PnpmVersion {
+        major: 10,
+        minor: 0,
+        patch: 0,
+    };
+
+    /// Creates a new PnpmVersion.
+    pub fn new(major: u32, minor: u32, patch: u32) -> Self {
+        Self {
+            major,
+            minor,
+            patch,
+        }
+    }
+
+    /// Parses a version string like "10.24.0" into a PnpmVersion.
+    ///
+    /// Returns None if the string cannot be parsed.
+    pub fn parse(version: &str) -> Option<Self> {
+        let parts: Vec<&str> = version.trim().split('.').collect();
+
+        let major = parts.first()?.parse().ok()?;
+        let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let patch = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        Some(Self {
+            major,
+            minor,
+            patch,
+        })
+    }
+}
+
+impl PartialOrd for PnpmVersion {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PnpmVersion {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.major, self.minor, self.patch).cmp(&(other.major, other.minor, other.patch))
+    }
+}
+
+impl fmt::Display for PnpmVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
 
 pub fn get_root() -> Result<PathBuf, std::io::Error> {
     let result = Command::new("npm").arg("root").arg("-g").output()?;
@@ -40,6 +104,60 @@ pub enum PackageManager {
     Pnpm,
 }
 
+/// Gets the installed pnpm version by running `pnpm --version`.
+///
+/// # Returns
+///
+/// * `Option<PnpmVersion>` - The parsed version or None if pnpm is not installed or version cannot be parsed
+pub fn get_pnpm_version() -> Option<PnpmVersion> {
+    let output = Command::new("pnpm").arg("--version").output().ok()?;
+
+    if !output.status.success() {
+        debug!("pnpm --version failed");
+        return None;
+    }
+
+    let version_str = String::from_utf8(output.stdout).ok()?;
+    let version = PnpmVersion::parse(&version_str)?;
+    debug!("Detected pnpm version: {}", version);
+    Some(version)
+}
+
+/// Checks if the pnpm version supports modern deploy (v10+).
+///
+/// # Arguments
+///
+/// * `version` - The parsed pnpm version
+///
+/// # Returns
+///
+/// * `bool` - True if version is >= 10.0.0
+pub fn is_pnpm_version_supported(version: &PnpmVersion) -> bool {
+    *version >= PnpmVersion::V10
+}
+
+/// Checks local pnpm version and returns a warning message if < v10.
+///
+/// This is separate from deploy mode detection because local pnpm version
+/// doesn't affect Docker builds (which use pnpm@latest), but we still want
+/// to inform users they should upgrade for local development benefits.
+///
+/// # Returns
+///
+/// * `Option<String>` - Warning message if local pnpm is < v10, None otherwise
+pub fn check_local_pnpm_version_warning() -> Option<String> {
+    let version = get_pnpm_version()?;
+    if !is_pnpm_version_supported(&version) {
+        Some(format!(
+            "Local pnpm v{} detected. Consider upgrading to v10+ for improved local development experience. \
+Docker builds use pnpm@latest regardless of local version.",
+            version
+        ))
+    } else {
+        None
+    }
+}
+
 impl fmt::Display for PackageManager {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -47,6 +165,28 @@ impl fmt::Display for PackageManager {
             PackageManager::Pnpm => write!(f, "pnpm"),
         }
     }
+}
+
+/// Determines how pnpm deploy should be invoked for Docker builds.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PnpmDeployMode {
+    /// Use modern `pnpm deploy` which respects the lockfile
+    Modern,
+    /// Use `pnpm deploy --legacy` which re-resolves dependencies
+    Legacy(LegacyReason),
+}
+
+/// Reason why legacy pnpm deploy mode is required.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LegacyReason {
+    /// .npmrc doesn't have inject-workspace-packages=true
+    NpmrcMissingSetting,
+    /// .npmrc has the setting, but lockfile wasn't regenerated with it
+    LockfileMissingSetting,
+    /// Lockfile has the setting but .npmrc doesn't (inconsistent state)
+    LockfileHasButNpmrcMissing,
+    /// Not in a pnpm workspace at all
+    NotPnpmWorkspace,
 }
 
 pub fn install_packages(
@@ -258,8 +398,795 @@ pub fn get_lock_file_path(project_dir: &PathBuf) -> Option<PathBuf> {
     None
 }
 
+/// Checks if .npmrc has inject-workspace-packages=true setting.
+///
+/// This setting is required for modern `pnpm deploy` to work correctly
+/// with lockfile respect in monorepo builds.
+///
+/// # Arguments
+///
+/// * `workspace_root` - Path to the workspace root directory
+///
+/// # Returns
+///
+/// * `bool` - True if the setting is present and set to true
+pub fn has_inject_workspace_packages_in_npmrc(workspace_root: &Path) -> bool {
+    let npmrc_path = workspace_root.join(".npmrc");
+
+    if !npmrc_path.exists() {
+        debug!("No .npmrc found at {:?}", npmrc_path);
+        return false;
+    }
+
+    match std::fs::read_to_string(&npmrc_path) {
+        Ok(content) => {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                // Skip comments
+                if trimmed.starts_with('#') || trimmed.starts_with(';') {
+                    continue;
+                }
+                // Check for the setting (handle various formats)
+                if trimmed.starts_with("inject-workspace-packages") {
+                    // Parse the value - could be =true, = true, =TRUE, etc.
+                    if let Some(value) = trimmed.split('=').nth(1) {
+                        let value = value.trim().to_lowercase();
+                        if value == "true" {
+                            debug!("Found inject-workspace-packages=true in .npmrc");
+                            return true;
+                        }
+                    }
+                }
+            }
+            debug!("inject-workspace-packages=true not found in .npmrc");
+            false
+        }
+        Err(e) => {
+            debug!("Failed to read .npmrc: {}", e);
+            false
+        }
+    }
+}
+
+/// Checks if pnpm-lock.yaml has injectWorkspacePackages: true in settings.
+///
+/// The lockfile stores the settings that were active when it was generated.
+/// If .npmrc has inject-workspace-packages=true but the lockfile doesn't
+/// have this setting, the lockfile needs to be regenerated.
+///
+/// # Arguments
+///
+/// * `workspace_root` - Path to the workspace root directory
+///
+/// # Returns
+///
+/// * `bool` - True if the lockfile has injectWorkspacePackages: true
+pub fn has_inject_workspace_packages_in_lockfile(workspace_root: &Path) -> bool {
+    let lockfile_path = workspace_root.join(PNPM_LOCK);
+
+    if !lockfile_path.exists() {
+        debug!("No pnpm-lock.yaml found at {:?}", lockfile_path);
+        return false;
+    }
+
+    match std::fs::read_to_string(&lockfile_path) {
+        Ok(content) => {
+            // Simple line-based parsing to find injectWorkspacePackages: true
+            // in the settings section. This avoids adding a YAML parsing dependency.
+            let mut in_settings = false;
+
+            for line in content.lines() {
+                let trimmed = line.trim();
+
+                // Track when we enter/exit settings section
+                if trimmed == "settings:" {
+                    in_settings = true;
+                    continue;
+                }
+
+                // Exit settings section when we hit another top-level key
+                if in_settings
+                    && !line.starts_with(' ')
+                    && !line.starts_with('\t')
+                    && !trimmed.is_empty()
+                {
+                    in_settings = false;
+                }
+
+                // Look for the setting within settings section
+                if in_settings && trimmed.starts_with("injectWorkspacePackages:") {
+                    if let Some(value) = trimmed.split(':').nth(1) {
+                        let value = value.trim().to_lowercase();
+                        if value == "true" {
+                            debug!("Found injectWorkspacePackages: true in pnpm-lock.yaml");
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            debug!("injectWorkspacePackages: true not found in pnpm-lock.yaml settings");
+            false
+        }
+        Err(e) => {
+            debug!("Failed to read pnpm-lock.yaml: {}", e);
+            false
+        }
+    }
+}
+
+/// Finds the pnpm workspace root by searching up the directory tree.
+///
+/// Looks for pnpm-workspace.yaml file starting from the given directory
+/// and traversing up to parent directories.
+///
+/// # Arguments
+///
+/// * `start_dir` - Directory to start searching from
+///
+/// # Returns
+///
+/// * `Option<PathBuf>` - Path to workspace root if found
+pub fn find_pnpm_workspace_root(start_dir: &Path) -> Option<PathBuf> {
+    let mut current_dir = start_dir.to_path_buf();
+
+    loop {
+        let workspace_file = current_dir.join("pnpm-workspace.yaml");
+        if workspace_file.exists() {
+            debug!("Found pnpm-workspace.yaml at: {:?}", current_dir);
+            return Some(current_dir);
+        }
+
+        match current_dir.parent() {
+            Some(parent) => current_dir = parent.to_path_buf(),
+            None => break,
+        }
+    }
+
+    debug!(
+        "No pnpm-workspace.yaml found starting from: {:?}",
+        start_dir
+    );
+    None
+}
+
+/// Detects whether to use modern or legacy pnpm deploy for Docker builds.
+///
+/// Modern `pnpm deploy` respects the lockfile but requires:
+/// 1. `inject-workspace-packages=true` in .npmrc
+/// 2. The lockfile to be generated with that setting active
+///
+/// If either condition is not met, falls back to legacy mode which
+/// re-resolves dependencies (non-deterministic).
+///
+/// Note: This function does NOT check local pnpm version because Docker builds
+/// use pnpm@latest regardless of what's installed locally. Use
+/// `check_local_pnpm_version_warning()` separately if you want to warn users
+/// about their local pnpm version.
+///
+/// # Arguments
+///
+/// * `project_dir` - Path to the project directory (will search up for workspace root)
+///
+/// # Returns
+///
+/// * `PnpmDeployMode` - Modern or Legacy with reason
+pub fn detect_pnpm_deploy_mode(project_dir: &Path) -> PnpmDeployMode {
+    // Check if we're in a pnpm workspace
+    let workspace_root = match find_pnpm_workspace_root(project_dir) {
+        Some(root) => root,
+        None => {
+            debug!("Not in a pnpm workspace");
+            return PnpmDeployMode::Legacy(LegacyReason::NotPnpmWorkspace);
+        }
+    };
+
+    let npmrc_has_setting = has_inject_workspace_packages_in_npmrc(&workspace_root);
+    let lockfile_has_setting = has_inject_workspace_packages_in_lockfile(&workspace_root);
+
+    match (npmrc_has_setting, lockfile_has_setting) {
+        (true, true) => {
+            debug!("Both .npmrc and lockfile have inject-workspace-packages - using modern deploy");
+            PnpmDeployMode::Modern
+        }
+        (true, false) => {
+            debug!(".npmrc has setting but lockfile doesn't - lockfile needs regeneration");
+            PnpmDeployMode::Legacy(LegacyReason::LockfileMissingSetting)
+        }
+        (false, true) => {
+            debug!("Lockfile has setting but .npmrc doesn't - inconsistent state");
+            PnpmDeployMode::Legacy(LegacyReason::LockfileHasButNpmrcMissing)
+        }
+        (false, false) => {
+            debug!("Neither .npmrc nor lockfile have inject-workspace-packages setting");
+            PnpmDeployMode::Legacy(LegacyReason::NpmrcMissingSetting)
+        }
+    }
+}
+
+/// Generates a condensed single-line warning message for terminal display.
+///
+/// This is a shorter version of `legacy_deploy_warning_message` suitable for
+/// terminal output where multi-line messages would be disruptive.
+///
+/// # Arguments
+///
+/// * `reason` - The reason legacy mode is being used
+///
+/// # Returns
+///
+/// * `String` - Single-line warning message
+pub fn legacy_deploy_terminal_message(reason: &LegacyReason) -> String {
+    match reason {
+        LegacyReason::NotPnpmWorkspace => {
+            "Not in a pnpm workspace - using legacy pnpm deploy".to_string()
+        }
+        _ => "Using legacy pnpm deploy - add `inject-workspace-packages=true` to .npmrc and run `pnpm install`".to_string(),
+    }
+}
+
+/// Returns the pnpm deploy flag based on deploy mode.
+///
+/// Modern mode uses no flag. Legacy mode uses `--legacy` flag.
+/// Since Docker builds use pnpm@latest (v10+), the `--legacy` flag is always supported.
+///
+/// # Arguments
+///
+/// * `mode` - The detected pnpm deploy mode
+///
+/// # Returns
+///
+/// * `&'static str` - The flag to append to `pnpm deploy` command ("" or " --legacy")
+pub fn get_pnpm_deploy_flag(mode: &PnpmDeployMode) -> &'static str {
+    match mode {
+        PnpmDeployMode::Modern => "",
+        PnpmDeployMode::Legacy(_) => " --legacy",
+    }
+}
+
+/// Generates a diagnostic warning message for legacy pnpm deploy mode.
+///
+/// Returns a multi-line message explaining what was detected and how to fix it.
+///
+/// # Arguments
+///
+/// * `reason` - The reason legacy mode is being used
+///
+/// # Returns
+///
+/// * `String` - Formatted warning message
+pub fn legacy_deploy_warning_message(reason: &LegacyReason) -> String {
+    let detected = match reason {
+        LegacyReason::NpmrcMissingSetting => ".npmrc missing `inject-workspace-packages=true`",
+        LegacyReason::LockfileMissingSetting => {
+            ".npmrc has `inject-workspace-packages=true` but lockfile was not regenerated"
+        }
+        LegacyReason::LockfileHasButNpmrcMissing => {
+            "lockfile has inject setting but .npmrc doesn't - inconsistent state"
+        }
+        LegacyReason::NotPnpmWorkspace => "not in a pnpm workspace (no pnpm-workspace.yaml found)",
+    };
+
+    format!(
+        r#"Using legacy pnpm deploy - Docker builds may not respect your lockfile.
+
+Detected: {}
+
+To fix:
+  1. Add `inject-workspace-packages=true` to your .npmrc
+  2. Run `pnpm install` to regenerate your lockfile"#,
+        detected
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_pnpm_deploy_mode_default() {
+        use super::*;
+        // Test that we can create the enum variants
+        let modern = PnpmDeployMode::Modern;
+        let legacy = PnpmDeployMode::Legacy(LegacyReason::NpmrcMissingSetting);
+
+        assert_eq!(modern, PnpmDeployMode::Modern);
+        assert!(matches!(legacy, PnpmDeployMode::Legacy(_)));
+    }
+
+    #[test]
+    fn test_npmrc_no_file() {
+        use super::*;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_empty_file() {
+        use super::*;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_present() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_case_insensitive() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // TRUE
+        let dir1 = tempdir().unwrap();
+        let mut file1 = std::fs::File::create(dir1.path().join(".npmrc")).unwrap();
+        writeln!(file1, "inject-workspace-packages=TRUE").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir1.path()));
+
+        // True
+        let dir2 = tempdir().unwrap();
+        let mut file2 = std::fs::File::create(dir2.path().join(".npmrc")).unwrap();
+        writeln!(file2, "inject-workspace-packages=True").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir2.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_explicit_false() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "inject-workspace-packages=false").unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_absent() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "some-other-setting=value").unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_hash_comment_ignored() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Per npmrc docs: Lines beginning with # are comments
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "# inject-workspace-packages=true").unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_semicolon_comment_ignored() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Per npmrc docs: Lines beginning with ; are comments
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "; inject-workspace-packages=true").unwrap();
+        assert!(!has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_after_comments() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Real-world .npmrc with comments followed by settings
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "# last modified: 01 Jan 2024").unwrap();
+        writeln!(file, "; Enable workspace package injection").unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_npmrc_setting_among_multiple_settings() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let mut file = std::fs::File::create(dir.path().join(".npmrc")).unwrap();
+        writeln!(file, "shamefully-hoist=true").unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+        writeln!(file, "strict-peer-dependencies=false").unwrap();
+        assert!(has_inject_workspace_packages_in_npmrc(dir.path()));
+    }
+
+    #[test]
+    fn test_has_inject_workspace_packages_in_lockfile() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Test with setting present in lockfile
+        let dir = tempdir().unwrap();
+        let lockfile_path = dir.path().join("pnpm-lock.yaml");
+        let mut file = std::fs::File::create(&lockfile_path).unwrap();
+        writeln!(
+            file,
+            r#"lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
+
+importers:
+  .: {{}}"#
+        )
+        .unwrap();
+
+        assert!(has_inject_workspace_packages_in_lockfile(dir.path()));
+
+        // Test with setting absent
+        let dir2 = tempdir().unwrap();
+        let lockfile_path2 = dir2.path().join("pnpm-lock.yaml");
+        let mut file2 = std::fs::File::create(&lockfile_path2).unwrap();
+        writeln!(
+            file2,
+            r#"lockfileVersion: '9.0'
+settings:
+  autoInstallPeers: true
+
+importers:
+  .: {{}}"#
+        )
+        .unwrap();
+
+        assert!(!has_inject_workspace_packages_in_lockfile(dir2.path()));
+
+        // Test with no lockfile
+        let dir3 = tempdir().unwrap();
+        assert!(!has_inject_workspace_packages_in_lockfile(dir3.path()));
+    }
+
+    #[test]
+    fn test_find_pnpm_workspace_root() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Create a mock monorepo structure
+        let dir = tempdir().unwrap();
+        let workspace_root = dir.path();
+
+        // Create pnpm-workspace.yaml at root
+        let workspace_yaml = workspace_root.join("pnpm-workspace.yaml");
+        let mut file = std::fs::File::create(&workspace_yaml).unwrap();
+        writeln!(file, "packages:\n  - 'apps/*'").unwrap();
+
+        // Create a nested project directory
+        let project_dir = workspace_root.join("apps").join("my-project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+
+        // Should find workspace root from project dir
+        let found = find_pnpm_workspace_root(&project_dir);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap(), workspace_root);
+
+        // Should find workspace root from root itself
+        let found_from_root = find_pnpm_workspace_root(workspace_root);
+        assert!(found_from_root.is_some());
+        assert_eq!(found_from_root.unwrap(), workspace_root);
+
+        // Should return None for directory without workspace
+        let unrelated_dir = tempdir().unwrap();
+        let not_found = find_pnpm_workspace_root(unrelated_dir.path());
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_not_workspace() {
+        use super::*;
+        use tempfile::tempdir;
+
+        // No workspace = NotPnpmWorkspace
+        // Note: local pnpm version doesn't affect deploy mode detection
+        let dir = tempdir().unwrap();
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(
+            result,
+            PnpmDeployMode::Legacy(LegacyReason::NotPnpmWorkspace)
+        );
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_npmrc_missing() {
+        use super::*;
+        use tempfile::tempdir;
+
+        // Workspace exists but no .npmrc
+        let dir = tempdir().unwrap();
+        let workspace_yaml = dir.path().join("pnpm-workspace.yaml");
+        std::fs::File::create(&workspace_yaml).unwrap();
+
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(
+            result,
+            PnpmDeployMode::Legacy(LegacyReason::NpmrcMissingSetting)
+        );
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_lockfile_missing_setting() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Workspace + .npmrc with setting, but lockfile without setting
+        let dir = tempdir().unwrap();
+
+        let workspace_yaml = dir.path().join("pnpm-workspace.yaml");
+        std::fs::File::create(&workspace_yaml).unwrap();
+
+        let npmrc = dir.path().join(".npmrc");
+        let mut file = std::fs::File::create(&npmrc).unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+
+        let lockfile = dir.path().join("pnpm-lock.yaml");
+        let mut file = std::fs::File::create(&lockfile).unwrap();
+        writeln!(file, "lockfileVersion: '9.0'\nimporters:\n  .: {{}}").unwrap();
+
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(
+            result,
+            PnpmDeployMode::Legacy(LegacyReason::LockfileMissingSetting)
+        );
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_modern() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Full proper configuration
+        let dir = tempdir().unwrap();
+
+        let workspace_yaml = dir.path().join("pnpm-workspace.yaml");
+        std::fs::File::create(&workspace_yaml).unwrap();
+
+        let npmrc = dir.path().join(".npmrc");
+        let mut file = std::fs::File::create(&npmrc).unwrap();
+        writeln!(file, "inject-workspace-packages=true").unwrap();
+
+        let lockfile = dir.path().join("pnpm-lock.yaml");
+        let mut file = std::fs::File::create(&lockfile).unwrap();
+        writeln!(
+            file,
+            "lockfileVersion: '9.0'\nsettings:\n  injectWorkspacePackages: true\nimporters:\n  .: {{}}"
+        )
+        .unwrap();
+
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(result, PnpmDeployMode::Modern);
+    }
+
+    #[test]
+    fn test_detect_pnpm_deploy_mode_lockfile_has_but_npmrc_missing() {
+        use super::*;
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        // Edge case: lockfile has setting but .npmrc doesn't
+        let dir = tempdir().unwrap();
+
+        let workspace_yaml = dir.path().join("pnpm-workspace.yaml");
+        std::fs::File::create(&workspace_yaml).unwrap();
+
+        // .npmrc without the setting
+        let npmrc = dir.path().join(".npmrc");
+        let mut file = std::fs::File::create(&npmrc).unwrap();
+        writeln!(file, "some-other=setting").unwrap();
+
+        let lockfile = dir.path().join("pnpm-lock.yaml");
+        let mut file = std::fs::File::create(&lockfile).unwrap();
+        writeln!(
+            file,
+            "lockfileVersion: '9.0'\nsettings:\n  injectWorkspacePackages: true\nimporters:\n  .: {{}}"
+        )
+        .unwrap();
+
+        let result = detect_pnpm_deploy_mode(dir.path());
+        assert_eq!(
+            result,
+            PnpmDeployMode::Legacy(LegacyReason::LockfileHasButNpmrcMissing)
+        );
+    }
+
+    #[test]
+    fn test_legacy_deploy_warning_message() {
+        use super::*;
+
+        // Test each reason produces appropriate message
+        let msg1 = legacy_deploy_warning_message(&LegacyReason::NpmrcMissingSetting);
+        assert!(msg1.contains(".npmrc missing"));
+        assert!(msg1.contains("inject-workspace-packages=true"));
+
+        let msg2 = legacy_deploy_warning_message(&LegacyReason::LockfileMissingSetting);
+        assert!(msg2.contains("lockfile was not regenerated"));
+
+        let msg3 = legacy_deploy_warning_message(&LegacyReason::LockfileHasButNpmrcMissing);
+        assert!(msg3.contains("inconsistent"));
+
+        let msg4 = legacy_deploy_warning_message(&LegacyReason::NotPnpmWorkspace);
+        assert!(msg4.contains("not in a pnpm workspace"));
+    }
+
+    #[test]
+    fn test_pnpm_version_parse() {
+        use super::*;
+
+        // Standard version strings
+        let v = PnpmVersion::parse("10.24.0").unwrap();
+        assert_eq!(v.major, 10);
+        assert_eq!(v.minor, 24);
+        assert_eq!(v.patch, 0);
+
+        // Version with trailing whitespace (from command output)
+        let v = PnpmVersion::parse("9.15.0\n").unwrap();
+        assert_eq!(v.major, 9);
+        assert_eq!(v.minor, 15);
+        assert_eq!(v.patch, 0);
+
+        // Major only
+        let v = PnpmVersion::parse("10").unwrap();
+        assert_eq!(v.major, 10);
+        assert_eq!(v.minor, 0);
+        assert_eq!(v.patch, 0);
+
+        // Major.minor only
+        let v = PnpmVersion::parse("10.5").unwrap();
+        assert_eq!(v.major, 10);
+        assert_eq!(v.minor, 5);
+        assert_eq!(v.patch, 0);
+
+        // Unparseable versions return None
+        assert!(PnpmVersion::parse("invalid").is_none());
+        assert!(PnpmVersion::parse("").is_none());
+    }
+
+    #[test]
+    fn test_pnpm_version_display() {
+        use super::*;
+
+        let v = PnpmVersion::new(10, 24, 3);
+        assert_eq!(format!("{}", v), "10.24.3");
+
+        assert_eq!(format!("{}", PnpmVersion::V10), "10.0.0");
+    }
+
+    #[test]
+    fn test_pnpm_version_comparison() {
+        use super::*;
+
+        // Equal versions
+        assert_eq!(PnpmVersion::new(10, 0, 0), PnpmVersion::V10);
+
+        // Greater than
+        assert!(PnpmVersion::new(10, 0, 1) > PnpmVersion::V10);
+        assert!(PnpmVersion::new(10, 1, 0) > PnpmVersion::V10);
+        assert!(PnpmVersion::new(11, 0, 0) > PnpmVersion::V10);
+
+        // Less than
+        assert!(PnpmVersion::new(9, 99, 99) < PnpmVersion::V10);
+        assert!(PnpmVersion::new(9, 0, 0) < PnpmVersion::V10);
+    }
+
+    #[test]
+    fn test_is_pnpm_version_supported() {
+        use super::*;
+
+        // v10+ should be supported
+        assert!(is_pnpm_version_supported(&PnpmVersion::new(10, 0, 0)));
+        assert!(is_pnpm_version_supported(&PnpmVersion::new(10, 24, 0)));
+        assert!(is_pnpm_version_supported(&PnpmVersion::new(11, 0, 0)));
+        assert!(is_pnpm_version_supported(&PnpmVersion::new(15, 3, 2)));
+
+        // v9 and below should not be supported
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(9, 0, 0)));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(9, 15, 0)));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(8, 0, 0)));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(7, 33, 0)));
+        assert!(!is_pnpm_version_supported(&PnpmVersion::new(1, 0, 0)));
+    }
+
+    #[test]
+    fn test_legacy_deploy_terminal_message() {
+        use super::*;
+
+        // Config-related reasons get the same generic message
+        let msg1 = legacy_deploy_terminal_message(&LegacyReason::NpmrcMissingSetting);
+        assert!(msg1.contains("inject-workspace-packages=true"));
+        assert!(msg1.contains(".npmrc"));
+        assert!(!msg1.contains('\n')); // Should be single line
+
+        let msg2 = legacy_deploy_terminal_message(&LegacyReason::LockfileMissingSetting);
+        assert_eq!(msg2, msg1); // Same message for config-related reasons
+
+        let msg3 = legacy_deploy_terminal_message(&LegacyReason::LockfileHasButNpmrcMissing);
+        assert_eq!(msg3, msg1);
+
+        // NotPnpmWorkspace has its own message
+        let msg4 = legacy_deploy_terminal_message(&LegacyReason::NotPnpmWorkspace);
+        assert!(msg4.contains("Not in a pnpm workspace"));
+        assert!(!msg4.contains('\n')); // Should be single line
+    }
+
+    #[test]
+    fn test_get_pnpm_deploy_flag() {
+        use super::*;
+
+        // Modern mode - no flag
+        assert_eq!(get_pnpm_deploy_flag(&PnpmDeployMode::Modern), "");
+
+        // All legacy reasons use --legacy flag (Docker uses pnpm@latest which supports it)
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(LegacyReason::NpmrcMissingSetting)),
+            " --legacy"
+        );
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(
+                LegacyReason::LockfileMissingSetting
+            )),
+            " --legacy"
+        );
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(
+                LegacyReason::LockfileHasButNpmrcMissing
+            )),
+            " --legacy"
+        );
+        assert_eq!(
+            get_pnpm_deploy_flag(&PnpmDeployMode::Legacy(LegacyReason::NotPnpmWorkspace)),
+            " --legacy"
+        );
+    }
+
+    #[test]
+    fn test_check_local_pnpm_version_warning() {
+        use super::*;
+
+        // This test verifies the function runs without panicking.
+        // The actual result depends on the local pnpm version.
+        let result = check_local_pnpm_version_warning();
+
+        // If we get a warning, verify it contains expected content
+        if let Some(warning) = result {
+            assert!(warning.contains("pnpm"));
+            assert!(warning.contains("Docker"));
+        }
+        // If no warning, that means local pnpm is >= v10 (or not installed)
+    }
+
     #[test]
     fn test_output_of_command() -> Result<(), std::io::Error> {
         //! Test to demonstrate the use of command and output handling

@@ -1097,6 +1097,9 @@ async fn log_route(
                     MessageType::Error => {
                         error!("{}: {}", message.action, message.details);
                     }
+                    MessageType::Warning => {
+                        warn!("{}: {}", message.action, message.details);
+                    }
                     MessageType::Success | MessageType::Info | MessageType::Highlight => {
                         info!("{}: {}", message.action, message.details);
                     }

@@ -439,6 +439,8 @@ def main():
     # Shared state for metrics and control
     running = threading.Event()
     running.set()  # Start in running state
+    # Signal fatal errors across threads using Event (thread-safe)
+    fatal_error = threading.Event()
     metrics = {"count_in": 0, "count_out": 0, "bytes_count": 0}
     metrics_lock = threading.Lock()
 
@@ -612,6 +614,11 @@ def main():
                     # Add a small delay before retrying on error
                     time.sleep(1)
 
+        except Exception as e:
+            log(f"Fatal error in processing thread: {e}")
+            traceback.print_exc()
+            fatal_error.set()
+
         finally:
             # Cleanup Kafka resources
             try:
@@ -650,6 +657,17 @@ def main():
         # Main thread waits for threads to complete
         while running.is_set():
             time.sleep(1)
+
+            if not processing_thread.is_alive() and running.is_set():
+                log("Processing thread died unexpectedly!")
+                fatal_error.set()
+                break
+
+    except Exception as e:
+        log(f"Unexpected error in main loop: {e}")
+        traceback.print_exc()
+        fatal_error.set()
+
     finally:
         # Ensure cleanup happens even if main thread gets interrupted
         running.clear()
@@ -661,8 +679,10 @@ def main():
 
         if metrics_thread.is_alive():
             log("Metrics thread did not exit cleanly")
+            fatal_error.set()
         if processing_thread.is_alive():
             log("Processing thread did not exit cleanly")
+            fatal_error.set()
 
         # Clean up Kafka resources regardless of thread state
         if kafka_refs["consumer"]:
@@ -678,8 +698,9 @@ def main():
             except Exception as e:
                 log(f"Error closing producer: {e}")
 
-        log("Shutdown complete")
-        sys.exit(0)
+        exit_code = 1 if fatal_error.is_set() else 0
+        log(f"Shutdown complete with exit code {exit_code}")
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":
