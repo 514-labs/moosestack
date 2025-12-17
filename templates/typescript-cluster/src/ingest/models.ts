@@ -39,6 +39,13 @@ export interface TableE {
   timestamp: number;
 }
 
+/** Table in additional database with cluster */
+export interface TableF {
+  id: Key<string>;
+  metric: number;
+  timestamp: number;
+}
+
 /** OLAP Tables */
 
 // TableA: Uses cluster_a with ReplicatedMergeTree
@@ -74,4 +81,12 @@ export const tableE = new OlapTable<TableE>("TableE", {
   orderByFields: ["id"],
   engine: ClickHouseEngines.ReplicatedMergeTree,
   // No cluster, no keeperPath, no replicaName - Moose will auto-inject in dev
+});
+
+// TableF: In additional database with cluster
+export const tableF = new OlapTable<TableF>("TableF", {
+  orderByFields: ["id"],
+  engine: ClickHouseEngines.ReplicatedMergeTree,
+  cluster: "cluster_a",
+  database: "analytics",
 });
