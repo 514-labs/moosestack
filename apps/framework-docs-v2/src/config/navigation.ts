@@ -141,7 +141,6 @@ const moosestackNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
   },
   // Connect to an existing ClickHouse
-  { type: "separator" },
   {
     type: "page",
     slug: "moosestack/getting-started/from-clickhouse",
