@@ -120,8 +120,64 @@ impl PythonProject {
         let mut location = directory.to_path_buf();
         location.push(SETUP_PY);
 
-        get_project_from_file(&location)
-            .map_err(|_| ConfigError::Message("Failed to load Python project".to_string()))
+        // Check if setup.py exists first for a better error message
+        if !location.exists() {
+            return Err(ConfigError::Message(format!(
+                "Failed to load Python project: setup.py not found\n\n\
+                 Expected file location: {}\n\
+                 Project directory: {}\n\n\
+                 Python projects require a setup.py file in the project root directory.\n\
+                 This file should contain a setup() function call with at minimum a 'name' parameter.\n\n\
+                 To fix this issue:\n\
+                 1. Ensure you're running the command from the correct project directory\n\
+                 2. Create a setup.py file if it doesn't exist\n\
+                 3. Verify your project has the correct structure (app/ directory with Python files)\n\n\
+                 For more information, see: https://docs.fiveonefour.com/moose/getting-started/quickstart",
+                location.display(),
+                directory.display()
+            )));
+        }
+
+        get_project_from_file(&location).map_err(|e| {
+            // Provide detailed context based on the type of error
+            let error_details = match &e {
+                PythonParserError::FileNotFound { path } => {
+                    format!("File not found: {}", path.display())
+                }
+                PythonParserError::InvalidPythonFile => {
+                    format!(
+                        "Invalid Python syntax in setup.py or setup() function not found\n\n\
+                         Common causes:\n\
+                         - setup.py has syntax errors\n\
+                         - setup.py doesn't contain a setup() function call\n\
+                         - setup() call is missing the required 'name' parameter\n\n\
+                         Your setup.py should look similar to:\n\
+                         \n  from setuptools import setup\n  setup(\n      name=\"your-project-name\",\n      version=\"0.0\",\n      install_requires=[...]\n  )"
+                    )
+                }
+                PythonParserError::UnsupportedDataTypeError { field_name, type_name } => {
+                    format!(
+                        "Unsupported data type in field '{}': {}\n\
+                         This error typically occurs when parsing data model files, not setup.py",
+                        field_name, type_name
+                    )
+                }
+                _ => format!("Error details: {}", e),
+            };
+
+            ConfigError::Message(format!(
+                "Failed to load Python project from {}\n\n\
+                 {}\n\n\
+                 Additional information:\n\
+                 - Python version requirement: >={}\n\
+                 - Required files: setup.py, moose.config.toml\n\
+                 - Recommended files: requirements.txt\n\n\
+                 For more information, see: https://docs.fiveonefour.com/moose/getting-started/quickstart",
+                location.display(),
+                error_details,
+                PYTHON_MINIMUM_VERSION
+            ))
+        })
     }
 
     pub fn main_file(&self) -> &str {

@@ -43,28 +43,34 @@ use num_traits::cast::ToPrimitive;
 
 /// Represents possible errors that can occur during Python file parsing
 #[derive(Debug, Clone, thiserror::Error)]
-#[error("Failed to parse the python file")]
 #[non_exhaustive]
 pub enum PythonParserError {
     /// File could not be found at the specified path
+    #[error("Python file not found at path: {path}")]
     FileNotFound { path: PathBuf },
     /// Encountered an unsupported data type in a field
-    #[error("Python Parser - Unsupported data type in {field_name}: {type_name}")]
+    #[error("Unsupported data type in field '{field_name}': {type_name}\n\
+             Supported types: str, int, float, bool, datetime, list[T], Optional[T], Key[T], JWT[T], and custom classes/enums")]
     UnsupportedDataTypeError {
         field_name: String,
         type_name: String,
     },
     /// Error occurred while parsing a class definition
-    #[error("Python Parser - Error parsing class node: {message}")]
+    #[error("Error parsing class definition: {message}")]
     ClassParseError { message: String },
     /// Error occurred while parsing an enum definition
-    #[error("Python Parser - Error parsing enum node: {message}")]
+    #[error("Error parsing enum definition: {message}")]
     EnumParseError { message: String },
     /// The Python file is not valid according to the expected format
-    #[error("Python Parser - Invalid python file, please refer to the documentation for an example of a valid python file")]
+    #[error(
+        "Invalid Python file: syntax error or malformed structure\n\
+             The file must be valid Python code that can be parsed.\n\
+             For setup.py: must contain a setup() function call.\n\
+             For data models: must contain valid class definitions."
+    )]
     InvalidPythonFile,
     /// Generic parsing error with a custom message
-    #[error("Python Parser - Error parsing: {message}")]
+    #[error("Parsing error: {message}")]
     OtherError { message: String },
 }
 
