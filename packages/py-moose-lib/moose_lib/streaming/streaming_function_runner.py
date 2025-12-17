@@ -658,7 +658,7 @@ def main():
         while running.is_set():
             time.sleep(1)
 
-            if not processing_thread.is_alive():
+            if not processing_thread.is_alive() and running.is_set():
                 log("Processing thread died unexpectedly!")
                 fatal_error.set()
                 break
