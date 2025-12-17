@@ -4,7 +4,6 @@
 //! crate. It includes components for displaying styled text and managing
 //! terminal state during CLI operations.
 
-use crate::utilities::constants::SHOW_TIMESTAMPS;
 use crossterm::{
     execute,
     style::{
@@ -12,7 +11,6 @@ use crossterm::{
     },
 };
 use std::io::{stdout, Result as IoResult};
-use std::sync::atomic::Ordering;
 
 /// Width of the action column in terminal output
 pub const ACTION_WIDTH: usize = 15;
@@ -215,9 +213,10 @@ fn write_styled_line_to<W: std::io::Write>(
     styled_text: &StyledText,
     message: &str,
     no_ansi: bool,
+    show_timestamps: bool,
 ) -> IoResult<()> {
     // Prepend timestamp if enabled
-    if SHOW_TIMESTAMPS.load(Ordering::Relaxed) {
+    if show_timestamps {
         let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
         execute!(writer, Print(&format!("{} ", timestamp)))?;
     }
@@ -270,9 +269,14 @@ fn write_styled_line_to<W: std::io::Write>(
     Ok(())
 }
 
-pub fn write_styled_line(styled_text: &StyledText, message: &str, no_ansi: bool) -> IoResult<()> {
+pub fn write_styled_line(
+    styled_text: &StyledText,
+    message: &str,
+    no_ansi: bool,
+    show_timestamps: bool,
+) -> IoResult<()> {
     let mut stdout = stdout();
-    write_styled_line_to(&mut stdout, styled_text, message, no_ansi)
+    write_styled_line_to(&mut stdout, styled_text, message, no_ansi, show_timestamps)
 }
 
 #[cfg(test)]
@@ -357,7 +361,7 @@ mod tests {
         let styled = StyledText::from_str("Test").green().bold();
 
         // no_ansi = false means ANSI codes SHOULD be present
-        write_styled_line_to(&mut buffer, &styled, "test message", false).unwrap();
+        write_styled_line_to(&mut buffer, &styled, "test message", false, false).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         // Check for ANSI escape code prefix (\x1b[ or ESC[)
@@ -374,7 +378,7 @@ mod tests {
         let styled = StyledText::from_str("Test").green().bold();
 
         // no_ansi = true means ANSI codes should NOT be present
-        write_styled_line_to(&mut buffer, &styled, "test message", true).unwrap();
+        write_styled_line_to(&mut buffer, &styled, "test message", true, false).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         // Verify no ANSI escape codes
@@ -397,7 +401,7 @@ mod tests {
         let mut buffer = Vec::new();
         let styled = StyledText::from_str("Bold").bold();
 
-        write_styled_line_to(&mut buffer, &styled, "message", false).unwrap();
+        write_styled_line_to(&mut buffer, &styled, "message", false, false).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         // Bold is attribute 1, should see \x1b[1m
@@ -419,7 +423,7 @@ mod tests {
 
         for (name, styled) in test_cases {
             let mut buffer = Vec::new();
-            write_styled_line_to(&mut buffer, &styled, "message", true).unwrap();
+            write_styled_line_to(&mut buffer, &styled, "message", true, false).unwrap();
             let output = String::from_utf8(buffer).unwrap();
 
             assert!(
@@ -442,7 +446,7 @@ mod tests {
 
         for (name, styled) in test_cases {
             let mut buffer = Vec::new();
-            write_styled_line_to(&mut buffer, &styled, "message", false).unwrap();
+            write_styled_line_to(&mut buffer, &styled, "message", false, false).unwrap();
             let output = String::from_utf8(buffer).unwrap();
 
             assert!(

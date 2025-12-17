@@ -7,7 +7,7 @@ use super::{
     message::{Message, MessageType},
     terminal::{write_styled_line, StyledText},
 };
-use crate::utilities::constants::NO_ANSI;
+use crate::utilities::constants::{NO_ANSI, SHOW_TIMESTAMPS};
 use std::sync::atomic::Ordering;
 use tracing::info;
 
@@ -34,7 +34,8 @@ pub fn batch_inserted(count: usize, table_name: &str) {
         details: format!("{count} row(s) successfully written to DB table ({table_name})"),
     };
     let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-    let _ = show_message_impl(MessageType::Info, message, true, no_ansi);
+    let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
+    let _ = show_message_impl(MessageType::Info, message, true, no_ansi, show_timestamps);
 }
 
 /// Wrapper function for the show_message macro.
@@ -60,7 +61,8 @@ pub fn batch_inserted(count: usize, table_name: &str) {
 /// ```
 pub fn show_message_wrapper(message_type: MessageType, message: Message) {
     let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-    let _ = show_message_impl(message_type, message, false, no_ansi);
+    let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
+    let _ = show_message_impl(message_type, message, false, no_ansi, show_timestamps);
 }
 
 /// Internal implementation for the show_message macro.
@@ -74,6 +76,7 @@ pub fn show_message_wrapper(message_type: MessageType, message: Message) {
 /// * `message` - The message to display
 /// * `should_log` - Whether to log the message
 /// * `no_ansi` - If true, disable ANSI color codes and formatting
+/// * `show_timestamps` - If true, prepend HH:MM:SS.mmm timestamps to output
 ///
 /// # Returns
 ///
@@ -83,6 +86,7 @@ pub fn show_message_impl(
     message: Message,
     should_log: bool,
     no_ansi: bool,
+    show_timestamps: bool,
 ) -> std::io::Result<()> {
     let action = message.action.clone();
     let details = message.details.clone();
@@ -97,7 +101,7 @@ pub fn show_message_impl(
     };
 
     // Write styled prefix and details in one line
-    write_styled_line(&styled_prefix, &details, no_ansi)?;
+    write_styled_line(&styled_prefix, &details, no_ansi, show_timestamps)?;
 
     if should_log {
         let log_action = action.replace('\n', " ");
@@ -147,26 +151,30 @@ pub fn show_message_impl(
 macro_rules! show_message {
     ($message_type:expr, $message:expr) => {{
         use std::sync::atomic::Ordering;
-        use $crate::utilities::constants::NO_ANSI;
+        use $crate::utilities::constants::{NO_ANSI, SHOW_TIMESTAMPS};
         let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+        let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
         $crate::cli::display::message_display::show_message_impl(
             $message_type,
             $message,
             true,
             no_ansi,
+            show_timestamps,
         )
         .expect("failed to write message to terminal");
     }};
 
     ($message_type:expr, $message:expr, $no_log:expr) => {{
         use std::sync::atomic::Ordering;
-        use $crate::utilities::constants::NO_ANSI;
+        use $crate::utilities::constants::{NO_ANSI, SHOW_TIMESTAMPS};
         let no_ansi = NO_ANSI.load(Ordering::Relaxed);
+        let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
         $crate::cli::display::message_display::show_message_impl(
             $message_type,
             $message,
             false,
             no_ansi,
+            show_timestamps,
         )
         .expect("failed to write message to terminal");
     }};
