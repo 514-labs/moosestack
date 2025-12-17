@@ -49,6 +49,7 @@ export async function getMooseUtils(req?: any): Promise<MooseUtils> {
     return {
       client: runtimeContext.client,
       sql: sql,
+      jwt: runtimeContext.jwt,
     };
   }
 
@@ -78,6 +79,7 @@ export async function getMooseUtils(req?: any): Promise<MooseUtils> {
   standaloneUtils = {
     client: mooseClient,
     sql: sql,
+    jwt: undefined,
   };
 
   return standaloneUtils;

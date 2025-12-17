@@ -6,13 +6,7 @@
  */
 
 import Fastify from "fastify";
-import {
-  WebApp,
-  getMooseClients,
-  Api,
-  MooseCache,
-  sql,
-} from "@514labs/moose-lib";
+import { WebApp, getMooseUtils, Api, MooseCache } from "@514labs/moose-lib";
 import { BarAggregatedMV } from "../views/barAggregated";
 import { tags } from "typia";
 
@@ -33,7 +27,7 @@ app.get("/health", async (_request, _reply) => {
 });
 
 app.get("/query", async (request, reply) => {
-  const { client } = await getMooseClients();
+  const { client, sql } = await getMooseUtils();
   const limit = parseInt((request.query as any).limit as string) || 10;
 
   try {
@@ -72,7 +66,7 @@ interface PostDataBody {
 }
 
 app.post<{ Body: PostDataBody }>("/data", async (request, reply) => {
-  const { client } = await getMooseClients();
+  const { client, sql } = await getMooseUtils();
   const {
     orderBy = "totalRows",
     limit = 5,
