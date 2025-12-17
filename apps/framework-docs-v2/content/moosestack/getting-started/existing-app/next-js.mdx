@@ -11,10 +11,10 @@ import { Callout, FileTree, BulletPointsCard } from "@/components/mdx";
 
 This guide shows how to add MooseStack to an existing Next.js (App Router) app as a library. You keep Next.js as your app runtime, but you get ClickHouse schema management as TypeScript code, type-safe query helpers you can import into server-side handlers, and a production migration workflow—without deploying a separate backend service.
 
-### Intended audience
+#### Intended audience
 Developers with an existing Next.js app who want to **embed schema management + type-safe ClickHouse queries** without deploying a separate backend service.
 
-### What you’ll accomplish
+#### What you’ll accomplish
 
 By the end of this guide, you’ll be able to:
 
@@ -219,7 +219,7 @@ Create `tsconfig.moose.json` in your project root:
 }
 ```
 
-### Configure Next.js (server bundling)
+#### Configure Next.js (server bundling)
 
 Update `next.config.ts` to avoid bundling server-only dependencies:
 
@@ -234,7 +234,7 @@ const nextConfig = {
 export default nextConfig;
 ```
 
-### Create Moose config + environment variables
+#### Create Moose config + environment variables
 
 Create `moose.config.toml` in your project root:
 
@@ -291,7 +291,7 @@ Update `.gitignore` to exclude MooseStack generated files:
 
 ## Model table
 
-In this step you’ll define your first ClickHouse table model in TypeScript. MooseStack uses these models as the source of truth for schema management. Create a file called `moose/models/events.ts` with the following content:
+In this step you’ll define your first ClickHouse model as an `OlapTable` object. MooseStack uses these models as the source of truth for schema management. Create a file called `moose/models/events.ts` with the following content:
 
 ```ts title="moose/models/events.ts"
 import { OlapTable } from "@514labs/moose-lib";
@@ -319,7 +319,7 @@ export const Events = new OlapTable<EventModel>("events", {
 
 ## Start local ClickHouse
 
-Now start Moose in dev mode. This instantly brings up a local ClickHouse instance (via Docker) and automatically instantiates your models against it, giving you a fast loop for iterating on your schema.
+Now start the Moose Runtime in `dev` mode. This instantly brings up a local ClickHouse instance (via Docker) and automatically instantiates your models against it, giving you a fast feedback loop for iterating on your schema.
 
 Leave this running in its own terminal for the rest of the guide:
 
@@ -327,7 +327,7 @@ Leave this running in its own terminal for the rest of the guide:
 pnpm dev:moose
 ```
 
-As you update models and query helpers in `moose/`, Moose will apply schema changes and (based on your `moose.config.toml`) rebuild `dist/` after reload so Next.js can import the compiled output via `@/moose`.
+As you update models and query helpers in `moose/`, Moose will apply schema changes to this instance and (based on your `moose.config.toml`) rebuild `dist/` after reload so Next.js can import the compiled output via `@/moose`.
 
 ---
 
@@ -335,9 +335,11 @@ As you update models and query helpers in `moose/`, Moose will apply schema chan
 
 ## Write queries
 
-With the local ClickHouse instance running (step 3), you’ll set up a client and write type-safe query helpers that use your TypeScript models.
+This step is crucial to facilitate the interaction between your Next.js app and Clickhouse.
 
-### Create a ClickHouse client helper
+With the local ClickHouse instance running, you’ll instantiate the Moose ClickHouse client to connect to it. This is a singleton that will be used to connect to the ClickHouse instance for the duration of the application's lifecycle. You'll then leverage this client to write type-safe query helpers that use your `OlapTable` objects. 
+
+#### Create a ClickHouse client helper
 
 Create `moose/client.ts`:
 
@@ -370,9 +372,9 @@ export async function getMoose() {
 }
 ```
 
-### Create a query helper
+#### Create a query helper
 
-This is a helper funciton that uses the Moose ClickHouse client and your OlapTable models to facilitate the interaction between Moose and Clickhouse. Create a file called `moose/queries/overview-metrics.ts` with the following content:
+Create a file called `moose/queries/overview-metrics.ts` with the following content:
 
 ```ts title="moose/queries/overview-metrics.ts"
 import { sql } from "@514labs/moose-lib";
@@ -429,24 +431,24 @@ export const getOverviewMetrics = async (dateRange?: DateRange) => {
 };
 ```
 
-### Export from `moose/index.ts`
+#### Export from `moose/index.ts`
 
 ```ts title="moose/index.ts"
 export * from "./models/events";
-export * from "./queries/overview-metrics";
+export * from "./queries/overview-metrics"; // Add this line
 ```
 
 ---
 
 ## Use in Next Page
 
-Keep `pnpm dev:moose` running (step 3). In a second terminal, start your Next.js app:
+Keep `pnpm dev:moose` running. In a second terminal, start your Next.js app:
 
 ```bash title="Terminal" copy
 pnpm dev:next
 ```
 
-Now import and call your Moose query helper from a **Server Component**:
+Now import and call your Moose query helper from a **Server Component** in your Next.js app:
 
 ```typescript title="app/analytics/page.tsx"
 import { getOverviewMetrics } from "@/moose";
@@ -481,12 +483,12 @@ Do not call ClickHouse from the browser. Use Server Components, Route Handlers, 
 
 ## Deploy to Production
 
-In this setup, your Next.js app connects directly to ClickHouse—there’s no separate Moose Runtime service to deploy. You just need to:
+In this setup, your Next.js app connects directly to ClickHouse—there’s no separate production Moose Runtime to deploy. You just need to:
 
 1. Apply your schema to production ClickHouse
 2. Configure your Next.js production environment with production credentials
 
-### Enable planned migrations
+#### Enable planned migrations
 
 Add `ddl_plan = true` to `[features]` in `moose.config.toml`:
 
@@ -497,7 +499,7 @@ data_model_v2 = true
 ddl_plan = true
 ```
 
-### Generate a migration plan
+#### Generate a migration plan
 
 ```bash title="Terminal" copy
 pnpm moose generate migration \
@@ -507,14 +509,14 @@ pnpm moose generate migration \
 
 This creates files in `migrations/` including `plan.yaml`.
 
-### Apply the migration
+#### Apply the migration
 
 ```bash title="Terminal" copy
 pnpm moose migrate \
   --clickhouse-url "clickhouse://user:password@your-prod-host:8443/db?secure=true"
 ```
 
-### Configure production environment
+#### Configure production environment
 
 Set these in your deployment platform (Vercel, Railway, etc.):
 
