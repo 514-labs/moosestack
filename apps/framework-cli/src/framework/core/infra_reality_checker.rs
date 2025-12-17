@@ -123,6 +123,9 @@ fn sql_is_equivalent(sql1: &str, sql2: &str) -> bool {
 /// - Exactly one teardown statement starting with "DROP VIEW IF EXISTS"
 /// - Setup starts with "CREATE MATERIALIZED VIEW IF NOT EXISTS"
 /// - Setup contains " TO " clause
+///
+/// NOTE: This uses the same conversion logic as InfrastructureMap::try_migrate_sql_resource_to_mv
+/// to ensure consistency.
 fn materialized_view_from_sql_resource(
     sql_resource: &SqlResource,
     default_database: &str,
@@ -151,11 +154,12 @@ fn materialized_view_from_sql_resource(
     // Parse the CREATE MATERIALIZED VIEW statement
     let parsed = parse_create_materialized_view(setup_sql).ok()?;
 
-    // Convert source tables from Vec<TableReference> to Vec<String>
+    // Convert source tables - use .table (not qualified_name) for consistency
+    // with InfrastructureMap::try_migrate_sql_resource_to_mv
     let source_tables: Vec<String> = parsed
         .source_tables
         .iter()
-        .map(|t| t.qualified_name())
+        .map(|t| t.table.clone())
         .collect();
 
     Some(MaterializedView {
@@ -178,6 +182,9 @@ fn materialized_view_from_sql_resource(
 /// - Setup starts with "CREATE VIEW IF NOT EXISTS"
 /// - Setup does not contain "MATERIALIZED"
 /// - Setup contains " AS "
+///
+/// NOTE: This uses the same conversion logic as InfrastructureMap::try_migrate_sql_resource_to_custom_view
+/// to ensure consistency.
 fn custom_view_from_sql_resource(
     sql_resource: &SqlResource,
     default_database: &str,
@@ -212,11 +219,11 @@ fn custom_view_from_sql_resource(
     let as_pos = upper.find(" AS ")?;
     let select_sql = setup_sql[(as_pos + 4)..].trim().to_string();
 
-    // Extract source tables from the SELECT query
-    // Use regex fallback which handles default database
+    // Extract source tables - use .table (not qualified_name) for consistency
+    // with InfrastructureMap::try_migrate_sql_resource_to_custom_view
     let source_tables: Vec<String> =
         match extract_source_tables_from_query_regex(&select_sql, default_database) {
-            Ok(tables) => tables.iter().map(|t| t.qualified_name()).collect(),
+            Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
             Err(e) => {
                 debug!(
                     "Failed to extract source tables from view '{}' SELECT query: {}. \
