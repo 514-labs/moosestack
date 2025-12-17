@@ -23,7 +23,8 @@ use crate::{
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
     infrastructure::olap::{
-        clickhouse::sql_parser::parse_create_materialized_view, OlapChangesError, OlapOperations,
+        clickhouse::sql_parser::{normalize_sql_for_comparison, parse_create_materialized_view},
+        OlapChangesError, OlapOperations,
     },
     project::Project,
 };
@@ -99,20 +100,19 @@ impl InfraDiscrepancies {
     }
 }
 
-/// Normalizes SQL for comparison by:
-/// - Collapsing all whitespace (newlines, tabs, multiple spaces) to single spaces
-/// - Trimming leading/trailing whitespace
+/// Checks if two SQL strings are semantically equivalent.
+/// Uses AST-based normalization to handle:
+/// - Whitespace differences (newlines, tabs, multiple spaces)
+/// - Database prefix differences (e.g., `local.Table` vs `Table`)
+/// - Identifier quoting differences (e.g., `` `column` `` vs `column`)
+/// - Keyword casing differences
 ///
 /// This is needed because ClickHouse reformats SQL when storing it
-/// (e.g., puts everything on one line in `as_select`).
-fn normalize_sql(sql: &str) -> String {
-    sql.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// Checks if two SQL strings are semantically equivalent.
-/// Compares normalized versions (whitespace-collapsed).
-fn sql_is_equivalent(sql1: &str, sql2: &str) -> bool {
-    normalize_sql(sql1) == normalize_sql(sql2)
+/// (e.g., puts everything on one line, adds database prefixes, adds backticks).
+fn sql_is_equivalent(sql1: &str, sql2: &str, default_database: &str) -> bool {
+    let normalized1 = normalize_sql_for_comparison(sql1, default_database);
+    let normalized2 = normalize_sql_for_comparison(sql2, default_database);
+    normalized1 == normalized2
 }
 
 /// Attempts to convert a SqlResource (from ClickHouse reality) into a MaterializedView.
@@ -306,7 +306,7 @@ fn materialized_views_are_equivalent(
     }
 
     // Compare SELECT SQL (normalized)
-    sql_is_equivalent(&mv1.select_sql, &mv2.select_sql)
+    sql_is_equivalent(&mv1.select_sql, &mv2.select_sql, default_database)
 }
 
 /// Checks if two CustomViews are semantically equivalent.
@@ -326,7 +326,7 @@ fn custom_views_are_equivalent(v1: &CustomView, v2: &CustomView, default_databas
     }
 
     // Compare SELECT SQL (normalized)
-    sql_is_equivalent(&v1.select_sql, &v2.select_sql)
+    sql_is_equivalent(&v1.select_sql, &v2.select_sql, default_database)
 }
 
 /// The Infrastructure Reality Checker compares actual infrastructure state with the infrastructure map.
