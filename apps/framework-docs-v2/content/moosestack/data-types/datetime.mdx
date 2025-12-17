@@ -1,0 +1,138 @@
+---
+title: Date & Time Types
+description: Date, DateTime, and DateTime64 column types in Moose
+order: 7
+category: reference
+---
+
+import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
+
+# Date & Time Types
+
+ClickHouse provides several date and time types with varying precision levels.
+
+## Date
+
+Stores a calendar date (year, month, day) without time.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface User {
+  birth_date: Date;       // Date
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from datetime import date
+
+class User(BaseModel):
+    birth_date: date      # Date
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## DateTime
+
+Stores date and time with second precision.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { DateTime } from "@514labs/moose-lib";
+
+interface Event {
+  created_at: DateTime;     // DateTime (second precision)
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from datetime import datetime
+
+class Event(BaseModel):
+    created_at: datetime    # DateTime
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## DateTime64
+
+Stores date and time with sub-second precision. The precision parameter `P` specifies decimal places (0-9).
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+import { DateTime64, ClickHousePrecision } from "@514labs/moose-lib";
+
+interface Event {
+  logged_at: DateTime64<3>;    // DateTime64(3) — milliseconds
+  measured_at: DateTime64<6>;  // DateTime64(6) — microseconds
+  precise_at: DateTime64<9>;   // DateTime64(9) — nanoseconds
+}
+
+// Verbose syntax alternative:
+interface EventVerbose {
+  logged_at: Date & ClickHousePrecision<3>;
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import clickhouse_datetime64
+
+class Event(BaseModel):
+    logged_at: clickhouse_datetime64(3)     # DateTime64(3) — milliseconds
+    measured_at: clickhouse_datetime64(6)   # DateTime64(6) — microseconds
+    precise_at: clickhouse_datetime64(9)    # DateTime64(9) — nanoseconds
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Date16
+
+Compact date format for storage optimization.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript
+interface CompactRecord {
+  record_date: Date;      // Date16
+}
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from typing import Annotated
+from datetime import date
+from moose_lib import ClickhouseSize
+
+class CompactRecord(BaseModel):
+    record_date: Annotated[date, ClickhouseSize(2)]   # Date16
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Type Mapping Reference
+
+| ClickHouse Type | TypeScript Helper | TypeScript Verbose | Python |
+|-----------------|-------------------|-------------------|--------|
+| `Date` | `Date` | `Date` | `date` |
+| `Date16` | `Date` | `Date` | `Annotated[date, ClickhouseSize(2)]` |
+| `DateTime` | `DateTime` | `Date` | `datetime` |
+| `DateTime64(P)` | `DateTime64<P>` | `Date & ClickHousePrecision<P>` | `clickhouse_datetime64(P)` |
+
+## Precision Guide
+
+| Precision | Resolution | Use Case |
+|-----------|------------|----------|
+| 0 | Seconds | General timestamps |
+| 3 | Milliseconds | Web events, logs |
+| 6 | Microseconds | High-frequency trading, metrics |
+| 9 | Nanoseconds | Scientific measurements |
+
+<Callout type="info" title="Choosing precision">
+Use `DateTime` (second precision) for most use cases. Only use `DateTime64` with higher precision when sub-second accuracy is required—it uses more storage.
+</Callout>
+

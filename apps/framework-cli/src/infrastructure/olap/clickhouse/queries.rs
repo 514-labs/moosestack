@@ -3677,8 +3677,13 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
         .map(|column| {
             let field_type = basic_field_type_to_string(&column.column_type)?;
 
-            // Escape single quotes in comments for SQL safety
-            let escaped_comment = column.comment.as_ref().map(|c| c.replace('\'', "''"));
+            // Escape for ClickHouse SQL string literals:
+            // 1. First escape backslashes (\ → \\) to preserve them
+            // 2. Then escape single quotes (' → '') for SQL safety
+            let escaped_comment = column
+                .comment
+                .as_ref()
+                .map(|c| c.replace('\\', "\\\\").replace('\'', "''"));
 
             let field_ttl = column.ttl.as_ref();
             let field_codec = column.codec.as_ref();
@@ -6990,5 +6995,149 @@ ORDER BY (`event_time`)
             is_deleted: None
         }
         .supports_order_by());
+    }
+
+    #[test]
+    fn test_engine_proto_roundtrip_replicated_replacing_merge_tree() {
+        // Test case 1: Empty params (ClickHouse Cloud mode)
+        let engine = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            ver: None,
+            is_deleted: None,
+        };
+        let serialized = engine.to_proto_string();
+        println!("Serialized (empty params): {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(
+            parsed.is_ok(),
+            "Failed to parse '{}': {:?}",
+            serialized,
+            parsed
+        );
+        assert_eq!(parsed.unwrap(), engine);
+
+        // Test case 2: With keeper_path and replica_name
+        let engine_with_paths = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: Some("/clickhouse/tables/{uuid}/{shard}".to_string()),
+            replica_name: Some("{replica}".to_string()),
+            ver: None,
+            is_deleted: None,
+        };
+        let serialized = engine_with_paths.to_proto_string();
+        println!("Serialized (with paths): {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(
+            parsed.is_ok(),
+            "Failed to parse '{}': {:?}",
+            serialized,
+            parsed
+        );
+        // Note: default paths get normalized to None
+        let expected = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            ver: None,
+            is_deleted: None,
+        };
+        assert_eq!(parsed.unwrap(), expected);
+
+        // Test case 3: With ver parameter
+        let engine_with_ver = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: Some("/custom/path".to_string()),
+            replica_name: Some("replica1".to_string()),
+            ver: Some("version_col".to_string()),
+            is_deleted: None,
+        };
+        let serialized = engine_with_ver.to_proto_string();
+        println!("Serialized (with ver): {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(
+            parsed.is_ok(),
+            "Failed to parse '{}': {:?}",
+            serialized,
+            parsed
+        );
+        assert_eq!(parsed.unwrap(), engine_with_ver);
+
+        // Test case 4: All parameters
+        let engine_full = ClickhouseEngine::ReplicatedReplacingMergeTree {
+            keeper_path: Some("/custom/path".to_string()),
+            replica_name: Some("replica1".to_string()),
+            ver: Some("version_col".to_string()),
+            is_deleted: Some("is_deleted_col".to_string()),
+        };
+        let serialized = engine_full.to_proto_string();
+        println!("Serialized (full): {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(
+            parsed.is_ok(),
+            "Failed to parse '{}': {:?}",
+            serialized,
+            parsed
+        );
+        assert_eq!(parsed.unwrap(), engine_full);
+    }
+
+    #[test]
+    fn test_engine_proto_roundtrip_all_replicated_engines() {
+        // ReplicatedMergeTree
+        let engine = ClickhouseEngine::ReplicatedMergeTree {
+            keeper_path: None,
+            replica_name: None,
+        };
+        let serialized = engine.to_proto_string();
+        println!("ReplicatedMergeTree: {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(parsed.is_ok(), "Failed to parse '{}'", serialized);
+        assert_eq!(parsed.unwrap(), engine);
+
+        // ReplicatedAggregatingMergeTree
+        let engine = ClickhouseEngine::ReplicatedAggregatingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+        };
+        let serialized = engine.to_proto_string();
+        println!("ReplicatedAggregatingMergeTree: {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(parsed.is_ok(), "Failed to parse '{}'", serialized);
+        assert_eq!(parsed.unwrap(), engine);
+
+        // ReplicatedSummingMergeTree
+        let engine = ClickhouseEngine::ReplicatedSummingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            columns: None,
+        };
+        let serialized = engine.to_proto_string();
+        println!("ReplicatedSummingMergeTree: {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(parsed.is_ok(), "Failed to parse '{}'", serialized);
+        assert_eq!(parsed.unwrap(), engine);
+
+        // ReplicatedCollapsingMergeTree
+        let engine = ClickhouseEngine::ReplicatedCollapsingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            sign: "sign_col".to_string(),
+        };
+        let serialized = engine.to_proto_string();
+        println!("ReplicatedCollapsingMergeTree: {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(parsed.is_ok(), "Failed to parse '{}'", serialized);
+        assert_eq!(parsed.unwrap(), engine);
+
+        // ReplicatedVersionedCollapsingMergeTree
+        let engine = ClickhouseEngine::ReplicatedVersionedCollapsingMergeTree {
+            keeper_path: None,
+            replica_name: None,
+            sign: "sign_col".to_string(),
+            version: "ver_col".to_string(),
+        };
+        let serialized = engine.to_proto_string();
+        println!("ReplicatedVersionedCollapsingMergeTree: {}", serialized);
+        let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
+        assert!(parsed.is_ok(), "Failed to parse '{}'", serialized);
+        assert_eq!(parsed.unwrap(), engine);
     }
 }

@@ -338,6 +338,7 @@ pub async fn create_project_from_template(
     name: &str,
     dir_path: &Path,
     no_fail_already_exists: bool,
+    custom_dockerfile: bool,
 ) -> Result<String, RoutineFailure> {
     let template_config = get_template_config(template, CLI_VERSION).await?;
 
@@ -466,6 +467,11 @@ pub async fn create_project_from_template(
         }
     }
 
+    // Setup custom Dockerfile if requested
+    if custom_dockerfile {
+        setup_custom_dockerfile(dir_path, language)?;
+    }
+
     maybe_create_git_repo(dir_path, project_arc, is_current_dir);
 
     Ok(template_config
@@ -512,6 +518,100 @@ fn maybe_create_git_repo(dir_path: &Path, project_arc: Arc<Project>, is_current_
             }
         );
     }
+}
+
+/// Sets up custom Dockerfile mode for the project by updating moose.config.toml.
+/// The actual Dockerfile will be generated during `moose build --docker`.
+fn setup_custom_dockerfile(
+    dir_path: &Path,
+    _language: SupportedLanguages,
+) -> Result<(), RoutineFailure> {
+    // Update moose.config.toml to enable custom_dockerfile
+    let config_path = dir_path.join("moose.config.toml");
+
+    if !config_path.exists() {
+        return Err(RoutineFailure::error(Message {
+            action: "Init".to_string(),
+            details:
+                "moose.config.toml not found. Please run 'moose init' first to create a project."
+                    .to_string(),
+        }));
+    }
+
+    let content = std::fs::read_to_string(&config_path).map_err(|e| {
+        RoutineFailure::error(Message {
+            action: "Init".to_string(),
+            details: format!("Failed to read moose.config.toml: {e}"),
+        })
+    })?;
+
+    // Regex patterns for matching uncommented config lines
+    // These patterns match lines that start with optional whitespace, then the setting (not commented)
+    let uncommented_false_re = Regex::new(r"(?m)^(\s*)custom_dockerfile\s*=\s*false").unwrap();
+    let uncommented_true_re = Regex::new(r"(?m)^(\s*)custom_dockerfile\s*=\s*true").unwrap();
+
+    // Add or update docker_config section
+    let new_content = if !content.contains("[docker_config]") {
+        // Append new section
+        let docker_config_section = r#"
+
+[docker_config]
+custom_dockerfile = true
+dockerfile_path = "./Dockerfile"
+"#;
+        format!("{content}{docker_config_section}")
+    } else if uncommented_false_re.is_match(&content) {
+        // Update existing uncommented setting from false to true
+        uncommented_false_re
+            .replace(&content, "${1}custom_dockerfile = true")
+            .to_string()
+    } else if uncommented_true_re.is_match(&content) {
+        // Already enabled, nothing to do
+        show_message!(
+            MessageType::Info,
+            Message {
+                action: "Info".to_string(),
+                details: "custom Dockerfile mode is already enabled in moose.config.toml"
+                    .to_string(),
+            }
+        );
+        return Ok(());
+    } else {
+        // [docker_config] exists but no uncommented custom_dockerfile setting
+        // This can happen if user only set dockerfile_path or has it commented out.
+        // Add the setting after the section header.
+        content.replace(
+            "[docker_config]",
+            "[docker_config]\ncustom_dockerfile = true",
+        )
+    };
+
+    if new_content != content {
+        std::fs::write(&config_path, new_content).map_err(|e| {
+            RoutineFailure::error(Message {
+                action: "Init".to_string(),
+                details: format!("Failed to write moose.config.toml: {e}"),
+            })
+        })?;
+    }
+
+    show_message!(
+        MessageType::Success,
+        Message {
+            action: "Enabled".to_string(),
+            details: "custom Dockerfile mode in moose.config.toml".to_string(),
+        }
+    );
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Info".to_string(),
+            details: "Run 'moose build --docker' to generate the Dockerfile at project root for customization".to_string(),
+        }
+    );
+
+    Ok(())
 }
 
 #[cfg(test)]

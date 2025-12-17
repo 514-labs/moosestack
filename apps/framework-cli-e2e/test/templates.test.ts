@@ -381,6 +381,169 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     });
 
+    it("should include column comments in DDL from TSDoc/Field descriptions", async function () {
+      if (config.isTestsVariant) {
+        const ddl = await getTableDDL("ColumnCommentsTest", "local");
+
+        // Verify comments are present in DDL for documented fields
+        // ClickHouse DDL format: `column_name` Type COMMENT 'comment text'
+        if (!ddl.includes("COMMENT 'Unique identifier for the record'")) {
+          throw new Error(
+            `Expected id column to have comment 'Unique identifier for the record'. DDL: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("COMMENT 'Timestamp when the event occurred'")) {
+          throw new Error(
+            `Expected timestamp column to have comment 'Timestamp when the event occurred'. DDL: ${ddl}`,
+          );
+        }
+        if (
+          !ddl.includes("COMMENT 'Email address of the user (must be valid)'")
+        ) {
+          throw new Error(
+            `Expected email column to have comment 'Email address of the user (must be valid)'. DDL: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("COMMENT 'Total price in USD ($)'")) {
+          throw new Error(
+            `Expected price column to have comment 'Total price in USD ($)'. DDL: ${ddl}`,
+          );
+        }
+
+        // Verify status field does NOT have a comment (it has no TSDoc/description)
+        // The status column should appear without a COMMENT clause
+        // Match from `status` to the next comma or closing paren to capture the full column definition
+        const statusMatch = ddl.match(/`status`[^,)]+/);
+        if (statusMatch && statusMatch[0].includes("COMMENT")) {
+          throw new Error(
+            `Expected status column to NOT have a comment, but found one. Match: ${statusMatch[0]}`,
+          );
+        }
+
+        testLogger.info(
+          `✅ Column comments DDL validation passed for ${config.language}`,
+        );
+      }
+    });
+
+    it("should preserve user comments alongside enum metadata in column comments", async function () {
+      if (config.isTestsVariant) {
+        const ddl = await getTableDDL("EnumColumnCommentsTest", "local");
+
+        // Enum columns should have BOTH user comment AND metadata
+        // Format: "User comment [MOOSE_METADATA:DO_NOT_MODIFY] {...}"
+
+        // Check status column has user comment
+        if (
+          !ddl.includes(
+            "Current status of the order - updates as order progresses",
+          )
+        ) {
+          throw new Error(
+            `Expected status enum column to have user comment 'Current status of the order - updates as order progresses'. DDL: ${ddl}`,
+          );
+        }
+
+        // Check status column has metadata prefix (enum metadata)
+        if (!ddl.includes("[MOOSE_METADATA:DO_NOT_MODIFY]")) {
+          throw new Error(
+            `Expected enum columns to have metadata prefix '[MOOSE_METADATA:DO_NOT_MODIFY]'. DDL: ${ddl}`,
+          );
+        }
+
+        // Check priority column has user comment
+        if (!ddl.includes("Priority level for fulfillment")) {
+          throw new Error(
+            `Expected priority enum column to have user comment 'Priority level for fulfillment'. DDL: ${ddl}`,
+          );
+        }
+
+        // Verify both user comment and metadata are in the SAME column comment
+        // Extract the status column's full comment from DDL
+        // Use [\s\S] to match any character including newlines, and match up to COMMENT
+        const statusCommentMatch = ddl.match(
+          /`status`[^`]*COMMENT\s*'([^']+)'/,
+        );
+        if (!statusCommentMatch) {
+          throw new Error(
+            `Expected status column to have a COMMENT clause. DDL: ${ddl}`,
+          );
+        }
+
+        const statusComment = statusCommentMatch[1];
+        if (
+          !statusComment.includes("Current status of the order") ||
+          !statusComment.includes("[MOOSE_METADATA:DO_NOT_MODIFY]")
+        ) {
+          throw new Error(
+            `Expected status column comment to contain BOTH user comment AND metadata. Got: '${statusComment}'`,
+          );
+        }
+
+        // Verify metadata JSON round-trip: the JSON with quotes must survive
+        // the SQL escaping/unescaping cycle through ClickHouse
+        const metadataPrefix = "[MOOSE_METADATA:DO_NOT_MODIFY]";
+        const metadataStart = statusComment.indexOf(metadataPrefix);
+        if (metadataStart === -1) {
+          throw new Error(
+            `Metadata prefix not found in comment: '${statusComment}'`,
+          );
+        }
+
+        const jsonPart = statusComment.substring(
+          metadataStart + metadataPrefix.length,
+        );
+        let parsedMetadata: any;
+        try {
+          parsedMetadata = JSON.parse(jsonPart.trim());
+        } catch (e) {
+          throw new Error(
+            `Metadata JSON failed to parse after round-trip through ClickHouse. ` +
+              `This indicates quotes or special characters were corrupted. ` +
+              `JSON: '${jsonPart}', Error: ${e}`,
+          );
+        }
+
+        // Verify the parsed metadata has expected structure with enum values
+        if (parsedMetadata.version !== 1) {
+          throw new Error(
+            `Expected metadata version 1, got: ${parsedMetadata.version}`,
+          );
+        }
+        if (
+          !parsedMetadata.enum ||
+          !Array.isArray(parsedMetadata.enum.members)
+        ) {
+          throw new Error(
+            `Expected metadata to contain enum.members array. Got: ${JSON.stringify(parsedMetadata)}`,
+          );
+        }
+
+        // Verify enum values survived the round-trip (these contain quotes in JSON)
+        const memberNames = parsedMetadata.enum.members.map((m: any) => m.name);
+        const expectedMembers =
+          config.language === "typescript" ?
+            ["Pending", "Processing", "Shipped", "Delivered", "Cancelled"]
+          : ["PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"];
+
+        for (const expected of expectedMembers) {
+          if (!memberNames.includes(expected)) {
+            throw new Error(
+              `Expected enum member '${expected}' not found in metadata after round-trip. ` +
+                `Found: ${memberNames.join(", ")}`,
+            );
+          }
+        }
+
+        testLogger.info(
+          `✅ Enum column metadata safety validation passed for ${config.language}`,
+        );
+        testLogger.info(
+          `✅ Metadata JSON round-trip verified - quotes and special chars preserved`,
+        );
+      }
+    });
+
     // Add versioned tables test for tests templates
     if (config.isTestsVariant) {
       it("should create versioned OlapTables correctly", async function () {

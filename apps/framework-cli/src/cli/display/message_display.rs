@@ -91,6 +91,7 @@ pub fn show_message_impl(
     let styled_prefix = match message_type {
         MessageType::Info => StyledText::new(action.clone()).cyan().bold(),
         MessageType::Success => StyledText::new(action.clone()).green().bold(),
+        MessageType::Warning => StyledText::new(action.clone()).yellow().bold(),
         MessageType::Error => StyledText::new(action.clone()).red().bold(),
         MessageType::Highlight => StyledText::new(action.clone()).on_green().bold(),
     };

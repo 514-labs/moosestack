@@ -1,4 +1,5 @@
 import ts, {
+  displayPartsToString,
   isIdentifier,
   isTypeReferenceNode,
   SymbolFlags,
@@ -1019,6 +1020,11 @@ export const toColumns = (
       );
     }
 
+    // Extract TSDoc comment from the property
+    const docComment = prop.getDocumentationComment(checker);
+    const comment =
+      docComment.length > 0 ? displayPartsToString(docComment) : null;
+
     return {
       name: prop.name,
       data_type: dataType,
@@ -1030,6 +1036,7 @@ export const toColumns = (
       ttl: handleTtl(type, checker),
       codec: handleCodec(type, checker),
       annotations,
+      comment,
     };
   });
 };

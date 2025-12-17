@@ -24,6 +24,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::fmt::Debug;
 use std::path::Path;
+use tracing::warn;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Eq, Hash)]
 pub struct SourceLocation {
@@ -684,10 +685,29 @@ impl Table {
     pub fn from_proto(proto: ProtoTable) -> Self {
         // First, reconstruct the basic engine from the string representation
         // This gives us the engine type and non-alterable parameters (e.g., S3 path, format)
+        let engine_string = proto.engine.as_ref().map(|w| w.value.clone());
+        let table_name = proto.name.clone();
+
         let engine = proto
             .engine
             .into_option()
-            .and_then(|wrapper| wrapper.value.as_str().try_into().ok())
+            .and_then(|wrapper| {
+                let engine_str = wrapper.value.as_str();
+                match engine_str.try_into() {
+                    Ok(engine) => Some(engine),
+                    Err(failed_str) => {
+                        warn!(
+                            "Failed to parse engine string '{}' for table '{}'. Falling back to default engine. \
+                            This may indicate an incompatibility with the ClickHouse cluster configuration. \
+                            Original engine string: {:?}",
+                            failed_str,
+                            table_name,
+                            engine_string
+                        );
+                        None
+                    }
+                }
+            })
             .or_else(|| {
                 proto
                     .deduplicate
@@ -696,7 +716,15 @@ impl Table {
                         is_deleted: None,
                     })
             })
-            .unwrap_or(ClickhouseEngine::MergeTree);
+            .unwrap_or_else(|| {
+                if engine_string.is_some() {
+                    warn!(
+                        "Engine string is present but parsing failed for table '{}'. Using MergeTree as fallback.",
+                        table_name
+                    );
+                }
+                ClickhouseEngine::MergeTree
+            });
 
         // Engine settings are now handled via table_settings field
 
@@ -1640,6 +1668,7 @@ impl EnumValue {
 mod tests {
 
     use super::*;
+    use crate::framework::core::infrastructure_map::PrimitiveTypes;
     use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 
     fn serialize_and_deserialize(t: &ColumnType) {
@@ -2327,6 +2356,210 @@ mod tests {
             first_canonicalize.order_by, second_canonicalize.order_by,
             "order_by should be identical after multiple canonicalize calls"
         );
+    }
+
+    #[test]
+    fn test_table_proto_roundtrip_replicated_replacing_merge_tree() {
+        // Create a table with ReplicatedReplacingMergeTree engine (empty params - cloud mode)
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path: None,
+                replica_name: None,
+                ver: None,
+                is_deleted: None,
+            },
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestModel".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: Some("test_db".to_string()),
+            table_ttl_setting: None,
+            cluster_name: Some("clickhouse".to_string()),
+            primary_key_expression: None,
+        };
+
+        // Serialize to proto
+        let proto = table.to_proto();
+        println!(
+            "Proto engine value: {:?}",
+            proto.engine.as_ref().map(|e| &e.value)
+        );
+
+        // Deserialize from proto
+        let roundtrip_table = Table::from_proto(proto);
+        println!("Original engine: {:?}", table.engine);
+        println!("Roundtrip engine: {:?}", roundtrip_table.engine);
+
+        // Check engine type is preserved
+        assert_eq!(
+            std::mem::discriminant(&table.engine),
+            std::mem::discriminant(&roundtrip_table.engine),
+            "Engine type should be preserved through proto roundtrip"
+        );
+        assert_eq!(
+            table.engine, roundtrip_table.engine,
+            "Engine should be identical after roundtrip"
+        );
+    }
+
+    #[test]
+    fn test_table_proto_roundtrip_replicated_with_params() {
+        // Create a table with ReplicatedReplacingMergeTree with custom paths
+        let table = Table {
+            name: "test_table".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::ReplicatedReplacingMergeTree {
+                keeper_path: Some("/custom/path".to_string()),
+                replica_name: Some("replica1".to_string()),
+                ver: Some("version_col".to_string()),
+                is_deleted: None,
+            },
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "TestModel".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: Some("test_db".to_string()),
+            table_ttl_setting: None,
+            cluster_name: Some("clickhouse".to_string()),
+            primary_key_expression: None,
+        };
+
+        // Serialize to proto
+        let proto = table.to_proto();
+        println!(
+            "Proto engine value: {:?}",
+            proto.engine.as_ref().map(|e| &e.value)
+        );
+
+        // Deserialize from proto
+        let roundtrip_table = Table::from_proto(proto);
+        println!("Original engine: {:?}", table.engine);
+        println!("Roundtrip engine: {:?}", roundtrip_table.engine);
+
+        // Check engine type is preserved
+        assert_eq!(
+            std::mem::discriminant(&table.engine),
+            std::mem::discriminant(&roundtrip_table.engine),
+            "Engine type should be preserved through proto roundtrip"
+        );
+        assert_eq!(
+            table.engine, roundtrip_table.engine,
+            "Engine should be identical after roundtrip"
+        );
+    }
+
+    #[test]
+    fn test_invalid_engine_string_logs_warning_before_fallback_to_mergetree() {
+        // This test addresses ENG-1689: Parsing errors should be logged, not silently swallowed.
+        //
+        // When engine parsing fails (e.g., due to format changes in ClickHouse or cluster-specific
+        // configurations), we need to:
+        // 1. Log a clear warning about the parsing failure
+        // 2. Include the failed engine string in the log
+        // 3. Still fall back to MergeTree to avoid breaking the system
+        //
+        // This test creates a proto with an intentionally unparseable engine string
+        // to verify that parsing failures are logged with appropriate warnings.
+
+        use protobuf::MessageField;
+
+        // Create a proto table with an invalid/unparseable engine string
+        let mut proto = ProtoTable::new();
+        proto.name = "test_table".to_string();
+        proto.order_by = vec!["id".to_string()];
+
+        // Use an engine string that will definitely fail to parse
+        // This simulates what might happen if ClickHouse returns an unexpected format
+        proto.engine = MessageField::some(StringValue {
+            value: "ReplicatedReplacingMergeTree_INVALID_FORMAT_123".to_string(),
+            ..Default::default()
+        });
+
+        // Add minimal required fields to avoid other errors
+        let mut column = infrastructure_map::Column::new();
+        column.name = "id".to_string();
+        column.required = true;
+        column.primary_key = true;
+        column.data_type = MessageField::some(ProtoColumnType {
+            t: Some(column_type::T::Simple(
+                infrastructure_map::SimpleColumnType::STRING.into(),
+            )),
+            ..Default::default()
+        });
+        proto.columns.push(column);
+
+        let mut primitive = infrastructure_map::PrimitiveSignature::new();
+        primitive.name = "TestModel".to_string();
+        primitive.primitive_type = infrastructure_map::PrimitiveTypes::DATA_MODEL.into();
+        proto.source_primitive = MessageField::some(primitive);
+
+        // Deserialize from proto - this should log a warning
+        let table = Table::from_proto(proto);
+
+        // After parsing failure, engine should fall back to MergeTree
+        // The key difference after the fix: A warning is now logged
+        println!("Deserialized engine: {:?}", table.engine);
+
+        match table.engine {
+            ClickhouseEngine::MergeTree => {
+                // Expected: parsing failed, logged warning, fell back to MergeTree
+                // Note: We can't easily assert that a warning was logged in unit tests,
+                // but the warning will appear in logs and help debug production issues
+                println!("As expected: Invalid engine string fell back to MergeTree (with warning logged)");
+            }
+            other => {
+                panic!(
+                    "Unexpected engine type after invalid parse: {:?}. Expected MergeTree fallback.",
+                    other
+                );
+            }
+        }
     }
 
     #[test]

@@ -753,6 +753,24 @@ const SidebarMenuSubButton = React.forwardRef<
 });
 SidebarMenuSubButton.displayName = "SidebarMenuSubButton";
 
+const SidebarMenuSubLabel = React.forwardRef<
+  HTMLLIElement,
+  React.ComponentProps<"li"> & { isFirst?: boolean }
+>(({ className, isFirst = false, ...props }, ref) => (
+  <li
+    ref={ref}
+    data-sidebar="menu-sub-label"
+    className={cn(
+      "flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/70",
+      !isFirst && "mt-4",
+      "group-data-[collapsible=icon]:hidden",
+      className,
+    )}
+    {...props}
+  />
+));
+SidebarMenuSubLabel.displayName = "SidebarMenuSubLabel";
+
 export {
   Sidebar,
   SidebarContent,
@@ -773,6 +791,7 @@ export {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarMenuSubLabel,
   SidebarProvider,
   SidebarRail,
   SidebarSeparator,

@@ -30,6 +30,7 @@ const createMockColumns = (fields: string[]): Column[] =>
     codec: null,
     materialized: null,
     annotations: [],
+    comment: null,
   }));
 
 // Helper function to create OlapTable with mock schema for testing
