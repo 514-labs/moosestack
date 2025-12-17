@@ -37,6 +37,15 @@ export interface ApiUtil {
   jwt: JWTPayload | undefined;
 }
 
+/**
+ * Utilities provided by getMooseUtils() for database access and SQL queries.
+ * Works in both Moose runtime and standalone contexts.
+ */
+export interface MooseUtils {
+  client: MooseClient;
+  sql: typeof sql;
+}
+
 /** @deprecated Use ApiUtil instead. */
 export type ConsumptionUtil = ApiUtil;
 
