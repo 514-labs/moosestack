@@ -6,7 +6,7 @@
  */
 
 import express from "express";
-import { WebApp, expressMiddleware, getMooseUtils } from "@514labs/moose-lib";
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
 import { BarAggregatedMV } from "../views/barAggregated";
 import { Api, MooseCache } from "@514labs/moose-lib";
 import { tags } from "typia";
@@ -16,15 +16,18 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use(expressMiddleware());
+// OLD PATTERN (before API cleanup):
+// import { expressMiddleware } from "@514labs/moose-lib";
+// app.use(expressMiddleware());
+// const moose = getMooseUtils(req);
 
 app.use((req, res, next) => {
   console.log(`[bar-express.ts] ${req.method} ${req.url}`);
   next();
 });
 
-const requireAuth = (req: any, res: any, next: any) => {
-  const moose = getMooseUtils(req);
+const requireAuth = async (req: any, res: any, next: any) => {
+  const moose = await getMooseUtils();
   if (!moose?.jwt) {
     return res.status(401).json({ error: "Unauthorized - JWT token required" });
   }
@@ -40,14 +43,8 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/query", async (req, res) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return res
-      .status(500)
-      .json({ error: "MooseStack utilities not available" });
-  }
-
-  const { client, sql } = moose;
+  // NEW PATTERN: Call getMooseUtils() directly without req parameter
+  const { client, sql } = await getMooseUtils();
   const limit = parseInt(req.query.limit as string) || 10;
 
   try {
@@ -78,7 +75,7 @@ app.get("/query", async (req, res) => {
 });
 
 app.get("/protected", requireAuth, async (req, res) => {
-  const moose = getMooseUtils(req);
+  const moose = await getMooseUtils();
 
   res.json({
     message: "You are authenticated",
@@ -88,14 +85,8 @@ app.get("/protected", requireAuth, async (req, res) => {
 });
 
 app.post("/data", async (req, res) => {
-  const moose = getMooseUtils(req);
-  if (!moose) {
-    return res
-      .status(500)
-      .json({ error: "MooseStack utilities not available" });
-  }
-
-  const { client, sql } = moose;
+  // NEW PATTERN: Call getMooseUtils() directly without req parameter
+  const { client, sql } = await getMooseUtils();
   const {
     orderBy = "totalRows",
     limit = 5,
