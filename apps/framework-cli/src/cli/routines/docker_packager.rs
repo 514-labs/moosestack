@@ -8,9 +8,16 @@ use crate::utilities::constants::{
 };
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
-use crate::utilities::package_managers::get_lock_file_path;
+use crate::utilities::package_managers::{
+    check_local_pnpm_version_warning, detect_pnpm_deploy_mode, find_pnpm_workspace_root,
+    get_lock_file_path, get_pnpm_deploy_flag, legacy_deploy_terminal_message,
+    legacy_deploy_warning_message, PnpmDeployMode,
+};
 use crate::utilities::{constants, system};
-use crate::{cli::display::Message, project::Project};
+use crate::{
+    cli::display::{show_message_wrapper, Message, MessageType},
+    project::Project,
+};
 
 use serde_json::Value as JsonValue;
 use std::fs;
@@ -472,12 +479,38 @@ pub fn create_dockerfile(
                     None => "# No lock file found".to_string(),
                 };
 
+                // Check local pnpm version (informational only - doesn't affect Docker builds)
+                if let Some(warning) = check_local_pnpm_version_warning() {
+                    tracing::info!("{}", warning);
+                }
+
+                // Detect whether to use modern or legacy pnpm deploy
+                let deploy_mode = detect_pnpm_deploy_mode(&workspace_root);
+
+                // Log warning if using legacy mode
+                if let PnpmDeployMode::Legacy(reason) = &deploy_mode {
+                    // Full message for logs
+                    let warning_msg = legacy_deploy_warning_message(reason);
+                    tracing::warn!("{}", warning_msg);
+                    // Condensed message for terminal
+                    show_message_wrapper(
+                        MessageType::Warning,
+                        Message {
+                            action: "Warning".to_string(),
+                            details: legacy_deploy_terminal_message(reason),
+                        },
+                    );
+                }
+
+                // Generate appropriate deploy command (Docker uses pnpm@latest which supports --legacy)
+                let deploy_flag = get_pnpm_deploy_flag(&deploy_mode);
+
                 let deploy_install_command = format!(
                     r#"
 # Use package manager to install only production dependencies
-RUN pnpm --filter "./{}" deploy /temp-deploy --legacy
+RUN pnpm --filter "./{}" deploy /temp-deploy{}
 
-# Fix: pnpm deploy --legacy doesn't copy native bindings, so rebuild them from source
+# Fix: When using pnpm deploy --legacy, native bindings aren't copied, so rebuild them from source
 # Generic solution: Find and rebuild all packages with native bindings (those with binding.gyp)
 RUN echo "=== Rebuilding native modules ===" && \
     cd /temp-deploy && \
@@ -496,7 +529,8 @@ RUN echo "=== Rebuilding native modules ===" && \
         echo "No native modules found (this is normal if your deps don't have native bindings)"; \
     fi && \
     echo "=== Native modules rebuild complete ===""#,
-                    relative_project_path.to_string_lossy()
+                    relative_project_path.to_string_lossy(),
+                    deploy_flag
                 );
 
                 // Modify the copy commands to copy from the build stage
@@ -989,26 +1023,6 @@ pub fn build_dockerfile(
         "Successfully".to_string(),
         "created docker image for deployment".to_string(),
     )))
-}
-
-/// Detects if the project is part of a pnpm workspace by looking for pnpm-workspace.yaml
-fn find_pnpm_workspace_root(start_dir: &Path) -> Option<PathBuf> {
-    let mut current_dir = start_dir.to_path_buf();
-
-    loop {
-        let workspace_file = current_dir.join("pnpm-workspace.yaml");
-        if workspace_file.exists() {
-            debug!("Found pnpm-workspace.yaml at: {:?}", current_dir);
-            return Some(current_dir);
-        }
-
-        match current_dir.parent() {
-            Some(parent) => current_dir = parent.to_path_buf(),
-            None => break,
-        }
-    }
-
-    None
 }
 
 /// Reads and parses pnpm-workspace.yaml to get package patterns
