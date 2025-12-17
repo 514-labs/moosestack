@@ -3,8 +3,9 @@ import { getClickhouseClient } from "../commons";
 import { sql } from "../sqlHelpers";
 import type { RuntimeClickHouseConfig } from "../config/runtime";
 
-// Cached utilities for standalone mode
+// Cached utilities and initialization promise for standalone mode
 let standaloneUtils: MooseUtils | null = null;
+let initPromise: Promise<MooseUtils> | null = null;
 
 // Convert config to client config format
 const toClientConfig = (config: {
@@ -58,31 +59,45 @@ export async function getMooseUtils(req?: any): Promise<MooseUtils> {
     return standaloneUtils;
   }
 
-  await import("../config/runtime");
-  const configRegistry = (globalThis as any)._mooseConfigRegistry;
-
-  if (!configRegistry) {
-    throw new Error(
-      "Moose not initialized. Ensure you're running within a Moose app " +
-        "or have proper configuration set up.",
-    );
+  // If initialization is in progress, wait for it
+  if (initPromise) {
+    return initPromise;
   }
 
-  const clickhouseConfig = await configRegistry.getStandaloneClickhouseConfig();
+  // Start initialization
+  initPromise = (async () => {
+    await import("../config/runtime");
+    const configRegistry = (globalThis as any)._mooseConfigRegistry;
 
-  const clickhouseClient = getClickhouseClient(
-    toClientConfig(clickhouseConfig),
-  );
-  const queryClient = new QueryClient(clickhouseClient, "standalone");
-  const mooseClient = new MooseClient(queryClient);
+    if (!configRegistry) {
+      throw new Error(
+        "Moose not initialized. Ensure you're running within a Moose app " +
+          "or have proper configuration set up.",
+      );
+    }
 
-  standaloneUtils = {
-    client: mooseClient,
-    sql: sql,
-    jwt: undefined,
-  };
+    const clickhouseConfig =
+      await configRegistry.getStandaloneClickhouseConfig();
 
-  return standaloneUtils;
+    const clickhouseClient = getClickhouseClient(
+      toClientConfig(clickhouseConfig),
+    );
+    const queryClient = new QueryClient(clickhouseClient, "standalone");
+    const mooseClient = new MooseClient(queryClient);
+
+    standaloneUtils = {
+      client: mooseClient,
+      sql: sql,
+      jwt: undefined,
+    };
+    return standaloneUtils;
+  })();
+
+  try {
+    return await initPromise;
+  } finally {
+    initPromise = null;
+  }
 }
 
 /**
