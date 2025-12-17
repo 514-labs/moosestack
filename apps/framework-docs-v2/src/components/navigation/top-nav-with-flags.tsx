@@ -9,7 +9,7 @@ async function TopNavWithFlagsContent() {
     getGitHubStars(),
     showHostingSection().catch(() => false),
     showGuidesSection().catch(() => false),
-    showAiSection().catch(() => true),
+    showAiSection().catch(() => false),
   ]);
 
   return (
