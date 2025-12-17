@@ -128,7 +128,7 @@ async def start_worker(
     )
 
     if worker is None:
-        log.info(
+        log.warning(
             "No workflows found. To disable workflow infrastructure, set workflows=false in moose.config.toml"
         )
         return
