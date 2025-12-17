@@ -1,150 +1,150 @@
 ---
-title: Moose APIs
-description: Create type-safe ingestion and analytics APIs for data access and integration
+title: Moose APIs & Web Apps
+description: Expose ingestion and analytics endpoints with native APIs, or bring your own web framework.
 order: 0
 category: apis
 ---
 
-import { Callout, LanguageTabs, LanguageTabContent, BulletPointsCard, CTACards, CTACard, ExportRequirement } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent, CTACards, CTACard } from "@/components/mdx";
 
-# Moose APIs
+# Moose APIs & Web Apps
 
-## Overview
+MooseStack lets you expose HTTP endpoints for **ingestion**, **analytics**, and **workflow triggers**.
 
-The APIs module provides standalone HTTP endpoints for data ingestion and analytics. Unlike other modules of the MooseStack, APIs are meant to be paired with other MooseStack modules like OLAP tables and streams.
+You can do this in two distinct ways:
 
-<Callout type="info" title="Bring Your Own API Framework">
-  If you'd prefer to use your own API framework of choice, instead of Moose APIs, see the [Bring Your Own API Framework documentation](/moosestack/app-api-frameworks) for comprehensive examples and patterns using frameworks such as Express, Koa, Fastify, or FastAPI.
-</Callout>
+- **Native Moose APIs**: define endpoints with Moose primitives (type-safe, OpenAPI-friendly).
+- **Web apps inside the Moose Runtime**: run Express/Fastify/Koa/FastAPI (or raw Node) inside MooseStack via `WebApp`.
 
-## Core Capabilities
+If you want to **embed Moose as a library inside an existing web app** (no separate Moose Runtime service), follow the “Add to Existing App” guides like [Next.js](/moosestack/getting-started/existing-app/next-js).
+
+## What this is
+
+Moose APIs are **application-facing HTTP interfaces** that sit on top of your Moose modules (OLAP tables, streams, workflows). They’re designed to be composed with the rest of your project, not used in isolation.
+
+## Why it matters
+
+APIs are where external systems touch your data platform. Moose gives you a path that is:
+
+- **Type-safe**: validate and convert request inputs.
+- **Operationally simple**: one runtime + one deployment when Moose hosts your web app.
+- **Composable**: reuse the same `client`/`sql` access patterns across handlers.
+
+## Choose an approach
+
+| You want… | Use… |
+| --- | --- |
+| Fastest path to ingestion/analytics endpoints | **Native Moose APIs** |
+| Custom middleware/routing, but still want Moose to run your web server | **WebApp (inside Moose Runtime)** |
+| Add ClickHouse modeling + queries inside an existing app | **Client-only embedding** (e.g. [Next.js](/moosestack/getting-started/existing-app/next-js)) |
+
+### 1) Native Moose APIs
+
+Native APIs are best for straightforward endpoints with minimal routing/middleware needs.
+
+- **Ingest**: create POST endpoints that validate payloads and route them into streams/tables.
+- **Analytics**: create GET endpoints that run queries (OLAP or custom logic).
+- **Trigger**: create POST endpoints that kick off workflows.
+
+### 2) Web apps inside the Moose Runtime (WebApp)
+
+If you want a full-featured web framework, MooseStack can host it via `WebApp` as part of the Moose Runtime.
+
+**Why embed your framework:**
+
+- One deployment pipeline managed by the Moose CLI
+- Moose utilities available in every request (`client`, `sql`, `jwt`)
+- Moose APIs and your framework routes can live under the same hostname
+
+Supported adapters include Express, Fastify, Koa, raw Node.js, and FastAPI.
+
+### 3) Embed Moose in an existing app (client-only)
+
+If you already have an app server (like Next.js), you can keep it where it is and use Moose libraries to model, migrate, and query ClickHouse **without deploying a separate Moose Runtime web service**.
+
+See: [Embed ClickHouse analytics in Next.js](/moosestack/getting-started/existing-app/next-js).
+
+## Key concepts
+
+### WebApp utilities (Moose Runtime hosting)
+
+When MooseStack hosts your framework, your handlers can access Moose utilities from the current request.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+const { client, sql, jwt } = getMooseUtils(req);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py copy
+from moose_lib.dmv2.web_app_helpers import get_moose_utils
+
+moose = get_moose_utils(request)
+client = moose.client
+jwt = moose.jwt
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Mount paths (for embedded frameworks)
+
+Each `WebApp` mounts your framework under a unique path.
+
+- **Cannot** be `/`
+- **Cannot** end with a trailing slash
+- **Cannot** start with reserved prefixes: `/admin`, `/api`, `/consumption`, `/health`, `/ingest`, `/mcp`, `/moose`, `/ready`, `/workflows`
+
+## Next steps
 
 <CTACards>
-<CTACard
-  title="Ingest New Data"
-  description="Create HTTP POST endpoints for data ingestion with validation and routing"
-  ctaLink="/moosestack/apis/ingest-api"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Ingest" }}
-/>
-<CTACard
-  title="Expose Analytics"
-  description="Create HTTP GET endpoints for reading data from your OLAP database with query parameters"
-  ctaLink="/moosestack/apis/analytics-api"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Analytics" }}
-/>
-<CTACard
-  title="Trigger Workflows"
-  description="Create HTTP POST endpoints to trigger workflows and other processes"
-  ctaLink="/moosestack/apis/trigger-api"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Trigger" }}
-/>
-<CTACard
-  title="Bring Your Own API Framework"
-  description="Use Express, Koa, Fastify, or FastAPI with MooseStack for advanced HTTP features and custom middleware"
-  ctaLink="/moosestack/app-api-frameworks"
-  ctaLabel="Learn More →"
-  badge={{ variant: "moose", text: "Custom" }}
-/>
+  <CTACard
+    title="Ingest New Data"
+    description="Create HTTP POST endpoints for validated ingestion."
+    ctaLink="/moosestack/apis/ingest-api"
+    ctaLabel="Read the guide →"
+    badge={{ variant: "moose", text: "Ingest" }}
+  />
+  <CTACard
+    title="Expose Analytics"
+    description="Create HTTP GET endpoints for queryable analytics."
+    ctaLink="/moosestack/apis/analytics-api"
+    ctaLabel="Read the guide →"
+    badge={{ variant: "moose", text: "Analytics" }}
+  />
+  <CTACard
+    title="Trigger Workflows"
+    description="Create HTTP endpoints that start workflows and processes."
+    ctaLink="/moosestack/apis/trigger-api"
+    ctaLabel="Read the guide →"
+    badge={{ variant: "moose", text: "Trigger" }}
+  />
+  <CTACard
+    title="Use Your Web Framework"
+    description="Run Express/Fastify/Koa/FastAPI (or raw Node) inside MooseStack."
+    ctaLink="/moosestack/app-api-frameworks"
+    ctaLabel="See patterns & examples →"
+    badge={{ variant: "moose", text: "WebApp" }}
+  />
+  <CTACard
+    title="Add Moose to an existing Next.js app"
+    description="Embed ClickHouse schema + queries in Next.js (no separate backend service)."
+    ctaLink="/moosestack/getting-started/existing-app/next-js"
+    ctaLabel="Follow the getting started →"
+    badge={{ variant: "moose", text: "Client-only" }}
+  />
 </CTACards>
 
-## Basic Examples
+<Callout type="info" title="Don’t conflate WebApp with client-only embedding">
+  **WebApp** runs your API framework inside the Moose Runtime. **Client-only embedding** keeps your existing app server
+  and uses Moose as a library (see [Next.js](/moosestack/getting-started/existing-app/next-js)).
+</Callout>
 
-<ExportRequirement primitive="API" example="export { userEventsApi, userDataApi }" />
+## Related resources
 
-### Ingestion API
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="IngestApi.ts" copy
-import { IngestApi } from "@514labs/moose-lib";
-
-interface UserEvent {
-  id: string;
-  userId: string;
-  timestamp: Date;
-  eventType: string;
-}
-
-// Create a standalone ingestion API
-export const userEventsApi = new IngestApi<UserEvent>("user-events", {
-  destination: eventStream
-});
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="IngestApi.py" copy
-from moose_lib import IngestApi
-from pydantic import BaseModel
-from datetime import datetime
-
-class UserEvent(BaseModel):
-    id: str
-    user_id: str
-    timestamp: datetime
-    event_type: str
-
-# Create a standalone ingestion API
-user_events_api = IngestApi[UserEvent]("user-events", IngestConfig(destination=event_stream))
-
-# No export needed - Python modules are automatically discovered
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-### Analytics API
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts filename="AnalyticsApi.ts" copy
-import { Api } from "@514labs/moose-lib";
-
-interface Params {
-  userId: string;
-  limit: number;
-}
-
-interface ResultData {
-  id: string;
-  name: string;
-  email: string;
-}
-
-// Create a standalone analytics API
-export const userDataApi = new Api<Params, ResultData[]>("user-data", 
-  async ({ userId, limit }, { client, sql }) => {
-    // Query external service or custom logic
-    return [
-      { id: userId, name: "John Doe", email: "john@example.com" }
-    ];
-  }
-);
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py filename="AnalyticsApi.py" copy
-from moose_lib import Api, MooseClient
-from pydantic import BaseModel
-
-class Params(BaseModel):
-    user_id: str
-    limit: int
-
-class ResultData(BaseModel):
-    id: str
-    name: str
-    email: str
-
-def query_function(client: MooseClient, params: QueryParams) -> list[UserData]:
-    # Query external service or custom logic using parameter binding
-    query = "SELECT * FROM user_data WHERE user_id = {user_id} LIMIT {limit}"
-    return client.query.execute(query, {"user_id": params.user_id, "limit": params.limit})
-
-user_data_api = Api[Params, ResultData]("get-data", query_function)
-
-# No export needed - Python modules are automatically discovered
-```
-  </LanguageTabContent>
-</LanguageTabs>
+- [Auth](/moosestack/apis/auth)
+- [OpenAPI SDK](/moosestack/apis/openapi-sdk)
+- [Embed Express/Fastify/Koa/FastAPI with WebApp](/moosestack/app-api-frameworks)
+- [Read data from OLAP tables](/moosestack/olap/read-data)
