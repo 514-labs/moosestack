@@ -49,8 +49,7 @@ pub enum PythonParserError {
     #[error("Python file not found at path: {path}")]
     FileNotFound { path: PathBuf },
     /// Encountered an unsupported data type in a field
-    #[error("Unsupported data type in field '{field_name}': {type_name}\n\
-             Supported types: str, int, float, bool, datetime, list[T], Optional[T], Key[T], JWT[T], and custom classes/enums")]
+    #[error("Unsupported data type in field '{field_name}': {type_name}")]
     UnsupportedDataTypeError {
         field_name: String,
         type_name: String,
