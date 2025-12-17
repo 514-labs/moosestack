@@ -44,6 +44,7 @@ export interface ApiUtil {
 export interface MooseUtils {
   client: MooseClient;
   sql: typeof sql;
+  jwt?: JWTPayload;
 }
 
 /** @deprecated Use ApiUtil instead. */
