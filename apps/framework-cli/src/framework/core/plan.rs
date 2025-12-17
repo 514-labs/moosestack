@@ -522,7 +522,11 @@ pub async fn load_target_infrastructure(
             ))
         })?;
 
-    Ok(target_infra_map)
+    // Canonicalize to ensure backward compatibility: migrate old SqlResource entries
+    // to MaterializedView/CustomView format to match how stored infrastructure maps are normalized.
+    // This prevents false "changes" when comparing old stored state (which has been canonicalized)
+    // with new target state (which might still have old SqlResource format).
+    Ok(target_infra_map.canonicalize_tables())
 }
 
 /// Loads the current infrastructure state from storage and reconciles with reality.

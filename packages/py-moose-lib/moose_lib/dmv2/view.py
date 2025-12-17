@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from .olap_table import OlapTable
 from ._registry import _custom_views
 from .source_location import get_source_file_from_stack
-from .materialized_view import MaterializedView
 
 
 class View:
@@ -45,7 +44,7 @@ class View:
         self,
         name: str,
         select_statement: str,
-        base_tables: list[Union[OlapTable, "View", "MaterializedView", Any]],
+        base_tables: list[Union[OlapTable, "View", Any]],
         metadata: dict = None,
     ):
         self.name = name

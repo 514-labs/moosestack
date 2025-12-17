@@ -5,7 +5,7 @@ This module provides classes for defining Materialized Views,
 including their SQL statements, target tables, and dependencies.
 """
 
-from typing import Any, Optional, Union, Generic, TypeVar
+from typing import Any, Optional, Union, Generic
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from ..blocks import ClickHouseEngines
@@ -13,6 +13,7 @@ from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
 from ._registry import _materialized_views
 from .source_location import get_source_file_from_stack
+from .view import View
 
 
 class MaterializedViewOptions(BaseModel):
@@ -33,7 +34,7 @@ class MaterializedViewOptions(BaseModel):
     """
 
     select_statement: str
-    select_tables: list[Union[OlapTable, "View", Any]]
+    select_tables: list[Union[OlapTable, "View"]]
     # Backward-compatibility: allow specifying just the table_name and engine
     table_name: Optional[str] = None
     materialized_view_name: str
