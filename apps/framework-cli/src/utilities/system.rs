@@ -104,18 +104,13 @@ pub async fn kill_child(child: &mut Child) -> Result<(), KillProcessError> {
 }
 
 /// Policy for when to restart a child process
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RestartPolicy {
     /// Always restart the process, even if it exits with code 0
     Always,
     /// Only restart on non-zero exit codes (failures)
+    #[default]
     OnFailure,
-}
-
-impl Default for RestartPolicy {
-    fn default() -> Self {
-        RestartPolicy::OnFailure
-    }
 }
 
 pub struct RestartingProcess {

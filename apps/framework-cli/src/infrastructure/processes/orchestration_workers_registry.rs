@@ -8,7 +8,7 @@ use crate::{
         languages::SupportedLanguages, python, typescript,
     },
     project::Project,
-    utilities::system::{KillProcessError, RestartPolicy, RestartingProcess, StartChildFn},
+    utilities::system::{KillProcessError, RestartPolicy, RestartingProcess},
 };
 
 /// Error types that can occur when managing orchestration workers
