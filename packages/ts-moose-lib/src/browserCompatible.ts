@@ -47,6 +47,10 @@ export {
   getWorkflow,
   getWebApps,
   getWebApp,
+  getCustomView,
+  getCustomViews,
+  getMaterializedView,
+  getMaterializedViews,
 } from "./dmv2";
 
 export {
