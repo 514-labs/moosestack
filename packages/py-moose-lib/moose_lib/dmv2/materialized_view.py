@@ -113,8 +113,6 @@ class MaterializedView(BaseTypedResource, Generic[T]):
         self.source_tables = [t.name for t in options.select_tables]
         self.source_file = get_source_file_from_stack()
 
-        # Register in the materialized_views registry
-        # In client-only mode, allow duplicate registrations for HMR support
         if self.name in _materialized_views:
             raise ValueError(f"MaterializedView with name {self.name} already exists")
         _materialized_views[self.name] = self

@@ -54,8 +54,6 @@ class View:
         self.metadata = metadata
         self.source_file = get_source_file_from_stack()
 
-        # Register in the custom_views registry
-        # In client-only mode, allow duplicate registrations for HMR support
         if self.name in _custom_views:
             raise ValueError(f"View with name {self.name} already exists")
         _custom_views[self.name] = self
