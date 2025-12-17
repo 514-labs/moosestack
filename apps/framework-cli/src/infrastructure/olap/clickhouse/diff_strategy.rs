@@ -99,8 +99,8 @@ pub fn enums_are_equivalent(actual: &DataEnum, target: &DataEnum) -> bool {
         return false;
     }
 
-    // Check each member
-    for (idx, target_member) in target.values.iter().enumerate() {
+    // Check each member - compare by name/value, not by index (order-insensitive)
+    for target_member in &target.values {
         match &target_member.value {
             EnumValue::String(target_str) => {
                 // For string enums, we have two cases:
@@ -112,21 +112,32 @@ pub fn enums_are_equivalent(actual: &DataEnum, target: &DataEnum) -> bool {
                 // Case 2: Both are from TypeScript (metadata has been written and read back)
                 // - Both have the same structure with string values
 
-                if let Some(actual_member) = actual.values.get(idx) {
+                // Find matching member in actual by name OR by the string value (for cross-mapping)
+                let actual_member = actual.values.iter().find(|m| {
+                    match &m.value {
+                        EnumValue::String(_) => {
+                            // Case 2: Both have strings, match by name
+                            m.name == target_member.name
+                        }
+                        EnumValue::Int(_) => {
+                            // Case 1: Actual has int, target has string
+                            // The actual member name should match the target string value
+                            m.name == *target_str
+                        }
+                    }
+                });
+
+                if let Some(actual_member) = actual_member {
                     match &actual_member.value {
                         EnumValue::String(actual_str) => {
-                            // Both have string values - they should match exactly
-                            if actual_member.name != target_member.name || actual_str != target_str
-                            {
+                            // Both have string values - values should match
+                            if actual_str != target_str {
                                 return false;
                             }
                         }
                         EnumValue::Int(_) => {
-                            // Actual has int, target has string - check cross-mapping
-                            // The actual member name should match the target string value
-                            if actual_member.name != *target_str {
-                                return false;
-                            }
+                            // Actual has int, target has string - this is valid (cross-mapping case)
+                            // We already checked the name matches the target string value
                         }
                     }
                 } else {
@@ -134,12 +145,10 @@ pub fn enums_are_equivalent(actual: &DataEnum, target: &DataEnum) -> bool {
                 }
             }
             EnumValue::Int(target_int) => {
-                // For integer enums, we need exact match
-                if let Some(actual_member) = actual.values.get(idx) {
-                    // Names should match
-                    if actual_member.name != target_member.name {
-                        return false;
-                    }
+                // For integer enums, find by name and check value matches
+                let actual_member = actual.values.iter().find(|m| m.name == target_member.name);
+
+                if let Some(actual_member) = actual_member {
                     // Values should match
                     if let EnumValue::Int(actual_int) = actual_member.value {
                         if actual_int != *target_int {
@@ -1575,6 +1584,145 @@ mod tests {
 
         // This is the core fix - TypeScript enum should be equivalent to ClickHouse representation
         assert!(enums_are_equivalent(&clickhouse_enum, &typescript_enum));
+    }
+
+    #[test]
+    fn test_enums_equivalent_int_enum_different_order() {
+        // TypeScript: enum ErrorSeverity { CRITICAL = 10, HIGH = 5, MEDIUM = 3, LOW = 1 }
+        let target_enum = DataEnum {
+            name: "ErrorSeverity".to_string(),
+            values: vec![
+                EnumMember {
+                    name: "CRITICAL".to_string(),
+                    value: EnumValue::Int(10),
+                },
+                EnumMember {
+                    name: "HIGH".to_string(),
+                    value: EnumValue::Int(5),
+                },
+                EnumMember {
+                    name: "MEDIUM".to_string(),
+                    value: EnumValue::Int(3),
+                },
+                EnumMember {
+                    name: "LOW".to_string(),
+                    value: EnumValue::Int(1),
+                },
+            ],
+        };
+
+        // ClickHouse sorts by value: Enum8('LOW' = 1, 'MEDIUM' = 3, 'HIGH' = 5, 'CRITICAL' = 10)
+        let actual_enum = DataEnum {
+            name: "Enum8".to_string(),
+            values: vec![
+                EnumMember {
+                    name: "LOW".to_string(),
+                    value: EnumValue::Int(1),
+                },
+                EnumMember {
+                    name: "MEDIUM".to_string(),
+                    value: EnumValue::Int(3),
+                },
+                EnumMember {
+                    name: "HIGH".to_string(),
+                    value: EnumValue::Int(5),
+                },
+                EnumMember {
+                    name: "CRITICAL".to_string(),
+                    value: EnumValue::Int(10),
+                },
+            ],
+        };
+
+        // Should be equivalent despite different order
+        assert!(enums_are_equivalent(&actual_enum, &target_enum));
+    }
+
+    #[test]
+    fn test_enums_equivalent_string_enum_different_order() {
+        // TypeScript: enum Priority { C = "c", B = "b", A = "a" }
+        let target_enum = DataEnum {
+            name: "Priority".to_string(),
+            values: vec![
+                EnumMember {
+                    name: "C".to_string(),
+                    value: EnumValue::String("c".to_string()),
+                },
+                EnumMember {
+                    name: "B".to_string(),
+                    value: EnumValue::String("b".to_string()),
+                },
+                EnumMember {
+                    name: "A".to_string(),
+                    value: EnumValue::String("a".to_string()),
+                },
+            ],
+        };
+
+        // ClickHouse without metadata, sorted by auto-assigned values: Enum8('a' = 1, 'b' = 2, 'c' = 3)
+        let actual_enum = DataEnum {
+            name: "Enum8".to_string(),
+            values: vec![
+                EnumMember {
+                    name: "a".to_string(),
+                    value: EnumValue::Int(1),
+                },
+                EnumMember {
+                    name: "b".to_string(),
+                    value: EnumValue::Int(2),
+                },
+                EnumMember {
+                    name: "c".to_string(),
+                    value: EnumValue::Int(3),
+                },
+            ],
+        };
+
+        // Should be equivalent despite different order
+        assert!(enums_are_equivalent(&actual_enum, &target_enum));
+    }
+
+    #[test]
+    fn test_enums_equivalent_metadata_different_order() {
+        // Both have metadata but members are in different order
+        let enum1 = DataEnum {
+            name: "HttpStatus".to_string(),
+            values: vec![
+                EnumMember {
+                    name: "OK".to_string(),
+                    value: EnumValue::Int(200),
+                },
+                EnumMember {
+                    name: "SERVER_ERROR".to_string(),
+                    value: EnumValue::Int(500),
+                },
+                EnumMember {
+                    name: "NOT_FOUND".to_string(),
+                    value: EnumValue::Int(404),
+                },
+            ],
+        };
+
+        let enum2 = DataEnum {
+            name: "HttpStatus".to_string(),
+            values: vec![
+                EnumMember {
+                    name: "OK".to_string(),
+                    value: EnumValue::Int(200),
+                },
+                EnumMember {
+                    name: "NOT_FOUND".to_string(),
+                    value: EnumValue::Int(404),
+                },
+                EnumMember {
+                    name: "SERVER_ERROR".to_string(),
+                    value: EnumValue::Int(500),
+                },
+            ],
+        };
+
+        // Should be equivalent despite different order
+        assert!(enums_are_equivalent(&enum1, &enum2));
     }
 
     #[test]
