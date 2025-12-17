@@ -326,49 +326,31 @@ describe("BYOF Standalone Functionality", function () {
 
   describe("webAppHelpers deprecation", () => {
     describe("expressMiddleware", () => {
-      it("should log deprecation warning when called", () => {
-        const originalWarn = console.warn;
-        let warningLogged = false;
-
-        console.warn = (msg: string) => {
-          if (
-            msg.includes("[DEPRECATED]") &&
-            msg.includes("expressMiddleware")
-          ) {
-            warningLogged = true;
-          }
-        };
-
-        try {
-          expressMiddleware();
-          expect(warningLogged).to.be.true;
-        } finally {
-          console.warn = originalWarn;
-        }
+      it("should log deprecation warning when called", async () => {
+        const { matched } = await captureWarnings(
+          () => expressMiddleware(),
+          /\[DEPRECATED\].*expressMiddleware/,
+        );
+        expect(matched).to.be.true;
       });
 
-      it("should still return a working middleware function", () => {
-        const originalWarn = console.warn;
-        console.warn = () => {}; // Suppress warning
+      it("should still return a working middleware function", async () => {
+        const { result: middleware } = await captureWarnings(() =>
+          expressMiddleware(),
+        );
+        expect(middleware).to.be.a("function");
 
-        try {
-          const middleware = expressMiddleware();
-          expect(middleware).to.be.a("function");
+        // Test middleware behavior
+        const req: any = { raw: { moose: { client: "test" } } };
+        const res: any = {};
+        let nextCalled = false;
+        const next = () => {
+          nextCalled = true;
+        };
 
-          // Test middleware behavior
-          const req: any = { raw: { moose: { client: "test" } } };
-          const res: any = {};
-          let nextCalled = false;
-          const next = () => {
-            nextCalled = true;
-          };
-
-          middleware(req, res, next);
-          expect(nextCalled).to.be.true;
-          expect(req.moose).to.deep.equal({ client: "test" });
-        } finally {
-          console.warn = originalWarn;
-        }
+        middleware(req, res, next);
+        expect(nextCalled).to.be.true;
+        expect(req.moose).to.deep.equal({ client: "test" });
       });
     });
   });
