@@ -125,50 +125,52 @@ const moosestackNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
   },
 
-  // Getting Started
+  // Separator
+  { type: "separator" },
+
+  // Getting Started (top-level paths)
+  { type: "label", title: "Getting Started" },
+
+  // Build a new app
   {
     type: "page",
-    slug: "moosestack/getting-started",
-    title: "Getting Started",
+    slug: "moosestack/getting-started/quickstart",
+    title: "Build a New App",
     icon: IconRocket,
     languages: ["typescript", "python"],
-    children: [
-      { type: "label", title: "New Project" },
-      {
-        type: "page",
-        slug: "moosestack/getting-started/quickstart",
-        title: "5-Minute Quickstart",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "templates",
-        title: "Browse Templates →",
-        languages: ["typescript", "python"],
-        external: true,
-      },
-      { type: "separator" },
-      { type: "label", title: "Existing App" },
-      {
-        type: "page",
-        slug: "moosestack/getting-started/existing-app/next-js",
-        title: "Next.js",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/getting-started/existing-app/fastify",
-        title: "Fastify",
-        languages: ["typescript"],
-      },
-      { type: "separator" },
-      {
-        type: "page",
-        slug: "moosestack/getting-started/from-clickhouse",
-        title: "From Existing ClickHouse",
-        languages: ["typescript", "python"],
-      },
-    ],
+  },
+  {
+    type: "page",
+    slug: "templates",
+    title: "Clone a Template →",
+    icon: IconCode,
+    languages: ["typescript", "python"],
+    external: true,
+  },
+
+  // Embed in an existing app
+  { type: "separator" },
+  { type: "label", title: "Embed in Existing App" },
+  {
+    type: "page",
+    slug: "moosestack/getting-started/existing-app/next-js",
+    title: "Next.js",
+    languages: ["typescript"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/getting-started/existing-app/fastify",
+    title: "Fastify",
+    languages: ["typescript"],
+  },
+
+  // Connect to an existing ClickHouse
+  { type: "separator" },
+  {
+    type: "page",
+    slug: "moosestack/getting-started/from-clickhouse",
+    title: "From Existing ClickHouse",
+    languages: ["typescript", "python"],
   },
 
   // Separator
@@ -201,66 +203,67 @@ const moosestackNavigationConfig: NavigationConfig = [
   // Separator
   { type: "separator" },
 
-  // MooseStack in your App section
-  { type: "label", title: "MooseStack in your App" },
+  // Modules section
+  { type: "label", title: "Modules" },
   {
-    type: "page",
-    slug: "moosestack/data-sources",
-    title: "Data sources",
-    icon: IconGitCompare,
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "moosestack/app-api-frameworks",
-    title: "App / API frameworks",
-    icon: IconCode,
-    languages: ["typescript", "python"],
-    children: [
+    type: "section",
+    title: "Moose Web App",
+    icon: IconApps,
+    items: [
       {
         type: "page",
-        slug: "moosestack/app-api-frameworks/nextjs",
-        title: "Next.js",
-        languages: ["typescript"],
+        slug: "moosestack/data-sources",
+        title: "Data Sources",
+        icon: IconGitCompare,
+        languages: ["typescript", "python"],
       },
       {
         type: "page",
-        slug: "moosestack/app-api-frameworks/express",
-        title: "Express",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/fastify",
-        title: "Fastify",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/koa",
-        title: "Koa",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/raw-nodejs",
-        title: "Raw Node.js",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/fastapi",
-        title: "FastAPI",
-        languages: ["python"],
+        slug: "moosestack/app-api-frameworks",
+        title: "App / API Frameworks",
+        icon: IconCode,
+        languages: ["typescript", "python"],
+        children: [
+          {
+            type: "page",
+            slug: "moosestack/app-api-frameworks/nextjs",
+            title: "Next.js",
+            languages: ["typescript"],
+          },
+          {
+            type: "page",
+            slug: "moosestack/app-api-frameworks/express",
+            title: "Express",
+            languages: ["typescript"],
+          },
+          {
+            type: "page",
+            slug: "moosestack/app-api-frameworks/fastify",
+            title: "Fastify",
+            languages: ["typescript"],
+          },
+          {
+            type: "page",
+            slug: "moosestack/app-api-frameworks/koa",
+            title: "Koa",
+            languages: ["typescript"],
+          },
+          {
+            type: "page",
+            slug: "moosestack/app-api-frameworks/raw-nodejs",
+            title: "Raw Node.js",
+            languages: ["typescript"],
+          },
+          {
+            type: "page",
+            slug: "moosestack/app-api-frameworks/fastapi",
+            title: "FastAPI",
+            languages: ["python"],
+          },
+        ],
       },
     ],
   },
-
-  // Separator
-  { type: "separator" },
-
-  // Modules section
-  { type: "label", title: "Modules" },
   {
     type: "page",
     slug: "moosestack/olap",
