@@ -7,23 +7,33 @@ import { Callout, FileTree, BulletPointsCard } from "@/components/mdx";
 
 # Embed ClickHouse analytics in your Next.js app
 
-This guide shows how to **embed ClickHouse-powered analytics** inside an existing Next.js (App Router) app using MooseStack.
+## Overview
 
-You’ll run **`moose dev` alongside `next dev`**, define ClickHouse tables and query helpers in a `moose/` workspace, and import them into your **Server Components / Route Handlers**.
+This guide shows how to add MooseStack to an existing Next.js (App Router) app as a library. You keep Next.js as your app runtime, but you get ClickHouse schema management as TypeScript code, type-safe query helpers you can import into server-side handlers, and a production migration workflow—without deploying a separate backend service.
 
-<Callout type="info" title="The core pattern">
-- Write models + queries in `moose/**`
-- Compile them to `dist/**` (Moose uses a TypeScript compiler plugin to inject schemas)
-- Import from `@/moose` (which points at `dist/`), not from `moose/`
-</Callout>
+### Intended audience
+Developers with an existing Next.js app who want to **embed schema management + type-safe ClickHouse queries** without deploying a separate backend service.
 
-**By the end you will have:**
+### What you’ll accomplish
 
-- **Local dev working**: `moose dev` (local ClickHouse + schema apply + rebuild `dist/`) running alongside `next dev`
-- **A `moose/` workspace**: tables + query helpers you can import from `@/moose`
-- **A working analytics page**: a Server Component that queries ClickHouse safely and type-sensibly
+By the end of this guide, you’ll be able to:
 
-**Best for:** developers with an existing Next.js app who want to **embed schema management + type-safe ClickHouse queries** without deploying a separate backend service.
+- Model ClickHouse schema in TypeScript in a `moose/` directory (tables, views/materialized views)
+- Query ClickHouse from your Next.js server-side code using type-safe query helpers
+- Run migrations against production ClickHouse with the Moose CLI as part of your existing deployment workflow
+
+### Guide outline
+
+- **[Get started](#get-started):** install and configure MooseStack in your Next.js repo, then set up your project so you can import the compiled output from `@/moose`.
+- **[Model table](#model-table):** define your ClickHouse table schema in TypeScript in `moose/models/`.
+- **[Start local ClickHouse](#start-local-clickhouse):** run `moose dev` to spin up a local ClickHouse instance and automatically instantiate (and hot-reload) your TypeScript models against it.
+- **[Write queries](#write-queries):** create type-safe query helpers that use your models, and set up the Moose ClickHouse client to connect to your local ClickHouse instance.
+- **[Use in Next.js](#use-in-nextjs):** import the compiled query helpers from `@/moose` into Server Components / Route Handlers, run your app, and see the query results render in your pages.
+- **[Deploy to production](#deploy-to-production):** use the Moose CLI to run migrations against production ClickHouse, then update your production environment variables to point at it.
+
+{/* ### What you’ll change in your repo
+
+You’ll touch a few things: dependencies + scripts, `moose.config.toml`, `tsconfig.moose.json`, some `tsconfig.json` / `next.config.*` configuration, `.env.local`, and the `moose/` directory itself. */}
 
 ---
 
@@ -31,6 +41,9 @@ You’ll run **`moose dev` alongside `next dev`**, define ClickHouse tables and 
 
 <FileTree>
   <FileTree.Folder name="your-nextjs-app" defaultOpen>
+    <FileTree.Folder name="app" defaultOpen>
+        <FileTree.File name="page.tsx" />
+    </FileTree.Folder>
     <FileTree.Folder name="moose" defaultOpen>
       <FileTree.File name="index.ts" />
       <FileTree.File name="client.ts" />
@@ -47,6 +60,10 @@ You’ll run **`moose dev` alongside `next dev`**, define ClickHouse tables and 
     <FileTree.File name="moose.config.toml" />
     <FileTree.File name="tsconfig.moose.json" />
     <FileTree.File name=".env.local" />
+    <FileTree.File name=".gitignore" />
+    <FileTree.File name="package.json" />
+    <FileTree.File name="tsconfig.json" />
+    <FileTree.File name="next.config.ts" />
   </FileTree.Folder>
 </FileTree>
 
@@ -87,11 +104,11 @@ You’ll run **`moose dev` alongside `next dev`**, define ClickHouse tables and 
 
 ---
 
-## 1) Installation & setup
+## Get Started
 
 This section gets MooseStack running inside your existing Next.js project. You’ll install dependencies, configure TypeScript + Next.js, and create the Moose config needed to run `moose dev` locally.
 
-### 1.1 Install dependencies + add scripts
+### Install dependencies + add scripts
 
 Add MooseStack and its build tools:
 
@@ -129,7 +146,7 @@ Add these scripts to your `package.json`:
 MooseStack uses compiler plugins to inject schemas into your models at build time. The `ts-patch` package provides `tspc`, which supports these plugins.
 </Callout>
 
-### 1.2 Configure TypeScript (import compiled Moose output)
+### Configure TypeScript (import compiled Moose output)
 
 Moose code must be imported from the compiled `dist/` output.
 
@@ -202,7 +219,7 @@ Create `tsconfig.moose.json` in your project root:
 }
 ```
 
-### 1.3 Configure Next.js (server bundling)
+### Configure Next.js (server bundling)
 
 Update `next.config.ts` to avoid bundling server-only dependencies:
 
@@ -217,7 +234,7 @@ const nextConfig = {
 export default nextConfig;
 ```
 
-### 1.4 Create Moose config + environment variables
+### Create Moose config + environment variables
 
 Create `moose.config.toml` in your project root:
 
@@ -272,16 +289,11 @@ Update `.gitignore` to exclude MooseStack generated files:
 
 ---
 
-## 2) Create your `moose/` workspace (models + queries)
+## Model table
 
-In this step you’ll add:
-- an OLAP table model
-- a ClickHouse client helper
-- a reusable query function
+In this step you’ll define your first ClickHouse table model in TypeScript. MooseStack uses these models as the source of truth for schema management. Create a file called `moose/models/events.ts` with the following content:
 
-### Define a model
-
-```typescript title="moose/models/events.ts"
+```ts title="moose/models/events.ts"
 import { OlapTable } from "@514labs/moose-lib";
 
 export interface EventModel {
@@ -302,6 +314,28 @@ export const Events = new OlapTable<EventModel>("events", {
   orderByFields: ["event_time"]
 });
 ```
+
+---
+
+## Start local ClickHouse
+
+Now start Moose in dev mode. This instantly brings up a local ClickHouse instance (via Docker) and automatically instantiates your models against it, giving you a fast loop for iterating on your schema.
+
+Leave this running in its own terminal for the rest of the guide:
+
+```bash title="Terminal" copy
+pnpm dev:moose
+```
+
+As you update models and query helpers in `moose/`, Moose will apply schema changes and (based on your `moose.config.toml`) rebuild `dist/` after reload so Next.js can import the compiled output via `@/moose`.
+
+---
+
+<span id="write-queries" />
+
+## Write queries
+
+With the local ClickHouse instance running (step 3), you’ll set up a client and write type-safe query helpers that use your TypeScript models.
 
 ### Create a ClickHouse client helper
 
@@ -338,7 +372,9 @@ export async function getMoose() {
 
 ### Create a query helper
 
-```typescript title="moose/queries/overview-metrics.ts"
+This is a helper funciton that uses the Moose ClickHouse client and your OlapTable models to facilitate the interaction between Moose and Clickhouse. Create a file called `moose/queries/overview-metrics.ts` with the following content:
+
+```ts title="moose/queries/overview-metrics.ts"
 import { sql } from "@514labs/moose-lib";
 import { Events } from "../models/events";
 import { getMoose } from "../client";
@@ -361,10 +397,10 @@ export const getOverviewMetrics = async (dateRange?: DateRange) => {
   const salesData = await moose.client.query.execute(
     sql`
       SELECT
-        sum(amount) as total_revenue,
+        sum(${Events.columns.amount}) as total_revenue,
         count(*) as total_sales
       FROM ${Events}
-      WHERE event_type = 'purchase' ${dateFilter}
+      WHERE ${Events.columns.event_type} = 'purchase' ${dateFilter}
     `
   );
 
@@ -375,9 +411,9 @@ export const getOverviewMetrics = async (dateRange?: DateRange) => {
 
   const activeUsersData = await moose.client.query.execute(
     sql`
-      SELECT uniq(customer_id) as active_users
+      SELECT uniq(${Events.columns.customer_id}) as active_users
       FROM ${Events}
-      WHERE event_time > now() - interval 1 hour
+      WHERE ${Events.columns.event_time} > now() - interval 1 hour
     `
   );
 
@@ -402,9 +438,15 @@ export * from "./queries/overview-metrics";
 
 ---
 
-## 3) Query ClickHouse from Next.js
+## Use in Next Page
 
-Import and call your Moose query helper from a **Server Component**:
+Keep `pnpm dev:moose` running (step 3). In a second terminal, start your Next.js app:
+
+```bash title="Terminal" copy
+pnpm dev:next
+```
+
+Now import and call your Moose query helper from a **Server Component**:
 
 ```typescript title="app/analytics/page.tsx"
 import { getOverviewMetrics } from "@/moose";
@@ -429,33 +471,15 @@ export default async function AnalyticsPage() {
 Do not call ClickHouse from the browser. Use Server Components, Route Handlers, or Server Actions so credentials remain server-side.
 </Callout>
 
----
-
-## 4) Run `moose dev` + `next dev` (recommended)
-
-Run both in two terminals:
-
-```bash title="Terminal 1" copy
-pnpm dev:moose
-```
-
-```bash title="Terminal 2" copy
-pnpm dev:next
-```
-
-**What’s happening:**
-- `moose dev` manages local ClickHouse (Docker) and applies schema changes from `moose/`
-- On every reload, Moose runs `on_reload_complete_script = "pnpm build:moose"` to rebuild `dist/`
-- Next imports compiled output from `dist/` via `@/moose`
-
 **Success checklist:**
+
 - `pnpm build:moose` creates `dist/index.js` (and types)
 - Next can resolve `@/moose`
 - Your `/analytics` page renders without runtime errors
 
 ---
 
-## 5) Production rollout (optional)
+## Deploy to Production
 
 In this setup, your Next.js app connects directly to ClickHouse—there’s no separate Moose Runtime service to deploy. You just need to:
 
