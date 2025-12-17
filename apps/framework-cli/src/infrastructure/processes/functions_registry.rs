@@ -1,4 +1,4 @@
-use crate::utilities::system::{RestartingProcess, StartChildFn};
+use crate::utilities::system::{RestartPolicy, RestartingProcess, StartChildFn};
 use crate::{
     framework::core::{
         infrastructure::function_process::FunctionProcess, infrastructure_map::InfrastructureMap,
@@ -107,8 +107,11 @@ impl FunctionProcessRegistry {
                         });
                     };
 
-                let restarting_process =
-                    RestartingProcess::create(function_process.id(), start_fn)?;
+                let restarting_process = RestartingProcess::create(
+                    function_process.id(),
+                    start_fn,
+                    RestartPolicy::Always,
+                )?;
                 self.registry
                     .insert(function_process.id(), restarting_process);
 
@@ -159,8 +162,11 @@ impl FunctionProcessRegistry {
                         });
                     };
 
-                let restarting_process =
-                    RestartingProcess::create(function_process.id(), start_fn)?;
+                let restarting_process = RestartingProcess::create(
+                    function_process.id(),
+                    start_fn,
+                    RestartPolicy::Always,
+                )?;
                 self.registry
                     .insert(function_process.id(), restarting_process);
 
