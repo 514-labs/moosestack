@@ -11,13 +11,12 @@ This release focuses on developer experience and database reliability. Moose now
 
 <Callout type="info" title="Highlights">
 * **New:** [Display ClickHouse connection info during moose dev startup](#display-clickhouse-connection-info-during-moose-dev-startup)
-* **New:** [JSON output option for plan command](#json-output-option-for-plan-command)
-* **New:** [VersionedCollapsingMergeTree and replicated variants support](#versionedcollapsingmergetree-and-replicated-variants-support)
+* **New:** [Table Engine Support: VersionedCollapsingMergeTree and replicated variants](#versionedcollapsingmergetree-and-replicated-variants-support)
 </Callout>
 
 
 
-## 🦌 Moose
+## Moose
 
 ### Display ClickHouse connection info during moose dev startup
 
@@ -25,34 +24,7 @@ The moose dev command now displays ClickHouse connection URLs when starting loca
 
 PR: [#3103](https://github.com/514-labs/moosestack/pull/3103)
 
-### JSON output option for plan command
-
-The `moose plan` command now supports a `--json` flag that outputs the infrastructure plan in JSON format for programmatic use and automation. This enables users to integrate plan results into CI/CD pipelines, scripts, and other tooling. Also includes fixes for production deployments with Docker Compose dependencies.
-
-```bash
-# Basic usage: Get plan output in JSON format
-moose plan --json
-
-# Use in CI/CD pipeline to check for changes
-PLAN_OUTPUT=$(moose plan --json)
-if echo "$PLAN_OUTPUT" | jq -e '.changes | length > 0' > /dev/null; then
-  echo "Infrastructure changes detected:"
-  echo "$PLAN_OUTPUT" | jq '.changes'
-  # Proceed with deployment or approval workflow
-else
-  echo "No infrastructure changes needed"
-fi
-
-# Save plan to file for review or audit trail
-moose plan --json > infrastructure-plan.json
-
-# Use with remote Moose server
-moose plan --json --url "https://api.mymoose.app" --token "$MOOSE_TOKEN"
-```
-
-PR: [#3099](https://github.com/514-labs/moosestack/pull/3099)
-
-### VersionedCollapsingMergeTree and replicated variants support
+### Table Engine Support: VersionedCollapsingMergeTree and replicated variants
 
 Added support for VersionedCollapsingMergeTree, CollapsingMergeTree, and their replicated variants in ClickHouse table engines. Users can now define data models that use these specialized merge tree engines for handling versioned data and collapsing operations, enabling more advanced data deduplication and versioning patterns in their streaming pipelines.
 
@@ -100,7 +72,7 @@ PR: [#3055](https://github.com/514-labs/moosestack/pull/3055) | Docs: [OlapTable
 
 ### Other improvements
 
-- **Reorganized configuration documentation** – Split the large configuration documentation page into focused sections for each component (ClickHouse, Redis, Redpanda, Temporal, etc.). This makes it easier to find and understand configuration options for specific parts of your MooseStack project. [#3093](https://github.com/514-labs/moosestack/pull/3093)
+- **JSON output option for `moose plan`** – The `moose plan` command now supports a `--json` flag that outputs the infrastructure plan in JSON format for programmatic use and automation. This enables users to integrate plan results into CI/CD pipelines, scripts, and other tooling. [#3099](https://github.com/514-labs/moosestack/pull/3099)
 - **Web-apps filter option in `moose ls`** – The moose ls command now supports filtering by web-apps infrastructure type, allowing users to view web application components in their data pipeline alongside other infrastructure types like tables, streams, and ingestion endpoints. [#3054](https://github.com/514-labs/moosestack/pull/3054)
 
 ### Bug fixes
@@ -113,17 +85,17 @@ PR: [#3055](https://github.com/514-labs/moosestack/pull/3055) | Docs: [OlapTable
 - **TTL operation handling and ModifyTableTtl migration schema** – Fixed a bug where TTL (Time To Live) operations weren't being properly ignored when specified, and added proper schema support for ModifyTableTtl migrations. This ensures TTL changes are handled correctly during table migrations and can be selectively ignored when needed. [#3092](https://github.com/514-labs/moosestack/pull/3092)
 - **Kafka-to-ClickHouse sync custom database configuration** – Fixed a bug where the Kafka-to-ClickHouse sync process ignored the table.database field in data model configurations, always using the default database instead. Now when users specify a custom database in their table configuration, the sync process correctly writes data to that database. [#3102](https://github.com/514-labs/moosestack/pull/3102)
 
-## 🐻 Boreal
+## Boreal
 
 ### Bug fixes
 
-- **Hosting telemetry crash** – Fixed a crash in the hosting telemetry system that could cause application instability. This improves the reliability of the platform's monitoring and data collection capabilities.
+
 - **Deployment error handling when no production deploy exists** – Improved deployment reliability by properly handling cases where no previous production deployment exists. This prevents deployment failures and provides better error tracking for project setup scenarios.
 - **Deployment redeployment production status** – Fixed an issue where redeploying a production deployment would incorrectly mark it as non-production, potentially causing confusion about which deployment is currently live. Also improved error handling when no production deployment is found.
 - **Deployment status filtering** – Fixed an issue where the deployment dashboard was using incorrect status filtering, which could cause production deployments to display incorrectly or not appear when they should. Users will now see accurate deployment status information in their project dashboard.
 - **Deployment status retrieval for production environments** – Fixed an issue where the system wasn't properly retrieving the current production deployment status. This ensures that deployment information is accurately displayed in the dashboard and prevents potential inconsistencies in deployment tracking.
 
-## 📦 Infrastructure
+## Infrastructure
 
 - **BYOC persistent volume mounts** – BYOC Moose deployments now support persistent volume mounts, allowing applications to store and access data that persists across pod restarts and redeployments. Great for network filesystems that need to be mounted to pods.
 - **Extended deployment startup timeouts** – Increased from 3 minutes to 20 minutes to prevent deployment failures during slow image pulls or resource provisioning. This reduces failed deployments and improves overall platform reliability for users.
