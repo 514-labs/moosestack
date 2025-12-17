@@ -1,0 +1,122 @@
+---
+title: December 15, 2025
+description: Release notes for December 15, 2025
+---
+
+import { Callout } from "@/components";
+
+# December 15, 2025
+
+This release focuses on developer experience and database reliability. Moose now surfaces ClickHouse connection details at startup and supports JSON output for CI/CD automation, while a suite of fixes ensures database configurations are respected across migrations, sync processes, and client libraries.
+
+<Callout type="info" title="Highlights">
+* **New:** [Display ClickHouse connection info during moose dev startup](#display-clickhouse-connection-info-during-moose-dev-startup)
+* **New:** [Table Engine Support: VersionedCollapsingMergeTree and replicated variants](#table-engine-support-versionedcollapsingmergetree-and-replicated-variants)
+</Callout>
+
+
+
+## Moose
+
+### Display ClickHouse connection info during moose dev startup
+
+The moose dev command now displays ClickHouse connection URLs when starting local infrastructure, making it easier for developers to connect to their databases for debugging and data exploration. Connection details are shown with masked passwords for security.
+
+```bash
+❯ moose dev
+
+> analytical-moosestack@0.0 dev /Users/mitchell/repos/analytical-moosestack
+> moose-cli dev
+
+        Created docker compose file
+        Warning Using legacy pnpm deploy - add `inject-workspace-packages=true` to .npmrc and run `pnpm install`
+✓ Local infrastructure started successfully
+      Validated analytical-moosestack-clickhousedb-1 docker container
+ClickHouse Conn http://panda:******@localhost:18123/?database=local
+                See moose.config.toml for complete connection details
+      Validated analytical-moosestack-redpanda-1 docker container
+      Validated Redpanda cluster
+      Validated analytical-moosestack-temporal-1 docker container
+       Node Id: analytical-moosestack::2d5e4bdc-935e-48a6-b258-069a8631fdfd
+       Starting development mode
+```
+
+PR: [#3103](https://github.com/514-labs/moosestack/pull/3103)
+
+### Table Engine Support: VersionedCollapsingMergeTree and replicated variants
+
+Added support for VersionedCollapsingMergeTree, CollapsingMergeTree, and their replicated variants in ClickHouse table engines. Users can now define data models that use these specialized merge tree engines for handling versioned data and collapsing operations, enabling more advanced data deduplication and versioning patterns in their streaming pipelines.
+
+```typescript
+import { Key } from "@514labs/moose-lib";
+
+// Define a data model using VersionedCollapsingMergeTree for user profile updates
+// This allows tracking profile changes over time with automatic deduplication
+export interface UserProfile {
+  userId: Key<string>;
+  email: string;
+  name: string;
+  lastLoginAt: Date;
+  
+  // Required fields for VersionedCollapsingMergeTree
+  sign: number;    // 1 for insert, -1 for delete/update
+  version: number; // Monotonically increasing version number
+}
+
+// Configure the table to use VersionedCollapsingMergeTree engine
+export default {
+  tableName: "user_profiles",
+  engine: {
+    VersionedCollapsingMergeTree: {
+      sign: "sign",     // Column name for the sign field
+      ver: "version"    // Column name for the version field
+    }
+  },
+  orderBy: ["userId", "version"], // Order by user ID and version
+  primaryKey: ["userId"]
+};
+
+// Example usage in a streaming function
+export function processUserUpdate(oldProfile: UserProfile, newProfile: UserProfile) {
+  return [
+    // Mark old record for deletion
+    { ...oldProfile, sign: -1 },
+    // Insert new record
+    { ...newProfile, sign: 1, version: oldProfile.version + 1 }
+  ];
+}
+```
+
+PR: [#3055](https://github.com/514-labs/moosestack/pull/3055) | Docs: [OlapTable](/moose/olap) | [VersionedCollapsingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/versionedcollapsingmergetree) | [CollapsingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/collapsingmergetree)
+
+### Other improvements
+
+- **JSON output option for `moose plan`** – The `moose plan` command now supports a `--json` flag that outputs the infrastructure plan in JSON format for programmatic use and automation. This enables users to integrate plan results into CI/CD pipelines, scripts, and other tooling. [#3099](https://github.com/514-labs/moosestack/pull/3099)
+- **Web-apps filter option in `moose ls`** – The moose ls command now supports filtering by web-apps infrastructure type, allowing users to view web application components in their data pipeline alongside other infrastructure types like tables, streams, and ingestion endpoints. [#3054](https://github.com/514-labs/moosestack/pull/3054)
+
+### Bug fixes
+
+- **Database engine detection for custom databases** – Fixed an issue where tables in custom databases weren't properly matched during migrations, causing them to appear unmapped and potentially use stale engine information. This could lead to incorrect engine type detection (e.g., showing MergeTree instead of ReplicatedReplacingMergeTree) and migration issues for users with custom database configurations. [#3118](https://github.com/514-labs/moosestack/pull/3118)
+- **Unnecessary table recreation on readonly settings changes** – Fixed an issue where ClickHouse tables would be unnecessarily recreated when readonly settings changed from None to their default values (e.g., index_granularity to 8192). This prevents disruptive table drops and recreations during deployments when no actual configuration changes occurred. [#3121](https://github.com/514-labs/moosestack/pull/3121)
+- **Database name handling when loading infrastructure from JSON** – Fixed an issue where the infrastructure map would not properly update database names and table IDs when loading from JSON files in production deployments. This ensures that table references and sync processes maintain correct database naming consistency, preventing potential deployment failures. [#3110](https://github.com/514-labs/moosestack/pull/3110)
+- **Standardize `db pull` command flag** – The `moose db pull` command now uses `--clickhouse-url` instead of `--connection-string` for consistency with other CLI commands. The command also supports the `CLICKHOUSE_URL` environment variable as a fallback. [#3106](https://github.com/514-labs/moosestack/pull/3106)
+- **TypeScript and Python clients inserting to correct database** – Fixed a bug where TypeScript and Python OlapTable clients were not respecting per-table database configuration. Previously, clients would always connect to the global default database even when a table was configured with a specific database. Now clients properly use the table-specific database setting when specified, falling back to the global config when not set. [#3107](https://github.com/514-labs/moosestack/pull/3107)
+- **TTL operation handling and ModifyTableTtl migration schema** – Fixed a bug where TTL (Time To Live) operations weren't being properly ignored when specified, and added proper schema support for ModifyTableTtl migrations. This ensures TTL changes are handled correctly during table migrations and can be selectively ignored when needed. [#3092](https://github.com/514-labs/moosestack/pull/3092)
+- **Kafka-to-ClickHouse sync custom database configuration** – Fixed a bug where the Kafka-to-ClickHouse sync process ignored the table.database field in data model configurations, always using the default database instead. Now when users specify a custom database in their table configuration, the sync process correctly writes data to that database. [#3102](https://github.com/514-labs/moosestack/pull/3102)
+
+## Boreal
+
+### Bug fixes
+
+
+- **Deployment error handling when no production deploy exists** – Improved deployment reliability by properly handling cases where no previous production deployment exists. This prevents deployment failures and provides better error tracking for project setup scenarios.
+- **Deployment redeployment production status** – Fixed an issue where redeploying a production deployment would incorrectly mark it as non-production, potentially causing confusion about which deployment is currently live. Also improved error handling when no production deployment is found.
+- **Deployment status filtering** – Fixed an issue where the deployment dashboard was using incorrect status filtering, which could cause production deployments to display incorrectly or not appear when they should. Users will now see accurate deployment status information in their project dashboard.
+- **Deployment status retrieval for production environments** – Fixed an issue where the system wasn't properly retrieving the current production deployment status. This ensures that deployment information is accurately displayed in the dashboard and prevents potential inconsistencies in deployment tracking.
+
+## Infrastructure
+
+- **BYOC persistent volume mounts** – BYOC Moose deployments now support persistent volume mounts, allowing applications to store and access data that persists across pod restarts and redeployments. Great for network filesystems that need to be mounted to pods.
+- **Extended deployment startup timeouts** – Increased from 3 minutes to 20 minutes to prevent deployment failures during slow image pulls or resource provisioning. This reduces failed deployments and improves overall platform reliability for users.
+
+
