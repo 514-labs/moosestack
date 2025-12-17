@@ -145,13 +145,9 @@ impl PythonProject {
                     format!("File not found: {}", path.display())
                 }
                 PythonParserError::InvalidPythonFile => {
-                    "Invalid Python syntax in setup.py or setup() function not found\n\n\
-                     Common causes:\n\
-                     - setup.py has syntax errors\n\
-                     - setup.py doesn't contain a setup() function call\n\
-                     - setup() call is missing the required 'name' parameter\n\n\
-                     Your setup.py should look similar to:\n\
-                     \n  from setuptools import setup\n  setup(\n      name=\"your-project-name\",\n      version=\"0.0\",\n      install_requires=[...]\n  )".to_string()
+                    "Invalid Python syntax in setup.py\n\n\
+                     The file contains syntax errors that prevent it from being parsed.\n\
+                     Please check your setup.py file for correct Python syntax.".to_string()
                 }
                 PythonParserError::UnsupportedDataTypeError { field_name, type_name } => {
                     format!(
@@ -159,6 +155,14 @@ impl PythonProject {
                          This error typically occurs when parsing data model files, not setup.py",
                         field_name, type_name
                     )
+                }
+                PythonParserError::OtherError { message } if message.to_lowercase().contains("function not found") => {
+                    "setup() function not found in setup.py\n\n\
+                     Common causes:\n\
+                     - setup.py doesn't contain a setup() function call\n\
+                     - setup() call is missing the required 'name' parameter\n\n\
+                     Your setup.py should look similar to:\n\
+                     \n  from setuptools import setup\n  setup(\n      name=\"your-project-name\",\n      version=\"0.0\",\n      install_requires=[...]\n  )".to_string()
                 }
                 _ => format!("Error details: {}", e),
             };
