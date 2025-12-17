@@ -103,6 +103,16 @@ pub async fn kill_child(child: &mut Child) -> Result<(), KillProcessError> {
     }
 }
 
+/// Policy for when to restart a child process
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RestartPolicy {
+    /// Always restart the process, even if it exits with code 0
+    Always,
+    /// Only restart on non-zero exit codes (failures)
+    #[default]
+    OnFailure,
+}
+
 pub struct RestartingProcess {
     monitor_task: JoinHandle<()>,
     kill: tokio::sync::oneshot::Sender<()>,
@@ -114,6 +124,7 @@ impl RestartingProcess {
     pub fn create<E: Debug + 'static>(
         process_id: String,
         start: StartChildFn<E>,
+        restart_policy: RestartPolicy,
     ) -> Result<RestartingProcess, E> {
         let child = start()?;
         let (sender, mut receiver) = tokio::sync::oneshot::channel::<()>();
@@ -135,17 +146,33 @@ impl RestartingProcess {
                         }
                         exit_status_result = child.wait() => {
                             let process_runtime = process_start_time.elapsed();
-                            match exit_status_result {
+                            let should_restart = match exit_status_result {
                                 Ok(exit_status) => {
                                     if exit_status.success() {
                                         info!("Process {} exited successfully after running for {:?}", process_id, process_runtime);
+                                        match restart_policy {
+                                            RestartPolicy::Always => {
+                                                info!("Process {} exited cleanly but restart policy is Always, will restart", process_id);
+                                                true
+                                            }
+                                            RestartPolicy::OnFailure => {
+                                                info!("Process {} exited cleanly and restart policy is OnFailure, not restarting", process_id);
+                                                false
+                                            }
+                                        }
                                     } else {
                                         warn!("Process {} exited with non-zero status: {:?} after running for {:?}", process_id, exit_status, process_runtime);
+                                        true // Always restart on failure
                                     }
                                 }
                                 Err(e) => {
                                     error!("Error waiting for process {}: {:?} after running for {:?}", process_id, e, process_runtime);
+                                    true // Treat errors as failures, restart
                                 }
+                            };
+
+                            if !should_restart {
+                                break 'monitor;
                             }
 
                             // Set initial delay based on whether the previous process ran long enough

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use tracing::info;
 
-use crate::utilities::system::{RestartingProcess, StartChildFn};
+use crate::utilities::system::{RestartPolicy, RestartingProcess, StartChildFn};
 use crate::{
     framework::{languages::SupportedLanguages, python, typescript},
     infrastructure::olap::clickhouse::config::ClickHouseConfig,
@@ -94,6 +94,7 @@ impl ConsumptionProcessRegistry {
         self.api_process = Some(RestartingProcess::create(
             "consumption-api".to_string(),
             start_child,
+            RestartPolicy::Always,
         )?);
 
         Ok(())

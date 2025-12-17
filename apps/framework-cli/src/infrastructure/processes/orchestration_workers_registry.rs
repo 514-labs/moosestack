@@ -8,7 +8,7 @@ use crate::{
         languages::SupportedLanguages, python, typescript,
     },
     project::Project,
-    utilities::system::KillProcessError,
+    utilities::system::{KillProcessError, RestartPolicy, RestartingProcess},
 };
 
 /// Error types that can occur when managing orchestration workers
@@ -87,9 +87,10 @@ impl OrchestrationWorkersRegistry {
                 })
             };
 
-        let restarting = crate::utilities::system::RestartingProcess::create(
+        let restarting = RestartingProcess::create(
             orchestration_worker.id(),
             start_fn,
+            RestartPolicy::OnFailure,
         )?;
         self.workers.insert(orchestration_worker.id(), restarting);
         Ok(())
