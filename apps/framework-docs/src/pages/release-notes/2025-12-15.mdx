@@ -22,6 +22,25 @@ This release focuses on developer experience and database reliability. Moose now
 
 The moose dev command now displays ClickHouse connection URLs when starting local infrastructure, making it easier for developers to connect to their databases for debugging and data exploration. Connection details are shown with masked passwords for security.
 
+```bash
+❯ moose dev
+
+> analytical-moosestack@0.0 dev /Users/mitchell/repos/analytical-moosestack
+> moose-cli dev
+
+        Created docker compose file
+        Warning Using legacy pnpm deploy - add `inject-workspace-packages=true` to .npmrc and run `pnpm install`
+✓ Local infrastructure started successfully
+      Validated analytical-moosestack-clickhousedb-1 docker container
+ClickHouse Conn http://panda:******@localhost:18123/?database=local
+                See moose.config.toml for complete connection details
+      Validated analytical-moosestack-redpanda-1 docker container
+      Validated Redpanda cluster
+      Validated analytical-moosestack-temporal-1 docker container
+       Node Id: analytical-moosestack::2d5e4bdc-935e-48a6-b258-069a8631fdfd
+       Starting development mode
+```
+
 PR: [#3103](https://github.com/514-labs/moosestack/pull/3103)
 
 ### Table Engine Support: VersionedCollapsingMergeTree and replicated variants
