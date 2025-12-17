@@ -5865,6 +5865,150 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
     }
 
     #[test]
+    fn test_shared_summing_merge_tree_columns_only_parsing() {
+        // ENG-1745: Test SharedSummingMergeTree with only column params (cloud format)
+        // When ClickHouse Cloud configures automatic replication paths,
+        // the engine string only contains the column parameter(s)
+        let test_cases: Vec<(&str, Option<Vec<&str>>)> = vec![
+            // 1 param: single column (no path since it doesn't contain '/')
+            ("SharedSummingMergeTree('amount')", Some(vec!["amount"])),
+            (
+                "SharedSummingMergeTree('total_value')",
+                Some(vec!["total_value"]),
+            ),
+            // 2 params: two columns (distinguished from path/replica by lack of '/')
+            (
+                "SharedSummingMergeTree('amount', 'count')",
+                Some(vec!["amount", "count"]),
+            ),
+            (
+                "SharedSummingMergeTree('col1', 'col2')",
+                Some(vec!["col1", "col2"]),
+            ),
+        ];
+
+        for (input, expected_columns) in test_cases {
+            let engine: ClickhouseEngine = input
+                .try_into()
+                .unwrap_or_else(|_| panic!("Failed to parse engine string: {}", input));
+            // SharedSummingMergeTree normalizes to SummingMergeTree
+            match engine {
+                ClickhouseEngine::SummingMergeTree { columns } => {
+                    assert_eq!(
+                        columns,
+                        expected_columns.map(|cols| cols.iter().map(|s| s.to_string()).collect()),
+                        "columns mismatch for input: {}",
+                        input
+                    );
+                }
+                _ => panic!(
+                    "Expected SummingMergeTree for SharedSummingMergeTree input: {}",
+                    input
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn test_shared_collapsing_merge_tree_column_only_parsing() {
+        // ENG-1745: Test SharedCollapsingMergeTree with only column param (cloud format)
+        // SharedCollapsingMergeTree(sign) should normalize to CollapsingMergeTree
+        let valid_cases = vec![
+            ("SharedCollapsingMergeTree('sign')", "sign"),
+            ("SharedCollapsingMergeTree('is_deleted')", "is_deleted"),
+            ("SharedCollapsingMergeTree(sign)", "sign"),
+        ];
+
+        for (input, expected_sign) in valid_cases {
+            let engine: ClickhouseEngine = input
+                .try_into()
+                .unwrap_or_else(|_| panic!("Failed to parse engine string: {}", input));
+            match engine {
+                ClickhouseEngine::CollapsingMergeTree { sign } => {
+                    assert_eq!(
+                        sign, expected_sign,
+                        "sign column mismatch for input: {}",
+                        input
+                    );
+                }
+                _ => panic!(
+                    "Expected CollapsingMergeTree for SharedCollapsingMergeTree input: {}",
+                    input
+                ),
+            }
+        }
+
+        // Negative tests: path-like parameters should fail for column-only format
+        // (paths start with '/' and require a replica param)
+        let invalid_cases = vec![
+            "SharedCollapsingMergeTree('/path')", // Only one path param - incomplete
+        ];
+
+        for input in invalid_cases {
+            let result = ClickhouseEngine::try_from(input);
+            assert!(result.is_err(), "Should fail for invalid input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_shared_versioned_collapsing_merge_tree_columns_only_parsing() {
+        // ENG-1745: Test SharedVersionedCollapsingMergeTree with only column params (cloud format)
+        // SharedVersionedCollapsingMergeTree(sign, version) should normalize to VersionedCollapsingMergeTree
+        let valid_cases = vec![
+            (
+                "SharedVersionedCollapsingMergeTree('sign', 'version')",
+                "sign",
+                "version",
+            ),
+            (
+                "SharedVersionedCollapsingMergeTree('is_deleted', 'ver')",
+                "is_deleted",
+                "ver",
+            ),
+            (
+                "SharedVersionedCollapsingMergeTree(sign, version)",
+                "sign",
+                "version",
+            ),
+        ];
+
+        for (input, expected_sign, expected_version) in valid_cases {
+            let engine: ClickhouseEngine = input
+                .try_into()
+                .unwrap_or_else(|_| panic!("Failed to parse engine string: {}", input));
+            match engine {
+                ClickhouseEngine::VersionedCollapsingMergeTree { sign, version } => {
+                    assert_eq!(
+                        sign, expected_sign,
+                        "sign column mismatch for input: {}",
+                        input
+                    );
+                    assert_eq!(
+                        version, expected_version,
+                        "version column mismatch for input: {}",
+                        input
+                    );
+                }
+                _ => panic!(
+                    "Expected VersionedCollapsingMergeTree for SharedVersionedCollapsingMergeTree input: {}",
+                    input
+                ),
+            }
+        }
+
+        // Negative tests: path-like parameters should fail for column-only format
+        let invalid_cases = vec![
+            "SharedVersionedCollapsingMergeTree('/path')", // Only one path param - incomplete
+            "SharedVersionedCollapsingMergeTree('/path', 'sign')", // Path with only one param
+        ];
+
+        for input in invalid_cases {
+            let result = ClickhouseEngine::try_from(input);
+            assert!(result.is_err(), "Should fail for invalid input: {}", input);
+        }
+    }
+
+    #[test]
     fn test_parse_quoted_csv_with_shared_merge_tree_params() {
         // Test the parse_quoted_csv helper function with SharedMergeTree parameters
         let test_cases = vec![
