@@ -334,12 +334,9 @@ const createMainRouter = async (
 
       if (matches) {
         if (webApp.config.injectMooseUtils !== false) {
-          const queryClient = new QueryClient(clickhouseClient, pathname);
-          (req as any).moose = {
-            client: new MooseClient(queryClient, temporalClient),
-            sql: sql,
-            jwt: jwtPayload,
-          };
+          // Import getMooseUtils dynamically to avoid circular deps
+          const { getMooseUtils } = await import("./standalone");
+          (req as any).moose = await getMooseUtils();
         }
 
         let proxiedUrl = req.url;
@@ -428,6 +425,12 @@ export const runApis = async (config: ApisConfig) => {
         console.log("Importing JWT public key...");
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
       }
+
+      // Set runtime context for getMooseUtils() to detect
+      const runtimeQueryClient = new QueryClient(clickhouseClient, "runtime");
+      (globalThis as any)._mooseRuntimeContext = {
+        client: new MooseClient(runtimeQueryClient, temporalClient),
+      };
 
       const server = http.createServer(
         await createMainRouter(
