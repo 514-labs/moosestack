@@ -1,5 +1,8 @@
 import { expect } from "chai";
-import { getMooseClients } from "../src/consumption-apis/standalone";
+import {
+  getMooseClients,
+  getMooseUtils,
+} from "../src/consumption-apis/standalone";
 import { sql } from "../src/sqlHelpers";
 import { OlapTable } from "../src/dmv2";
 
@@ -79,6 +82,68 @@ describe("BYOF Standalone Functionality", function () {
         } else {
           delete process.env.MOOSE_CLICKHOUSE_CONFIG__HOST;
         }
+      }
+    });
+  });
+
+  describe("getMooseUtils", () => {
+    it("should return client and sql utilities", async () => {
+      const utils = await getMooseUtils();
+
+      expect(utils).to.exist;
+      expect(utils.client).to.exist;
+      expect(utils.client.query).to.exist;
+      expect(utils.sql).to.exist;
+      expect(utils.sql).to.be.a("function");
+    });
+
+    it("should cache client on subsequent calls", async () => {
+      const utils1 = await getMooseUtils();
+      const utils2 = await getMooseUtils();
+
+      expect(utils1.client).to.equal(utils2.client);
+    });
+
+    it("should work with sql template tag from returned utils", async () => {
+      const { sql: sqlUtil } = await getMooseUtils();
+      const query = sqlUtil`SELECT 1 as test`;
+
+      expect(query).to.exist;
+      expect(query.strings).to.have.lengthOf(1);
+    });
+
+    it("should log deprecation warning when req parameter is passed", async () => {
+      const originalWarn = console.warn;
+      let warningLogged = false;
+
+      console.warn = (msg: string) => {
+        if (msg.includes("[DEPRECATED]") && msg.includes("getMooseUtils")) {
+          warningLogged = true;
+        }
+      };
+
+      try {
+        const fakeReq = {};
+        await getMooseUtils(fakeReq);
+        expect(warningLogged).to.be.true;
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
+
+    it("should still return valid utils when req parameter is passed (backwards compat)", async () => {
+      const originalWarn = console.warn;
+      console.warn = () => {}; // Suppress warning for this test
+
+      try {
+        const fakeReq = {};
+        const utils = await getMooseUtils(fakeReq);
+
+        expect(utils).to.exist;
+        expect(utils.client).to.exist;
+        expect(utils.sql).to.exist;
+      } finally {
+        console.warn = originalWarn;
       }
     });
   });
