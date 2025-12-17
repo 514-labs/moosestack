@@ -84,6 +84,24 @@ describe("BYOF Standalone Functionality", function () {
         }
       }
     });
+
+    it("should log deprecation warning", async () => {
+      const originalWarn = console.warn;
+      let warningLogged = false;
+
+      console.warn = (msg: string) => {
+        if (msg.includes("[DEPRECATED]") && msg.includes("getMooseClients")) {
+          warningLogged = true;
+        }
+      };
+
+      try {
+        await getMooseClients();
+        expect(warningLogged).to.be.true;
+      } finally {
+        console.warn = originalWarn;
+      }
+    });
   });
 
   describe("getMooseUtils", () => {

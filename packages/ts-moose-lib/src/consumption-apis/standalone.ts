@@ -83,32 +83,41 @@ export async function getMooseUtils(req?: any): Promise<MooseUtils> {
   return standaloneUtils;
 }
 
+/**
+ * @deprecated Use getMooseUtils() instead.
+ * Creates a Moose client for database access.
+ */
 export async function getMooseClients(
   config?: Partial<RuntimeClickHouseConfig>,
 ): Promise<{ client: MooseClient }> {
-  await import("../config/runtime");
-  const configRegistry = (globalThis as any)._mooseConfigRegistry;
+  console.warn(
+    "[DEPRECATED] getMooseClients() is deprecated. Use getMooseUtils() instead.",
+  );
 
-  if (!configRegistry) {
-    throw new Error(
-      "Configuration registry not initialized. Ensure the Moose framework is properly set up.",
+  // If custom config provided, create a one-off client (don't cache)
+  if (config && Object.keys(config).length > 0) {
+    await import("../config/runtime");
+    const configRegistry = (globalThis as any)._mooseConfigRegistry;
+
+    if (!configRegistry) {
+      throw new Error(
+        "Configuration registry not initialized. Ensure the Moose framework is properly set up.",
+      );
+    }
+
+    const clickhouseConfig =
+      await configRegistry.getStandaloneClickhouseConfig(config);
+
+    const clickhouseClient = getClickhouseClient(
+      toClientConfig(clickhouseConfig),
     );
+    const queryClient = new QueryClient(clickhouseClient, "standalone");
+    const mooseClient = new MooseClient(queryClient);
+
+    return { client: mooseClient };
   }
 
-  const clickhouseConfig =
-    await configRegistry.getStandaloneClickhouseConfig(config);
-
-  const clickhouseClient = getClickhouseClient({
-    username: clickhouseConfig.username,
-    password: clickhouseConfig.password,
-    database: clickhouseConfig.database,
-    useSSL: clickhouseConfig.useSSL ? "true" : "false",
-    host: clickhouseConfig.host,
-    port: clickhouseConfig.port,
-  });
-
-  const queryClient = new QueryClient(clickhouseClient, "standalone");
-  const mooseClient = new MooseClient(queryClient);
-
-  return { client: mooseClient };
+  // No custom config - delegate to getMooseUtils
+  const utils = await getMooseUtils();
+  return { client: utils.client };
 }
