@@ -7,6 +7,33 @@ import { expressMiddleware } from "../src/consumption-apis/webAppHelpers";
 import { sql } from "../src/sqlHelpers";
 import { OlapTable } from "../src/dmv2";
 
+/**
+ * Temporarily replaces console.warn, runs a callback, and restores the original.
+ * Returns captured warning messages and a convenience boolean for pattern matching.
+ */
+async function captureWarnings<T>(
+  callback: () => T | Promise<T>,
+  pattern?: RegExp,
+): Promise<{ result: T; warnings: string[]; matched: boolean }> {
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+
+  console.warn = (msg: string) => {
+    warnings.push(msg);
+  };
+
+  try {
+    const result = await callback();
+    return {
+      result,
+      warnings,
+      matched: pattern ? warnings.some((w) => pattern.test(w)) : false,
+    };
+  } finally {
+    console.warn = originalWarn;
+  }
+}
+
 describe("BYOF Standalone Functionality", function () {
   this.timeout(10000);
 
@@ -123,6 +150,19 @@ describe("BYOF Standalone Functionality", function () {
       expect(utils1.client).to.equal(utils2.client);
     });
 
+    it("should handle concurrent initialization without race conditions", async () => {
+      // Call getMooseUtils multiple times concurrently
+      const [utils1, utils2, utils3] = await Promise.all([
+        getMooseUtils(),
+        getMooseUtils(),
+        getMooseUtils(),
+      ]);
+
+      // All calls should return the same cached instance
+      expect(utils1.client).to.equal(utils2.client);
+      expect(utils2.client).to.equal(utils3.client);
+    });
+
     it("should work with sql template tag from returned utils", async () => {
       const { sql: sqlUtil } = await getMooseUtils();
       const query = sqlUtil`SELECT 1 as test`;
@@ -132,38 +172,23 @@ describe("BYOF Standalone Functionality", function () {
     });
 
     it("should log deprecation warning when req parameter is passed", async () => {
-      const originalWarn = console.warn;
-      let warningLogged = false;
-
-      console.warn = (msg: string) => {
-        if (msg.includes("[DEPRECATED]") && msg.includes("getMooseUtils")) {
-          warningLogged = true;
-        }
-      };
-
-      try {
-        const fakeReq = {};
-        await getMooseUtils(fakeReq);
-        expect(warningLogged).to.be.true;
-      } finally {
-        console.warn = originalWarn;
-      }
+      const fakeReq = {};
+      const { matched } = await captureWarnings(
+        () => getMooseUtils(fakeReq),
+        /\[DEPRECATED\].*getMooseUtils/,
+      );
+      expect(matched).to.be.true;
     });
 
     it("should still return valid utils when req parameter is passed (backwards compat)", async () => {
-      const originalWarn = console.warn;
-      console.warn = () => {}; // Suppress warning for this test
+      const fakeReq = {};
+      const { result: utils } = await captureWarnings(() =>
+        getMooseUtils(fakeReq),
+      );
 
-      try {
-        const fakeReq = {};
-        const utils = await getMooseUtils(fakeReq);
-
-        expect(utils).to.exist;
-        expect(utils.client).to.exist;
-        expect(utils.sql).to.exist;
-      } finally {
-        console.warn = originalWarn;
-      }
+      expect(utils).to.exist;
+      expect(utils.client).to.exist;
+      expect(utils.sql).to.exist;
     });
   });
 
