@@ -12,7 +12,7 @@ from ..blocks import ClickHouseEngines
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
 from ._registry import _materialized_views
-from .source_location import get_source_file_from_stack
+from ._source_capture import get_source_file_from_stack
 from .view import View
 
 

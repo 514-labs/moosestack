@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from .olap_table import OlapTable
 from ._registry import _custom_views
-from .source_location import get_source_file_from_stack
+from ._source_capture import get_source_file_from_stack
 
 
 class View:
