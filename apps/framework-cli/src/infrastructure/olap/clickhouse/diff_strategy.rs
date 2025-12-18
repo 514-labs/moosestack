@@ -727,13 +727,49 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })
             .collect();
 
+        // Diff projections
+        let mut projection_changes = Vec::new();
+        for before_proj in &before.projections {
+            if !after.projections.iter().any(|p| p.name == before_proj.name) {
+                projection_changes.push(ColumnChange::DropProjection {
+                    projection_name: before_proj.name.clone(),
+                });
+            }
+        }
+        for after_proj in &after.projections {
+            if let Some(before_proj) = before
+                .projections
+                .iter()
+                .find(|p| p.name == after_proj.name)
+            {
+                if before_proj != after_proj {
+                    projection_changes.push(ColumnChange::DropProjection {
+                        projection_name: before_proj.name.clone(),
+                    });
+                    projection_changes.push(ColumnChange::AddProjection {
+                        projection: after_proj.clone(),
+                    });
+                }
+            } else {
+                projection_changes.push(ColumnChange::AddProjection {
+                    projection: after_proj.clone(),
+                });
+            }
+        }
+
         // For other changes, ClickHouse can handle them via ALTER TABLE.
-        // If there are no column/index/sample_by changes, return an empty vector.
+        // If there are no column/index/sample_by/projection changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
-        if !column_changes.is_empty() || before.indexes != after.indexes || sample_by_changed {
+        if !column_changes.is_empty()
+            || before.indexes != after.indexes
+            || !projection_changes.is_empty()
+            || sample_by_changed
+        {
+            let mut all_changes = column_changes;
+            all_changes.extend(projection_changes);
             changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
-                column_changes,
+                column_changes: all_changes,
                 order_by_change,
                 partition_by_change,
                 before: before.clone(),
@@ -807,6 +843,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1759,6 +1796,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: Some(table_settings),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

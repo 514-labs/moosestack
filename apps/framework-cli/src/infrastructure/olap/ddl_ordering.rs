@@ -1,5 +1,5 @@
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
-use crate::framework::core::infrastructure::table::{Column, Table, TableIndex};
+use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, TableProjection};
 use crate::framework::core::infrastructure::view::{View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
@@ -66,6 +66,33 @@ pub enum AtomicOlapOperation {
         table: Table,
         /// Name of the column to drop
         column_name: String,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Add a projection to a table
+    AddProjection {
+        /// The table to add the projection to
+        table: Table,
+        /// Projection to add
+        projection: TableProjection,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Drop a projection from a table
+    DropProjection {
+        /// The table to drop the projection from
+        table: Table,
+        /// Name of the projection to drop
+        projection_name: String,
+        /// Dependency information
+        dependency_info: DependencyInfo,
+    },
+    /// Materialize a projection
+    MaterializeProjection {
+        /// The table containing the projection
+        table: Table,
+        /// Name of the projection to materialize
+        projection_name: String,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -352,6 +379,36 @@ impl AtomicOlapOperation {
                 sql: resource.teardown.clone(),
                 description: format!("Running teardown SQL for resource {}", resource.name),
             },
+            AtomicOlapOperation::AddProjection {
+                table,
+                projection,
+                dependency_info: _,
+            } => SerializableOlapOperation::AddTableProjection {
+                table: table.name.clone(),
+                projection: projection.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::DropProjection {
+                table,
+                projection_name,
+                dependency_info: _,
+            } => SerializableOlapOperation::DropTableProjection {
+                table: table.name.clone(),
+                projection_name: projection_name.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::MaterializeProjection {
+                table,
+                projection_name,
+                dependency_info: _,
+            } => SerializableOlapOperation::MaterializeTableProjection {
+                table: table.name.clone(),
+                projection_name: projection_name.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
         }
     }
 
@@ -370,6 +427,17 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::DropTableColumn { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
+            AtomicOlapOperation::AddProjection { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::DropProjection { table, .. } => InfrastructureSignature::Table {
+                id: table.id(default_database),
+            },
+            AtomicOlapOperation::MaterializeProjection { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
             AtomicOlapOperation::ModifyTableColumn { table, .. } => {
                 InfrastructureSignature::Table {
                     id: table.id(default_database),
@@ -432,6 +500,15 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::DropTableColumn {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::AddProjection {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::DropProjection {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::MaterializeProjection {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifyTableColumn {
@@ -873,6 +950,26 @@ fn process_column_changes(
             } => {
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
+            }
+            ColumnChange::AddProjection { projection } => {
+                plan.setup_ops.push(AtomicOlapOperation::AddProjection {
+                    table: after.clone(),
+                    projection: projection.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
+                plan.setup_ops
+                    .push(AtomicOlapOperation::MaterializeProjection {
+                        table: after.clone(),
+                        projection_name: projection.name.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
+            }
+            ColumnChange::DropProjection { projection_name } => {
+                plan.teardown_ops.push(AtomicOlapOperation::DropProjection {
+                    table: before.clone(),
+                    projection_name: projection_name.clone(),
+                    dependency_info: create_empty_dependency_info(),
+                });
             }
         }
     }
@@ -1320,6 +1417,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1399,6 +1497,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1424,6 +1523,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1521,6 +1621,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1546,6 +1647,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1663,6 +1765,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1824,6 +1927,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1848,6 +1952,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1872,6 +1977,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1965,6 +2071,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1989,6 +2096,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2013,6 +2121,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2037,6 +2146,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2061,6 +2171,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2217,6 +2328,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2242,6 +2354,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2370,6 +2483,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2395,6 +2509,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2528,6 +2643,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2552,6 +2668,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2765,6 +2882,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2879,6 +2997,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3005,6 +3124,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3056,6 +3176,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
