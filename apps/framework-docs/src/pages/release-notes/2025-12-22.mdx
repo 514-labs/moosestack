@@ -20,7 +20,7 @@ This release focuses on self-documenting schemas and deployment customization. D
 
 ### Support for column comments in data models
 
-Data model fields now support comments that are preserved in the generated ClickHouse database schema. In TypeScript, use TSDoc comments (/** */), and in Python, use Field(description="..."). These comments appear as COMMENT clauses in the database DDL, making schemas more self-documenting and easier to understand for data analysts and other team members.
+Data model fields now support comments that are preserved in the generated ClickHouse database schema. In TypeScript, use TSDoc comments `/** */`, and in Python, use `Field(description="...")`. These comments appear as COMMENT clauses in the database DDL, making schemas more self-documenting and easier to understand for data analysts and other team members.
 
 ```typescript
 // models/UserEvent.ts
@@ -40,6 +40,22 @@ export interface UserEvent {
   // No comment - this field won't have a database comment
   status: string;
 }
+```
+
+```python
+# models.py
+from moose_lib import Key
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: Key[str] = Field(description="Unique identifier for the record")
+    timestamp: datetime = Field(description="Timestamp when the event occurred")
+    email: str = Field(description="Email address of the user (must be valid)")
+    price: float = Field(description="Total price in USD ($)")
+    
+    # No description - this field won't have a database comment
+    status: str
 ```
 
 PR: [#3137](https://github.com/514-labs/moosestack/pull/3137)
@@ -75,13 +91,9 @@ moose build --docker
 PR: [#3135](https://github.com/514-labs/moosestack/pull/3135)
 
 ### Other Improvements
-- **Improved Python project loading error messages with diagnostic information** – Enhanced error messages when Python projects fail to load, providing detailed diagnostic information including specific file paths, common causes, and step-by-step troubleshooting guidance. Users now get clearer feedback when setup.py is missing, contains syntax errors, or lacks required setup() function calls, making it easier to debug and fix Python project configuration issues. [#3147](https://github.com/514-labs/moosestack/pull/3147)
-- **Improved documentation code block behavior** – Updated documentation site to make code block animations opt-in rather than automatic, providing a cleaner reading experience. Code blocks now remain static by default and only animate when explicitly requested with the 'animate' attribute. [#3139](https://github.com/514-labs/moosestack/pull/3139)
-- **Improved stream configuration documentation with clearer examples** – Enhanced the stream configuration documentation by separating parallelism and retention period into distinct sections with clearer explanations. Added better context about performance trade-offs for parallelism and storage implications for retention periods, making it easier for users to configure streams appropriately. [#3119](https://github.com/514-labs/moosestack/pull/3119)
-- **Improved data modeling documentation structure** – Reorganized the data modeling documentation by promoting "Problem" and "Solution" sections to top-level headings, making it easier for users to understand the core concepts and benefits of Moose's data modeling approach. [#3144](https://github.com/514-labs/moosestack/pull/3144)
-- **Improved migration documentation with comprehensive guides and troubleshooting** – Added extensive documentation for Moose's migration system, including detailed guides for CLI migrations, automatic migrations, planned migrations, and troubleshooting failed migrations. This helps users better understand and manage database schema changes in their data pipelines. [#3136](https://github.com/514-labs/moosestack/pull/3136)
 - **Added ClickHouse connection info to moose dev output** – The moose dev command now displays ClickHouse connection URLs when starting local infrastructure, making it easier for developers to connect to their databases for debugging and data exploration. Connection details are shown with masked passwords for security. [#3103](https://github.com/514-labs/moosestack/pull/3103)
-- **Added detailed documentation for all ClickHouse data types and table engines** – Added detailed documentation for all ClickHouse data types (arrays, booleans, decimals, datetime, strings, etc.) and table engines (MergeTree variants, distributed engines, S3 integrations). Users can now reference complete type mapping guides and engine configuration examples when building data models. [#3134](https://github.com/514-labs/moosestack/pull/3134)
+- **Improved Python project loading error messages with diagnostic information** – Enhanced error messages when Python projects fail to load, providing detailed diagnostic information including specific file paths, common causes, and step-by-step troubleshooting guidance. Users now get clearer feedback when setup.py is missing, contains syntax errors, or lacks required setup() function calls, making it easier to debug and fix Python project configuration issues. [#3147](https://github.com/514-labs/moosestack/pull/3147)
+- **Expanded documentation across core concepts** – Added comprehensive guides for migrations (CLI, automatic, and planned workflows), stream configuration (parallelism and retention trade-offs), data modeling (problem-solution structure), and complete ClickHouse reference documentation covering all data types and table engines. [#3136](https://github.com/514-labs/moosestack/pull/3136) [#3119](https://github.com/514-labs/moosestack/pull/3119) [#3144](https://github.com/514-labs/moosestack/pull/3144) [#3134](https://github.com/514-labs/moosestack/pull/3134)
 
 ### Bug Fixes
 - **Fix pnpm build requirements for Kafka JavaScript dependencies** – Fixed build issues with pnpm by adding @514labs/kafka-javascript to the onlyBuiltDependencies list across all project templates. This ensures that Kafka-related dependencies are properly built during installation, preventing runtime errors when using streaming features. [#3146](https://github.com/514-labs/moosestack/pull/3146)
