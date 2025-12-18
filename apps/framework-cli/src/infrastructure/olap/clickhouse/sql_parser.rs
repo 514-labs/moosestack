@@ -4,6 +4,7 @@
 //! particularly CREATE MATERIALIZED VIEW and INSERT INTO ... SELECT statements.
 
 use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
+use regex::Regex;
 use sqlparser::ast::{
     Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, SetExpr, Statement, TableFactor,
     TableWithJoins, VisitMut, VisitorMut,
@@ -13,6 +14,116 @@ use sqlparser::parser::Parser;
 use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::sync::LazyLock;
+
+/// ClickHouse type names that need to be PascalCased
+/// The sqlparser library uppercases these when formatting, but ClickHouse requires PascalCase
+/// We should submit a fix to the sqlparser crate to handle this properly.
+static CLICKHOUSE_TYPE_FIXES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+    vec![
+        // Integer types (longer ones first to avoid partial matches)
+        ("UINT256", "UInt256"),
+        ("UINT128", "UInt128"),
+        ("UINT64", "UInt64"),
+        ("UINT32", "UInt32"),
+        ("UINT16", "UInt16"),
+        ("UINT8", "UInt8"),
+        ("INT256", "Int256"),
+        ("INT128", "Int128"),
+        ("INT64", "Int64"),
+        ("INT32", "Int32"),
+        ("INT16", "Int16"),
+        ("INT8", "Int8"),
+        // Float types
+        ("FLOAT64", "Float64"),
+        ("FLOAT32", "Float32"),
+        // Date/Time types
+        ("DATETIME64", "DateTime64"),
+        ("DATETIME", "DateTime"),
+        ("DATE32", "Date32"),
+        ("DATE", "Date"),
+        // String types
+        ("FIXEDSTRING", "FixedString"),
+        ("STRING", "String"),
+        // Container types
+        ("LOWCARDINALITY", "LowCardinality"),
+        ("NULLABLE", "Nullable"),
+        ("ARRAY", "Array"),
+        ("TUPLE", "Tuple"),
+        ("NESTED", "Nested"),
+        ("MAP", "Map"),
+        // Other types
+        ("DECIMAL256", "Decimal256"),
+        ("DECIMAL128", "Decimal128"),
+        ("DECIMAL64", "Decimal64"),
+        ("DECIMAL32", "Decimal32"),
+        ("DECIMAL", "Decimal"),
+        ("BOOLEAN", "Boolean"),
+        ("BOOL", "Bool"),
+        ("ENUM16", "Enum16"),
+        ("ENUM8", "Enum8"),
+        ("IPV4", "IPv4"),
+        ("IPV6", "IPv6"),
+        ("UUID", "UUID"),
+        // Aggregate functions
+        ("AGGREGATEFUNCTION", "AggregateFunction"),
+        ("SIMPLEAGGREGATEFUNCTION", "SimpleAggregateFunction"),
+        // Geo types
+        ("MULTILINESTRING", "MultiLineString"),
+        ("LINESTRING", "LineString"),
+        ("MULTIPOLYGON", "MultiPolygon"),
+        ("POLYGON", "Polygon"),
+        ("POINT", "Point"),
+        ("RING", "Ring"),
+    ]
+});
+
+/// Regex pattern for matching ClickHouse types in SQL
+/// Matches type names that are followed by '(' or whitespace/end, ensuring we don't
+/// match partial identifiers
+static CLICKHOUSE_TYPE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    // Build a pattern that matches all the uppercase type names
+    let type_names: Vec<&str> = CLICKHOUSE_TYPE_FIXES
+        .iter()
+        .map(|(upper, _)| *upper)
+        .collect();
+    let pattern = format!(r"\b({})\b", type_names.join("|"));
+    Regex::new(&pattern).expect("CLICKHOUSE_TYPE_PATTERN regex should compile")
+});
+
+/// Fixes ClickHouse type casing in SQL strings
+///
+/// The sqlparser library converts types to uppercase when formatting AST back to string,
+/// but ClickHouse requires PascalCased types (e.g., "String" not "STRING", "UInt64" not "UINT64").
+/// This function converts uppercase types back to their proper PascalCase form.
+fn fix_clickhouse_type_casing(sql: &str) -> String {
+    CLICKHOUSE_TYPE_PATTERN
+        .replace_all(sql, |caps: &regex::Captures| {
+            let matched = &caps[1];
+            // Find the correct PascalCase version and return as owned String
+            CLICKHOUSE_TYPE_FIXES
+                .iter()
+                .find(|(upper, _)| *upper == matched)
+                .map(|(_, pascal)| pascal.to_string())
+                .unwrap_or_else(|| matched.to_string())
+        })
+        .into_owned()
+}
+
+/// Converts a sqlparser Query AST to a SQL string with proper ClickHouse type casing.
+///
+/// The standard sqlparser `Display` trait uppercases type names (e.g., `String` → `STRING`),
+/// but ClickHouse requires PascalCased types. This function formats the query and fixes
+/// the type casing in one step.
+///
+/// # Example
+/// ```ignore
+/// let query: Query = /* parsed query */;
+/// let sql = query_to_sql_string(&query);
+/// // Returns: "SELECT CAST(col AS String)" instead of "SELECT CAST(col AS STRING)"
+/// ```
+pub fn query_to_sql_string(query: &Query) -> String {
+    fix_clickhouse_type_casing(&format!("{}", query))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterializedViewStatement {
@@ -664,8 +775,8 @@ pub fn parse_create_materialized_view(
             let to_table_str = object_name_to_string(to_table);
             let (target_database, target_table) = split_qualified_name(&to_table_str);
 
-            // Format the SELECT statement
-            let select_statement = format!("{}", query);
+            // Format the SELECT statement with proper ClickHouse type casing
+            let select_statement = query_to_sql_string(query);
 
             // Extract source tables from the query
             let source_tables = extract_source_tables_from_query_ast(query)?;
@@ -705,7 +816,8 @@ pub fn parse_insert_select(sql: &str) -> Result<InsertSelectStatement, SqlParseE
 
             if let Some(query) = &insert.source {
                 let source_tables = extract_source_tables_from_query_ast(query)?;
-                let select_statement = format!("{}", query);
+                // Format the SELECT statement with proper ClickHouse type casing
+                let select_statement = query_to_sql_string(query);
 
                 Ok(InsertSelectStatement {
                     target_database,
@@ -2157,6 +2269,117 @@ pub mod tests {
             ),
             "Should parse as ReplicatedReplacingMergeTree, got {:?}",
             engine
+        );
+    }
+
+    #[test]
+    fn test_fix_clickhouse_type_casing() {
+        // Test that fix_clickhouse_type_casing converts uppercase types to PascalCase
+        use super::fix_clickhouse_type_casing;
+
+        // Test basic types
+        assert_eq!(fix_clickhouse_type_casing("STRING"), "String");
+        assert_eq!(fix_clickhouse_type_casing("INT64"), "Int64");
+        assert_eq!(fix_clickhouse_type_casing("UINT32"), "UInt32");
+        assert_eq!(fix_clickhouse_type_casing("FLOAT64"), "Float64");
+        assert_eq!(fix_clickhouse_type_casing("DATETIME"), "DateTime");
+        assert_eq!(fix_clickhouse_type_casing("BOOLEAN"), "Boolean");
+
+        // Test in CAST expressions (the main use case)
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS STRING)"),
+            "CAST(col AS String)"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS UINT64)"),
+            "CAST(col AS UInt64)"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS DATETIME)"),
+            "CAST(col AS DateTime)"
+        );
+
+        // Test nested types
+        assert_eq!(
+            fix_clickhouse_type_casing("NULLABLE(STRING)"),
+            "Nullable(String)"
+        );
+        assert_eq!(fix_clickhouse_type_casing("ARRAY(INT32)"), "Array(Int32)");
+        assert_eq!(
+            fix_clickhouse_type_casing("LOWCARDINALITY(STRING)"),
+            "LowCardinality(String)"
+        );
+
+        // Test complex expression with multiple types
+        let input = "SELECT CAST(a AS STRING), CAST(b AS UINT64), CAST(c AS NULLABLE(DATETIME64))";
+        let expected =
+            "SELECT CAST(a AS String), CAST(b AS UInt64), CAST(c AS Nullable(DateTime64))";
+        assert_eq!(fix_clickhouse_type_casing(input), expected);
+
+        // Ensure we don't modify lowercase identifiers that look similar
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT string_column FROM table"),
+            "SELECT string_column FROM table"
+        );
+    }
+
+    #[test]
+    fn test_parse_materialized_view_preserves_type_casing() {
+        // Test that parsed materialized views preserve ClickHouse type casing
+        let sql = r#"CREATE MATERIALIZED VIEW mv TO target AS
+            SELECT CAST(id AS String), CAST(value AS UInt64), CAST(ts AS DateTime)
+            FROM source"#;
+
+        let result = parse_create_materialized_view(sql).unwrap();
+
+        // The select statement should preserve PascalCase types
+        assert!(
+            result.select_statement.contains("String"),
+            "Should contain 'String', got: {}",
+            result.select_statement
+        );
+        assert!(
+            result.select_statement.contains("UInt64"),
+            "Should contain 'UInt64', got: {}",
+            result.select_statement
+        );
+        assert!(
+            result.select_statement.contains("DateTime"),
+            "Should contain 'DateTime', got: {}",
+            result.select_statement
+        );
+
+        // Should NOT contain uppercase versions
+        assert!(
+            !result.select_statement.contains("STRING"),
+            "Should NOT contain 'STRING', got: {}",
+            result.select_statement
+        );
+        assert!(
+            !result.select_statement.contains("UINT64"),
+            "Should NOT contain 'UINT64', got: {}",
+            result.select_statement
+        );
+    }
+
+    #[test]
+    fn test_parse_insert_select_preserves_type_casing() {
+        // Test that parsed insert select statements preserve ClickHouse type casing
+        let sql =
+            r#"INSERT INTO target SELECT CAST(id AS String), CAST(value AS Int64) FROM source"#;
+
+        let result = parse_insert_select(sql).unwrap();
+
+        // The select statement should preserve PascalCase types
+        assert!(
+            result.select_statement.contains("String"),
+            "Should contain 'String', got: {}",
+            result.select_statement
+        );
+        assert!(
+            result.select_statement.contains("Int64"),
+            "Should contain 'Int64', got: {}",
+            result.select_statement
         );
     }
 }
