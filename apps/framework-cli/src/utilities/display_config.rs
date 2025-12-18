@@ -61,7 +61,7 @@ use lazy_static::lazy_static;
 ///
 /// This struct is designed to be cheap to copy (3 bytes) and is typically
 /// wrapped in an Arc for sharing across threads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DisplayConfig {
     /// When true, disable ANSI escape codes in terminal output.
     /// This is useful for environments that don't support ANSI colors
@@ -75,16 +75,6 @@ pub struct DisplayConfig {
     /// When true, show elapsed time for operations (e.g., "finished in 234ms").
     /// Helps identify performance bottlenecks during development.
     pub show_timing: bool,
-}
-
-impl Default for DisplayConfig {
-    fn default() -> Self {
-        Self {
-            no_ansi: false,
-            show_timestamps: false,
-            show_timing: false,
-        }
-    }
 }
 
 lazy_static! {
