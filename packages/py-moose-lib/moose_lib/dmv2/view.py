@@ -44,7 +44,7 @@ class View:
         self,
         name: str,
         select_statement: str,
-        base_tables: list[Union[OlapTable, "View", Any]],
+        base_tables: list[Union[OlapTable, "View"]],
         metadata: dict = None,
     ):
         self.name = name
