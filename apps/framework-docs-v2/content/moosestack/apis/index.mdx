@@ -64,39 +64,6 @@ If you already have an app server (like Next.js), you can keep it where it is an
 
 See: [Next.js](/moosestack/getting-started/existing-app/next-js) or [Fastify](/moosestack/getting-started/existing-app/fastify).
 
-## Key concepts
-
-### WebApp utilities (Moose Runtime hosting)
-
-When MooseStack hosts your framework, your handlers can access Moose utilities from the current request.
-
-<LanguageTabs>
-  <LanguageTabContent value="typescript">
-```ts copy
-import { getMooseUtils } from "@514labs/moose-lib";
-
-const { client, sql, jwt } = getMooseUtils(req);
-```
-  </LanguageTabContent>
-  <LanguageTabContent value="python">
-```py copy
-from moose_lib.dmv2.web_app_helpers import get_moose_utils
-
-moose = get_moose_utils(request)
-client = moose.client
-jwt = moose.jwt
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-### Mount paths (for embedded frameworks)
-
-Each `WebApp` mounts your framework under a unique path.
-
-- **Cannot** be `/`
-- **Cannot** end with a trailing slash
-- **Cannot** start with reserved prefixes: `/admin`, `/api`, `/consumption`, `/health`, `/ingest`, `/mcp`, `/moose`, `/ready`, `/workflows`
-
 ## Next steps
 
 <CTACards>

@@ -48,3 +48,66 @@ If you already have a running app server, you can keep it where it is and use Mo
 - [Embed ClickHouse analytics in Next.js](/moosestack/getting-started/existing-app/next-js)
 - [Embed ClickHouse analytics in Fastify](/moosestack/getting-started/existing-app/fastify)
 - For query patterns, see [Reading Data](/moosestack/olap/read-data).
+
+## Declare a WebApp
+
+To declare a WebApp, you need to create a `WebApp` instance and mount it to a path.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+import { WebApp } from "@514labs/moose-lib";
+const webApp = new WebApp("webapp", your_framework_app, {
+  mountPath: "/webapp",
+  metadata: {
+    description: "Your framework application",
+  },
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python copy
+from moose_lib import WebApp, WebAppConfig, WebAppMetadata
+# Register as WebApp
+web_app = WebApp(
+    "webapp",
+    your_framework_app,
+    WebAppConfig(
+        mount_path="/webapp",
+        metadata=WebAppMetadata(description="Your framework application")
+    )
+)
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Mount paths
+
+Each `WebApp` mounts your framework under a unique path.
+
+- **Cannot** be `/`
+- **Cannot** end with a trailing slash
+- **Cannot** start with reserved prefixes: `/admin`, `/api`, `/consumption`, `/health`, `/ingest`, `/mcp`, `/moose`, `/ready`, `/workflows`
+
+### WebApp utilities
+
+When MooseStack hosts your framework, your API handlers can access Moose utilities from the current request.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts copy
+import { getMooseUtils } from "@514labs/moose-lib";
+
+const { client, sql, jwt } = getMooseUtils(req);
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```py copy
+from moose_lib.dmv2.web_app_helpers import get_moose_utils
+
+moose = get_moose_utils(request)
+client = moose.client
+jwt = moose.jwt
+```
+  </LanguageTabContent>
+</LanguageTabs>
