@@ -457,4 +457,36 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_write_styled_line_with_timestamps() {
+        let mut buffer = Vec::new();
+        let styled = StyledText::from_str("Test").green();
+
+        write_styled_line_to(&mut buffer, &styled, "message", true, true).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+
+        // Timestamp format: HH:MM:SS.mmm (e.g., "12:34:56.789 ")
+        // Check that the output starts with a timestamp pattern
+        assert!(
+            output.len() >= 13,
+            "Output should be long enough to contain timestamp. Got: {:?}",
+            output
+        );
+
+        // Check colon positions for HH:MM:SS pattern
+        let chars: Vec<char> = output.chars().collect();
+        assert!(
+            chars.len() >= 13 && chars[2] == ':' && chars[5] == ':',
+            "Output should start with HH:MM:SS timestamp pattern. Got: {:?}",
+            output
+        );
+
+        // Verify there's a space after the milliseconds
+        assert!(
+            chars[12] == ' ',
+            "Timestamp should be followed by a space. Got: {:?}",
+            output
+        );
+    }
 }
