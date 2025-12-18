@@ -35,6 +35,52 @@ from .life_cycle import LifeCycle
 from ._source_capture import get_source_file_from_stack
 
 
+class TableProjection(BaseModel):
+    """Defines a ClickHouse projection for optimizing specific query patterns.
+
+    Projections duplicate data with different sort orders or pre-computed aggregations.
+
+    ClickHouse rules:
+    - Non-aggregate projections: Must have ORDER BY
+    - Aggregate projections (with GROUP BY): Cannot have ORDER BY (ordering is implicit from GROUP BY)
+
+    Attributes:
+        name: Unique name for the projection.
+        select: Columns or expression to project (list of column names or SQL expression).
+        order_by: Optional ordering for non-aggregate projections.
+        group_by: Optional grouping for aggregate projections (mutually exclusive with order_by).
+
+    Examples:
+        Non-aggregate projection with explicit column list:
+        ```python
+        TableProjection(
+            name="user_projection",
+            select=["user_id", "timestamp", "event_type"],
+            order_by=["user_id", "timestamp"]
+        )
+        ```
+
+        Aggregate projection for pre-computed metrics (no order_by):
+        ```python
+        TableProjection(
+            name="hourly_metrics",
+            select="toStartOfHour(timestamp) as hour, count() as cnt",
+            group_by="hour"
+        )
+        ```
+    """
+
+    name: str
+    select: Union[list[str], str]
+    order_by: Optional[Union[list[str], str]] = None
+    group_by: Optional[Union[list[str], str]] = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=AliasGenerator(serialization_alias=to_camel),
+    )
+
+
 @dataclass
 class InsertOptions:
     """Options for insert operations.
@@ -175,33 +221,6 @@ class OlapConfig(BaseModel):
     indexes: list[TableIndex] = []
 
     # Optional projections for optimizing specific query patterns
-    class TableProjection(BaseModel):
-        """
-        Defines a ClickHouse projection for optimizing specific query patterns.
-        Projections duplicate data with different sort orders or pre-computed aggregations.
-
-        ClickHouse rules:
-        - Non-aggregate projections: Must have order_by
-        - Aggregate projections (with group_by): Cannot have order_by (ordering is implicit from group_by)
-
-        Examples:
-            Non-aggregate projection with explicit column list:
-            {"name": "user_projection", "select": ["user_id", "timestamp", "event_type"], "order_by": ["user_id", "timestamp"]}
-
-            Aggregate projection for pre-computed metrics (no order_by):
-            {"name": "hourly_metrics", "select": "toStartOfHour(timestamp) as hour, count() as cnt", "group_by": "hour"}
-        """
-
-        name: str
-        select: Union[list[str], str]
-        order_by: Optional[Union[list[str], str]] = None
-        group_by: Optional[Union[list[str], str]] = None
-
-        model_config = ConfigDict(
-            populate_by_name=True,
-            alias_generator=AliasGenerator(serialization_alias=to_camel),
-        )
-
     projections: list[TableProjection] = []
     database: Optional[str] = None  # Optional database name for multi-database support
 

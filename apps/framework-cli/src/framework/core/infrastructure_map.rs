@@ -5967,7 +5967,6 @@ mod diff_tests {
 
     #[test]
     fn test_table_diff_detects_projection_changes() {
-        // Test adding projection
         let mut before = create_test_table("test_table", "1.0");
         let mut after = before.clone();
         after.projections = vec![TableProjection {
@@ -5977,7 +5976,6 @@ mod diff_tests {
             group_by: None,
         }];
 
-        // Set database field for both tables
         before.database = Some(DEFAULT_DATABASE_NAME.to_string());
         after.database = Some(DEFAULT_DATABASE_NAME.to_string());
 
@@ -6029,7 +6027,6 @@ mod diff_tests {
         }];
         let mut after = create_test_table("test_table", "1.0");
 
-        // Set database field for both tables
         before.database = Some(DEFAULT_DATABASE_NAME.to_string());
         after.database = Some(DEFAULT_DATABASE_NAME.to_string());
 

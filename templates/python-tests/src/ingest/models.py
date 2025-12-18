@@ -28,6 +28,7 @@ from moose_lib import (
     ClickhousePrecision,
     IngestApi,
     IngestConfigWithDestination,
+    TableProjection,
 )
 from datetime import datetime, date
 from typing import Optional, Annotated, Any
@@ -1043,22 +1044,22 @@ projection_test_table = OlapTable[ProjectionTest](
         engine=MergeTreeEngine(),
         order_by_fields=["id", "timestamp"],
         projections=[
-            OlapConfig.TableProjection(
+            TableProjection(
                 name="by_user_fields",
                 select=["user_id", "timestamp", "event_type"],
                 order_by=["user_id", "timestamp"],
             ),
-            OlapConfig.TableProjection(
+            TableProjection(
                 name="by_user_expr",
                 select="user_id, timestamp, event_type",
                 order_by="user_id, timestamp",
             ),
-            OlapConfig.TableProjection(
+            TableProjection(
                 name="hourly_agg",
                 select="toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
                 group_by="hour",
             ),
-            OlapConfig.TableProjection(
+            TableProjection(
                 name="daily_stats",
                 select="toDate(timestamp) as date, event_type, count() as cnt, avg(value) as avg_val",
                 group_by="date, event_type",
