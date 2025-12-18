@@ -9,7 +9,8 @@ use crate::framework::core::infrastructure::table::{
     Column, ColumnType, DataEnum, EnumValue, JsonOptions, Nested, Table,
 };
 use crate::framework::core::infrastructure_map::{
-    ColumnChange, OlapChange, OrderByChange, PartitionByChange, TableChange, TableDiffStrategy,
+    ColumnChange, OlapChange, OrderByChange, PartitionByChange, ProjectionChange, TableChange,
+    TableDiffStrategy,
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
@@ -731,7 +732,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         let mut projection_changes = Vec::new();
         for before_proj in &before.projections {
             if !after.projections.iter().any(|p| p.name == before_proj.name) {
-                projection_changes.push(ColumnChange::DropProjection {
+                projection_changes.push(ProjectionChange::Removed {
                     projection_name: before_proj.name.clone(),
                 });
             }
@@ -743,15 +744,15 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
                 .find(|p| p.name == after_proj.name)
             {
                 if before_proj != after_proj {
-                    projection_changes.push(ColumnChange::DropProjection {
+                    projection_changes.push(ProjectionChange::Removed {
                         projection_name: before_proj.name.clone(),
                     });
-                    projection_changes.push(ColumnChange::AddProjection {
+                    projection_changes.push(ProjectionChange::Added {
                         projection: after_proj.clone(),
                     });
                 }
             } else {
-                projection_changes.push(ColumnChange::AddProjection {
+                projection_changes.push(ProjectionChange::Added {
                     projection: after_proj.clone(),
                 });
             }
@@ -765,11 +766,10 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             || !projection_changes.is_empty()
             || sample_by_changed
         {
-            let mut all_changes = column_changes;
-            all_changes.extend(projection_changes);
             changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
-                column_changes: all_changes,
+                column_changes,
+                projection_changes,
                 order_by_change,
                 partition_by_change,
                 before: before.clone(),

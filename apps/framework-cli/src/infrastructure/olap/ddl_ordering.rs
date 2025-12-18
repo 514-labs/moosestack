@@ -3,7 +3,9 @@ use crate::framework::core::infrastructure::table::{Column, Table, TableIndex, T
 use crate::framework::core::infrastructure::view::{Dmv1View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
-use crate::framework::core::infrastructure_map::{Change, ColumnChange, OlapChange, TableChange};
+use crate::framework::core::infrastructure_map::{
+    Change, ColumnChange, OlapChange, ProjectionChange, TableChange,
+};
 #[cfg(test)]
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::SerializableOlapOperation;
@@ -945,8 +947,14 @@ fn handle_table_update(
     before: &Table,
     after: &Table,
     column_changes: &[ColumnChange],
+    projection_changes: &[ProjectionChange],
 ) -> OperationPlan {
     let mut plan = handle_table_column_updates(before, after, column_changes);
+    plan.combine(process_projection_changes(
+        before,
+        after,
+        projection_changes,
+    ));
     plan.combine(process_index_changes(before, after));
     // SAMPLE BY changes are handled via ALTER TABLE
     if before.sample_by != after.sample_by {
@@ -1034,7 +1042,23 @@ fn process_column_changes(
                 plan.setup_ops
                     .push(process_column_modification(after, before_col, after_col));
             }
-            ColumnChange::AddProjection { projection } => {
+        }
+    }
+
+    plan
+}
+
+/// Process the projection changes that were already computed by the infrastructure map
+fn process_projection_changes(
+    before: &Table,
+    after: &Table,
+    projection_changes: &[ProjectionChange],
+) -> OperationPlan {
+    let mut plan = OperationPlan::new();
+
+    for change in projection_changes {
+        match change {
+            ProjectionChange::Added { projection } => {
                 plan.setup_ops.push(AtomicOlapOperation::AddProjection {
                     table: after.clone(),
                     projection: projection.clone(),
@@ -1047,7 +1071,7 @@ fn process_column_changes(
                         dependency_info: create_empty_dependency_info(),
                     });
             }
-            ColumnChange::DropProjection { projection_name } => {
+            ProjectionChange::Removed { projection_name } => {
                 plan.teardown_ops.push(AtomicOlapOperation::DropProjection {
                     table: before.clone(),
                     projection_name: projection_name.clone(),
@@ -1359,8 +1383,9 @@ pub fn order_olap_changes(
                 before,
                 after,
                 column_changes,
+                projection_changes,
                 ..
-            }) => handle_table_update(before, after, column_changes),
+            }) => handle_table_update(before, after, column_changes, projection_changes),
             OlapChange::Table(TableChange::SettingsChanged {
                 table,
                 before_settings,
@@ -1620,7 +1645,9 @@ fn path_exists(graph: &DiGraph<usize, ()>, start: NodeIndex, end: NodeIndex) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{ColumnType, OrderBy};
+    use crate::framework::core::infrastructure::table::{
+        Column, ColumnType, OrderBy, ProjectionClause, TableProjection,
+    };
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
     use crate::framework::{
         core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes},
@@ -1628,14 +1655,9 @@ mod tests {
     };
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
-    #[test]
-    fn test_basic_operations() {
-        // Simplified test for now, the real test will be implemented later
-        // when the real implementation is complete
-
-        // Create a test table
-        let table = Table {
-            name: "test_table".to_string(),
+    fn create_test_table(name: &str) -> Table {
+        Table {
+            name: name.to_string(),
             columns: vec![],
             order_by: OrderBy::Fields(vec![]),
             partition_by: None,
@@ -1644,7 +1666,7 @@ mod tests {
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
+                primitive_type: PrimitiveTypes::DataModel,
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,
@@ -1657,7 +1679,12 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
-        };
+        }
+    }
+
+    #[test]
+    fn test_basic_operations() {
+        let table = create_test_table("test_table");
 
         // Create some atomic operations
         let create_op = AtomicOlapOperation::CreateTable {
@@ -1713,57 +1740,8 @@ mod tests {
         // Table B depends on Table A
         // View C depends on Table B
 
-        // Create table A - no dependencies
-        let table_a = Table {
-            name: "table_a".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        // Create table B - depends on table A
-        let table_b = Table {
-            name: "table_b".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table_a = create_test_table("table_a");
+        let table_b = create_test_table("table_b");
 
         // Create view C - depends on table B
         let view_c = Dmv1View {
@@ -1838,56 +1816,9 @@ mod tests {
         // Order should be: View C, Table B, Table A
 
         // Create table A - source for materialized view
-        let table_a = Table {
-            name: "table_a".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
+        let table_a = create_test_table("table_a");
         // Create table B - target for materialized view
-        let table_b = Table {
-            name: "table_b".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table_b = create_test_table("table_b");
 
         // Create view C - depends on table B
         let view_c = Dmv1View {
@@ -1982,30 +1913,7 @@ mod tests {
     #[test]
     fn test_mixed_operation_types() {
         // Test with mix of table, column, and view operations
-        let table = Table {
-            name: "test_table".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table = create_test_table("test_table");
 
         let view = Dmv1View {
             name: "test_view".to_string(),
@@ -2144,80 +2052,9 @@ mod tests {
         graph.add_edge(c, a, ());
 
         // Create some placeholder operations for the cycle detection
-        let table_a = Table {
-            name: "table_a".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        let table_b = Table {
-            name: "table_b".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        let table_c = Table {
-            name: "table_c".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table_a = create_test_table("table_a");
+        let table_b = create_test_table("table_b");
+        let table_c = create_test_table("table_c");
 
         // Test operations
         let operations = vec![
@@ -2287,131 +2124,11 @@ mod tests {
         // C depends on A
         // D depends on B and C
         // E depends on D
-
-        let table_a = Table {
-            name: "table_a".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        let table_b = Table {
-            name: "table_b".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        let table_c = Table {
-            name: "table_c".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        let table_d = Table {
-            name: "table_d".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        let table_e = Table {
-            name: "table_e".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table_a = create_test_table("table_a");
+        let table_b = create_test_table("table_b");
+        let table_c = create_test_table("table_c");
+        let table_d = create_test_table("table_d");
+        let table_e = create_test_table("table_e");
 
         let op_create_a = AtomicOlapOperation::CreateTable {
             table: table_a.clone(),
@@ -2545,56 +2262,9 @@ mod tests {
         // The correct order should be: A, B, MV_Setup
 
         // Create table A - source for materialized view
-        let table_a = Table {
-            name: "table_a".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
+        let table_a = create_test_table("table_a");
         // Create table B - target for materialized view
-        let table_b = Table {
-            name: "table_b".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table_b = create_test_table("table_b");
 
         // Create SQL resource for a materialized view
         let mv_sql_resource = SqlResource {
@@ -2700,56 +2370,9 @@ mod tests {
         // MV (materialized view) first, then tables (A and B)
 
         // Create table A - source for materialized view
-        let table_a = Table {
-            name: "table_a".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
+        let table_a = create_test_table("table_a");
         // Create table B - target for materialized view
-        let table_b = Table {
-            name: "table_b".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table_b = create_test_table("table_b");
 
         // Create SQL resource for a materialized view
         let mv_sql_resource = SqlResource {
@@ -2854,61 +2477,13 @@ mod tests {
         // - Table A: Base table
         // - Table B: Target for materialized view
         // - MV: Reads from A, writes to B
-
+        //
         // The correct order based on our implementation should be:
         // Setup: A, B, MV
         // Teardown: MV, then A and B (order between A and B not important)
 
-        // Create tables
-        let table_a = Table {
-            name: "table_a".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
-
-        let table_b = Table {
-            name: "table_b".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table_a = create_test_table("table_a");
+        let table_b = create_test_table("table_b");
 
         // Create SQL resource for materialized view
         let resource = SqlResource {
@@ -3098,31 +2673,7 @@ mod tests {
         // Test proper ordering of column add operations
         // Column add operations must happen after table creation
 
-        // Create a test table
-        let table = Table {
-            name: "test_table".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table = create_test_table("test_table");
 
         // Create a column
         let column = Column {
@@ -3213,31 +2764,7 @@ mod tests {
         // Test proper ordering of column drop operations
         // Column drop operations must happen before table deletion
 
-        // Create a test table
-        let table = Table {
-            name: "test_table".to_string(),
-            columns: vec![],
-            order_by: OrderBy::Fields(vec![]),
-            partition_by: None,
-            sample_by: None,
-            engine: ClickhouseEngine::MergeTree,
-            version: None,
-            source_primitive: PrimitiveSignature {
-                name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DBBlock,
-            },
-            metadata: None,
-            life_cycle: LifeCycle::FullyManaged,
-            engine_params_hash: None,
-            table_settings_hash: None,
-            table_settings: None,
-            indexes: vec![],
-            projections: vec![],
-            database: None,
-            table_ttl_setting: None,
-            cluster_name: None,
-            primary_key_expression: None,
-        };
+        let table = create_test_table("test_table");
 
         // Create operations with signatures that work with the current implementation
         // For column operations on test_table, create a custom signature
@@ -3452,7 +2979,7 @@ mod tests {
         ];
 
         // Generate the operation plan
-        let plan = handle_table_update(&before_table, &after_table, &column_changes);
+        let plan = handle_table_update(&before_table, &after_table, &column_changes, &[]);
 
         // Check that the plan uses column-level operations (not drop+create)
         assert_eq!(
@@ -3535,5 +3062,57 @@ mod tests {
                 _ => panic!("Expected RawSql operation"),
             }
         }
+    }
+
+    #[test]
+    fn test_add_projection_includes_materialize() {
+        let before = create_test_table("test");
+        let mut after = before.clone();
+        let projection = TableProjection {
+            name: "test_proj".to_string(),
+            select: ProjectionClause::Fields(vec!["id".to_string()]),
+            order_by: Some(ProjectionClause::Fields(vec!["id".to_string()])),
+            group_by: None,
+        };
+        after.projections = vec![projection.clone()];
+
+        let projection_changes = vec![ProjectionChange::Added { projection }];
+        let plan = handle_table_update(&before, &after, &[], &projection_changes);
+
+        assert_eq!(plan.setup_ops.len(), 2);
+        assert!(matches!(
+            &plan.setup_ops[0],
+            AtomicOlapOperation::AddProjection { .. }
+        ));
+        assert!(matches!(
+            &plan.setup_ops[1],
+            AtomicOlapOperation::MaterializeProjection { .. }
+        ));
+        assert_eq!(plan.teardown_ops.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_projection_no_materialize() {
+        let mut before = create_test_table("test");
+        before.projections = vec![TableProjection {
+            name: "test_proj".to_string(),
+            select: ProjectionClause::Fields(vec!["id".to_string()]),
+            order_by: Some(ProjectionClause::Fields(vec!["id".to_string()])),
+            group_by: None,
+        }];
+        let mut after = before.clone();
+        after.projections = vec![];
+
+        let projection_changes = vec![ProjectionChange::Removed {
+            projection_name: "test_proj".to_string(),
+        }];
+        let plan = handle_table_update(&before, &after, &[], &projection_changes);
+
+        assert_eq!(plan.teardown_ops.len(), 1);
+        assert!(matches!(
+            &plan.teardown_ops[0],
+            AtomicOlapOperation::DropProjection { .. }
+        ));
+        assert_eq!(plan.setup_ops.len(), 0);
     }
 }
