@@ -109,14 +109,16 @@ static TYPE_WRAPPERS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
 /// Types only appear in specific syntactic positions in SQL:
 /// 1. After `AS ` in CAST expressions: `CAST(x AS INT64)`
 /// 2. After `TypeWrapper(` where TypeWrapper is Nullable, Array, etc.
-/// 3. After `, ` inside type wrapper parentheses: `AggregateFunction(sum, INT64)`, `Map(String, INT64)`
+/// 3. After `), ` inside type expressions: `Map(Nullable(String), INT64)` - the INT64 comes after `), `
+/// 4. After `word, ` inside type wrappers: `AggregateFunction(sum, INT64)` - INT64 after `sum, `
+/// 5. After `Type, ` inside multi-type wrappers: `Tuple(String, INT64)` - INT64 after `String, `
 ///
 /// This pattern captures the context (prefix), type name, and suffix separately to avoid
 /// incorrectly converting identifiers like column names that match type names.
 ///
-/// Note: The comma alternative requires the comma to be inside parentheses that follow
-/// a type wrapper name, preventing matches like `SELECT a, DATE, b` where the comma
-/// is in a SELECT list (not a type context).
+/// For cases 3-5 (comma contexts), the type must be followed by `)`, `(`, or `,`
+/// which indicates we're inside a type expression (not a SELECT list). In SELECT lists like
+/// `SELECT func(), DATE FROM t`, the DATE would be followed by space, not a type-context char.
 static CLICKHOUSE_TYPE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // Build alternation of all uppercase type names (longer first to avoid partial matches)
     let mut type_names: Vec<&str> = CLICKHOUSE_TYPE_FIXES.keys().copied().collect();
@@ -127,21 +129,21 @@ static CLICKHOUSE_TYPE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // Build wrapper pattern (both uppercase and PascalCase)
     let wrappers_pattern = TYPE_WRAPPERS.join("|");
 
+    // Build a list of type names that can precede a comma (PascalCase forms since they're already converted)
+    let pascal_types: Vec<&str> = CLICKHOUSE_TYPE_FIXES.values().copied().collect();
+    let pascal_types_pattern = pascal_types.join("|");
+
     // Match types only in valid type contexts:
     // - After "AS " (CAST expressions)
     // - After "TypeWrapper(" where TypeWrapper is a known type wrapper (first arg)
-    // - After "TypeWrapper([^)]*," where comma is inside wrapper parens (subsequent args)
-    // The type must be followed by ( ) , or whitespace
+    // - After "), " inside type expressions (subsequent args after nested types)
+    // - After "(word, " inside type wrappers (subsequent args after simple identifiers like function names)
+    // - After "PascalType, " inside multi-type wrappers (subsequent args after already-converted types)
+    //   The type must be followed by ), (, or ,
     // Group 1: prefix context, Group 2: type name, Group 3: suffix
-    //
-    // The pattern `(?:wrappers)\([^)]*,\s*` ensures commas only match when:
-    // - Preceded by a type wrapper name
-    // - Followed by an open paren
-    // - With any non-close-paren chars before the comma
-    // This prevents matching commas in SELECT lists like `SELECT a, DATE, b`
     let pattern = format!(
-        r"((?:{})\([^)]*,\s*|AS\s+|(?:{})\()({})([\s(),])",
-        wrappers_pattern, wrappers_pattern, types_pattern
+        r"(AS\s+|(?:{})\(|\),\s*|\(\w+,\s*|(?:{}),\s*)({})([(,)])",
+        wrappers_pattern, pascal_types_pattern, types_pattern
     );
     Regex::new(&pattern).expect("CLICKHOUSE_TYPE_PATTERN regex should compile")
 });
@@ -2462,6 +2464,35 @@ pub mod tests {
         assert_eq!(
             fix_clickhouse_type_casing("CAST(col AS ARRAY(NULLABLE(STRING)))"),
             "CAST(col AS Array(Nullable(String)))"
+        );
+
+        // Test multi-argument container types with nested types (Map, Tuple)
+        // This is a critical edge case: the second argument of Map comes after
+        // a nested type with parentheses, like Map(Nullable(String), UINT64)
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS MAP(STRING, UINT64))"),
+            "CAST(col AS Map(String, UInt64))",
+            "Map second argument should be converted"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS MAP(NULLABLE(STRING), UINT64))"),
+            "CAST(col AS Map(Nullable(String), UInt64))",
+            "Map with nested first argument: second argument should still be converted"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS MAP(NULLABLE(STRING), NULLABLE(INT64)))"),
+            "CAST(col AS Map(Nullable(String), Nullable(Int64)))",
+            "Map with both arguments nested should convert all types"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS TUPLE(STRING, INT64, FLOAT32))"),
+            "CAST(col AS Tuple(String, Int64, Float32))",
+            "Tuple with multiple arguments should convert all types"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS TUPLE(NULLABLE(STRING), ARRAY(INT64)))"),
+            "CAST(col AS Tuple(Nullable(String), Array(Int64)))",
+            "Tuple with nested types should convert all types"
         );
     }
 
