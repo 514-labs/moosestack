@@ -51,7 +51,7 @@ use super::{
         olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
-        table::{Column, Metadata, Table, TableIndex},
+        table::{Column, Metadata, Table, TableIndex, TableProjection},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
         view::View,
@@ -329,6 +329,9 @@ struct PartialTable {
     pub table_settings: Option<std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub indexes: Vec<TableIndex>,
+    /// Optional projections for query optimization
+    #[serde(default)]
+    pub projections: Vec<TableProjection>,
     /// Optional table-level TTL expression (ClickHouse expression, without leading 'TTL')
     #[serde(alias = "ttl")]
     pub ttl: Option<String>,
@@ -783,6 +786,7 @@ impl PartialInfrastructureMap {
                     },
                     table_settings_hash: None, // Will be computed below
                     indexes: partial_table.indexes.clone(),
+                    projections: partial_table.projections.clone(),
                     table_ttl_setting,
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),

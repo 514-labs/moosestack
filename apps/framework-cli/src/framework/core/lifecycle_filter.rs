@@ -238,10 +238,11 @@ fn create_column_changes_filtered_change(
 ) -> FilteredChange {
     let blocked_column_names: Vec<String> = blocked_columns
         .iter()
-        .map(|c| match c {
-            ColumnChange::Removed(col) => col.name.clone(),
-            ColumnChange::Added { column, .. } => column.name.clone(),
-            ColumnChange::Updated { after: col, .. } => col.name.clone(),
+        .filter_map(|c| match c {
+            ColumnChange::Removed(col) => Some(col.name.clone()),
+            ColumnChange::Added { column, .. } => Some(column.name.clone()),
+            ColumnChange::Updated { after: col, .. } => Some(col.name.clone()),
+            ColumnChange::AddProjection { .. } | ColumnChange::DropProjection { .. } => None,
         })
         .collect();
 
@@ -611,6 +612,12 @@ fn create_column_change_violation(
         ColumnChange::Updated { after: col, .. } => {
             (col.name.clone(), ViolationType::ColumnModification)
         }
+        ColumnChange::AddProjection { projection } => {
+            (projection.name.clone(), ViolationType::ColumnAddition)
+        }
+        ColumnChange::DropProjection { projection_name } => {
+            (projection_name.clone(), ViolationType::ColumnRemoval)
+        }
     };
 
     LifecycleViolation {
@@ -739,6 +746,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

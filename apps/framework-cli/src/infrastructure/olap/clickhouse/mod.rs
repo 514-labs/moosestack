@@ -45,7 +45,8 @@ use sql_parser::{
     extract_engine_from_create_table, extract_indexes_from_create_table,
     extract_primary_key_from_create_table, extract_sample_by_from_create_table,
     extract_source_tables_from_query, extract_source_tables_from_query_regex,
-    extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
+    extract_table_settings_from_create_table, fetch_projections_for_database,
+    normalize_sql_for_comparison, split_qualified_name,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -207,6 +208,30 @@ pub enum SerializableOlapOperation {
     DropTableIndex {
         table: String,
         index_name: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
+    },
+    AddTableProjection {
+        table: String,
+        projection: crate::framework::core::infrastructure::table::TableProjection,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
+    },
+    DropTableProjection {
+        table: String,
+        projection_name: String,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
+    },
+    MaterializeTableProjection {
+        table: String,
+        projection_name: String,
         /// The database containing the table (None means use primary database)
         database: Option<String>,
         /// Optional cluster name for ON CLUSTER support
@@ -428,6 +453,34 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         } => {
             format!("Dropping index '{}' from table '{}'", index_name, table)
         }
+        SerializableOlapOperation::AddTableProjection {
+            table, projection, ..
+        } => {
+            format!(
+                "Adding projection '{}' to table '{}'",
+                projection.name, table
+            )
+        }
+        SerializableOlapOperation::DropTableProjection {
+            table,
+            projection_name,
+            ..
+        } => {
+            format!(
+                "Dropping projection '{}' from table '{}'",
+                projection_name, table
+            )
+        }
+        SerializableOlapOperation::MaterializeTableProjection {
+            table,
+            projection_name,
+            ..
+        } => {
+            format!(
+                "Materializing projection '{}' on table '{}'",
+                projection_name, table
+            )
+        }
         SerializableOlapOperation::ModifySampleBy {
             table, expression, ..
         } => {
@@ -620,6 +673,54 @@ pub async fn execute_atomic_operation(
             )
             .await?;
         }
+        SerializableOlapOperation::AddTableProjection {
+            table,
+            projection,
+            database,
+            cluster_name,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_add_table_projection(
+                target_db,
+                table,
+                projection,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
+        }
+        SerializableOlapOperation::DropTableProjection {
+            table,
+            projection_name,
+            database,
+            cluster_name,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_drop_table_projection(
+                target_db,
+                table,
+                projection_name,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
+        }
+        SerializableOlapOperation::MaterializeTableProjection {
+            table,
+            projection_name,
+            database,
+            cluster_name,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            execute_materialize_table_projection(
+                target_db,
+                table,
+                projection_name,
+                cluster_name.as_deref(),
+                client,
+            )
+            .await?;
+        }
         SerializableOlapOperation::ModifySampleBy {
             table,
             expression,
@@ -718,6 +819,87 @@ async fn execute_drop_table_index(
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} DROP INDEX `{}`",
         db_name, table_name, cluster_clause, index_name
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_add_table_projection(
+    db_name: &str,
+    table_name: &str,
+    projection: &crate::framework::core::infrastructure::table::TableProjection,
+    cluster_name: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let mut clauses = Vec::new();
+    clauses.push(format!("SELECT {}", projection.select.to_sql()));
+
+    // ClickHouse rule: Aggregate projections (with GROUP BY) cannot have ORDER BY
+    if let Some(ref group_by) = projection.group_by {
+        clauses.push(format!("GROUP BY {}", group_by.to_sql()));
+    } else if let Some(ref order_by) = projection.order_by {
+        // ORDER BY only allowed for non-aggregate projections
+        clauses.push(format!("ORDER BY {}", order_by.to_sql()));
+    }
+
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}`{} ADD PROJECTION `{}` ({})",
+        db_name,
+        table_name,
+        cluster_clause,
+        projection.name,
+        clauses.join(" ")
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_drop_table_projection(
+    db_name: &str,
+    table_name: &str,
+    projection_name: &str,
+    cluster_name: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}`{} DROP PROJECTION IF EXISTS `{}`",
+        db_name, table_name, cluster_clause, projection_name
+    );
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(table_name.to_string()),
+        })
+}
+
+async fn execute_materialize_table_projection(
+    db_name: &str,
+    table_name: &str,
+    projection_name: &str,
+    cluster_name: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let cluster_clause = cluster_name
+        .map(|c| format!(" ON CLUSTER {}", c))
+        .unwrap_or_default();
+    let sql = format!(
+        "ALTER TABLE `{}`.`{}`{} MATERIALIZE PROJECTION {}",
+        db_name, table_name, cluster_clause, projection_name
     );
     run_query(&sql, client)
         .await
@@ -1658,6 +1840,19 @@ impl OlapOperations for ConfiguredDBClient {
         debug!("Starting list_tables operation for database: {}", db_name);
         debug!("Using project version: {}", project.cur_version());
 
+        // Fetch all projections for this database upfront using system.projections
+        // This is more efficient and reliable than parsing CREATE TABLE DDL
+        let projections_by_table = fetch_projections_for_database(&self.client, db_name)
+            .await
+            .map_err(|e| {
+                debug!("Error fetching projections: {}", e);
+                OlapChangesError::DatabaseError(format!("Failed to fetch projections: {}", e))
+            })?;
+        debug!(
+            "Fetched projections for {} tables",
+            projections_by_table.len()
+        );
+
         // First get basic table information
         let query = format!(
             r#"
@@ -2075,6 +2270,16 @@ impl OlapOperations for ConfiguredDBClient {
                 .collect();
             debug!("Extracted indexes for table {}: {:?}", table_name, indexes);
 
+            // Get projections for this table from the HashMap we fetched earlier
+            let projections = projections_by_table
+                .get(&table_name)
+                .cloned()
+                .unwrap_or_default();
+            debug!(
+                "Retrieved projections for table {}: {:?}",
+                table_name, projections
+            );
+
             let table = Table {
                 // keep the name with version suffix, following PartialInfrastructureMap.convert_tables
                 name: table_name,
@@ -2095,6 +2300,7 @@ impl OlapOperations for ConfiguredDBClient {
                 table_settings_hash: None,
                 table_settings,
                 indexes,
+                projections,
                 database: Some(database),
                 table_ttl_setting,
                 // cluster_name is always None from introspection because ClickHouse doesn't store
@@ -3642,6 +3848,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
@@ -3712,6 +3919,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),

@@ -624,6 +624,70 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         );
       });
 
+      it("should create projections defined in templates", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        const ddl = await getTableDDL("ProjectionTest", "local");
+
+        // Verify all projection names exist
+        if (!ddl.includes("PROJECTION by_user_fields")) {
+          throw new Error(
+            `PROJECTION by_user_fields not found in DDL. DDL: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("PROJECTION by_user_expr")) {
+          throw new Error(
+            `PROJECTION by_user_expr not found in DDL. DDL: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("PROJECTION hourly_agg")) {
+          throw new Error(
+            `PROJECTION hourly_agg not found in DDL. DDL: ${ddl}`,
+          );
+        }
+        if (!ddl.includes("PROJECTION daily_stats")) {
+          throw new Error(
+            `PROJECTION daily_stats not found in DDL. DDL: ${ddl}`,
+          );
+        }
+
+        // Verify non-aggregate projection has SELECT and ORDER BY
+        // ClickHouse formats DDL with newlines/whitespace, so use regex with \s+ for flexible matching
+        const fieldName =
+          config.language === "typescript" ? "userId" : "user_id";
+        const selectRegex = new RegExp(`SELECT[\\s\\S]*?${fieldName}`, "i");
+        const orderByRegex = new RegExp(`ORDER BY[\\s\\S]*?${fieldName}`, "i");
+
+        if (!selectRegex.test(ddl)) {
+          throw new Error(
+            `SELECT clause with ${fieldName} not found in by_user_fields projection. DDL: ${ddl}`,
+          );
+        }
+        if (!orderByRegex.test(ddl)) {
+          throw new Error(
+            `ORDER BY ${fieldName} not found in by_user_fields projection. DDL: ${ddl}`,
+          );
+        }
+
+        // Verify aggregate projections have GROUP BY (and NO ORDER BY)
+        // Use flexible whitespace matching for ClickHouse-formatted DDL
+        const groupByHourRegex = /GROUP BY[\s\S]*?hour/i;
+        const groupByDateRegex = /GROUP BY[\s\S]*?date/i;
+
+        if (!groupByHourRegex.test(ddl)) {
+          throw new Error(
+            `GROUP BY hour not found in hourly_agg projection. DDL: ${ddl}`,
+          );
+        }
+        if (!groupByDateRegex.test(ddl)) {
+          throw new Error(
+            `GROUP BY date not found in daily_stats projection. DDL: ${ddl}`,
+          );
+        }
+
+        testLogger.info("✅ Projection DDL validation passed");
+      });
+
       it("should create Buffer engine table correctly", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
