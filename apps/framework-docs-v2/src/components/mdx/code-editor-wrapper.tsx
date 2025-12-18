@@ -62,8 +62,8 @@ export function CodeEditorWrapper({
   const terminalWriting = isTerminal ? writing : writing;
 
   return (
-    <div className={cn("not-prose overflow-hidden min-w-0", className)}>
-      <div className="overflow-x-auto min-w-0 h-full">
+    <div className={cn("not-prose min-w-0", className)}>
+      <div className="min-w-0 h-full">
         <CodeEditor
           lang={language}
           title={title}

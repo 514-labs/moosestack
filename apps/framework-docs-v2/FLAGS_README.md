@@ -23,7 +23,7 @@
 
 - `show-hosting-section` - Controls Hosting tab visibility (default: off)
 - `show-guides-section` - Controls Guides tab visibility (default: off)
-- `show-ai-section` - Controls AI tab visibility (default: on)
+- `show-ai-section` - Controls AI tab visibility (default: off)
 - `show-data-sources-page` - Controls Data sources page visibility in navigation (default: off)
 
 ## How It Works
