@@ -16,11 +16,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// OLD PATTERN (before API cleanup):
-// import { expressMiddleware } from "@514labs/moose-lib";
-// app.use(expressMiddleware());
-// const moose = getMooseUtils(req);
-
 app.use((req, res, next) => {
   console.log(`[bar-express.ts] ${req.method} ${req.url}`);
   next();
@@ -43,7 +38,6 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/query", async (req, res) => {
-  // NEW PATTERN: Call getMooseUtils() directly without req parameter
   const { client, sql } = await getMooseUtils();
   const limit = parseInt(req.query.limit as string) || 10;
 
@@ -85,7 +79,6 @@ app.get("/protected", requireAuth, async (req, res) => {
 });
 
 app.post("/data", async (req, res) => {
-  // NEW PATTERN: Call getMooseUtils() directly without req parameter
   const { client, sql } = await getMooseUtils();
   const {
     orderBy = "totalRows",
