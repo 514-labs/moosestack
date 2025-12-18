@@ -93,5 +93,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(newUrl, { status: 301 });
   }
 
+  // Redirect old/dead documentation links to their new locations
+  const redirectMap: Record<string, string> = {
+    "/moose/api-reference": "/moose/reference/ts-moose-lib",
+    "/moose/help": "/moose/help/troubleshooting",
+    "/moose/reference/cli-reference": "/moose/moose-cli",
+    "/sloan/reference/cli-reference": "/moose/moose-cli",
+  };
+
+  if (redirectMap[pathname]) {
+    const newUrl = request.nextUrl.clone();
+    newUrl.pathname = redirectMap[pathname];
+    return NextResponse.redirect(newUrl, { status: 301 });
+  }
+
   return NextResponse.next();
 }
