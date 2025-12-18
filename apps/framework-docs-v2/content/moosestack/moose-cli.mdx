@@ -49,6 +49,8 @@ moose dev [--mcp] [--docker] [--timestamps] [--timing]
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
 - `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2.3s" (default: false)
 
+When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
+
 **Example with timing flags:**
 ```bash
 # Basic dev mode
