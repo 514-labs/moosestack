@@ -140,13 +140,6 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconRocket,
     languages: ["typescript", "python"],
   },
-  // Connect to an existing ClickHouse
-  {
-    type: "page",
-    slug: "moosestack/getting-started/from-clickhouse",
-    title: "Connect to Existing ClickHouse",
-    languages: ["typescript", "python"],
-  },
   {
     type: "page",
     slug: "templates",
@@ -155,7 +148,14 @@ const moosestackNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
     external: true,
   },
-
+  // Connect to an existing ClickHouse
+  {
+    type: "page",
+    slug: "moosestack/getting-started/from-clickhouse",
+    title: "Connect to Existing ClickHouse",
+    icon: IconDatabase,
+    languages: ["typescript", "python"],
+  },
   // Embed in an existing app
   { type: "separator" },
   { type: "label", title: "Add to Existing App" },
