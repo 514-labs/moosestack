@@ -15,98 +15,168 @@ use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::sync::LazyLock;
 
-/// ClickHouse type names that need to be PascalCased
-/// The sqlparser library uppercases these when formatting, but ClickHouse requires PascalCase
+/// ClickHouse type name mappings from uppercase (sqlparser output) to PascalCase (ClickHouse required).
+/// The sqlparser library uppercases these when formatting, but ClickHouse requires PascalCase.
 /// We should submit a fix to the sqlparser crate to handle this properly.
-static CLICKHOUSE_TYPE_FIXES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+static CLICKHOUSE_TYPE_FIXES: LazyLock<std::collections::HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| {
+        [
+            // Integer types
+            ("UINT256", "UInt256"),
+            ("UINT128", "UInt128"),
+            ("UINT64", "UInt64"),
+            ("UINT32", "UInt32"),
+            ("UINT16", "UInt16"),
+            ("UINT8", "UInt8"),
+            ("INT256", "Int256"),
+            ("INT128", "Int128"),
+            ("INT64", "Int64"),
+            ("INT32", "Int32"),
+            ("INT16", "Int16"),
+            ("INT8", "Int8"),
+            // Float types
+            ("FLOAT64", "Float64"),
+            ("FLOAT32", "Float32"),
+            // Date/Time types
+            ("DATETIME64", "DateTime64"),
+            ("DATETIME", "DateTime"),
+            ("DATE32", "Date32"),
+            ("DATE", "Date"),
+            // String types
+            ("FIXEDSTRING", "FixedString"),
+            ("STRING", "String"),
+            // Container types
+            ("LOWCARDINALITY", "LowCardinality"),
+            ("NULLABLE", "Nullable"),
+            ("ARRAY", "Array"),
+            ("TUPLE", "Tuple"),
+            ("NESTED", "Nested"),
+            ("MAP", "Map"),
+            // Other types
+            ("DECIMAL256", "Decimal256"),
+            ("DECIMAL128", "Decimal128"),
+            ("DECIMAL64", "Decimal64"),
+            ("DECIMAL32", "Decimal32"),
+            ("DECIMAL", "Decimal"),
+            ("BOOLEAN", "Boolean"),
+            ("BOOL", "Bool"),
+            ("ENUM16", "Enum16"),
+            ("ENUM8", "Enum8"),
+            ("IPV4", "IPv4"),
+            ("IPV6", "IPv6"),
+            ("UUID", "UUID"),
+            // Aggregate functions
+            ("AGGREGATEFUNCTION", "AggregateFunction"),
+            ("SIMPLEAGGREGATEFUNCTION", "SimpleAggregateFunction"),
+            // Geo types
+            ("MULTILINESTRING", "MultiLineString"),
+            ("LINESTRING", "LineString"),
+            ("MULTIPOLYGON", "MultiPolygon"),
+            ("POLYGON", "Polygon"),
+            ("POINT", "Point"),
+            ("RING", "Ring"),
+        ]
+        .into_iter()
+        .collect()
+    });
+
+/// Type wrapper names that take type arguments (both uppercase and PascalCase forms).
+/// These are used to identify valid type contexts after `(`.
+static TYPE_WRAPPERS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
     vec![
-        // Integer types (longer ones first to avoid partial matches)
-        ("UINT256", "UInt256"),
-        ("UINT128", "UInt128"),
-        ("UINT64", "UInt64"),
-        ("UINT32", "UInt32"),
-        ("UINT16", "UInt16"),
-        ("UINT8", "UInt8"),
-        ("INT256", "Int256"),
-        ("INT128", "Int128"),
-        ("INT64", "Int64"),
-        ("INT32", "Int32"),
-        ("INT16", "Int16"),
-        ("INT8", "Int8"),
-        // Float types
-        ("FLOAT64", "Float64"),
-        ("FLOAT32", "Float32"),
-        // Date/Time types
-        ("DATETIME64", "DateTime64"),
-        ("DATETIME", "DateTime"),
-        ("DATE32", "Date32"),
-        ("DATE", "Date"),
-        // String types
-        ("FIXEDSTRING", "FixedString"),
-        ("STRING", "String"),
-        // Container types
-        ("LOWCARDINALITY", "LowCardinality"),
-        ("NULLABLE", "Nullable"),
-        ("ARRAY", "Array"),
-        ("TUPLE", "Tuple"),
-        ("NESTED", "Nested"),
-        ("MAP", "Map"),
-        // Other types
-        ("DECIMAL256", "Decimal256"),
-        ("DECIMAL128", "Decimal128"),
-        ("DECIMAL64", "Decimal64"),
-        ("DECIMAL32", "Decimal32"),
-        ("DECIMAL", "Decimal"),
-        ("BOOLEAN", "Boolean"),
-        ("BOOL", "Bool"),
-        ("ENUM16", "Enum16"),
-        ("ENUM8", "Enum8"),
-        ("IPV4", "IPv4"),
-        ("IPV6", "IPv6"),
-        ("UUID", "UUID"),
-        // Aggregate functions
-        ("AGGREGATEFUNCTION", "AggregateFunction"),
-        ("SIMPLEAGGREGATEFUNCTION", "SimpleAggregateFunction"),
-        // Geo types
-        ("MULTILINESTRING", "MultiLineString"),
-        ("LINESTRING", "LineString"),
-        ("MULTIPOLYGON", "MultiPolygon"),
-        ("POLYGON", "Polygon"),
-        ("POINT", "Point"),
-        ("RING", "Ring"),
+        // Uppercase (sqlparser output) and PascalCase (after conversion) forms
+        "NULLABLE",
+        "Nullable",
+        "ARRAY",
+        "Array",
+        "LOWCARDINALITY",
+        "LowCardinality",
+        "TUPLE",
+        "Tuple",
+        "NESTED",
+        "Nested",
+        "MAP",
+        "Map",
+        "AGGREGATEFUNCTION",
+        "AggregateFunction",
+        "SIMPLEAGGREGATEFUNCTION",
+        "SimpleAggregateFunction",
     ]
 });
 
-/// Regex pattern for matching ClickHouse types in SQL
-/// Matches type names that are followed by '(' or whitespace/end, ensuring we don't
-/// match partial identifiers
+/// Regex pattern for matching ClickHouse types in type contexts only.
+///
+/// Types only appear in specific syntactic positions in SQL:
+/// 1. After `AS ` in CAST expressions: `CAST(x AS INT64)`
+/// 2. After `TypeWrapper(` where TypeWrapper is Nullable, Array, etc.
+/// 3. After `, ` inside type arguments: `AggregateFunction(sum, INT64)`
+///
+/// This pattern captures the context (prefix), type name, and suffix separately to avoid
+/// incorrectly converting identifiers like column names that match type names.
 static CLICKHOUSE_TYPE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    // Build a pattern that matches all the uppercase type names
-    let type_names: Vec<&str> = CLICKHOUSE_TYPE_FIXES
-        .iter()
-        .map(|(upper, _)| *upper)
-        .collect();
-    let pattern = format!(r"\b({})\b", type_names.join("|"));
+    // Build alternation of all uppercase type names (longer first to avoid partial matches)
+    let mut type_names: Vec<&str> = CLICKHOUSE_TYPE_FIXES.keys().copied().collect();
+    // Sort by length descending to match longer types first (e.g., DATETIME64 before DATETIME)
+    type_names.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    let types_pattern = type_names.join("|");
+
+    // Build wrapper pattern (both uppercase and PascalCase)
+    let wrappers_pattern = TYPE_WRAPPERS.join("|");
+
+    // Match types only in valid type contexts:
+    // - After "AS " (CAST expressions)
+    // - After "TypeWrapper(" where TypeWrapper is a known type wrapper
+    // - After ", " (type arguments, e.g., AggregateFunction(sum, INT64))
+    // The type must be followed by ( ) , or whitespace
+    // Group 1: prefix context, Group 2: type name, Group 3: suffix
+    let pattern = format!(
+        r"(AS\s+|(?:{})\(|,\s*)({})([\s(),])",
+        wrappers_pattern, types_pattern
+    );
     Regex::new(&pattern).expect("CLICKHOUSE_TYPE_PATTERN regex should compile")
 });
 
-/// Fixes ClickHouse type casing in SQL strings
+/// Fixes ClickHouse type casing in SQL strings.
 ///
 /// The sqlparser library converts types to uppercase when formatting AST back to string,
 /// but ClickHouse requires PascalCased types (e.g., "String" not "STRING", "UInt64" not "UINT64").
-/// This function converts uppercase types back to their proper PascalCase form.
+///
+/// This function uses context-aware matching to only convert types in valid type positions,
+/// avoiding incorrectly converting identifiers (column names, aliases) that might match
+/// type names. For example, `SELECT DATE FROM events` keeps `DATE` as-is (it's a column),
+/// while `CAST(x AS DATE)` converts `DATE` to `Date`.
 fn fix_clickhouse_type_casing(sql: &str) -> String {
-    CLICKHOUSE_TYPE_PATTERN
-        .replace_all(sql, |caps: &regex::Captures| {
-            let matched = &caps[1];
-            // Find the correct PascalCase version and return as owned String
-            CLICKHOUSE_TYPE_FIXES
-                .iter()
-                .find(|(upper, _)| *upper == matched)
-                .map(|(_, pascal)| pascal.to_string())
-                .unwrap_or_else(|| matched.to_string())
-        })
-        .into_owned()
+    // We need to apply the pattern repeatedly because nested types like
+    // `Nullable(Array(String))` require multiple passes. Each pass converts
+    // one level of nesting, and the converted types (now PascalCase) won't
+    // match on subsequent passes.
+    let mut result = sql.to_string();
+
+    // Keep applying until no more changes (handles nested types)
+    loop {
+        let new_result = CLICKHOUSE_TYPE_PATTERN
+            .replace_all(&result, |caps: &regex::Captures| {
+                let prefix = &caps[1]; // The context prefix (AS, (, ,)
+                let type_name = &caps[2]; // The uppercase type name
+                let suffix = &caps[3]; // The suffix (whitespace, paren, comma)
+
+                // Look up the PascalCase version
+                let pascal_type = CLICKHOUSE_TYPE_FIXES
+                    .get(type_name)
+                    .copied()
+                    .unwrap_or(type_name);
+
+                format!("{}{}{}", prefix, pascal_type, suffix)
+            })
+            .into_owned();
+
+        if new_result == result {
+            break;
+        }
+        result = new_result;
+    }
+
+    result
 }
 
 /// Converts a sqlparser Query AST to a SQL string with proper ClickHouse type casing.
@@ -2275,15 +2345,8 @@ pub mod tests {
     #[test]
     fn test_fix_clickhouse_type_casing() {
         // Test that fix_clickhouse_type_casing converts uppercase types to PascalCase
+        // ONLY in valid type contexts (after AS, inside type wrappers like Nullable())
         use super::fix_clickhouse_type_casing;
-
-        // Test basic types
-        assert_eq!(fix_clickhouse_type_casing("STRING"), "String");
-        assert_eq!(fix_clickhouse_type_casing("INT64"), "Int64");
-        assert_eq!(fix_clickhouse_type_casing("UINT32"), "UInt32");
-        assert_eq!(fix_clickhouse_type_casing("FLOAT64"), "Float64");
-        assert_eq!(fix_clickhouse_type_casing("DATETIME"), "DateTime");
-        assert_eq!(fix_clickhouse_type_casing("BOOLEAN"), "Boolean");
 
         // Test in CAST expressions (the main use case)
         assert_eq!(
@@ -2295,19 +2358,30 @@ pub mod tests {
             "CAST(col AS UInt64)"
         );
         assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS INT64)"),
+            "CAST(col AS Int64)"
+        );
+        assert_eq!(
             fix_clickhouse_type_casing("CAST(col AS DATETIME)"),
             "CAST(col AS DateTime)"
         );
-
-        // Test nested types
         assert_eq!(
-            fix_clickhouse_type_casing("NULLABLE(STRING)"),
-            "Nullable(String)"
+            fix_clickhouse_type_casing("CAST(col AS BOOLEAN)"),
+            "CAST(col AS Boolean)"
         );
-        assert_eq!(fix_clickhouse_type_casing("ARRAY(INT32)"), "Array(Int32)");
+
+        // Test nested types (container types with inner types)
         assert_eq!(
-            fix_clickhouse_type_casing("LOWCARDINALITY(STRING)"),
-            "LowCardinality(String)"
+            fix_clickhouse_type_casing("CAST(col AS NULLABLE(STRING))"),
+            "CAST(col AS Nullable(String))"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS ARRAY(INT32))"),
+            "CAST(col AS Array(Int32))"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS LOWCARDINALITY(STRING))"),
+            "CAST(col AS LowCardinality(String))"
         );
 
         // Test complex expression with multiple types
@@ -2316,10 +2390,57 @@ pub mod tests {
             "SELECT CAST(a AS String), CAST(b AS UInt64), CAST(c AS Nullable(DateTime64))";
         assert_eq!(fix_clickhouse_type_casing(input), expected);
 
-        // Ensure we don't modify lowercase identifiers that look similar
+        // Ensure we don't modify lowercase identifiers
         assert_eq!(
             fix_clickhouse_type_casing("SELECT string_column FROM table"),
             "SELECT string_column FROM table"
+        );
+
+        // CRITICAL: Ensure we don't modify uppercase column names/identifiers
+        // These are valid ClickHouse identifiers that should NOT be converted
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT DATE FROM events"),
+            "SELECT DATE FROM events",
+            "Column name DATE should not be converted to Date"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT UUID FROM users"),
+            "SELECT UUID FROM users",
+            "Column name UUID should not be converted"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT MAP FROM data"),
+            "SELECT MAP FROM data",
+            "Column name MAP should not be converted to Map"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT POINT FROM geo"),
+            "SELECT POINT FROM geo",
+            "Column name POINT should not be converted to Point"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT STRING AS alias FROM table"),
+            "SELECT STRING AS alias FROM table",
+            "Column name STRING should not be converted even before AS"
+        );
+
+        // Test that types after AS are converted while column names are preserved
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT CAST(DATE AS STRING) FROM events"),
+            "SELECT CAST(DATE AS String) FROM events",
+            "Only the type after AS should be converted, not the column DATE"
+        );
+
+        // Test aggregate function types
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS AGGREGATEFUNCTION(sum, INT64))"),
+            "CAST(col AS AggregateFunction(sum, Int64))"
+        );
+
+        // Test deeply nested types
+        assert_eq!(
+            fix_clickhouse_type_casing("CAST(col AS ARRAY(NULLABLE(STRING)))"),
+            "CAST(col AS Array(Nullable(String)))"
         );
     }
 
