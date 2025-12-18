@@ -127,12 +127,31 @@ pub fn load_dotenv_files(directory: &Path, environment: MooseEnvironment) {
         }
     }
 
+    // Set NODE_ENV based on the Moose environment
+    // This is commonly used by Node.js libraries and frameworks to determine runtime behavior
+    let node_env = match environment {
+        MooseEnvironment::Development => "development",
+        MooseEnvironment::Production => "production",
+    };
+
+    // Only set NODE_ENV if it's not already set (respect existing system configuration)
+    if std::env::var("NODE_ENV").is_err() {
+        std::env::set_var("NODE_ENV", node_env);
+        info!("Set NODE_ENV={}", node_env);
+    } else {
+        debug!(
+            "NODE_ENV already set to '{}', not overwriting",
+            std::env::var("NODE_ENV").unwrap_or_default()
+        );
+    }
+
     info!("Environment configuration loaded");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
     use tempfile::TempDir;
 
@@ -197,5 +216,62 @@ mod tests {
 
         // Cleanup
         env::remove_var("MOOSE_LOCAL_ONLY_VAR");
+    }
+
+    #[test]
+    #[serial]
+    fn test_node_env_set_for_development() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().to_path_buf();
+
+        // Ensure NODE_ENV is not set
+        env::remove_var("NODE_ENV");
+
+        // Load in development mode
+        load_dotenv_files(&path, MooseEnvironment::Development);
+
+        // NODE_ENV should be set to "development"
+        assert_eq!(env::var("NODE_ENV").unwrap(), "development");
+
+        // Cleanup
+        env::remove_var("NODE_ENV");
+    }
+
+    #[test]
+    #[serial]
+    fn test_node_env_set_for_production() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().to_path_buf();
+
+        // Ensure NODE_ENV is not set
+        env::remove_var("NODE_ENV");
+
+        // Load in production mode
+        load_dotenv_files(&path, MooseEnvironment::Production);
+
+        // NODE_ENV should be set to "production"
+        assert_eq!(env::var("NODE_ENV").unwrap(), "production");
+
+        // Cleanup
+        env::remove_var("NODE_ENV");
+    }
+
+    #[test]
+    #[serial]
+    fn test_node_env_not_overwritten_if_already_set() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().to_path_buf();
+
+        // Set NODE_ENV to a custom value
+        env::set_var("NODE_ENV", "custom_value");
+
+        // Load in production mode
+        load_dotenv_files(&path, MooseEnvironment::Production);
+
+        // NODE_ENV should still be "custom_value"
+        assert_eq!(env::var("NODE_ENV").unwrap(), "custom_value");
+
+        // Cleanup
+        env::remove_var("NODE_ENV");
     }
 }
