@@ -162,6 +162,9 @@ message Table {
   // Hash of table settings for change detection (including sensitive settings)
   // Used to detect settings changes without storing plaintext sensitive values
   optional string table_settings_hash = 20;
+
+  // Optional ClickHouse projections for query optimization
+  repeated TableProjection projections = 21;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
@@ -186,6 +189,26 @@ message TableIndex {
   string type = 3;
   repeated string arguments = 4;
   uint64 granularity = 5;
+}
+
+// Projection clause - either explicit fields or SQL expression
+message ProjectionClause {
+  oneof clause {
+    ProjectionFields fields = 1;
+    string expression = 2;
+  }
+}
+
+message ProjectionFields {
+  repeated string field = 1;
+}
+
+// ClickHouse projection for query optimization
+message TableProjection {
+  string name = 1;
+  ProjectionClause select = 2;
+  ProjectionClause order_by = 3;
+  optional ProjectionClause group_by = 4;
 }
 
 message View {

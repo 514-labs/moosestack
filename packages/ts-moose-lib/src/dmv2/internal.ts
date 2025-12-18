@@ -272,6 +272,14 @@ interface TableJson {
     arguments: string[];
     granularity: number;
   }[];
+  /** Optional table projections */
+  projections?: {
+    name: string;
+    select: string[] | string;
+    order_by?: string[] | string; // Optional: only for non-aggregate projections
+    group_by?: string[] | string; // Optional: only for aggregate projections
+    where_clause?: string;
+  }[];
   /** Optional table-level TTL expression (without leading 'TTL'). */
   ttl?: string;
   /** Optional database name for multi-database support. */
@@ -901,6 +909,17 @@ export const toInfraMap = (registry: typeof moose_internal) => {
           ...i,
           granularity: i.granularity === undefined ? 1 : i.granularity,
           arguments: i.arguments === undefined ? [] : i.arguments,
+        })) || [],
+      projections:
+        table.config.projections?.map((p) => ({
+          name: p.name,
+          select: p.select,
+          ...("orderBy" in p && p.orderBy !== undefined ?
+            { orderBy: p.orderBy }
+          : {}),
+          ...("groupBy" in p && p.groupBy !== undefined ?
+            { groupBy: p.groupBy }
+          : {}),
         })) || [],
       ttl: table.config.ttl,
       database: table.config.database,
