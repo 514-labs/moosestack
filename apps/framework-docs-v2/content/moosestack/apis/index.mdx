@@ -16,7 +16,7 @@ You can do this in two distinct ways:
 - **Native Moose APIs**: define endpoints with Moose primitives (type-safe, OpenAPI-friendly).
 - **Web apps inside the Moose Runtime**: run Express/Fastify/Koa/FastAPI (or raw Node) inside MooseStack via `WebApp`.
 
-If you want to **embed Moose as a library inside an existing web app** (no separate Moose Runtime service), follow the “Add to Existing App” guides like [Next.js](/moosestack/getting-started/existing-app/next-js).
+If you want to **embed Moose as a library inside an existing web app** (no separate Moose Runtime service), follow the “Add to Existing App” guides like [Next.js](/moosestack/getting-started/existing-app/next-js) or [Fastify](/moosestack/getting-started/existing-app/fastify).
 
 ## What this is
 
@@ -42,9 +42,9 @@ APIs are where external systems touch your data platform. Moose gives you a path
 
 Native APIs are best for straightforward endpoints with minimal routing/middleware needs.
 
-- **Ingest**: create POST endpoints that validate payloads and route them into streams/tables.
-- **Analytics**: create GET endpoints that run queries (OLAP or custom logic).
-- **Trigger**: create POST endpoints that kick off workflows.
+- **[Ingest API](/moosestack/apis/ingest-api)**: create POST endpoints that validate payloads and route them into streams/tables.
+- **[Analytics API](/moosestack/apis/analytics-api)**: create GET endpoints that run queries (OLAP or custom logic).
+- **[Trigger API](/moosestack/apis/trigger-api)**: create POST endpoints that kick off workflows.
 
 ### 2) Web apps inside the Moose Runtime (WebApp)
 
@@ -56,13 +56,13 @@ If you want a full-featured web framework, MooseStack can host it via `WebApp` a
 - Moose utilities available in every request (`client`, `sql`, `jwt`)
 - Moose APIs and your framework routes can live under the same hostname
 
-Supported adapters include Express, Fastify, Koa, raw Node.js, and FastAPI.
+Supported adapters include: [Express](/moosestack/app-api-frameworks/express), [Fastify](/moosestack/app-api-frameworks/fastify), [Koa](/moosestack/app-api-frameworks/koa), [raw Node.js](/moosestack/app-api-frameworks/raw-nodejs), and [FastAPI](/moosestack/app-api-frameworks/fastapi).
 
 ### 3) Embed Moose in an existing app (client-only)
 
 If you already have an app server (like Next.js), you can keep it where it is and use Moose libraries to model, migrate, and query ClickHouse **without deploying a separate Moose Runtime web service**.
 
-See: [Embed ClickHouse analytics in Next.js](/moosestack/getting-started/existing-app/next-js).
+See: [Next.js](/moosestack/getting-started/existing-app/next-js) or [Fastify](/moosestack/getting-started/existing-app/fastify).
 
 ## Key concepts
 
