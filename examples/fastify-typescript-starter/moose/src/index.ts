@@ -17,3 +17,6 @@ export interface EventModel {
 export const Events = new OlapTable<EventModel>("events", {
   orderByFields: ["event_time"],
 });
+
+// Note: this file defines/exports Moose resources (OlapTable, etc.) as plain TS modules
+// so it can be imported directly by a runtime server without an extra build step.

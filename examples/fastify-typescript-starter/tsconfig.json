@@ -1,14 +1,5 @@
 {
   "extends": "fastify-tsconfig",
-  // "ts-node": {
-  //   "compilerOptions": {
-  //     "allowImportingTsExtensions": false,
-  //     "verbatimModuleSyntax": false,
-  //     "erasableSyntaxOnly": false,
-  //     "module": "commonjs",
-  //     "moduleResolution": "node"
-  //   }
-  // },
   "compilerOptions": {
     "target": "esnext",
     "module": "nodenext",
@@ -29,9 +20,6 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": false,
     "erasableSyntaxOnly": false
-  },
-  "paths": {
-    "@/moose": ["./dist/index"]
   },
   "exclude": ["node_modules", "dist", "moose"],
   "include": ["./src/**/*.ts"]

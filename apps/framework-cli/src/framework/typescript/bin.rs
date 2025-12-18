@@ -1,4 +1,4 @@
-use crate::cli::display::MessageType;
+use crate::{cli::display::MessageType, utilities::constants::TSCONFIG_JSON};
 use serde::Deserialize;
 use std::{env, path::Path, process::Stdio};
 
@@ -33,10 +33,7 @@ pub fn run(
     );
 
     command
-        .env(
-            "TS_NODE_PROJECT",
-            project_path.join(&project.typescript_config.tsconfig_path),
-        )
+        .env("TS_NODE_PROJECT", project_path.join(TSCONFIG_JSON))
         .env("PATH", bin_path)
         .env("TS_NODE_COMPILER_HOST", "true")
         .env("NODE_NO_WARNINGS", "1")
