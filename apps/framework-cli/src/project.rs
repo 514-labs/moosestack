@@ -153,18 +153,28 @@ pub struct TypescriptConfig {
     /// Package manager to use (npm, pnpm, yarn)
     #[serde(default = "default_package_manager")]
     pub package_manager: String,
+
+    /// Path to TypeScript config file for ts-node execution (defaults to "tsconfig.json")
+    /// This path is relative to the project root directory.
+    #[serde(default = "default_tsconfig_path")]
+    pub tsconfig_path: String,
 }
 
 impl Default for TypescriptConfig {
     fn default() -> Self {
         Self {
             package_manager: default_package_manager(),
+            tsconfig_path: default_tsconfig_path(),
         }
     }
 }
 
 fn default_package_manager() -> String {
     "npm".to_string()
+}
+
+fn default_tsconfig_path() -> String {
+    "tsconfig.json".to_string()
 }
 
 fn default_state_storage() -> String {
