@@ -10,15 +10,13 @@
     "dev": "pnpm dev:fastify",
     "build:moose:types": "pnpm -C moose run build:types",
     "build:moose": "pnpm -C moose run build",
-    "dev:fastify": "cross-env NODE_ENV=development node --watch src/index.ts",
+    "dev:fastify": "cross-env NODE_ENV=development node --env-file=.env --watch src/index.ts",
     "dev:moose": "pnpm -C moose run dev",
     "moose": "pnpm -C moose run moose",
     "format": "prettier --write \"src/**/*.ts\"",
-    "start": "node src/index.ts",
+    "start": "node --env-file=.env src/index.ts",
     "typecheck": "tsc --noEmit"
   },
-  "author": "Matschik <mathieu.schimmerling@protonmail.com>",
-  "license": "MIT",
   "dependencies": {
     "@514labs/moose-lib": "^0.6.293",
     "moose": "workspace:*",

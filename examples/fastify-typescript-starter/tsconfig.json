@@ -22,5 +22,5 @@
     "erasableSyntaxOnly": false
   },
   "exclude": ["node_modules", "dist", "moose"],
-  "include": ["./src/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }
