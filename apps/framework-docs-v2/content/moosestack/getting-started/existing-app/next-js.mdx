@@ -25,7 +25,7 @@ By the end of this guide, you’ll be able to:
 ### Guide outline
 
 - **[Get started](#get-started):** install and configure MooseStack in your Next.js repo, then set up your project so you can import the compiled output from `@/moose`.
-- **[Model table](#model-table):** define your ClickHouse table schema in TypeScript in `moose/models/`.
+- **[Model table](#model-table):** define your ClickHouse table schema in TypeScript in `moose/index.ts`.
 - **[Start local ClickHouse](#start-local-clickhouse):** run `moose dev` to spin up a local ClickHouse instance and automatically instantiate (and hot-reload) your TypeScript models against it.
 - **[Write queries](#write-queries):** create type-safe query helpers that use your models, and set up the Moose ClickHouse client to connect to your local ClickHouse instance.
 - **[Use in Next.js](#use-in-nextjs):** import the compiled query helpers from `@/moose` into Server Components / Route Handlers, run your app, and see the query results render in your pages.
@@ -47,9 +47,6 @@ You’ll touch a few things: dependencies + scripts, `moose.config.toml`, `tscon
     <FileTree.Folder name="moose" defaultOpen>
       <FileTree.File name="index.ts" />
       <FileTree.File name="client.ts" />
-      <FileTree.Folder name="models" defaultOpen>
-        <FileTree.File name="events.ts" />
-      </FileTree.Folder>
       <FileTree.Folder name="queries" defaultOpen>
         <FileTree.File name="overview-metrics.ts" />
       </FileTree.Folder>
@@ -114,7 +111,7 @@ Add MooseStack and its build tools:
 
 ```bash title="Terminal" copy
 pnpm add @514labs/moose-lib ts-patch tsconfig-paths typia
-pnpm add -D @514labs/moose-cli @types/node
+pnpm add -D @514labs/moose-cli@latest @types/node
 ```
 
 Add these scripts to your `package.json`:
@@ -196,7 +193,6 @@ Create `tsconfig.moose.json` in your project root:
 
 ```json title="tsconfig.moose.json"
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
     "noEmit": false,
@@ -206,6 +202,7 @@ Create `tsconfig.moose.json` in your project root:
     "moduleResolution": "node",
     "isolatedModules": false,
     "strictNullChecks": true,
+    "esModuleInterop": true,
     "plugins": [
       { "transform": "typia/lib/transform" },
       {
@@ -291,9 +288,9 @@ Update `.gitignore` to exclude MooseStack generated files:
 
 ## Model table
 
-In this step you’ll define your first ClickHouse model as an `OlapTable` object. MooseStack uses these models as the source of truth for schema management. Create a file called `moose/models/events.ts` with the following content:
+In this step you’ll define your first ClickHouse model as an `OlapTable` object. MooseStack uses these models as the source of truth for schema management. Create `moose/index.ts` with the following content:
 
-```ts title="moose/models/events.ts"
+```ts title="moose/index.ts"
 import { OlapTable } from "@514labs/moose-lib";
 
 export interface EventModel {
@@ -378,7 +375,7 @@ Create a file called `moose/queries/overview-metrics.ts` with the following cont
 
 ```ts title="moose/queries/overview-metrics.ts"
 import { sql } from "@514labs/moose-lib";
-import { Events } from "../models/events";
+import { Events } from "../index";
 import { getMoose } from "../client";
 
 export interface DateRange {
@@ -434,8 +431,7 @@ export const getOverviewMetrics = async (dateRange?: DateRange) => {
 #### Export from `moose/index.ts`
 
 ```ts title="moose/index.ts"
-export * from "./models/events";
-export * from "./queries/overview-metrics"; // Add this line
+export * from "./queries/overview-metrics";
 ```
 
 ---
