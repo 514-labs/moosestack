@@ -3657,6 +3657,9 @@ impl serde::Serialize for InfrastructureMap {
             sql_resources: &'a HashMap<String, SqlResource>,
             workflows: &'a HashMap<String, Workflow>,
             web_apps: &'a HashMap<String, super::infrastructure::web_app::WebApp>,
+            materialized_views:
+                &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
+            custom_views: &'a HashMap<String, super::infrastructure::view::CustomView>,
         }
 
         // Mask credentials before serialization (for JSON migration files)
@@ -3678,6 +3681,8 @@ impl serde::Serialize for InfrastructureMap {
             sql_resources: &masked_inframap.sql_resources,
             workflows: &masked_inframap.workflows,
             web_apps: &masked_inframap.web_apps,
+            materialized_views: &masked_inframap.materialized_views,
+            custom_views: &masked_inframap.custom_views,
         };
 
         // Serialize to JSON value, sort keys, then serialize that

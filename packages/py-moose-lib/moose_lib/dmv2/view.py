@@ -21,9 +21,8 @@ class View:
     Args:
         name: The name of the view to be created.
         select_statement: The SQL SELECT statement defining the view.
-        base_tables: A list of objects with a `name` attribute (OlapTable, View,
-                     MaterializedView) that this view depends on. Used for
-                     dependency tracking.
+        base_tables: A list of objects with a `name` attribute (OlapTable, View)
+                     that this view depends on. Used for dependency tracking.
         metadata: Optional metadata for the view.
 
     Attributes:
