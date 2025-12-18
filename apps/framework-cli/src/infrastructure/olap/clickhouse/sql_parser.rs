@@ -109,10 +109,14 @@ static TYPE_WRAPPERS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
 /// Types only appear in specific syntactic positions in SQL:
 /// 1. After `AS ` in CAST expressions: `CAST(x AS INT64)`
 /// 2. After `TypeWrapper(` where TypeWrapper is Nullable, Array, etc.
-/// 3. After `, ` inside type arguments: `AggregateFunction(sum, INT64)`
+/// 3. After `, ` inside type wrapper parentheses: `AggregateFunction(sum, INT64)`, `Map(String, INT64)`
 ///
 /// This pattern captures the context (prefix), type name, and suffix separately to avoid
 /// incorrectly converting identifiers like column names that match type names.
+///
+/// Note: The comma alternative requires the comma to be inside parentheses that follow
+/// a type wrapper name, preventing matches like `SELECT a, DATE, b` where the comma
+/// is in a SELECT list (not a type context).
 static CLICKHOUSE_TYPE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     // Build alternation of all uppercase type names (longer first to avoid partial matches)
     let mut type_names: Vec<&str> = CLICKHOUSE_TYPE_FIXES.keys().copied().collect();
@@ -125,13 +129,19 @@ static CLICKHOUSE_TYPE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 
     // Match types only in valid type contexts:
     // - After "AS " (CAST expressions)
-    // - After "TypeWrapper(" where TypeWrapper is a known type wrapper
-    // - After ", " (type arguments, e.g., AggregateFunction(sum, INT64))
+    // - After "TypeWrapper(" where TypeWrapper is a known type wrapper (first arg)
+    // - After "TypeWrapper([^)]*," where comma is inside wrapper parens (subsequent args)
     // The type must be followed by ( ) , or whitespace
     // Group 1: prefix context, Group 2: type name, Group 3: suffix
+    //
+    // The pattern `(?:wrappers)\([^)]*,\s*` ensures commas only match when:
+    // - Preceded by a type wrapper name
+    // - Followed by an open paren
+    // - With any non-close-paren chars before the comma
+    // This prevents matching commas in SELECT lists like `SELECT a, DATE, b`
     let pattern = format!(
-        r"(AS\s+|(?:{})\(|,\s*)({})([\s(),])",
-        wrappers_pattern, types_pattern
+        r"((?:{})\([^)]*,\s*|AS\s+|(?:{})\()({})([\s(),])",
+        wrappers_pattern, wrappers_pattern, types_pattern
     );
     Regex::new(&pattern).expect("CLICKHOUSE_TYPE_PATTERN regex should compile")
 });
@@ -2422,6 +2432,17 @@ pub mod tests {
             fix_clickhouse_type_casing("SELECT STRING AS alias FROM table"),
             "SELECT STRING AS alias FROM table",
             "Column name STRING should not be converted even before AS"
+        );
+        // CRITICAL: Comma-separated columns in SELECT should NOT be converted
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT a, DATE, b FROM t"),
+            "SELECT a, DATE, b FROM t",
+            "Column name DATE in SELECT list should not be converted"
+        );
+        assert_eq!(
+            fix_clickhouse_type_casing("SELECT x, STRING, y, INT64 FROM t"),
+            "SELECT x, STRING, y, INT64 FROM t",
+            "Column names in SELECT list should not be converted"
         );
 
         // Test that types after AS are converted while column names are preserved
