@@ -55,7 +55,7 @@
 //! - [Kill All Setters pattern](https://blog.sentry.io/you-cant-rust-that/#kill-all-setters-2)
 
 use arc_swap::ArcSwap;
-use std::sync::Arc;
+use lazy_static::lazy_static;
 
 /// Display configuration flags for terminal output.
 ///
@@ -87,22 +87,24 @@ impl Default for DisplayConfig {
     }
 }
 
-/// Global display configuration using arc-swap for lock-free atomic access.
-///
-/// This is initialized with default values and should be updated once at
-/// startup based on CLI flags or environment variables.
-///
-/// # Performance
-///
-/// Loading this config is very cheap:
-/// - No locks acquired
-/// - Atomic pointer load
-/// - Reference count increment
-///
-/// The loaded Arc can be held for the duration of an operation to ensure
-/// consistent configuration throughout.
-pub static DISPLAY_CONFIG: ArcSwap<DisplayConfig> = ArcSwap::from_pointee(DisplayConfig {
-    no_ansi: false,
-    show_timestamps: false,
-    show_timing: false,
-});
+lazy_static! {
+    /// Global display configuration using arc-swap for lock-free atomic access.
+    ///
+    /// This is initialized with default values and should be updated once at
+    /// startup based on CLI flags or environment variables.
+    ///
+    /// # Performance
+    ///
+    /// Loading this config is very cheap:
+    /// - No locks acquired
+    /// - Atomic pointer load
+    /// - Reference count increment
+    ///
+    /// The loaded Arc can be held for the duration of an operation to ensure
+    /// consistent configuration throughout.
+    pub static ref DISPLAY_CONFIG: ArcSwap<DisplayConfig> = ArcSwap::from_pointee(DisplayConfig {
+        no_ansi: false,
+        show_timestamps: false,
+        show_timing: false,
+    });
+}
