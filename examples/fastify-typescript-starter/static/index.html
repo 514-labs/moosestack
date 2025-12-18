@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fastify + Typescript App</title>
+    <style>
+      body {
+        font-family: Georgia, "Times New Roman", Times, serif;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Welcome to Fastify + Typescript App 🔥</h1>
+    <h2>API Documentation</h2>
+    <div id="app"></div>
+
+    <script>
+      let html = "";
+      const routes = [
+        {
+          name: "User API",
+          path: "/api/v1/user",
+        },
+      ];
+
+      async function initApp() {
+        for (const route of routes) {
+          const response = await fetch(route.path);
+          const json = await response.json();
+          html += `<h3>${route.name}</h3>
+                    <a href="${route.path}">${route.path}</a>
+                    <pre>${JSON.stringify(json)}</pre>`;
+        }
+        document.getElementById("app").innerHTML = html;
+      }
+
+      initApp();
+    </script>
+  </body>
+</html>
