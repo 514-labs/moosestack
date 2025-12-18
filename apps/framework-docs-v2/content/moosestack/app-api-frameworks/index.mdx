@@ -49,9 +49,14 @@ If you already have a running app server, you can keep it where it is and use Mo
 - [Embed ClickHouse analytics in Fastify](/moosestack/getting-started/existing-app/fastify)
 - For query patterns, see [Reading Data](/moosestack/olap/read-data).
 
-## Declare a WebApp
+## WebApp
 
-To declare a WebApp, you need to create a `WebApp` instance and mount it to a path.
+The `WebApp` class is the bridge between your web framework and MooseStack. It handles:
+
+- [Mounting your framework at a custom URL path](#mount-paths)
+- [Injecting MooseStack utilities (database clients, SQL helpers, JWT)](#webapp-utilities)
+- Validating JWT tokens when authentication is configured
+- Managing the request/response lifecycle
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -91,7 +96,7 @@ Each `WebApp` mounts your framework under a unique path.
 
 ### WebApp utilities
 
-When MooseStack hosts your framework, your API handlers can access Moose utilities from the current request.
+All frameworks can access your OLAP database through MooseStack's injected utilities:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
