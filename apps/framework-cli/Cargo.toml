@@ -43,6 +43,7 @@ hyper-util = { version = "0.1.17", features = ["full"] }
 http-body-util = "0.1"
 lazy_static = "1.4.0"
 anyhow = "1.0"
+arc-swap = "1.7"
 git2 = { version = "0.18.1", features = ["vendored-libgit2"] }
 regex = "1.10.3"
 reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }

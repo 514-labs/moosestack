@@ -27,9 +27,8 @@
 //! ```
 
 use crate::cli::display::{Message, MessageType};
-use crate::utilities::constants::SHOW_TIMING;
+use crate::utilities::display_config::DISPLAY_CONFIG;
 use std::future::Future;
-use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 /// Wraps a synchronous operation with timing information.
@@ -64,7 +63,7 @@ where
     let start = Instant::now();
     let result = f();
 
-    if SHOW_TIMING.load(Ordering::Relaxed) {
+    if DISPLAY_CONFIG.load().show_timing {
         let elapsed = start.elapsed();
         show_message!(MessageType::Info, {
             Message {
@@ -109,7 +108,7 @@ where
     let start = Instant::now();
     let result = f.await;
 
-    if SHOW_TIMING.load(Ordering::Relaxed) {
+    if DISPLAY_CONFIG.load().show_timing {
         let elapsed = start.elapsed();
         show_message!(MessageType::Info, {
             Message {
@@ -125,17 +124,27 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utilities::display_config::DisplayConfig;
+    use std::sync::Arc;
 
     #[test]
     fn test_with_timing_returns_value() {
-        SHOW_TIMING.store(false, Ordering::Relaxed);
+        DISPLAY_CONFIG.store(Arc::new(DisplayConfig {
+            no_ansi: false,
+            show_timestamps: false,
+            show_timing: false,
+        }));
         let result = with_timing("Test", || 42);
         assert_eq!(result, 42);
     }
 
     #[tokio::test]
     async fn test_with_timing_async_returns_value() {
-        SHOW_TIMING.store(false, Ordering::Relaxed);
+        DISPLAY_CONFIG.store(Arc::new(DisplayConfig {
+            no_ansi: false,
+            show_timestamps: false,
+            show_timing: false,
+        }));
         let result = with_timing_async("Test", async { 42 }).await;
         assert_eq!(result, 42);
     }

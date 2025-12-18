@@ -7,8 +7,7 @@ use super::{
     message::{Message, MessageType},
     terminal::{write_styled_line, StyledText},
 };
-use crate::utilities::constants::{NO_ANSI, SHOW_TIMESTAMPS};
-use std::sync::atomic::Ordering;
+use crate::utilities::display_config::DISPLAY_CONFIG;
 use tracing::info;
 
 /// Displays a message about a batch database insertion.
@@ -33,9 +32,14 @@ pub fn batch_inserted(count: usize, table_name: &str) {
         action: "[DB]".to_string(),
         details: format!("{count} row(s) successfully written to DB table ({table_name})"),
     };
-    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-    let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
-    let _ = show_message_impl(MessageType::Info, message, true, no_ansi, show_timestamps);
+    let config = DISPLAY_CONFIG.load();
+    let _ = show_message_impl(
+        MessageType::Info,
+        message,
+        true,
+        config.no_ansi,
+        config.show_timestamps,
+    );
 }
 
 /// Wrapper function for the show_message macro.
@@ -60,9 +64,14 @@ pub fn batch_inserted(count: usize, table_name: &str) {
 /// );
 /// ```
 pub fn show_message_wrapper(message_type: MessageType, message: Message) {
-    let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-    let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
-    let _ = show_message_impl(message_type, message, false, no_ansi, show_timestamps);
+    let config = DISPLAY_CONFIG.load();
+    let _ = show_message_impl(
+        message_type,
+        message,
+        false,
+        config.no_ansi,
+        config.show_timestamps,
+    );
 }
 
 /// Internal implementation for the show_message macro.
@@ -150,31 +159,27 @@ pub fn show_message_impl(
 #[macro_export]
 macro_rules! show_message {
     ($message_type:expr, $message:expr) => {{
-        use std::sync::atomic::Ordering;
-        use $crate::utilities::constants::{NO_ANSI, SHOW_TIMESTAMPS};
-        let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-        let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
+        use $crate::utilities::display_config::DISPLAY_CONFIG;
+        let config = DISPLAY_CONFIG.load();
         $crate::cli::display::message_display::show_message_impl(
             $message_type,
             $message,
             true,
-            no_ansi,
-            show_timestamps,
+            config.no_ansi,
+            config.show_timestamps,
         )
         .expect("failed to write message to terminal");
     }};
 
     ($message_type:expr, $message:expr, $no_log:expr) => {{
-        use std::sync::atomic::Ordering;
-        use $crate::utilities::constants::{NO_ANSI, SHOW_TIMESTAMPS};
-        let no_ansi = NO_ANSI.load(Ordering::Relaxed);
-        let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
+        use $crate::utilities::display_config::DISPLAY_CONFIG;
+        let config = DISPLAY_CONFIG.load();
         $crate::cli::display::message_display::show_message_impl(
             $message_type,
             $message,
             false,
-            no_ansi,
-            show_timestamps,
+            config.no_ansi,
+            config.show_timestamps,
         )
         .expect("failed to write message to terminal");
     }};
