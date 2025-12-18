@@ -4,8 +4,6 @@
     "noEmit": false,
     "declaration": true,
     "declarationMap": true,
-    "module": "commonjs",
-    "moduleResolution": "node",
     "isolatedModules": false,
     "strictNullChecks": true,
     "esModuleInterop": true,
@@ -17,6 +15,6 @@
       }
     ]
   },
-  "include": ["moose/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
