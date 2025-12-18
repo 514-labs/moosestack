@@ -276,26 +276,8 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "moosestack/olap/ttl",
-        title: "TTL (Time-to-Live)",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
         slug: "moosestack/olap/materialized-columns",
         title: "Materialized Columns",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/schema-optimization",
-        title: "Schema Optimization",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/olap/indexes",
-        title: "Secondary & Data-skipping Indexes",
         languages: ["typescript", "python"],
       },
       { type: "separator" },
