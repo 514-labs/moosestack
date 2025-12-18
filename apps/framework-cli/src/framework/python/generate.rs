@@ -546,6 +546,8 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         })
     });
 
+    let uses_projections = tables.iter().any(|table| !table.projections.is_empty());
+
     // Add imports
     writeln!(output, "from pydantic import BaseModel, Field, ConfigDict").unwrap();
     writeln!(output, "from typing import Optional, Any, Annotated").unwrap();
@@ -568,6 +570,10 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
 
     if uses_simple_aggregate {
         moose_lib_imports.push("simple_aggregated");
+    }
+
+    if uses_projections {
+        moose_lib_imports.push("TableProjection");
     }
 
     writeln!(
@@ -1111,12 +1117,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
         if !table.projections.is_empty() {
             writeln!(output, "    projections=[").unwrap();
             for proj in &table.projections {
-                write!(
-                    output,
-                    "        OlapConfig.TableProjection(name={:?}",
-                    proj.name
-                )
-                .unwrap();
+                write!(output, "        TableProjection(name={:?}", proj.name).unwrap();
 
                 // Serialize select clause
                 match &proj.select {
@@ -1161,7 +1162,7 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 // Serialize GROUP BY clause if present
                 // Always output as string expression because GROUP BY often references
                 // aliases from SELECT (e.g., "hour" from "toStartOfHour(timestamp) as hour")
-                // which Python type hints can't validate as fields on T
+                // which type hints can't validate
                 if let Some(ref group_by) = proj.group_by {
                     let group_by_str = match group_by {
                         crate::framework::core::infrastructure::table::ProjectionClause::Fields(fields) => {

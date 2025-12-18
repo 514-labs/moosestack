@@ -887,6 +887,8 @@ async fn execute_drop_table_projection(
         })
 }
 
+/// Materializes a projection by backfilling it with existing table data.
+/// This is required after adding a new projection to populate it with historical rows.
 async fn execute_materialize_table_projection(
     db_name: &str,
     table_name: &str,
@@ -898,7 +900,7 @@ async fn execute_materialize_table_projection(
         .map(|c| format!(" ON CLUSTER {}", c))
         .unwrap_or_default();
     let sql = format!(
-        "ALTER TABLE `{}`.`{}`{} MATERIALIZE PROJECTION {}",
+        "ALTER TABLE `{}`.`{}`{} MATERIALIZE PROJECTION `{}`",
         db_name, table_name, cluster_clause, projection_name
     );
     run_query(&sql, client)

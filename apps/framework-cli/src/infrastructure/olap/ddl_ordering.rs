@@ -981,6 +981,8 @@ fn process_projection_changes(
                     projection: projection.clone(),
                     dependency_info: create_empty_dependency_info(),
                 });
+                // MATERIALIZE backfills the projection with existing table data.
+                // Without this, the projection would only contain data from new inserts.
                 plan.setup_ops
                     .push(AtomicOlapOperation::MaterializeProjection {
                         table: after.clone(),

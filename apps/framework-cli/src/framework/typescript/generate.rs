@@ -1027,7 +1027,7 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 // Serialize GROUP BY clause if present
                 // Always output as string expression because GROUP BY often references
                 // aliases from SELECT (e.g., "hour" from "toStartOfHour(timestamp) as hour")
-                // which TypeScript can't validate as fields on T
+                // which type hints can't validate
                 if let Some(ref group_by) = proj.group_by {
                     let group_by_str = match group_by {
                         crate::framework::core::infrastructure::table::ProjectionClause::Fields(fields) => {

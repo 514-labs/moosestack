@@ -23,6 +23,7 @@ from .olap_table import (
     OlapConfig,
     OlapTable,
     InsertOptions,
+    TableProjection,
 )
 
 from .stream import (
@@ -131,6 +132,7 @@ __all__ = [
     "OlapConfig",
     "OlapTable",
     "InsertOptions",
+    "TableProjection",
     # Streams
     "StreamConfig",
     "TransformConfig",

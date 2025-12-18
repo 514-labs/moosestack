@@ -25,6 +25,7 @@ from moose_lib.dmv2 import (
     OlapConfig,
     SqlResource,
 )
+from moose_lib.dmv2.olap_table import TableProjection
 from moose_lib.dmv2.stream import KafkaSchemaConfig
 from pydantic.alias_generators import to_camel
 from pydantic.json_schema import JsonSchemaValue
@@ -303,7 +304,7 @@ class TableConfig(BaseModel):
     life_cycle: Optional[str] = None
     table_settings: Optional[dict[str, str]] = None
     indexes: list[OlapConfig.TableIndex] = []
-    projections: list[OlapConfig.TableProjection] = []
+    projections: list[TableProjection] = []
     ttl: Optional[str] = None
     database: Optional[str] = None
     cluster: Optional[str] = None
