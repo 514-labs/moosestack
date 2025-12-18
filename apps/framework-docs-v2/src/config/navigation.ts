@@ -152,8 +152,8 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/getting-started/from-clickhouse",
-    title: "Connect to Existing ClickHouse",
     icon: IconDatabase,
+    title: "Existing ClickHouse",
     languages: ["typescript", "python"],
   },
   // Embed in an existing app
