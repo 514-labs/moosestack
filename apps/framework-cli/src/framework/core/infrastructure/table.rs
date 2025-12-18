@@ -11,6 +11,9 @@ use crate::proto::infrastructure_map::LifeCycle as ProtoLifeCycle;
 use crate::proto::infrastructure_map::SimpleColumnType;
 use crate::proto::infrastructure_map::Table as ProtoTable;
 use crate::proto::infrastructure_map::{column_type, DateType};
+use crate::proto::infrastructure_map::{
+    projection_clause, ProjectionClause as ProtoProjectionClause, ProjectionFields,
+};
 use crate::proto::infrastructure_map::{ColumnType as ProtoColumnType, Map, Tuple};
 use crate::utilities::normalize_path_string;
 use num_traits::ToPrimitive;
@@ -252,24 +255,16 @@ impl ProjectionClause {
         !sql.chars().any(|c| c == '(' || c == ')' || c == '*') && !lower.contains(" as ")
     }
 
-    pub fn from_proto(
-        proto: Option<crate::proto::infrastructure_map::ProjectionClause>,
-    ) -> Option<Self> {
+    pub fn from_proto(proto: Option<ProtoProjectionClause>) -> Option<Self> {
         proto.and_then(|p| {
             p.clause.map(|c| match c {
-                crate::proto::infrastructure_map::projection_clause::Clause::Fields(f) => {
-                    ProjectionClause::Fields(f.field)
-                }
-                crate::proto::infrastructure_map::projection_clause::Clause::Expression(e) => {
-                    ProjectionClause::Expression(e)
-                }
+                projection_clause::Clause::Fields(f) => ProjectionClause::Fields(f.field),
+                projection_clause::Clause::Expression(e) => ProjectionClause::Expression(e),
             })
         })
     }
 
-    pub fn to_proto(&self) -> crate::proto::infrastructure_map::ProjectionClause {
-        use crate::proto::infrastructure_map::{projection_clause, ProjectionFields};
-
+    pub fn to_proto(&self) -> ProtoProjectionClause {
         let clause = match self {
             ProjectionClause::Fields(fields) => {
                 projection_clause::Clause::Fields(ProjectionFields {
@@ -282,7 +277,7 @@ impl ProjectionClause {
             }
         };
 
-        crate::proto::infrastructure_map::ProjectionClause {
+        ProtoProjectionClause {
             clause: Some(clause),
             special_fields: Default::default(),
         }
