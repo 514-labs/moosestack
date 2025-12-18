@@ -5596,6 +5596,25 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
                 result
             );
         }
+
+        // Guard against insufficient parameters: single-parameter forms should error
+        // Both engines require 2 params minimum when not using automatic configuration
+        let insufficient_param_cases = vec![
+            // ReplicatedReplacingMergeTree with 1 param (only path, missing replica)
+            "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}')",
+            // SharedReplacingMergeTree with 1 param (only path, missing replica)
+            "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}')",
+        ];
+
+        for input in insufficient_param_cases {
+            let result = ClickhouseEngine::try_from(input);
+            assert!(
+                result.is_err(),
+                "Should reject insufficient parameters for input: {}. Got: {:?}",
+                input,
+                result
+            );
+        }
     }
 
     #[test]
