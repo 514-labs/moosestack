@@ -5,18 +5,41 @@ order: 0
 category: integration
 ---
 
-import { Callout } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 
 # Build HTTP APIs with your own framework
 
 MooseStack allows you to embed a supported framework inside MooseStack via `WebApp`. This is useful when you need full framework routing/middleware but still want MooseStack to run and deploy everything together.
 
-- [Express](/moosestack/app-api-frameworks/express)
-- [Fastify](/moosestack/app-api-frameworks/fastify)
-- [Koa](/moosestack/app-api-frameworks/koa)
-- [Raw Node.js](/moosestack/app-api-frameworks/raw-nodejs)
-- [FastAPI](/moosestack/app-api-frameworks/fastapi)
+## Supported frameworks:
+MooseStack provides adapters for the following frameworks:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+    <ul>
+      <li>
+        <a href="/moosestack/app-api-frameworks/express">Express</a>
+      </li>
+      <li>
+        <a href="/moosestack/app-api-frameworks/fastify">Fastify</a>
+      </li>
+      <li>
+        <a href="/moosestack/app-api-frameworks/koa">Koa</a>
+      </li>
+      <li>
+        <a href="/moosestack/app-api-frameworks/raw-nodejs">Raw Node.js</a>
+      </li>
+    </ul>
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+    <ul>
+      <li>
+        <a href="/moosestack/app-api-frameworks/fastapi">FastAPI</a>
+      </li>
+    </ul>
+  </LanguageTabContent>
+</LanguageTabs>
 
 ## Client-only embedding (existing apps)
 
