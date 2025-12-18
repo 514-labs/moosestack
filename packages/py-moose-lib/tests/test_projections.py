@@ -7,6 +7,7 @@ and are correctly serialized to the infrastructure map.
 
 import pytest
 from moose_lib import OlapTable, OlapConfig, ClickHouseEngines, MergeTreeEngine
+from moose_lib.dmv2.olap_table import TableProjection
 from moose_lib.dmv2.registry import get_tables
 from moose_lib.internal import to_infra_map
 from pydantic import BaseModel
@@ -30,7 +31,7 @@ def test_simple_field_list_projection():
             engine=MergeTreeEngine(),
             order_by_fields=["timestamp"],
             projections=[
-                OlapConfig.TableProjection(
+                TableProjection(
                     name="by_user",
                     select=["user_id", "timestamp", "event_type"],
                     order_by=["user_id", "timestamp"],
@@ -61,12 +62,12 @@ def test_multiple_projections():
             engine=MergeTreeEngine(),
             order_by_fields=["timestamp"],
             projections=[
-                OlapConfig.TableProjection(
+                TableProjection(
                     name="by_user",
                     select=["user_id", "timestamp"],
                     order_by=["user_id"],
                 ),
-                OlapConfig.TableProjection(
+                TableProjection(
                     name="by_event",
                     select=["event_type", "timestamp"],
                     order_by=["event_type"],
@@ -91,7 +92,7 @@ def test_expression_based_projection():
             engine=MergeTreeEngine(),
             order_by_fields=["timestamp"],
             projections=[
-                OlapConfig.TableProjection(
+                TableProjection(
                     name="hourly_metrics",
                     select="toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
                     order_by="hour",
@@ -120,12 +121,12 @@ def test_mixed_projections():
             engine=MergeTreeEngine(),
             order_by_fields=["timestamp"],
             projections=[
-                OlapConfig.TableProjection(
+                TableProjection(
                     name="by_user",
                     select=["user_id", "timestamp"],
                     order_by=["user_id"],
                 ),
-                OlapConfig.TableProjection(
+                TableProjection(
                     name="hourly_agg",
                     select="toStartOfHour(timestamp) as hour, count() as cnt",
                     order_by="hour",
@@ -168,7 +169,7 @@ def test_table_without_projections():
 def test_projection_pydantic_validation():
     """Test that Pydantic validates projection configuration."""
     # This should work - valid projection
-    proj = OlapConfig.TableProjection(
+    proj = TableProjection(
         name="test",
         select=["field1", "field2"],
         order_by=["field1"],
@@ -176,7 +177,7 @@ def test_projection_pydantic_validation():
     assert proj.name == "test"
 
     # Test with expression strings
-    proj_expr = OlapConfig.TableProjection(
+    proj_expr = TableProjection(
         name="test_expr",
         select="count() as cnt",
         order_by="cnt",
