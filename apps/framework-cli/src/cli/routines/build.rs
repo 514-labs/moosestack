@@ -276,7 +276,7 @@ pub fn build_package(project: &Project) -> Result<PathBuf, BuildError> {
 
     // For TypeScript projects, modify tsconfig.json to add baseUrl
     if project.language == SupportedLanguages::Typescript {
-        let tsconfig_path = package_dir.join(TSCONFIG_JSON);
+        let tsconfig_path = package_dir.join(&project.typescript_config.tsconfig_path);
         if tsconfig_path.exists() {
             modify_tsconfig_baseurl(&tsconfig_path)?;
         }

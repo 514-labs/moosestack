@@ -429,6 +429,7 @@ pub fn create_dockerfile(
                 let typescript_mappings = match analyze_typescript_paths(
                     &workspace_root,
                     &relative_project_path.to_string_lossy(),
+                    &project.typescript_config.tsconfig_path,
                 ) {
                     Ok(mappings) => {
                         // Transform tsconfig.json for Docker with pre-computed paths
@@ -437,6 +438,7 @@ pub fn create_dockerfile(
                             &relative_project_path.to_string_lossy(),
                             &mappings,
                             &internal_dir,
+                            &project.typescript_config.tsconfig_path,
                         ) {
                             error!("Failed to transform tsconfig.json for Docker: {}", e);
                         }
@@ -1129,10 +1131,11 @@ fn generate_workspace_copy_commands(workspace_root: &Path, patterns: &[String]) 
 fn analyze_typescript_paths(
     workspace_root: &Path,
     relative_project_path: &str,
+    tsconfig_path: &str,
 ) -> Result<Vec<PathMapping>, std::io::Error> {
     let tsconfig_path = workspace_root
         .join(relative_project_path)
-        .join("tsconfig.json");
+        .join(tsconfig_path);
 
     if !tsconfig_path.exists() {
         debug!("No tsconfig.json found at {:?}", tsconfig_path);
@@ -1251,6 +1254,7 @@ fn transform_tsconfig_for_docker(
     relative_project_path: &str,
     mappings: &[PathMapping],
     internal_dir: &Path,
+    tsconfig_path: &str,
 ) -> Result<(), std::io::Error> {
     if mappings.is_empty() {
         debug!("No TypeScript path mappings to transform");
@@ -1259,7 +1263,7 @@ fn transform_tsconfig_for_docker(
 
     let original_tsconfig_path = workspace_root
         .join(relative_project_path)
-        .join("tsconfig.json");
+        .join(tsconfig_path);
     let packager_tsconfig_path = internal_dir.join("packager/tsconfig.json");
 
     if !original_tsconfig_path.exists() {
