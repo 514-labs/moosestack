@@ -95,6 +95,7 @@ use crate::framework::core::infrastructure_map::{
 };
 use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_validator;
+use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse_config;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use serde::Deserialize;
@@ -659,7 +660,7 @@ pub async fn start_development_mode(
         );
 
         // Resolve remote ClickHouse config (handles env var, config file + keychain, or prompts)
-        match code_generation::resolve_remote_clickhouse_config(&project, None) {
+        match resolve_remote_clickhouse_config(&project, None) {
             Ok(Some(remote_config)) => {
                 // Use the resolved config for schema drift detection
                 let client =

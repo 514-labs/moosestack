@@ -51,12 +51,6 @@ pub fn prompt_user_for_remote_ch_http() -> Result<String, RoutineFailure> {
     Ok(url.to_string())
 }
 
-/// Re-export for remote configuration resolution
-///
-/// This function is implemented in infrastructure/olap/clickhouse/config_resolver
-/// and re-exported here for backward compatibility with existing code.
-pub use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse_config;
-
 fn should_be_externally_managed(table: &Table) -> bool {
     table.columns.iter().any(|c| c.name.starts_with("_peerdb_"))
 }

@@ -6,9 +6,7 @@ use crate::cli::routines::RoutineSuccess;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
-use crate::infrastructure::olap::clickhouse::config::{
-    parse_clickhouse_connection_string, ClickHouseConfig,
-};
+use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::project::Project;
 use crate::utilities::constants::ENV_REMOTE_CLICKHOUSE_URL;
 
@@ -19,57 +17,6 @@ use crate::infrastructure::olap::clickhouse::remote::RemoteConnection;
 use std::cmp::min;
 use std::collections::HashSet;
 use tracing::{debug, info, warn};
-
-/// Resolves the remote ClickHouse URL from multiple sources
-///
-/// This is a wrapper around config_resolver::resolve_remote_clickhouse_config
-/// that returns a URL string instead of a parsed config, for use in seed command.
-///
-/// # Returns
-/// - `Ok(Some(url))` if URL found
-/// - `Ok(None)` if no URL configured
-/// - `Err` if resolution fails
-fn resolve_remote_clickhouse_url(
-    project: &Project,
-    explicit_url: Option<&str>,
-) -> Result<Option<String>, RoutineFailure> {
-    // Delegate to unified resolver
-    let config = config_resolver::resolve_remote_clickhouse_config(project, explicit_url)?;
-
-    match config {
-        Some(cfg) => {
-            // Rebuild URL from config using safe URL builder
-            // (percent-encodes credentials with special characters)
-            let protocol = if cfg.use_ssl { "https" } else { "http" };
-            let mut url =
-                reqwest::Url::parse(&format!("{}://{}:{}", protocol, cfg.host, cfg.host_port))
-                    .map_err(|e| {
-                        RoutineFailure::error(Message::new(
-                            "URL".to_string(),
-                            format!("Failed to construct URL: {e}"),
-                        ))
-                    })?;
-
-            // set_username/set_password safely percent-encode special characters
-            url.set_username(&cfg.user).map_err(|_| {
-                RoutineFailure::error(Message::new(
-                    "URL".to_string(),
-                    "Failed to set username in URL".to_string(),
-                ))
-            })?;
-            url.set_password(Some(&cfg.password)).map_err(|_| {
-                RoutineFailure::error(Message::new(
-                    "URL".to_string(),
-                    "Failed to set password in URL".to_string(),
-                ))
-            })?;
-            url.query_pairs_mut().append_pair("database", &cfg.db_name);
-
-            Ok(Some(url.to_string()))
-        }
-        None => Ok(None),
-    }
-}
 
 /// Validates that a database name is not empty
 fn validate_database_name(db_name: &str) -> Result<(), RoutineFailure> {
@@ -372,21 +319,13 @@ fn get_tables_to_seed(infra_map: &InfrastructureMap, table_name: Option<String>)
 /// table validation, and data copying
 async fn seed_clickhouse_operation(
     project: &Project,
-    clickhouse_url: &str,
+    remote_config: ClickHouseConfig,
     table: Option<String>,
     limit: Option<usize>,
     order_by: Option<&str>,
 ) -> Result<(String, String, Vec<String>), RoutineFailure> {
     // Load infrastructure map
     let infra_map = load_infrastructure_map(project).await?;
-
-    // Parse ClickHouse URL
-    let remote_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
-        RoutineFailure::error(Message::new(
-            "SeedClickhouse".to_string(),
-            format!("Invalid ClickHouse URL: {e}"),
-        ))
-    })?;
 
     // Validate database name
     validate_database_name(&remote_config.db_name)?;
@@ -461,31 +400,36 @@ pub async fn handle_seed_command(
             table,
             order_by,
         }) => {
-            let resolved_clickhouse_url =
-                match resolve_remote_clickhouse_url(project, clickhouse_url.as_deref())? {
-                    Some(url) => url,
-                    None => {
-                        return Err(RoutineFailure::error(Message::new(
-                            "SeedClickhouse".to_string(),
-                            format!(
-                                "No remote ClickHouse URL configured. Options:\n\
+            let remote_config = match config_resolver::resolve_remote_clickhouse_config(
+                project,
+                clickhouse_url.as_deref(),
+            )? {
+                Some(config) => config,
+                None => {
+                    return Err(RoutineFailure::error(Message::new(
+                        "SeedClickhouse".to_string(),
+                        format!(
+                            "No remote ClickHouse URL configured. Options:\n\
                                  • Pass --clickhouse-url flag (for this command)\n\
                                  • Set {} environment variable (can be in .env.local)\n\
                                  • Add [dev.remote_clickhouse] to moose.config.toml (recommended)",
-                                ENV_REMOTE_CLICKHOUSE_URL
-                            ),
-                        )))
-                    }
-                };
+                            ENV_REMOTE_CLICKHOUSE_URL
+                        ),
+                    )))
+                }
+            };
 
-            info!("Running seed clickhouse command with ClickHouse URL: {resolved_clickhouse_url}");
+            info!(
+                "Running seed clickhouse command with remote: {}@{}:{}",
+                remote_config.user, remote_config.host, remote_config.host_port
+            );
 
             let (local_db_name, remote_db_name, summary) = with_spinner_completion_async(
                 "Initializing database seeding operation...",
                 "Database seeding completed",
                 seed_clickhouse_operation(
                     project,
-                    &resolved_clickhouse_url,
+                    remote_config,
                     table.clone(),
                     if *all { None } else { Some(*limit) },
                     order_by.as_deref(),
@@ -1100,26 +1044,36 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_remote_clickhouse_url_explicit() {
+    fn test_resolve_remote_config_explicit() {
         let project = create_test_project("test_project");
-        let result =
-            resolve_remote_clickhouse_url(&project, Some("http://localhost:8123?database=test"));
+        let result = config_resolver::resolve_remote_clickhouse_config(
+            &project,
+            Some("http://localhost:8123?database=test"),
+        );
         assert!(result.is_ok());
-        assert!(result.unwrap().is_some());
+        let config = result.unwrap();
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.db_name, "test");
     }
 
     #[test]
-    fn test_resolve_remote_clickhouse_url_env_var() {
+    fn test_resolve_remote_config_env_var() {
         let project = create_test_project("test_project");
         std::env::set_var(
             ENV_REMOTE_CLICKHOUSE_URL,
             "http://localhost:8123?database=test",
         );
-        let result = resolve_remote_clickhouse_url(&project, None);
+        let result = config_resolver::resolve_remote_clickhouse_config(&project, None);
         std::env::remove_var(ENV_REMOTE_CLICKHOUSE_URL);
 
         assert!(result.is_ok());
-        assert!(result.unwrap().is_some());
+        let config = result.unwrap();
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.db_name, "test");
     }
 
     #[test]

@@ -67,6 +67,6 @@ apis = true
 # This allows MaterializedViews to reference external tables in dev mode
 create_local_mirrors = true
 # Number of sample rows to seed (0 = schema only)
-sample_size = 100
+sample_size = 0
 # Refresh mirrors on every startup (false = only create if missing)
 refresh_on_startup = false
