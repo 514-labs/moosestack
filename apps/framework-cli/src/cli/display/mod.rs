@@ -25,6 +25,7 @@
 //! - [`spinner`]: Spinner components for progress indication
 //! - [`infrastructure`]: Infrastructure change display functionality
 //! - [`table`]: Table formatting and display utilities
+//! - [`timing`]: Timing utilities for measuring operation duration
 //!
 //! ## Usage Examples
 //!
