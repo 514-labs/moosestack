@@ -20,7 +20,7 @@ This release focuses on self-documenting schemas and deployment customization. D
 
 ### Support for column comments in data models
 
-Data model fields now support comments that are preserved in the generated ClickHouse database schema. In TypeScript, use TSDoc comments `/** */`, and in Python, use `Field(description="...")`. These comments appear as COMMENT clauses in the database DDL, making schemas more self-documenting and easier to understand for data analysts and other team members.
+Data model fields now support comments that are preserved in the generated ClickHouse database schema. In TypeScript, use TSDoc comments `/** */`. In Python, use either `Field(description="...")` or attribute docstrings with `use_attribute_docstrings=True`. These comments appear as COMMENT clauses in the database DDL, making schemas more self-documenting and easier to understand for data analysts and other team members.
 
 ```typescript
 // models/UserEvent.ts
@@ -43,7 +43,7 @@ export interface UserEvent {
 ```
 
 ```python
-# models.py
+# models.py - Option 1: Using Field(description=...)
 from moose_lib import Key
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -55,6 +55,27 @@ class UserEvent(BaseModel):
     price: float = Field(description="Total price in USD ($)")
     
     # No description - this field won't have a database comment
+    status: str
+
+# Option 2: Using attribute docstrings
+from pydantic import ConfigDict
+
+class UserEvent(BaseModel):
+    model_config = ConfigDict(use_attribute_docstrings=True)
+    
+    id: Key[str]
+    """Unique identifier for the record"""
+    
+    timestamp: datetime
+    """Timestamp when the event occurred"""
+    
+    email: str
+    """Email address of the user (must be valid)"""
+    
+    price: float
+    """Total price in USD ($)"""
+    
+    # No docstring - this field won't have a database comment
     status: str
 ```
 
