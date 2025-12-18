@@ -2,16 +2,59 @@ import http from "http";
 import type { MooseUtils } from "./helpers";
 
 /**
- * @deprecated Use getMooseUtils() directly instead.
- * This function previously extracted moose utilities from the request object.
- * Now getMooseUtils() can be called without any parameters.
+ * @deprecated Use `getMooseUtils()` from '@514labs/moose-lib' instead.
+ *
+ * This synchronous function extracts MooseUtils from a request object that was
+ * injected by Moose runtime middleware. It returns undefined if not running
+ * in a Moose-managed context.
+ *
+ * Migration: Replace with the async version:
+ * ```typescript
+ * // Old (sync, deprecated):
+ * import { getMooseUtilsFromRequest } from '@514labs/moose-lib';
+ * const moose = getMooseUtilsFromRequest(req);
+ *
+ * // New (async, recommended):
+ * import { getMooseUtils } from '@514labs/moose-lib';
+ * const moose = await getMooseUtils();
+ * ```
+ *
+ * @param req - The HTTP request object containing injected moose utilities
+ * @returns MooseUtils if available on the request, undefined otherwise
  */
-export function getMooseUtils(
+export function getMooseUtilsFromRequest(
   req: http.IncomingMessage | any,
 ): MooseUtils | undefined {
   console.warn(
-    "[DEPRECATED] getMooseUtils(req) from webAppHelpers is deprecated. " +
-      "Import getMooseUtils from '@514labs/moose-lib' and call it without parameters.",
+    "[DEPRECATED] getMooseUtilsFromRequest() is deprecated. " +
+      "Import getMooseUtils from '@514labs/moose-lib' and call it without parameters: " +
+      "const { client, sql } = await getMooseUtils();",
+  );
+  return (req as any).moose;
+}
+
+/**
+ * @deprecated Use `getMooseUtils()` from '@514labs/moose-lib' instead.
+ *
+ * This is a legacy alias for getMooseUtilsFromRequest. The main getMooseUtils
+ * export from '@514labs/moose-lib' is now async and does not require a request parameter.
+ *
+ * BREAKING CHANGE WARNING: The new getMooseUtils() returns Promise<MooseUtils>,
+ * not MooseUtils | undefined. You must await the result:
+ * ```typescript
+ * const moose = await getMooseUtils(); // New async API
+ * ```
+ *
+ * @param req - The HTTP request object containing injected moose utilities
+ * @returns MooseUtils if available on the request, undefined otherwise
+ */
+export function getLegacyMooseUtils(
+  req: http.IncomingMessage | any,
+): MooseUtils | undefined {
+  console.warn(
+    "[DEPRECATED] getLegacyMooseUtils(req) is deprecated. " +
+      "The new getMooseUtils() is async and does not require a request parameter: " +
+      "const { client, sql } = await getMooseUtils();",
   );
   return (req as any).moose;
 }

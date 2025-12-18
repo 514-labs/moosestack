@@ -24,7 +24,18 @@ const toClientConfig = (config: {
  * Get Moose utilities for database access and SQL queries.
  * Works in both Moose runtime and standalone contexts.
  *
+ * **IMPORTANT**: This function is async and returns a Promise. You must await the result:
+ * ```typescript
+ * const moose = await getMooseUtils(); // Correct
+ * const moose = getMooseUtils(); // WRONG - returns Promise, not MooseUtils!
+ * ```
+ *
+ * **Breaking Change from v1.x**: This function signature changed from sync to async.
+ * If you were using the old sync API that extracted utils from a request object,
+ * use `getMooseUtilsFromRequest(req)` for backward compatibility (deprecated).
+ *
  * @param req - DEPRECATED: Request parameter is no longer needed and will be ignored.
+ *              If you need to extract moose from a request, use getMooseUtilsFromRequest().
  * @returns Promise resolving to MooseUtils with client and sql utilities.
  *
  * @example

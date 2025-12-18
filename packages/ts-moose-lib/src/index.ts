@@ -18,6 +18,8 @@ export * from "./consumption-apis/helpers";
 export {
   expressMiddleware,
   ExpressRequestWithMoose,
+  getMooseUtilsFromRequest,
+  getLegacyMooseUtils,
 } from "./consumption-apis/webAppHelpers";
 export * from "./scripts/task";
 
