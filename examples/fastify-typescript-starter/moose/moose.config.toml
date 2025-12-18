@@ -1,9 +1,6 @@
 language = "Typescript"
-source_dir = "moose"
+source_dir = "src"
  
-[typescript_config]
-tsconfig_path = "tsconfig.moose.json"
-
 [clickhouse_config]
 db_name = "local"
 user = "panda"
@@ -19,7 +16,7 @@ port = 4000
 management_port = 5001
  
 # Key dev workflow: rebuild dist/ after moose reloads
-on_reload_complete_script = "pnpm build:moose"
+# on_reload_complete_script = "pnpm build"
  
 [features]
 streaming_engine = false

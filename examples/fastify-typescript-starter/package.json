@@ -2,15 +2,17 @@
   "name": "fastify-typescript-starter",
   "version": "4.2.0",
   "description": "Fastify TypeScript starter repository",
+  "type": "module",
   "engines": {
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build:moose:types": "tspc -p tsconfig.moose.json --declaration --emitDeclarationOnly",
-    "build:moose": "pnpm build:moose:types && tspc -p tsconfig.moose.json",
+    "dev": "pnpm dev:fastify",
+    "build:moose:types": "pnpm -C moose run build:types",
+    "build:moose": "pnpm -C moose run build",
     "dev:fastify": "cross-env NODE_ENV=development node --watch src/index.ts",
-    "dev:moose": "moose-cli dev",
-    "moose": "moose-cli",
+    "dev:moose": "pnpm -C moose run dev",
+    "moose": "pnpm -C moose run moose",
     "format": "prettier --write \"src/**/*.ts\"",
     "start": "node src/index.ts",
     "typecheck": "tsc --noEmit"
@@ -19,23 +21,17 @@
   "license": "MIT",
   "dependencies": {
     "@514labs/moose-lib": "^0.6.293",
+    "moose": "workspace:*",
     "fastify": "^5.6.2",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
     "typia": "^10.1.0"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "^0.6.293",
     "@types/node": "^24.10.4",
     "cross-env": "^10.1.0",
     "fastify-tsconfig": "^3.0.0",
     "prettier": "^3.7.3",
     "typescript": "^5.9.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@confluentinc/kafka-javascript",
-      "@514labs/kafka-javascript"
-    ]
   }
 }

@@ -3,6 +3,7 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
 
 importers:
 
@@ -14,6 +15,9 @@ importers:
       fastify:
         specifier: ^5.6.2
         version: 5.6.2
+      moose:
+        specifier: workspace:*
+        version: link:moose
       ts-patch:
         specifier: ^3.3.0
         version: 3.3.0
@@ -24,9 +28,6 @@ importers:
         specifier: ^10.1.0
         version: 10.1.0(@types/node@24.10.4)(typescript@5.9.3)
     devDependencies:
-      '@514labs/moose-cli':
-        specifier: ^0.6.293
-        version: 0.6.293
       '@types/node':
         specifier: ^24.10.4
         version: 24.10.4
@@ -39,6 +40,28 @@ importers:
       prettier:
         specifier: ^3.7.3
         version: 3.7.4
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  moose:
+    dependencies:
+      '@514labs/moose-lib':
+        specifier: ^0.6.293
+        version: 0.6.293(@swc/core@1.15.5)(@types/node@24.10.4)(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@24.10.4)(typescript@5.9.3))
+      ts-patch:
+        specifier: ^3.3.0
+        version: 3.3.0
+      typia:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/node@24.10.4)(typescript@5.9.3)
+    devDependencies:
+      '@514labs/moose-cli':
+        specifier: ^0.6.293
+        version: 0.6.293
+      '@types/node':
+        specifier: ^24.10.4
+        version: 24.10.4
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
