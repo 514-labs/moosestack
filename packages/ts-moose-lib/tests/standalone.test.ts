@@ -181,6 +181,54 @@ describe("BYOF Standalone Functionality", function () {
       expect(utils.client).to.exist;
       expect(utils.sql).to.exist;
     });
+
+    it("should return undefined jwt in standalone mode", async () => {
+      const utils = await getMooseUtils();
+      expect(utils.jwt).to.be.undefined;
+    });
+
+    it("should return runtime context when available", async () => {
+      const mockClient = { query: { execute: () => {} }, workflow: {} };
+      const mockJwt = { sign: () => "token", verify: () => ({}) };
+
+      (globalThis as any)._mooseRuntimeContext = {
+        client: mockClient,
+        jwt: mockJwt,
+      };
+
+      try {
+        const utils = await getMooseUtils();
+        expect(utils.client).to.equal(mockClient);
+        expect(utils.jwt).to.equal(mockJwt);
+        expect(utils.sql).to.exist;
+      } finally {
+        delete (globalThis as any)._mooseRuntimeContext;
+      }
+    });
+
+    it("should prefer runtime context over standalone cache", async () => {
+      // First call to populate standalone cache
+      const standaloneUtils = await getMooseUtils();
+      expect(standaloneUtils.jwt).to.be.undefined;
+
+      // Now set runtime context
+      const mockClient = { query: { execute: () => {} }, workflow: {} };
+      const mockJwt = { sign: () => "token" };
+
+      (globalThis as any)._mooseRuntimeContext = {
+        client: mockClient,
+        jwt: mockJwt,
+      };
+
+      try {
+        const runtimeUtils = await getMooseUtils();
+        // Should use runtime context, not standalone cache
+        expect(runtimeUtils.client).to.equal(mockClient);
+        expect(runtimeUtils.jwt).to.equal(mockJwt);
+      } finally {
+        delete (globalThis as any)._mooseRuntimeContext;
+      }
+    });
   });
 
   describe("sql template tag", () => {
