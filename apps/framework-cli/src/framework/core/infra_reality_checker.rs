@@ -23,8 +23,7 @@ use crate::{
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
     infrastructure::olap::{
-        clickhouse::sql_parser::{normalize_sql_for_comparison, parse_create_materialized_view},
-        OlapChangesError, OlapOperations,
+        clickhouse::sql_parser::normalize_sql_for_comparison, OlapChangesError, OlapOperations,
     },
     project::Project,
 };
@@ -113,134 +112,6 @@ fn sql_is_equivalent(sql1: &str, sql2: &str, default_database: &str) -> bool {
     let normalized1 = normalize_sql_for_comparison(sql1, default_database);
     let normalized2 = normalize_sql_for_comparison(sql2, default_database);
     normalized1 == normalized2
-}
-
-/// Attempts to convert a SqlResource (from ClickHouse reality) into a MaterializedView.
-/// Returns None if the SqlResource is not a moose-lib generated materialized view.
-///
-/// Only matches moose-lib generated MVs which use:
-/// - Exactly one setup statement
-/// - Exactly one teardown statement starting with "DROP VIEW IF EXISTS"
-/// - Setup starts with "CREATE MATERIALIZED VIEW IF NOT EXISTS"
-/// - Setup contains " TO " clause
-///
-/// NOTE: This uses the same conversion logic as InfrastructureMap::try_migrate_sql_resource_to_mv
-/// to ensure consistency.
-fn materialized_view_from_sql_resource(
-    sql_resource: &SqlResource,
-    default_database: &str,
-) -> Option<MaterializedView> {
-    // Must have exactly one setup and one teardown statement
-    if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
-        return None;
-    }
-
-    let setup_sql = sql_resource.setup.first()?;
-    let teardown_sql = sql_resource.teardown.first()?;
-
-    // Check teardown matches moose-lib pattern (exact prefix)
-    if !teardown_sql.starts_with("DROP VIEW IF EXISTS") {
-        return None;
-    }
-
-    // Check setup matches moose-lib pattern (exact prefix, with TO clause)
-    if !setup_sql.starts_with("CREATE MATERIALIZED VIEW IF NOT EXISTS") {
-        return None;
-    }
-    if !setup_sql.contains(" TO ") {
-        return None;
-    }
-
-    // Parse the CREATE MATERIALIZED VIEW statement
-    let parsed = parse_create_materialized_view(setup_sql).ok()?;
-
-    // Convert source tables - use .table (not qualified_name) for consistency
-    // with InfrastructureMap::try_migrate_sql_resource_to_mv
-    let source_tables: Vec<String> = parsed
-        .source_tables
-        .iter()
-        .map(|t| t.table.clone())
-        .collect();
-
-    Some(MaterializedView {
-        name: sql_resource.name.clone(),
-        database: Some(default_database.to_string()),
-        select_sql: parsed.select_statement,
-        source_tables,
-        target_table: parsed.target_table,
-        target_database: parsed.target_database,
-        source_file: sql_resource.source_file.clone(),
-    })
-}
-
-/// Attempts to convert a SqlResource (from ClickHouse reality) into a CustomView.
-/// Returns None if the SqlResource is not a moose-lib generated custom view.
-///
-/// Only matches moose-lib generated views which use:
-/// - Exactly one setup statement
-/// - Exactly one teardown statement starting with "DROP VIEW IF EXISTS"
-/// - Setup starts with "CREATE VIEW IF NOT EXISTS"
-/// - Setup does not contain "MATERIALIZED"
-/// - Setup contains " AS "
-///
-/// NOTE: This uses the same conversion logic as InfrastructureMap::try_migrate_sql_resource_to_custom_view
-/// to ensure consistency.
-fn custom_view_from_sql_resource(
-    sql_resource: &SqlResource,
-    default_database: &str,
-) -> Option<CustomView> {
-    use crate::infrastructure::olap::clickhouse::sql_parser::extract_source_tables_from_query_regex;
-
-    // Must have exactly one setup and one teardown statement
-    if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
-        return None;
-    }
-
-    let setup_sql = sql_resource.setup.first()?;
-    let teardown_sql = sql_resource.teardown.first()?;
-
-    // Check teardown matches moose-lib pattern (exact prefix)
-    if !teardown_sql.starts_with("DROP VIEW IF EXISTS") {
-        return None;
-    }
-
-    // Check setup matches moose-lib pattern (exact prefix)
-    if !setup_sql.starts_with("CREATE VIEW IF NOT EXISTS") {
-        return None;
-    }
-
-    // Must not be a MATERIALIZED VIEW
-    if setup_sql.contains("MATERIALIZED") {
-        return None;
-    }
-
-    // Extract the SELECT part after AS
-    let upper = setup_sql.to_uppercase();
-    let as_pos = upper.find(" AS ")?;
-    let select_sql = setup_sql[(as_pos + 4)..].trim().to_string();
-
-    // Extract source tables - use .table (not qualified_name) for consistency
-    // with InfrastructureMap::try_migrate_sql_resource_to_custom_view
-    let source_tables: Vec<String> =
-        match extract_source_tables_from_query_regex(&select_sql, default_database) {
-            Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
-            Err(e) => {
-                debug!(
-                    "Failed to extract source tables from view '{}' SELECT query: {}. \
-                     Source table dependency tracking may be incomplete.",
-                    sql_resource.name, e
-                );
-                Vec::new()
-            }
-        };
-
-    Some(CustomView {
-        name: sql_resource.name.clone(),
-        database: Some(default_database.to_string()),
-        select_sql,
-        source_tables,
-        source_file: sql_resource.source_file.clone(),
-    })
 }
 
 /// Normalizes a database reference for comparison.
@@ -626,9 +497,10 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
 
         for sql_resource in actual_sql_resources {
             // Try to convert to MaterializedView first
-            if let Some(mv) =
-                materialized_view_from_sql_resource(&sql_resource, &infra_map.default_database)
-            {
+            if let Some(mv) = InfrastructureMap::try_migrate_sql_resource_to_mv(
+                &sql_resource,
+                &infra_map.default_database,
+            ) {
                 debug!(
                     "Converted SQL resource '{}' to MaterializedView",
                     sql_resource.name
@@ -636,9 +508,10 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                 actual_materialized_views.insert(mv.name.clone(), mv);
             }
             // Try to convert to CustomView
-            else if let Some(view) =
-                custom_view_from_sql_resource(&sql_resource, &infra_map.default_database)
-            {
+            else if let Some(view) = InfrastructureMap::try_migrate_sql_resource_to_custom_view(
+                &sql_resource,
+                &infra_map.default_database,
+            ) {
                 debug!(
                     "Converted SQL resource '{}' to CustomView",
                     sql_resource.name

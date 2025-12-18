@@ -2910,7 +2910,7 @@ impl InfrastructureMap {
 
     /// Attempts to migrate a SqlResource to a MaterializedView.
     /// Returns None if the SqlResource is not a moose-lib generated materialized view.
-    fn try_migrate_sql_resource_to_mv(
+    pub fn try_migrate_sql_resource_to_mv(
         sql_resource: &SqlResource,
         default_database: &str,
     ) -> Option<MaterializedView> {
@@ -2960,7 +2960,7 @@ impl InfrastructureMap {
 
     /// Attempts to migrate a SqlResource to a CustomView.
     /// Returns None if the SqlResource is not a moose-lib generated custom view.
-    fn try_migrate_sql_resource_to_custom_view(
+    pub fn try_migrate_sql_resource_to_custom_view(
         sql_resource: &SqlResource,
         default_database: &str,
     ) -> Option<CustomView> {
@@ -2996,7 +2996,15 @@ impl InfrastructureMap {
         let source_tables: Vec<String> =
             match extract_source_tables_from_query_regex(&select_sql, default_database) {
                 Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
-                Err(_) => Vec::new(),
+                Err(e) => {
+                    tracing::debug!(
+                        "Failed to extract source tables from view '{}' SELECT query: {}. \
+                         Source table dependency tracking may be incomplete.",
+                        sql_resource.name,
+                        e
+                    );
+                    Vec::new()
+                }
             };
 
         Some(CustomView {
