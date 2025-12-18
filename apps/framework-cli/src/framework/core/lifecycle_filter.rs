@@ -36,7 +36,8 @@
 
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{
-    ColumnChange, FilteredChange, OlapChange, TableChange,
+    ColumnChange, FilteredChange, OlapChange, OrderByChange, PartitionByChange, ProjectionChange,
+    TableChange,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use std::collections::HashSet;
@@ -120,6 +121,7 @@ fn filter_single_change(
         OlapChange::Table(TableChange::Updated {
             name,
             column_changes,
+            projection_changes,
             order_by_change,
             partition_by_change,
             before,
@@ -128,6 +130,7 @@ fn filter_single_change(
             filter_table_update(
                 name,
                 column_changes,
+                projection_changes,
                 order_by_change,
                 partition_by_change,
                 before,
@@ -195,8 +198,9 @@ fn create_orphan_create_filtered_change(table: Table) -> FilteredChange {
 fn filter_table_update(
     name: String,
     column_changes: Vec<ColumnChange>,
-    order_by_change: crate::framework::core::infrastructure_map::OrderByChange,
-    partition_by_change: crate::framework::core::infrastructure_map::PartitionByChange,
+    projection_changes: Vec<ProjectionChange>,
+    order_by_change: OrderByChange,
+    partition_by_change: PartitionByChange,
     before: Table,
     after: Table,
     applied: &mut Vec<OlapChange>,
@@ -220,6 +224,7 @@ fn filter_table_update(
     applied.push(OlapChange::Table(TableChange::Updated {
         name,
         column_changes: allowed_columns,
+        projection_changes,
         order_by_change,
         partition_by_change,
         before,
@@ -231,18 +236,17 @@ fn filter_table_update(
 fn create_column_changes_filtered_change(
     table_name: &str,
     blocked_columns: Vec<ColumnChange>,
-    order_by_change: crate::framework::core::infrastructure_map::OrderByChange,
-    partition_by_change: crate::framework::core::infrastructure_map::PartitionByChange,
+    order_by_change: OrderByChange,
+    partition_by_change: PartitionByChange,
     before: Table,
     after: Table,
 ) -> FilteredChange {
     let blocked_column_names: Vec<String> = blocked_columns
         .iter()
-        .filter_map(|c| match c {
-            ColumnChange::Removed(col) => Some(col.name.clone()),
-            ColumnChange::Added { column, .. } => Some(column.name.clone()),
-            ColumnChange::Updated { after: col, .. } => Some(col.name.clone()),
-            ColumnChange::AddProjection { .. } | ColumnChange::DropProjection { .. } => None,
+        .map(|c| match c {
+            ColumnChange::Removed(col) => col.name.clone(),
+            ColumnChange::Added { column, .. } => column.name.clone(),
+            ColumnChange::Updated { after: col, .. } => col.name.clone(),
         })
         .collect();
 
@@ -257,6 +261,7 @@ fn create_column_changes_filtered_change(
         change: OlapChange::Table(TableChange::Updated {
             name: table_name.to_string(),
             column_changes: blocked_columns,
+            projection_changes: vec![],
             order_by_change,
             partition_by_change,
             before,
@@ -612,12 +617,6 @@ fn create_column_change_violation(
         ColumnChange::Updated { after: col, .. } => {
             (col.name.clone(), ViolationType::ColumnModification)
         }
-        ColumnChange::AddProjection { projection } => {
-            (projection.name.clone(), ViolationType::ColumnAddition)
-        }
-        ColumnChange::DropProjection { projection_name } => {
-            (projection_name.clone(), ViolationType::ColumnRemoval)
-        }
     };
 
     LifecycleViolation {
@@ -710,7 +709,7 @@ fn create_table_modification_violation(
 mod tests {
     use super::*;
     use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType, OrderBy};
-    use crate::framework::core::infrastructure_map::{OrderByChange, PartitionByChange};
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::versions::Version;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
@@ -735,10 +734,9 @@ mod tests {
             sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             version: Some(Version::from_string("1.0.0".to_string())),
-            source_primitive: crate::framework::core::infrastructure_map::PrimitiveSignature {
+            source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
-                primitive_type:
-                    crate::framework::core::infrastructure_map::PrimitiveTypes::DataModel,
+                primitive_type: PrimitiveTypes::DataModel,
             },
             metadata: None,
             life_cycle,
@@ -827,6 +825,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -855,6 +854,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -885,6 +885,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -1090,6 +1091,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -1120,6 +1122,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -1151,6 +1154,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
