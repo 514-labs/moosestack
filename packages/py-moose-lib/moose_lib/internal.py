@@ -305,6 +305,7 @@ class TableConfig(BaseModel):
     life_cycle: Optional[str] = None
     table_settings: Optional[dict[str, str]] = None
     indexes: list[OlapConfig.TableIndex] = []
+    projections: list[OlapConfig.TableProjection] = []
     ttl: Optional[str] = None
     database: Optional[str] = None
     cluster: Optional[str] = None
@@ -932,6 +933,7 @@ def to_infra_map() -> dict:
             # Map 'settings' to 'table_settings' for internal use
             table_settings=table_settings if table_settings else None,
             indexes=table.config.indexes,
+            projections=table.config.projections,
             ttl=table.config.ttl,
             database=table.config.database,
             cluster=table.config.cluster,

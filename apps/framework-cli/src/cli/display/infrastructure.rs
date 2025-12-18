@@ -522,6 +522,12 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                                 }
                             }
                         }
+                        crate::framework::core::infrastructure_map::ColumnChange::AddProjection {
+                            projection,
+                        } => format!("  + Projection: {}", projection.name),
+                        crate::framework::core::infrastructure_map::ColumnChange::DropProjection {
+                            projection_name,
+                        } => format!("  - Projection: {}", projection_name),
                     };
                     details.push(change_line);
                 }
@@ -823,6 +829,18 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_databa
                                     before.name,
                                     format_column_type(&before.data_type),
                                     format_column_type(&after.data_type)
+                                ));
+                            }
+                            ColumnChange::AddProjection { projection } => {
+                                details.push(format!(
+                                    "    + Projection: {} (add blocked)",
+                                    projection.name
+                                ));
+                            }
+                            ColumnChange::DropProjection { projection_name } => {
+                                details.push(format!(
+                                    "    - Projection: {} (removal blocked)",
+                                    projection_name
                                 ));
                             }
                         }

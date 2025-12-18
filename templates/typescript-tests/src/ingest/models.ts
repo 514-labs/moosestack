@@ -1007,3 +1007,48 @@ export const enumColumnCommentsTestTable =
   new OlapTable<EnumColumnCommentsTest>("EnumColumnCommentsTest", {
     orderByFields: ["id", "timestamp"],
   });
+
+/**
+ * Test interface for ClickHouse projections.
+ * Projections are pre-aggregated or differently sorted copies of data
+ * that improve query performance for specific access patterns.
+ */
+export interface ProjectionTest {
+  id: Key<string>;
+  userId: string;
+  timestamp: DateTime;
+  eventType: string;
+  value: number;
+}
+
+export const projectionTestTable = new OlapTable<ProjectionTest>(
+  "ProjectionTest",
+  {
+    engine: ClickHouseEngines.MergeTree,
+    orderByFields: ["id", "timestamp"],
+    projections: [
+      {
+        name: "by_user_fields",
+        select: ["userId", "timestamp", "eventType"],
+        orderBy: ["userId", "timestamp"],
+      },
+      {
+        name: "by_user_expr",
+        select: "userId, timestamp, eventType",
+        orderBy: "userId, timestamp",
+      },
+      {
+        name: "hourly_agg",
+        select:
+          "toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
+        groupBy: "hour",
+      },
+      {
+        name: "daily_stats",
+        select:
+          "toDate(timestamp) as date, eventType, count() as cnt, avg(value) as avg_val",
+        groupBy: "date, eventType",
+      },
+    ],
+  },
+);

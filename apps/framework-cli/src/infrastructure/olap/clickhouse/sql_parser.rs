@@ -467,6 +467,165 @@ pub fn extract_indexes_from_create_table(sql: &str) -> Result<Vec<ClickHouseInde
     Ok(result)
 }
 
+/// Fetch all projections for a database from system.projections table
+/// Returns a HashMap mapping table_name -> Vec<TableProjection>
+pub async fn fetch_projections_for_database(
+    client: &clickhouse::Client,
+    database: &str,
+) -> Result<
+    std::collections::HashMap<
+        String,
+        Vec<crate::framework::core::infrastructure::table::TableProjection>,
+    >,
+    SqlParseError,
+> {
+    let query = "SELECT table, name, query FROM system.projections WHERE database = ?";
+
+    #[derive(clickhouse::Row, serde::Deserialize)]
+    struct ProjectionRow {
+        table: String,
+        name: String,
+        query: String,
+    }
+
+    let rows: Vec<ProjectionRow> = client
+        .query(query)
+        .bind(database)
+        .fetch_all()
+        .await
+        .map_err(|_| SqlParseError::UnsupportedStatement)?;
+
+    let mut projections_by_table = std::collections::HashMap::new();
+
+    for row in rows {
+        match parse_projection_select_query(&row.query, row.name) {
+            Ok(projection) => {
+                projections_by_table
+                    .entry(row.table)
+                    .or_insert_with(Vec::new)
+                    .push(projection);
+            }
+            Err(e) => {
+                // Log error but continue processing other projections
+                eprintln!(
+                    "Warning: Failed to parse projection query '{}': {}",
+                    row.query, e
+                );
+            }
+        }
+    }
+
+    Ok(projections_by_table)
+}
+
+/// Parse a projection's SELECT query into TableProjection
+/// This is much simpler than parsing CREATE TABLE DDL because we only need to parse
+/// a single clean SELECT statement from system.projections
+fn parse_projection_select_query(
+    query: &str,
+    name: String,
+) -> Result<crate::framework::core::infrastructure::table::TableProjection, SqlParseError> {
+    use crate::framework::core::infrastructure::table::{ProjectionClause, TableProjection};
+
+    let dialect = ClickHouseDialect {};
+    let ast = Parser::parse_sql(&dialect, query)?;
+
+    if ast.is_empty() {
+        return Err(SqlParseError::UnsupportedStatement);
+    }
+
+    match &ast[0] {
+        Statement::Query(query_box) => {
+            // Extract ORDER BY clause if present
+            // Use regex to extract ORDER BY from the original query string since
+            // sqlparser's ORDER BY structure is complex
+            let order_by_clause = if query.to_uppercase().contains("ORDER BY") {
+                let upper = query.to_uppercase();
+                if let Some(order_pos) = upper.find(" ORDER BY ") {
+                    let after_order = &query[order_pos + " ORDER BY ".len()..];
+                    // Find end of ORDER BY clause (before GROUP BY or end of string)
+                    let end_pos = after_order
+                        .to_uppercase()
+                        .find(" GROUP BY ")
+                        .unwrap_or(after_order.len());
+                    let order_str = after_order[..end_pos].trim().to_string();
+
+                    if ProjectionClause::is_simple_fields(&order_str) {
+                        let fields: Vec<String> =
+                            order_str.split(',').map(|s| s.trim().to_string()).collect();
+                        Some(ProjectionClause::Fields(fields))
+                    } else {
+                        Some(ProjectionClause::Expression(order_str))
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            match &*query_box.body {
+                SetExpr::Select(select) => {
+                    // Extract SELECT clause
+                    let select_str = select
+                        .projection
+                        .iter()
+                        .map(|item| item.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    let select_clause = if ProjectionClause::is_simple_fields(&select_str) {
+                        // For simple fields, extract just the field names
+                        let fields: Vec<String> = select
+                            .projection
+                            .iter()
+                            .filter_map(|item| match item {
+                                SelectItem::UnnamedExpr(Expr::Identifier(ident)) => {
+                                    Some(ident.value.clone())
+                                }
+                                SelectItem::ExprWithAlias { alias, .. } => {
+                                    Some(alias.value.clone())
+                                }
+                                _ => None,
+                            })
+                            .collect();
+
+                        if !fields.is_empty() {
+                            ProjectionClause::Fields(fields)
+                        } else {
+                            ProjectionClause::Expression(select_str)
+                        }
+                    } else {
+                        ProjectionClause::Expression(select_str)
+                    };
+
+                    // Extract GROUP BY clause
+                    // Always treat GROUP BY as an Expression to match code generation behavior
+                    // (GROUP BY often references aliases from SELECT, which aren't real table fields)
+                    let group_by_clause = match &select.group_by {
+                        sqlparser::ast::GroupByExpr::Expressions(exprs, _) if !exprs.is_empty() => {
+                            let group_strs: Vec<String> =
+                                exprs.iter().map(|e| e.to_string()).collect();
+                            let group_by_str = group_strs.join(", ");
+                            Some(ProjectionClause::Expression(group_by_str))
+                        }
+                        _ => None,
+                    };
+
+                    Ok(TableProjection {
+                        name,
+                        select: select_clause,
+                        order_by: order_by_clause,
+                        group_by: group_by_clause,
+                    })
+                }
+                _ => Err(SqlParseError::UnsupportedStatement),
+            }
+        }
+        _ => Err(SqlParseError::UnsupportedStatement),
+    }
+}
+
 /// Strips column definitions from CREATE VIEW/MATERIALIZED VIEW statements
 /// ClickHouse includes column type definitions like `(col1 Type1, col2 Type2)` before AS
 /// but the SQL parser doesn't support this syntax, so we remove it
@@ -1008,6 +1167,7 @@ fn extract_tables_from_expr(
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::framework::core::infrastructure::table::ProjectionClause;
 
     pub const NESTED_OBJECTS_SQL: &str = "CREATE TABLE local.NestedObjects (`id` String, `timestamp` DateTime('UTC'), `address` Nested(street String, city String, coordinates Nested(lat Float64, lng Float64)), `metadata` Nested(tags Array(String), priority Int64, config Nested(enabled Bool, settings Nested(theme String, notifications Bool)))) ENGINE = MergeTree PRIMARY KEY id ORDER BY id SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_granularity_bytes = 10485760";
 
@@ -2158,5 +2318,131 @@ pub mod tests {
             "Should parse as ReplicatedReplacingMergeTree, got {:?}",
             engine
         );
+    }
+
+    #[test]
+    fn test_parse_projection_simple_fields_with_order_by() {
+        let query = "SELECT userId, timestamp, eventType ORDER BY userId, timestamp";
+        let projection = parse_projection_select_query(query, "test_proj".to_string()).unwrap();
+
+        assert_eq!(projection.name, "test_proj");
+
+        match &projection.select {
+            ProjectionClause::Fields(fields) => {
+                assert_eq!(fields, &vec!["userId", "timestamp", "eventType"]);
+            }
+            _ => panic!("Expected Fields variant for SELECT"),
+        }
+
+        match &projection.order_by {
+            Some(ProjectionClause::Fields(fields)) => {
+                assert_eq!(fields, &vec!["userId", "timestamp"]);
+            }
+            _ => panic!("Expected Fields variant for ORDER BY"),
+        }
+
+        assert!(projection.group_by.is_none());
+    }
+
+    #[test]
+    fn test_parse_projection_aggregate_with_group_by() {
+        let query = "SELECT toStartOfHour(timestamp) AS hour, count() AS cnt, sum(value) AS total GROUP BY hour";
+        let projection = parse_projection_select_query(query, "hourly_agg".to_string()).unwrap();
+
+        assert_eq!(projection.name, "hourly_agg");
+
+        // SELECT with aggregates should be an Expression
+        match &projection.select {
+            ProjectionClause::Expression(expr) => {
+                assert!(expr.contains("toStartOfHour"));
+                assert!(expr.contains("count()"));
+            }
+            _ => panic!("Expected Expression variant for SELECT with aggregates"),
+        }
+
+        assert!(projection.order_by.is_none());
+
+        match &projection.group_by {
+            Some(ProjectionClause::Expression(expr)) => {
+                assert_eq!(expr, "hour");
+            }
+            _ => panic!("Expected Expression variant for GROUP BY"),
+        }
+    }
+
+    #[test]
+    fn test_parse_projection_expression_order_by() {
+        let query = "SELECT userId, timestamp, eventType ORDER BY userId, toStartOfDay(timestamp)";
+        let projection = parse_projection_select_query(query, "test_expr".to_string()).unwrap();
+
+        assert_eq!(projection.name, "test_expr");
+
+        // ORDER BY with function should be an Expression
+        match &projection.order_by {
+            Some(ProjectionClause::Expression(expr)) => {
+                assert!(expr.contains("userId"));
+                assert!(expr.contains("toStartOfDay"));
+            }
+            _ => panic!("Expected Expression variant for ORDER BY with function"),
+        }
+    }
+
+    #[test]
+    fn test_parse_projection_multi_field_group_by() {
+        let query =
+            "SELECT toDate(timestamp) AS date, eventType, count() AS cnt GROUP BY date, eventType";
+        let projection = parse_projection_select_query(query, "daily_stats".to_string()).unwrap();
+
+        assert_eq!(projection.name, "daily_stats");
+
+        match &projection.group_by {
+            Some(ProjectionClause::Expression(expr)) => {
+                assert_eq!(expr, "date, eventType");
+            }
+            _ => panic!("Expected Expression variant for multi-field GROUP BY"),
+        }
+    }
+
+    #[test]
+    fn test_parse_projection_no_order_by_no_group_by() {
+        let query = "SELECT userId, timestamp, eventType";
+        let projection = parse_projection_select_query(query, "simple".to_string()).unwrap();
+
+        assert_eq!(projection.name, "simple");
+
+        match &projection.select {
+            ProjectionClause::Fields(fields) => {
+                assert_eq!(fields, &vec!["userId", "timestamp", "eventType"]);
+            }
+            _ => panic!("Expected Fields variant"),
+        }
+
+        assert!(projection.order_by.is_none());
+        assert!(projection.group_by.is_none());
+    }
+
+    #[test]
+    fn test_parse_projection_complex_expressions() {
+        let query = "SELECT toStartOfHour(toDateTime(timestamp)) AS hour, length(data) AS len ORDER BY hour";
+        let projection = parse_projection_select_query(query, "complex".to_string()).unwrap();
+
+        assert_eq!(projection.name, "complex");
+
+        // Nested functions should result in Expression
+        match &projection.select {
+            ProjectionClause::Expression(expr) => {
+                assert!(expr.contains("toStartOfHour"));
+                assert!(expr.contains("toDateTime"));
+            }
+            _ => panic!("Expected Expression variant for complex SELECT"),
+        }
+    }
+
+    #[test]
+    fn test_parse_projection_invalid_query() {
+        let query = "NOT A VALID SELECT STATEMENT";
+        let result = parse_projection_select_query(query, "invalid".to_string());
+
+        assert!(result.is_err(), "Should fail to parse invalid query");
     }
 }

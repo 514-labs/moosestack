@@ -232,6 +232,113 @@ impl TableIndex {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ProjectionClause {
+    Fields(Vec<String>),
+    Expression(String),
+}
+
+impl ProjectionClause {
+    pub fn to_sql(&self) -> String {
+        match self {
+            ProjectionClause::Fields(fields) => fields.join(", "),
+            ProjectionClause::Expression(expr) => expr.clone(),
+        }
+    }
+
+    pub fn is_simple_fields(sql: &str) -> bool {
+        let lower = sql.to_lowercase();
+        !sql.chars().any(|c| c == '(' || c == ')' || c == '*') && !lower.contains(" as ")
+    }
+
+    pub fn from_proto(
+        proto: Option<crate::proto::infrastructure_map::ProjectionClause>,
+    ) -> Option<Self> {
+        proto.and_then(|p| {
+            p.clause.map(|c| match c {
+                crate::proto::infrastructure_map::projection_clause::Clause::Fields(f) => {
+                    ProjectionClause::Fields(f.field)
+                }
+                crate::proto::infrastructure_map::projection_clause::Clause::Expression(e) => {
+                    ProjectionClause::Expression(e)
+                }
+            })
+        })
+    }
+
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::ProjectionClause {
+        use crate::proto::infrastructure_map::{projection_clause, ProjectionFields};
+
+        let clause = match self {
+            ProjectionClause::Fields(fields) => {
+                projection_clause::Clause::Fields(ProjectionFields {
+                    field: fields.clone(),
+                    special_fields: Default::default(),
+                })
+            }
+            ProjectionClause::Expression(expr) => {
+                projection_clause::Clause::Expression(expr.clone())
+            }
+        };
+
+        crate::proto::infrastructure_map::ProjectionClause {
+            clause: Some(clause),
+            special_fields: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableProjection {
+    pub name: String,
+    pub select: ProjectionClause,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub order_by: Option<ProjectionClause>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub group_by: Option<ProjectionClause>,
+}
+
+impl PartialEq for TableProjection {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.select.to_sql().to_lowercase() == other.select.to_sql().to_lowercase()
+            && self.order_by.as_ref().map(|o| o.to_sql().to_lowercase())
+                == other.order_by.as_ref().map(|o| o.to_sql().to_lowercase())
+            && self.group_by.as_ref().map(|g| g.to_sql().to_lowercase())
+                == other.group_by.as_ref().map(|g| g.to_sql().to_lowercase())
+    }
+}
+
+impl Eq for TableProjection {}
+
+impl TableProjection {
+    pub fn is_aggregate(&self) -> bool {
+        self.group_by.is_some()
+    }
+
+    pub fn to_proto(&self) -> crate::proto::infrastructure_map::TableProjection {
+        crate::proto::infrastructure_map::TableProjection {
+            name: self.name.clone(),
+            select: Some(self.select.to_proto()).into(),
+            order_by: self.order_by.as_ref().map(|o| o.to_proto()).into(),
+            group_by: self.group_by.as_ref().map(|g| g.to_proto()).into(),
+            special_fields: Default::default(),
+        }
+    }
+
+    pub fn from_proto(proto: crate::proto::infrastructure_map::TableProjection) -> Self {
+        TableProjection {
+            name: proto.name,
+            select: ProjectionClause::from_proto(proto.select.into_option())
+                .unwrap_or_else(|| ProjectionClause::Expression("*".to_string())),
+            order_by: ProjectionClause::from_proto(proto.order_by.into_option()),
+            group_by: ProjectionClause::from_proto(proto.group_by.into_option()),
+        }
+    }
+}
+
 impl PartialEq for OrderBy {
     fn eq(&self, other: &Self) -> bool {
         self.to_expr() == other.to_expr()
@@ -309,6 +416,9 @@ pub struct Table {
     /// Secondary indexes.
     #[serde(default)]
     pub indexes: Vec<TableIndex>,
+    /// ClickHouse projections for query optimization
+    #[serde(default)]
+    pub projections: Vec<TableProjection>,
     /// Optional database name for multi-database support
     /// When not specified, uses the global ClickHouse config database
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -677,6 +787,7 @@ impl Table {
                 LifeCycle::ExternallyManaged => ProtoLifeCycle::EXTERNALLY_MANAGED.into(),
             },
             indexes: self.indexes.iter().map(|i| i.to_proto()).collect(),
+            projections: self.projections.iter().map(|p| p.to_proto()).collect(),
             database: self.database.clone(),
             special_fields: Default::default(),
         }
@@ -792,6 +903,11 @@ impl Table {
                 .indexes
                 .into_iter()
                 .map(TableIndex::from_proto)
+                .collect(),
+            projections: proto
+                .projections
+                .into_iter()
+                .map(TableProjection::from_proto)
                 .collect(),
             database: proto.database,
             table_ttl_setting: proto.table_ttl_setting,
@@ -1876,6 +1992,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1979,6 +2096,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2004,6 +2122,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2122,6 +2241,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2192,6 +2312,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2261,6 +2382,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2336,6 +2458,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2396,6 +2519,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
@@ -2464,6 +2588,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("test_db".to_string()),
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
@@ -2591,5 +2716,93 @@ mod tests {
 
         metadata_no_source.normalize_source_path(&project_root);
         assert!(metadata_no_source.source.is_none());
+    }
+
+    #[test]
+    fn test_projection_clause_to_sql() {
+        let fields_clause = ProjectionClause::Fields(vec!["id".to_string(), "name".to_string()]);
+        assert_eq!(fields_clause.to_sql(), "id, name");
+
+        let expr_clause = ProjectionClause::Expression("count(), sum(value)".to_string());
+        assert_eq!(expr_clause.to_sql(), "count(), sum(value)");
+
+        let empty_fields = ProjectionClause::Fields(vec![]);
+        assert_eq!(empty_fields.to_sql(), "");
+    }
+
+    #[test]
+    fn test_projection_clause_is_simple_fields() {
+        assert!(ProjectionClause::is_simple_fields("id, name, value"));
+        assert!(ProjectionClause::is_simple_fields("userId"));
+        assert!(ProjectionClause::is_simple_fields("a, b, c"));
+
+        assert!(!ProjectionClause::is_simple_fields("count()"));
+        assert!(!ProjectionClause::is_simple_fields(
+            "toStartOfHour(timestamp)"
+        ));
+        assert!(!ProjectionClause::is_simple_fields("id, sum(value)"));
+        assert!(!ProjectionClause::is_simple_fields("a as b"));
+    }
+
+    #[test]
+    fn test_projection_clause_proto_roundtrip() {
+        let fields_clause = ProjectionClause::Fields(vec!["a".to_string(), "b".to_string()]);
+        let proto = fields_clause.to_proto();
+        let roundtrip = ProjectionClause::from_proto(Some(proto)).unwrap();
+        assert_eq!(fields_clause, roundtrip);
+
+        let expr_clause = ProjectionClause::Expression("count() as cnt".to_string());
+        let proto = expr_clause.to_proto();
+        let roundtrip = ProjectionClause::from_proto(Some(proto)).unwrap();
+        assert_eq!(expr_clause, roundtrip);
+
+        assert!(ProjectionClause::from_proto(None).is_none());
+    }
+
+    #[test]
+    fn test_table_projection_is_aggregate() {
+        let normal_projection = TableProjection {
+            name: "by_user".to_string(),
+            select: ProjectionClause::Fields(vec!["userId".to_string(), "timestamp".to_string()]),
+            order_by: Some(ProjectionClause::Fields(vec!["userId".to_string()])),
+            group_by: None,
+        };
+        assert!(!normal_projection.is_aggregate());
+
+        let aggregate_projection = TableProjection {
+            name: "hourly_metrics".to_string(),
+            select: ProjectionClause::Expression(
+                "toStartOfHour(timestamp) as hour, count() as cnt".to_string(),
+            ),
+            order_by: None,
+            group_by: Some(ProjectionClause::Expression("hour".to_string())),
+        };
+        assert!(aggregate_projection.is_aggregate());
+
+        let projection_with_fields_group_by = TableProjection {
+            name: "grouped".to_string(),
+            select: ProjectionClause::Fields(vec!["userId".to_string()]),
+            order_by: None,
+            group_by: Some(ProjectionClause::Fields(vec!["userId".to_string()])),
+        };
+        assert!(projection_with_fields_group_by.is_aggregate());
+    }
+
+    #[test]
+    fn test_table_projection_proto_roundtrip() {
+        let projection = TableProjection {
+            name: "test_projection".to_string(),
+            select: ProjectionClause::Fields(vec!["a".to_string(), "b".to_string()]),
+            order_by: None,
+            group_by: Some(ProjectionClause::Fields(vec!["a".to_string()])),
+        };
+
+        let proto = projection.to_proto();
+        let roundtrip = TableProjection::from_proto(proto);
+
+        assert_eq!(projection.name, roundtrip.name);
+        assert_eq!(projection.select, roundtrip.select);
+        assert_eq!(projection.order_by, roundtrip.order_by);
+        assert_eq!(projection.group_by, roundtrip.group_by);
     }
 }

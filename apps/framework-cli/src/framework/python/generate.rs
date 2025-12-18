@@ -1108,6 +1108,76 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             }
             writeln!(output, "    ],").unwrap();
         }
+        if !table.projections.is_empty() {
+            writeln!(output, "    projections=[").unwrap();
+            for proj in &table.projections {
+                write!(
+                    output,
+                    "        OlapConfig.TableProjection(name={:?}",
+                    proj.name
+                )
+                .unwrap();
+
+                // Serialize select clause
+                match &proj.select {
+                    crate::framework::core::infrastructure::table::ProjectionClause::Fields(
+                        fields,
+                    ) => {
+                        write!(output, ", select=[").unwrap();
+                        for (i, f) in fields.iter().enumerate() {
+                            if i > 0 {
+                                write!(output, ", ").unwrap();
+                            }
+                            write!(output, "{:?}", f).unwrap();
+                        }
+                        write!(output, "]").unwrap();
+                    }
+                    crate::framework::core::infrastructure::table::ProjectionClause::Expression(
+                        expr,
+                    ) => {
+                        write!(output, ", select={:?}", expr).unwrap();
+                    }
+                }
+
+                // Serialize ORDER BY clause if present
+                if let Some(ref order_by) = proj.order_by {
+                    match order_by {
+                        crate::framework::core::infrastructure::table::ProjectionClause::Fields(fields) => {
+                            write!(output, ", order_by=[").unwrap();
+                            for (i, f) in fields.iter().enumerate() {
+                                if i > 0 {
+                                    write!(output, ", ").unwrap();
+                                }
+                                write!(output, "{:?}", f).unwrap();
+                            }
+                            write!(output, "]").unwrap();
+                        }
+                        crate::framework::core::infrastructure::table::ProjectionClause::Expression(expr) => {
+                            write!(output, ", order_by={:?}", expr).unwrap();
+                        }
+                    }
+                }
+
+                // Serialize GROUP BY clause if present
+                // Always output as string expression because GROUP BY often references
+                // aliases from SELECT (e.g., "hour" from "toStartOfHour(timestamp) as hour")
+                // which Python type hints can't validate as fields on T
+                if let Some(ref group_by) = proj.group_by {
+                    let group_by_str = match group_by {
+                        crate::framework::core::infrastructure::table::ProjectionClause::Fields(fields) => {
+                            fields.join(", ")
+                        }
+                        crate::framework::core::infrastructure::table::ProjectionClause::Expression(expr) => {
+                            expr.clone()
+                        }
+                    };
+                    write!(output, ", group_by={:?}", group_by_str).unwrap();
+                }
+
+                writeln!(output, "),").unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "))").unwrap();
         writeln!(output).unwrap();
     }
@@ -1162,6 +1232,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1283,6 +1354,7 @@ foo_table = OlapTable[Foo]("Foo", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1416,6 +1488,7 @@ nested_array_table = OlapTable[NestedArray]("NestedArray", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1724,6 +1797,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
@@ -1793,6 +1867,7 @@ user_table = OlapTable[User]("User", OlapConfig(
                     granularity: 1,
                 },
             ],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1865,6 +1940,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -1922,6 +1998,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
@@ -1992,6 +2069,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -2054,6 +2132,7 @@ user_table = OlapTable[User]("User", OlapConfig(
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

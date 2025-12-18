@@ -319,6 +319,30 @@ fn validate_table_databases_and_clusters(
             } => {
                 validate(database, cluster_name, table);
             }
+            SerializableOlapOperation::AddTableProjection {
+                table,
+                database,
+                cluster_name,
+                ..
+            } => {
+                validate(database, cluster_name, table);
+            }
+            SerializableOlapOperation::DropTableProjection {
+                table,
+                database,
+                cluster_name,
+                ..
+            } => {
+                validate(database, cluster_name, table);
+            }
+            SerializableOlapOperation::MaterializeTableProjection {
+                table,
+                database,
+                cluster_name,
+                ..
+            } => {
+                validate(database, cluster_name, table);
+            }
             SerializableOlapOperation::ModifySampleBy {
                 table,
                 database,
@@ -793,6 +817,7 @@ mod tests {
             partition_by: None,
             sample_by: None,
             indexes: vec![],
+            projections: vec![],
             version: None,
             source_primitive: PrimitiveSignature {
                 name: name.to_string(),

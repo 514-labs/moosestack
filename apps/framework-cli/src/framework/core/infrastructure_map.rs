@@ -39,7 +39,7 @@ use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::olap_process::OlapProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
 use super::infrastructure::sql_resource::SqlResource;
-use super::infrastructure::table::{Column, OrderBy, Table};
+use super::infrastructure::table::{Column, OrderBy, Table, TableProjection};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::{Dmv1View, View};
@@ -266,6 +266,10 @@ pub enum ColumnChange {
     Removed(Column),
     /// An existing column has been modified
     Updated { before: Column, after: Column },
+    /// A new projection has been added
+    AddProjection { projection: TableProjection },
+    /// An existing projection has been removed
+    DropProjection { projection_name: String },
 }
 
 /// Represents changes to the order_by configuration of a table
@@ -2155,6 +2159,8 @@ impl InfrastructureMap {
                         let table_settings_changed =
                             table.table_settings != target_table.table_settings;
 
+                        let projections_changed = table.projections != target_table.projections;
+
                         // Only process changes if there are actual differences to report
                         // Note: cluster_name changes are intentionally excluded - they don't trigger operations
                         if !column_changes.is_empty()
@@ -2163,6 +2169,7 @@ impl InfrastructureMap {
                             || engine_changed
                             || indexes_changed
                             || table_settings_changed
+                            || projections_changed
                         {
                             // Use the strategy to determine the appropriate changes
                             let strategy_changes = strategy.diff_table_update(
@@ -2415,7 +2422,15 @@ impl InfrastructureMap {
                     );
                     false // Remove destructive column removals
                 }
+                ColumnChange::DropProjection { .. } => {
+                    tracing::debug!(
+                        "Filtering out projection removal for deletion-protected table '{}'",
+                        table.name
+                    );
+                    false // Remove destructive projection removals
+                }
                 ColumnChange::Added { .. } => true, // Allow additive changes
+                ColumnChange::AddProjection { .. } => true, // Allow additive projections
                 ColumnChange::Updated { .. } => true, // Allow column updates
             });
 
@@ -3788,6 +3803,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3852,6 +3868,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4362,6 +4379,7 @@ mod diff_tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4611,6 +4629,9 @@ mod diff_tests {
                     assert!(!b.required && a.required);
                     assert!(!b.unique && a.unique);
                     updated += 1;
+                }
+                ColumnChange::AddProjection { .. } | ColumnChange::DropProjection { .. } => {
+                    panic!("Unexpected projection change in column diff test")
                 }
             }
         }
@@ -7236,6 +7257,7 @@ mod diff_orchestration_worker_tests {
             engine_params_hash: None,
             table_settings_hash: None,
             indexes: vec![],
+            projections: vec![],
             metadata: None,
             source_primitive: PrimitiveSignature {
                 name: "s3queue_test".to_string(),
@@ -7270,6 +7292,7 @@ mod diff_orchestration_worker_tests {
             engine_params_hash: None,
             table_settings_hash: None,
             indexes: vec![],
+            projections: vec![],
             metadata: None,
             source_primitive: PrimitiveSignature {
                 name: "kafka_test".to_string(),

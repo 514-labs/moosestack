@@ -982,6 +982,68 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
             }
             writeln!(output, "    ],").unwrap();
         }
+        if !table.projections.is_empty() {
+            writeln!(output, "    projections: [").unwrap();
+            for proj in &table.projections {
+                writeln!(output, "        {{").unwrap();
+                writeln!(output, "            name: {:?},", proj.name).unwrap();
+
+                // Serialize select clause
+                match &proj.select {
+                    crate::framework::core::infrastructure::table::ProjectionClause::Fields(
+                        fields,
+                    ) => {
+                        let fields_str = fields
+                            .iter()
+                            .map(|f| format!("{:?}", f))
+                            .collect::<Vec<String>>()
+                            .join(", ");
+                        writeln!(output, "            select: [{}],", fields_str).unwrap();
+                    }
+                    crate::framework::core::infrastructure::table::ProjectionClause::Expression(
+                        expr,
+                    ) => {
+                        writeln!(output, "            select: {:?},", expr).unwrap();
+                    }
+                }
+
+                // Serialize ORDER BY clause if present
+                if let Some(ref order_by) = proj.order_by {
+                    match order_by {
+                        crate::framework::core::infrastructure::table::ProjectionClause::Fields(fields) => {
+                            let fields_str = fields
+                                .iter()
+                                .map(|f| format!("{:?}", f))
+                                .collect::<Vec<String>>()
+                                .join(", ");
+                            writeln!(output, "            orderBy: [{}],", fields_str).unwrap();
+                        }
+                        crate::framework::core::infrastructure::table::ProjectionClause::Expression(expr) => {
+                            writeln!(output, "            orderBy: {:?},", expr).unwrap();
+                        }
+                    }
+                }
+
+                // Serialize GROUP BY clause if present
+                // Always output as string expression because GROUP BY often references
+                // aliases from SELECT (e.g., "hour" from "toStartOfHour(timestamp) as hour")
+                // which TypeScript can't validate as fields on T
+                if let Some(ref group_by) = proj.group_by {
+                    let group_by_str = match group_by {
+                        crate::framework::core::infrastructure::table::ProjectionClause::Fields(fields) => {
+                            fields.join(", ")
+                        }
+                        crate::framework::core::infrastructure::table::ProjectionClause::Expression(expr) => {
+                            expr.clone()
+                        }
+                    };
+                    writeln!(output, "            groupBy: {:?},", group_by_str).unwrap();
+                }
+
+                writeln!(output, "        }},").unwrap();
+            }
+            writeln!(output, "    ],").unwrap();
+        }
         writeln!(output, "}});").unwrap();
         writeln!(output).unwrap();
     }
@@ -1108,6 +1170,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1196,6 +1259,7 @@ export const UserTable = new OlapTable<User>("User", {
                     .collect(),
             ),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1251,6 +1315,7 @@ export const UserTable = new OlapTable<User>("User", {
                 .collect(),
             ),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1329,6 +1394,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1378,6 +1444,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1463,6 +1530,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1530,6 +1598,7 @@ export const UserTable = new OlapTable<User>("User", {
                     granularity: 4,
                 },
             ],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1607,6 +1676,7 @@ export const UserTable = new OlapTable<User>("User", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1693,6 +1763,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: Some("timestamp + INTERVAL 90 DAY DELETE".to_string()),
             cluster_name: None,
@@ -1767,6 +1838,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
@@ -1818,6 +1890,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: Some("analytics_db".to_string()),
             table_ttl_setting: None,
             cluster_name: None,
@@ -1888,6 +1961,7 @@ export const TaskTable = new OlapTable<Task>("Task", {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
