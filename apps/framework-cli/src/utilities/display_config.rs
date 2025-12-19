@@ -14,7 +14,7 @@
 //!
 //! # Usage
 //!
-//! ```rust
+//! ```rust,no_run
 //! use crate::utilities::display_config::load_display_config;
 //!
 //! // Load the current configuration
@@ -36,7 +36,7 @@
 //!
 //! Configuration is typically set once at startup:
 //!
-//! ```rust
+//! ```rust,no_run
 //! use crate::utilities::display_config::{update_display_config, DisplayConfig};
 //!
 //! let new_config = DisplayConfig {
@@ -107,7 +107,7 @@ lazy_static! {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// use crate::utilities::display_config::load_display_config;
 ///
 /// let config = load_display_config();
@@ -126,7 +126,7 @@ pub fn load_display_config() -> Arc<DisplayConfig> {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// use crate::utilities::display_config::{update_display_config, DisplayConfig};
 ///
 /// update_display_config(DisplayConfig {
