@@ -234,7 +234,7 @@ Add more tables by exporting additional `OlapTable` objects from `moose/src/inde
 
 ## Start local ClickHouse
 
-Start the Moose Runtime in `dev` mode. This brings up a local ClickHouse instance (via Docker) and applies your models on reload.
+Start the Moose Runtime in `dev` mode. This brings up a local ClickHouse instance (via Docker) and hot-reloads schema changes to it whenever you edit your models.
 
 Leave this running in its own terminal for the rest of the guide:
 
@@ -243,14 +243,13 @@ Leave this running in its own terminal for the rest of the guide:
 pnpm dev:moose
 ```
 
-The starter project’s `moose.config.toml` configures `on_reload_complete_script`, so each reload also rebuilds `moose/dist` for your Fastify app.
+The provided `moose` workspace is configured to automatically rebuild the package for use inside your Fastify app whenever you make changes to your models. 
 
----
-
-
-## Use in Fastify
-
-Keep `pnpm dev:moose` running.
+```toml title="moose/moose.config.toml"
+[http_server_config]
+on_reload_complete_script = "pnpm build"
+```
+See [Dev Environment Configuration](/moosestack/configuration/dev-environment) for more details.
 
 #### 1) Set up a shared ClickHouse client in `moose/`
 
