@@ -20,7 +20,7 @@
 //! }).await;
 //! ```
 //!
-//! When the SHOW_TIMING flag is enabled, these wrappers will display:
+//! When `DisplayConfig.show_timing` is enabled (via the --timing CLI flag), these wrappers will display:
 //! ```text
 //! Planning finished in 234ms
 //! Execution finished in 2.3s
@@ -33,7 +33,7 @@ use std::time::Instant;
 
 /// Wraps a synchronous operation with timing information.
 ///
-/// If SHOW_TIMING is enabled, displays the elapsed time after completion
+/// If `DisplayConfig.show_timing` is enabled (via --timing CLI flag), displays the elapsed time after completion
 /// using the show_message! macro with Info type.
 ///
 /// # Arguments
@@ -78,7 +78,7 @@ where
 
 /// Wraps an asynchronous operation with timing information.
 ///
-/// If SHOW_TIMING is enabled, displays the elapsed time after completion.
+/// If `DisplayConfig.show_timing` is enabled (via --timing CLI flag), displays the elapsed time after completion.
 /// This is the async version of `with_timing`.
 ///
 /// # Arguments
