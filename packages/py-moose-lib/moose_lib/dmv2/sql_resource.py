@@ -50,7 +50,7 @@ class SqlResource:
         pushes_data_to: Optional[
             list[Union[OlapTable, View, MaterializedView, "SqlResource"]]
         ] = None,
-        metadata: dict = None,
+        metadata: Optional[dict] = None,
     ):
         self.name = name
         self.setup = setup

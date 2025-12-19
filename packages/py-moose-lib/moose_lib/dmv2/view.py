@@ -5,8 +5,7 @@ This module provides classes for defining standard SQL Views,
 including their SQL statements and dependencies.
 """
 
-from typing import Union, Optional, Any
-from pydantic import BaseModel
+from typing import Union, Optional
 
 from .olap_table import OlapTable
 from ._registry import _custom_views
@@ -44,7 +43,7 @@ class View:
         name: str,
         select_statement: str,
         base_tables: list[Union[OlapTable, "View"]],
-        metadata: dict = None,
+        metadata: Optional[dict] = None,
     ):
         self.name = name
         self.select_sql = select_statement

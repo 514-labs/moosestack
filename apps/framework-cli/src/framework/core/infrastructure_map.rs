@@ -57,9 +57,6 @@ use crate::framework::scripts::Workflow;
 use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
-use crate::infrastructure::olap::clickhouse::sql_parser::{
-    extract_source_tables_from_query, parse_create_materialized_view,
-};
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
@@ -1056,6 +1053,7 @@ impl InfrastructureMap {
             &target_map.materialized_views,
             &target_map.tables,
             is_production,
+            &self.default_database,
             &mut changes.olap_changes,
         );
         let mv_changes = changes.olap_changes.len() - olap_changes_len_before;
@@ -1067,6 +1065,7 @@ impl InfrastructureMap {
         Self::diff_custom_views(
             &self.custom_views,
             &target_map.custom_views,
+            &self.default_database,
             &mut changes.olap_changes,
         );
         let custom_view_changes = changes.olap_changes.len() - olap_changes_len_before;
@@ -1756,19 +1755,26 @@ impl InfrastructureMap {
 
     /// Compare materialized views between two infrastructure maps and compute the differences
     ///
+    /// Uses semantic equivalence checking to avoid false positives from formatting differences,
+    /// whitespace changes, or database prefix variations.
+    ///
     /// # Arguments
     /// * `self_mvs` - HashMap of source materialized views
     /// * `target_mvs` - HashMap of target materialized views
     /// * `tables` - HashMap of target tables (for checking if source tables are S3Queue/Kafka)
     /// * `is_production` - Whether we're in production mode (population only in dev)
+    /// * `default_database` - Default database name for normalization
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_materialized_views(
         self_mvs: &HashMap<String, MaterializedView>,
         target_mvs: &HashMap<String, MaterializedView>,
         tables: &HashMap<String, Table>,
         is_production: bool,
+        default_database: &str,
         olap_changes: &mut Vec<OlapChange>,
     ) {
+        use crate::framework::core::infra_reality_checker::materialized_views_are_equivalent;
+
         tracing::info!(
             "Analyzing materialized view differences between {} source MVs and {} target MVs",
             self_mvs.len(),
@@ -1781,7 +1787,8 @@ impl InfrastructureMap {
 
         for (id, mv) in self_mvs {
             if let Some(target_mv) = target_mvs.get(id) {
-                if mv != target_mv {
+                // Use semantic equivalence check instead of plain !=
+                if !materialized_views_are_equivalent(mv, target_mv, default_database) {
                     tracing::debug!("Materialized view '{}' has differences", id);
                     mv_updates += 1;
                     olap_changes.push(OlapChange::MaterializedView(Change::Updated {
@@ -1850,7 +1857,7 @@ impl InfrastructureMap {
 
         // Check if any source table is S3Queue or Kafka (which don't support SELECT)
         let has_unpopulatable_source = mv.source_tables.iter().any(|source_table| {
-            // Try direct lookup first
+            // Try direct lookup by key first
             if let Some(table) = tables.get(source_table) {
                 return ClickHouseTableDiffStrategy::is_s3queue_table(table)
                     || ClickHouseTableDiffStrategy::is_kafka_table(table);
@@ -1859,17 +1866,15 @@ impl InfrastructureMap {
             // Extract the table name from potentially qualified name (e.g., "db.table" -> "table")
             let table_name_only = source_table.split('.').next_back().unwrap_or(source_table);
 
-            // Try finding by searching for keys ending with the table name
-            // Keys are in format: "{database}_{table_name}"
-            let table_suffix = format!("_{}", table_name_only);
-            if let Some((_key, table)) = tables.iter().find(|(key, _)| key.ends_with(&table_suffix))
-            {
+            // Try direct lookup with just the table name as key
+            if let Some(table) = tables.get(table_name_only) {
                 return ClickHouseTableDiffStrategy::is_s3queue_table(table)
                     || ClickHouseTableDiffStrategy::is_kafka_table(table);
             }
 
-            // Also try direct lookup with just the table name
-            if let Some(table) = tables.get(table_name_only) {
+            // Finally, search by matching the actual Table.name field (ignoring map keys)
+            // This avoids false matches from suffix-based key matching
+            if let Some((_key, table)) = tables.iter().find(|(_, t)| t.name == table_name_only) {
                 return ClickHouseTableDiffStrategy::is_s3queue_table(table)
                     || ClickHouseTableDiffStrategy::is_kafka_table(table);
             }
@@ -1897,15 +1902,22 @@ impl InfrastructureMap {
 
     /// Compare custom views between two infrastructure maps and compute the differences
     ///
+    /// Uses semantic equivalence checking to avoid false positives from formatting differences,
+    /// whitespace changes, or database prefix variations.
+    ///
     /// # Arguments
     /// * `self_views` - HashMap of source custom views
     /// * `target_views` - HashMap of target custom views
+    /// * `default_database` - Default database name for normalization
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_custom_views(
         self_views: &HashMap<String, CustomView>,
         target_views: &HashMap<String, CustomView>,
+        default_database: &str,
         olap_changes: &mut Vec<OlapChange>,
     ) {
+        use crate::framework::core::infra_reality_checker::custom_views_are_equivalent;
+
         tracing::info!(
             "Analyzing custom view differences between {} source views and {} target views",
             self_views.len(),
@@ -1918,7 +1930,8 @@ impl InfrastructureMap {
 
         for (id, view) in self_views {
             if let Some(target_view) = target_views.get(id) {
-                if view != target_view {
+                // Use semantic equivalence check instead of plain !=
+                if !custom_views_are_equivalent(view, target_view, default_database) {
                     tracing::debug!("Custom view '{}' has differences", id);
                     view_updates += 1;
                     olap_changes.push(OlapChange::CustomView(Change::Updated {
@@ -2814,7 +2827,7 @@ impl InfrastructureMap {
 
         // Migrate old SqlResources that are actually MVs or Views to new format
         // Keep track of which ones we migrate so we can remove them from sql_resources
-        let mut migrated_keys = Vec::new();
+        let mut migrated_keys = std::collections::HashSet::new();
 
         for (key, sql_resource) in &all_sql_resources {
             // Skip if already in new format maps (shouldn't happen but be safe)
@@ -2832,7 +2845,7 @@ impl InfrastructureMap {
                     sql_resource.name
                 );
                 materialized_views.insert(mv.name.clone(), mv);
-                migrated_keys.push(key.clone());
+                migrated_keys.insert(key.clone());
                 continue;
             }
 
@@ -2845,7 +2858,7 @@ impl InfrastructureMap {
                     sql_resource.name
                 );
                 custom_views.insert(view.name.clone(), view);
-                migrated_keys.push(key.clone());
+                migrated_keys.insert(key.clone());
             }
         }
 
@@ -2975,7 +2988,9 @@ impl InfrastructureMap {
         sql_resource: &SqlResource,
         default_database: &str,
     ) -> Option<CustomView> {
-        use crate::infrastructure::olap::clickhouse::sql_parser::extract_source_tables_from_query_regex;
+        use crate::infrastructure::olap::clickhouse::sql_parser::{
+            extract_source_tables_from_query, extract_source_tables_from_query_regex,
+        };
 
         // Must have exactly one setup and one teardown statement
         if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
@@ -3004,19 +3019,31 @@ impl InfrastructureMap {
         let select_sql = setup_sql[(as_pos + 4)..].trim().to_string();
 
         // Extract source tables (use unqualified names for consistency)
-        let source_tables: Vec<String> =
-            match extract_source_tables_from_query_regex(&select_sql, default_database) {
-                Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
-                Err(e) => {
-                    tracing::debug!(
-                        "Failed to extract source tables from view '{}' SELECT query: {}. \
-                         Source table dependency tracking may be incomplete.",
-                        sql_resource.name,
-                        e
-                    );
-                    Vec::new()
+        // Try AST parser first (same approach as MaterializedView migration),
+        // fall back to regex if it fails on ClickHouse-specific syntax
+        let source_tables: Vec<String> = match extract_source_tables_from_query(&select_sql) {
+            Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
+            Err(e) => {
+                tracing::debug!(
+                    "AST parser failed to extract source tables from view '{}' SELECT query: {}. \
+                     Falling back to regex parser.",
+                    sql_resource.name,
+                    e
+                );
+                match extract_source_tables_from_query_regex(&select_sql, default_database) {
+                    Ok(tables) => tables.iter().map(|t| t.table.clone()).collect(),
+                    Err(e) => {
+                        tracing::debug!(
+                            "Regex parser also failed to extract source tables from view '{}' SELECT query: {}. \
+                             Source table dependency tracking may be incomplete.",
+                            sql_resource.name,
+                            e
+                        );
+                        Vec::new()
+                    }
                 }
-            };
+            }
+        };
 
         Some(CustomView {
             name: sql_resource.name.clone(),
@@ -3139,74 +3166,29 @@ impl InfrastructureMap {
         let mut sql_resources_to_remove = Vec::new();
 
         for (key, sql_resource) in &self.sql_resources {
-            // moose-lib always generates exactly 1 setup and 1 teardown statement
-            if sql_resource.setup.len() != 1 || sql_resource.teardown.len() != 1 {
+            // Try to migrate to MaterializedView using shared helper
+            if let Some(mv) =
+                Self::try_migrate_sql_resource_to_mv(sql_resource, &self.default_database)
+            {
+                tracing::debug!(
+                    "Migrating SqlResource '{}' to MaterializedView in canonicalize_tables",
+                    sql_resource.name
+                );
+                self.materialized_views.insert(mv.name.clone(), mv);
+                sql_resources_to_remove.push(key.clone());
                 continue;
             }
 
-            let setup_sql = &sql_resource.setup[0];
-            let teardown_sql = &sql_resource.teardown[0];
-
-            // Verify teardown matches moose-lib pattern exactly
-            if !teardown_sql.starts_with("DROP VIEW IF EXISTS") {
-                continue;
-            }
-
-            // Check if this is a CREATE MATERIALIZED VIEW statement (moose-lib generated)
-            // Must have TO clause which distinguishes it from regular views
-            if setup_sql.starts_with("CREATE MATERIALIZED VIEW IF NOT EXISTS")
-                && setup_sql.contains(" TO ")
+            // Try to migrate to CustomView using shared helper
+            if let Some(view) =
+                Self::try_migrate_sql_resource_to_custom_view(sql_resource, &self.default_database)
             {
-                if let Ok(mv_stmt) = parse_create_materialized_view(setup_sql) {
-                    // Extract source table names as strings
-                    let source_tables: Vec<String> =
-                        mv_stmt.source_tables.into_iter().map(|t| t.table).collect();
-
-                    let mv = MaterializedView {
-                        name: sql_resource.name.clone(),
-                        database: sql_resource.database.clone(),
-                        select_sql: mv_stmt.select_statement,
-                        source_tables,
-                        target_table: mv_stmt.target_table,
-                        target_database: mv_stmt.target_database,
-                        source_file: sql_resource.source_file.clone(),
-                    };
-
-                    // Insert into materialized_views map using name as key
-                    // (consistent with TS/Python moose-lib which emit name as key)
-                    self.materialized_views.insert(mv.name.clone(), mv);
-                    sql_resources_to_remove.push(key.clone());
-                }
-            }
-            // Check if this is a CREATE VIEW statement (moose-lib generated)
-            // Must NOT contain "MATERIALIZED" and must have AS clause
-            else if setup_sql.starts_with("CREATE VIEW IF NOT EXISTS")
-                && !setup_sql.contains("MATERIALIZED")
-                && setup_sql.contains(" AS ")
-            {
-                // Find the AS clause to extract the SELECT
-                if let Some(as_pos) = setup_sql.find(" AS ") {
-                    let select_sql = setup_sql[as_pos + 4..].trim().to_string();
-
-                    // Extract source table names as strings
-                    let source_tables: Vec<String> = extract_source_tables_from_query(&select_sql)
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|t| t.table)
-                        .collect();
-
-                    let view = CustomView {
-                        name: sql_resource.name.clone(),
-                        database: sql_resource.database.clone(),
-                        select_sql,
-                        source_tables,
-                        source_file: sql_resource.source_file.clone(),
-                    };
-
-                    // Insert using name as key (consistent with TS/Python moose-lib)
-                    self.custom_views.insert(view.name.clone(), view);
-                    sql_resources_to_remove.push(key.clone());
-                }
+                tracing::debug!(
+                    "Migrating SqlResource '{}' to CustomView in canonicalize_tables",
+                    sql_resource.name
+                );
+                self.custom_views.insert(view.name.clone(), view);
+                sql_resources_to_remove.push(key.clone());
             }
         }
 
@@ -6156,7 +6138,7 @@ mod diff_sql_resources_tests {
     }
 
     #[test]
-    fn test_update_materialized_view_select_statement_should_trigger_backfill() {
+    fn test_update_materialized_view_emits_only_sql_resource_update() {
         use crate::framework::core::infrastructure::InfrastructureSignature;
 
         // Note: MV population is no longer triggered by SqlResource diff.

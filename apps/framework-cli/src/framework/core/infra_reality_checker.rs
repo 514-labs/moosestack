@@ -147,7 +147,7 @@ fn normalize_source_tables(tables: &[String], default_database: &str) -> Vec<Str
 /// Checks if two MaterializedViews are semantically equivalent.
 /// Compares target table, source tables (sorted), and normalized SELECT SQL.
 /// Uses default_database to normalize `None` database references.
-fn materialized_views_are_equivalent(
+pub fn materialized_views_are_equivalent(
     mv1: &MaterializedView,
     mv2: &MaterializedView,
     default_database: &str,
@@ -183,7 +183,11 @@ fn materialized_views_are_equivalent(
 /// Checks if two CustomViews are semantically equivalent.
 /// Compares source tables (sorted) and normalized SELECT SQL.
 /// Uses default_database to normalize table references.
-fn custom_views_are_equivalent(v1: &CustomView, v2: &CustomView, default_database: &str) -> bool {
+pub fn custom_views_are_equivalent(
+    v1: &CustomView,
+    v2: &CustomView,
+    default_database: &str,
+) -> bool {
     // Compare names
     if v1.name != v2.name {
         return false;
