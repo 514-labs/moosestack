@@ -33,14 +33,7 @@ router.get("/health", async (ctx) => {
 
 // Query endpoint
 router.get("/query", async (ctx) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose) {
-    ctx.status = 500;
-    ctx.body = { error: "MooseStack utilities not available" };
-    return;
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const limit = parseInt((ctx.query.limit as string) || "10");
 
   try {
@@ -73,14 +66,7 @@ router.get("/query", async (ctx) => {
 
 // Data endpoint with POST
 router.post("/data", async (ctx) => {
-  const moose = getMooseUtils(ctx.req);
-  if (!moose) {
-    ctx.status = 500;
-    ctx.body = { error: "MooseStack utilities not available" };
-    return;
-  }
-
-  const { client, sql } = moose;
+  const { client, sql } = await getMooseUtils();
   const {
     orderBy = "totalRows",
     limit = 5,
