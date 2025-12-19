@@ -35,7 +35,6 @@ use crate::framework::core::{
     },
     plan::InfraPlan,
 };
-use crate::utilities::display_config::load_display_config;
 use crossterm::{execute, style::Print};
 use tracing::info;
 
@@ -270,14 +269,7 @@ fn format_table_display(
 /// ```
 pub fn infra_added(message: &str) {
     let styled_text = StyledText::from_str("+ ").green();
-    let config = load_display_config();
-    write_styled_line(
-        &styled_text,
-        message,
-        config.no_ansi,
-        config.show_timestamps,
-    )
-    .expect("failed to write message to terminal");
+    write_styled_line(&styled_text, message).expect("failed to write message to terminal");
     info!("+ {}", message.trim());
 }
 
@@ -315,14 +307,7 @@ pub fn infra_added_detailed(title: &str, details: &[String]) {
 /// ```
 pub fn infra_removed(message: &str) {
     let styled_text = StyledText::from_str("- ").red();
-    let config = load_display_config();
-    write_styled_line(
-        &styled_text,
-        message,
-        config.no_ansi,
-        config.show_timestamps,
-    )
-    .expect("failed to write message to terminal");
+    write_styled_line(&styled_text, message).expect("failed to write message to terminal");
     info!("- {}", message.trim());
 }
 
@@ -360,14 +345,7 @@ pub fn infra_removed_detailed(title: &str, details: &[String]) {
 /// ```
 pub fn infra_updated(message: &str) {
     let styled_text = StyledText::from_str("~ ").yellow();
-    let config = load_display_config();
-    write_styled_line(
-        &styled_text,
-        message,
-        config.no_ansi,
-        config.show_timestamps,
-    )
-    .expect("failed to write message to terminal");
+    write_styled_line(&styled_text, message).expect("failed to write message to terminal");
     info!("~ {}", message.trim());
 }
 

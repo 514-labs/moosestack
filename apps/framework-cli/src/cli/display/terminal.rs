@@ -12,6 +12,8 @@ use crossterm::{
 };
 use std::io::{stdout, Result as IoResult};
 
+use crate::utilities::display_config::load_display_config;
+
 /// Width of the action column in terminal output
 pub const ACTION_WIDTH: usize = 15;
 
@@ -269,14 +271,16 @@ fn write_styled_line_to<W: std::io::Write>(
     Ok(())
 }
 
-pub fn write_styled_line(
-    styled_text: &StyledText,
-    message: &str,
-    no_ansi: bool,
-    show_timestamps: bool,
-) -> IoResult<()> {
+pub fn write_styled_line(styled_text: &StyledText, message: &str) -> IoResult<()> {
+    let config = load_display_config();
     let mut stdout = stdout();
-    write_styled_line_to(&mut stdout, styled_text, message, no_ansi, show_timestamps)
+    write_styled_line_to(
+        &mut stdout,
+        styled_text,
+        message,
+        config.no_ansi,
+        config.show_timestamps,
+    )
 }
 
 #[cfg(test)]
