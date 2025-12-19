@@ -70,6 +70,8 @@
 //! );
 //! ```
 
+use crate::utilities::display_config::load_display_config;
+
 #[macro_use]
 pub mod message_display;
 
@@ -115,7 +117,6 @@ pub use timing::{with_timing, with_timing_async};
 /// }
 /// ```
 pub fn should_show_spinner(is_production: bool) -> bool {
-    use crate::utilities::display_config::load_display_config;
     !is_production && !load_display_config().show_timing
 }
 

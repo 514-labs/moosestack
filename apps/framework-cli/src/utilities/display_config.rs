@@ -60,7 +60,7 @@ use lazy_static::lazy_static;
 
 /// Display configuration flags for terminal output.
 ///
-/// This struct is designed to be cheap to copy (3 bytes) and is typically
+/// This struct is designed to be cheap to copy and is typically
 /// wrapped in an Arc for sharing across threads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DisplayConfig {
