@@ -47,7 +47,7 @@ moose dev [--mcp] [--docker] [--timestamps] [--timing]
 - `--mcp`: Enable or disable the MCP (Model Context Protocol) server (default: true). The MCP server provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moosestack/moosedev-mcp) for details.
 - `--docker`: Use Docker for infrastructure (default behavior in dev mode)
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
-- `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2.3s" (default: false)
+- `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2s 300ms" (default: false)
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 
@@ -70,9 +70,19 @@ moose dev --timestamps --timing
 ```
 Planning finished in 145ms
 Validation finished in 23ms
-Execution finished in 1.2s
+Execution finished in 1s 200ms
 Persist State finished in 45ms
 OpenAPI Gen finished in 89ms
+```
+
+**Sample output with `--timestamps`:**
+```
+14:23:45.123 Planning started
+14:23:45.268 Planning completed
+14:23:45.291 Validation started
+14:23:45.314 Validation completed
+14:23:45.337 Execution started
+14:23:46.537 Execution completed
 ```
 
 The development server includes:
