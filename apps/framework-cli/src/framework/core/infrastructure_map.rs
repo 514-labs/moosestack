@@ -890,6 +890,16 @@ impl InfrastructureMap {
                     .values()
                     .map(|resource| OlapChange::SqlResource(Added(Box::new(resource.clone())))),
             )
+            .chain(
+                self.materialized_views
+                    .values()
+                    .map(|mv| OlapChange::MaterializedView(Change::Added(Box::new(mv.clone())))),
+            )
+            .chain(
+                self.custom_views
+                    .values()
+                    .map(|cv| OlapChange::CustomView(Change::Added(Box::new(cv.clone())))),
+            )
             .collect()
     }
 
@@ -3372,6 +3382,8 @@ impl InfrastructureMap {
             || !self.views.is_empty()
             || !self.topic_to_table_sync_processes.is_empty()
             || !self.sql_resources.is_empty()
+            || !self.materialized_views.is_empty()
+            || !self.custom_views.is_empty()
     }
 
     pub fn uses_streaming(&self) -> bool {
