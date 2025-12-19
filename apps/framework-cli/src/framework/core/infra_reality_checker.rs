@@ -28,7 +28,7 @@ use crate::{
     project::Project,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 use tracing::{debug, warn};
 
@@ -137,20 +137,17 @@ fn normalize_table_name(table: &str, default_database: &str) -> String {
     }
 }
 
-/// Normalizes source tables for comparison by:
-/// - Stripping default database prefix from qualified names
-/// - Sorting for order-independent comparison
-fn normalize_source_tables(tables: &[String], default_database: &str) -> Vec<String> {
-    let mut normalized: Vec<_> = tables
+/// Normalizes source tables for comparison by stripping default database prefix.
+/// Returns a HashSet for order-independent comparison.
+fn normalize_source_tables(tables: &[String], default_database: &str) -> HashSet<String> {
+    tables
         .iter()
         .map(|t| normalize_table_name(t, default_database))
-        .collect();
-    normalized.sort();
-    normalized
+        .collect()
 }
 
 /// Checks if two MaterializedViews are semantically equivalent.
-/// Compares target table, source tables (sorted), and normalized SELECT SQL.
+/// Compares target table, source tables (order-independent), and normalized SELECT SQL.
 /// Uses default_database to normalize `None` database references.
 pub fn materialized_views_are_equivalent(
     mv1: &MaterializedView,
@@ -174,7 +171,7 @@ pub fn materialized_views_are_equivalent(
         return false;
     }
 
-    // Compare source tables (order-independent, normalized)
+    // Compare source tables (order-independent via HashSet)
     let sources1 = normalize_source_tables(&mv1.source_tables, default_database);
     let sources2 = normalize_source_tables(&mv2.source_tables, default_database);
     if sources1 != sources2 {
@@ -186,7 +183,7 @@ pub fn materialized_views_are_equivalent(
 }
 
 /// Checks if two CustomViews are semantically equivalent.
-/// Compares source tables (sorted) and normalized SELECT SQL.
+/// Compares source tables (order-independent) and normalized SELECT SQL.
 /// Uses default_database to normalize table references.
 pub fn custom_views_are_equivalent(
     v1: &CustomView,
@@ -198,7 +195,7 @@ pub fn custom_views_are_equivalent(
         return false;
     }
 
-    // Compare source tables (order-independent, normalized)
+    // Compare source tables (order-independent via HashSet)
     let sources1 = normalize_source_tables(&v1.source_tables, default_database);
     let sources2 = normalize_source_tables(&v2.source_tables, default_database);
     if sources1 != sources2 {
