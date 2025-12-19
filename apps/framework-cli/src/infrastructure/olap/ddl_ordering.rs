@@ -1,6 +1,6 @@
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
 use crate::framework::core::infrastructure::table::{Column, Table, TableIndex};
-use crate::framework::core::infrastructure::view::{View, ViewType};
+use crate::framework::core::infrastructure::view::{Dmv1View, ViewType};
 use crate::framework::core::infrastructure::DataLineage;
 use crate::framework::core::infrastructure::InfrastructureSignature;
 use crate::framework::core::infrastructure_map::{Change, ColumnChange, OlapChange, TableChange};
@@ -139,14 +139,14 @@ pub enum AtomicOlapOperation {
     /// Create a new view
     CreateView {
         /// The view to create
-        view: View,
+        view: Dmv1View,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
     /// Drop an existing view
     DropView {
         /// The view to drop
-        view: View,
+        view: Dmv1View,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -181,14 +181,14 @@ pub enum AtomicOlapOperation {
     /// Create a structured custom view
     CreateCustomView {
         /// The custom view to create
-        view: crate::framework::core::infrastructure::view::CustomView,
+        view: crate::framework::core::infrastructure::view::View,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
     /// Drop a structured custom view
     DropCustomView {
         /// The custom view to drop
-        view: crate::framework::core::infrastructure::view::CustomView,
+        view: crate::framework::core::infrastructure::view::View,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
@@ -346,7 +346,7 @@ impl AtomicOlapOperation {
                 view,
                 dependency_info: _,
             } => {
-                let View {
+                let Dmv1View {
                     view_type: ViewType::TableAlias { source_table_name },
                     ..
                 } = view;
@@ -970,7 +970,7 @@ fn process_column_changes(
 
 /// Creates an operation to add a view
 fn create_view_operation(
-    view: &View,
+    view: &Dmv1View,
     pulls_from: Vec<InfrastructureSignature>,
 ) -> AtomicOlapOperation {
     AtomicOlapOperation::CreateView {
@@ -981,7 +981,7 @@ fn create_view_operation(
 
 /// Creates an operation to drop a view
 fn drop_view_operation(
-    view: &View,
+    view: &Dmv1View,
     pushes_to: Vec<InfrastructureSignature>,
 ) -> AtomicOlapOperation {
     AtomicOlapOperation::DropView {
@@ -1015,21 +1015,21 @@ fn run_teardown_sql_operation(
 }
 
 /// Handles adding a view operation
-fn handle_view_add(view: &View) -> OperationPlan {
+fn handle_view_add(view: &Dmv1View) -> OperationPlan {
     let pulls_from = view.pulls_data_from();
     let setup_op = create_view_operation(view, pulls_from);
     OperationPlan::setup(vec![setup_op])
 }
 
 /// Handles removing a view operation
-fn handle_view_remove(view: &View) -> OperationPlan {
+fn handle_view_remove(view: &Dmv1View) -> OperationPlan {
     let pushed_to = view.pushes_data_to();
     let teardown_op = drop_view_operation(view, pushed_to);
     OperationPlan::teardown(vec![teardown_op])
 }
 
 /// Handles updating a view operation
-fn handle_view_update(before: &View, after: &View) -> OperationPlan {
+fn handle_view_update(before: &Dmv1View, after: &Dmv1View) -> OperationPlan {
     // For views we always drop and recreate
     let pushed_to = before.pushes_data_to();
     let teardown_op = drop_view_operation(before, pushed_to);
@@ -1078,7 +1078,7 @@ fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> Oper
 }
 
 use crate::framework::core::infrastructure::materialized_view::MaterializedView;
-use crate::framework::core::infrastructure::view::CustomView;
+use crate::framework::core::infrastructure::view::View;
 
 /// Handles adding a materialized view operation
 fn handle_materialized_view_add(mv: &MaterializedView) -> OperationPlan {
@@ -1132,7 +1132,7 @@ fn handle_materialized_view_update(
 }
 
 /// Handles adding a custom view operation
-fn handle_custom_view_add(view: &CustomView) -> OperationPlan {
+fn handle_custom_view_add(view: &View) -> OperationPlan {
     let pulls_from = view.pulls_data_from();
     let pushes_to = view.pushes_data_to();
 
@@ -1145,7 +1145,7 @@ fn handle_custom_view_add(view: &CustomView) -> OperationPlan {
 }
 
 /// Handles removing a custom view operation
-fn handle_custom_view_remove(view: &CustomView) -> OperationPlan {
+fn handle_custom_view_remove(view: &View) -> OperationPlan {
     let pulls_from = view.pulls_data_from();
     let pushes_to = view.pushes_data_to();
 
@@ -1158,7 +1158,7 @@ fn handle_custom_view_remove(view: &CustomView) -> OperationPlan {
 }
 
 /// Handles updating a custom view operation
-fn handle_custom_view_update(before: &CustomView, after: &CustomView) -> OperationPlan {
+fn handle_custom_view_update(before: &View, after: &View) -> OperationPlan {
     let before_pulls = before.pulls_data_from();
     let before_pushes = before.pushes_data_to();
     let teardown_op = AtomicOlapOperation::DropCustomView {
@@ -1633,7 +1633,7 @@ mod tests {
         };
 
         // Create view C - depends on table B
-        let view_c = View {
+        let view_c = Dmv1View {
             name: "view_c".to_string(),
             view_type: crate::framework::core::infrastructure::view::ViewType::TableAlias {
                 source_table_name: "table_b".to_string(),
@@ -1755,7 +1755,7 @@ mod tests {
         };
 
         // Create view C - depends on table B
-        let view_c = View {
+        let view_c = Dmv1View {
             name: "view_c".to_string(),
             view_type: crate::framework::core::infrastructure::view::ViewType::TableAlias {
                 source_table_name: "table_b".to_string(),
@@ -1871,7 +1871,7 @@ mod tests {
             primary_key_expression: None,
         };
 
-        let view = View {
+        let view = Dmv1View {
             name: "test_view".to_string(),
             view_type: crate::framework::core::infrastructure::view::ViewType::TableAlias {
                 source_table_name: "test_table".to_string(),

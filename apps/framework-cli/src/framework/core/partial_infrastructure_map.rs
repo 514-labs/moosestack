@@ -54,7 +54,7 @@ use super::{
         table::{Column, Metadata, Table, TableIndex},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
-        view::View,
+        view::Dmv1View,
     },
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
 };
@@ -535,7 +535,7 @@ pub struct PartialInfrastructureMap {
     #[serde(default)]
     tables: HashMap<String, PartialTable>,
     #[serde(default)]
-    views: HashMap<String, View>,
+    views: HashMap<String, Dmv1View>,
     #[serde(default)]
     sql_resources: HashMap<String, SqlResource>,
     #[serde(default)]
@@ -556,7 +556,7 @@ pub struct PartialInfrastructureMap {
         crate::framework::core::infrastructure::materialized_view::MaterializedView,
     >,
     #[serde(default)]
-    custom_views: HashMap<String, crate::framework::core::infrastructure::view::CustomView>,
+    custom_views: HashMap<String, crate::framework::core::infrastructure::view::View>,
 }
 
 impl PartialInfrastructureMap {

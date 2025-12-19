@@ -42,7 +42,7 @@ use super::infrastructure::sql_resource::SqlResource;
 use super::infrastructure::table::{Column, OrderBy, Table};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
-use super::infrastructure::view::{CustomView, View};
+use super::infrastructure::view::{Dmv1View, View};
 use super::partial_infrastructure_map::LifeCycle;
 use super::partial_infrastructure_map::PartialInfrastructureMap;
 use super::primitive_map::PrimitiveMap;
@@ -388,13 +388,13 @@ pub enum OlapChange {
     /// Change to a database table
     Table(TableChange),
     /// Change to a database view (internal alias views)
-    View(Change<View>),
+    View(Change<Dmv1View>),
     /// Change to SQL resource (legacy, for raw SQL)
     SqlResource(Change<SqlResource>),
     /// Change to a structured materialized view
     MaterializedView(Change<MaterializedView>),
     /// Change to a structured custom view (user-defined SELECT views)
-    CustomView(Change<CustomView>),
+    CustomView(Change<View>),
     /// Explicit operation to populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -535,7 +535,7 @@ pub struct InfrastructureMap {
     pub tables: HashMap<String, Table>,
 
     /// Collection of database views indexed by view name
-    pub views: HashMap<String, View>,
+    pub views: HashMap<String, Dmv1View>,
 
     /// Processes that sync data from topics to tables
     pub topic_to_table_sync_processes: HashMap<String, TopicToTableSyncProcess>,
@@ -578,7 +578,7 @@ pub struct InfrastructureMap {
 
     /// Collection of custom views indexed by view name
     #[serde(default)]
-    pub custom_views: HashMap<String, CustomView>,
+    pub custom_views: HashMap<String, View>,
 }
 
 impl InfrastructureMap {
@@ -709,7 +709,7 @@ impl InfrastructureMap {
                     if data_model.config.storage.enabled
                         && previous_version_model.config.storage.enabled
                     {
-                        let view = View::alias_view(data_model, previous_version_model);
+                        let view = Dmv1View::alias_view(data_model, previous_version_model);
                         views.insert(view.id(), view);
                     }
 
@@ -1318,8 +1318,8 @@ impl InfrastructureMap {
     /// # Returns
     /// A tuple of (additions, removals, updates) counts
     fn diff_views(
-        self_views: &HashMap<String, View>,
-        target_views: &HashMap<String, View>,
+        self_views: &HashMap<String, Dmv1View>,
+        target_views: &HashMap<String, Dmv1View>,
         olap_changes: &mut Vec<OlapChange>,
     ) -> (usize, usize, usize) {
         tracing::info!("Analyzing changes in Views...");
@@ -1911,8 +1911,8 @@ impl InfrastructureMap {
     /// * `default_database` - Default database name for normalization
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_custom_views(
-        self_views: &HashMap<String, CustomView>,
-        target_views: &HashMap<String, CustomView>,
+        self_views: &HashMap<String, View>,
+        target_views: &HashMap<String, View>,
         default_database: &str,
         olap_changes: &mut Vec<OlapChange>,
     ) {
@@ -2819,10 +2819,10 @@ impl InfrastructureMap {
             .map(|(k, v)| (k, MaterializedView::from_proto(v)))
             .collect();
 
-        let mut custom_views: HashMap<String, CustomView> = proto
+        let mut custom_views: HashMap<String, View> = proto
             .custom_views
             .into_iter()
-            .map(|(k, v)| (k, CustomView::from_proto(v)))
+            .map(|(k, v)| (k, View::from_proto(v)))
             .collect();
 
         // Migrate old SqlResources that are actually MVs or Views to new format
@@ -2895,7 +2895,7 @@ impl InfrastructureMap {
             views: proto
                 .views
                 .into_iter()
-                .map(|(k, v)| (k, View::from_proto(v)))
+                .map(|(k, v)| (k, Dmv1View::from_proto(v)))
                 .collect(),
             topic_to_table_sync_processes: proto
                 .topic_to_table_sync_processes
@@ -2999,7 +2999,7 @@ impl InfrastructureMap {
     pub fn try_migrate_sql_resource_to_custom_view(
         sql_resource: &SqlResource,
         default_database: &str,
-    ) -> Option<CustomView> {
+    ) -> Option<View> {
         use crate::infrastructure::olap::clickhouse::sql_parser::{
             extract_source_tables_from_query, extract_source_tables_from_query_regex,
         };
@@ -3069,7 +3069,7 @@ impl InfrastructureMap {
                     }),
                 });
 
-        Some(CustomView {
+        Some(View {
             name: sql_resource.name.clone(),
             database: Some(default_database.to_string()),
             select_sql,
@@ -3666,7 +3666,7 @@ impl serde::Serialize for InfrastructureMap {
             topics: &'a HashMap<String, Topic>,
             api_endpoints: &'a HashMap<String, ApiEndpoint>,
             tables: &'a HashMap<String, Table>,
-            views: &'a HashMap<String, View>,
+            views: &'a HashMap<String, Dmv1View>,
             topic_to_table_sync_processes: &'a HashMap<String, TopicToTableSyncProcess>,
             topic_to_topic_sync_processes: &'a HashMap<String, TopicToTopicSyncProcess>,
             function_processes: &'a HashMap<String, FunctionProcess>,
@@ -3678,7 +3678,7 @@ impl serde::Serialize for InfrastructureMap {
             web_apps: &'a HashMap<String, super::infrastructure::web_app::WebApp>,
             materialized_views:
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
-            custom_views: &'a HashMap<String, super::infrastructure::view::CustomView>,
+            custom_views: &'a HashMap<String, super::infrastructure::view::View>,
         }
 
         // Mask credentials before serialization (for JSON migration files)
@@ -6402,13 +6402,13 @@ mod diff_topic_tests {
 #[cfg(test)]
 mod diff_view_tests {
     use super::*;
-    use crate::framework::core::infrastructure::view::{View, ViewType};
+    use crate::framework::core::infrastructure::view::{Dmv1View, ViewType};
     use crate::framework::versions::Version;
 
     // Helper function to create a test view
-    fn create_test_view(name: &str, version_str: &str, source_table: &str) -> View {
+    fn create_test_view(name: &str, version_str: &str, source_table: &str) -> Dmv1View {
         let version = Version::from_string(version_str.to_string());
-        View {
+        Dmv1View {
             name: name.to_string(),
             version: version.clone(),
             view_type: ViewType::TableAlias {

@@ -24,7 +24,7 @@ pub enum ViewType {
 /// This is used by the framework to create alias views for data model versions.
 /// For user-defined views, see `CustomView`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct View {
+pub struct Dmv1View {
     pub name: String,
     pub version: Version,
     pub view_type: ViewType,
@@ -41,7 +41,7 @@ pub struct View {
 /// The structure is flat to match JSON output from TypeScript/Python moose-lib.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CustomView {
+pub struct View {
     /// Name of the view
     pub name: String,
 
@@ -60,7 +60,7 @@ pub struct CustomView {
     pub metadata: Option<Metadata>,
 }
 
-impl CustomView {
+impl View {
     /// Creates a new CustomView
     pub fn new(
         name: impl Into<String>,
@@ -186,7 +186,7 @@ impl CustomView {
     }
 }
 
-impl DataLineage for CustomView {
+impl DataLineage for View {
     fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
         self.source_tables
             .iter()
@@ -199,7 +199,7 @@ impl DataLineage for CustomView {
     }
 }
 
-impl View {
+impl Dmv1View {
     // This is only to be used in the context of the new core
     // currently name includes the version, here we are separating that out.
     pub fn id(&self) -> String {
@@ -215,7 +215,7 @@ impl View {
     }
 
     pub fn alias_view(data_model: &DataModel, source_data_model: &DataModel) -> Self {
-        View {
+        Dmv1View {
             name: data_model.name.clone(),
             version: data_model.version.clone(),
             view_type: ViewType::TableAlias {
@@ -234,7 +234,7 @@ impl View {
     }
 
     pub fn from_proto(proto: ProtoView) -> Self {
-        View {
+        Dmv1View {
             name: proto.name,
             version: Version::from_string(proto.version),
             view_type: ViewType::from_proto(proto.view_type.unwrap()),
@@ -242,7 +242,7 @@ impl View {
     }
 }
 
-impl DataLineage for View {
+impl DataLineage for Dmv1View {
     fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
         match &self.view_type {
             ViewType::TableAlias { source_table_name } => vec![InfrastructureSignature::Table {

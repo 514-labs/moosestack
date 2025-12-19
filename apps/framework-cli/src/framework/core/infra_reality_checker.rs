@@ -19,7 +19,7 @@ use crate::{
         infrastructure::materialized_view::MaterializedView,
         infrastructure::sql_resource::SqlResource,
         infrastructure::table::Table,
-        infrastructure::view::CustomView,
+        infrastructure::view::View,
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
     infrastructure::olap::{
@@ -74,7 +74,7 @@ pub struct InfraDiscrepancies {
     /// Materialized views that exist in both but have differences
     pub mismatched_materialized_views: Vec<OlapChange>,
     /// Custom views that exist in reality but are not in the map
-    pub unmapped_custom_views: Vec<CustomView>,
+    pub unmapped_custom_views: Vec<View>,
     /// Custom views that are in the map but don't exist in reality
     pub missing_custom_views: Vec<String>,
     /// Custom views that exist in both but have differences
@@ -185,11 +185,7 @@ pub fn materialized_views_are_equivalent(
 /// Checks if two CustomViews are semantically equivalent.
 /// Compares source tables (order-independent) and normalized SELECT SQL.
 /// Uses default_database to normalize table references.
-pub fn custom_views_are_equivalent(
-    v1: &CustomView,
-    v2: &CustomView,
-    default_database: &str,
-) -> bool {
+pub fn custom_views_are_equivalent(v1: &View, v2: &View, default_database: &str) -> bool {
     // Compare names
     if v1.name != v2.name {
         return false;
@@ -498,7 +494,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Convert SQL resources from reality to structured types (MVs and custom views)
         // This allows us to compare them with the infra_map's materialized_views and custom_views
         let mut actual_materialized_views: HashMap<String, MaterializedView> = HashMap::new();
-        let mut actual_custom_views: HashMap<String, CustomView> = HashMap::new();
+        let mut actual_custom_views: HashMap<String, View> = HashMap::new();
         let mut remaining_sql_resources: Vec<SqlResource> = Vec::new();
 
         for sql_resource in actual_sql_resources {
