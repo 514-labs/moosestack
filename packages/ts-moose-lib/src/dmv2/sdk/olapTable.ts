@@ -749,6 +749,31 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       );
     }
 
+    // Validate that projections are only used with MergeTree family engines
+    const projections = (resolvedConfig as any).projections;
+    if (projections && Array.isArray(projections) && projections.length > 0) {
+      const engine = resolvedConfig.engine;
+      const nonMergeTreeEngines = [
+        ClickHouseEngines.S3,
+        ClickHouseEngines.S3Queue,
+        ClickHouseEngines.Buffer,
+        ClickHouseEngines.Distributed,
+        ClickHouseEngines.IcebergS3,
+        ClickHouseEngines.Kafka,
+      ];
+
+      if (
+        typeof engine === "string" &&
+        nonMergeTreeEngines.includes(engine as ClickHouseEngines)
+      ) {
+        throw new Error(
+          `OlapTable ${name}: ${engine} engine does not support PROJECTION clauses. ` +
+            `Projections are only supported on MergeTree family engines. ` +
+            `Remove projections from your configuration.`,
+        );
+      }
+    }
+
     super(name, resolvedConfig, schema, columns, validators);
     this.name = name;
 

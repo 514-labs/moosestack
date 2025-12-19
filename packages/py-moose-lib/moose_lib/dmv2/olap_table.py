@@ -322,6 +322,25 @@ class OlapConfig(BaseModel):
                         f"Remove partition_by from your configuration."
                     )
 
+            # All non-MergeTree engines don't support PROJECTIONS
+            engines_without_projections = (
+                S3Engine,
+                S3QueueEngine,
+                BufferEngine,
+                DistributedEngine,
+                KafkaEngine,
+                IcebergS3Engine,
+            )
+            if isinstance(self.engine, engines_without_projections):
+                engine_name = type(self.engine).__name__
+
+                if self.projections:
+                    raise ValueError(
+                        f"{engine_name} does not support PROJECTION clauses. "
+                        f"Projections are only supported on MergeTree family engines. "
+                        f"Remove projections from your configuration."
+                    )
+
 
 class OlapTable(TypedMooseResource, Generic[T]):
     """Represents an OLAP table (e.g., a ClickHouse table) typed with a Pydantic model.
