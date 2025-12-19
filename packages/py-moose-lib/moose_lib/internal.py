@@ -496,7 +496,7 @@ class MaterializedViewJson(BaseModel):
         source_tables: Names of source tables the SELECT reads from.
         target_table: Name of the target table where data is written.
         target_database: Optional database for the target table.
-        source_file: Optional path to the source file where this MV is defined.
+        metadata: Optional metadata for the materialized view (e.g., description, source file).
     """
 
     model_config = model_config
@@ -507,7 +507,7 @@ class MaterializedViewJson(BaseModel):
     source_tables: List[str]
     target_table: str
     target_database: Optional[str] = None
-    source_file: Optional[str] = None
+    metadata: Optional[dict] = None
 
 
 class CustomViewJson(BaseModel):
@@ -518,7 +518,7 @@ class CustomViewJson(BaseModel):
         database: Optional database where the view is created.
         select_sql: The SELECT SQL statement.
         source_tables: Names of source tables the SELECT reads from.
-        source_file: Optional path to the source file where this view is defined.
+        metadata: Optional metadata for the view (e.g., description, source file).
     """
 
     model_config = model_config
@@ -527,7 +527,7 @@ class CustomViewJson(BaseModel):
     database: Optional[str] = None
     select_sql: str
     source_tables: List[str]
-    source_file: Optional[str] = None
+    metadata: Optional[dict] = None
 
 
 class InfrastructureMap(BaseModel):
@@ -1049,7 +1049,7 @@ def to_infra_map() -> dict:
             source_tables=mv.source_tables,
             target_table=mv.target_table.name,
             target_database=getattr(mv.target_table.config, "database", None),
-            source_file=getattr(mv, "source_file", None),
+            metadata=getattr(mv, "metadata", None),
         )
 
     # Serialize custom views with structured data
@@ -1058,7 +1058,7 @@ def to_infra_map() -> dict:
             name=view.name,
             select_sql=view.select_sql,
             source_tables=view.source_tables,
-            source_file=getattr(view, "source_file", None),
+            metadata=getattr(view, "metadata", None),
         )
 
     infra_map = InfrastructureMap(

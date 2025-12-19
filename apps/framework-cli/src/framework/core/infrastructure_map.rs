@@ -2971,6 +2971,18 @@ impl InfrastructureMap {
             .map(|t| t.table.clone())
             .collect();
 
+        // Migrate source_file to metadata.source.file
+        let metadata =
+            sql_resource
+                .source_file
+                .as_ref()
+                .map(|file| super::infrastructure::table::Metadata {
+                    description: None,
+                    source: Some(super::infrastructure::table::SourceLocation {
+                        file: file.clone(),
+                    }),
+                });
+
         Some(MaterializedView {
             name: sql_resource.name.clone(),
             database: Some(default_database.to_string()),
@@ -2978,7 +2990,7 @@ impl InfrastructureMap {
             source_tables,
             target_table: parsed.target_table,
             target_database: parsed.target_database,
-            source_file: sql_resource.source_file.clone(),
+            metadata,
         })
     }
 
@@ -3045,12 +3057,24 @@ impl InfrastructureMap {
             }
         };
 
+        // Migrate source_file to metadata.source.file
+        let metadata =
+            sql_resource
+                .source_file
+                .as_ref()
+                .map(|file| super::infrastructure::table::Metadata {
+                    description: None,
+                    source: Some(super::infrastructure::table::SourceLocation {
+                        file: file.clone(),
+                    }),
+                });
+
         Some(CustomView {
             name: sql_resource.name.clone(),
             database: Some(default_database.to_string()),
             select_sql,
             source_tables,
-            source_file: sql_resource.source_file.clone(),
+            metadata,
         })
     }
 

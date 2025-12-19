@@ -230,8 +230,8 @@ message CustomView {
   optional string database = 2;
   // The SELECT query that defines the view
   SelectQuery select_query = 3;
-  // Optional source file path where this view is defined
-  optional string source_file = 4;
+  // Optional metadata for the view (e.g., description, source file)
+  optional Metadata metadata = 4;
 }
 
 // ClickHouse Materialized View that writes transformed data to a target table.
@@ -245,8 +245,8 @@ message MaterializedView {
   SelectQuery select_query = 3;
   // Target table where transformed data is written (the TO clause)
   TableReference target_table = 4;
-  // Optional source file path where this MV is defined
-  optional string source_file = 5;
+  // Optional metadata for the materialized view (e.g., description, source file)
+  optional Metadata metadata = 5;
 }
 
 message TopicToTableSyncProcess {

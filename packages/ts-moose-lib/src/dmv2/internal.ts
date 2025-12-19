@@ -452,8 +452,8 @@ interface MaterializedViewJson {
   targetTable: string;
   /** Target table database (optional) */
   targetDatabase?: string;
-  /** Optional source file path where this MV is defined */
-  sourceFile?: string;
+  /** Optional metadata for the materialized view (e.g., description, source file) */
+  metadata?: { [key: string]: any };
 }
 
 /**
@@ -468,8 +468,8 @@ interface CustomViewJson {
   selectSql: string;
   /** Source tables that the SELECT reads from */
   sourceTables: string[];
-  /** Optional source file path where this view is defined */
-  sourceFile?: string;
+  /** Optional metadata for the view (e.g., description, source file) */
+  metadata?: { [key: string]: any };
 }
 
 /**
@@ -1109,7 +1109,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       sourceTables: mv.sourceTables,
       targetTable: mv.targetTable.name,
       targetDatabase: mv.targetTable.config.database,
-      sourceFile: mv.sourceFile,
+      metadata: mv.metadata,
     };
   });
 
@@ -1119,7 +1119,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       name: view.name,
       selectSql: view.selectSql,
       sourceTables: view.sourceTables,
-      sourceFile: view.sourceFile,
+      metadata: view.metadata,
     };
   });
 

@@ -71,7 +71,7 @@ class MaterializedView(BaseTypedResource, Generic[T]):
     name: str
     select_sql: str
     source_tables: list[str]
-    source_file: Optional[str] = None
+    metadata: Optional[dict] = None
 
     def __init__(
         self,
@@ -112,7 +112,24 @@ class MaterializedView(BaseTypedResource, Generic[T]):
         self.config = options
         self.select_sql = options.select_statement
         self.source_tables = [t.name for t in options.select_tables]
-        self.source_file = get_source_file_from_stack()
+
+        # Initialize metadata, preserving user-provided metadata if any
+        if options.metadata:
+            self.metadata = (
+                options.metadata.copy()
+                if isinstance(options.metadata, dict)
+                else options.metadata
+            )
+        else:
+            self.metadata = {}
+
+        # Capture source file from stack trace if not already provided
+        if not isinstance(self.metadata, dict):
+            self.metadata = {}
+        if "source" not in self.metadata:
+            source_file = get_source_file_from_stack()
+            if source_file:
+                self.metadata["source"] = {"file": source_file}
 
         if self.name in _materialized_views:
             raise ValueError(f"MaterializedView with name {self.name} already exists")

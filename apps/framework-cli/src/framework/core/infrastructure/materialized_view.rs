@@ -21,6 +21,7 @@ use crate::proto::infrastructure_map::{
     TableReference as ProtoTableReference,
 };
 
+use super::table::Metadata;
 use super::{DataLineage, InfrastructureSignature};
 
 /// Reference to a table, optionally qualified with database.
@@ -117,9 +118,9 @@ pub struct MaterializedView {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub target_database: Option<String>,
 
-    /// Optional source file path where this MV is defined
+    /// Optional metadata for the materialized view (e.g., description, source file)
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub source_file: Option<String>,
+    pub metadata: Option<Metadata>,
 }
 
 impl MaterializedView {
@@ -137,7 +138,7 @@ impl MaterializedView {
             source_tables,
             target_table: target_table.into(),
             target_database: None,
-            source_file: None,
+            metadata: None,
         }
     }
 
@@ -220,7 +221,18 @@ impl MaterializedView {
             database: self.database.clone(),
             select_query: MessageField::some(select_query),
             target_table: MessageField::some(target_table),
-            source_file: self.source_file.clone(),
+            metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
+                crate::proto::infrastructure_map::Metadata {
+                    description: m.description.clone().unwrap_or_default(),
+                    source: MessageField::from_option(m.source.as_ref().map(|s| {
+                        crate::proto::infrastructure_map::SourceLocation {
+                            file: s.file.clone(),
+                            special_fields: Default::default(),
+                        }
+                    })),
+                    special_fields: Default::default(),
+                }
+            })),
             special_fields: Default::default(),
         }
     }
@@ -242,6 +254,18 @@ impl MaterializedView {
             .map(|t| (t.table, t.database))
             .unwrap_or_default();
 
+        let metadata = proto.metadata.into_option().map(|m| Metadata {
+            description: if m.description.is_empty() {
+                None
+            } else {
+                Some(m.description)
+            },
+            source: m
+                .source
+                .into_option()
+                .map(|s| super::table::SourceLocation { file: s.file }),
+        });
+
         Self {
             name: proto.name,
             database: proto.database,
@@ -249,7 +273,7 @@ impl MaterializedView {
             source_tables,
             target_table,
             target_database,
-            source_file: proto.source_file,
+            metadata,
         }
     }
 }

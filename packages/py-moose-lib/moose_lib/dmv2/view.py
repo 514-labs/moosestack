@@ -35,7 +35,6 @@ class View:
     name: str
     select_sql: str
     source_tables: list[str]
-    source_file: Optional[str] = None
     metadata: Optional[dict] = None
 
     def __init__(
@@ -48,8 +47,20 @@ class View:
         self.name = name
         self.select_sql = select_statement
         self.source_tables = [t.name for t in base_tables]
-        self.metadata = metadata
-        self.source_file = get_source_file_from_stack()
+
+        # Initialize metadata, preserving user-provided metadata if any
+        if metadata:
+            self.metadata = metadata.copy() if isinstance(metadata, dict) else metadata
+        else:
+            self.metadata = {}
+
+        # Capture source file from stack trace if not already provided
+        if not isinstance(self.metadata, dict):
+            self.metadata = {}
+        if "source" not in self.metadata:
+            source_file = get_source_file_from_stack()
+            if source_file:
+                self.metadata["source"] = {"file": source_file}
 
         if self.name in _custom_views:
             raise ValueError(f"View with name {self.name} already exists")

@@ -10,6 +10,7 @@ use crate::proto::infrastructure_map::TableAlias as ProtoTableAlias;
 use crate::proto::infrastructure_map::TableReference as ProtoTableReference;
 use crate::proto::infrastructure_map::View as ProtoView;
 
+use super::table::Metadata;
 use super::DataLineage;
 use super::InfrastructureSignature;
 
@@ -54,9 +55,9 @@ pub struct CustomView {
     /// Names of source tables/views referenced in the SELECT
     pub source_tables: Vec<String>,
 
-    /// Optional source file path where this view is defined
+    /// Optional metadata for the view (e.g., description, source file)
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub source_file: Option<String>,
+    pub metadata: Option<Metadata>,
 }
 
 impl CustomView {
@@ -71,7 +72,7 @@ impl CustomView {
             database: None,
             select_sql: select_sql.into(),
             source_tables,
-            source_file: None,
+            metadata: None,
         }
     }
 
@@ -135,7 +136,18 @@ impl CustomView {
             name: self.name.clone(),
             database: self.database.clone(),
             select_query: MessageField::some(select_query),
-            source_file: self.source_file.clone(),
+            metadata: MessageField::from_option(self.metadata.as_ref().map(|m| {
+                crate::proto::infrastructure_map::Metadata {
+                    description: m.description.clone().unwrap_or_default(),
+                    source: MessageField::from_option(m.source.as_ref().map(|s| {
+                        crate::proto::infrastructure_map::SourceLocation {
+                            file: s.file.clone(),
+                            special_fields: Default::default(),
+                        }
+                    })),
+                    special_fields: Default::default(),
+                }
+            })),
             special_fields: Default::default(),
         }
     }
@@ -152,12 +164,24 @@ impl CustomView {
             })
             .unwrap_or_default();
 
+        let metadata = proto.metadata.into_option().map(|m| Metadata {
+            description: if m.description.is_empty() {
+                None
+            } else {
+                Some(m.description)
+            },
+            source: m
+                .source
+                .into_option()
+                .map(|s| super::table::SourceLocation { file: s.file }),
+        });
+
         Self {
             name: proto.name,
             database: proto.database,
             select_sql,
             source_tables,
-            source_file: proto.source_file,
+            metadata,
         }
     }
 }

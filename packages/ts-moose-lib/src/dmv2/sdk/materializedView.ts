@@ -42,6 +42,9 @@ export interface MaterializedViewConfig<T> {
   /** @deprecated See {@link targetTable}
    *  Optional ordering fields for the target table. Crucial if using ReplacingMergeTree. */
   orderByFields?: (keyof T & string)[];
+
+  /** Optional metadata for the materialized view (e.g., description, source file). */
+  metadata?: { [key: string]: any };
 }
 
 const requireTargetTableName = (tableName: string | undefined): string => {
@@ -75,8 +78,8 @@ export class MaterializedView<TargetTable> {
   /** Names of source tables that the SELECT reads from */
   sourceTables: string[];
 
-  /** @internal Source file path where this MV was defined */
-  sourceFile?: string;
+  /** Optional metadata for the materialized view */
+  metadata: { [key: string]: any };
 
   /**
    * Creates a new MaterializedView instance.
@@ -139,9 +142,17 @@ export class MaterializedView<TargetTable> {
     this.selectSql = selectStatement;
     this.sourceTables = options.selectTables.map((t) => t.name);
 
-    // Capture source file from stack trace
-    const stack = new Error().stack;
-    this.sourceFile = getSourceFileFromStack(stack);
+    // Initialize metadata, preserving user-provided metadata if any
+    this.metadata = options.metadata ? { ...options.metadata } : {};
+
+    // Capture source file from stack trace if not already provided
+    if (!this.metadata.source) {
+      const stack = new Error().stack;
+      const sourceInfo = getSourceFileFromStack(stack);
+      if (sourceInfo) {
+        this.metadata.source = { file: sourceInfo };
+      }
+    }
 
     // Register in the materializedViews registry
     const materializedViews = getMooseInternal().materializedViews;

@@ -20,19 +20,21 @@ export class View {
   /** Names of source tables/views that the SELECT reads from */
   sourceTables: string[];
 
-  /** @internal Source file path where this view was defined */
-  sourceFile?: string;
+  /** Optional metadata for the view */
+  metadata: { [key: string]: any };
 
   /**
    * Creates a new View instance.
    * @param name The name of the view to be created.
    * @param selectStatement The SQL SELECT statement that defines the view's logic.
    * @param baseTables An array of OlapTable or View objects that the `selectStatement` reads from. Used for dependency tracking.
+   * @param metadata Optional metadata for the view (e.g., description, source file).
    */
   constructor(
     name: string,
     selectStatement: string | Sql,
     baseTables: (OlapTable<any> | View)[],
+    metadata?: { [key: string]: any },
   ) {
     if (typeof selectStatement !== "string") {
       selectStatement = toStaticQuery(selectStatement);
@@ -42,9 +44,17 @@ export class View {
     this.selectSql = selectStatement;
     this.sourceTables = baseTables.map((t) => t.name);
 
-    // Capture source file from stack trace
-    const stack = new Error().stack;
-    this.sourceFile = getSourceFileFromStack(stack);
+    // Initialize metadata, preserving user-provided metadata if any
+    this.metadata = metadata ? { ...metadata } : {};
+
+    // Capture source file from stack trace if not already provided
+    if (!this.metadata.source) {
+      const stack = new Error().stack;
+      const sourceInfo = getSourceFileFromStack(stack);
+      if (sourceInfo) {
+        this.metadata.source = { file: sourceInfo };
+      }
+    }
 
     // Register in the customViews registry
     const customViews = getMooseInternal().customViews;
