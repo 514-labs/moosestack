@@ -16,14 +16,14 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod/v3";
-import { WebApp, getMooseUtils, ApiUtil } from "@514labs/moose-lib";
+import { WebApp, getMooseUtils, MooseUtils } from "@514labs/moose-lib";
 import { createAuthMiddleware } from "@514labs/express-pbkdf2-api-key-auth";
 
 function clickhouseReadonlyQuery(
-  client: ApiUtil["client"],
+  client: MooseUtils["client"],
   sql: string,
   limit = 100,
-): ReturnType<ApiUtil["client"]["query"]["client"]["query"]> {
+): ReturnType<MooseUtils["client"]["query"]["client"]["query"]> {
   return client.query.client.query({
     query: sql,
     format: "JSONEachRow",
@@ -39,7 +39,7 @@ function clickhouseReadonlyQuery(
  * Uses currentDatabase() to automatically query the active database context.
  */
 async function getTableColumns(
-  client: ApiUtil["client"],
+  client: MooseUtils["client"],
   tableName: string,
 ): Promise<ColumnInfo[]> {
   const query = `
@@ -88,7 +88,7 @@ type TableQueryResult = z.infer<typeof TableQueryResultSchema>;
  * Uses currentDatabase() to automatically query the active database context.
  */
 async function getTablesAndMaterializedViews(
-  client: ApiUtil["client"],
+  client: MooseUtils["client"],
   componentType?: string,
   searchPattern?: string,
 ): Promise<{
@@ -153,7 +153,7 @@ async function getTablesAndMaterializedViews(
  * Format catalog as summary (just names and column counts)
  */
 async function formatCatalogSummary(
-  client: ApiUtil["client"],
+  client: MooseUtils["client"],
   tables: Array<{ name: string; engine: string }>,
   materializedViews: Array<{ name: string; engine: string }>,
 ): Promise<string> {
@@ -190,7 +190,7 @@ async function formatCatalogSummary(
  * Format catalog as detailed JSON with full schema information
  */
 async function formatCatalogDetailed(
-  client: ApiUtil["client"],
+  client: MooseUtils["client"],
   tables: Array<{ name: string; engine: string }>,
   materializedViews: Array<{ name: string; engine: string }>,
 ): Promise<string> {
@@ -271,7 +271,7 @@ app.use(authMiddleware);
  * This is required for stateless mode where each request is fully independent.
  * The mooseUtils parameter provides access to ClickHouse client and SQL helpers.
  */
-const serverFactory = (mooseUtils: ApiUtil | null) => {
+const serverFactory = (mooseUtils: MooseUtils) => {
   const server = new McpServer({
     name: "moosestack-mcp-tools",
     version: "1.0.0",
@@ -302,19 +302,6 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
     },
     async ({ query, limit = 100 }) => {
       try {
-        // Check if MooseStack utilities are available
-        if (!mooseUtils) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: MooseStack utilities not available",
-              },
-            ],
-            isError: true,
-          };
-        }
-
         const { client } = mooseUtils;
 
         const result = await clickhouseReadonlyQuery(
@@ -389,19 +376,6 @@ const serverFactory = (mooseUtils: ApiUtil | null) => {
     },
     async ({ component_type, search, format = "summary" }) => {
       try {
-        // Check if MooseStack utilities are available
-        if (!mooseUtils) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: MooseStack utilities not available",
-              },
-            ],
-            isError: true,
-          };
-        }
-
         const { client } = mooseUtils;
 
         // Get filtered list of tables and materialized views
@@ -467,11 +441,7 @@ app.all("/", async (req, res) => {
     console.log(`[MCP] Handling ${req.method} request (stateless mode)`);
 
     // Get MooseStack utilities (ClickHouse client and SQL helpers)
-    const mooseUtils = getMooseUtils(req);
-
-    if (!mooseUtils) {
-      throw new Error("MooseStack utilities not available");
-    }
+    const mooseUtils = await getMooseUtils();
 
     // Create a fresh transport and server for EVERY request (stateless)
     const transport = new StreamableHTTPServerTransport({

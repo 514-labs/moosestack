@@ -1,33 +1,151 @@
-import { MooseClient, QueryClient } from "./helpers";
+import { MooseClient, QueryClient, MooseUtils } from "./helpers";
 import { getClickhouseClient } from "../commons";
+import { sql } from "../sqlHelpers";
 import type { RuntimeClickHouseConfig } from "../config/runtime";
 
-export async function getMooseClients(
-  config?: Partial<RuntimeClickHouseConfig>,
-): Promise<{ client: MooseClient }> {
-  await import("../config/runtime");
-  const configRegistry = (globalThis as any)._mooseConfigRegistry;
+// Cached utilities and initialization promise for standalone mode
+let standaloneUtils: MooseUtils | null = null;
+let initPromise: Promise<MooseUtils> | null = null;
 
-  if (!configRegistry) {
-    throw new Error(
-      "Configuration registry not initialized. Ensure the Moose framework is properly set up.",
+// Convert config to client config format
+const toClientConfig = (config: {
+  host: string;
+  port: string;
+  username: string;
+  password: string;
+  database: string;
+  useSSL: boolean;
+}) => ({
+  ...config,
+  useSSL: config.useSSL ? "true" : "false",
+});
+
+/**
+ * Get Moose utilities for database access and SQL queries.
+ * Works in both Moose runtime and standalone contexts.
+ *
+ * **IMPORTANT**: This function is async and returns a Promise. You must await the result:
+ * ```typescript
+ * const moose = await getMooseUtils(); // Correct
+ * const moose = getMooseUtils(); // WRONG - returns Promise, not MooseUtils!
+ * ```
+ *
+ * **Breaking Change from v1.x**: This function signature changed from sync to async.
+ * If you were using the old sync API that extracted utils from a request object,
+ * use `getMooseUtilsFromRequest(req)` for backward compatibility (deprecated).
+ *
+ * @param req - DEPRECATED: Request parameter is no longer needed and will be ignored.
+ *              If you need to extract moose from a request, use getMooseUtilsFromRequest().
+ * @returns Promise resolving to MooseUtils with client and sql utilities.
+ *
+ * @example
+ * ```typescript
+ * const { client, sql } = await getMooseUtils();
+ * const result = await client.query.execute(sql`SELECT * FROM table`);
+ * ```
+ */
+export async function getMooseUtils(req?: any): Promise<MooseUtils> {
+  // Deprecation warning if req passed
+  if (req !== undefined) {
+    console.warn(
+      "[DEPRECATED] getMooseUtils(req) no longer requires a request parameter. " +
+        "Use getMooseUtils() instead.",
     );
   }
 
-  const clickhouseConfig =
-    await configRegistry.getStandaloneClickhouseConfig(config);
+  // Check if running in Moose runtime
+  const runtimeContext = (globalThis as any)._mooseRuntimeContext;
 
-  const clickhouseClient = getClickhouseClient({
-    username: clickhouseConfig.username,
-    password: clickhouseConfig.password,
-    database: clickhouseConfig.database,
-    useSSL: clickhouseConfig.useSSL ? "true" : "false",
-    host: clickhouseConfig.host,
-    port: clickhouseConfig.port,
-  });
+  if (runtimeContext) {
+    // In Moose runtime - use existing connections
+    return {
+      client: runtimeContext.client,
+      sql: sql,
+      jwt: runtimeContext.jwt,
+    };
+  }
 
-  const queryClient = new QueryClient(clickhouseClient, "standalone");
-  const mooseClient = new MooseClient(queryClient);
+  // Standalone mode - use cached client or create new one
+  if (standaloneUtils) {
+    return standaloneUtils;
+  }
 
-  return { client: mooseClient };
+  // If initialization is in progress, wait for it
+  if (initPromise) {
+    return initPromise;
+  }
+
+  // Start initialization
+  initPromise = (async () => {
+    await import("../config/runtime");
+    const configRegistry = (globalThis as any)._mooseConfigRegistry;
+
+    if (!configRegistry) {
+      throw new Error(
+        "Moose not initialized. Ensure you're running within a Moose app " +
+          "or have proper configuration set up.",
+      );
+    }
+
+    const clickhouseConfig =
+      await configRegistry.getStandaloneClickhouseConfig();
+
+    const clickhouseClient = getClickhouseClient(
+      toClientConfig(clickhouseConfig),
+    );
+    const queryClient = new QueryClient(clickhouseClient, "standalone");
+    const mooseClient = new MooseClient(queryClient);
+
+    standaloneUtils = {
+      client: mooseClient,
+      sql: sql,
+      jwt: undefined,
+    };
+    return standaloneUtils;
+  })();
+
+  try {
+    return await initPromise;
+  } finally {
+    initPromise = null;
+  }
+}
+
+/**
+ * @deprecated Use getMooseUtils() instead.
+ * Creates a Moose client for database access.
+ */
+export async function getMooseClients(
+  config?: Partial<RuntimeClickHouseConfig>,
+): Promise<{ client: MooseClient }> {
+  console.warn(
+    "[DEPRECATED] getMooseClients() is deprecated. Use getMooseUtils() instead.",
+  );
+
+  // If custom config provided, create a one-off client (don't cache)
+  if (config && Object.keys(config).length > 0) {
+    await import("../config/runtime");
+    const configRegistry = (globalThis as any)._mooseConfigRegistry;
+
+    if (!configRegistry) {
+      throw new Error(
+        "Configuration registry not initialized. Ensure the Moose framework is properly set up.",
+      );
+    }
+
+    const clickhouseConfig =
+      await configRegistry.getStandaloneClickhouseConfig(config);
+
+    const clickhouseClient = getClickhouseClient(
+      toClientConfig(clickhouseConfig),
+    );
+    const queryClient = new QueryClient(clickhouseClient, "standalone");
+    const mooseClient = new MooseClient(queryClient);
+
+    return { client: mooseClient };
+  }
+
+  // No custom config - delegate to getMooseUtils
+  const utils = await getMooseUtils();
+  return { client: utils.client };
 }
