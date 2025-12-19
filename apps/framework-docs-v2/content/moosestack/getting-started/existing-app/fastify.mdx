@@ -146,7 +146,7 @@ Add `moose` as a workspace dependency in your **Fastify app workspace** `package
 ```json title="(your Fastify app workspace)/package.json"
 {
   "dependencies": {
-    "moose": "workspace:*",
+    "moose": "workspace:*"
   }
 }
 ```
@@ -161,7 +161,7 @@ These scripts are not required, but they make it easy to run Moose commands from
     "dev:fastify": "cross-env NODE_ENV=development node --env-file=.env --watch src/index.ts",
     "dev:moose": "pnpm -C moose run dev",
     "build:moose": "pnpm -C moose run build",
-    "moose": "pnpm -C moose run moose",
+    "moose": "pnpm -C moose run moose"
   }
 }
 ```
