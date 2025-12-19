@@ -79,7 +79,7 @@ class UserEvent(BaseModel):
     status: str
 ```
 
-PR: [#3137](https://github.com/514-labs/moosestack/pull/3137)
+PR: [#3137](https://github.com/514-labs/moosestack/pull/3137) | Docs: [Column Comments](/moose/olap/model-table#column-comments)
 
 ### Custom Dockerfile
 Users can now enable custom Dockerfile support using the new --custom-dockerfile flag with moose init. This allows developers to customize their Docker build process while still leveraging Moose's base configuration. The custom Dockerfile is preserved across builds to maintain user customizations.
@@ -115,6 +115,8 @@ PR: [#3135](https://github.com/514-labs/moosestack/pull/3135)
 - **Added ClickHouse connection info to moose dev output** – The moose dev command now displays ClickHouse connection URLs when starting local infrastructure, making it easier for developers to connect to their databases for debugging and data exploration. Connection details are shown with masked passwords for security. [#3103](https://github.com/514-labs/moosestack/pull/3103)
 - **Improved Python project loading error messages with diagnostic information** – Enhanced error messages when Python projects fail to load, providing detailed diagnostic information including specific file paths, common causes, and step-by-step troubleshooting guidance. Users now get clearer feedback when setup.py is missing, contains syntax errors, or lacks required setup() function calls, making it easier to debug and fix Python project configuration issues. [#3147](https://github.com/514-labs/moosestack/pull/3147)
 - **Expanded documentation across core concepts** – Added comprehensive guides for migrations (CLI, automatic, and planned workflows), stream configuration (parallelism and retention trade-offs), data modeling (problem-solution structure), and complete ClickHouse reference documentation covering all data types and table engines. [#3136](https://github.com/514-labs/moosestack/pull/3136) [#3119](https://github.com/514-labs/moosestack/pull/3119) [#3144](https://github.com/514-labs/moosestack/pull/3144) [#3134](https://github.com/514-labs/moosestack/pull/3134)
+- **Simplified consumption API utilities** – Introduced unified async `getMooseUtils()` that auto-detects context and works without parameters. Legacy APIs (`getMooseClients()`, `expressMiddleware()`) are deprecated but remain backwards compatible. [#3145](https://github.com/514-labs/moosestack/pull/3145)
+- **Added timing flags to moose dev** – Added optional `--timestamps` and `--timing` flags to display timestamps and operation durations during development, helping debug performance issues and track event sequences. [#3113](https://github.com/514-labs/moosestack/pull/3113)
 
 ### Bug Fixes
 - **Fix pnpm build requirements for Kafka JavaScript dependencies** – Fixed build issues with pnpm by adding @514labs/kafka-javascript to the onlyBuiltDependencies list across all project templates. This ensures that Kafka-related dependencies are properly built during installation, preventing runtime errors when using streaming features. [#3146](https://github.com/514-labs/moosestack/pull/3146)
@@ -124,6 +126,7 @@ PR: [#3135](https://github.com/514-labs/moosestack/pull/3135)
 - **Fix Python code generation for Buffer and Distributed engines** – Fixed a bug where Python code generation was missing imports for BufferEngine and DistributedEngine, causing errors when users tried to use these ClickHouse table engines in their data models. [#3133](https://github.com/514-labs/moosestack/pull/3133)
 - **Fix visual bugs in framework documentation** – Fixed various visual bugs and layout issues in the MooseStack framework documentation site, improving readability and user experience when browsing guides and examples. [#3021](https://github.com/514-labs/moosestack/pull/3021)
 - **Fix prompts for externally managed tables to reference Boreal instead of ClickHouse Cloud** – Updated CLI prompts and help text to reference Boreal (boreal.cloud) instead of ClickHouse Cloud when configuring externally managed tables. Also clarified the command to use 'moose db pull' instead of 'moose pull' and updated the setup requirements to be more specific about ClickHouse connection details needed. [#3130](https://github.com/514-labs/moosestack/pull/3130)
+- **Fix ReplacingMergeTree parameter validation** – Fixed parameter validation for ReplacingMergeTree engines to enforce correct parameter counts, preventing silent truncation. [#3145](https://github.com/514-labs/moosestack/pull/3145)
 
 ## Boreal
 
