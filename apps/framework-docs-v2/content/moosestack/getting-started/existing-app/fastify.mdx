@@ -139,14 +139,7 @@ pnpm -C moose run build
 
 </Callout>
 
-### Install dependencies + add scripts
-
-Add MooseStack runtime helpers to your Fastify app:
-
-```bash title="Terminal" copy
-# run this from your Fastify app workspace directory
-pnpm add @514labs/moose-lib
-```
+#### Add your moose workspace as a dependency
 
 Add `moose` as a workspace dependency in your **Fastify app workspace** `package.json`:
 
@@ -154,7 +147,6 @@ Add `moose` as a workspace dependency in your **Fastify app workspace** `package
 {
   "dependencies": {
     "moose": "workspace:*",
-    "@514labs/moose-lib": "^0.6.293"
   }
 }
 ```
@@ -170,11 +162,13 @@ These scripts are not required, but they make it easy to run Moose commands from
     "dev:moose": "pnpm -C moose run dev",
     "build:moose": "pnpm -C moose run build",
     "moose": "pnpm -C moose run moose",
-    "start": "node --env-file=.env src/index.ts"
   }
 }
 ```
-
+ 
+ <Callout type="info" title="Note">
+ `dev:fastify` might be different for your app, depending on how you start your Fastify server.
+ </Callout>
 
 ### Configure environment variables (Fastify runtime)
 
