@@ -27,11 +27,11 @@ Moose lets you declare projections directly in your table definitions. Projectio
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="Projections.ts" copy
-import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+import { OlapTable, ClickHouseEngines, DateTime } from "@514labs/moose-lib";
 
 interface UserEvents {
   userId: string;
-  timestamp: number;
+  timestamp: DateTime;
   eventType: string;
   value: number;
 }
@@ -61,10 +61,11 @@ export const EventsTable = new OlapTable<UserEvents>("UserEvents", {
 from moose_lib import OlapTable, OlapConfig, TableProjection
 from moose_lib.blocks import MergeTreeEngine
 from pydantic import BaseModel
+from datetime import datetime
 
 class UserEvents(BaseModel):
     userId: str
-    timestamp: float
+    timestamp: datetime
     eventType: str
     value: float
 

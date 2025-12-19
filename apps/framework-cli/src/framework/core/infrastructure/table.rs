@@ -235,14 +235,25 @@ impl TableIndex {
     }
 }
 
+/// Represents a clause in a ClickHouse projection (SELECT, ORDER BY, or GROUP BY).
+///
+/// Can be either an explicit list of field names or a raw SQL expression.
+/// This dual representation allows for both simple projections (field lists)
+/// and complex ones (expressions with functions, aliases, etc.).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ProjectionClause {
+    /// List of field names (e.g., `["user_id", "timestamp"]`)
     Fields(Vec<String>),
+    /// SQL expression (e.g., `"toStartOfHour(timestamp) as hour, count() as cnt"`)
     Expression(String),
 }
 
 impl ProjectionClause {
+    /// Converts the clause to SQL string format.
+    ///
+    /// For `Fields` variant, joins field names with commas (e.g., `"id, name, value"`).
+    /// For `Expression` variant, returns the SQL expression as-is.
     pub fn to_sql(&self) -> String {
         match self {
             ProjectionClause::Fields(fields) => fields.join(", "),
@@ -250,6 +261,10 @@ impl ProjectionClause {
         }
     }
 
+    /// Heuristic to detect if SQL string represents simple field list vs complex expression.
+    ///
+    /// Returns `true` for comma-separated field names (e.g., `"id, name, value"`).
+    /// Returns `false` for function calls, aliases, or expressions (e.g., `"count() as cnt"`).
     pub fn is_simple_fields(sql: &str) -> bool {
         let lower = sql.to_lowercase();
         !sql.chars().any(|c| c == '(' || c == ')' || c == '*') && !lower.contains(" as ")
@@ -284,25 +299,44 @@ impl ProjectionClause {
     }
 }
 
+/// A ClickHouse projection for optimizing specific query patterns.
+///
+/// # ClickHouse Rules
+///
+/// - **Non-aggregate projections**: Must have `order_by`, cannot have `group_by`
+/// - **Aggregate projections**: Must have `group_by`, cannot have `order_by` (ordering is implicit from GROUP BY)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TableProjection {
+    /// Unique name for the projection
     pub name: String,
+    /// Columns or expression to project (required)
     pub select: ProjectionClause,
+    /// Optional ordering for non-aggregate projections (mutually exclusive with `group_by`)
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub order_by: Option<ProjectionClause>,
+    /// Optional grouping for aggregate projections (mutually exclusive with `order_by`)
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub group_by: Option<ProjectionClause>,
 }
 
+/// Equality implementation that compares projections by normalized SQL output
 impl PartialEq for TableProjection {
     fn eq(&self, other: &Self) -> bool {
+        let normalize = |sql: &str| -> String {
+            sql.replace('`', "")
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>()
+                .to_lowercase()
+        };
+
         self.name == other.name
-            && self.select.to_sql().to_lowercase() == other.select.to_sql().to_lowercase()
-            && self.order_by.as_ref().map(|o| o.to_sql().to_lowercase())
-                == other.order_by.as_ref().map(|o| o.to_sql().to_lowercase())
-            && self.group_by.as_ref().map(|g| g.to_sql().to_lowercase())
-                == other.group_by.as_ref().map(|g| g.to_sql().to_lowercase())
+            && normalize(&self.select.to_sql()) == normalize(&other.select.to_sql())
+            && self.order_by.as_ref().map(|o| normalize(&o.to_sql()))
+                == other.order_by.as_ref().map(|o| normalize(&o.to_sql()))
+            && self.group_by.as_ref().map(|g| normalize(&g.to_sql()))
+                == other.group_by.as_ref().map(|g| normalize(&g.to_sql()))
     }
 }
 
@@ -2799,5 +2833,82 @@ mod tests {
         assert_eq!(projection.select, roundtrip.select);
         assert_eq!(projection.order_by, roundtrip.order_by);
         assert_eq!(projection.group_by, roundtrip.group_by);
+    }
+
+    #[test]
+    fn test_table_projection_equality_with_sql_normalization() {
+        // Test that projections with different formatting but semantically identical SQL are equal
+        let proj1 = TableProjection {
+            name: "test".to_string(),
+            select: ProjectionClause::Expression("userId,  timestamp".to_string()),
+            order_by: Some(ProjectionClause::Expression(
+                "userId, timestamp".to_string(),
+            )),
+            group_by: None,
+        };
+
+        let proj2 = TableProjection {
+            name: "test".to_string(),
+            select: ProjectionClause::Expression("userId,timestamp".to_string()),
+            order_by: Some(ProjectionClause::Expression("userId,timestamp".to_string())),
+            group_by: None,
+        };
+
+        // Different whitespace but semantically identical
+        assert_eq!(proj1, proj2);
+
+        // Test with backticks (ClickHouse may return these)
+        let proj3 = TableProjection {
+            name: "test".to_string(),
+            select: ProjectionClause::Expression("`userId`, `timestamp`".to_string()),
+            order_by: Some(ProjectionClause::Expression(
+                "`userId`, `timestamp`".to_string(),
+            )),
+            group_by: None,
+        };
+
+        assert_eq!(proj1, proj3);
+
+        // Test Fields variant with different whitespace
+        let proj_fields1 = TableProjection {
+            name: "test2".to_string(),
+            select: ProjectionClause::Fields(vec!["userId".to_string(), "timestamp".to_string()]),
+            order_by: Some(ProjectionClause::Fields(vec!["userId".to_string()])),
+            group_by: None,
+        };
+
+        let proj_fields2 = TableProjection {
+            name: "test2".to_string(),
+            select: ProjectionClause::Expression("userId, timestamp".to_string()),
+            order_by: Some(ProjectionClause::Expression("userId".to_string())),
+            group_by: None,
+        };
+
+        // Fields variant and Expression variant should be equal if they produce the same SQL
+        assert_eq!(proj_fields1, proj_fields2);
+
+        // Different projection name should not be equal
+        let proj4 = TableProjection {
+            name: "different".to_string(),
+            select: ProjectionClause::Expression("userId, timestamp".to_string()),
+            order_by: Some(ProjectionClause::Expression(
+                "userId, timestamp".to_string(),
+            )),
+            group_by: None,
+        };
+
+        assert_ne!(proj1, proj4);
+
+        // Different SQL content should not be equal
+        let proj5 = TableProjection {
+            name: "test".to_string(),
+            select: ProjectionClause::Expression("userId, eventType".to_string()),
+            order_by: Some(ProjectionClause::Expression(
+                "userId, timestamp".to_string(),
+            )),
+            group_by: None,
+        };
+
+        assert_ne!(proj1, proj5);
     }
 }

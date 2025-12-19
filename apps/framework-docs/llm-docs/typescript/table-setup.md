@@ -807,11 +807,11 @@ Projections duplicate data with different sort orders or pre-computed aggregatio
 - Aggregate projections (with `groupBy`): Cannot have `orderBy` (ordering is implicit from GROUP BY)
 
 ```typescript
-import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+import { OlapTable, ClickHouseEngines, DateTime } from "@514labs/moose-lib";
 
 interface UserEvents {
   userId: string;
-  timestamp: number;
+  timestamp: DateTime;
   eventType: string;
   value: number;
 }

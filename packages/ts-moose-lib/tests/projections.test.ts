@@ -60,7 +60,7 @@ describe("OlapTable Projections", () => {
 
   describe("Simple Field List Projections", () => {
     it("should create projections with field arrays", () => {
-      const table = createTestOlapTable<UserEvent>("Events", {
+      createTestOlapTable<UserEvent>("Events", {
         engine: ClickHouseEngines.MergeTree,
         orderByFields: ["timestamp"],
         projections: [
@@ -90,7 +90,7 @@ describe("OlapTable Projections", () => {
     });
 
     it("should support multiple projections on one table", () => {
-      const table = createTestOlapTable<UserEvent>("Events2", {
+      createTestOlapTable<UserEvent>("Events2", {
         engine: ClickHouseEngines.MergeTree,
         orderByFields: ["timestamp"],
         projections: [
@@ -118,7 +118,7 @@ describe("OlapTable Projections", () => {
 
   describe("Expression-Based Projections", () => {
     it("should create projections with SQL expressions", () => {
-      const table = createTestOlapTable<UserEvent>("Events3", {
+      createTestOlapTable<UserEvent>("Events3", {
         engine: ClickHouseEngines.MergeTree,
         orderByFields: ["timestamp"],
         projections: [
@@ -149,7 +149,7 @@ describe("OlapTable Projections", () => {
 
   describe("Mixed Projections", () => {
     it("should support both field lists and expressions in different projections", () => {
-      const table = createTestOlapTable<UserEvent>("Events5", {
+      createTestOlapTable<UserEvent>("Events5", {
         engine: ClickHouseEngines.MergeTree,
         orderByFields: ["timestamp"],
         projections: [
@@ -183,7 +183,7 @@ describe("OlapTable Projections", () => {
 
   describe("Empty Projections", () => {
     it("should handle tables without projections", () => {
-      const table = createTestOlapTable<UserEvent>("Events6", {
+      createTestOlapTable<UserEvent>("Events6", {
         engine: ClickHouseEngines.MergeTree,
         orderByFields: ["timestamp"],
       });
@@ -192,6 +192,46 @@ describe("OlapTable Projections", () => {
       const registeredTable = tables.get("Events6");
 
       expect(registeredTable!.config.projections).to.be.undefined;
+    });
+  });
+
+  describe("Projection Serialization", () => {
+    it("should serialize projections to infrastructure map with camelCase for Rust serde", () => {
+      createTestOlapTable<UserEvent>("Events7", {
+        engine: ClickHouseEngines.MergeTree,
+        orderByFields: ["timestamp"],
+        projections: [
+          {
+            name: "by_user",
+            select: ["userId", "timestamp"],
+            orderBy: ["userId"],
+          },
+          {
+            name: "hourly_agg",
+            select: "toStartOfHour(timestamp) as hour, count() as cnt",
+            groupBy: "hour",
+          },
+        ],
+      });
+
+      const infraMap = toInfraMap(getMooseInternal());
+      const serializedTable = infraMap.tables["Events7"];
+
+      expect(serializedTable.projections).to.have.lengthOf(2);
+
+      // Verify non-aggregate projection has orderBy (camelCase for Rust serde)
+      expect(serializedTable.projections![0]).to.deep.include({
+        name: "by_user",
+        orderBy: ["userId"],
+      });
+      expect(serializedTable.projections![0]).to.not.have.property("groupBy");
+
+      // Verify aggregate projection has groupBy (camelCase for Rust serde)
+      expect(serializedTable.projections![1]).to.deep.include({
+        name: "hourly_agg",
+        groupBy: "hour",
+      });
+      expect(serializedTable.projections![1]).to.not.have.property("orderBy");
     });
   });
 });

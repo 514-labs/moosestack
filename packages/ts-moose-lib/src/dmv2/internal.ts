@@ -276,8 +276,8 @@ interface TableJson {
   projections?: {
     name: string;
     select: string[] | string;
-    order_by?: string[] | string; // Optional: only for non-aggregate projections
-    group_by?: string[] | string; // Optional: only for aggregate projections
+    orderBy?: string[] | string; // Optional: only for non-aggregate projections (camelCase for Rust serde)
+    groupBy?: string[] | string; // Optional: only for aggregate projections (camelCase for Rust serde)
     where_clause?: string;
   }[];
   /** Optional table-level TTL expression (without leading 'TTL'). */

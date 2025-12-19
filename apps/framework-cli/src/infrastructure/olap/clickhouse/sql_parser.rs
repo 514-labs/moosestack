@@ -13,6 +13,7 @@ use sqlparser::parser::Parser;
 use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::sync::LazyLock;
+use tracing::warn;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterializedViewStatement {
@@ -506,11 +507,7 @@ pub async fn fetch_projections_for_database(
                     .push(projection);
             }
             Err(e) => {
-                // Log error but continue processing other projections
-                eprintln!(
-                    "Warning: Failed to parse projection query '{}': {}",
-                    row.query, e
-                );
+                warn!("Failed to parse projection query '{}': {}", row.query, e);
             }
         }
     }

@@ -1215,14 +1215,46 @@ mod tests {
                 database: Some("another_bad_db".to_string()),
                 cluster_name: None,
             },
+            SerializableOlapOperation::AddTableProjection {
+                table: "test".to_string(),
+                projection: crate::framework::core::infrastructure::table::TableProjection {
+                    name: "test_proj".to_string(),
+                    select: crate::framework::core::infrastructure::table::ProjectionClause::Fields(
+                        vec!["id".to_string()],
+                    ),
+                    order_by: Some(
+                        crate::framework::core::infrastructure::table::ProjectionClause::Fields(
+                            vec!["id".to_string()],
+                        ),
+                    ),
+                    group_by: None,
+                },
+                database: Some("projection_bad_db".to_string()),
+                cluster_name: None,
+            },
+            SerializableOlapOperation::DropTableProjection {
+                table: "test".to_string(),
+                projection_name: "test_proj".to_string(),
+                database: Some("drop_proj_bad_db".to_string()),
+                cluster_name: None,
+            },
+            SerializableOlapOperation::MaterializeTableProjection {
+                table: "test".to_string(),
+                projection_name: "test_proj".to_string(),
+                database: Some("materialize_bad_db".to_string()),
+                cluster_name: None,
+            },
         ];
 
         let result = validate_table_databases_and_clusters(&operations, "local", &[], &None);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        // Should report both bad databases
+        // Should report all bad databases
         assert!(err.contains("bad_db"));
         assert!(err.contains("another_bad_db"));
+        assert!(err.contains("projection_bad_db"));
+        assert!(err.contains("drop_proj_bad_db"));
+        assert!(err.contains("materialize_bad_db"));
     }
 
     #[test]

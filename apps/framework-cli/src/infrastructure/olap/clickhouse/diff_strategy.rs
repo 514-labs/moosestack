@@ -9,8 +9,8 @@ use crate::framework::core::infrastructure::table::{
     Column, ColumnType, DataEnum, EnumValue, JsonOptions, Nested, Table,
 };
 use crate::framework::core::infrastructure_map::{
-    ColumnChange, OlapChange, OrderByChange, PartitionByChange, ProjectionChange, TableChange,
-    TableDiffStrategy,
+    compute_projection_diff, ColumnChange, OlapChange, OrderByChange, PartitionByChange,
+    TableChange, TableDiffStrategy,
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
@@ -728,35 +728,8 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })
             .collect();
 
-        // Diff projections
-        let mut projection_changes = Vec::new();
-        for before_proj in &before.projections {
-            if !after.projections.iter().any(|p| p.name == before_proj.name) {
-                projection_changes.push(ProjectionChange::Removed {
-                    projection_name: before_proj.name.clone(),
-                });
-            }
-        }
-        for after_proj in &after.projections {
-            if let Some(before_proj) = before
-                .projections
-                .iter()
-                .find(|p| p.name == after_proj.name)
-            {
-                if before_proj != after_proj {
-                    projection_changes.push(ProjectionChange::Removed {
-                        projection_name: before_proj.name.clone(),
-                    });
-                    projection_changes.push(ProjectionChange::Added {
-                        projection: after_proj.clone(),
-                    });
-                }
-            } else {
-                projection_changes.push(ProjectionChange::Added {
-                    projection: after_proj.clone(),
-                });
-            }
-        }
+        // Diff projections using shared helper
+        let projection_changes = compute_projection_diff(before, after);
 
         // For other changes, ClickHouse can handle them via ALTER TABLE.
         // If there are no column/index/sample_by/projection changes, return an empty vector.

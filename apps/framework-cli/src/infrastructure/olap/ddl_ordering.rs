@@ -1433,7 +1433,7 @@ mod tests {
             version: None,
             source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
-                primitive_type: PrimitiveTypes::DataModel,
+                primitive_type: PrimitiveTypes::DBBlock,
             },
             metadata: None,
             life_cycle: LifeCycle::FullyManaged,

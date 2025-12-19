@@ -241,6 +241,19 @@ fn format_table_display(
         details.push(format!("Order by: {}", table.order_by));
     }
 
+    // Projections section (if present)
+    if !table.projections.is_empty() {
+        details.push("Projections:".to_string());
+        for projection in &table.projections {
+            let proj_type = if projection.is_aggregate() {
+                "aggregate"
+            } else {
+                "non-aggregate"
+            };
+            details.push(format!("  {} ({})", projection.name, proj_type));
+        }
+    }
+
     // Cluster section (if present)
     if let Some(ref cluster) = table.cluster_name {
         details.push(format!("Cluster: {}", cluster));
