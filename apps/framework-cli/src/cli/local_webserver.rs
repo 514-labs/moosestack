@@ -32,6 +32,7 @@ use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaStreamConfig;
 use crate::metrics::MetricEvent;
 
+use crate::cli::display::should_show_spinner;
 use crate::framework::core::infrastructure::api_endpoint::APIType;
 use crate::framework::core::infrastructure_map::Change;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
@@ -2738,7 +2739,7 @@ async fn shutdown(
                 let mut process_registry = process_registry.write().await;
                 process_registry.stop().await
             },
-            !project.is_production && !load_display_config().show_timing,
+            should_show_spinner(project.is_production),
         )
         .await
     })

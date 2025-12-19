@@ -251,8 +251,8 @@ async fn watch(
                             Ok(())
                         },
                         {
-                            use crate::utilities::display_config::load_display_config;
-                            !project.is_production && !load_display_config().show_timing
+                            use crate::cli::display::should_show_spinner;
+                            should_show_spinner(project.is_production)
                         },
                     )
                     .await;

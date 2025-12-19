@@ -88,6 +88,37 @@ pub use spinner::{with_spinner_completion, with_spinner_completion_async};
 pub use table::show_table;
 pub use timing::{with_timing, with_timing_async};
 
+/// Determines whether spinners should be shown based on project mode and timing display.
+///
+/// Spinners are shown when:
+/// - The project is NOT in production mode (dev mode), AND
+/// - Timing output is NOT enabled (to avoid conflicting output)
+///
+/// This centralizes the logic for when to display spinners vs when to show timing info.
+///
+/// # Arguments
+///
+/// * `is_production` - Whether the project is running in production mode
+///
+/// # Returns
+///
+/// `true` if spinners should be displayed, `false` otherwise
+///
+/// # Examples
+///
+/// ```rust
+/// use crate::cli::display::should_show_spinner;
+///
+/// let show_spinner = should_show_spinner(project.is_production);
+/// if show_spinner {
+///     // Display spinner for long-running operation
+/// }
+/// ```
+pub fn should_show_spinner(is_production: bool) -> bool {
+    use crate::utilities::display_config::load_display_config;
+    !is_production && !load_display_config().show_timing
+}
+
 // Legacy compatibility - maintain the crossterm_utils module for existing code
 pub mod crossterm_utils {
     //! Legacy compatibility module for crossterm utilities.

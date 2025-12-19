@@ -462,12 +462,15 @@ fn create_rolling_file_appender(date_format: &str) -> DateBasedWriter {
 pub fn setup_logging(settings: &LoggerSettings) {
     clean_old_logs();
 
-    // Initialize global display configuration for terminal display functions
-    // Note: show_timestamps and show_timing are set via CLI args in cli.rs
+    // Initialize global display configuration for terminal display functions.
+    // This is a two-phase initialization:
+    // 1. Logger sets no_ansi from settings (needed before any terminal output)
+    // 2. CLI commands will update show_timestamps and show_timing later in cli.rs
+    //    based on the --timestamps and --timing flags from the dev command
     update_display_config(DisplayConfig {
         no_ansi: settings.no_ansi,
-        show_timestamps: false, // Set by CLI args
-        show_timing: false,     // Set by CLI args
+        show_timestamps: false,
+        show_timing: false,
     });
 
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
