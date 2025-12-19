@@ -135,3 +135,74 @@ pub mod crossterm_utils {
     #[allow(unused_imports)]
     pub use super::terminal::{write_styled_line, StyledText, TerminalComponent};
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utilities::display_config::{update_display_config, DisplayConfig};
+    use std::sync::Mutex;
+
+    // Mutex to serialize tests that modify global DISPLAY_CONFIG
+    // This prevents tests from interfering with each other when running in parallel
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_should_show_spinner_in_dev_mode_without_timing() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // Setup: dev mode (is_production=false), no timing
+        update_display_config(DisplayConfig {
+            no_ansi: false,
+            show_timestamps: false,
+            show_timing: false,
+        });
+
+        // Should show spinner in dev mode when timing is disabled
+        assert!(should_show_spinner(false));
+    }
+
+    #[test]
+    fn test_should_not_show_spinner_in_production() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // Setup: production mode (is_production=true), no timing
+        update_display_config(DisplayConfig {
+            no_ansi: false,
+            show_timestamps: false,
+            show_timing: false,
+        });
+
+        // Should NOT show spinner in production mode
+        assert!(!should_show_spinner(true));
+    }
+
+    #[test]
+    fn test_should_not_show_spinner_when_timing_enabled() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // Setup: dev mode (is_production=false), timing enabled
+        update_display_config(DisplayConfig {
+            no_ansi: false,
+            show_timestamps: false,
+            show_timing: true,
+        });
+
+        // Should NOT show spinner when timing is enabled (conflicts with timing output)
+        assert!(!should_show_spinner(false));
+    }
+
+    #[test]
+    fn test_should_not_show_spinner_in_production_with_timing() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // Setup: production mode (is_production=true), timing enabled
+        update_display_config(DisplayConfig {
+            no_ansi: false,
+            show_timestamps: false,
+            show_timing: true,
+        });
+
+        // Should NOT show spinner in production mode even with timing
+        assert!(!should_show_spinner(true));
+    }
+}
