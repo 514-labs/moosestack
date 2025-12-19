@@ -213,7 +213,14 @@ fn write_styled_line_to<W: std::io::Write>(
     styled_text: &StyledText,
     message: &str,
     no_ansi: bool,
+    show_timestamps: bool,
 ) -> IoResult<()> {
+    // Prepend timestamp if enabled
+    if show_timestamps {
+        let timestamp = chrono::Local::now().format("%H:%M:%S%.3f");
+        execute!(writer, Print(&format!("{} ", timestamp)))?;
+    }
+
     // Ensure action is exactly ACTION_WIDTH characters, right-aligned
     // Use character-aware truncation to avoid panics on multi-byte UTF-8 characters
     let truncated_action = if styled_text.text.chars().count() > ACTION_WIDTH {
@@ -262,9 +269,14 @@ fn write_styled_line_to<W: std::io::Write>(
     Ok(())
 }
 
-pub fn write_styled_line(styled_text: &StyledText, message: &str, no_ansi: bool) -> IoResult<()> {
+pub fn write_styled_line(
+    styled_text: &StyledText,
+    message: &str,
+    no_ansi: bool,
+    show_timestamps: bool,
+) -> IoResult<()> {
     let mut stdout = stdout();
-    write_styled_line_to(&mut stdout, styled_text, message, no_ansi)
+    write_styled_line_to(&mut stdout, styled_text, message, no_ansi, show_timestamps)
 }
 
 #[cfg(test)]
@@ -349,7 +361,7 @@ mod tests {
         let styled = StyledText::from_str("Test").green().bold();
 
         // no_ansi = false means ANSI codes SHOULD be present
-        write_styled_line_to(&mut buffer, &styled, "test message", false).unwrap();
+        write_styled_line_to(&mut buffer, &styled, "test message", false, false).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         // Check for ANSI escape code prefix (\x1b[ or ESC[)
@@ -366,7 +378,7 @@ mod tests {
         let styled = StyledText::from_str("Test").green().bold();
 
         // no_ansi = true means ANSI codes should NOT be present
-        write_styled_line_to(&mut buffer, &styled, "test message", true).unwrap();
+        write_styled_line_to(&mut buffer, &styled, "test message", true, false).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         // Verify no ANSI escape codes
@@ -389,7 +401,7 @@ mod tests {
         let mut buffer = Vec::new();
         let styled = StyledText::from_str("Bold").bold();
 
-        write_styled_line_to(&mut buffer, &styled, "message", false).unwrap();
+        write_styled_line_to(&mut buffer, &styled, "message", false, false).unwrap();
         let output = String::from_utf8(buffer).unwrap();
 
         // Bold is attribute 1, should see \x1b[1m
@@ -411,7 +423,7 @@ mod tests {
 
         for (name, styled) in test_cases {
             let mut buffer = Vec::new();
-            write_styled_line_to(&mut buffer, &styled, "message", true).unwrap();
+            write_styled_line_to(&mut buffer, &styled, "message", true, false).unwrap();
             let output = String::from_utf8(buffer).unwrap();
 
             assert!(
@@ -434,7 +446,7 @@ mod tests {
 
         for (name, styled) in test_cases {
             let mut buffer = Vec::new();
-            write_styled_line_to(&mut buffer, &styled, "message", false).unwrap();
+            write_styled_line_to(&mut buffer, &styled, "message", false, false).unwrap();
             let output = String::from_utf8(buffer).unwrap();
 
             assert!(
@@ -444,5 +456,37 @@ mod tests {
                 output
             );
         }
+    }
+
+    #[test]
+    fn test_write_styled_line_with_timestamps() {
+        let mut buffer = Vec::new();
+        let styled = StyledText::from_str("Test").green();
+
+        write_styled_line_to(&mut buffer, &styled, "message", true, true).unwrap();
+        let output = String::from_utf8(buffer).unwrap();
+
+        // Timestamp format: HH:MM:SS.mmm (e.g., "12:34:56.789 ")
+        // Check that the output starts with a timestamp pattern
+        assert!(
+            output.len() >= 13,
+            "Output should be long enough to contain timestamp. Got: {:?}",
+            output
+        );
+
+        // Check colon positions for HH:MM:SS pattern
+        let chars: Vec<char> = output.chars().collect();
+        assert!(
+            chars.len() >= 13 && chars[2] == ':' && chars[5] == ':',
+            "Output should start with HH:MM:SS timestamp pattern. Got: {:?}",
+            output
+        );
+
+        // Verify there's a space after the milliseconds
+        assert!(
+            chars[12] == ' ',
+            "Timestamp should be followed by a space. Got: {:?}",
+            output
+        );
     }
 }

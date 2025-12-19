@@ -1,7 +1,38 @@
 import { expect } from "chai";
-import { getMooseClients } from "../src/consumption-apis/standalone";
+import {
+  getMooseClients,
+  getMooseUtils,
+} from "../src/consumption-apis/standalone";
+import { expressMiddleware } from "../src/consumption-apis/webAppHelpers";
 import { sql } from "../src/sqlHelpers";
 import { OlapTable } from "../src/dmv2";
+
+/**
+ * Temporarily replaces console.warn, runs a callback, and restores the original.
+ * Returns captured warning messages and a convenience boolean for pattern matching.
+ */
+async function captureWarnings<T>(
+  callback: () => T | Promise<T>,
+  pattern?: RegExp,
+): Promise<{ result: T; warnings: string[]; matched: boolean }> {
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+
+  console.warn = (msg: string) => {
+    warnings.push(msg);
+  };
+
+  try {
+    const result = await callback();
+    return {
+      result,
+      warnings,
+      matched: pattern ? warnings.some((w) => pattern.test(w)) : false,
+    };
+  } finally {
+    console.warn = originalWarn;
+  }
+}
 
 describe("BYOF Standalone Functionality", function () {
   this.timeout(10000);
@@ -79,6 +110,123 @@ describe("BYOF Standalone Functionality", function () {
         } else {
           delete process.env.MOOSE_CLICKHOUSE_CONFIG__HOST;
         }
+      }
+    });
+
+    it("should log deprecation warning", async () => {
+      const { warnings } = await captureWarnings(() => getMooseClients());
+      expect(
+        warnings.some(
+          (w) => w.includes("[DEPRECATED]") && w.includes("getMooseClients"),
+        ),
+      ).to.be.true;
+    });
+  });
+
+  describe("getMooseUtils", () => {
+    it("should return client and sql utilities", async () => {
+      const utils = await getMooseUtils();
+
+      expect(utils).to.exist;
+      expect(utils.client).to.exist;
+      expect(utils.client.query).to.exist;
+      expect(utils.sql).to.exist;
+      expect(utils.sql).to.be.a("function");
+    });
+
+    it("should cache client on subsequent calls", async () => {
+      const utils1 = await getMooseUtils();
+      const utils2 = await getMooseUtils();
+
+      expect(utils1.client).to.equal(utils2.client);
+    });
+
+    it("should handle concurrent initialization without race conditions", async () => {
+      // Call getMooseUtils multiple times concurrently
+      const [utils1, utils2, utils3] = await Promise.all([
+        getMooseUtils(),
+        getMooseUtils(),
+        getMooseUtils(),
+      ]);
+
+      // All calls should return the same cached instance
+      expect(utils1.client).to.equal(utils2.client);
+      expect(utils2.client).to.equal(utils3.client);
+    });
+
+    it("should work with sql template tag from returned utils", async () => {
+      const { sql: sqlUtil } = await getMooseUtils();
+      const query = sqlUtil`SELECT 1 as test`;
+
+      expect(query).to.exist;
+      expect(query.strings).to.have.lengthOf(1);
+    });
+
+    it("should log deprecation warning when req parameter is passed", async () => {
+      const fakeReq = {};
+      const { matched } = await captureWarnings(
+        () => getMooseUtils(fakeReq),
+        /\[DEPRECATED\].*getMooseUtils/,
+      );
+      expect(matched).to.be.true;
+    });
+
+    it("should still return valid utils when req parameter is passed (backwards compat)", async () => {
+      const fakeReq = {};
+      const { result: utils } = await captureWarnings(() =>
+        getMooseUtils(fakeReq),
+      );
+
+      expect(utils).to.exist;
+      expect(utils.client).to.exist;
+      expect(utils.sql).to.exist;
+    });
+
+    it("should return undefined jwt in standalone mode", async () => {
+      const utils = await getMooseUtils();
+      expect(utils.jwt).to.be.undefined;
+    });
+
+    it("should return runtime context when available", async () => {
+      const mockClient = { query: { execute: () => {} }, workflow: {} };
+      const mockJwt = { sign: () => "token", verify: () => ({}) };
+
+      (globalThis as any)._mooseRuntimeContext = {
+        client: mockClient,
+        jwt: mockJwt,
+      };
+
+      try {
+        const utils = await getMooseUtils();
+        expect(utils.client).to.equal(mockClient);
+        expect(utils.jwt).to.equal(mockJwt);
+        expect(utils.sql).to.exist;
+      } finally {
+        delete (globalThis as any)._mooseRuntimeContext;
+      }
+    });
+
+    it("should prefer runtime context over standalone cache", async () => {
+      // First call to populate standalone cache
+      const standaloneUtils = await getMooseUtils();
+      expect(standaloneUtils.jwt).to.be.undefined;
+
+      // Now set runtime context
+      const mockClient = { query: { execute: () => {} }, workflow: {} };
+      const mockJwt = { sign: () => "token" };
+
+      (globalThis as any)._mooseRuntimeContext = {
+        client: mockClient,
+        jwt: mockJwt,
+      };
+
+      try {
+        const runtimeUtils = await getMooseUtils();
+        // Should use runtime context, not standalone cache
+        expect(runtimeUtils.client).to.equal(mockClient);
+        expect(runtimeUtils.jwt).to.equal(mockJwt);
+      } finally {
+        delete (globalThis as any)._mooseRuntimeContext;
       }
     });
   });
@@ -221,6 +369,37 @@ describe("BYOF Standalone Functionality", function () {
 
       expect(client).to.exist;
       expect(query.values[0]).to.equal(42);
+    });
+  });
+
+  describe("webAppHelpers deprecation", () => {
+    describe("expressMiddleware", () => {
+      it("should log deprecation warning when called", async () => {
+        const { matched } = await captureWarnings(
+          () => expressMiddleware(),
+          /\[DEPRECATED\].*expressMiddleware/,
+        );
+        expect(matched).to.be.true;
+      });
+
+      it("should still return a working middleware function", async () => {
+        const { result: middleware } = await captureWarnings(() =>
+          expressMiddleware(),
+        );
+        expect(middleware).to.be.a("function");
+
+        // Test middleware behavior
+        const req: any = { raw: { moose: { client: "test" } } };
+        const res: any = {};
+        let nextCalled = false;
+        const next = () => {
+          nextCalled = true;
+        };
+
+        middleware(req, res, next);
+        expect(nextCalled).to.be.true;
+        expect(req.moose).to.deep.equal({ client: "test" });
+      });
     });
   });
 });

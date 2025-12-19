@@ -34,14 +34,7 @@ const router = async (req: IncomingMessage, res: ServerResponse) => {
 
   // Query endpoint
   if (pathname === "/query" && req.method === "GET") {
-    const moose = getMooseUtils(req);
-    if (!moose) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "MooseStack utilities not available" }));
-      return;
-    }
-
-    const { client, sql } = moose;
+    const { client, sql } = await getMooseUtils();
     const limit = parseInt((url.query.limit as string) || "10");
 
     try {
@@ -80,13 +73,6 @@ const router = async (req: IncomingMessage, res: ServerResponse) => {
 
   // Data endpoint with POST
   if (pathname === "/data" && req.method === "POST") {
-    const moose = getMooseUtils(req);
-    if (!moose) {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "MooseStack utilities not available" }));
-      return;
-    }
-
     // Parse POST body
     let body = "";
     req.on("data", (chunk) => {
@@ -95,7 +81,7 @@ const router = async (req: IncomingMessage, res: ServerResponse) => {
 
     req.on("end", async () => {
       try {
-        const { client, sql } = moose;
+        const { client, sql } = await getMooseUtils();
         const {
           orderBy = "totalRows",
           limit = 5,
