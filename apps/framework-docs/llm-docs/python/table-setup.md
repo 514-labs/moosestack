@@ -202,6 +202,54 @@ stats = await user_event_table.query({
 })
 ```
 
+## Projections
+
+Projections duplicate data with different sort orders or pre-computed aggregations to optimize specific query patterns. They improve read performance at the cost of increased write latency and storage.
+
+**ClickHouse rules:**
+- Non-aggregate projections: Must have `order_by`
+- Aggregate projections (with `group_by`): Cannot have `order_by` (ordering is implicit from GROUP BY)
+
+```python
+from moose_lib import OlapTable, OlapConfig, TableProjection
+from moose_lib.blocks import MergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvents(BaseModel):
+    user_id: str
+    timestamp: datetime
+    event_type: str
+    value: float
+
+events_table = OlapTable[UserEvents](
+    "UserEvents",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["timestamp", "user_id"],
+        projections=[
+            # Non-aggregate: Re-sort for user-specific queries
+            TableProjection(
+                name="by_user",
+                select=["user_id", "timestamp", "event_type"],
+                order_by=["user_id", "timestamp"]
+            ),
+            # Aggregate: Pre-compute hourly metrics
+            TableProjection(
+                name="hourly_metrics",
+                select="toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
+                group_by="hour"
+            ),
+        ],
+    ),
+)
+```
+
+**When to use:**
+- Speed up queries with different sort orders than your main ORDER BY
+- Pre-aggregate metrics (counts, sums, averages) for instant rollup queries
+- Optimize user-specific or time-bucketed queries
+
 ## Table Maintenance
 
 ### Partitioning and TTL

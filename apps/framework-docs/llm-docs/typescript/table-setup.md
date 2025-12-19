@@ -798,6 +798,49 @@ interface KafkaSettings {
 - **No ALTER TABLE**: Column or settings changes require DROP and CREATE (Moose handles this automatically)
 - **No direct SELECT**: Query data from the MaterializedView destination table, not the Kafka table
 
+## Projections
+
+Projections duplicate data with different sort orders or pre-computed aggregations to optimize specific query patterns. They improve read performance at the cost of increased write latency and storage.
+
+**ClickHouse rules:**
+- Non-aggregate projections: Must have `orderBy`
+- Aggregate projections (with `groupBy`): Cannot have `orderBy` (ordering is implicit from GROUP BY)
+
+```typescript
+import { OlapTable, ClickHouseEngines, DateTime } from "@514labs/moose-lib";
+
+interface UserEvents {
+  userId: string;
+  timestamp: DateTime;
+  eventType: string;
+  value: number;
+}
+
+export const EventsTable = new OlapTable<UserEvents>("UserEvents", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["timestamp", "userId"],
+  projections: [
+    // Non-aggregate: Re-sort for user-specific queries
+    {
+      name: "by_user",
+      select: ["userId", "timestamp", "eventType"],
+      orderBy: ["userId", "timestamp"],
+    },
+    // Aggregate: Pre-compute hourly metrics
+    {
+      name: "hourly_metrics",
+      select: "toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
+      groupBy: "hour",
+    },
+  ],
+});
+```
+
+**When to use:**
+- Speed up queries with different sort orders than your main ORDER BY
+- Pre-aggregate metrics (counts, sums, averages) for instant rollup queries
+- Optimize user-specific or time-bucketed queries
+
 ## Best Practices
 
 1. **Sorting Key Fields**:

@@ -9,7 +9,8 @@ use crate::framework::core::infrastructure::table::{
     Column, ColumnType, DataEnum, EnumValue, JsonOptions, Nested, Table,
 };
 use crate::framework::core::infrastructure_map::{
-    ColumnChange, OlapChange, OrderByChange, PartitionByChange, TableChange, TableDiffStrategy,
+    compute_projection_diff, ColumnChange, OlapChange, OrderByChange, PartitionByChange,
+    TableChange, TableDiffStrategy,
 };
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 use std::collections::HashMap;
@@ -727,13 +728,21 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             })
             .collect();
 
+        // Diff projections using shared helper
+        let projection_changes = compute_projection_diff(before, after);
+
         // For other changes, ClickHouse can handle them via ALTER TABLE.
-        // If there are no column/index/sample_by changes, return an empty vector.
+        // If there are no column/index/sample_by/projection changes, return an empty vector.
         let sample_by_changed = before.sample_by != after.sample_by;
-        if !column_changes.is_empty() || before.indexes != after.indexes || sample_by_changed {
+        if !column_changes.is_empty()
+            || before.indexes != after.indexes
+            || !projection_changes.is_empty()
+            || sample_by_changed
+        {
             changes.push(OlapChange::Table(TableChange::Updated {
                 name: before.name.clone(),
                 column_changes,
+                projection_changes,
                 order_by_change,
                 partition_by_change,
                 before: before.clone(),
@@ -807,6 +816,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -1759,6 +1769,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: Some(table_settings),
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,

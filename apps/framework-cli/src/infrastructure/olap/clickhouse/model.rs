@@ -663,6 +663,8 @@ pub struct ClickHouseTable {
     pub cluster_name: Option<String>,
     /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
     pub primary_key_expression: Option<String>,
+    /// Projections for query optimization
+    pub projections: Vec<crate::framework::core::infrastructure::table::TableProjection>,
 }
 
 impl ClickHouseTable {

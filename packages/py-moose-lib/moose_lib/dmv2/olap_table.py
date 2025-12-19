@@ -11,7 +11,8 @@ from clickhouse_connect import get_client
 from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 from dataclasses import dataclass
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict, AliasGenerator, model_validator
+from pydantic.alias_generators import to_camel
 from typing import (
     List,
     Optional,
@@ -32,6 +33,72 @@ from ._registry import _tables
 from ..data_models import Column, is_array_nested_type, is_nested_type, _to_columns
 from .life_cycle import LifeCycle
 from ._source_capture import get_source_file_from_stack
+
+
+class TableProjection(BaseModel):
+    """Defines a ClickHouse projection for optimizing specific query patterns.
+
+    Projections duplicate data with different sort orders or pre-computed aggregations.
+
+    ClickHouse rules:
+    - Non-aggregate projections: Must have ORDER BY
+    - Aggregate projections (with GROUP BY): Cannot have ORDER BY (ordering is implicit from GROUP BY)
+
+    Attributes:
+        name: Unique name for the projection.
+        select: Columns or expression to project (list of column names or SQL expression).
+        order_by: Optional ordering for non-aggregate projections.
+        group_by: Optional grouping for aggregate projections (mutually exclusive with order_by).
+
+    Examples:
+        Non-aggregate projection with explicit column list:
+        ```python
+        TableProjection(
+            name="user_projection",
+            select=["user_id", "timestamp", "event_type"],
+            order_by=["user_id", "timestamp"]
+        )
+        ```
+
+        Aggregate projection for pre-computed metrics (no order_by):
+        ```python
+        TableProjection(
+            name="hourly_metrics",
+            select="toStartOfHour(timestamp) as hour, count() as cnt",
+            group_by="hour"
+        )
+        ```
+    """
+
+    name: str
+    select: list[str] | str
+    order_by: list[str] | str | None = None
+    group_by: list[str] | str | None = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=AliasGenerator(serialization_alias=to_camel),
+    )
+
+    @model_validator(mode="after")
+    def check_projection_mode(self) -> "TableProjection":
+        """Enforce ClickHouse projection rules: order_by XOR group_by."""
+        has_order_by = self.order_by is not None
+        has_group_by = self.group_by is not None
+
+        if has_order_by and has_group_by:
+            raise ValueError(
+                "TableProjection must have exactly one of 'order_by' or 'group_by' "
+                "(non-aggregate: order_by only; aggregate: group_by only)."
+            )
+
+        if not has_order_by and not has_group_by:
+            raise ValueError(
+                "TableProjection must have either 'order_by' (non-aggregate) "
+                "or 'group_by' (aggregate projection)."
+            )
+
+        return self
 
 
 @dataclass
@@ -147,6 +214,8 @@ class OlapConfig(BaseModel):
                  Use this to enable replicated tables across ClickHouse clusters.
                  The cluster must be defined in moose.config.toml (dev environment only).
                  Example: cluster="prod_cluster"
+        projections: List of table projections for optimizing specific query patterns.
+                    Projections pre-compute different sort orders or aggregations for faster queries.
     """
     order_by_fields: list[str] = []
     order_by_expression: Optional[str] = None
@@ -172,6 +241,9 @@ class OlapConfig(BaseModel):
         granularity: int = 1
 
     indexes: list[TableIndex] = []
+
+    # Optional projections for optimizing specific query patterns
+    projections: list[TableProjection] = []
     database: Optional[str] = None  # Optional database name for multi-database support
 
     def model_post_init(self, __context):
@@ -248,6 +320,25 @@ class OlapConfig(BaseModel):
                     raise ValueError(
                         f"{engine_name} does not support PARTITION BY clause. "
                         f"Remove partition_by from your configuration."
+                    )
+
+            # All non-MergeTree engines don't support PROJECTIONS
+            engines_without_projections = (
+                S3Engine,
+                S3QueueEngine,
+                BufferEngine,
+                DistributedEngine,
+                KafkaEngine,
+                IcebergS3Engine,
+            )
+            if isinstance(self.engine, engines_without_projections):
+                engine_name = type(self.engine).__name__
+
+                if self.projections:
+                    raise ValueError(
+                        f"{engine_name} does not support PROJECTION clauses. "
+                        f"Projections are only supported on MergeTree family engines. "
+                        f"Remove projections from your configuration."
                     )
 
 
