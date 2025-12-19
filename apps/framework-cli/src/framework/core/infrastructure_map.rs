@@ -1780,10 +1780,11 @@ impl InfrastructureMap {
                     }));
 
                     // Check if updated MV needs population (only in dev)
+                    // Pass true to populate - updated MVs need their data refreshed
                     Self::check_materialized_view_population(
                         target_mv,
                         tables,
-                        true,
+                        true, // should_populate
                         is_production,
                         olap_changes,
                     );
@@ -1809,7 +1810,7 @@ impl InfrastructureMap {
                 Self::check_materialized_view_population(
                     mv,
                     tables,
-                    true,
+                    true, // should_populate
                     is_production,
                     olap_changes,
                 );
@@ -1831,7 +1832,7 @@ impl InfrastructureMap {
     fn check_materialized_view_population(
         mv: &MaterializedView,
         tables: &HashMap<String, Table>,
-        is_new: bool,
+        should_populate: bool,
         is_production: bool,
         olap_changes: &mut Vec<OlapChange>,
     ) {
@@ -1866,8 +1867,8 @@ impl InfrastructureMap {
             false
         });
 
-        // Only populate in dev for new MVs with supported source tables
-        if is_new && !has_unpopulatable_source && !is_production {
+        // Only populate if requested and in dev mode with supported source tables
+        if should_populate && !has_unpopulatable_source && !is_production {
             tracing::info!(
                 "Adding population operation for materialized view '{}'",
                 mv.name
