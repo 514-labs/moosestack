@@ -1,0 +1,26 @@
+{
+  "extends": "fastify-tsconfig",
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["ESNext"],
+    "noEmit": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "noImplicitThis": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false,
+    "erasableSyntaxOnly": false
+  },
+  "exclude": ["node_modules", "dist", "moose"],
+  "include": ["./src/**/*.ts"]
+}
