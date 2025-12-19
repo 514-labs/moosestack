@@ -1,15 +1,18 @@
 import { sql } from "@514labs/moose-lib";
 import { Events } from "../models/events";
-import { getMoose } from "../client";
+import { executeQuery } from "../client";
 
 export interface DateRange {
   start: Date;
   end: Date;
 }
 
-export const getOverviewMetrics = async (dateRange?: DateRange) => {
-  const moose = await getMoose();
+interface SalesRow {
+  total_revenue: number;
+  total_sales: number;
+}
 
+export const getOverviewMetrics = async (dateRange?: DateRange) => {
   const startDate = dateRange?.start.toISOString().split("T")[0];
   const endDate = dateRange?.end.toISOString().split("T")[0];
 
@@ -18,7 +21,7 @@ export const getOverviewMetrics = async (dateRange?: DateRange) => {
       sql`AND event_time >= toDate(${startDate!}) AND event_time <= toDate(${endDate!})`
     : sql``;
 
-  const salesData = await moose.client.query.execute(
+  const sales = await executeQuery<SalesRow>(
     sql`
       SELECT
         sum(amount) as total_revenue,
@@ -28,26 +31,17 @@ export const getOverviewMetrics = async (dateRange?: DateRange) => {
     `,
   );
 
-  const [salesRow] = await salesData.json<{
-    total_revenue?: number;
-    total_sales?: number;
-  }>();
-
-  const activeUsersData = await moose.client.query.execute(
-    sql`
-      SELECT uniq(customer_id) as active_users
-      FROM ${Events}
-      WHERE event_time > now() - interval 1 hour
-    `,
-  );
-
-  const [activeUsersRow] = await activeUsersData.json<{
-    active_users?: number;
-  }>();
+  const activeUsers = await executeQuery<{
+    active_users: number;
+  }>(sql`
+    SELECT uniq(customer_id) as active_users
+    FROM ${Events}
+    WHERE event_time > now() - interval 1 hour
+  `);
 
   return {
-    totalRevenue: salesRow?.total_revenue ?? 0,
-    totalSales: salesRow?.total_sales ?? 0,
-    activeNow: activeUsersRow?.active_users ?? 0,
+    totalRevenue: sales?.[0]?.total_revenue ?? 0,
+    totalSales: sales?.[0]?.total_sales ?? 0,
+    activeNow: activeUsers?.[0]?.active_users ?? 0,
   };
 };

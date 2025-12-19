@@ -341,31 +341,30 @@ With the local ClickHouse instance running, you’ll instantiate the Moose Click
 Create `moose/client.ts`:
 
 ```ts title="moose/client.ts"
-import { getMooseClients } from "@514labs/moose-lib";
+import { getMooseClients, Sql } from "@514labs/moose-lib";
 
-const globalForMoose = globalThis as unknown as {
-  mooseClient: Awaited<ReturnType<typeof getMooseClients>> | undefined;
-};
+let clientsPromise:
+  | Promise<Awaited<ReturnType<typeof getMooseClients>>>
+  | undefined;
 
-export async function getMoose() {
-  if (globalForMoose.mooseClient) {
-    return globalForMoose.mooseClient;
-  }
-
-  const client = await getMooseClients({
-    database: process.env.MOOSE_CLICKHOUSE_CONFIG__DB_NAME!,
-    host: process.env.MOOSE_CLICKHOUSE_CONFIG__HOST!,
-    port: process.env.MOOSE_CLICKHOUSE_CONFIG__PORT!,
-    username: process.env.MOOSE_CLICKHOUSE_CONFIG__USER!,
-    password: process.env.MOOSE_CLICKHOUSE_CONFIG__PASSWORD!,
-    useSSL: process.env.MOOSE_CLICKHOUSE_CONFIG__USE_SSL === "true"
+async function getMoose() {
+  clientsPromise ??= getMooseClients({
+    host: process.env.MOOSE_CLICKHOUSE_CONFIG__HOST ?? "localhost",
+    port: process.env.MOOSE_CLICKHOUSE_CONFIG__PORT ?? "18123",
+    username: process.env.MOOSE_CLICKHOUSE_CONFIG__USER ?? "panda",
+    password: process.env.MOOSE_CLICKHOUSE_CONFIG__PASSWORD ?? "pandapass",
+    database: process.env.MOOSE_CLICKHOUSE_CONFIG__DB_NAME ?? "local",
+    useSSL:
+      (process.env.MOOSE_CLICKHOUSE_CONFIG__USE_SSL ?? "false") === "true",
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    globalForMoose.mooseClient = client;
-  }
+  return await clientsPromise;
+}
 
-  return client;
+export async function executeQuery<T>(query: Sql): Promise<T[]> {
+  const { client } = await getMoose();
+  const result = await client.query.execute(query);
+  return result.json();
 }
 ```
 
@@ -375,8 +374,8 @@ Create a file called `moose/queries/overview-metrics.ts` with the following cont
 
 ```ts title="moose/queries/overview-metrics.ts"
 import { sql } from "@514labs/moose-lib";
-import { Events } from "../index";
-import { getMoose } from "../client";
+import { Events } from "../models/events";
+import { executeQuery } from "../client";
 
 export interface DateRange {
   start: Date;
@@ -384,46 +383,41 @@ export interface DateRange {
 }
 
 export const getOverviewMetrics = async (dateRange?: DateRange) => {
-  const moose = await getMoose();
-
   const startDate = dateRange?.start.toISOString().split("T")[0];
   const endDate = dateRange?.end.toISOString().split("T")[0];
 
-  const dateFilter = dateRange
-    ? sql`AND event_time >= toDate(${startDate!}) AND event_time <= toDate(${endDate!})`
+  interface SalesRow {
+    total_revenue: number;
+    total_sales: number;
+  }
+
+  const dateFilter =
+    dateRange ?
+      sql`AND event_time >= toDate(${startDate!}) AND event_time <= toDate(${endDate!})`
     : sql``;
 
-  const salesData = await moose.client.query.execute(
+  const sales = await executeQuery<SalesRow>(
     sql`
       SELECT
-        sum(${Events.columns.amount}) as total_revenue,
+        sum(amount) as total_revenue,
         count(*) as total_sales
       FROM ${Events}
-      WHERE ${Events.columns.event_type} = 'purchase' ${dateFilter}
-    `
+      WHERE event_type = 'purchase' ${dateFilter}
+    `,
   );
 
-  const [salesRow] = await salesData.json<{
-    total_revenue?: number;
-    total_sales?: number;
-  }>();
-
-  const activeUsersData = await moose.client.query.execute(
-    sql`
-      SELECT uniq(${Events.columns.customer_id}) as active_users
-      FROM ${Events}
-      WHERE ${Events.columns.event_time} > now() - interval 1 hour
-    `
-  );
-
-  const [activeUsersRow] = await activeUsersData.json<{
-    active_users?: number;
-  }>();
+  const activeUsers = await executeQuery<{
+    active_users: number;
+  }>(sql`
+    SELECT uniq(customer_id) as active_users
+    FROM ${Events}
+    WHERE event_time > now() - interval 1 hour
+  `);
 
   return {
-    totalRevenue: salesRow?.total_revenue ?? 0,
-    totalSales: salesRow?.total_sales ?? 0,
-    activeNow: activeUsersRow?.active_users ?? 0
+    totalRevenue: sales?.[0]?.total_revenue ?? 0,
+    totalSales: sales?.[0]?.total_sales ?? 0,
+    activeNow: activeUsers?.[0]?.active_users ?? 0,
   };
 };
 ```
@@ -431,6 +425,7 @@ export const getOverviewMetrics = async (dateRange?: DateRange) => {
 #### Export from `moose/index.ts`
 
 ```ts title="moose/index.ts"
+export * from "./models/events";
 export * from "./queries/overview-metrics";
 ```
 
