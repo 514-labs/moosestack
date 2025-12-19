@@ -153,6 +153,10 @@ mod tests {
             show_timestamps: false,
             show_timing: false,
         });
+
+        // Drop the lock before awaiting to avoid holding it across await point
+        drop(_lock);
+
         let result = with_timing_async("Test", async { 42 }).await;
         assert_eq!(result, 42);
     }
