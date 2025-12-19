@@ -138,3 +138,107 @@ pub fn load_display_config() -> Arc<DisplayConfig> {
 pub fn update_display_config(config: DisplayConfig) {
     DISPLAY_CONFIG.store(Arc::new(config));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Mutex to serialize tests that modify global DISPLAY_CONFIG
+    // This prevents tests from interfering with each other when running in parallel
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn test_load_returns_current_config() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // Set a known config
+        update_display_config(DisplayConfig {
+            no_ansi: false,
+            show_timestamps: false,
+            show_timing: false,
+        });
+
+        // Load should return the current config
+        let config = load_display_config();
+        assert!(!config.no_ansi);
+        assert!(!config.show_timestamps);
+        assert!(!config.show_timing);
+    }
+
+    #[test]
+    fn test_update_changes_config() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // Create a new config with specific values
+        let new_config = DisplayConfig {
+            no_ansi: true,
+            show_timestamps: true,
+            show_timing: false,
+        };
+
+        // Update the global config
+        update_display_config(new_config);
+
+        // Load should return the new config
+        let loaded = load_display_config();
+        assert_eq!(*loaded, new_config);
+    }
+
+    #[test]
+    fn test_atomic_consistency() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // Update to a config where all flags are true
+        update_display_config(DisplayConfig {
+            no_ansi: true,
+            show_timestamps: true,
+            show_timing: true,
+        });
+
+        // All fields should be set together atomically
+        let config = load_display_config();
+        assert!(config.no_ansi);
+        assert!(config.show_timestamps);
+        assert!(config.show_timing);
+    }
+
+    #[test]
+    fn test_multiple_updates() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // First update
+        update_display_config(DisplayConfig {
+            no_ansi: true,
+            show_timestamps: false,
+            show_timing: false,
+        });
+        let config1 = load_display_config();
+        assert!(config1.no_ansi);
+        assert!(!config1.show_timestamps);
+
+        // Second update should completely replace the first
+        update_display_config(DisplayConfig {
+            no_ansi: false,
+            show_timestamps: true,
+            show_timing: true,
+        });
+        let config2 = load_display_config();
+        assert!(!config2.no_ansi);
+        assert!(config2.show_timestamps);
+        assert!(config2.show_timing);
+    }
+
+    #[test]
+    fn test_default_config() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
+        // Reset to default
+        update_display_config(DisplayConfig::default());
+
+        let config = load_display_config();
+        assert!(!config.no_ansi);
+        assert!(!config.show_timestamps);
+        assert!(!config.show_timing);
+    }
+}
