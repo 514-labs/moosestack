@@ -60,9 +60,8 @@ function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
 function stripMdxComponents(content: string): string {
   let result = content;
 
-  // Remove import statements
-  result = result.replace(/^import\s+.*?from\s+['"].*?['"];?\s*$/gm, "");
-  result = result.replace(/^import\s+{[^}]*}\s+from\s+['"].*?['"];?\s*$/gm, "");
+  // Remove import statements (including multiline imports)
+  result = result.replace(/^import\s+[\s\S]*?from\s+['"].*?['"];?\s*$/gm, "");
 
   // Remove export statements (but keep exported content)
   result = result.replace(/^export\s+default\s+/gm, "");
@@ -110,9 +109,10 @@ function extractSearchableContent(rawContent: string): string {
 
   // Keep code blocks but mark them (Pagefind can index code)
   // Convert fenced code blocks to simple text representation
+  // Allow any attributes (filename, copy, etc.) before the newline
   content = content.replace(
-    /```(\w+)?(?:\s+filename="[^"]*")?\n([\s\S]*?)```/g,
-    (_, lang, code) => {
+    /```(\w+)?(?:[^\n]*)\n([\s\S]*?)```/g,
+    (_, _lang, code) => {
       return `\n${code.trim()}\n`;
     },
   );
