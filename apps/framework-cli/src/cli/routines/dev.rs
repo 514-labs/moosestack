@@ -12,7 +12,7 @@ use crate::cli::settings::Settings;
 use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
 use crate::utilities::constants::CLI_PROJECT_INTERNAL_DIR;
-use crate::utilities::display_config::DISPLAY_CONFIG;
+use crate::utilities::display_config::load_display_config;
 use crate::utilities::package_managers::{
     check_local_pnpm_version_warning, detect_pnpm_deploy_mode, find_pnpm_workspace_root,
     legacy_deploy_terminal_message, legacy_deploy_warning_message, PnpmDeployMode,
@@ -131,7 +131,7 @@ pub fn run_containers(project: &Project, docker_client: &DockerClient) -> anyhow
             "Starting local infrastructure",
             "Local infrastructure started successfully",
             || docker_client.start_containers(project),
-            !project.is_production && !DISPLAY_CONFIG.load().show_timing,
+            !project.is_production && !load_display_config().show_timing,
         )
     })
 }

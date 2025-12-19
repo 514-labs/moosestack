@@ -69,7 +69,7 @@ use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
 use crate::framework::languages::SupportedLanguages;
-use crate::utilities::display_config::{DisplayConfig, DISPLAY_CONFIG};
+use crate::utilities::display_config::{load_display_config, update_display_config, DisplayConfig};
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -606,12 +606,12 @@ pub async fn top_command_handler(
             info!("Moose Version: {}", CLI_VERSION);
 
             // Update display configuration with CLI flags (preserving no_ansi from logger setup)
-            let config = DISPLAY_CONFIG.load();
-            DISPLAY_CONFIG.store(Arc::new(DisplayConfig {
+            let config = load_display_config();
+            update_display_config(DisplayConfig {
                 no_ansi: config.no_ansi,
                 show_timestamps: *timestamps,
                 show_timing: *timing,
-            }));
+            });
 
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);

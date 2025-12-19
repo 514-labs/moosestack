@@ -92,8 +92,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID};
-use crate::utilities::display_config::{DisplayConfig, DISPLAY_CONFIG};
-use std::sync::Arc;
+use crate::utilities::display_config::{update_display_config, DisplayConfig};
 
 use super::settings::user_directory;
 
@@ -465,11 +464,11 @@ pub fn setup_logging(settings: &LoggerSettings) {
 
     // Initialize global display configuration for terminal display functions
     // Note: show_timestamps and show_timing are set via CLI args in cli.rs
-    DISPLAY_CONFIG.store(Arc::new(DisplayConfig {
+    update_display_config(DisplayConfig {
         no_ansi: settings.no_ansi,
         show_timestamps: false, // Set by CLI args
         show_timing: false,     // Set by CLI args
-    }));
+    });
 
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 

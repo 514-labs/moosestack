@@ -27,7 +27,7 @@
 //! ```
 
 use crate::cli::display::{Message, MessageType};
-use crate::utilities::display_config::DISPLAY_CONFIG;
+use crate::utilities::display_config::load_display_config;
 use std::future::Future;
 use std::time::Instant;
 
@@ -63,7 +63,7 @@ where
     let start = Instant::now();
     let result = f();
 
-    if DISPLAY_CONFIG.load().show_timing {
+    if load_display_config().show_timing {
         let elapsed = start.elapsed();
         show_message!(MessageType::Info, {
             Message {
@@ -108,7 +108,7 @@ where
     let start = Instant::now();
     let result = f.await;
 
-    if DISPLAY_CONFIG.load().show_timing {
+    if load_display_config().show_timing {
         let elapsed = start.elapsed();
         show_message!(MessageType::Info, {
             Message {
@@ -124,27 +124,26 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utilities::display_config::DisplayConfig;
-    use std::sync::Arc;
+    use crate::utilities::display_config::{update_display_config, DisplayConfig};
 
     #[test]
     fn test_with_timing_returns_value() {
-        DISPLAY_CONFIG.store(Arc::new(DisplayConfig {
+        update_display_config(DisplayConfig {
             no_ansi: false,
             show_timestamps: false,
             show_timing: false,
-        }));
+        });
         let result = with_timing("Test", || 42);
         assert_eq!(result, 42);
     }
 
     #[tokio::test]
     async fn test_with_timing_async_returns_value() {
-        DISPLAY_CONFIG.store(Arc::new(DisplayConfig {
+        update_display_config(DisplayConfig {
             no_ansi: false,
             show_timestamps: false,
             show_timing: false,
-        }));
+        });
         let result = with_timing_async("Test", async { 42 }).await;
         assert_eq!(result, 42);
     }

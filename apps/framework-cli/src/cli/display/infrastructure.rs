@@ -35,7 +35,7 @@ use crate::framework::core::{
     },
     plan::InfraPlan,
 };
-use crate::utilities::display_config::DISPLAY_CONFIG;
+use crate::utilities::display_config::load_display_config;
 use crossterm::{execute, style::Print};
 use tracing::info;
 
@@ -270,7 +270,7 @@ fn format_table_display(
 /// ```
 pub fn infra_added(message: &str) {
     let styled_text = StyledText::from_str("+ ").green();
-    let config = DISPLAY_CONFIG.load();
+    let config = load_display_config();
     write_styled_line(
         &styled_text,
         message,
@@ -315,7 +315,7 @@ pub fn infra_added_detailed(title: &str, details: &[String]) {
 /// ```
 pub fn infra_removed(message: &str) {
     let styled_text = StyledText::from_str("- ").red();
-    let config = DISPLAY_CONFIG.load();
+    let config = load_display_config();
     write_styled_line(
         &styled_text,
         message,
@@ -360,7 +360,7 @@ pub fn infra_removed_detailed(title: &str, details: &[String]) {
 /// ```
 pub fn infra_updated(message: &str) {
     let styled_text = StyledText::from_str("~ ").yellow();
-    let config = DISPLAY_CONFIG.load();
+    let config = load_display_config();
     write_styled_line(
         &styled_text,
         message,

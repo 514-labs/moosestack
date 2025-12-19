@@ -15,10 +15,10 @@
 //! # Usage
 //!
 //! ```rust
-//! use crate::utilities::display_config::DISPLAY_CONFIG;
+//! use crate::utilities::display_config::load_display_config;
 //!
 //! // Load the current configuration
-//! let config = DISPLAY_CONFIG.load();
+//! let config = load_display_config();
 //!
 //! // Access individual fields
 //! if config.no_ansi {
@@ -37,8 +37,7 @@
 //! Configuration is typically set once at startup:
 //!
 //! ```rust
-//! use std::sync::Arc;
-//! use crate::utilities::display_config::{DISPLAY_CONFIG, DisplayConfig};
+//! use crate::utilities::display_config::{update_display_config, DisplayConfig};
 //!
 //! let new_config = DisplayConfig {
 //!     no_ansi: true,
@@ -46,13 +45,15 @@
 //!     show_timing: true,
 //! };
 //!
-//! DISPLAY_CONFIG.store(Arc::new(new_config));
+//! update_display_config(new_config);
 //! ```
 //!
 //! # References
 //!
 //! - [arc-swap documentation](https://docs.rs/arc-swap/latest/arc_swap/)
 //! - [Kill All Setters pattern](https://blog.sentry.io/you-cant-rust-that/#kill-all-setters-2)
+
+use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use lazy_static::lazy_static;
@@ -92,9 +93,48 @@ lazy_static! {
     ///
     /// The loaded Arc can be held for the duration of an operation to ensure
     /// consistent configuration throughout.
-    pub static ref DISPLAY_CONFIG: ArcSwap<DisplayConfig> = ArcSwap::from_pointee(DisplayConfig {
+    static ref DISPLAY_CONFIG: ArcSwap<DisplayConfig> = ArcSwap::from_pointee(DisplayConfig {
         no_ansi: false,
         show_timestamps: false,
         show_timing: false,
     });
+}
+
+/// Loads the current display configuration.
+///
+/// Returns an Arc-guarded reference to the current configuration.
+/// This is very cheap (atomic pointer load + refcount increment).
+///
+/// # Example
+///
+/// ```rust
+/// use crate::utilities::display_config::load_display_config;
+///
+/// let config = load_display_config();
+/// if config.show_timing {
+///     // Show timing information
+/// }
+/// ```
+pub fn load_display_config() -> Arc<DisplayConfig> {
+    DISPLAY_CONFIG.load_full()
+}
+
+/// Updates the display configuration atomically.
+///
+/// This should typically only be called once at startup based on CLI flags
+/// or environment variables.
+///
+/// # Example
+///
+/// ```rust
+/// use crate::utilities::display_config::{update_display_config, DisplayConfig};
+///
+/// update_display_config(DisplayConfig {
+///     no_ansi: true,
+///     show_timestamps: false,
+///     show_timing: true,
+/// });
+/// ```
+pub fn update_display_config(config: DisplayConfig) {
+    DISPLAY_CONFIG.store(Arc::new(config));
 }

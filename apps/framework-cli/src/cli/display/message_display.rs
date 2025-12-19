@@ -7,7 +7,7 @@ use super::{
     message::{Message, MessageType},
     terminal::{write_styled_line, StyledText},
 };
-use crate::utilities::display_config::DISPLAY_CONFIG;
+use crate::utilities::display_config::load_display_config;
 use tracing::info;
 
 /// Displays a message about a batch database insertion.
@@ -32,7 +32,7 @@ pub fn batch_inserted(count: usize, table_name: &str) {
         action: "[DB]".to_string(),
         details: format!("{count} row(s) successfully written to DB table ({table_name})"),
     };
-    let config = DISPLAY_CONFIG.load();
+    let config = load_display_config();
     let _ = show_message_impl(
         MessageType::Info,
         message,
@@ -64,7 +64,7 @@ pub fn batch_inserted(count: usize, table_name: &str) {
 /// );
 /// ```
 pub fn show_message_wrapper(message_type: MessageType, message: Message) {
-    let config = DISPLAY_CONFIG.load();
+    let config = load_display_config();
     let _ = show_message_impl(
         message_type,
         message,
@@ -159,8 +159,8 @@ pub fn show_message_impl(
 #[macro_export]
 macro_rules! show_message {
     ($message_type:expr, $message:expr) => {{
-        use $crate::utilities::display_config::DISPLAY_CONFIG;
-        let config = DISPLAY_CONFIG.load();
+        use $crate::utilities::display_config::load_display_config;
+        let config = load_display_config();
         $crate::cli::display::message_display::show_message_impl(
             $message_type,
             $message,
@@ -172,8 +172,8 @@ macro_rules! show_message {
     }};
 
     ($message_type:expr, $message:expr, $no_log:expr) => {{
-        use $crate::utilities::display_config::DISPLAY_CONFIG;
-        let config = DISPLAY_CONFIG.load();
+        use $crate::utilities::display_config::load_display_config;
+        let config = load_display_config();
         $crate::cli::display::message_display::show_message_impl(
             $message_type,
             $message,
