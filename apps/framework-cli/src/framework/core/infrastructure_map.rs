@@ -7361,7 +7361,13 @@ mod normalize_tests {
         assert_eq!(mv.name, "events_summary_mv");
         assert_eq!(mv.target_table, "events_summary");
         assert!(mv.select_sql.contains("SELECT user_id"));
-        assert_eq!(mv.source_file, Some("app/sql/events.ts".to_string()));
+        assert_eq!(
+            mv.metadata
+                .as_ref()
+                .and_then(|m| m.source.as_ref())
+                .map(|s| s.file.clone()),
+            Some("app/sql/events.ts".to_string())
+        );
     }
 
     #[test]
@@ -7412,7 +7418,13 @@ mod normalize_tests {
             .expect("Should have a custom view");
         assert_eq!(view.name, "active_users");
         assert!(view.select_sql.contains("SELECT * FROM users"));
-        assert_eq!(view.source_file, Some("app/sql/views.ts".to_string()));
+        assert_eq!(
+            view.metadata
+                .as_ref()
+                .and_then(|m| m.source.as_ref())
+                .map(|s| s.file.clone()),
+            Some("app/sql/views.ts".to_string())
+        );
     }
 
     #[test]
