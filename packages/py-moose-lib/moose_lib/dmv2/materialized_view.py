@@ -16,6 +16,14 @@ from ._source_capture import get_source_file_from_stack
 from .view import View
 
 
+def _format_table_reference(table: Union[OlapTable, View]) -> str:
+    """Helper function to format a table reference as `database`.`table` or just `table`"""
+    database = table.config.database if isinstance(table, OlapTable) else None
+    if database:
+        return f"`{database}`.`{table.name}`"
+    return f"`{table.name}`"
+
+
 class MaterializedViewOptions(BaseModel):
     """Configuration options for creating a Materialized View.
 
@@ -111,7 +119,7 @@ class MaterializedView(BaseTypedResource, Generic[T]):
         self.target_table = target_table
         self.config = options
         self.select_sql = options.select_statement
-        self.source_tables = [t.name for t in options.select_tables]
+        self.source_tables = [_format_table_reference(t) for t in options.select_tables]
 
         # Initialize metadata, preserving user-provided metadata if any
         if options.metadata:

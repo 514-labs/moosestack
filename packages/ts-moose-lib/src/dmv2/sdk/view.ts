@@ -4,6 +4,18 @@ import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
 
 /**
+ * Helper function to format a table reference as `database`.`table` or just `table`
+ */
+function formatTableReference(table: OlapTable<any> | View): string {
+  const database =
+    table instanceof OlapTable ? table.config.database : undefined;
+  if (database) {
+    return `\`${database}\`.\`${table.name}\``;
+  }
+  return `\`${table.name}\``;
+}
+
+/**
  * Represents a database View, defined by a SQL SELECT statement based on one or more base tables or other views.
  * Emits structured data for the Moose infrastructure system.
  */
@@ -42,7 +54,7 @@ export class View {
 
     this.name = name;
     this.selectSql = selectStatement;
-    this.sourceTables = baseTables.map((t) => t.name);
+    this.sourceTables = baseTables.map((t) => formatTableReference(t));
 
     // Initialize metadata, preserving user-provided metadata if any
     this.metadata = metadata ? { ...metadata } : {};

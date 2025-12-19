@@ -12,6 +12,14 @@ from ._registry import _custom_views
 from ._source_capture import get_source_file_from_stack
 
 
+def _format_table_reference(table: Union[OlapTable, "View"]) -> str:
+    """Helper function to format a table reference as `database`.`table` or just `table`"""
+    database = table.config.database if isinstance(table, OlapTable) else None
+    if database:
+        return f"`{database}`.`{table.name}`"
+    return f"`{table.name}`"
+
+
 class View:
     """Represents a standard SQL database View.
 
@@ -46,7 +54,7 @@ class View:
     ):
         self.name = name
         self.select_sql = select_statement
-        self.source_tables = [t.name for t in base_tables]
+        self.source_tables = [_format_table_reference(t) for t in base_tables]
 
         # Initialize metadata, preserving user-provided metadata if any
         if metadata:

@@ -120,12 +120,17 @@ fn normalize_database(db: &Option<String>, default_database: &str) -> String {
     db.as_deref().unwrap_or(default_database).to_string()
 }
 
-/// Normalizes a table name by stripping the default database prefix if present.
-/// e.g., "local.events" with default "local" becomes "events"
-/// but "other_db.events" stays as "other_db.events"
+/// Normalizes a table reference for comparison.
+/// Now that source_tables come pre-formatted from TypeScript/Python libraries as:
+/// - `database_name`.`table_name` (with backticks) when database is specified
+/// - `table_name` (with backticks) when database is not specified
+///
+/// This function strips the default database prefix if present, leaving just `table_name`.
 fn normalize_table_name(table: &str, default_database: &str) -> String {
-    let prefix = format!("{}.", default_database);
+    // Handle the format: `database_name`.`table_name`
+    let prefix = format!("`{}`.", default_database);
     if table.starts_with(&prefix) {
+        // Strip the database prefix, leaving just `table_name`
         table[prefix.len()..].to_string()
     } else {
         table.to_string()

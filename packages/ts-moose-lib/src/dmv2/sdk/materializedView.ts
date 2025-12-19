@@ -8,6 +8,18 @@ import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
 
 /**
+ * Helper function to format a table reference as `database`.`table` or just `table`
+ */
+function formatTableReference(table: OlapTable<any> | View): string {
+  const database =
+    table instanceof OlapTable ? table.config.database : undefined;
+  if (database) {
+    return `\`${database}\`.\`${table.name}\``;
+  }
+  return `\`${table.name}\``;
+}
+
+/**
  * Configuration options for creating a Materialized View.
  * @template T The data type of the records stored in the target table of the materialized view.
  */
@@ -140,7 +152,9 @@ export class MaterializedView<TargetTable> {
     this.name = options.materializedViewName;
     this.targetTable = targetTable;
     this.selectSql = selectStatement;
-    this.sourceTables = options.selectTables.map((t) => t.name);
+    this.sourceTables = options.selectTables.map((t) =>
+      formatTableReference(t),
+    );
 
     // Initialize metadata, preserving user-provided metadata if any
     this.metadata = options.metadata ? { ...options.metadata } : {};
