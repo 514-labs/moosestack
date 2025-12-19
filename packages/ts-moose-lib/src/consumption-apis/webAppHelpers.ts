@@ -44,20 +44,8 @@ export function getMooseUtilsFromRequest(
  * ```typescript
  * const moose = await getMooseUtils(); // New async API
  * ```
- *
- * @param req - The HTTP request object containing injected moose utilities
- * @returns MooseUtils if available on the request, undefined otherwise
  */
-export function getLegacyMooseUtils(
-  req: http.IncomingMessage | any,
-): MooseUtils | undefined {
-  console.warn(
-    "[DEPRECATED] getLegacyMooseUtils(req) is deprecated. " +
-      "The new getMooseUtils() is async and does not require a request parameter: " +
-      "const { client, sql } = await getMooseUtils();",
-  );
-  return (req as any).moose;
-}
+export const getLegacyMooseUtils = getMooseUtilsFromRequest;
 
 /**
  * @deprecated No longer needed. Use getMooseUtils() directly instead.

@@ -30,6 +30,7 @@ export { MooseCache } from "./clients/redisClient";
 export { ApiUtil, ConsumptionUtil } from "./consumption-apis/helpers";
 
 export { getMooseUtils, getMooseClients } from "./consumption-apis/standalone";
+export type { MooseUtils } from "./consumption-apis/helpers";
 export { sql } from "./sqlHelpers";
 
 export * from "./utilities";
