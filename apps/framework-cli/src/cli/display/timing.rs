@@ -125,9 +125,16 @@ where
 mod tests {
     use super::*;
     use crate::utilities::display_config::{update_display_config, DisplayConfig};
+    use std::sync::Mutex;
+
+    // Mutex to serialize tests that modify global DISPLAY_CONFIG
+    // This prevents tests from interfering with each other when running in parallel
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_with_timing_returns_value() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
         update_display_config(DisplayConfig {
             no_ansi: false,
             show_timestamps: false,
@@ -139,6 +146,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_timing_async_returns_value() {
+        let _lock = TEST_LOCK.lock().unwrap();
+
         update_display_config(DisplayConfig {
             no_ansi: false,
             show_timestamps: false,
