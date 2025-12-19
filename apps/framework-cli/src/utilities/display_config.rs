@@ -216,6 +216,7 @@ mod tests {
         let config1 = load_display_config();
         assert!(config1.no_ansi);
         assert!(!config1.show_timestamps);
+        assert!(!config1.show_timing);
 
         // Second update should completely replace the first
         update_display_config(DisplayConfig {
