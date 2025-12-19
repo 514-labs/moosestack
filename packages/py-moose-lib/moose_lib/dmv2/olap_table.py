@@ -11,7 +11,7 @@ from clickhouse_connect import get_client
 from clickhouse_connect.driver.client import Client
 from clickhouse_connect.driver.exceptions import ClickHouseError
 from dataclasses import dataclass
-from pydantic import BaseModel, Field, ConfigDict, AliasGenerator
+from pydantic import BaseModel, Field, ConfigDict, AliasGenerator, model_validator
 from pydantic.alias_generators import to_camel
 from typing import (
     List,
@@ -71,14 +71,34 @@ class TableProjection(BaseModel):
     """
 
     name: str
-    select: Union[list[str], str]
-    order_by: Optional[Union[list[str], str]] = None
-    group_by: Optional[Union[list[str], str]] = None
+    select: list[str] | str
+    order_by: list[str] | str | None = None
+    group_by: list[str] | str | None = None
 
     model_config = ConfigDict(
         populate_by_name=True,
         alias_generator=AliasGenerator(serialization_alias=to_camel),
     )
+
+    @model_validator(mode="after")
+    def check_projection_mode(self) -> "TableProjection":
+        """Enforce ClickHouse projection rules: order_by XOR group_by."""
+        has_order_by = self.order_by is not None
+        has_group_by = self.group_by is not None
+
+        if has_order_by and has_group_by:
+            raise ValueError(
+                "TableProjection must have exactly one of 'order_by' or 'group_by' "
+                "(non-aggregate: order_by only; aggregate: group_by only)."
+            )
+
+        if not has_order_by and not has_group_by:
+            raise ValueError(
+                "TableProjection must have either 'order_by' (non-aggregate) "
+                "or 'group_by' (aggregate projection)."
+            )
+
+        return self
 
 
 @dataclass
@@ -194,6 +214,8 @@ class OlapConfig(BaseModel):
                  Use this to enable replicated tables across ClickHouse clusters.
                  The cluster must be defined in moose.config.toml (dev environment only).
                  Example: cluster="prod_cluster"
+        projections: List of table projections for optimizing specific query patterns.
+                    Projections pre-compute different sort orders or aggregations for faster queries.
     """
     order_by_fields: list[str] = []
     order_by_expression: Optional[str] = None

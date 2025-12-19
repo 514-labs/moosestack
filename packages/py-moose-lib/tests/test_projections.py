@@ -25,7 +25,7 @@ class UserEvent(BaseModel):
 
 def test_simple_field_list_projection():
     """Test projections with simple field lists."""
-    table = OlapTable[UserEvent](
+    OlapTable[UserEvent](
         "Events",
         OlapConfig(
             engine=MergeTreeEngine(),
@@ -56,7 +56,7 @@ def test_simple_field_list_projection():
 
 def test_multiple_projections():
     """Test table with multiple projections."""
-    table = OlapTable[UserEvent](
+    OlapTable[UserEvent](
         "Events2",
         OlapConfig(
             engine=MergeTreeEngine(),
@@ -86,7 +86,7 @@ def test_multiple_projections():
 
 def test_expression_based_projection():
     """Test projections with SQL expressions."""
-    table = OlapTable[UserEvent](
+    OlapTable[UserEvent](
         "Events3",
         OlapConfig(
             engine=MergeTreeEngine(),
@@ -95,7 +95,6 @@ def test_expression_based_projection():
                 TableProjection(
                     name="hourly_metrics",
                     select="toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
-                    order_by="hour",
                     group_by="hour",
                 )
             ],
@@ -115,7 +114,7 @@ def test_expression_based_projection():
 
 def test_mixed_projections():
     """Test table with both field list and expression projections."""
-    table = OlapTable[UserEvent](
+    OlapTable[UserEvent](
         "Events5",
         OlapConfig(
             engine=MergeTreeEngine(),
@@ -129,7 +128,6 @@ def test_mixed_projections():
                 TableProjection(
                     name="hourly_agg",
                     select="toStartOfHour(timestamp) as hour, count() as cnt",
-                    order_by="hour",
                     group_by="hour",
                 ),
             ],
@@ -151,7 +149,7 @@ def test_mixed_projections():
 
 def test_table_without_projections():
     """Test that tables without projections serialize correctly."""
-    table = OlapTable[UserEvent](
+    OlapTable[UserEvent](
         "Events6",
         OlapConfig(
             engine=MergeTreeEngine(),

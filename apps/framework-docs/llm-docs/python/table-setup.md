@@ -214,10 +214,11 @@ Projections duplicate data with different sort orders or pre-computed aggregatio
 from moose_lib import OlapTable, OlapConfig, TableProjection
 from moose_lib.blocks import MergeTreeEngine
 from pydantic import BaseModel
+from datetime import datetime
 
 class UserEvents(BaseModel):
     user_id: str
-    timestamp: float
+    timestamp: datetime
     event_type: str
     value: float
 
