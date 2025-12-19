@@ -69,7 +69,9 @@ use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
 use crate::framework::languages::SupportedLanguages;
+use crate::utilities::constants::{SHOW_TIMESTAMPS, SHOW_TIMING};
 use anyhow::Result;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -595,9 +597,18 @@ pub async fn top_command_handler(
                 )))
             }
         }
-        Commands::Dev { no_infra, mcp } => {
+        Commands::Dev {
+            no_infra,
+            mcp,
+            timestamps,
+            timing,
+        } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
+
+            // Set global flags for timestamps and timing
+            SHOW_TIMESTAMPS.store(*timestamps, Ordering::Relaxed);
+            SHOW_TIMING.store(*timing, Ordering::Relaxed);
 
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
