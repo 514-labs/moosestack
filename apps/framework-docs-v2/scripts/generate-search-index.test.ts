@@ -62,8 +62,12 @@ function extractSearchableContent(rawContent: string): string {
   // Convert markdown images to alt text
   content = content.replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1");
 
-  // Remove HTML comments
-  content = content.replace(/<!--[\s\S]*?-->/g, "");
+  // Remove HTML comments (iteratively to handle overlapping/malformed cases)
+  let previousContent: string;
+  do {
+    previousContent = content;
+    content = content.replace(/<!--[\s\S]*?-->/g, "");
+  } while (content !== previousContent);
 
   // Clean up multiple blank lines
   content = content.replace(/\n{3,}/g, "\n\n");
