@@ -400,6 +400,7 @@ interface InfrastructureSignatureJson {
     | "ApiEndpoint"
     | "TopicToTableSyncProcess"
     | "View"
+    | "MaterializedView"
     | "SqlResource";
 }
 
@@ -1056,6 +1057,18 @@ export const toInfraMap = (registry: typeof moose_internal) => {
             id: resource.name,
             kind: "SqlResource",
           };
+        } else if (r.kind === "View") {
+          const view = r as View;
+          return {
+            id: view.name,
+            kind: "View",
+          };
+        } else if (r.kind === "MaterializedView") {
+          const mv = r as MaterializedView<any>;
+          return {
+            id: mv.name,
+            kind: "MaterializedView",
+          };
         } else {
           throw new Error(`Unknown sql resource dependency type: ${r}`);
         }
@@ -1076,6 +1089,18 @@ export const toInfraMap = (registry: typeof moose_internal) => {
           return {
             id: resource.name,
             kind: "SqlResource",
+          };
+        } else if (r.kind === "View") {
+          const view = r as View;
+          return {
+            id: view.name,
+            kind: "View",
+          };
+        } else if (r.kind === "MaterializedView") {
+          const mv = r as MaterializedView<any>;
+          return {
+            id: mv.name,
+            kind: "MaterializedView",
           };
         } else {
           throw new Error(`Unknown sql resource dependency type: ${r}`);

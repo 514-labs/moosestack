@@ -3332,6 +3332,11 @@ async fn get_admin_reconciled_inframap(
     let target_sql_resource_ids: HashSet<String> =
         current_map.sql_resources.keys().cloned().collect();
 
+    let target_materialized_view_ids: HashSet<String> =
+        current_map.materialized_views.keys().cloned().collect();
+
+    let target_view_ids: HashSet<String> = current_map.views.keys().cloned().collect();
+
     // Reconcile the loaded map with actual database state (single load, no race condition).
     // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
     // may support reconciliation of other infrastructure types (e.g., Kafka topics).
@@ -3343,6 +3348,8 @@ async fn get_admin_reconciled_inframap(
             &current_map,
             &target_table_ids,
             &target_sql_resource_ids,
+            &target_materialized_view_ids,
+            &target_view_ids,
             clickhouse_client,
         )
         .await?

@@ -458,6 +458,7 @@ class InfrastructureSignatureJson(BaseModel):
         "ApiEndpoint",
         "TopicToTableSyncProcess",
         "View",
+        "MaterializedView",
         "SqlResource",
     ]
 
@@ -589,6 +590,10 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
             # Explicitly cast for type hint checking if needed
             resource = r  # type: SqlResource
             return InfrastructureSignatureJson(id=resource.name, kind="SqlResource")
+        elif r.kind == "View":
+            return InfrastructureSignatureJson(id=r.name, kind="View")
+        elif r.kind == "MaterializedView":
+            return InfrastructureSignatureJson(id=r.name, kind="MaterializedView")
         else:
             raise TypeError(f"Unknown SQL resource kind: {r.kind} for object: {r}")
     else:
