@@ -491,7 +491,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             actual_sql_resources.len()
         );
 
-        // Convert SQL resources from reality to structured types (MVs and custom views)
+        // Convert SQL resources from reality to structured types (MVs and views)
         // This allows us to compare them with the infra_map's materialized_views and views
         let mut actual_materialized_views: HashMap<String, MaterializedView> = HashMap::new();
         let mut actual_views: HashMap<String, View> = HashMap::new();
@@ -656,11 +656,11 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         // Compare Custom Views
         debug!("Comparing custom views with infrastructure map");
         debug!(
-            "Actual custom view IDs: {:?}",
+            "Actual view IDs: {:?}",
             actual_views.keys().collect::<Vec<_>>()
         );
         debug!(
-            "Infrastructure map custom view IDs: {:?}",
+            "Infrastructure map view IDs: {:?}",
             infra_map.views.keys().collect::<Vec<_>>()
         );
 
