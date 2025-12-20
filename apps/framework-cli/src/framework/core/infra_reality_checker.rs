@@ -162,6 +162,13 @@ pub fn materialized_views_are_equivalent(
         return false;
     }
 
+    // Compare MV databases (where the MV itself is created)
+    if normalize_database(&mv1.database, default_database)
+        != normalize_database(&mv2.database, default_database)
+    {
+        return false;
+    }
+
     // Compare target tables (normalize to strip backticks and database prefix)
     if normalize_table_name(&mv1.target_table, default_database)
         != normalize_table_name(&mv2.target_table, default_database)
@@ -193,6 +200,13 @@ pub fn materialized_views_are_equivalent(
 pub fn views_are_equivalent(v1: &View, v2: &View, default_database: &str) -> bool {
     // Compare names
     if v1.name != v2.name {
+        return false;
+    }
+
+    // Compare view databases (where the view itself is created)
+    if normalize_database(&v1.database, default_database)
+        != normalize_database(&v2.database, default_database)
+    {
         return false;
     }
 
