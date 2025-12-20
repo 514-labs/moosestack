@@ -3023,9 +3023,6 @@ impl InfrastructureMap {
         if !setup_sql.starts_with("CREATE VIEW IF NOT EXISTS") {
             return None;
         }
-        if setup_sql.contains("MATERIALIZED") {
-            return None;
-        }
 
         // Extract the SELECT part after AS
         let upper = setup_sql.to_uppercase();
