@@ -1977,7 +1977,7 @@ mod tests {
 
                 let has_create_view = ordered
                     .iter()
-                    .any(|op| matches!(op, AtomicOlapOperation::CreateView { .. }));
+                    .any(|op| matches!(op, AtomicOlapOperation::CreateDmv1View { .. }));
                 assert!(has_create_view, "Expected CreateView operation in result");
             }
             Err(err) => {
