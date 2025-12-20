@@ -1,14 +1,23 @@
-import {
-  ClickHouseEngines,
-  createMaterializedView,
-  dropView,
-} from "../../blocks/helpers";
+import { ClickHouseEngines } from "../../blocks/helpers";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { OlapConfig, OlapTable } from "./olapTable";
-import { SqlResource } from "./sqlResource";
 import { View } from "./view";
 import { IJsonSchemaCollection } from "typia";
 import { Column } from "../../dataModels/dataModelTypes";
+import { getMooseInternal, isClientOnlyMode } from "../internal";
+import { getSourceFileFromStack } from "../utils/stackTrace";
+
+/**
+ * Helper function to format a table reference as `database`.`table` or just `table`
+ */
+function formatTableReference(table: OlapTable<any> | View): string {
+  const database =
+    table instanceof OlapTable ? table.config.database : undefined;
+  if (database) {
+    return `\`${database}\`.\`${table.name}\``;
+  }
+  return `\`${table.name}\``;
+}
 
 /**
  * Configuration options for creating a Materialized View.
@@ -45,6 +54,9 @@ export interface MaterializedViewConfig<T> {
   /** @deprecated See {@link targetTable}
    *  Optional ordering fields for the target table. Crucial if using ReplacingMergeTree. */
   orderByFields?: (keyof T & string)[];
+
+  /** Optional metadata for the materialized view (e.g., description, source file). */
+  metadata?: { [key: string]: any };
 }
 
 const requireTargetTableName = (tableName: string | undefined): string => {
@@ -62,9 +74,24 @@ const requireTargetTableName = (tableName: string | undefined): string => {
  *
  * @template TargetTable The data type of the records stored in the underlying target OlapTable. The structure of T defines the target table schema.
  */
-export class MaterializedView<TargetTable> extends SqlResource {
+export class MaterializedView<TargetTable> {
+  /** @internal */
+  public readonly kind = "MaterializedView";
+
+  /** The name of the materialized view */
+  name: string;
+
   /** The target OlapTable instance where the materialized data is stored. */
   targetTable: OlapTable<TargetTable>;
+
+  /** The SELECT SQL statement */
+  selectSql: string;
+
+  /** Names of source tables that the SELECT reads from */
+  sourceTables: string[];
+
+  /** Optional metadata for the materialized view */
+  metadata: { [key: string]: any };
 
   /**
    * Creates a new MaterializedView instance.
@@ -122,24 +149,30 @@ export class MaterializedView<TargetTable> extends SqlResource {
       );
     }
 
-    super(
-      options.materializedViewName,
-      [
-        createMaterializedView({
-          name: options.materializedViewName,
-          destinationTable: targetTable.name,
-          select: selectStatement,
-        }),
-        // Population is now handled automatically by Rust infrastructure
-        // based on table engine type and whether this is a new or updated view
-      ],
-      [dropView(options.materializedViewName)],
-      {
-        pullsDataFrom: options.selectTables,
-        pushesDataTo: [targetTable],
-      },
+    this.name = options.materializedViewName;
+    this.targetTable = targetTable;
+    this.selectSql = selectStatement;
+    this.sourceTables = options.selectTables.map((t) =>
+      formatTableReference(t),
     );
 
-    this.targetTable = targetTable;
+    // Initialize metadata, preserving user-provided metadata if any
+    this.metadata = options.metadata ? { ...options.metadata } : {};
+
+    // Capture source file from stack trace if not already provided
+    if (!this.metadata.source) {
+      const stack = new Error().stack;
+      const sourceInfo = getSourceFileFromStack(stack);
+      if (sourceInfo) {
+        this.metadata.source = { file: sourceInfo };
+      }
+    }
+
+    // Register in the materializedViews registry
+    const materializedViews = getMooseInternal().materializedViews;
+    if (!isClientOnlyMode() && materializedViews.has(this.name)) {
+      throw new Error(`MaterializedView with name ${this.name} already exists`);
+    }
+    materializedViews.set(this.name, this);
   }
 }

@@ -158,6 +158,262 @@
           "additionalProperties": false
         },
         {
+          "description": "Modify table settings",
+          "type": "object",
+          "properties": {
+            "ModifyTableSettings": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "description": "The table to modify settings for",
+                  "type": "string"
+                },
+                "before_settings": {
+                  "description": "The settings before modification",
+                  "type": ["object", "null"],
+                  "additionalProperties": { "type": "string" }
+                },
+                "after_settings": {
+                  "description": "The settings after modification",
+                  "type": ["object", "null"],
+                  "additionalProperties": { "type": "string" }
+                },
+                "database": {
+                  "description": "The database containing the table",
+                  "type": ["string", "null"]
+                },
+                "cluster_name": {
+                  "description": "Optional cluster name for ON CLUSTER support",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["table"]
+            }
+          },
+          "required": ["ModifyTableSettings"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Add an index to a table",
+          "type": "object",
+          "properties": {
+            "AddTableIndex": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "description": "The table to add the index to",
+                  "type": "string"
+                },
+                "index": {
+                  "description": "The index to add",
+                  "$ref": "#/$defs/TableIndex"
+                },
+                "database": {
+                  "description": "The database containing the table",
+                  "type": ["string", "null"]
+                },
+                "cluster_name": {
+                  "description": "Optional cluster name for ON CLUSTER support",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["table", "index"]
+            }
+          },
+          "required": ["AddTableIndex"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Drop an index from a table",
+          "type": "object",
+          "properties": {
+            "DropTableIndex": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "description": "The table to drop the index from",
+                  "type": "string"
+                },
+                "index_name": {
+                  "description": "Name of the index to drop",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "The database containing the table",
+                  "type": ["string", "null"]
+                },
+                "cluster_name": {
+                  "description": "Optional cluster name for ON CLUSTER support",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["table", "index_name"]
+            }
+          },
+          "required": ["DropTableIndex"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Modify SAMPLE BY expression for a table",
+          "type": "object",
+          "properties": {
+            "ModifySampleBy": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "description": "The table to modify",
+                  "type": "string"
+                },
+                "expression": {
+                  "description": "The new SAMPLE BY expression",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "The database containing the table",
+                  "type": ["string", "null"]
+                },
+                "cluster_name": {
+                  "description": "Optional cluster name for ON CLUSTER support",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["table", "expression"]
+            }
+          },
+          "required": ["ModifySampleBy"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Remove SAMPLE BY from a table",
+          "type": "object",
+          "properties": {
+            "RemoveSampleBy": {
+              "type": "object",
+              "properties": {
+                "table": {
+                  "description": "The table to remove SAMPLE BY from",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "The database containing the table",
+                  "type": ["string", "null"]
+                },
+                "cluster_name": {
+                  "description": "Optional cluster name for ON CLUSTER support",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["table"]
+            }
+          },
+          "required": ["RemoveSampleBy"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Create a materialized view",
+          "type": "object",
+          "properties": {
+            "CreateMaterializedView": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "description": "Name of the materialized view",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "Database where the MV is created",
+                  "type": ["string", "null"]
+                },
+                "target_table": {
+                  "description": "Target table where transformed data is written",
+                  "type": "string"
+                },
+                "target_database": {
+                  "description": "Target database (if different from MV database)",
+                  "type": ["string", "null"]
+                },
+                "select_sql": {
+                  "description": "The SELECT SQL statement",
+                  "type": "string"
+                }
+              },
+              "required": ["name", "target_table", "select_sql"]
+            }
+          },
+          "required": ["CreateMaterializedView"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Drop a materialized view",
+          "type": "object",
+          "properties": {
+            "DropMaterializedView": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "description": "Name of the materialized view",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "Database where the MV is located",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["name"]
+            }
+          },
+          "required": ["DropMaterializedView"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Create a custom view (user-defined SELECT view)",
+          "type": "object",
+          "properties": {
+            "CreateView": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "description": "Name of the view",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "Database where the view is created",
+                  "type": ["string", "null"]
+                },
+                "select_sql": {
+                  "description": "The SELECT SQL statement",
+                  "type": "string"
+                }
+              },
+              "required": ["name", "select_sql"]
+            }
+          },
+          "required": ["CreateView"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Drop a custom view",
+          "type": "object",
+          "properties": {
+            "DropView": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "description": "Name of the view",
+                  "type": "string"
+                },
+                "database": {
+                  "description": "Database where the view is located",
+                  "type": ["string", "null"]
+                }
+              },
+              "required": ["name"]
+            }
+          },
+          "required": ["DropView"],
+          "additionalProperties": false
+        },
+        {
           "description": "Modify or remove table-level TTL",
           "type": "object",
           "properties": {
@@ -215,6 +471,36 @@
           "additionalProperties": false
         }
       ]
+    },
+    "TableIndex": {
+      "description": "Represents a secondary/data-skipping index",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Name of the index",
+          "type": "string"
+        },
+        "expression": {
+          "description": "The expression to index",
+          "type": "string"
+        },
+        "index_type": {
+          "description": "Type of index (e.g., minmax, set, bloom_filter)",
+          "type": "string"
+        },
+        "arguments": {
+          "description": "Optional arguments for the index type",
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "granularity": {
+          "description": "Index granularity",
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": ["name", "expression", "index_type", "granularity"]
     },
     "Table": {
       "type": "object",
