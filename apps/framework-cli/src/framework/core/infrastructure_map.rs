@@ -1861,26 +1861,26 @@ impl InfrastructureMap {
     ) {
         use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 
+        /// Helper to parse a table reference string (e.g., "`table`" or "`database`.`table`")
+        /// and return the database and table names with backticks removed.
+        fn parse_table_reference(table_ref: &str) -> (Option<String>, String) {
+            let cleaned = table_ref.replace('`', "");
+            let parts: Vec<&str> = cleaned.split('.').collect();
+            match parts.as_slice() {
+                [table] => (None, table.to_string()),
+                [database, table] => (Some(database.to_string()), table.to_string()),
+                _ => (None, cleaned),
+            }
+        }
+
         // Check if any source table is S3Queue or Kafka (which don't support SELECT)
         let has_unpopulatable_source = mv.source_tables.iter().any(|source_table| {
-            // Try direct lookup by key first
-            if let Some(table) = tables.get(source_table) {
-                return ClickHouseTableDiffStrategy::is_s3queue_table(table)
-                    || ClickHouseTableDiffStrategy::is_kafka_table(table);
-            }
+            // Parse the table reference and extract just the table name
+            let (_db, table_name) = parse_table_reference(source_table);
 
-            // Extract the table name from potentially qualified name (e.g., "db.table" -> "table")
-            let table_name_only = source_table.split('.').next_back().unwrap_or(source_table);
-
-            // Try direct lookup with just the table name as key
-            if let Some(table) = tables.get(table_name_only) {
-                return ClickHouseTableDiffStrategy::is_s3queue_table(table)
-                    || ClickHouseTableDiffStrategy::is_kafka_table(table);
-            }
-
-            // Finally, search by matching the actual Table.name field (ignoring map keys)
-            // This avoids false matches from suffix-based key matching
-            if let Some((_key, table)) = tables.iter().find(|(_, t)| t.name == table_name_only) {
+            // Search by matching the actual Table.name field
+            // This is the most reliable way since table HashMap keys include database and version
+            if let Some((_key, table)) = tables.iter().find(|(_, t)| t.name == table_name) {
                 return ClickHouseTableDiffStrategy::is_s3queue_table(table)
                     || ClickHouseTableDiffStrategy::is_kafka_table(table);
             }

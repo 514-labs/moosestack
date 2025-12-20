@@ -619,7 +619,8 @@ impl AtomicOlapOperation {
         match self {
             AtomicOlapOperation::RunTeardownSql { .. }
             | AtomicOlapOperation::DropDmv1View { .. }
-            | AtomicOlapOperation::DropView { .. } => {
+            | AtomicOlapOperation::DropView { .. }
+            | AtomicOlapOperation::DropMaterializedView { .. } => {
                 // For a view or materialized view, we reverse the normal dependency direction
                 // Both pushes_data_to and pulls_data_from tables should depend on the view being gone first
 
@@ -1009,26 +1010,30 @@ fn run_teardown_sql_operation(
 }
 
 /// Handles adding a dmv1 view operation
-fn handle_dmv1_view_add(view: &Dmv1View) -> OperationPlan {
-    let pulls_from = view.pulls_data_from();
+fn handle_dmv1_view_add(view: &Dmv1View, default_database: &str) -> OperationPlan {
+    let pulls_from = view.pulls_data_from(default_database);
     let setup_op = create_view_operation(view, pulls_from);
     OperationPlan::setup(vec![setup_op])
 }
 
 /// Handles removing a dmv1 view operation
-fn handle_dmv1_view_remove(view: &Dmv1View) -> OperationPlan {
-    let pushed_to = view.pushes_data_to();
+fn handle_dmv1_view_remove(view: &Dmv1View, default_database: &str) -> OperationPlan {
+    let pushed_to = view.pushes_data_to(default_database);
     let teardown_op = drop_view_operation(view, pushed_to);
     OperationPlan::teardown(vec![teardown_op])
 }
 
 /// Handles updating a dmv1 view operation
-fn handle_dmv1_view_update(before: &Dmv1View, after: &Dmv1View) -> OperationPlan {
+fn handle_dmv1_view_update(
+    before: &Dmv1View,
+    after: &Dmv1View,
+    default_database: &str,
+) -> OperationPlan {
     // For views we always drop and recreate
-    let pushed_to = before.pushes_data_to();
+    let pushed_to = before.pushes_data_to(default_database);
     let teardown_op = drop_view_operation(before, pushed_to);
 
-    let pulls_from = after.pulls_data_from();
+    let pulls_from = after.pulls_data_from(default_database);
     let setup_op = create_view_operation(after, pulls_from);
 
     let mut plan = OperationPlan::new();
@@ -1039,30 +1044,34 @@ fn handle_dmv1_view_update(before: &Dmv1View, after: &Dmv1View) -> OperationPlan
 
 /// Handles adding a SQL resource operation
 /// Handle adding a SQL resource
-fn handle_sql_resource_add(resource: &SqlResource) -> OperationPlan {
-    let pulls_from = resource.pulls_data_from();
-    let pushes_to = resource.pushes_data_to();
+fn handle_sql_resource_add(resource: &SqlResource, default_database: &str) -> OperationPlan {
+    let pulls_from = resource.pulls_data_from(default_database);
+    let pushes_to = resource.pushes_data_to(default_database);
     let setup_op = run_setup_sql_operation(resource, pulls_from, pushes_to);
     OperationPlan::setup(vec![setup_op])
 }
 
 /// Handles removing a SQL resource operation
-fn handle_sql_resource_remove(resource: &SqlResource) -> OperationPlan {
-    let pulls_from = resource.pulls_data_from();
-    let pushes_to = resource.pushes_data_to();
+fn handle_sql_resource_remove(resource: &SqlResource, default_database: &str) -> OperationPlan {
+    let pulls_from = resource.pulls_data_from(default_database);
+    let pushes_to = resource.pushes_data_to(default_database);
     let teardown_op = run_teardown_sql_operation(resource, pulls_from, pushes_to);
     OperationPlan::teardown(vec![teardown_op])
 }
 
 /// Handles updating a SQL resource operation
 /// Handle updating a SQL resource
-fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> OperationPlan {
-    let before_pulls = before.pulls_data_from();
-    let before_pushes = before.pushes_data_to();
+fn handle_sql_resource_update(
+    before: &SqlResource,
+    after: &SqlResource,
+    default_database: &str,
+) -> OperationPlan {
+    let before_pulls = before.pulls_data_from(default_database);
+    let before_pushes = before.pushes_data_to(default_database);
     let teardown_op = run_teardown_sql_operation(before, before_pulls, before_pushes);
 
-    let after_pulls = after.pulls_data_from();
-    let after_pushes = after.pushes_data_to();
+    let after_pulls = after.pulls_data_from(default_database);
+    let after_pushes = after.pushes_data_to(default_database);
     let setup_op = run_setup_sql_operation(after, after_pulls, after_pushes);
 
     let mut plan = OperationPlan::new();
@@ -1074,10 +1083,29 @@ fn handle_sql_resource_update(before: &SqlResource, after: &SqlResource) -> Oper
 use crate::framework::core::infrastructure::materialized_view::MaterializedView;
 use crate::framework::core::infrastructure::view::View;
 
+/// Helper function to parse table reference strings and convert them to Table IDs.
+/// Table references can be in the format "`table`" or "`database`.`table`".
+/// This function removes backticks, parses the database/table, and converts to
+/// the format expected by `Table::id()`: "database_tablename".
+fn parse_table_reference_to_id(table_ref: &str, default_database: &str) -> String {
+    // Remove backticks and split by '.'
+    let cleaned = table_ref.replace('`', "");
+    let parts: Vec<&str> = cleaned.split('.').collect();
+
+    match parts.as_slice() {
+        [table] => format!("{}_{}", default_database, table),
+        [database, table] => format!("{}_{}", database, table),
+        _ => {
+            // Fallback: treat the whole string as table name
+            format!("{}_{}", default_database, cleaned)
+        }
+    }
+}
+
 /// Handles adding a materialized view operation
-fn handle_materialized_view_add(mv: &MaterializedView) -> OperationPlan {
-    let pulls_from = mv.pulls_data_from();
-    let pushes_to = mv.pushes_data_to();
+fn handle_materialized_view_add(mv: &MaterializedView, default_database: &str) -> OperationPlan {
+    let pulls_from = mv.pulls_data_from(default_database);
+    let pushes_to = mv.pushes_data_to(default_database);
 
     let setup_op = AtomicOlapOperation::CreateMaterializedView {
         mv: mv.clone(),
@@ -1088,9 +1116,9 @@ fn handle_materialized_view_add(mv: &MaterializedView) -> OperationPlan {
 }
 
 /// Handles removing a materialized view operation
-fn handle_materialized_view_remove(mv: &MaterializedView) -> OperationPlan {
-    let pulls_from = mv.pulls_data_from();
-    let pushes_to = mv.pushes_data_to();
+fn handle_materialized_view_remove(mv: &MaterializedView, default_database: &str) -> OperationPlan {
+    let pulls_from = mv.pulls_data_from(default_database);
+    let pushes_to = mv.pushes_data_to(default_database);
 
     let teardown_op = AtomicOlapOperation::DropMaterializedView {
         mv: mv.clone(),
@@ -1104,16 +1132,17 @@ fn handle_materialized_view_remove(mv: &MaterializedView) -> OperationPlan {
 fn handle_materialized_view_update(
     before: &MaterializedView,
     after: &MaterializedView,
+    default_database: &str,
 ) -> OperationPlan {
-    let before_pulls = before.pulls_data_from();
-    let before_pushes = before.pushes_data_to();
+    let before_pulls = before.pulls_data_from(default_database);
+    let before_pushes = before.pushes_data_to(default_database);
     let teardown_op = AtomicOlapOperation::DropMaterializedView {
         mv: before.clone(),
         dependency_info: create_dependency_info(before_pulls, before_pushes),
     };
 
-    let after_pulls = after.pulls_data_from();
-    let after_pushes = after.pushes_data_to();
+    let after_pulls = after.pulls_data_from(default_database);
+    let after_pushes = after.pushes_data_to(default_database);
     let setup_op = AtomicOlapOperation::CreateMaterializedView {
         mv: after.clone(),
         dependency_info: create_dependency_info(after_pulls, after_pushes),
@@ -1126,9 +1155,9 @@ fn handle_materialized_view_update(
 }
 
 /// Handles adding a custom view operation
-fn handle_view_add(view: &View) -> OperationPlan {
-    let pulls_from = view.pulls_data_from();
-    let pushes_to = view.pushes_data_to();
+fn handle_view_add(view: &View, default_database: &str) -> OperationPlan {
+    let pulls_from = view.pulls_data_from(default_database);
+    let pushes_to = view.pushes_data_to(default_database);
 
     let setup_op = AtomicOlapOperation::CreateView {
         view: view.clone(),
@@ -1139,9 +1168,9 @@ fn handle_view_add(view: &View) -> OperationPlan {
 }
 
 /// Handles removing a custom view operation
-fn handle_view_remove(view: &View) -> OperationPlan {
-    let pulls_from = view.pulls_data_from();
-    let pushes_to = view.pushes_data_to();
+fn handle_view_remove(view: &View, default_database: &str) -> OperationPlan {
+    let pulls_from = view.pulls_data_from(default_database);
+    let pushes_to = view.pushes_data_to(default_database);
 
     let teardown_op = AtomicOlapOperation::DropView {
         view: view.clone(),
@@ -1152,16 +1181,16 @@ fn handle_view_remove(view: &View) -> OperationPlan {
 }
 
 /// Handles updating a custom view operation
-fn handle_view_update(before: &View, after: &View) -> OperationPlan {
-    let before_pulls = before.pulls_data_from();
-    let before_pushes = before.pushes_data_to();
+fn handle_view_update(before: &View, after: &View, default_database: &str) -> OperationPlan {
+    let before_pulls = before.pulls_data_from(default_database);
+    let before_pushes = before.pushes_data_to(default_database);
     let teardown_op = AtomicOlapOperation::DropView {
         view: before.clone(),
         dependency_info: create_dependency_info(before_pulls, before_pushes),
     };
 
-    let after_pulls = after.pulls_data_from();
-    let after_pushes = after.pushes_data_to();
+    let after_pulls = after.pulls_data_from(default_database);
+    let after_pushes = after.pushes_data_to(default_database);
     let setup_op = AtomicOlapOperation::CreateView {
         view: after.clone(),
         dependency_info: create_dependency_info(after_pulls, after_pushes),
@@ -1277,14 +1306,18 @@ pub fn order_olap_changes(
                 let mut plan = OperationPlan::new();
 
                 // Dependencies: reads from source tables
+                // Source tables are in format "`table`" or "`database`.`table`"
+                // Need to convert to "database_tablename" format
                 let pulls_from = source_tables
                     .iter()
-                    .map(|table| InfrastructureSignature::Table { id: table.clone() })
+                    .map(|table| InfrastructureSignature::Table {
+                        id: parse_table_reference_to_id(table, default_database),
+                    })
                     .collect();
 
-                // Pushes to target table
+                // Pushes to target table (also needs parsing)
                 let pushes_to = vec![InfrastructureSignature::Table {
-                    id: target_table.clone(),
+                    id: parse_table_reference_to_id(target_table, default_database),
                 }];
 
                 plan.setup_ops
@@ -1298,33 +1331,37 @@ pub fn order_olap_changes(
                     });
                 plan
             }
-            OlapChange::Dmv1View(Change::Added(boxed_view)) => handle_dmv1_view_add(boxed_view),
+            OlapChange::Dmv1View(Change::Added(boxed_view)) => {
+                handle_dmv1_view_add(boxed_view, default_database)
+            }
             OlapChange::Dmv1View(Change::Removed(boxed_view)) => {
-                handle_dmv1_view_remove(boxed_view)
+                handle_dmv1_view_remove(boxed_view, default_database)
             }
             OlapChange::Dmv1View(Change::Updated { before, after }) => {
-                handle_dmv1_view_update(before, after)
+                handle_dmv1_view_update(before, after, default_database)
             }
             OlapChange::SqlResource(Change::Added(boxed_resource)) => {
-                handle_sql_resource_add(boxed_resource)
+                handle_sql_resource_add(boxed_resource, default_database)
             }
             OlapChange::SqlResource(Change::Removed(boxed_resource)) => {
-                handle_sql_resource_remove(boxed_resource)
+                handle_sql_resource_remove(boxed_resource, default_database)
             }
             OlapChange::SqlResource(Change::Updated { before, after }) => {
-                handle_sql_resource_update(before, after)
+                handle_sql_resource_update(before, after, default_database)
             }
-            OlapChange::MaterializedView(Change::Added(mv)) => handle_materialized_view_add(mv),
+            OlapChange::MaterializedView(Change::Added(mv)) => {
+                handle_materialized_view_add(mv, default_database)
+            }
             OlapChange::MaterializedView(Change::Removed(mv)) => {
-                handle_materialized_view_remove(mv)
+                handle_materialized_view_remove(mv, default_database)
             }
             OlapChange::MaterializedView(Change::Updated { before, after }) => {
-                handle_materialized_view_update(before, after)
+                handle_materialized_view_update(before, after, default_database)
             }
-            OlapChange::View(Change::Added(view)) => handle_view_add(view),
-            OlapChange::View(Change::Removed(view)) => handle_view_remove(view),
+            OlapChange::View(Change::Added(view)) => handle_view_add(view, default_database),
+            OlapChange::View(Change::Removed(view)) => handle_view_remove(view, default_database),
             OlapChange::View(Change::Updated { before, after }) => {
-                handle_view_update(before, after)
+                handle_view_update(before, after, default_database)
             }
         };
 

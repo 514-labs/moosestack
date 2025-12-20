@@ -278,17 +278,50 @@ impl MaterializedView {
     }
 }
 
+impl MaterializedView {
+    /// Parse a table reference string (e.g., "`table`" or "`database`.`table`")
+    /// and return the database and table names with backticks removed.
+    ///
+    /// Returns (database, table) where database is None if not specified.
+    fn parse_table_reference(table_ref: &str) -> (Option<String>, String) {
+        // Remove backticks and split by '.'
+        let cleaned = table_ref.replace('`', "");
+        let parts: Vec<&str> = cleaned.split('.').collect();
+
+        match parts.as_slice() {
+            [table] => (None, table.to_string()),
+            [database, table] => (Some(database.to_string()), table.to_string()),
+            _ => {
+                // Fallback: treat the whole string as table name
+                (None, cleaned)
+            }
+        }
+    }
+
+    /// Convert a table reference string to a Table ID format: "database_tablename"
+    ///
+    /// This matches the format used by `Table::id(default_database)` to ensure
+    /// dependency edges connect properly in the DDL ordering graph.
+    fn table_reference_to_id(table_ref: &str, default_database: &str) -> String {
+        let (db, table) = Self::parse_table_reference(table_ref);
+        let database = db.as_deref().unwrap_or(default_database);
+        format!("{}_{}", database, table)
+    }
+}
+
 impl DataLineage for MaterializedView {
-    fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
+    fn pulls_data_from(&self, default_database: &str) -> Vec<InfrastructureSignature> {
         self.source_tables
             .iter()
-            .map(|t| InfrastructureSignature::Table { id: t.clone() })
+            .map(|t| InfrastructureSignature::Table {
+                id: Self::table_reference_to_id(t, default_database),
+            })
             .collect()
     }
 
-    fn pushes_data_to(&self) -> Vec<InfrastructureSignature> {
+    fn pushes_data_to(&self, default_database: &str) -> Vec<InfrastructureSignature> {
         vec![InfrastructureSignature::Table {
-            id: self.target_table.clone(),
+            id: Self::table_reference_to_id(&self.target_table, default_database),
         }]
     }
 }
@@ -340,11 +373,71 @@ mod tests {
             "target",
         );
 
-        let pulls = mv.pulls_data_from();
+        let pulls = mv.pulls_data_from("local");
         assert_eq!(pulls.len(), 2);
 
-        let pushes = mv.pushes_data_to();
+        let pushes = mv.pushes_data_to("local");
         assert_eq!(pushes.len(), 1);
+    }
+
+    #[test]
+    fn test_materialized_view_data_lineage_with_backticks() {
+        // Test with backticked table names (as they come from TypeScript/Python)
+        let mv = MaterializedView::new(
+            "mv",
+            "SELECT * FROM events",
+            vec!["`events`".to_string()],
+            "`target`",
+        );
+
+        let pulls = mv.pulls_data_from("local");
+        assert_eq!(pulls.len(), 1);
+        // Should match Table::id format: "database_tablename"
+        assert_eq!(
+            pulls[0],
+            InfrastructureSignature::Table {
+                id: "local_events".to_string()
+            }
+        );
+
+        let pushes = mv.pushes_data_to("local");
+        assert_eq!(pushes.len(), 1);
+        assert_eq!(
+            pushes[0],
+            InfrastructureSignature::Table {
+                id: "local_target".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_materialized_view_data_lineage_with_database_qualifier() {
+        // Test with database-qualified table names
+        let mv = MaterializedView::new(
+            "mv",
+            "SELECT * FROM mydb.events",
+            vec!["`mydb`.`events`".to_string()],
+            "`otherdb`.`target`",
+        );
+
+        let pulls = mv.pulls_data_from("local");
+        assert_eq!(pulls.len(), 1);
+        // Should use the explicit database, not default
+        assert_eq!(
+            pulls[0],
+            InfrastructureSignature::Table {
+                id: "mydb_events".to_string()
+            }
+        );
+
+        let pushes = mv.pushes_data_to("local");
+        assert_eq!(pushes.len(), 1);
+        assert_eq!(
+            pushes[0],
+            InfrastructureSignature::Table {
+                id: "otherdb_target".to_string()
+            }
+        );
     }
 
     #[test]

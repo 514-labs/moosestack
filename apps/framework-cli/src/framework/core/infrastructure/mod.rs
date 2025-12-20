@@ -167,8 +167,16 @@ impl InfrastructureSignature {
 /// - Pushing: Active sending of data to another component
 pub trait DataLineage {
     /// Returns infrastructure components that this component actively pulls data from.
-    fn pulls_data_from(&self) -> Vec<InfrastructureSignature>;
+    ///
+    /// # Arguments
+    /// * `default_database` - The default database name, used to resolve table references
+    ///   that don't explicitly specify a database.
+    fn pulls_data_from(&self, default_database: &str) -> Vec<InfrastructureSignature>;
 
     /// Returns infrastructure components that this component actively pushes data to.
-    fn pushes_data_to(&self) -> Vec<InfrastructureSignature>;
+    ///
+    /// # Arguments
+    /// * `default_database` - The default database name, used to resolve table references
+    ///   that don't explicitly specify a database.
+    fn pushes_data_to(&self, default_database: &str) -> Vec<InfrastructureSignature>;
 }
