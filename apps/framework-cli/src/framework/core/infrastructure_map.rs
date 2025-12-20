@@ -576,7 +576,7 @@ pub struct InfrastructureMap {
     #[serde(default)]
     pub materialized_views: HashMap<String, MaterializedView>,
 
-    /// Collection of custom views indexed by view name
+    /// Collection of views indexed by view name
     #[serde(default)]
     pub views: HashMap<String, View>,
 }
@@ -1063,8 +1063,8 @@ impl InfrastructureMap {
         let mv_changes = changes.olap_changes.len() - olap_changes_len_before;
         tracing::info!("Materialized View changes detected: {}", mv_changes);
 
-        // Custom Views
-        tracing::info!("Analyzing changes in Custom Views...");
+        // Views
+        tracing::info!("Analyzing changes in Views...");
         let olap_changes_len_before = changes.olap_changes.len();
         Self::diff_views(
             &self.views,
@@ -1906,14 +1906,14 @@ impl InfrastructureMap {
         }
     }
 
-    /// Compare custom views between two infrastructure maps and compute the differences
+    /// Compare views between two infrastructure maps and compute the differences
     ///
     /// Uses semantic equivalence checking to avoid false positives from formatting differences,
     /// whitespace changes, or database prefix variations.
     ///
     /// # Arguments
-    /// * `self_views` - HashMap of source custom views
-    /// * `target_views` - HashMap of target custom views
+    /// * `self_views` - HashMap of source views
+    /// * `target_views` - HashMap of target views
     /// * `default_database` - Default database name for normalization
     /// * `olap_changes` - Mutable vector to collect the identified changes
     pub fn diff_views(
@@ -7459,7 +7459,7 @@ mod normalize_tests {
             normalized.materialized_views.is_empty(),
             "Should not have materialized views"
         );
-        assert!(normalized.views.is_empty(), "Should not have custom views");
+        assert!(normalized.views.is_empty(), "Should not have views");
     }
 
     #[test]

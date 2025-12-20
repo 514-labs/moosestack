@@ -658,8 +658,8 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             mismatched_materialized_views.len()
         );
 
-        // Compare Custom Views
-        debug!("Comparing custom views with infrastructure map");
+        // Compare Views
+        debug!("Comparing views with infrastructure map");
         debug!(
             "Actual view IDs: {:?}",
             actual_views.keys().collect::<Vec<_>>()
@@ -727,7 +727,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables, \
             {} unmapped SQL resources, {} missing SQL resources, {} mismatched SQL resources, \
             {} unmapped MVs, {} missing MVs, {} mismatched MVs, \
-            {} unmapped custom views, {} missing custom views, {} mismatched custom views",
+            {} unmapped views, {} missing views, {} mismatched views",
             discrepancies.unmapped_tables.len(),
             discrepancies.missing_tables.len(),
             discrepancies.mismatched_tables.len(),

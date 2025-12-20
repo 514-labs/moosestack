@@ -1437,7 +1437,7 @@ async fn execute_create_materialized_view(
     Ok(())
 }
 
-/// Executes a CREATE VIEW statement for custom views
+/// Executes a CREATE VIEW statement for views
 async fn execute_create_view(
     db_name: &str,
     view_name: &str,
