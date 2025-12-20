@@ -1398,6 +1398,13 @@ async fn execute_raw_sql(
     Ok(())
 }
 
+/// Strips backticks from an identifier string.
+/// This is necessary because SDK-provided table/view names may already have backticks,
+/// and we need to ensure we don't create double-backticks in SQL.
+fn strip_backticks(s: &str) -> String {
+    s.trim().trim_matches('`').replace('`', "")
+}
+
 /// Executes a CREATE MATERIALIZED VIEW statement
 async fn execute_create_materialized_view(
     db_name: &str,
@@ -1409,9 +1416,11 @@ async fn execute_create_materialized_view(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let target_db = view_database.unwrap_or(db_name);
+    // Strip any existing backticks from target_table to avoid double-backticks
+    let clean_target_table = strip_backticks(target_table);
     let to_target = match target_database {
-        Some(tdb) => format!("`{}`.`{}`", tdb, target_table),
-        None => format!("`{}`.`{}`", target_db, target_table),
+        Some(tdb) => format!("`{}`.`{}`", tdb, clean_target_table),
+        None => format!("`{}`.`{}`", target_db, clean_target_table),
     };
     let sql = format!(
         "CREATE MATERIALIZED VIEW IF NOT EXISTS `{}`.`{}` TO {} AS {}",
@@ -4106,5 +4115,26 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             sqls[0],
             "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN `user_hash` REMOVE MATERIALIZED"
         );
+    }
+
+    #[test]
+    fn test_strip_backticks() {
+        // Test basic backtick removal
+        assert_eq!(strip_backticks("`table_name`"), "table_name");
+
+        // Test with no backticks
+        assert_eq!(strip_backticks("table_name"), "table_name");
+
+        // Test with backticks in the middle (database.table format from SDK)
+        assert_eq!(strip_backticks("`db`.`table`"), "db.table");
+
+        // Test with leading/trailing whitespace
+        assert_eq!(strip_backticks("  `table`  "), "table");
+
+        // Test with only backticks
+        assert_eq!(strip_backticks("``"), "");
+
+        // Test the specific case from the MaterializedView test
+        assert_eq!(strip_backticks("`target`"), "target");
     }
 }

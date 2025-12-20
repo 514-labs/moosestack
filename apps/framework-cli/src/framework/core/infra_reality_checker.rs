@@ -126,15 +126,18 @@ fn normalize_database(db: &Option<String>, default_database: &str) -> String {
 /// - `table_name` (with backticks) when database is not specified
 ///
 /// This function strips the default database prefix if present, leaving just `table_name`.
+/// Also removes backticks to match the SQL parser's behavior (sql_parser.rs:736).
 fn normalize_table_name(table: &str, default_database: &str) -> String {
     // Handle the format: `database_name`.`table_name`
     let prefix = format!("`{}`.", default_database);
-    if table.starts_with(&prefix) {
+    let normalized = if table.starts_with(&prefix) {
         // Strip the database prefix, leaving just `table_name`
         table[prefix.len()..].to_string()
     } else {
         table.to_string()
-    }
+    };
+    // Strip backticks to match SQL parser behavior (sql_parser.rs:736)
+    normalized.replace('`', "")
 }
 
 /// Normalizes source tables for comparison by stripping default database prefix.
@@ -159,8 +162,10 @@ pub fn materialized_views_are_equivalent(
         return false;
     }
 
-    // Compare target tables (just the name, database handled separately)
-    if mv1.target_table != mv2.target_table {
+    // Compare target tables (normalize to strip backticks and database prefix)
+    if normalize_table_name(&mv1.target_table, default_database)
+        != normalize_table_name(&mv2.target_table, default_database)
+    {
         return false;
     }
 
@@ -524,7 +529,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         }
 
         debug!(
-            "Classified SQL resources: {} MVs, {} custom views, {} remaining sql_resources",
+            "Classified SQL resources: {} MVs, {} views, {} remaining sql_resources",
             actual_materialized_views.len(),
             actual_views.len(),
             remaining_sql_resources.len()
@@ -1600,5 +1605,104 @@ mod tests {
             }
             _ => panic!("Expected TableChange::Updated variant"),
         }
+    }
+
+    #[test]
+    fn test_normalize_table_name_strips_backticks() {
+        let default_db = "mydb";
+
+        // Test simple table name with backticks
+        assert_eq!(
+            normalize_table_name("`events`", default_db),
+            "events",
+            "Should strip backticks from table name"
+        );
+
+        // Test table name without backticks (should remain unchanged)
+        assert_eq!(
+            normalize_table_name("events", default_db),
+            "events",
+            "Should handle table name without backticks"
+        );
+
+        // Test qualified table name with backticks
+        assert_eq!(
+            normalize_table_name("`mydb`.`events`", default_db),
+            "events",
+            "Should strip database prefix and backticks"
+        );
+
+        // Test qualified table name with different database
+        assert_eq!(
+            normalize_table_name("`otherdb`.`events`", default_db),
+            "otherdb.events",
+            "Should keep other database prefix but strip backticks"
+        );
+    }
+
+    #[test]
+    fn test_materialized_views_are_equivalent_with_backticks() {
+        use crate::framework::core::infrastructure::materialized_view::MaterializedView;
+
+        let default_db = "mydb";
+
+        // MV from SDK (with backticks)
+        let mv_sdk = MaterializedView {
+            name: "test_mv".to_string(),
+            database: None,
+            target_table: "`events`".to_string(),
+            target_database: None,
+            select_sql: "SELECT * FROM `source`".to_string(),
+            source_tables: vec!["`source`".to_string()],
+            metadata: None,
+        };
+
+        // MV from migrated SQL (without backticks, as SQL parser strips them)
+        let mv_migrated = MaterializedView {
+            name: "test_mv".to_string(),
+            database: None,
+            target_table: "events".to_string(),
+            target_database: None,
+            select_sql: "SELECT * FROM source".to_string(),
+            source_tables: vec!["source".to_string()],
+            metadata: None,
+        };
+
+        // These should be equivalent despite backtick differences
+        assert!(
+            materialized_views_are_equivalent(&mv_sdk, &mv_migrated, default_db),
+            "MVs should be equivalent despite backtick differences"
+        );
+    }
+
+    #[test]
+    fn test_views_are_equivalent_with_backticks() {
+        use crate::framework::core::infrastructure::view::View;
+
+        let default_db = "mydb";
+
+        // View from SDK (with backticks)
+        let view_sdk = View {
+            name: "test_view".to_string(),
+            database: None,
+            select_sql: "SELECT * FROM `source`".to_string(),
+            source_tables: vec!["`source`".to_string()],
+            metadata: None,
+        };
+
+        // View from migrated SQL (without backticks)
+        let view_migrated = View {
+            name: "test_view".to_string(),
+            database: None,
+            select_sql: "SELECT * FROM source".to_string(),
+            source_tables: vec!["source".to_string()],
+            metadata: None,
+        };
+
+        // These should be equivalent despite backtick differences
+        assert!(
+            views_are_equivalent(&view_sdk, &view_migrated, default_db),
+            "Views should be equivalent despite backtick differences"
+        );
     }
 }
