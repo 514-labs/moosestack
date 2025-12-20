@@ -751,23 +751,23 @@ if (mv) {
 }
 ```
 
-### `getCustomViews()`
-Get all registered custom views.
+### `getViews()`
+Get all registered views.
 ```ts
-import { getCustomViews } from "@514labs/moose-lib";
+import { getViews } from "@514labs/moose-lib";
 
-const views = getCustomViews();  // Returns Map<string, View>
+const views = getViews();  // Returns Map<string, View>
 for (const [name, view] of views) {
   console.log(`View: ${name}`);
 }
 ```
 
-### `getCustomView(name)`
-Get a specific custom view by name.
+### `getView(name)`
+Get a specific view by name.
 ```ts
-import { getCustomView } from "@514labs/moose-lib";
+import { getView } from "@514labs/moose-lib";
 
-const view = getCustomView("ActiveUsersView");
+const view = getView("ActiveUsersView");
 if (view) {
   console.log(`View: ${view.name}`);
 }

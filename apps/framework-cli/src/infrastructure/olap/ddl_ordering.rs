@@ -136,15 +136,15 @@ pub enum AtomicOlapOperation {
         /// Dependency information
         dependency_info: DependencyInfo,
     },
-    /// Create a new view
-    CreateView {
+    /// Create a new DMv1 view (table alias)
+    CreateDmv1View {
         /// The view to create
         view: Dmv1View,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
-    /// Drop an existing view
-    DropView {
+    /// Drop an existing DMv1 view
+    DropDmv1View {
         /// The view to drop
         view: Dmv1View,
         /// Dependency information
@@ -179,14 +179,14 @@ pub enum AtomicOlapOperation {
         dependency_info: DependencyInfo,
     },
     /// Create a structured custom view
-    CreateCustomView {
+    CreateView {
         /// The custom view to create
         view: crate::framework::core::infrastructure::view::View,
         /// Dependency information
         dependency_info: DependencyInfo,
     },
     /// Drop a structured custom view
-    DropCustomView {
+    DropView {
         /// The custom view to drop
         view: crate::framework::core::infrastructure::view::View,
         /// Dependency information
@@ -341,8 +341,8 @@ impl AtomicOlapOperation {
                     },
                 }
             }
-            // views are not in DMV2, convert them to RawSql
-            AtomicOlapOperation::CreateView {
+            // DMv1 views are not in DMV2, convert them to RawSql
+            AtomicOlapOperation::CreateDmv1View {
                 view,
                 dependency_info: _,
             } => {
@@ -359,7 +359,7 @@ impl AtomicOlapOperation {
                     description: format!("Creating view {}", view.id()),
                 }
             }
-            AtomicOlapOperation::DropView {
+            AtomicOlapOperation::DropDmv1View {
                 view,
                 dependency_info: _,
             } => SerializableOlapOperation::RawSql {
@@ -395,19 +395,15 @@ impl AtomicOlapOperation {
                     database: mv.database.clone(),
                 }
             }
-            AtomicOlapOperation::CreateCustomView { view, .. } => {
-                SerializableOlapOperation::CreateCustomView {
-                    name: view.name.clone(),
-                    database: view.database.clone(),
-                    select_sql: view.select_sql.clone(),
-                }
-            }
-            AtomicOlapOperation::DropCustomView { view, .. } => {
-                SerializableOlapOperation::DropCustomView {
-                    name: view.name.clone(),
-                    database: view.database.clone(),
-                }
-            }
+            AtomicOlapOperation::CreateView { view, .. } => SerializableOlapOperation::CreateView {
+                name: view.name.clone(),
+                database: view.database.clone(),
+                select_sql: view.select_sql.clone(),
+            },
+            AtomicOlapOperation::DropView { view, .. } => SerializableOlapOperation::DropView {
+                name: view.name.clone(),
+                database: view.database.clone(),
+            },
         }
     }
 
@@ -456,12 +452,18 @@ impl AtomicOlapOperation {
                     id: view_name.clone(),
                 }
             }
-            AtomicOlapOperation::CreateView { view, .. } => {
-                InfrastructureSignature::View { id: view.id() }
+            AtomicOlapOperation::CreateDmv1View { view, .. } => {
+                InfrastructureSignature::Dmv1View { id: view.id() }
             }
-            AtomicOlapOperation::DropView { view, .. } => {
-                InfrastructureSignature::View { id: view.id() }
+            AtomicOlapOperation::DropDmv1View { view, .. } => {
+                InfrastructureSignature::Dmv1View { id: view.id() }
             }
+            AtomicOlapOperation::CreateView { view, .. } => InfrastructureSignature::View {
+                id: view.id(default_database),
+            },
+            AtomicOlapOperation::DropView { view, .. } => InfrastructureSignature::View {
+                id: view.id(default_database),
+            },
             AtomicOlapOperation::RunSetupSql { resource, .. } => {
                 InfrastructureSignature::SqlResource {
                     id: resource.name.clone(),
@@ -480,16 +482,6 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::DropMaterializedView { mv, .. } => {
                 InfrastructureSignature::MaterializedView {
                     id: mv.id(default_database),
-                }
-            }
-            AtomicOlapOperation::CreateCustomView { view, .. } => {
-                InfrastructureSignature::CustomView {
-                    id: view.id(default_database),
-                }
-            }
-            AtomicOlapOperation::DropCustomView { view, .. } => {
-                InfrastructureSignature::CustomView {
-                    id: view.id(default_database),
                 }
             }
         }
@@ -534,10 +526,10 @@ impl AtomicOlapOperation {
             | AtomicOlapOperation::PopulateMaterializedView {
                 dependency_info, ..
             }
-            | AtomicOlapOperation::CreateView {
+            | AtomicOlapOperation::CreateDmv1View {
                 dependency_info, ..
             }
-            | AtomicOlapOperation::DropView {
+            | AtomicOlapOperation::DropDmv1View {
                 dependency_info, ..
             }
             | AtomicOlapOperation::RunSetupSql {
@@ -552,10 +544,10 @@ impl AtomicOlapOperation {
             | AtomicOlapOperation::DropMaterializedView {
                 dependency_info, ..
             }
-            | AtomicOlapOperation::CreateCustomView {
+            | AtomicOlapOperation::CreateView {
                 dependency_info, ..
             }
-            | AtomicOlapOperation::DropCustomView {
+            | AtomicOlapOperation::DropView {
                 dependency_info, ..
             } => Some(dependency_info),
         }
@@ -625,7 +617,9 @@ impl AtomicOlapOperation {
         // Special cases for views and materialized views:
         // In teardown, we want views and materialized views to be dropped before their source and target tables
         match self {
-            AtomicOlapOperation::RunTeardownSql { .. } | AtomicOlapOperation::DropView { .. } => {
+            AtomicOlapOperation::RunTeardownSql { .. }
+            | AtomicOlapOperation::DropDmv1View { .. }
+            | AtomicOlapOperation::DropView { .. } => {
                 // For a view or materialized view, we reverse the normal dependency direction
                 // Both pushes_data_to and pulls_data_from tables should depend on the view being gone first
 
@@ -968,23 +962,23 @@ fn process_column_changes(
     plan
 }
 
-/// Creates an operation to add a view
+/// Creates an operation to add a Dmv1 view
 fn create_view_operation(
     view: &Dmv1View,
     pulls_from: Vec<InfrastructureSignature>,
 ) -> AtomicOlapOperation {
-    AtomicOlapOperation::CreateView {
+    AtomicOlapOperation::CreateDmv1View {
         view: view.clone(),
         dependency_info: create_dependency_info(pulls_from, vec![]),
     }
 }
 
-/// Creates an operation to drop a view
+/// Creates an operation to drop a Dmv1 view
 fn drop_view_operation(
     view: &Dmv1View,
     pushes_to: Vec<InfrastructureSignature>,
 ) -> AtomicOlapOperation {
-    AtomicOlapOperation::DropView {
+    AtomicOlapOperation::DropDmv1View {
         view: view.clone(),
         dependency_info: create_dependency_info(vec![], pushes_to),
     }
@@ -1014,22 +1008,22 @@ fn run_teardown_sql_operation(
     }
 }
 
-/// Handles adding a view operation
-fn handle_view_add(view: &Dmv1View) -> OperationPlan {
+/// Handles adding a dmv1 view operation
+fn handle_dmv1_view_add(view: &Dmv1View) -> OperationPlan {
     let pulls_from = view.pulls_data_from();
     let setup_op = create_view_operation(view, pulls_from);
     OperationPlan::setup(vec![setup_op])
 }
 
-/// Handles removing a view operation
-fn handle_view_remove(view: &Dmv1View) -> OperationPlan {
+/// Handles removing a dmv1 view operation
+fn handle_dmv1_view_remove(view: &Dmv1View) -> OperationPlan {
     let pushed_to = view.pushes_data_to();
     let teardown_op = drop_view_operation(view, pushed_to);
     OperationPlan::teardown(vec![teardown_op])
 }
 
-/// Handles updating a view operation
-fn handle_view_update(before: &Dmv1View, after: &Dmv1View) -> OperationPlan {
+/// Handles updating a dmv1 view operation
+fn handle_dmv1_view_update(before: &Dmv1View, after: &Dmv1View) -> OperationPlan {
     // For views we always drop and recreate
     let pushed_to = before.pushes_data_to();
     let teardown_op = drop_view_operation(before, pushed_to);
@@ -1132,11 +1126,11 @@ fn handle_materialized_view_update(
 }
 
 /// Handles adding a custom view operation
-fn handle_custom_view_add(view: &View) -> OperationPlan {
+fn handle_view_add(view: &View) -> OperationPlan {
     let pulls_from = view.pulls_data_from();
     let pushes_to = view.pushes_data_to();
 
-    let setup_op = AtomicOlapOperation::CreateCustomView {
+    let setup_op = AtomicOlapOperation::CreateView {
         view: view.clone(),
         dependency_info: create_dependency_info(pulls_from, pushes_to),
     };
@@ -1145,11 +1139,11 @@ fn handle_custom_view_add(view: &View) -> OperationPlan {
 }
 
 /// Handles removing a custom view operation
-fn handle_custom_view_remove(view: &View) -> OperationPlan {
+fn handle_view_remove(view: &View) -> OperationPlan {
     let pulls_from = view.pulls_data_from();
     let pushes_to = view.pushes_data_to();
 
-    let teardown_op = AtomicOlapOperation::DropCustomView {
+    let teardown_op = AtomicOlapOperation::DropView {
         view: view.clone(),
         dependency_info: create_dependency_info(pulls_from, pushes_to),
     };
@@ -1158,17 +1152,17 @@ fn handle_custom_view_remove(view: &View) -> OperationPlan {
 }
 
 /// Handles updating a custom view operation
-fn handle_custom_view_update(before: &View, after: &View) -> OperationPlan {
+fn handle_view_update(before: &View, after: &View) -> OperationPlan {
     let before_pulls = before.pulls_data_from();
     let before_pushes = before.pushes_data_to();
-    let teardown_op = AtomicOlapOperation::DropCustomView {
+    let teardown_op = AtomicOlapOperation::DropView {
         view: before.clone(),
         dependency_info: create_dependency_info(before_pulls, before_pushes),
     };
 
     let after_pulls = after.pulls_data_from();
     let after_pushes = after.pushes_data_to();
-    let setup_op = AtomicOlapOperation::CreateCustomView {
+    let setup_op = AtomicOlapOperation::CreateView {
         view: after.clone(),
         dependency_info: create_dependency_info(after_pulls, after_pushes),
     };
@@ -1304,10 +1298,12 @@ pub fn order_olap_changes(
                     });
                 plan
             }
-            OlapChange::View(Change::Added(boxed_view)) => handle_view_add(boxed_view),
-            OlapChange::View(Change::Removed(boxed_view)) => handle_view_remove(boxed_view),
-            OlapChange::View(Change::Updated { before, after }) => {
-                handle_view_update(before, after)
+            OlapChange::Dmv1View(Change::Added(boxed_view)) => handle_dmv1_view_add(boxed_view),
+            OlapChange::Dmv1View(Change::Removed(boxed_view)) => {
+                handle_dmv1_view_remove(boxed_view)
+            }
+            OlapChange::Dmv1View(Change::Updated { before, after }) => {
+                handle_dmv1_view_update(before, after)
             }
             OlapChange::SqlResource(Change::Added(boxed_resource)) => {
                 handle_sql_resource_add(boxed_resource)
@@ -1325,10 +1321,10 @@ pub fn order_olap_changes(
             OlapChange::MaterializedView(Change::Updated { before, after }) => {
                 handle_materialized_view_update(before, after)
             }
-            OlapChange::CustomView(Change::Added(view)) => handle_custom_view_add(view),
-            OlapChange::CustomView(Change::Removed(view)) => handle_custom_view_remove(view),
-            OlapChange::CustomView(Change::Updated { before, after }) => {
-                handle_custom_view_update(before, after)
+            OlapChange::View(Change::Added(view)) => handle_view_add(view),
+            OlapChange::View(Change::Removed(view)) => handle_view_remove(view),
+            OlapChange::View(Change::Updated { before, after }) => {
+                handle_view_update(before, after)
             }
         };
 
@@ -1660,7 +1656,7 @@ mod tests {
             },
         };
 
-        let op_create_c = AtomicOlapOperation::CreateView {
+        let op_create_c = AtomicOlapOperation::CreateDmv1View {
             view: view_c.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {
@@ -1694,8 +1690,8 @@ mod tests {
         }
 
         match &ordered[2] {
-            AtomicOlapOperation::CreateView { view, .. } => assert_eq!(view.name, "view_c"),
-            _ => panic!("Expected CreateView for view_c as third operation"),
+            AtomicOlapOperation::CreateDmv1View { view, .. } => assert_eq!(view.name, "view_c"),
+            _ => panic!("Expected CreateDmv1View for view_c as third operation"),
         }
     }
 
@@ -1785,14 +1781,14 @@ mod tests {
                     id: table_a.id(DEFAULT_DATABASE_NAME),
                 }],
                 // View C depends on Table B
-                pushes_data_to: vec![InfrastructureSignature::View {
+                pushes_data_to: vec![InfrastructureSignature::Dmv1View {
                     id: "view_c".to_string(),
                 }],
             },
         };
 
         // For view C (depends on B)
-        let op_drop_c = AtomicOlapOperation::DropView {
+        let op_drop_c = AtomicOlapOperation::DropDmv1View {
             view: view_c.clone(),
             dependency_info: DependencyInfo {
                 // View C depends on Table B
@@ -1816,7 +1812,7 @@ mod tests {
             .iter()
             .map(|op| match op {
                 AtomicOlapOperation::DropTable { table, .. } => format!("table {}", table.name),
-                AtomicOlapOperation::DropView { view, .. } => format!("view {}", view.name),
+                AtomicOlapOperation::DropDmv1View { view, .. } => format!("view {}", view.name),
                 _ => "other".to_string(),
             })
             .collect::<Vec<_>>();
@@ -1827,8 +1823,8 @@ mod tests {
 
         // First operation should be to drop view C
         match &ordered[0] {
-            AtomicOlapOperation::DropView { view, .. } => assert_eq!(view.name, "view_c"),
-            _ => panic!("Expected DropView for view_c as first operation"),
+            AtomicOlapOperation::DropDmv1View { view, .. } => assert_eq!(view.name, "view_c"),
+            _ => panic!("Expected DropDmv1View for view_c as first operation"),
         }
 
         // Second operation should be to drop table B
@@ -1922,7 +1918,7 @@ mod tests {
         };
 
         // Create view (depends on table)
-        let op_create_view = AtomicOlapOperation::CreateView {
+        let op_create_view = AtomicOlapOperation::CreateDmv1View {
             view: view.clone(),
             dependency_info: DependencyInfo {
                 pulls_data_from: vec![InfrastructureSignature::Table {

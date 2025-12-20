@@ -21,7 +21,7 @@ function formatTableReference(table: OlapTable<any> | View): string {
  */
 export class View {
   /** @internal */
-  public readonly kind = "CustomView";
+  public readonly kind = "View";
 
   /** The name of the view */
   name: string;
@@ -68,11 +68,11 @@ export class View {
       }
     }
 
-    // Register in the customViews registry
-    const customViews = getMooseInternal().customViews;
-    if (!isClientOnlyMode() && customViews.has(this.name)) {
+    // Register in the views registry
+    const views = getMooseInternal().views;
+    if (!isClientOnlyMode() && views.has(this.name)) {
       throw new Error(`View with name ${this.name} already exists`);
     }
-    customViews.set(this.name, this);
+    views.set(this.name, this);
   }
 }

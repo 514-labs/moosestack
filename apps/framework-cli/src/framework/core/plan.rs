@@ -358,48 +358,43 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
         }
     }
 
-    // Handle Custom Views reconciliation
-    debug!("Reconciling Custom Views");
+    // Handle Views reconciliation
+    debug!("Reconciling Views");
 
-    // Remove missing custom views (in map but don't exist in reality)
-    for missing_view_id in discrepancies.missing_custom_views {
+    // Remove missing views (in map but don't exist in reality)
+    for missing_view_id in discrepancies.missing_views {
         debug!(
-            "Removing missing custom view from infrastructure map: {}",
+            "Removing missing view from infrastructure map: {}",
             missing_view_id
         );
-        reconciled_map.custom_views.remove(&missing_view_id);
+        reconciled_map.views.remove(&missing_view_id);
     }
 
-    // Add unmapped custom views (exist in database but not in current infrastructure map)
-    for unmapped_view in discrepancies.unmapped_custom_views {
+    // Add unmapped views (exist in database but not in current infrastructure map)
+    for unmapped_view in discrepancies.unmapped_views {
         let name = &unmapped_view.name;
         debug!(
-            "Adding unmapped custom view found in reality to infrastructure map: {}",
+            "Adding unmapped view found in reality to infrastructure map: {}",
             name
         );
-        reconciled_map
-            .custom_views
-            .insert(name.clone(), unmapped_view);
+        reconciled_map.views.insert(name.clone(), unmapped_view);
     }
 
-    // Update mismatched custom views (exist in both but differ)
-    for change in discrepancies.mismatched_custom_views {
+    // Update mismatched views (exist in both but differ)
+    for change in discrepancies.mismatched_views {
         match change {
-            OlapChange::CustomView(Change::Updated { before, .. }) => {
+            OlapChange::View(Change::Updated { before, .. }) => {
                 // We use 'before' (the actual view from reality) because we want the
                 // reconciled map to reflect the current state of the database.
                 let name = &before.name;
                 debug!(
-                    "Updating mismatched custom view in infrastructure map to match reality: {}",
+                    "Updating mismatched view in infrastructure map to match reality: {}",
                     name
                 );
-                reconciled_map.custom_views.insert(name.clone(), *before);
+                reconciled_map.views.insert(name.clone(), *before);
             }
             _ => {
-                tracing::warn!(
-                    "Unexpected change type in mismatched_custom_views: {:?}",
-                    change
-                );
+                tracing::warn!("Unexpected change type in mismatched_views: {:?}", change);
             }
         }
     }
@@ -523,7 +518,7 @@ pub async fn load_target_infrastructure(
         })?;
 
     // Canonicalize to ensure backward compatibility: migrate old SqlResource entries
-    // to MaterializedView/CustomView format to match how stored infrastructure maps are normalized.
+    // to MaterializedView/View format to match how stored infrastructure maps are normalized.
     // This prevents false "changes" when comparing old stored state (which has been canonicalized)
     // with new target state (which might still have old SqlResource format).
     Ok(target_infra_map.canonicalize_tables())

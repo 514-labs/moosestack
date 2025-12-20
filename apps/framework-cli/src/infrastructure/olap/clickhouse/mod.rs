@@ -248,7 +248,7 @@ pub enum SerializableOlapOperation {
         database: Option<String>,
     },
     /// Create a custom view (user-defined SELECT view)
-    CreateCustomView {
+    CreateView {
         /// Name of the view
         name: String,
         /// Database where the view is created (None = default database)
@@ -257,7 +257,7 @@ pub enum SerializableOlapOperation {
         select_sql: String,
     },
     /// Drop a custom view
-    DropCustomView {
+    DropView {
         /// Name of the view
         name: String,
         /// Database where the view is located (None = default database)
@@ -493,10 +493,10 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::DropMaterializedView { name, .. } => {
             format!("Dropping materialized view '{}'", name)
         }
-        SerializableOlapOperation::CreateCustomView { name, .. } => {
+        SerializableOlapOperation::CreateView { name, .. } => {
             format!("Creating custom view '{}'", name)
         }
-        SerializableOlapOperation::DropCustomView { name, .. } => {
+        SerializableOlapOperation::DropView { name, .. } => {
             format!("Dropping custom view '{}'", name)
         }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
@@ -718,15 +718,14 @@ pub async fn execute_atomic_operation(
         SerializableOlapOperation::DropMaterializedView { name, database } => {
             execute_drop_view(db_name, name, database.as_deref(), client).await?;
         }
-        SerializableOlapOperation::CreateCustomView {
+        SerializableOlapOperation::CreateView {
             name,
             database,
             select_sql,
         } => {
-            execute_create_custom_view(db_name, name, database.as_deref(), select_sql, client)
-                .await?;
+            execute_create_view(db_name, name, database.as_deref(), select_sql, client).await?;
         }
-        SerializableOlapOperation::DropCustomView { name, database } => {
+        SerializableOlapOperation::DropView { name, database } => {
             execute_drop_view(db_name, name, database.as_deref(), client).await?;
         }
         SerializableOlapOperation::RawSql { sql, description } => {
@@ -1430,7 +1429,7 @@ async fn execute_create_materialized_view(
 }
 
 /// Executes a CREATE VIEW statement for custom views
-async fn execute_create_custom_view(
+async fn execute_create_view(
     db_name: &str,
     view_name: &str,
     view_database: Option<&str>,
@@ -1448,7 +1447,7 @@ async fn execute_create_custom_view(
         .await
         .map_err(|e| ClickhouseChangesError::ClickhouseClient {
             error: e,
-            resource: Some(format!("custom_view:{}", view_name)),
+            resource: Some(format!("view:{}", view_name)),
         })?;
     Ok(())
 }

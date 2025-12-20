@@ -637,22 +637,22 @@ if mv:
     print(f"Target table: {mv.target_table.name}")
 ```
 
-### `get_custom_views()`
-Get all registered custom views.
+### `get_views()`
+Get all registered views.
 ```python
-from moose_lib import get_custom_views
+from moose_lib import get_views
 
-views = get_custom_views()  # Returns Dict[str, View]
+views = get_views()  # Returns Dict[str, View]
 for name, view in views.items():
     print(f"View: {name}")
 ```
 
-### `get_custom_view(name)`
-Get a specific custom view by name.
+### `get_view(name)`
+Get a specific view by name.
 ```python
-from moose_lib import get_custom_view
+from moose_lib import get_view
 
-view = get_custom_view("ActiveUsersView")
+view = get_view("ActiveUsersView")
 if view:
     print(f"View: {view.name}")
 ```

@@ -196,18 +196,18 @@ export function getMaterializedView(
 }
 
 /**
- * Get all registered custom views.
+ * Get all registered views.
  * @returns A Map of view name to View instance
  */
-export function getCustomViews(): Map<string, View> {
-  return getMooseInternal().customViews;
+export function getViews(): Map<string, View> {
+  return getMooseInternal().views;
 }
 
 /**
- * Get a registered custom view by name.
- * @param name - The name of the custom view
+ * Get a registered view by name.
+ * @param name - The name of the view
  * @returns The View instance or undefined if not found
  */
-export function getCustomView(name: string): View | undefined {
-  return getMooseInternal().customViews.get(name);
+export function getView(name: string): View | undefined {
+  return getMooseInternal().views.get(name);
 }

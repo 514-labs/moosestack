@@ -369,7 +369,7 @@
           "description": "Create a custom view (user-defined SELECT view)",
           "type": "object",
           "properties": {
-            "CreateCustomView": {
+            "CreateView": {
               "type": "object",
               "properties": {
                 "name": {
@@ -388,14 +388,14 @@
               "required": ["name", "select_sql"]
             }
           },
-          "required": ["CreateCustomView"],
+          "required": ["CreateView"],
           "additionalProperties": false
         },
         {
           "description": "Drop a custom view",
           "type": "object",
           "properties": {
-            "DropCustomView": {
+            "DropView": {
               "type": "object",
               "properties": {
                 "name": {
@@ -410,7 +410,7 @@
               "required": ["name"]
             }
           },
-          "required": ["DropCustomView"],
+          "required": ["DropView"],
           "additionalProperties": false
         },
         {

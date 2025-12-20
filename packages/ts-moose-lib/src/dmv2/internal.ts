@@ -74,7 +74,7 @@ const moose_internal = {
   workflows: new Map<string, Workflow>(),
   webApps: new Map<string, WebApp>(),
   materializedViews: new Map<string, MaterializedView<any>>(),
-  customViews: new Map<string, View>(),
+  views: new Map<string, View>(),
 };
 /**
  * Default retention period for streams if not specified (7 days in seconds).
@@ -457,9 +457,9 @@ interface MaterializedViewJson {
 }
 
 /**
- * JSON representation of a structured Custom View.
+ * JSON representation of a structured View.
  */
-interface CustomViewJson {
+interface ViewJson {
   /** Name of the view */
   name: string;
   /** Database where the view is created (optional, uses default if not set) */
@@ -851,7 +851,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const workflows: { [key: string]: WorkflowJson } = {};
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
-  const customViews: { [key: string]: CustomViewJson } = {};
+  const views: { [key: string]: ViewJson } = {};
 
   registry.tables.forEach((table) => {
     const id =
@@ -1113,9 +1113,9 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     };
   });
 
-  // Serialize custom views with structured data
-  registry.customViews.forEach((view) => {
-    customViews[view.name] = {
+  // Serialize views with structured data
+  registry.views.forEach((view) => {
+    views[view.name] = {
       name: view.name,
       selectSql: view.selectSql,
       sourceTables: view.sourceTables,
@@ -1132,7 +1132,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     workflows,
     webApps,
     materializedViews,
-    customViews,
+    views,
   };
 };
 
@@ -1180,7 +1180,7 @@ const loadIndex = () => {
   registry.workflows.clear();
   registry.webApps.clear();
   registry.materializedViews.clear();
-  registry.customViews.clear();
+  registry.views.clear();
 
   // Clear require cache for app directory to pick up changes
   const appDir = `${process.cwd()}/${getSourceDir()}`;

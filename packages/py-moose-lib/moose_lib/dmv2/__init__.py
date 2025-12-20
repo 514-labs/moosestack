@@ -113,8 +113,8 @@ from .registry import (
     get_web_app,
     get_materialized_views,
     get_materialized_view,
-    get_custom_views,
-    get_custom_view,
+    get_views,
+    get_view,
     # Backward compatibility aliases
     get_consumption_apis,
     get_consumption_api,
@@ -197,8 +197,8 @@ __all__ = [
     "get_web_app",
     "get_materialized_views",
     "get_materialized_view",
-    "get_custom_views",
-    "get_custom_view",
+    "get_views",
+    "get_view",
     # Backward compatibility aliases (deprecated)
     "get_consumption_apis",
     "get_consumption_api",

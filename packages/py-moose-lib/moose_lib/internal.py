@@ -22,7 +22,7 @@ from moose_lib.dmv2 import (
     get_workflows,
     get_web_apps,
     get_materialized_views,
-    get_custom_views,
+    get_views,
     OlapTable,
     OlapConfig,
     SqlResource,
@@ -510,7 +510,7 @@ class MaterializedViewJson(BaseModel):
     metadata: Optional[dict] = None
 
 
-class CustomViewJson(BaseModel):
+class ViewJson(BaseModel):
     """Internal representation of a structured Custom View for serialization.
 
     Attributes:
@@ -544,7 +544,7 @@ class InfrastructureMap(BaseModel):
         workflows: Dictionary mapping workflow names to their configurations.
         web_apps: Dictionary mapping WebApp names to their configurations.
         materialized_views: Dictionary mapping MV names to their structured configurations.
-        custom_views: Dictionary mapping custom view names to their structured configurations.
+        views: Dictionary mapping view names to their structured configurations.
     """
 
     model_config = model_config
@@ -557,7 +557,7 @@ class InfrastructureMap(BaseModel):
     workflows: dict[str, WorkflowJson]
     web_apps: dict[str, WebAppJson]
     materialized_views: dict[str, MaterializedViewJson]
-    custom_views: dict[str, CustomViewJson]
+    views: dict[str, ViewJson]
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -874,7 +874,7 @@ def to_infra_map() -> dict:
     workflows = {}
     web_apps = {}
     materialized_views = {}
-    custom_views = {}
+    views = {}
 
     for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
@@ -1053,8 +1053,8 @@ def to_infra_map() -> dict:
         )
 
     # Serialize custom views with structured data
-    for name, view in get_custom_views().items():
-        custom_views[name] = CustomViewJson(
+    for name, view in get_views().items():
+        views[name] = ViewJson(
             name=view.name,
             select_sql=view.select_sql,
             source_tables=view.source_tables,
@@ -1070,7 +1070,7 @@ def to_infra_map() -> dict:
         workflows=workflows,
         web_apps=web_apps,
         materialized_views=materialized_views,
-        custom_views=custom_views,
+        views=views,
     )
 
     return infra_map.model_dump(by_alias=True, exclude_none=False)

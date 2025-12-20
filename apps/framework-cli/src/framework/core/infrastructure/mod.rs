@@ -51,14 +51,14 @@ pub enum InfrastructureSignature {
     ApiEndpoint { id: String },
     /// Process that synchronizes data from a topic to a table
     TopicToTableSyncProcess { id: String },
-    /// View infrastructure component (for internal alias views)
-    View { id: String },
+    /// DMv1 View infrastructure component (for internal alias views / data model versioning)
+    Dmv1View { id: String },
     /// SQL resource infrastructure component (legacy, for raw SQL)
     SqlResource { id: String },
     /// Materialized view infrastructure component
     MaterializedView { id: String },
-    /// Custom view infrastructure component (user-defined SELECT views)
-    CustomView { id: String },
+    /// View infrastructure component (user-defined SELECT views)
+    View { id: String },
 }
 
 impl InfrastructureSignature {
@@ -69,10 +69,10 @@ impl InfrastructureSignature {
             | Self::Topic { id }
             | Self::ApiEndpoint { id }
             | Self::TopicToTableSyncProcess { id }
-            | Self::View { id }
+            | Self::Dmv1View { id }
             | Self::SqlResource { id }
             | Self::MaterializedView { id }
-            | Self::CustomView { id } => id,
+            | Self::View { id } => id,
         }
     }
 
@@ -98,9 +98,9 @@ impl InfrastructureSignature {
                 proto.set_topic_to_table_sync_process_id(id.clone());
                 proto
             }
-            InfrastructureSignature::View { id } => {
+            InfrastructureSignature::Dmv1View { id } => {
                 let mut proto = ProtoInfrastructureSignature::new();
-                proto.set_view_id(id.clone());
+                proto.set_dmv1_view_id(id.clone());
                 proto
             }
             InfrastructureSignature::SqlResource { id } => {
@@ -113,9 +113,9 @@ impl InfrastructureSignature {
                 proto.set_materialized_view_id(id.clone());
                 proto
             }
-            InfrastructureSignature::CustomView { id } => {
+            InfrastructureSignature::View { id } => {
                 let mut proto = ProtoInfrastructureSignature::new();
-                proto.set_custom_view_id(id.clone());
+                proto.set_view_id(id.clone());
                 proto
             }
         }
@@ -135,8 +135,8 @@ impl InfrastructureSignature {
             Some(infrastructure_signature::Signature::TopicToTableSyncProcessId(id)) => {
                 InfrastructureSignature::TopicToTableSyncProcess { id }
             }
-            Some(infrastructure_signature::Signature::ViewId(id)) => {
-                InfrastructureSignature::View { id }
+            Some(infrastructure_signature::Signature::Dmv1ViewId(id)) => {
+                InfrastructureSignature::Dmv1View { id }
             }
             Some(infrastructure_signature::Signature::SqlResourceId(id)) => {
                 InfrastructureSignature::SqlResource { id }
@@ -144,8 +144,8 @@ impl InfrastructureSignature {
             Some(infrastructure_signature::Signature::MaterializedViewId(id)) => {
                 InfrastructureSignature::MaterializedView { id }
             }
-            Some(infrastructure_signature::Signature::CustomViewId(id)) => {
-                InfrastructureSignature::CustomView { id }
+            Some(infrastructure_signature::Signature::ViewId(id)) => {
+                InfrastructureSignature::View { id }
             }
             None => {
                 panic!("Invalid infrastructure signature");

@@ -535,7 +535,7 @@ pub struct PartialInfrastructureMap {
     #[serde(default)]
     tables: HashMap<String, PartialTable>,
     #[serde(default)]
-    views: HashMap<String, Dmv1View>,
+    dmv1_views: HashMap<String, Dmv1View>,
     #[serde(default)]
     sql_resources: HashMap<String, SqlResource>,
     #[serde(default)]
@@ -556,7 +556,7 @@ pub struct PartialInfrastructureMap {
         crate::framework::core::infrastructure::materialized_view::MaterializedView,
     >,
     #[serde(default)]
-    custom_views: HashMap<String, crate::framework::core::infrastructure::view::View>,
+    views: HashMap<String, crate::framework::core::infrastructure::view::View>,
 }
 
 impl PartialInfrastructureMap {
@@ -682,7 +682,7 @@ impl PartialInfrastructureMap {
             topics,
             api_endpoints,
             tables,
-            views: self.views,
+            dmv1_views: self.dmv1_views,
             sql_resources: self.sql_resources,
             topic_to_table_sync_processes,
             topic_to_topic_sync_processes: self.topic_to_topic_sync_processes,
@@ -695,7 +695,7 @@ impl PartialInfrastructureMap {
             workflows,
             web_apps,
             materialized_views: self.materialized_views,
-            custom_views: self.custom_views,
+            views: self.views,
         };
 
         normalize_all_metadata_paths(&mut infra_map, project_root);

@@ -9,7 +9,7 @@ message InfrastructureMap {
   map<string, Topic> topics = 1;
   map<string, ApiEndpoint> api_endpoints = 2;
   map<string, Table> tables = 3;
-  map<string, View> views = 4;
+  map<string, Dmv1View> dmv1_views = 4;
   map<string, TopicToTableSyncProcess> topic_to_table_sync_processes = 5;
   map<string, TopicToTopicSyncProcess> topic_to_topic_sync_processes = 6;
   map<string, FunctionProcess> function_processes = 7;
@@ -27,8 +27,8 @@ message InfrastructureMap {
 
   // Structured materialized views (replaces SqlResource for MVs)
   map<string, MaterializedView> materialized_views = 16;
-  // Structured custom views (replaces SqlResource for views)
-  map<string, CustomView> custom_views = 17;
+  // Structured views (replaces SqlResource for views)
+  map<string, View> views = 17;
 }
 
 message SourceLocation {
@@ -193,7 +193,7 @@ message TableIndex {
   uint64 granularity = 5;
 }
 
-message View {
+message Dmv1View {
   string name = 1;
   string version = 2;
   oneof view_type {
@@ -223,7 +223,7 @@ message SelectQuery {
 
 // User-defined ClickHouse View with an arbitrary SELECT query.
 // Views are virtual tables that compute results on-demand.
-message CustomView {
+message View {
   // Name of the view
   string name = 1;
   // Database where the view is created (empty = default database)
@@ -484,12 +484,12 @@ message InfrastructureSignature {
   oneof signature {
     string topic_id = 1;
     string table_id = 2;
-    string view_id = 3;
+    string dmv1_view_id = 3;
     string sql_resource_id = 4;
     string api_endpoint_id = 5;
     string topic_to_table_sync_process_id = 6;
     string materialized_view_id = 7;
-    string custom_view_id = 8;
+    string view_id = 8;
   }
 }
 

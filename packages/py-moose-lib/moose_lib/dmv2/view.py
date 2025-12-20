@@ -8,7 +8,7 @@ including their SQL statements and dependencies.
 from typing import Union, Optional
 
 from .olap_table import OlapTable
-from ._registry import _custom_views
+from ._registry import _views
 from ._source_capture import get_source_file_from_stack
 
 
@@ -39,7 +39,7 @@ class View:
         source_file (Optional[str]): Path to source file where defined.
     """
 
-    kind: str = "CustomView"
+    kind: str = "View"
     name: str
     select_sql: str
     source_tables: list[str]
@@ -70,6 +70,6 @@ class View:
             if source_file:
                 self.metadata["source"] = {"file": source_file}
 
-        if self.name in _custom_views:
+        if self.name in _views:
             raise ValueError(f"View with name {self.name} already exists")
-        _custom_views[self.name] = self
+        _views[self.name] = self

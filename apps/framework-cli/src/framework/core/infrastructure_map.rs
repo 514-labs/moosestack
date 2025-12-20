@@ -387,14 +387,14 @@ pub enum InfraChange {
 pub enum OlapChange {
     /// Change to a database table
     Table(TableChange),
-    /// Change to a database view (internal alias views)
-    View(Change<Dmv1View>),
+    /// Change to a database view (internal alias views for data model versioning)
+    Dmv1View(Change<Dmv1View>),
     /// Change to SQL resource (legacy, for raw SQL)
     SqlResource(Change<SqlResource>),
     /// Change to a structured materialized view
     MaterializedView(Change<MaterializedView>),
-    /// Change to a structured custom view (user-defined SELECT views)
-    CustomView(Change<View>),
+    /// Change to a structured view (user-defined SELECT views)
+    View(Change<View>),
     /// Explicit operation to populate a materialized view with initial data
     PopulateMaterializedView {
         /// Name of the materialized view
@@ -534,8 +534,8 @@ pub struct InfrastructureMap {
     /// Collection of database tables indexed by table name
     pub tables: HashMap<String, Table>,
 
-    /// Collection of database views indexed by view name
-    pub views: HashMap<String, Dmv1View>,
+    /// Collection of database views (DMv1 for table aliases) indexed by view name
+    pub dmv1_views: HashMap<String, Dmv1View>,
 
     /// Processes that sync data from topics to tables
     pub topic_to_table_sync_processes: HashMap<String, TopicToTableSyncProcess>,
@@ -578,7 +578,7 @@ pub struct InfrastructureMap {
 
     /// Collection of custom views indexed by view name
     #[serde(default)]
-    pub custom_views: HashMap<String, View>,
+    pub views: HashMap<String, View>,
 }
 
 impl InfrastructureMap {
@@ -605,7 +605,7 @@ impl InfrastructureMap {
             topics: Default::default(),
             api_endpoints: Default::default(),
             tables: Default::default(),
-            views: Default::default(),
+            dmv1_views: Default::default(),
             topic_to_table_sync_processes: Default::default(),
             topic_to_topic_sync_processes: Default::default(),
             function_processes: Default::default(),
@@ -616,7 +616,7 @@ impl InfrastructureMap {
             workflows: Default::default(),
             web_apps: Default::default(),
             materialized_views: Default::default(),
-            custom_views: Default::default(),
+            views: Default::default(),
         }
     }
 
@@ -787,7 +787,7 @@ impl InfrastructureMap {
             topic_to_table_sync_processes,
             topic_to_topic_sync_processes,
             tables,
-            views,
+            dmv1_views: views,
             function_processes,
             block_db_processes,
             consumption_api_web_server,
@@ -796,7 +796,7 @@ impl InfrastructureMap {
             workflows: Default::default(),
             web_apps: Default::default(),
             materialized_views: Default::default(),
-            custom_views: Default::default(),
+            views: Default::default(),
         }
     }
 
@@ -893,9 +893,9 @@ impl InfrastructureMap {
                     .map(|mv| OlapChange::MaterializedView(Change::Added(Box::new(mv.clone())))),
             )
             .chain(
-                self.custom_views
+                self.views
                     .values()
-                    .map(|cv| OlapChange::CustomView(Change::Added(Box::new(cv.clone())))),
+                    .map(|cv| OlapChange::View(Change::Added(Box::new(cv.clone())))),
             )
             .collect()
     }
@@ -1031,8 +1031,12 @@ impl InfrastructureMap {
         let table_changes = changes.olap_changes.len() - olap_changes_len_before;
         tracing::info!("Table changes detected: {}", table_changes);
 
-        // Views
-        Self::diff_views(&self.views, &target_map.views, &mut changes.olap_changes);
+        // DMv1 Views (table aliases)
+        Self::diff_dmv1_views(
+            &self.dmv1_views,
+            &target_map.dmv1_views,
+            &mut changes.olap_changes,
+        );
 
         // SQL Resources
         tracing::info!("Analyzing changes in SQL Resources...");
@@ -1062,14 +1066,14 @@ impl InfrastructureMap {
         // Custom Views
         tracing::info!("Analyzing changes in Custom Views...");
         let olap_changes_len_before = changes.olap_changes.len();
-        Self::diff_custom_views(
-            &self.custom_views,
-            &target_map.custom_views,
+        Self::diff_views(
+            &self.views,
+            &target_map.views,
             &self.default_database,
             &mut changes.olap_changes,
         );
-        let custom_view_changes = changes.olap_changes.len() - olap_changes_len_before;
-        tracing::info!("Custom View changes detected: {}", custom_view_changes);
+        let view_changes = changes.olap_changes.len() - olap_changes_len_before;
+        tracing::info!("View changes detected: {}", view_changes);
 
         // All process types
         self.diff_all_processes(target_map, &mut changes.processes_changes);
@@ -1317,7 +1321,7 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// A tuple of (additions, removals, updates) counts
-    fn diff_views(
+    fn diff_dmv1_views(
         self_views: &HashMap<String, Dmv1View>,
         target_views: &HashMap<String, Dmv1View>,
         olap_changes: &mut Vec<OlapChange>,
@@ -1331,26 +1335,28 @@ impl InfrastructureMap {
         for (id, view) in self_views {
             if let Some(target_view) = target_views.get(id) {
                 if view != target_view {
-                    tracing::debug!("View updated: {} ({})", view.name, id);
+                    tracing::debug!("Dmv1View updated: {} ({})", view.name, id);
                     view_updates += 1;
-                    olap_changes.push(OlapChange::View(Change::Updated {
+                    olap_changes.push(OlapChange::Dmv1View(Change::Updated {
                         before: Box::new(view.clone()),
                         after: Box::new(target_view.clone()),
                     }));
                 }
             } else {
-                tracing::debug!("View removed: {} ({})", view.name, id);
+                tracing::debug!("Dmv1View removed: {} ({})", view.name, id);
                 view_removals += 1;
-                olap_changes.push(OlapChange::View(Change::Removed(Box::new(view.clone()))));
+                olap_changes.push(OlapChange::Dmv1View(Change::Removed(Box::new(
+                    view.clone(),
+                ))));
             }
         }
 
         // Check for additions
         for (id, view) in target_views {
             if !self_views.contains_key(id) {
-                tracing::debug!("View added: {} ({})", view.name, id);
+                tracing::debug!("Dmv1View added: {} ({})", view.name, id);
                 view_additions += 1;
-                olap_changes.push(OlapChange::View(Change::Added(Box::new(view.clone()))));
+                olap_changes.push(OlapChange::Dmv1View(Change::Added(Box::new(view.clone()))));
             }
         }
 
@@ -1910,13 +1916,13 @@ impl InfrastructureMap {
     /// * `target_views` - HashMap of target custom views
     /// * `default_database` - Default database name for normalization
     /// * `olap_changes` - Mutable vector to collect the identified changes
-    pub fn diff_custom_views(
+    pub fn diff_views(
         self_views: &HashMap<String, View>,
         target_views: &HashMap<String, View>,
         default_database: &str,
         olap_changes: &mut Vec<OlapChange>,
     ) {
-        use crate::framework::core::infra_reality_checker::custom_views_are_equivalent;
+        use crate::framework::core::infra_reality_checker::views_are_equivalent;
 
         tracing::info!(
             "Analyzing custom view differences between {} source views and {} target views",
@@ -1931,10 +1937,10 @@ impl InfrastructureMap {
         for (id, view) in self_views {
             if let Some(target_view) = target_views.get(id) {
                 // Use semantic equivalence check instead of plain !=
-                if !custom_views_are_equivalent(view, target_view, default_database) {
+                if !views_are_equivalent(view, target_view, default_database) {
                     tracing::debug!("Custom view '{}' has differences", id);
                     view_updates += 1;
-                    olap_changes.push(OlapChange::CustomView(Change::Updated {
+                    olap_changes.push(OlapChange::View(Change::Updated {
                         before: Box::new(view.clone()),
                         after: Box::new(target_view.clone()),
                     }));
@@ -1942,9 +1948,7 @@ impl InfrastructureMap {
             } else {
                 tracing::debug!("Custom view '{}' removed", id);
                 view_removals += 1;
-                olap_changes.push(OlapChange::CustomView(Change::Removed(Box::new(
-                    view.clone(),
-                ))));
+                olap_changes.push(OlapChange::View(Change::Removed(Box::new(view.clone()))));
             }
         }
 
@@ -1952,9 +1956,7 @@ impl InfrastructureMap {
             if !self_views.contains_key(id) {
                 tracing::debug!("Custom view '{}' added", id);
                 view_additions += 1;
-                olap_changes.push(OlapChange::CustomView(Change::Added(Box::new(
-                    view.clone(),
-                ))));
+                olap_changes.push(OlapChange::View(Change::Added(Box::new(view.clone()))));
             }
         }
 
@@ -2735,8 +2737,8 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
-            views: self
-                .views
+            dmv1_views: self
+                .dmv1_views
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
@@ -2777,8 +2779,8 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
-            custom_views: self
-                .custom_views
+            views: self
+                .views
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
@@ -2812,15 +2814,15 @@ impl InfrastructureMap {
             .map(|(k, v)| (k, SqlResource::from_proto(v)))
             .collect();
 
-        // Load existing materialized_views and custom_views from proto
+        // Load existing materialized_views and views from proto
         let mut materialized_views: HashMap<String, MaterializedView> = proto
             .materialized_views
             .into_iter()
             .map(|(k, v)| (k, MaterializedView::from_proto(v)))
             .collect();
 
-        let mut custom_views: HashMap<String, View> = proto
-            .custom_views
+        let mut views: HashMap<String, View> = proto
+            .views
             .into_iter()
             .map(|(k, v)| (k, View::from_proto(v)))
             .collect();
@@ -2832,7 +2834,7 @@ impl InfrastructureMap {
         for (key, sql_resource) in &all_sql_resources {
             // Skip if already in new format maps (shouldn't happen but be safe)
             if materialized_views.contains_key(&sql_resource.name)
-                || custom_views.contains_key(&sql_resource.name)
+                || views.contains_key(&sql_resource.name)
             {
                 continue;
             }
@@ -2849,15 +2851,15 @@ impl InfrastructureMap {
                 continue;
             }
 
-            // Try to migrate to CustomView
+            // Try to migrate to View
             if let Some(view) =
-                Self::try_migrate_sql_resource_to_custom_view(sql_resource, &default_database)
+                Self::try_migrate_sql_resource_to_view(sql_resource, &default_database)
             {
                 tracing::debug!(
-                    "Migrating SqlResource '{}' to CustomView format",
+                    "Migrating SqlResource '{}' to View format",
                     sql_resource.name
                 );
-                custom_views.insert(view.name.clone(), view);
+                views.insert(view.name.clone(), view);
                 migrated_keys.insert(key.clone());
             }
         }
@@ -2892,8 +2894,8 @@ impl InfrastructureMap {
                 .into_iter()
                 .map(|(k, v)| (k, Table::from_proto(v)))
                 .collect(),
-            views: proto
-                .views
+            dmv1_views: proto
+                .dmv1_views
                 .into_iter()
                 .map(|(k, v)| (k, Dmv1View::from_proto(v)))
                 .collect(),
@@ -2928,7 +2930,7 @@ impl InfrastructureMap {
                 .map(|(k, v)| (k, super::infrastructure::web_app::WebApp::from_proto(&v)))
                 .collect(),
             materialized_views,
-            custom_views,
+            views,
         })
     }
 
@@ -2994,9 +2996,9 @@ impl InfrastructureMap {
         })
     }
 
-    /// Attempts to migrate a SqlResource to a CustomView.
+    /// Attempts to migrate a SqlResource to a View.
     /// Returns None if the SqlResource is not a moose-lib generated custom view.
-    pub fn try_migrate_sql_resource_to_custom_view(
+    pub fn try_migrate_sql_resource_to_view(
         sql_resource: &SqlResource,
         default_database: &str,
     ) -> Option<View> {
@@ -3155,7 +3157,7 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// A new infrastructure map with SqlResource entries converted to MaterializedView
-    /// or CustomView where applicable
+    /// or View where applicable
     pub fn normalize(self) -> Self {
         // Delegate to canonicalize_tables which contains the conversion logic
         self.canonicalize_tables()
@@ -3203,15 +3205,15 @@ impl InfrastructureMap {
                 continue;
             }
 
-            // Try to migrate to CustomView using shared helper
+            // Try to migrate to View using shared helper
             if let Some(view) =
-                Self::try_migrate_sql_resource_to_custom_view(sql_resource, &self.default_database)
+                Self::try_migrate_sql_resource_to_view(sql_resource, &self.default_database)
             {
                 tracing::debug!(
-                    "Migrating SqlResource '{}' to CustomView in canonicalize_tables",
+                    "Migrating SqlResource '{}' to View in canonicalize_tables",
                     sql_resource.name
                 );
-                self.custom_views.insert(view.name.clone(), view);
+                self.views.insert(view.name.clone(), view);
                 sql_resources_to_remove.push(key.clone());
             }
         }
@@ -3385,11 +3387,11 @@ impl InfrastructureMap {
 
     pub fn uses_olap(&self) -> bool {
         !self.tables.is_empty()
-            || !self.views.is_empty()
+            || !self.dmv1_views.is_empty()
             || !self.topic_to_table_sync_processes.is_empty()
             || !self.sql_resources.is_empty()
             || !self.materialized_views.is_empty()
-            || !self.custom_views.is_empty()
+            || !self.views.is_empty()
     }
 
     pub fn uses_streaming(&self) -> bool {
@@ -3632,7 +3634,7 @@ impl Default for InfrastructureMap {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -3643,7 +3645,7 @@ impl Default for InfrastructureMap {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         }
     }
 }
@@ -3666,7 +3668,7 @@ impl serde::Serialize for InfrastructureMap {
             topics: &'a HashMap<String, Topic>,
             api_endpoints: &'a HashMap<String, ApiEndpoint>,
             tables: &'a HashMap<String, Table>,
-            views: &'a HashMap<String, Dmv1View>,
+            dmv1_views: &'a HashMap<String, Dmv1View>,
             topic_to_table_sync_processes: &'a HashMap<String, TopicToTableSyncProcess>,
             topic_to_topic_sync_processes: &'a HashMap<String, TopicToTopicSyncProcess>,
             function_processes: &'a HashMap<String, FunctionProcess>,
@@ -3678,7 +3680,7 @@ impl serde::Serialize for InfrastructureMap {
             web_apps: &'a HashMap<String, super::infrastructure::web_app::WebApp>,
             materialized_views:
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
-            custom_views: &'a HashMap<String, super::infrastructure::view::View>,
+            views: &'a HashMap<String, super::infrastructure::view::View>,
         }
 
         // Mask credentials before serialization (for JSON migration files)
@@ -3690,7 +3692,7 @@ impl serde::Serialize for InfrastructureMap {
             topics: &masked_inframap.topics,
             api_endpoints: &masked_inframap.api_endpoints,
             tables: &masked_inframap.tables,
-            views: &masked_inframap.views,
+            dmv1_views: &masked_inframap.dmv1_views,
             topic_to_table_sync_processes: &masked_inframap.topic_to_table_sync_processes,
             topic_to_topic_sync_processes: &masked_inframap.topic_to_topic_sync_processes,
             function_processes: &masked_inframap.function_processes,
@@ -3701,7 +3703,7 @@ impl serde::Serialize for InfrastructureMap {
             workflows: &masked_inframap.workflows,
             web_apps: &masked_inframap.web_apps,
             materialized_views: &masked_inframap.materialized_views,
-            custom_views: &masked_inframap.custom_views,
+            views: &masked_inframap.views,
         };
 
         // Serialize to JSON value, sort keys, then serialize that
@@ -6424,8 +6426,8 @@ mod diff_view_tests {
         let mut map1 = InfrastructureMap::default();
         let mut map2 = InfrastructureMap::default();
         let view = create_test_view("view1", "1.0", "table1");
-        map1.views.insert(view.id(), view.clone());
-        map2.views.insert(view.id(), view);
+        map1.dmv1_views.insert(view.id(), view.clone());
+        map2.dmv1_views.insert(view.id(), view);
 
         let changes =
             map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
@@ -6440,16 +6442,16 @@ mod diff_view_tests {
         let map1 = InfrastructureMap::default(); // Before state (empty)
         let mut map2 = InfrastructureMap::default(); // After state
         let view = create_test_view("view1", "1.0", "table1");
-        map2.views.insert(view.id(), view.clone());
+        map2.dmv1_views.insert(view.id(), view.clone());
 
         let changes =
             map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
-            OlapChange::View(Change::Added(v)) => {
+            OlapChange::Dmv1View(Change::Added(v)) => {
                 assert_eq!(**v, view, "Added view does not match")
             }
-            _ => panic!("Expected View Added change"),
+            _ => panic!("Expected Dmv1View Added change"),
         }
         // Ensure other change types are not affected (except processes)
         assert!(changes.streaming_engine_changes.is_empty());
@@ -6461,16 +6463,16 @@ mod diff_view_tests {
         let mut map1 = InfrastructureMap::default(); // Before state
         let map2 = InfrastructureMap::default(); // After state (empty)
         let view = create_test_view("view1", "1.0", "table1");
-        map1.views.insert(view.id(), view.clone());
+        map1.dmv1_views.insert(view.id(), view.clone());
 
         let changes =
             map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
-            OlapChange::View(Change::Removed(v)) => {
+            OlapChange::Dmv1View(Change::Removed(v)) => {
                 assert_eq!(**v, view, "Removed view does not match")
             }
-            _ => panic!("Expected View Removed change"),
+            _ => panic!("Expected Dmv1View Removed change"),
         }
         // Ensure other change types are not affected (except processes)
         assert!(changes.streaming_engine_changes.is_empty());
@@ -6496,14 +6498,15 @@ mod diff_view_tests {
             "Test setup error: IDs should be the same for update test"
         );
 
-        map1.views.insert(view_before.id(), view_before.clone());
-        map2.views.insert(view_after.id(), view_after.clone());
+        map1.dmv1_views
+            .insert(view_before.id(), view_before.clone());
+        map2.dmv1_views.insert(view_after.id(), view_after.clone());
 
         let changes =
             map1.diff_with_table_strategy(&map2, &DefaultTableDiffStrategy, true, false, &[]);
         assert_eq!(changes.olap_changes.len(), 1, "Expected one OLAP change");
         match &changes.olap_changes[0] {
-            OlapChange::View(Change::Updated { before, after }) => {
+            OlapChange::Dmv1View(Change::Updated { before, after }) => {
                 assert_eq!(**before, view_before, "Before view does not match");
                 assert_eq!(**after, view_after, "After view does not match");
                 assert_eq!(before.name, after.name, "Name should NOT have changed");
@@ -6516,7 +6519,7 @@ mod diff_view_tests {
                     "ViewType should have changed"
                 );
             }
-            _ => panic!("Expected View Updated change"),
+            _ => panic!("Expected Dmv1View Updated change"),
         }
         // Ensure other change types are not affected (except processes)
         assert!(changes.streaming_engine_changes.is_empty());
@@ -7395,7 +7398,7 @@ mod normalize_tests {
         map.sql_resources
             .insert("active_users".to_string(), view_sql_resource);
 
-        // Normalize should convert this to a CustomView
+        // Normalize should convert this to a View
         let normalized = map.normalize();
 
         // SqlResource should be removed
@@ -7404,18 +7407,14 @@ mod normalize_tests {
             "SqlResource should have been removed"
         );
 
-        // CustomView should be added
-        assert_eq!(
-            normalized.custom_views.len(),
-            1,
-            "Should have one custom view"
-        );
+        // View should be added
+        assert_eq!(normalized.views.len(), 1, "Should have one view");
 
         let view = normalized
-            .custom_views
+            .views
             .values()
             .next()
-            .expect("Should have a custom view");
+            .expect("Should have a view");
         assert_eq!(view.name, "active_users");
         assert!(view.select_sql.contains("SELECT * FROM users"));
         assert_eq!(
@@ -7460,10 +7459,7 @@ mod normalize_tests {
             normalized.materialized_views.is_empty(),
             "Should not have materialized views"
         );
-        assert!(
-            normalized.custom_views.is_empty(),
-            "Should not have custom views"
-        );
+        assert!(normalized.views.is_empty(), "Should not have custom views");
     }
 
     #[test]

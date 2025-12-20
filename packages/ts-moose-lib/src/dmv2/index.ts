@@ -100,6 +100,6 @@ export {
   getWebApp,
   getMaterializedViews,
   getMaterializedView,
-  getCustomViews,
-  getCustomView,
+  getViews,
+  getView,
 } from "./registry";

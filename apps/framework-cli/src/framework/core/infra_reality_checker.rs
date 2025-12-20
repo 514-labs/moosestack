@@ -73,12 +73,12 @@ pub struct InfraDiscrepancies {
     pub missing_materialized_views: Vec<String>,
     /// Materialized views that exist in both but have differences
     pub mismatched_materialized_views: Vec<OlapChange>,
-    /// Custom views that exist in reality but are not in the map
-    pub unmapped_custom_views: Vec<View>,
-    /// Custom views that are in the map but don't exist in reality
-    pub missing_custom_views: Vec<String>,
-    /// Custom views that exist in both but have differences
-    pub mismatched_custom_views: Vec<OlapChange>,
+    /// Views that exist in reality but are not in the map
+    pub unmapped_views: Vec<View>,
+    /// Views that are in the map but don't exist in reality
+    pub missing_views: Vec<String>,
+    /// Views that exist in both but have differences
+    pub mismatched_views: Vec<OlapChange>,
 }
 
 impl InfraDiscrepancies {
@@ -93,9 +93,9 @@ impl InfraDiscrepancies {
             && self.unmapped_materialized_views.is_empty()
             && self.missing_materialized_views.is_empty()
             && self.mismatched_materialized_views.is_empty()
-            && self.unmapped_custom_views.is_empty()
-            && self.missing_custom_views.is_empty()
-            && self.mismatched_custom_views.is_empty()
+            && self.unmapped_views.is_empty()
+            && self.missing_views.is_empty()
+            && self.mismatched_views.is_empty()
     }
 }
 
@@ -182,10 +182,10 @@ pub fn materialized_views_are_equivalent(
     sql_is_equivalent(&mv1.select_sql, &mv2.select_sql, default_database)
 }
 
-/// Checks if two CustomViews are semantically equivalent.
+/// Checks if two Views are semantically equivalent.
 /// Compares source tables (order-independent) and normalized SELECT SQL.
 /// Uses default_database to normalize table references.
-pub fn custom_views_are_equivalent(v1: &View, v2: &View, default_database: &str) -> bool {
+pub fn views_are_equivalent(v1: &View, v2: &View, default_database: &str) -> bool {
     // Compare names
     if v1.name != v2.name {
         return false;
@@ -492,9 +492,9 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         );
 
         // Convert SQL resources from reality to structured types (MVs and custom views)
-        // This allows us to compare them with the infra_map's materialized_views and custom_views
+        // This allows us to compare them with the infra_map's materialized_views and views
         let mut actual_materialized_views: HashMap<String, MaterializedView> = HashMap::new();
-        let mut actual_custom_views: HashMap<String, View> = HashMap::new();
+        let mut actual_views: HashMap<String, View> = HashMap::new();
         let mut remaining_sql_resources: Vec<SqlResource> = Vec::new();
 
         for sql_resource in actual_sql_resources {
@@ -509,16 +509,13 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
                 );
                 actual_materialized_views.insert(mv.name.clone(), mv);
             }
-            // Try to convert to CustomView
-            else if let Some(view) = InfrastructureMap::try_migrate_sql_resource_to_custom_view(
+            // Try to convert to View
+            else if let Some(view) = InfrastructureMap::try_migrate_sql_resource_to_view(
                 &sql_resource,
                 &infra_map.default_database,
             ) {
-                debug!(
-                    "Converted SQL resource '{}' to CustomView",
-                    sql_resource.name
-                );
-                actual_custom_views.insert(view.name.clone(), view);
+                debug!("Converted SQL resource '{}' to View", sql_resource.name);
+                actual_views.insert(view.name.clone(), view);
             }
             // Keep as SqlResource if it doesn't match MV or View patterns
             else {
@@ -529,7 +526,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         debug!(
             "Classified SQL resources: {} MVs, {} custom views, {} remaining sql_resources",
             actual_materialized_views.len(),
-            actual_custom_views.len(),
+            actual_views.len(),
             remaining_sql_resources.len()
         );
 
@@ -660,46 +657,43 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         debug!("Comparing custom views with infrastructure map");
         debug!(
             "Actual custom view IDs: {:?}",
-            actual_custom_views.keys().collect::<Vec<_>>()
+            actual_views.keys().collect::<Vec<_>>()
         );
         debug!(
             "Infrastructure map custom view IDs: {:?}",
-            infra_map.custom_views.keys().collect::<Vec<_>>()
+            infra_map.views.keys().collect::<Vec<_>>()
         );
 
-        // Find unmapped custom views (exist in reality but not in map)
-        let unmapped_custom_views: Vec<_> = actual_custom_views
+        // Find unmapped views (exist in reality but not in map)
+        let unmapped_views: Vec<_> = actual_views
             .values()
-            .filter(|view| !infra_map.custom_views.contains_key(&view.name))
+            .filter(|view| !infra_map.views.contains_key(&view.name))
             .cloned()
             .collect();
 
-        debug!(
-            "Found {} unmapped custom views",
-            unmapped_custom_views.len()
-        );
+        debug!("Found {} unmapped views", unmapped_views.len());
 
-        // Find missing custom views (in map but don't exist in reality)
-        let missing_custom_views: Vec<String> = infra_map
-            .custom_views
+        // Find missing views (in map but don't exist in reality)
+        let missing_views: Vec<String> = infra_map
+            .views
             .keys()
-            .filter(|id| !actual_custom_views.contains_key(*id))
+            .filter(|id| !actual_views.contains_key(*id))
             .cloned()
             .collect();
 
         debug!(
-            "Found {} missing custom views: {:?}",
-            missing_custom_views.len(),
-            missing_custom_views
+            "Found {} missing views: {:?}",
+            missing_views.len(),
+            missing_views
         );
 
-        // Find mismatched custom views (exist in both but differ)
-        let mut mismatched_custom_views = Vec::new();
-        for (id, desired) in &infra_map.custom_views {
-            if let Some(actual) = actual_custom_views.get(id) {
-                if !custom_views_are_equivalent(actual, desired, &infra_map.default_database) {
-                    debug!("Found mismatch in custom view: {}", id);
-                    mismatched_custom_views.push(OlapChange::CustomView(Change::Updated {
+        // Find mismatched views (exist in both but differ)
+        let mut mismatched_views = Vec::new();
+        for (id, desired) in &infra_map.views {
+            if let Some(actual) = actual_views.get(id) {
+                if !views_are_equivalent(actual, desired, &infra_map.default_database) {
+                    debug!("Found mismatch in view: {}", id);
+                    mismatched_views.push(OlapChange::View(Change::Updated {
                         before: Box::new(actual.clone()),
                         after: Box::new(desired.clone()),
                     }));
@@ -707,10 +701,7 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             }
         }
 
-        debug!(
-            "Found {} mismatched custom views",
-            mismatched_custom_views.len()
-        );
+        debug!("Found {} mismatched views", mismatched_views.len());
 
         let discrepancies = InfraDiscrepancies {
             unmapped_tables,
@@ -722,9 +713,9 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_materialized_views,
             missing_materialized_views,
             mismatched_materialized_views,
-            unmapped_custom_views,
-            missing_custom_views,
-            mismatched_custom_views,
+            unmapped_views,
+            missing_views,
+            mismatched_views,
         };
 
         debug!(
@@ -741,9 +732,9 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             discrepancies.unmapped_materialized_views.len(),
             discrepancies.missing_materialized_views.len(),
             discrepancies.mismatched_materialized_views.len(),
-            discrepancies.unmapped_custom_views.len(),
-            discrepancies.missing_custom_views.len(),
-            discrepancies.mismatched_custom_views.len()
+            discrepancies.unmapped_views.len(),
+            discrepancies.missing_views.len(),
+            discrepancies.mismatched_views.len()
         );
 
         if discrepancies.is_empty() {
@@ -902,7 +893,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -913,7 +904,7 @@ mod tests {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         // Create reality checker
@@ -975,7 +966,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -986,7 +977,7 @@ mod tests {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1054,7 +1045,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -1065,7 +1056,7 @@ mod tests {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1124,7 +1115,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -1135,7 +1126,7 @@ mod tests {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1196,7 +1187,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -1207,7 +1198,7 @@ mod tests {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1284,7 +1275,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -1295,7 +1286,7 @@ mod tests {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1489,7 +1480,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -1500,7 +1491,7 @@ mod tests {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1556,7 +1547,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -1567,7 +1558,7 @@ mod tests {
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
-            custom_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map

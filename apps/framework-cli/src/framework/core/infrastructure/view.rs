@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::framework::data_model::model::DataModel;
 use crate::framework::versions::Version;
-use crate::proto::infrastructure_map::view::View_type as ProtoViewType;
-use crate::proto::infrastructure_map::CustomView as ProtoCustomView;
+use crate::proto::infrastructure_map::dmv1view;
+use crate::proto::infrastructure_map::Dmv1View as ProtoDmv1View;
 use crate::proto::infrastructure_map::SelectQuery as ProtoSelectQuery;
 use crate::proto::infrastructure_map::TableAlias as ProtoTableAlias;
 use crate::proto::infrastructure_map::TableReference as ProtoTableReference;
@@ -22,7 +22,7 @@ pub enum ViewType {
 /// Internal view for table aliasing (versioned data models).
 ///
 /// This is used by the framework to create alias views for data model versions.
-/// For user-defined views, see `CustomView`.
+/// For user-defined views, see `View`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Dmv1View {
     pub name: String,
@@ -32,9 +32,8 @@ pub struct Dmv1View {
 
 /// A user-defined ClickHouse View.
 ///
-/// Unlike `View` which is used for internal aliasing, `CustomView` represents
-/// a user-defined view with an arbitrary SELECT query. Views are virtual tables
-/// that compute their results on-demand from the SELECT query.
+/// This represents a user-defined view with an arbitrary SELECT query.
+/// Views are virtual tables that compute their results on-demand from the SELECT query.
 ///
 /// This is distinct from `MaterializedView` which persists its results to a table.
 ///
@@ -61,7 +60,7 @@ pub struct View {
 }
 
 impl View {
-    /// Creates a new CustomView
+    /// Creates a new View
     pub fn new(
         name: impl Into<String>,
         select_sql: impl Into<String>,
@@ -117,7 +116,7 @@ impl View {
     }
 
     /// Convert to proto representation
-    pub fn to_proto(&self) -> ProtoCustomView {
+    pub fn to_proto(&self) -> ProtoView {
         let select_query = ProtoSelectQuery {
             sql: self.select_sql.clone(),
             source_tables: self
@@ -132,7 +131,7 @@ impl View {
             special_fields: Default::default(),
         };
 
-        ProtoCustomView {
+        ProtoView {
             name: self.name.clone(),
             database: self.database.clone(),
             select_query: MessageField::some(select_query),
@@ -153,7 +152,7 @@ impl View {
     }
 
     /// Create from proto representation
-    pub fn from_proto(proto: ProtoCustomView) -> Self {
+    pub fn from_proto(proto: ProtoView) -> Self {
         let (select_sql, source_tables) = proto
             .select_query
             .map(|sq| {
@@ -224,8 +223,8 @@ impl Dmv1View {
         }
     }
 
-    pub fn to_proto(&self) -> ProtoView {
-        ProtoView {
+    pub fn to_proto(&self) -> ProtoDmv1View {
+        ProtoDmv1View {
             name: self.name.clone(),
             version: self.version.to_string(),
             view_type: Some(self.view_type.to_proto()),
@@ -233,7 +232,7 @@ impl Dmv1View {
         }
     }
 
-    pub fn from_proto(proto: ProtoView) -> Self {
+    pub fn from_proto(proto: ProtoDmv1View) -> Self {
         Dmv1View {
             name: proto.name,
             version: Version::from_string(proto.version),
@@ -257,10 +256,10 @@ impl DataLineage for Dmv1View {
 }
 
 impl ViewType {
-    fn to_proto(&self) -> ProtoViewType {
+    fn to_proto(&self) -> dmv1view::View_type {
         match self {
             ViewType::TableAlias { source_table_name } => {
-                ProtoViewType::TableAlias(ProtoTableAlias {
+                dmv1view::View_type::TableAlias(ProtoTableAlias {
                     source_table_name: source_table_name.clone(),
                     special_fields: Default::default(),
                 })
@@ -268,9 +267,9 @@ impl ViewType {
         }
     }
 
-    pub fn from_proto(proto: ProtoViewType) -> Self {
+    pub fn from_proto(proto: dmv1view::View_type) -> Self {
         match proto {
-            ProtoViewType::TableAlias(alias) => ViewType::TableAlias {
+            dmv1view::View_type::TableAlias(alias) => ViewType::TableAlias {
                 source_table_name: alias.source_table_name,
             },
         }

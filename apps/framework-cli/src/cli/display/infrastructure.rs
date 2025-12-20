@@ -625,13 +625,13 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
         OlapChange::MaterializedView(Change::Updated { before: _, after }) => {
             infra_updated(&after.short_display());
         }
-        OlapChange::CustomView(Change::Added(view)) => {
+        OlapChange::Dmv1View(Change::Added(view)) => {
             infra_added(&view.short_display());
         }
-        OlapChange::CustomView(Change::Removed(view)) => {
+        OlapChange::Dmv1View(Change::Removed(view)) => {
             infra_removed(&view.short_display());
         }
-        OlapChange::CustomView(Change::Updated { before: _, after }) => {
+        OlapChange::Dmv1View(Change::Updated { before: _, after }) => {
             infra_updated(&after.short_display());
         }
     });

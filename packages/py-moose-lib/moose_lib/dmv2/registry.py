@@ -24,7 +24,7 @@ from ._registry import (
     _api_path_map,
     _web_apps,
     _materialized_views,
-    _custom_views,
+    _views,
 )
 from .materialized_view import MaterializedView
 from .view import View
@@ -127,14 +127,14 @@ def get_materialized_view(name: str) -> Optional["MaterializedView"]:
     return _materialized_views.get(name)
 
 
-def get_custom_views() -> Dict[str, "View"]:
-    """Get all registered custom views."""
-    return _custom_views
+def get_views() -> Dict[str, "View"]:
+    """Get all registered views."""
+    return _views
 
 
-def get_custom_view(name: str) -> Optional["View"]:
-    """Get a registered custom view by name."""
-    return _custom_views.get(name)
+def get_view(name: str) -> Optional["View"]:
+    """Get a registered view by name."""
+    return _views.get(name)
 
 
 # Backward compatibility aliases (deprecated)
