@@ -227,9 +227,14 @@ pub fn read_settings() -> Result<Settings, ConfigError> {
     // Check RELEASE_CHANNEL env var (matches install script behavior)
     // This takes precedence over MOOSE_RELEASE_CHANNEL and config file
     if let Ok(channel) = std::env::var("RELEASE_CHANNEL") {
-        let channel = channel.to_lowercase();
-        if channel == "stable" || channel == "dev" {
-            settings.release_channel = channel;
+        let channel_lower = channel.to_lowercase();
+        if channel_lower == "stable" || channel_lower == "dev" {
+            settings.release_channel = channel_lower;
+        } else {
+            warn!(
+                "Invalid RELEASE_CHANNEL value '{}', ignoring (valid: stable, dev)",
+                channel
+            );
         }
     }
 
