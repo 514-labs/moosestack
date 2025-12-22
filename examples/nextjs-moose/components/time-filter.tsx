@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Select,
@@ -16,7 +17,7 @@ const timeRanges = [
   { label: "All time", value: "all" },
 ];
 
-export function TimeFilter() {
+function TimeFilterInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentRange = searchParams.get("range") || "30d";
@@ -44,5 +45,17 @@ export function TimeFilter() {
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+export function TimeFilter() {
+  return (
+    <Suspense
+      fallback={
+        <div className="w-[180px] h-10 rounded-md border border-input bg-background animate-pulse" />
+      }
+    >
+      <TimeFilterInner />
+    </Suspense>
   );
 }

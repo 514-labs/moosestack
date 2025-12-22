@@ -12,7 +12,15 @@ interface SalesRow {
   total_sales: number;
 }
 
-export const getOverviewMetrics = async (dateRange?: DateRange) => {
+interface OverviewMetrics {
+  totalRevenue: number;
+  totalSales: number;
+  activeNow: number;
+}
+
+export const getOverviewMetrics = async (
+  dateRange?: DateRange,
+): Promise<OverviewMetrics> => {
   const startDate = dateRange?.start.toISOString().split("T")[0];
   const endDate = dateRange?.end.toISOString().split("T")[0];
 

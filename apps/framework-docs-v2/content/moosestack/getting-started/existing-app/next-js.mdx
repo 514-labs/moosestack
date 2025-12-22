@@ -288,9 +288,9 @@ Update `.gitignore` to exclude MooseStack generated files:
 
 ## Model table
 
-In this step you’ll define your first ClickHouse model as an `OlapTable` object. MooseStack uses these models as the source of truth for schema management. Create `moose/index.ts` with the following content:
+In this step you’ll define your first ClickHouse model as an `OlapTable` object. MooseStack uses these models as the source of truth for schema management. Create `moose/models/events.ts` with the following content:
 
-```ts title="moose/index.ts"
+```ts title="moose/models/events.ts"
 import { OlapTable } from "@514labs/moose-lib";
 
 export interface EventModel {
@@ -423,6 +423,8 @@ export const getOverviewMetrics = async (dateRange?: DateRange) => {
 ```
 
 #### Export from `moose/index.ts`
+
+Create `moose/index.ts` to re-export your models and queries:
 
 ```ts title="moose/index.ts"
 export * from "./models/events";

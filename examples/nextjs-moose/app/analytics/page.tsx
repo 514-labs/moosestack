@@ -3,6 +3,7 @@ import { DashboardLayout } from "@/components/dashboard-layout";
 import { MetricCard } from "@/components/metric-card";
 import { TimeFilter } from "@/components/time-filter";
 import { getDateRange } from "@/lib/date-utils";
+import { formatCurrency, formatNumber } from "@/lib/format-utils";
 import { DollarSign, ShoppingCart, Users } from "lucide-react";
 
 export default async function AnalyticsPage({
@@ -13,19 +14,6 @@ export default async function AnalyticsPage({
   const dateRange = getDateRange(searchParams?.range || null);
   const { totalRevenue, totalSales, activeNow } =
     await getOverviewMetrics(dateRange);
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat("en-US").format(value);
-  };
 
   return (
     <DashboardLayout>

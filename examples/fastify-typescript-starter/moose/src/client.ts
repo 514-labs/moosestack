@@ -1,13 +1,7 @@
-import { getMooseClients, Sql } from "@514labs/moose-lib";
+import { getMooseClients, Sql, QueryClient } from "@514labs/moose-lib";
 
-let clientsPromise:
-  | Promise<Awaited<ReturnType<typeof getMooseClients>>>
-  | undefined;
-
-async function getMoose() {
-  // Keep env loading as an application concern.
-  // In this starter, Fastify loads `.env` via `node --env-file=.env ...`.
-  clientsPromise ??= getMooseClients({
+async function getClickhouseClient(): Promise<QueryClient> {
+  const { client } = await getMooseClients({
     host: process.env.MOOSE_CLICKHOUSE_CONFIG__HOST ?? "localhost",
     port: process.env.MOOSE_CLICKHOUSE_CONFIG__PORT ?? "18123",
     username: process.env.MOOSE_CLICKHOUSE_CONFIG__USER ?? "panda",
@@ -17,11 +11,11 @@ async function getMoose() {
       (process.env.MOOSE_CLICKHOUSE_CONFIG__USE_SSL ?? "false") === "true",
   });
 
-  return await clientsPromise;
+  return client.query;
 }
 
 export async function executeQuery<T>(query: Sql): Promise<T[]> {
-  const { client } = await getMoose();
-  const result = await client.query.execute(query);
+  const queryClient = await getClickhouseClient();
+  const result = await queryClient.execute(query);
   return result.json();
 }

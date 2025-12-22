@@ -1,4 +1,3 @@
-import { TemplateMetadata } from "@/lib/template-types";
 import type { Language } from "@/lib/content-types";
 import {
   IconChartArea,
