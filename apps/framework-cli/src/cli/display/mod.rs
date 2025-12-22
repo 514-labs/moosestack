@@ -139,12 +139,9 @@ pub mod crossterm_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utilities::display_config::{update_display_config, DisplayConfig};
-    use std::sync::Mutex;
-
-    // Mutex to serialize tests that modify global DISPLAY_CONFIG
-    // This prevents tests from interfering with each other when running in parallel
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    use crate::utilities::display_config::{
+        test_utils::TEST_LOCK, update_display_config, DisplayConfig,
+    };
 
     #[test]
     fn test_should_show_spinner_in_dev_mode_without_timing() {

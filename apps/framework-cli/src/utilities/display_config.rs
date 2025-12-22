@@ -140,13 +140,19 @@ pub fn update_display_config(config: DisplayConfig) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+pub(crate) mod test_utils {
     use std::sync::Mutex;
 
-    // Mutex to serialize tests that modify global DISPLAY_CONFIG
-    // This prevents tests from interfering with each other when running in parallel
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    // Shared mutex to serialize ALL tests that modify global DISPLAY_CONFIG
+    // This prevents tests from interfering with each other when running in parallel,
+    // even across different test modules (display_config, timing, mod, etc.)
+    pub static TEST_LOCK: Mutex<()> = Mutex::new(());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_utils::TEST_LOCK;
 
     #[test]
     fn test_load_returns_current_config() {
