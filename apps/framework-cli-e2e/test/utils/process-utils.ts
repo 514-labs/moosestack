@@ -107,10 +107,14 @@ export const waitForServerStart = async (
       devProcess.off("exit", onExit);
     };
 
+    const storedStdout: any[] = [];
     const onStdout = async (data: any) => {
       const output = data.toString();
       if (!output.match(/^\n[⢹⢺⢼⣸⣇⡧⡗⡏] Starting local infrastructure$/)) {
         log.debug("Moose server output", { output: output.trim() });
+        if (!serverStarted) {
+          storedStdout.push(output);
+        }
       }
 
       if (!serverStarted && output.includes(startupMessage)) {
@@ -129,6 +133,10 @@ export const waitForServerStart = async (
       log.debug(`Moose process exited`, { exitCode: code });
       if (!serverStarted) {
         cleanup();
+        try {
+          console.log("Moose server output:");
+          storedStdout.forEach((data) => console.log(data));
+        } catch {}
         reject(new Error(`Moose process exited with code ${code}`));
       } else {
         cleanup();

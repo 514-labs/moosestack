@@ -73,6 +73,8 @@ pub enum PlanningError {
 /// * `infra_map` - The infrastructure map to update
 /// * `target_table_ids` - Tables to include from unmapped tables (tables in DB but not in current inframap). Only unmapped tables with names in this set will be added to the reconciled inframap.
 /// * `target_sql_resource_ids` - SQL resources to include from unmapped SQL resources.
+/// * `target_materialized_view_ids` - Materialized views to include from unmapped MVs.
+/// * `target_view_ids` - Views to include from unmapped views.
 /// * `olap_client` - The OLAP client to use for checking reality
 ///
 /// # Returns
@@ -82,6 +84,8 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
     current_infra_map: &InfrastructureMap,
     target_table_ids: &HashSet<String>,
     target_sql_resource_ids: &HashSet<String>,
+    target_materialized_view_ids: &HashSet<String>,
+    target_view_ids: &HashSet<String>,
     olap_client: T,
 ) -> Result<InfrastructureMap, PlanningError> {
     info!("Reconciling infrastructure map with actual database state");
@@ -310,6 +314,105 @@ pub async fn reconcile_with_reality<T: OlapOperations>(
         }
     }
 
+    // Handle Materialized Views reconciliation
+    debug!("Reconciling Materialized Views");
+
+    // Remove missing MVs (in map but don't exist in reality)
+    for missing_mv_id in discrepancies.missing_materialized_views {
+        debug!(
+            "Removing missing materialized view from infrastructure map: {}",
+            missing_mv_id
+        );
+        reconciled_map.materialized_views.remove(&missing_mv_id);
+    }
+
+    // Add unmapped MVs (exist in database but not in current infrastructure map).
+    // Same filtering logic as unmapped tables/SQL resources—only adopt MVs in target_materialized_view_ids
+    // to avoid managing external materialized views.
+    for unmapped_mv in discrepancies.unmapped_materialized_views {
+        let name = &unmapped_mv.name;
+
+        if target_materialized_view_ids.contains(name) {
+            debug!(
+                "Adding unmapped materialized view found in reality to infrastructure map: {}",
+                name
+            );
+            reconciled_map
+                .materialized_views
+                .insert(name.clone(), unmapped_mv);
+        }
+    }
+
+    // Update mismatched MVs (exist in both but differ)
+    for change in discrepancies.mismatched_materialized_views {
+        match change {
+            OlapChange::MaterializedView(Change::Updated { before, .. }) => {
+                // We use 'before' (the actual MV from reality) because we want the
+                // reconciled map to reflect the current state of the database.
+                let name = &before.name;
+                debug!(
+                    "Updating mismatched materialized view in infrastructure map to match reality: {}",
+                    name
+                );
+                reconciled_map
+                    .materialized_views
+                    .insert(name.clone(), *before);
+            }
+            _ => {
+                tracing::warn!(
+                    "Unexpected change type in mismatched_materialized_views: {:?}",
+                    change
+                );
+            }
+        }
+    }
+
+    // Handle Views reconciliation
+    debug!("Reconciling Views");
+
+    // Remove missing views (in map but don't exist in reality)
+    for missing_view_id in discrepancies.missing_views {
+        debug!(
+            "Removing missing view from infrastructure map: {}",
+            missing_view_id
+        );
+        reconciled_map.views.remove(&missing_view_id);
+    }
+
+    // Add unmapped views (exist in database but not in current infrastructure map).
+    // Same filtering logic as unmapped tables/SQL resources—only adopt views in target_view_ids
+    // to avoid managing external views.
+    for unmapped_view in discrepancies.unmapped_views {
+        let name = &unmapped_view.name;
+
+        if target_view_ids.contains(name) {
+            debug!(
+                "Adding unmapped view found in reality to infrastructure map: {}",
+                name
+            );
+            reconciled_map.views.insert(name.clone(), unmapped_view);
+        }
+    }
+
+    // Update mismatched views (exist in both but differ)
+    for change in discrepancies.mismatched_views {
+        match change {
+            OlapChange::View(Change::Updated { before, .. }) => {
+                // We use 'before' (the actual view from reality) because we want the
+                // reconciled map to reflect the current state of the database.
+                let name = &before.name;
+                debug!(
+                    "Updating mismatched view in infrastructure map to match reality: {}",
+                    name
+                );
+                reconciled_map.views.insert(name.clone(), *before);
+            }
+            _ => {
+                tracing::warn!("Unexpected change type in mismatched_views: {:?}", change);
+            }
+        }
+    }
+
     info!("Infrastructure map successfully reconciled with actual database state");
     Ok(reconciled_map)
 }
@@ -428,7 +531,11 @@ pub async fn load_target_infrastructure(
             ))
         })?;
 
-    Ok(target_infra_map)
+    // Canonicalize to ensure backward compatibility: migrate old SqlResource entries
+    // to MaterializedView/View format to match how stored infrastructure maps are normalized.
+    // This prevents false "changes" when comparing old stored state (which has been canonicalized)
+    // with new target state (which might still have old SqlResource format).
+    Ok(target_infra_map.canonicalize_tables())
 }
 
 /// Loads the current infrastructure state from storage and reconciles with reality.
@@ -462,6 +569,8 @@ pub async fn load_target_infrastructure(
 /// * `olap_client` - Client for querying actual database state
 /// * `target_table_ids` - Filter for unmapped tables: only adopt tables whose IDs are in this set
 /// * `target_sql_resource_ids` - Filter for unmapped SQL resources: only adopt resources in this set
+/// * `target_materialized_view_ids` - Filter for unmapped materialized views: only adopt MVs in this set
+/// * `target_view_ids` - Filter for unmapped views: only adopt views in this set
 ///
 /// # Returns
 /// * `Result<InfrastructureMap, PlanningError>` - The reconciled current state
@@ -471,6 +580,8 @@ pub async fn load_reconciled_infrastructure<T: OlapOperations>(
     olap_client: T,
     target_table_ids: &HashSet<String>,
     target_sql_resource_ids: &HashSet<String>,
+    target_materialized_view_ids: &HashSet<String>,
+    target_view_ids: &HashSet<String>,
 ) -> Result<InfrastructureMap, PlanningError> {
     let current_infra_map = storage.load_infrastructure_map().await?;
 
@@ -490,6 +601,8 @@ pub async fn load_reconciled_infrastructure<T: OlapOperations>(
             &current_map_or_empty,
             target_table_ids,
             target_sql_resource_ids,
+            target_materialized_view_ids,
+            target_view_ids,
             olap_client,
         )
         .await?
@@ -536,6 +649,12 @@ pub async fn plan_changes(
         .collect();
     let target_sql_resource_ids: HashSet<String> =
         target_infra_map.sql_resources.keys().cloned().collect();
+    let target_materialized_view_ids: HashSet<String> = target_infra_map
+        .materialized_views
+        .keys()
+        .cloned()
+        .collect();
+    let target_view_ids: HashSet<String> = target_infra_map.views.keys().cloned().collect();
 
     let reconciled_map = load_reconciled_infrastructure(
         project,
@@ -543,6 +662,8 @@ pub async fn plan_changes(
         olap_client,
         &target_table_ids,
         &target_sql_resource_ids,
+        &target_materialized_view_ids,
+        &target_view_ids,
     )
     .await?;
 
@@ -750,6 +871,8 @@ mod tests {
             &infra_map,
             &HashSet::new(),
             &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
@@ -769,6 +892,8 @@ mod tests {
             &project,
             &infra_map,
             &target_ids,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             MockOlapClient {
                 tables: vec![table.clone()],
@@ -828,6 +953,8 @@ mod tests {
             &project,
             &infra_map,
             &target_table_ids,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             reconcile_mock_client,
         )
@@ -910,6 +1037,8 @@ mod tests {
             &infra_map,
             &target_table_ids,
             &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
             reconcile_mock_client,
         )
         .await
@@ -969,6 +1098,8 @@ mod tests {
             &project,
             &infra_map,
             &target_table_ids,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             reconcile_mock_client,
         )
@@ -1031,6 +1162,8 @@ mod tests {
             &loaded_map,
             &HashSet::new(),
             &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await
@@ -1089,6 +1222,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &loaded_map,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
             mock_client,
@@ -1197,6 +1332,8 @@ mod tests {
             &infra_map,
             &HashSet::new(),
             &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await
@@ -1259,6 +1396,8 @@ mod tests {
             &infra_map,
             &HashSet::new(),
             &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await
@@ -1310,6 +1449,8 @@ mod tests {
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
+            &HashSet::new(),
+            &HashSet::new(),
             &HashSet::new(),
             &HashSet::new(),
             mock_client,
@@ -1365,6 +1506,8 @@ mod tests {
             &infra_map,
             &HashSet::new(),
             &target_sql_resource_ids,
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await
@@ -1424,6 +1567,8 @@ mod tests {
             &infra_map,
             &HashSet::new(),
             &target_sql_resource_ids,
+            &HashSet::new(),
+            &HashSet::new(),
             mock_client,
         )
         .await

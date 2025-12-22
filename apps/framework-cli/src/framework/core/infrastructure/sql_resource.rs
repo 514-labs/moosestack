@@ -113,12 +113,12 @@ impl SqlResource {
 /// This allows querying the data flow relationships of the SQL resource.
 impl DataLineage for SqlResource {
     /// Returns the signatures of infrastructure components from which this resource pulls data.
-    fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
+    fn pulls_data_from(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
         self.pulls_data_from.clone()
     }
 
     /// Returns the signatures of infrastructure components to which this resource pushes data.
-    fn pushes_data_to(&self) -> Vec<InfrastructureSignature> {
+    fn pushes_data_to(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
         self.pushes_data_to.clone()
     }
 }

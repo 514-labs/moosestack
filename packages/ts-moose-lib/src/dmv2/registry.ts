@@ -14,6 +14,8 @@ import { Api } from "./sdk/consumptionApi";
 import { SqlResource } from "./sdk/sqlResource";
 import { Workflow } from "./sdk/workflow";
 import { WebApp } from "./sdk/webApp";
+import { MaterializedView } from "./sdk/materializedView";
+import { View } from "./sdk/view";
 import { getMooseInternal } from "./internal";
 
 /**
@@ -172,4 +174,40 @@ export function getWebApps(): Map<string, WebApp> {
  */
 export function getWebApp(name: string): WebApp | undefined {
   return getMooseInternal().webApps.get(name);
+}
+
+/**
+ * Get all registered materialized views.
+ * @returns A Map of MV name to MaterializedView instance
+ */
+export function getMaterializedViews(): Map<string, MaterializedView<any>> {
+  return getMooseInternal().materializedViews;
+}
+
+/**
+ * Get a registered materialized view by name.
+ * @param name - The name of the materialized view
+ * @returns The MaterializedView instance or undefined if not found
+ */
+export function getMaterializedView(
+  name: string,
+): MaterializedView<any> | undefined {
+  return getMooseInternal().materializedViews.get(name);
+}
+
+/**
+ * Get all registered views.
+ * @returns A Map of view name to View instance
+ */
+export function getViews(): Map<string, View> {
+  return getMooseInternal().views;
+}
+
+/**
+ * Get a registered view by name.
+ * @param name - The name of the view
+ * @returns The View instance or undefined if not found
+ */
+export function getView(name: string): View | undefined {
+  return getMooseInternal().views.get(name);
 }
