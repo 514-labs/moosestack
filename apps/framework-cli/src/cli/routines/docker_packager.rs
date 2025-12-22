@@ -654,6 +654,14 @@ COPY --chown=moose:moose ./{} ./{}"#,
 /// Builds Docker images from the generated Dockerfile for specified architectures.
 /// Handles both monorepo and standalone builds, copying necessary files and managing
 /// temporary build contexts appropriately for each build type.
+///
+/// # Arguments
+///
+/// * `project` - The project configuration
+/// * `docker_client` - Docker client for running build commands
+/// * `is_amd64` - Whether to build for linux/amd64 architecture
+/// * `is_arm64` - Whether to build for linux/arm64 architecture
+/// * `release_channel` - The release channel for downloading CLI binaries ("stable" or "dev")
 pub fn build_dockerfile(
     project: &Project,
     docker_client: &DockerClient,
