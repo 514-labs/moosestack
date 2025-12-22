@@ -53,7 +53,7 @@
 //! - [arc-swap documentation](https://docs.rs/arc-swap/latest/arc_swap/)
 //! - [Kill All Setters pattern](https://blog.sentry.io/you-cant-rust-that/#kill-all-setters-2)
 
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, OnceLock};
 
 use arc_swap::ArcSwap;
 
@@ -79,25 +79,27 @@ pub struct DisplayConfig {
 
 /// Global display configuration using arc-swap for lock-free atomic access.
 ///
-/// This is initialized with default values and should be updated once at
-/// startup based on CLI flags or environment variables.
+/// This is initialized with default values on first access and can be updated
+/// at startup based on CLI flags or environment variables.
 ///
 /// # Performance
 ///
 /// Loading this config is very cheap:
-/// - No locks acquired
+/// - One-time initialization check
+/// - No locks acquired after initialization
 /// - Atomic pointer load
 /// - Reference count increment
 ///
 /// The loaded Arc can be held for the duration of an operation to ensure
 /// consistent configuration throughout.
-static DISPLAY_CONFIG: LazyLock<ArcSwap<DisplayConfig>> = LazyLock::new(|| {
-    ArcSwap::from_pointee(DisplayConfig {
-        no_ansi: false,
-        show_timestamps: false,
-        show_timing: false,
-    })
-});
+static DISPLAY_CONFIG: OnceLock<ArcSwap<DisplayConfig>> = OnceLock::new();
+
+/// Gets or initializes the global display configuration.
+///
+/// This is called internally by load_display_config and update_display_config.
+fn get_display_config() -> &'static ArcSwap<DisplayConfig> {
+    DISPLAY_CONFIG.get_or_init(|| ArcSwap::from_pointee(DisplayConfig::default()))
+}
 
 /// Loads the current display configuration.
 ///
@@ -115,7 +117,7 @@ static DISPLAY_CONFIG: LazyLock<ArcSwap<DisplayConfig>> = LazyLock::new(|| {
 /// }
 /// ```
 pub fn load_display_config() -> Arc<DisplayConfig> {
-    DISPLAY_CONFIG.load_full()
+    get_display_config().load_full()
 }
 
 /// Updates the display configuration atomically.
@@ -135,7 +137,7 @@ pub fn load_display_config() -> Arc<DisplayConfig> {
 /// });
 /// ```
 pub fn update_display_config(config: DisplayConfig) {
-    DISPLAY_CONFIG.store(Arc::new(config));
+    get_display_config().store(Arc::new(config));
 }
 
 #[cfg(test)]
