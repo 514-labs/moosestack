@@ -117,7 +117,7 @@ This guide assumes you’re using **pnpm workspaces**. Your Fastify app package 
 
 In the Fastify starter example, `pnpm-workspace.yaml` lives at the repo root and includes **two packages**: the Fastify app (`.`) and the Moose package (`moose`).
 
-```yaml title="pnpm-workspace.yaml (fastify-typescript-starter)"
+```yaml title="pnpm-workspace.yaml (fastify-moose)"
 packages:
   - "."
   - "moose"
@@ -127,7 +127,7 @@ packages:
 If you want the quickest setup, you can pull the `moose/` workspace package from our Fastify example and drop it next to your Fastify app (as `./moose`):
 
 ```bash title="Terminal" copy
-pnpm dlx tiged 514-labs/moose/examples/fastify-typescript-starter/moose moose
+pnpm dlx tiged 514-labs/moose/examples/fastify-moose/moose moose
 ```
 
 Then install dependencies and build the `moose` package:
