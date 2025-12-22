@@ -654,11 +654,20 @@ COPY --chown=moose:moose ./{} ./{}"#,
 /// Builds Docker images from the generated Dockerfile for specified architectures.
 /// Handles both monorepo and standalone builds, copying necessary files and managing
 /// temporary build contexts appropriately for each build type.
+///
+/// # Arguments
+///
+/// * `project` - The project configuration
+/// * `docker_client` - Docker client for running build commands
+/// * `is_amd64` - Whether to build for linux/amd64 architecture
+/// * `is_arm64` - Whether to build for linux/arm64 architecture
+/// * `release_channel` - The release channel for downloading CLI binaries ("stable" or "dev")
 pub fn build_dockerfile(
     project: &Project,
     docker_client: &DockerClient,
     is_amd64: bool,
     is_arm64: bool,
+    release_channel: &str,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
 
@@ -927,6 +936,7 @@ pub fn build_dockerfile(
                     cli_version,
                     "linux/amd64",
                     "x86_64-unknown-linux-gnu",
+                    release_channel,
                 )
             },
             !project.is_production,
@@ -967,6 +977,7 @@ pub fn build_dockerfile(
                     cli_version,
                     "linux/arm64",
                     "aarch64-unknown-linux-gnu",
+                    release_channel,
                 )
             },
             !project.is_production,

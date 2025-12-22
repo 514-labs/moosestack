@@ -556,8 +556,13 @@ pub async fn top_command_handler(
 
                 let docker_client = DockerClient::new(&settings);
                 create_dockerfile(&project_arc, &docker_client)?.show();
-                let _: RoutineSuccess =
-                    build_dockerfile(&project_arc, &docker_client, *amd64, *arm64)?;
+                let _: RoutineSuccess = build_dockerfile(
+                    &project_arc,
+                    &docker_client,
+                    *amd64,
+                    *arm64,
+                    settings.release_channel(),
+                )?;
 
                 wait_for_usage_capture(capture_handle).await;
 
