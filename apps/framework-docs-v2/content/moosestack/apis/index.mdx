@@ -36,7 +36,7 @@ APIs are where external systems interface with your OLAP database. MooseStack gi
 | --- | --- |
 | Fastest path to ingestion/analytics endpoints | **Native Moose APIs** |
 | Custom middleware/routing, but still want Moose to run your web server | **WebApp (inside Moose Runtime)** |
-| Add ClickHouse modeling + queries inside an existing app | **Client-only embedding** (e.g. [Next.js](/moosestack/getting-started/existing-app/next-js)) |
+| Typed ClickHouse models + queries in your existing backend | **Embed MooseStack in an existing app** (e.g. [Fastify](/moosestack/getting-started/existing-app/fastify)) |
 
 ### 1) Native Moose APIs
 
@@ -58,9 +58,9 @@ If you want a full-featured web framework, MooseStack can host it via `WebApp` a
 
 Supported adapters include: [Express](/moosestack/app-api-frameworks/express), [Fastify](/moosestack/app-api-frameworks/fastify), [Koa](/moosestack/app-api-frameworks/koa), [raw Node.js](/moosestack/app-api-frameworks/raw-nodejs), and [FastAPI](/moosestack/app-api-frameworks/fastapi).
 
-### 3) Embed Moose in an existing app (client-only)
+### 3) Use Moose CLI + library in your existing backend
 
-If you already have an app server (like Next.js), you can keep it where it is and use Moose libraries to model, migrate, and query ClickHouse **without deploying a separate Moose Runtime web service**.
+If you already have an app server (like Next.js or Fastify), you can keep it where it is and use Moose as a **CLI tool** (for schema migrations) and **library** (for type-safe ClickHouse queries) **without deploying a separate Moose Runtime web service**.
 
 See: [Next.js](/moosestack/getting-started/existing-app/next-js) or [Fastify](/moosestack/getting-started/existing-app/fastify).
 

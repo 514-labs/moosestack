@@ -2,9 +2,9 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
 import { getEvents } from "moose";
 
-type RecentEventsQuery = {
+interface RecentEventsQuery {
   limit?: string;
-};
+}
 
 export default async function clickhouseController(fastify: FastifyInstance) {
   // GET /api/v1/clickhouse/recent?limit=10

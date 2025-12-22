@@ -60,7 +60,7 @@ src/
   ├── router.ts             # Route registration
   └── controller/           # Route handlers
       ├── indexController.ts
-      └── userController.ts
+      └── clickhouseController.ts
 moose/
   ├── moose.config.toml
   ├── package.json
@@ -72,7 +72,7 @@ moose/
 
 1. Start the dev server: `pnpm dev`
 2. Visit `http://localhost:3006` in your browser
-3. Check `http://localhost:3006/api/v1/user` for the API endpoint
+3. Check `http://localhost:3006/api/v1/clickhouse/recent` for the API endpoint
 4. Edit files in `src/` to see changes automatically
 
 ## Features
