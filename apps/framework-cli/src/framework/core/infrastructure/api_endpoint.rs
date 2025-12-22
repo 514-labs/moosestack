@@ -204,11 +204,11 @@ impl From<EndpointFile> for ApiEndpoint {
 }
 
 impl DataLineage for ApiEndpoint {
-    fn pulls_data_from(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
+    fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
         vec![]
     }
 
-    fn pushes_data_to(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
+    fn pushes_data_to(&self) -> Vec<InfrastructureSignature> {
         match &self.api_type {
             APIType::INGRESS {
                 target_topic_id, ..

@@ -35,9 +35,6 @@ Moose supports a comprehensive set of ClickHouse column types across both TypeSc
 - [**Nullable**](/moosestack/data-types/nullable) — Optional fields
 - [**Aggregates**](/moosestack/data-types/aggregates) — `SimpleAggregateFunction` for pre-aggregation
 
-### Schema Features
-- [**Column Comments**](/moosestack/data-types/column-comments) — Add descriptions to columns that appear in ClickHouse DDL
-
 ## Quick Reference
 
 | Category | TypeScript | Python |
@@ -58,5 +55,4 @@ Moose supports a comprehensive set of ClickHouse column types across both TypeSc
 - **Use `LowCardinality`** for string columns with repeated values (< 10,000 unique)
 - **Choose appropriate DateTime precision** based on your accuracy needs
 - **Order columns by cardinality** (low to high) for better compression
-- **Add column comments** to document field purposes in your schema
 

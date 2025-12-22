@@ -3333,11 +3333,6 @@ async fn get_admin_reconciled_inframap(
     let target_sql_resource_ids: HashSet<String> =
         current_map.sql_resources.keys().cloned().collect();
 
-    let target_materialized_view_ids: HashSet<String> =
-        current_map.materialized_views.keys().cloned().collect();
-
-    let target_view_ids: HashSet<String> = current_map.views.keys().cloned().collect();
-
     // Reconcile the loaded map with actual database state (single load, no race condition).
     // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
     // may support reconciliation of other infrastructure types (e.g., Kafka topics).
@@ -3349,8 +3344,6 @@ async fn get_admin_reconciled_inframap(
             &current_map,
             &target_table_ids,
             &target_sql_resource_ids,
-            &target_materialized_view_ids,
-            &target_view_ids,
             clickhouse_client,
         )
         .await?
@@ -3622,12 +3615,6 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
-            unmapped_materialized_views: vec![],
-            missing_materialized_views: vec![],
-            mismatched_materialized_views: vec![],
-            unmapped_views: vec![],
-            missing_views: vec![],
-            mismatched_views: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3647,12 +3634,6 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
-            unmapped_materialized_views: vec![],
-            missing_materialized_views: vec![],
-            mismatched_materialized_views: vec![],
-            unmapped_views: vec![],
-            missing_views: vec![],
-            mismatched_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3688,12 +3669,6 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
-            unmapped_materialized_views: vec![],
-            missing_materialized_views: vec![],
-            mismatched_materialized_views: vec![],
-            unmapped_views: vec![],
-            missing_views: vec![],
-            mismatched_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();

@@ -605,24 +605,6 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                 ],
             );
         }
-        OlapChange::MaterializedView(Change::Added(mv)) => {
-            infra_added(&mv.short_display());
-        }
-        OlapChange::MaterializedView(Change::Removed(mv)) => {
-            infra_removed(&mv.short_display());
-        }
-        OlapChange::MaterializedView(Change::Updated { before: _, after }) => {
-            infra_updated(&after.short_display());
-        }
-        OlapChange::Dmv1View(Change::Added(view)) => {
-            infra_added(&view.short_display());
-        }
-        OlapChange::Dmv1View(Change::Removed(view)) => {
-            infra_removed(&view.short_display());
-        }
-        OlapChange::Dmv1View(Change::Updated { before: _, after }) => {
-            infra_updated(&after.short_display());
-        }
     });
 }
 

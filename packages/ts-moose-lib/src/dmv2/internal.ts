@@ -37,8 +37,6 @@ import {
 } from "./sdk/stream";
 import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
-import { MaterializedView } from "./sdk/materializedView";
-import { View } from "./sdk/view";
 
 /**
  * Gets the source directory from environment variable or defaults to "app"
@@ -73,8 +71,6 @@ const moose_internal = {
   sqlResources: new Map<string, SqlResource>(),
   workflows: new Map<string, Workflow>(),
   webApps: new Map<string, WebApp>(),
-  materializedViews: new Map<string, MaterializedView<any>>(),
-  views: new Map<string, View>(),
 };
 /**
  * Default retention period for streams if not specified (7 days in seconds).
@@ -400,7 +396,6 @@ interface InfrastructureSignatureJson {
     | "ApiEndpoint"
     | "TopicToTableSyncProcess"
     | "View"
-    | "MaterializedView"
     | "SqlResource";
 }
 
@@ -435,42 +430,6 @@ interface SqlResourceJson {
   sourceLine?: number;
   /** Optional source column number where this resource is defined. */
   sourceColumn?: number;
-}
-
-/**
- * JSON representation of a structured Materialized View.
- */
-interface MaterializedViewJson {
-  /** Name of the materialized view */
-  name: string;
-  /** Database where the MV is created (optional, uses default if not set) */
-  database?: string;
-  /** The SELECT SQL statement */
-  selectSql: string;
-  /** Source tables that the SELECT reads from */
-  sourceTables: string[];
-  /** Target table where transformed data is written */
-  targetTable: string;
-  /** Target table database (optional) */
-  targetDatabase?: string;
-  /** Optional metadata for the materialized view (e.g., description, source file) */
-  metadata?: { [key: string]: any };
-}
-
-/**
- * JSON representation of a structured View.
- */
-interface ViewJson {
-  /** Name of the view */
-  name: string;
-  /** Database where the view is created (optional, uses default if not set) */
-  database?: string;
-  /** The SELECT SQL statement */
-  selectSql: string;
-  /** Source tables that the SELECT reads from */
-  sourceTables: string[];
-  /** Optional metadata for the view (e.g., description, source file) */
-  metadata?: { [key: string]: any };
 }
 
 /**
@@ -851,8 +810,6 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const sqlResources: { [key: string]: SqlResourceJson } = {};
   const workflows: { [key: string]: WorkflowJson } = {};
   const webApps: { [key: string]: WebAppJson } = {};
-  const materializedViews: { [key: string]: MaterializedViewJson } = {};
-  const views: { [key: string]: ViewJson } = {};
 
   registry.tables.forEach((table) => {
     const id =
@@ -1057,18 +1014,6 @@ export const toInfraMap = (registry: typeof moose_internal) => {
             id: resource.name,
             kind: "SqlResource",
           };
-        } else if (r.kind === "View") {
-          const view = r as View;
-          return {
-            id: view.name,
-            kind: "View",
-          };
-        } else if (r.kind === "MaterializedView") {
-          const mv = r as MaterializedView<any>;
-          return {
-            id: mv.name,
-            kind: "MaterializedView",
-          };
         } else {
           throw new Error(`Unknown sql resource dependency type: ${r}`);
         }
@@ -1089,18 +1034,6 @@ export const toInfraMap = (registry: typeof moose_internal) => {
           return {
             id: resource.name,
             kind: "SqlResource",
-          };
-        } else if (r.kind === "View") {
-          const view = r as View;
-          return {
-            id: view.name,
-            kind: "View",
-          };
-        } else if (r.kind === "MaterializedView") {
-          const mv = r as MaterializedView<any>;
-          return {
-            id: mv.name,
-            kind: "MaterializedView",
           };
         } else {
           throw new Error(`Unknown sql resource dependency type: ${r}`);
@@ -1126,28 +1059,6 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     };
   });
 
-  // Serialize materialized views with structured data
-  registry.materializedViews.forEach((mv) => {
-    materializedViews[mv.name] = {
-      name: mv.name,
-      selectSql: mv.selectSql,
-      sourceTables: mv.sourceTables,
-      targetTable: mv.targetTable.name,
-      targetDatabase: mv.targetTable.config.database,
-      metadata: mv.metadata,
-    };
-  });
-
-  // Serialize views with structured data
-  registry.views.forEach((view) => {
-    views[view.name] = {
-      name: view.name,
-      selectSql: view.selectSql,
-      sourceTables: view.sourceTables,
-      metadata: view.metadata,
-    };
-  });
-
   return {
     topics,
     tables,
@@ -1156,8 +1067,6 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     sqlResources,
     workflows,
     webApps,
-    materializedViews,
-    views,
   };
 };
 
@@ -1204,8 +1113,6 @@ const loadIndex = () => {
   registry.sqlResources.clear();
   registry.workflows.clear();
   registry.webApps.clear();
-  registry.materializedViews.clear();
-  registry.views.clear();
 
   // Clear require cache for app directory to pick up changes
   const appDir = `${process.cwd()}/${getSourceDir()}`;

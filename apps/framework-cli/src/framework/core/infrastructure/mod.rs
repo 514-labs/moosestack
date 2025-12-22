@@ -23,7 +23,6 @@ use std::hash::Hash;
 pub mod api_endpoint;
 pub mod consumption_webserver;
 pub mod function_process;
-pub mod materialized_view;
 pub mod olap_process;
 pub mod orchestration_worker;
 pub mod sql_resource;
@@ -51,14 +50,10 @@ pub enum InfrastructureSignature {
     ApiEndpoint { id: String },
     /// Process that synchronizes data from a topic to a table
     TopicToTableSyncProcess { id: String },
-    /// DMv1 View infrastructure component (for internal alias views / data model versioning)
-    Dmv1View { id: String },
-    /// SQL resource infrastructure component (legacy, for raw SQL)
-    SqlResource { id: String },
-    /// Materialized view infrastructure component
-    MaterializedView { id: String },
-    /// View infrastructure component (user-defined SELECT views)
+    /// View infrastructure component
     View { id: String },
+    /// SQL resource infrastructure component
+    SqlResource { id: String },
 }
 
 impl InfrastructureSignature {
@@ -69,10 +64,8 @@ impl InfrastructureSignature {
             | Self::Topic { id }
             | Self::ApiEndpoint { id }
             | Self::TopicToTableSyncProcess { id }
-            | Self::Dmv1View { id }
-            | Self::SqlResource { id }
-            | Self::MaterializedView { id }
-            | Self::View { id } => id,
+            | Self::View { id }
+            | Self::SqlResource { id } => id,
         }
     }
 
@@ -98,24 +91,14 @@ impl InfrastructureSignature {
                 proto.set_topic_to_table_sync_process_id(id.clone());
                 proto
             }
-            InfrastructureSignature::Dmv1View { id } => {
+            InfrastructureSignature::View { id } => {
                 let mut proto = ProtoInfrastructureSignature::new();
-                proto.set_dmv1_view_id(id.clone());
+                proto.set_view_id(id.clone());
                 proto
             }
             InfrastructureSignature::SqlResource { id } => {
                 let mut proto = ProtoInfrastructureSignature::new();
                 proto.set_sql_resource_id(id.clone());
-                proto
-            }
-            InfrastructureSignature::MaterializedView { id } => {
-                let mut proto = ProtoInfrastructureSignature::new();
-                proto.set_materialized_view_id(id.clone());
-                proto
-            }
-            InfrastructureSignature::View { id } => {
-                let mut proto = ProtoInfrastructureSignature::new();
-                proto.set_view_id(id.clone());
                 proto
             }
         }
@@ -135,17 +118,11 @@ impl InfrastructureSignature {
             Some(infrastructure_signature::Signature::TopicToTableSyncProcessId(id)) => {
                 InfrastructureSignature::TopicToTableSyncProcess { id }
             }
-            Some(infrastructure_signature::Signature::Dmv1ViewId(id)) => {
-                InfrastructureSignature::Dmv1View { id }
+            Some(infrastructure_signature::Signature::ViewId(id)) => {
+                InfrastructureSignature::View { id }
             }
             Some(infrastructure_signature::Signature::SqlResourceId(id)) => {
                 InfrastructureSignature::SqlResource { id }
-            }
-            Some(infrastructure_signature::Signature::MaterializedViewId(id)) => {
-                InfrastructureSignature::MaterializedView { id }
-            }
-            Some(infrastructure_signature::Signature::ViewId(id)) => {
-                InfrastructureSignature::View { id }
             }
             None => {
                 panic!("Invalid infrastructure signature");
@@ -167,16 +144,8 @@ impl InfrastructureSignature {
 /// - Pushing: Active sending of data to another component
 pub trait DataLineage {
     /// Returns infrastructure components that this component actively pulls data from.
-    ///
-    /// # Arguments
-    /// * `default_database` - The default database name, used to resolve table references
-    ///   that don't explicitly specify a database.
-    fn pulls_data_from(&self, default_database: &str) -> Vec<InfrastructureSignature>;
+    fn pulls_data_from(&self) -> Vec<InfrastructureSignature>;
 
     /// Returns infrastructure components that this component actively pushes data to.
-    ///
-    /// # Arguments
-    /// * `default_database` - The default database name, used to resolve table references
-    ///   that don't explicitly specify a database.
-    fn pushes_data_to(&self, default_database: &str) -> Vec<InfrastructureSignature>;
+    fn pushes_data_to(&self) -> Vec<InfrastructureSignature>;
 }

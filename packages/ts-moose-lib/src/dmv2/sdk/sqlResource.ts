@@ -2,10 +2,8 @@ import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { OlapTable } from "./olapTable";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { getSourceLocationFromStack } from "../utils/stackTrace";
-import { MaterializedView } from "./materializedView";
-import { View } from "./view";
 
-type SqlObject = OlapTable<any> | SqlResource | View | MaterializedView<any>;
+type SqlObject = OlapTable<any> | SqlResource;
 
 /**
  * Represents a generic SQL resource that requires setup and teardown commands.
