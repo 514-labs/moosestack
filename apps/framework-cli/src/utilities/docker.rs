@@ -612,12 +612,20 @@ impl DockerClient {
     }
 
     /// Runs buildx command
+    ///
+    /// # Arguments
+    /// * `directory` - The build context directory
+    /// * `version` - The CLI version to download
+    /// * `architecture` - The Docker platform architecture (e.g., "linux/amd64")
+    /// * `binarylabel` - The target triple (e.g., "x86_64-unknown-linux-gnu")
+    /// * `channel` - The release channel ("stable" or "dev")
     pub fn buildx(
         &self,
         directory: &PathBuf,
         version: &str,
         architecture: &str,
         binarylabel: &str,
+        channel: &str,
     ) -> std::io::Result<()> {
         let mut child = self
             .create_command()
@@ -626,7 +634,7 @@ impl DockerClient {
             .arg("build")
             .arg("--build-arg")
             .arg(format!(
-                "DOWNLOAD_URL=https://github.com/514-labs/moose/releases/download/v{version}/moose-cli-{binarylabel}"
+                "DOWNLOAD_URL=https://downloads.fiveonefour.com/{channel}/{version}/{binarylabel}/moose-cli"
             ))
             .arg("--platform")
             .arg(architecture)

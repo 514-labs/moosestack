@@ -659,6 +659,7 @@ pub fn build_dockerfile(
     docker_client: &DockerClient,
     is_amd64: bool,
     is_arm64: bool,
+    release_channel: &str,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
 
@@ -927,6 +928,7 @@ pub fn build_dockerfile(
                     cli_version,
                     "linux/amd64",
                     "x86_64-unknown-linux-gnu",
+                    release_channel,
                 )
             },
             !project.is_production,
@@ -967,6 +969,7 @@ pub fn build_dockerfile(
                     cli_version,
                     "linux/arm64",
                     "aarch64-unknown-linux-gnu",
+                    release_channel,
                 )
             },
             !project.is_production,
