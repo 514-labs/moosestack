@@ -32,7 +32,7 @@ Only your Fastify server runs in production. MooseStack is used as a library + C
 
 ## Project structure
 
-This guide’s examples mirror our reference project at `examples/fastify-typescript-starter/`:
+This guide’s examples mirror our reference project, which you can find in the [`/examples/fastify-moose` directory](https://github.com/514-labs/moosestack/tree/main/examples/fastify-typescript-starter) of the MooseStack GitHub repository:
 
 - The Fastify app is at the repo root (`./`)
 - A sibling `moose/` workspace package that contains your ClickHouse models and query helpers
@@ -40,7 +40,7 @@ This guide’s examples mirror our reference project at `examples/fastify-typesc
 If you’re applying this to an existing repo with a different layout, keep the **package name** `moose` the same and adjust only the paths/commands.
 
 <FileTree>
-  <FileTree.Folder name="fastify-typescript-starter" defaultOpen>
+  <FileTree.Folder name="fastify-moose" defaultOpen>
     <FileTree.File name="pnpm-workspace.yaml" />
     <FileTree.File name="package.json" />
     <FileTree.File name="tsconfig.json" />
@@ -80,8 +80,8 @@ If you’re applying this to an existing repo with a different layout, keep the 
   divider={false}
   bullets={[
     {
-      title: "Node.js 24+",
-      description: "Matches the Fastify starter + recommended dev setup",
+      title: "Node.js 20+",
+      description: "Minimum version required for @514labs/moose-lib",
       link: { text: "Download →", href: "https://nodejs.org/en/download", external: true },
     },
     {

@@ -1,7 +1,7 @@
 {
-  "name": "fastify-typescript-starter",
-  "version": "4.2.0",
-  "description": "Fastify TypeScript starter repository",
+  "name": "fastify-moose",
+  "version": "0.1.0",
+  "description": "Example repository for embedding MooseStack in a Fastify app",
   "type": "module",
   "engines": {
     "node": ">=24.0.0"
