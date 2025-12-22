@@ -53,9 +53,9 @@
 //! - [arc-swap documentation](https://docs.rs/arc-swap/latest/arc_swap/)
 //! - [Kill All Setters pattern](https://blog.sentry.io/you-cant-rust-that/#kill-all-setters-2)
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use arc_swap::ArcSwap;
+use arc_swap::ArcSwapOption;
 
 /// Display configuration flags for terminal output.
 ///
@@ -79,31 +79,25 @@ pub struct DisplayConfig {
 
 /// Global display configuration using arc-swap for lock-free atomic access.
 ///
-/// This is initialized with default values on first access and can be updated
-/// at startup based on CLI flags or environment variables.
+/// Initialized as empty and set at startup based on CLI flags or environment variables.
+/// If not set, defaults are used on access.
 ///
 /// # Performance
 ///
 /// Loading this config is very cheap:
-/// - One-time initialization check
-/// - No locks acquired after initialization
+/// - No locks acquired
 /// - Atomic pointer load
 /// - Reference count increment
+/// - Fallback to default if None (cheap clone of Copy type)
 ///
 /// The loaded Arc can be held for the duration of an operation to ensure
 /// consistent configuration throughout.
-static DISPLAY_CONFIG: OnceLock<ArcSwap<DisplayConfig>> = OnceLock::new();
-
-/// Gets or initializes the global display configuration.
-///
-/// This is called internally by load_display_config and update_display_config.
-fn get_display_config() -> &'static ArcSwap<DisplayConfig> {
-    DISPLAY_CONFIG.get_or_init(|| ArcSwap::from_pointee(DisplayConfig::default()))
-}
+static DISPLAY_CONFIG: ArcSwapOption<DisplayConfig> = ArcSwapOption::const_empty();
 
 /// Loads the current display configuration.
 ///
 /// Returns an Arc-guarded reference to the current configuration.
+/// If no configuration has been set, returns the default configuration.
 /// This is very cheap (atomic pointer load + refcount increment).
 ///
 /// # Example
@@ -117,7 +111,9 @@ fn get_display_config() -> &'static ArcSwap<DisplayConfig> {
 /// }
 /// ```
 pub fn load_display_config() -> Arc<DisplayConfig> {
-    get_display_config().load_full()
+    DISPLAY_CONFIG
+        .load_full()
+        .unwrap_or_else(|| Arc::new(DisplayConfig::default()))
 }
 
 /// Updates the display configuration atomically.
@@ -137,7 +133,7 @@ pub fn load_display_config() -> Arc<DisplayConfig> {
 /// });
 /// ```
 pub fn update_display_config(config: DisplayConfig) {
-    get_display_config().store(Arc::new(config));
+    DISPLAY_CONFIG.store(Some(Arc::new(config)));
 }
 
 #[cfg(test)]
