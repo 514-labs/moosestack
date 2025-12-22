@@ -142,6 +142,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_with_timing_async_returns_value() {
         let _lock = TEST_LOCK.lock().unwrap();
 
@@ -151,9 +152,9 @@ mod tests {
             show_timing: false,
         });
 
-        // Drop the lock before awaiting to avoid holding it across await point
-        drop(_lock);
-
+        // Hold the lock across the await for proper test isolation
+        // The future `async { 42 }` resolves immediately, so there's no actual
+        // concurrency that would cause deadlock issues (Clippy warning suppressed above)
         let result = with_timing_async("Test", async { 42 }).await;
         assert_eq!(result, 42);
     }
