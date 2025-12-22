@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import posthog from "posthog-js";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -53,6 +54,9 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
   const template = isTemplate ? (item as TemplateMetadata) : null;
   const app = !isTemplate ? (item as AppMetadata) : null;
   const [chipsExpanded, setChipsExpanded] = React.useState(false);
+  const showDeployButton = posthog.isFeatureEnabled?.(
+    "show-template-deploy-button",
+  );
 
   const categoryLabels = {
     starter: "Starter",
@@ -157,14 +161,16 @@ export function TemplateCard({ item, className }: TemplateCardProps) {
       </CardContent>
       <CardFooter className="flex flex-col gap-2 w-full">
         <div className="flex w-full items-center justify-start gap-2 mt-auto">
-          <Button variant="default" asChild>
-            <Link
-              href={`https://moose.dev/deploy?template=${isTemplate ? template!.slug : app!.slug}`}
-            >
-              <IconRocket className="h-4 w-4" />
-              Deploy
-            </Link>
-          </Button>
+          {showDeployButton && (
+            <Button variant="default" asChild>
+              <Link
+                href={`https://moose.dev/deploy?template=${isTemplate ? template!.slug : app!.slug}`}
+              >
+                <IconRocket className="h-4 w-4" />
+                Deploy
+              </Link>
+            </Button>
+          )}
           {!isTemplate && app && app.blogPost && (
             <Button variant="outline" size="icon" asChild>
               <Link
