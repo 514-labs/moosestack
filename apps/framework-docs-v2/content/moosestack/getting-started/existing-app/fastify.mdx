@@ -9,15 +9,15 @@ import { Callout, FileTree, BulletPointsCard } from "@/components/mdx";
 
 ## Overview
 
-This quickstart shows how to embed MooseStack into an existing Fastify app so you can define ClickHouse schema in TypeScript and serve type-safe analytics endpoints from Fastify—while keeping Fastify as your only deployed backend.
+This quickstart guide shows how to embed MooseStack into an existing Fastify app so you can define ClickHouse schema in TypeScript and serve type-safe analytics endpoints from Fastify—while keeping Fastify as your only deployed backend.
 
 From this you will be able to:
-- Model ClickHouse schema in TypeScript, alongside your Fastify code
-- Integrate type-safe ClickHouse queries into your Fastify API endpoints
+- Model ClickHouse schema using Moose OLAP objects (TypeScript) alongside your Fastify code
+- Integrate type-safe ClickHouse queries (via the Moose OLAP client) into your Fastify API endpoints
 - Generate/apply migrations against production ClickHouse when you’re ready to deploy
 
 <Callout type="info" title="What runs in production?">
-Only your Fastify server runs in production. MooseStack is used as a library + CLI to manage schema/migrations and to generate an importable package (`moose/dist`) that your Fastify runtime uses to query ClickHouse.
+Only your Fastify server runs in production. You use MooseStack as a library + CLI to manage schema/migrations and to generate an importable package (`moose/dist`) that your Fastify runtime uses to query ClickHouse.
 </Callout>
 
 ### Guide outline
@@ -32,7 +32,7 @@ Only your Fastify server runs in production. MooseStack is used as a library + C
 
 ## Project structure
 
-This guide’s examples mirror our reference project, which you can find in the [`/examples/fastify-moose` directory](https://github.com/514-labs/moosestack/tree/main/examples/fastify-typescript-starter) of the MooseStack GitHub repository:
+This guide’s examples mirror our reference project, which you can find in the [`/examples/fastify-moose` directory](https://github.com/514-labs/moosestack/tree/main/examples/fastify-moose) of the MooseStack GitHub repository:
 
 - The Fastify app is at the repo root (`./`)
 - A sibling `moose/` workspace package that contains your ClickHouse models and query helpers
@@ -190,7 +190,7 @@ MOOSE_CLICKHOUSE_CONFIG__USE_SSL=false
 <Callout type="info" title="Configuring environment variables in the example app">
 In the example Fastify app, environment variables are loaded automatically on startup using Node’s built-in env loader (`node --env-file=.env ...`).
 
-If you already use a different approach, that’s fine—just ensure the variables above are set in `process.env` before Fastify starts (so the `moose` client can initialize correctly).
+If you already use a different approach, just ensure the variables above are set in `process.env` before Fastify starts (so the `moose` client can initialize correctly).
 </Callout>
 
 Update your `.gitignore` to exclude MooseStack generated files:
@@ -203,11 +203,9 @@ Update your `.gitignore` to exclude MooseStack generated files:
 .ts-node/
 ```
 
----
-
 ## Model table
 
-In this step you’ll define your first ClickHouse model as an `OlapTable` object.
+In this step you’ll define your first ClickHouse model as an [`OlapTable`](/moosestack/olap/model-table) object.
 
 The starter `moose` package you copied into your repo already includes an example model at `moose/src/index.ts`:
 
@@ -229,8 +227,6 @@ export const Events = new OlapTable<EventModel>("events", {
 <Callout type="info" title="Adding more tables">
 Add more tables by exporting additional `OlapTable` objects from `moose/src/index.ts`. See [OlapTable Reference](/moosestack/olap/model-table).
 </Callout>
-
----
 
 ## Start local ClickHouse
 
@@ -256,28 +252,25 @@ See [Dev Environment Configuration](/moosestack/configuration/dev-environment) f
 First, create a shared ClickHouse client initializer inside your `moose` package. This keeps connection logic in one place and lets Fastify handlers call simple query helpers.
 
 ```ts title="moose/src/client.ts"
-import { getMooseClients, Sql } from "@514labs/moose-lib";
+import { getMooseClients, Sql, QueryClient } from "@514labs/moose-lib";
 
-let clientsPromise: Promise<Awaited<ReturnType<typeof getMooseClients>>> | undefined;
-
-async function getMoose() {
-  // Keep env loading as an application concern.
-  // In this starter, Fastify loads `.env` via `node --env-file=.env ...`.
-  clientsPromise ??= getMooseClients({
+async function getClickhouseClient(): Promise<QueryClient> {
+  const { client } = await getMooseClients({
     host: process.env.MOOSE_CLICKHOUSE_CONFIG__HOST ?? "localhost",
     port: process.env.MOOSE_CLICKHOUSE_CONFIG__PORT ?? "18123",
     username: process.env.MOOSE_CLICKHOUSE_CONFIG__USER ?? "panda",
     password: process.env.MOOSE_CLICKHOUSE_CONFIG__PASSWORD ?? "pandapass",
     database: process.env.MOOSE_CLICKHOUSE_CONFIG__DB_NAME ?? "local",
-    useSSL: (process.env.MOOSE_CLICKHOUSE_CONFIG__USE_SSL ?? "false") === "true",
+    useSSL:
+      (process.env.MOOSE_CLICKHOUSE_CONFIG__USE_SSL ?? "false") === "true",
   });
 
-  return await clientsPromise;
+  return client.query;
 }
 
 export async function executeQuery<T>(query: Sql): Promise<T[]> {
-  const { client } = await getMoose();
-  const result = await client.query.execute(query);
+  const queryClient = await getClickhouseClient();
+  const result = await queryClient.execute(query);
   return result.json();
 }
 ```
@@ -308,6 +301,7 @@ export async function getEvents(limit: number = 10): Promise<EventModel[]> {
 
 }
 ```
+For more query patterns and details on using the `sql` template tag, see [Reading Data](/moosestack/olap/read-data).
 
 #### 3) Import and use the helper in Fastify
 
@@ -342,8 +336,6 @@ export default async function clickhouseController(fastify: FastifyInstance) {
 }
 ```
 
----
-
 ## Deploy to production
 
 There’s no separate production Moose Runtime to deploy. You just need to:
@@ -367,6 +359,8 @@ ddl_plan = true
 <Callout type="warning" title="Important: Use production credentials">
 This command connects to the ClickHouse instance you specify in `--clickhouse-url` and generates a migration plan *for that database*. Use your **production** ClickHouse URL + credentials if you intend to deploy these schema changes to production.
 </Callout>
+
+For detailed information about migration workflows, lifecycle management, and plan formats, see the [Migrations documentation](/moosestack/migrate).
 
 ```bash title="Terminal" copy
 pnpm moose generate migration \
@@ -397,8 +391,6 @@ MOOSE_CLICKHOUSE_CONFIG__PASSWORD=prod_password
 MOOSE_CLICKHOUSE_CONFIG__USE_SSL=true
 ```
 
----
-
 ## Troubleshooting
 
 If you see import errors for `import ... from "moose"`, confirm:
@@ -406,8 +398,6 @@ If you see import errors for `import ... from "moose"`, confirm:
 - Your root `pnpm-workspace.yaml` includes both your Fastify app and the `moose` workspace
 - You ran `pnpm install` so `workspace:*` links are created
 - You ran `pnpm -C moose run build` (or your equivalent script) to generate `moose/dist/`
-
----
 
 ## Next steps
 

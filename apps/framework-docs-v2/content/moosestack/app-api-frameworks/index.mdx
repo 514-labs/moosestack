@@ -1,6 +1,6 @@
 ---
 title: Bring Your Own API Framework
-description: Use Express, Koa, Fastify, FastAPI (or raw Node) with MooseStack
+description: Use Express, Koa, Fastify, FastAPI (or raw Node.js) with MooseStack
 order: 0
 category: integration
 ---
@@ -8,9 +8,9 @@ category: integration
 import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 
-# Build HTTP APIs with your own framework
+# Build HTTP APIs with your framework of choice
 
-MooseStack allows you to embed a supported framework inside MooseStack via `WebApp`. This is useful when you need full framework routing/middleware but still want MooseStack to run and deploy everything together.
+MooseStack allows you to embed a supported framework inside your MooseStack application. This is useful when you need full framework routing/middleware but still want MooseStack to run and deploy everything together.
 
 ## Supported frameworks:
 MooseStack provides adapters for the following frameworks:
@@ -41,15 +41,19 @@ MooseStack provides adapters for the following frameworks:
   </LanguageTabContent>
 </LanguageTabs>
 
+<Callout type="info" title="Want to discuss other integrations?" href="https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg" ctaLabel="Join Slack">
+Join our Slack community to chat about other framework integrations you'd like to see or share your own implementation.
+</Callout>
+
 ## Client-only embedding (existing apps)
 
-If you already have a running app server, you can keep it where it is and use MooseStack as a library for ClickHouse modeling + type-safe queries (no separate Moose Runtime web service).
+Optionally, if you already have a running app server, you can keep it where it is and use MooseStack as a library for ClickHouse modeling + type-safe queries (no separate Moose Runtime web service).
 
 - [Embed ClickHouse analytics in Next.js](/moosestack/getting-started/existing-app/next-js)
 - [Embed ClickHouse analytics in Fastify](/moosestack/getting-started/existing-app/fastify)
 - For query patterns, see [Reading Data](/moosestack/olap/read-data).
 
-## WebApp
+## The WebApp Class
 
 The `WebApp` class is the bridge between your web framework and MooseStack. It handles:
 
@@ -57,6 +61,8 @@ The `WebApp` class is the bridge between your web framework and MooseStack. It h
 - [Injecting MooseStack utilities (database clients, SQL helpers, JWT)](#webapp-utilities)
 - Validating JWT tokens when authentication is configured
 - Managing the request/response lifecycle
+
+See [framework templates](/templates) for complete working examples with Express, Fastify, Koa, FastAPI, and more.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
@@ -89,6 +95,28 @@ web_app = WebApp(
 ### Mount paths
 
 Each `WebApp` mounts your framework under a unique path.
+  <LanguageTabs>
+    <LanguageTabContent value="typescript">
+```ts copy
+const webApp = new WebApp("webapp", your_framework_app, {
+  mountPath: "/webapp",
+  /// ... other config ...
+});
+```
+    </LanguageTabContent>
+    <LanguageTabContent value="python">
+```python copy
+web_app = WebApp(
+    "webapp",
+    your_framework_app,
+    WebAppConfig(
+        mount_path="/webapp",
+        ## ... other config ...
+    )
+)
+```
+    </LanguageTabContent>
+  </LanguageTabs>
 
 - **Cannot** be `/`
 - **Cannot** end with a trailing slash
@@ -96,7 +124,7 @@ Each `WebApp` mounts your framework under a unique path.
 
 ### WebApp utilities
 
-All frameworks can access your OLAP database through MooseStack's injected utilities:
+Your frameworks can now access your OLAP database through MooseStack's injected utilities. This includes the Moose ClickHouse client, SQL helpers, and JWT utilities.
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
