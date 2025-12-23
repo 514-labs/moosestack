@@ -96,7 +96,7 @@ jobs:
           echo "::notice title=Merge Queue Info::PR #${PR_NUM}, HEAD=${PR_HEAD_SHA:0:8}, base=${BASE_SHA:0:8}"
 
       - name: Check for cached successful test run
-        if: github.event_name == 'merge_group'
+        if: github.event_name == 'merge_group' && steps.merge-cache-check.outputs.cache_key != ''
         id: restore-test-cache
         uses: actions/cache/restore@v4
         with:
@@ -108,7 +108,11 @@ jobs:
         if: github.event_name == 'merge_group'
         id: merge-skip
         run: |
-          if [[ "${{ steps.restore-test-cache.outputs.cache-hit }}" == "true" ]]; then
+          # If cache_key was never set (PR extraction failed), fall back to running tests
+          if [[ -z "${{ steps.merge-cache-check.outputs.cache_key }}" ]]; then
+            echo "::notice title=Run Merge Queue::Could not extract PR info - running full test suite"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.restore-test-cache.outputs.cache-hit }}" == "true" ]]; then
             echo "::notice title=Skip Merge Queue::Cache hit - PR #${{ steps.merge-cache-check.outputs.pr_number }} was already tested against main@${{ steps.merge-cache-check.outputs.base_sha }}"
             echo "skip=true" >> $GITHUB_OUTPUT
           else
