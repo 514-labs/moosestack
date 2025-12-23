@@ -133,6 +133,7 @@ mod tests {
             load_infra: None,
             typescript_config: crate::project::TypescriptConfig::default(),
             source_dir: crate::project::default_source_dir(),
+            docker_config: crate::project::DockerConfig::default(),
         }
     }
 
@@ -186,7 +187,7 @@ mod tests {
                 tables: table_map,
                 topics: HashMap::new(),
                 api_endpoints: HashMap::new(),
-                views: HashMap::new(),
+                dmv1_views: HashMap::new(),
                 topic_to_table_sync_processes: HashMap::new(),
                 topic_to_topic_sync_processes: HashMap::new(),
                 function_processes: HashMap::new(),
@@ -196,6 +197,8 @@ mod tests {
                 sql_resources: HashMap::new(),
                 workflows: HashMap::new(),
                 web_apps: HashMap::new(),
+                materialized_views: HashMap::new(),
+                views: HashMap::new(),
             },
             changes: Default::default(),
         }

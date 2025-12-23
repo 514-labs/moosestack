@@ -617,6 +617,46 @@ if admin_app:
     print(f"Mounted at: {admin_app.config.mount_path}")
 ```
 
+### `get_materialized_views()`
+Get all registered materialized views.
+```python
+from moose_lib import get_materialized_views
+
+mvs = get_materialized_views()  # Returns Dict[str, MaterializedView]
+for name, mv in mvs.items():
+    print(f"MV: {name}, target: {mv.target_table.name}")
+```
+
+### `get_materialized_view(name)`
+Get a specific materialized view by name.
+```python
+from moose_lib import get_materialized_view
+
+mv = get_materialized_view("UserStatsMV")
+if mv:
+    print(f"Target table: {mv.target_table.name}")
+```
+
+### `get_views()`
+Get all registered views.
+```python
+from moose_lib import get_views
+
+views = get_views()  # Returns Dict[str, View]
+for name, view in views.items():
+    print(f"View: {name}")
+```
+
+### `get_view(name)`
+Get a specific view by name.
+```python
+from moose_lib import get_view
+
+view = get_view("ActiveUsersView")
+if view:
+    print(f"View: {view.name}")
+```
+
 ### Backward Compatibility
 ```python
 # Deprecated: Use get_apis and get_api instead

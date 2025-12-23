@@ -69,7 +69,9 @@ use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
 use crate::framework::languages::SupportedLanguages;
+use crate::utilities::constants::{SHOW_TIMESTAMPS, SHOW_TIMING};
 use anyhow::Result;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -331,10 +333,11 @@ pub async fn top_command_handler(
             no_fail_already_exists,
             from_remote,
             language,
+            custom_dockerfile,
         } => {
             info!(
-                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}",
-                name, location, template, language
+                "Running init command with name: {}, location: {:?}, template: {:?}, language: {:?}, custom_dockerfile: {}",
+                name, location, template, language, custom_dockerfile
             );
 
             // Determine template, prompting for language if needed (especially for --from-remote)
@@ -384,9 +387,14 @@ pub async fn top_command_handler(
 
             check_project_name(name)?;
 
-            let post_install_message =
-                create_project_from_template(&template, name, dir_path, *no_fail_already_exists)
-                    .await?;
+            let post_install_message = create_project_from_template(
+                &template,
+                name,
+                dir_path,
+                *no_fail_already_exists,
+                *custom_dockerfile,
+            )
+            .await?;
 
             let normalized_url = match from_remote {
                 None => {
@@ -548,8 +556,13 @@ pub async fn top_command_handler(
 
                 let docker_client = DockerClient::new(&settings);
                 create_dockerfile(&project_arc, &docker_client)?.show();
-                let _: RoutineSuccess =
-                    build_dockerfile(&project_arc, &docker_client, *amd64, *arm64)?;
+                let _: RoutineSuccess = build_dockerfile(
+                    &project_arc,
+                    &docker_client,
+                    *amd64,
+                    *arm64,
+                    settings.release_channel(),
+                )?;
 
                 wait_for_usage_capture(capture_handle).await;
 
@@ -589,9 +602,18 @@ pub async fn top_command_handler(
                 )))
             }
         }
-        Commands::Dev { no_infra, mcp } => {
+        Commands::Dev {
+            no_infra,
+            mcp,
+            timestamps,
+            timing,
+        } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
+
+            // Set global flags for timestamps and timing
+            SHOW_TIMESTAMPS.store(*timestamps, Ordering::Relaxed);
+            SHOW_TIMING.store(*timing, Ordering::Relaxed);
 
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);

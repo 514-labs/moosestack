@@ -8,9 +8,16 @@ use crate::utilities::constants::{
 };
 use crate::utilities::docker::DockerClient;
 use crate::utilities::nodejs_version::determine_node_version_from_package_json;
-use crate::utilities::package_managers::get_lock_file_path;
+use crate::utilities::package_managers::{
+    check_local_pnpm_version_warning, detect_pnpm_deploy_mode, find_pnpm_workspace_root,
+    get_lock_file_path, get_pnpm_deploy_flag, legacy_deploy_terminal_message,
+    legacy_deploy_warning_message, PnpmDeployMode,
+};
 use crate::utilities::{constants, system};
-use crate::{cli::display::Message, project::Project};
+use crate::{
+    cli::display::{show_message_wrapper, Message, MessageType},
+    project::Project,
+};
 
 use serde_json::Value as JsonValue;
 use std::fs;
@@ -30,6 +37,43 @@ fn ensure_directory_exists(path: &Path) -> Result<(), std::io::Error> {
     } else {
         Ok(())
     }
+}
+
+/// Returns the path to the managed Dockerfile in the internal directory
+fn managed_dockerfile_path(internal_dir: &Path) -> PathBuf {
+    internal_dir.join("packager/Dockerfile")
+}
+
+/// Returns the path to a custom Dockerfile based on project config
+fn custom_dockerfile_path(project: &Project) -> PathBuf {
+    let dockerfile_path = project
+        .docker_config
+        .dockerfile_path
+        .trim_start_matches("./");
+    project.project_location.join(dockerfile_path)
+}
+
+/// Determines the Dockerfile location based on project's docker_config
+fn resolve_dockerfile_path(project: &Project, internal_dir: &Path) -> PathBuf {
+    if project.docker_config.custom_dockerfile {
+        custom_dockerfile_path(project)
+    } else {
+        managed_dockerfile_path(internal_dir)
+    }
+}
+
+/// Checks if we should skip Dockerfile generation to preserve user customizations
+fn should_skip_dockerfile_generation(project: &Project, target_path: &Path) -> bool {
+    // If custom_dockerfile is enabled and the target file already exists,
+    // preserve it to avoid overwriting user customizations
+    if project.docker_config.custom_dockerfile && target_path.exists() {
+        info!(
+            "Custom Dockerfile exists at {:?}, skipping generation to preserve customizations",
+            target_path
+        );
+        return true;
+    }
+    false
 }
 
 /// Helper function to copy config files for monorepo builds
@@ -284,7 +328,27 @@ pub fn create_dockerfile(
         )
     })?;
 
-    let file_path = internal_dir.join("packager/Dockerfile");
+    // Determine Dockerfile path based on docker_config
+    let file_path = resolve_dockerfile_path(project, &internal_dir);
+
+    // Check if we should skip generation (custom Dockerfile already exists)
+    if should_skip_dockerfile_generation(project, &file_path) {
+        return Ok(RoutineSuccess::success(Message::new(
+            "Using existing".to_string(),
+            format!(
+                "custom Dockerfile at {} (edit moose.config.toml to disable)",
+                file_path.display()
+            ),
+        )));
+    }
+
+    // Log if creating a custom Dockerfile for the first time
+    if project.docker_config.custom_dockerfile {
+        info!(
+            "Creating custom Dockerfile at project root: {:?}",
+            file_path
+        );
+    }
 
     info!("Creating Dockerfile at: {:?}", file_path);
     ensure_directory_exists(&file_path).map_err(|err| {
@@ -415,12 +479,38 @@ pub fn create_dockerfile(
                     None => "# No lock file found".to_string(),
                 };
 
+                // Check local pnpm version (informational only - doesn't affect Docker builds)
+                if let Some(warning) = check_local_pnpm_version_warning() {
+                    tracing::info!("{}", warning);
+                }
+
+                // Detect whether to use modern or legacy pnpm deploy
+                let deploy_mode = detect_pnpm_deploy_mode(&workspace_root);
+
+                // Log warning if using legacy mode
+                if let PnpmDeployMode::Legacy(reason) = &deploy_mode {
+                    // Full message for logs
+                    let warning_msg = legacy_deploy_warning_message(reason);
+                    tracing::warn!("{}", warning_msg);
+                    // Condensed message for terminal
+                    show_message_wrapper(
+                        MessageType::Warning,
+                        Message {
+                            action: "Warning".to_string(),
+                            details: legacy_deploy_terminal_message(reason),
+                        },
+                    );
+                }
+
+                // Generate appropriate deploy command (Docker uses pnpm@latest which supports --legacy)
+                let deploy_flag = get_pnpm_deploy_flag(&deploy_mode);
+
                 let deploy_install_command = format!(
                     r#"
 # Use package manager to install only production dependencies
-RUN pnpm --filter "./{}" deploy /temp-deploy --legacy
+RUN pnpm --filter "./{}" deploy /temp-deploy{}
 
-# Fix: pnpm deploy --legacy doesn't copy native bindings, so rebuild them from source
+# Fix: When using pnpm deploy --legacy, native bindings aren't copied, so rebuild them from source
 # Generic solution: Find and rebuild all packages with native bindings (those with binding.gyp)
 RUN echo "=== Rebuilding native modules ===" && \
     cd /temp-deploy && \
@@ -439,7 +529,8 @@ RUN echo "=== Rebuilding native modules ===" && \
         echo "No native modules found (this is normal if your deps don't have native bindings)"; \
     fi && \
     echo "=== Native modules rebuild complete ===""#,
-                    relative_project_path.to_string_lossy()
+                    relative_project_path.to_string_lossy(),
+                    deploy_flag
                 );
 
                 // Modify the copy commands to copy from the build stage
@@ -543,20 +634,40 @@ COPY --chown=moose:moose ./{} ./{}"#,
     })?;
 
     info!("Dockerfile created at: {:?}", file_path);
+
+    // Provide appropriate success message based on custom dockerfile mode
+    let message = if project.docker_config.custom_dockerfile {
+        format!(
+            "created custom Dockerfile at {} - you can now customize it",
+            file_path.display()
+        )
+    } else {
+        "created dockerfile".to_string()
+    };
+
     Ok(RoutineSuccess::success(Message::new(
         "Successfully".to_string(),
-        "created dockerfile".to_string(),
+        message,
     )))
 }
 
 /// Builds Docker images from the generated Dockerfile for specified architectures.
 /// Handles both monorepo and standalone builds, copying necessary files and managing
 /// temporary build contexts appropriately for each build type.
+///
+/// # Arguments
+///
+/// * `project` - The project configuration
+/// * `docker_client` - Docker client for running build commands
+/// * `is_amd64` - Whether to build for linux/amd64 architecture
+/// * `is_arm64` - Whether to build for linux/arm64 architecture
+/// * `release_channel` - The release channel for downloading CLI binaries ("stable" or "dev")
 pub fn build_dockerfile(
     project: &Project,
     docker_client: &DockerClient,
     is_amd64: bool,
     is_arm64: bool,
+    release_channel: &str,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
 
@@ -571,19 +682,23 @@ pub fn build_dockerfile(
         )
     })?;
 
-    let file_path = internal_dir.join("packager/Dockerfile");
+    // Determine Dockerfile path based on docker_config
+    let file_path = resolve_dockerfile_path(project, &internal_dir);
     info!("Building Dockerfile at: {:?}", file_path);
 
-    fs::create_dir_all(file_path.parent().unwrap()).map_err(|err| {
-        error!("Failed to create directory for project packaging: {}", err);
-        RoutineFailure::new(
-            Message::new(
-                "Failed".to_string(),
-                "to create directory for project packaging".to_string(),
-            ),
-            err,
-        )
-    })?;
+    // Ensure directory exists for the Dockerfile
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| {
+            error!("Failed to create directory for project packaging: {}", err);
+            RoutineFailure::new(
+                Message::new(
+                    "Failed".to_string(),
+                    "to create directory for project packaging".to_string(),
+                ),
+                err,
+            )
+        })?;
+    }
 
     // Copy app & etc to packager directory
     let project_root_path = project.project_location.clone();
@@ -677,7 +792,8 @@ pub fn build_dockerfile(
     // Check if this is a monorepo build
     // .monorepo-info is a temporary file generated by our docker_packager process.
     let monorepo_info_path = internal_dir.join("packager/.monorepo-info");
-    let (build_context, dockerfile_path) = if monorepo_info_path.exists() {
+    // Track whether we copied versions directory (only clean up what we created)
+    let (build_context, dockerfile_path, copied_versions_dir) = if monorepo_info_path.exists() {
         // Read monorepo info
         match fs::read_to_string(&monorepo_info_path) {
             Ok(content) => {
@@ -738,10 +854,10 @@ pub fn build_dockerfile(
                         )
                     })?;
 
-                    (workspace_root, temp_dockerfile)
+                    (workspace_root, temp_dockerfile, false)
                 } else {
                     info!("Invalid monorepo info, falling back to standard build");
-                    (internal_dir.join("packager"), file_path)
+                    (internal_dir.join("packager"), file_path, false)
                 }
             }
             Err(e) => {
@@ -749,12 +865,51 @@ pub fn build_dockerfile(
                     "Failed to read monorepo info: {}, falling back to standard build",
                     e
                 );
-                (internal_dir.join("packager"), file_path)
+                (internal_dir.join("packager"), file_path, false)
             }
         }
+    } else if project.docker_config.custom_dockerfile {
+        // Custom Dockerfile build - use project root as build context
+        info!(
+            "Using custom Dockerfile at {:?} with project root as build context",
+            file_path
+        );
+
+        // For custom Dockerfile builds, copy versions directory to project root
+        // so the Dockerfile can find it at ./versions
+        // Only copy if destination doesn't exist (don't overwrite user's versions directory)
+        let versions_src = internal_dir.join("packager/versions");
+        let versions_dest = project.project_location.join("versions");
+        let copied_versions = if versions_src.exists() && !versions_dest.exists() {
+            if let Err(e) = system::copy_directory(&versions_src, &project.project_location) {
+                error!(
+                    "Failed to copy versions directory for custom Dockerfile build: {}",
+                    e
+                );
+                return Err(RoutineFailure::new(
+                    Message::new(
+                        "Failed".to_string(),
+                        "to copy versions directory for custom Dockerfile build".to_string(),
+                    ),
+                    e,
+                ));
+            }
+            info!("Copied versions directory to {:?}", versions_dest);
+            true
+        } else {
+            if versions_dest.exists() {
+                info!(
+                    "Versions directory already exists at {:?}, skipping copy",
+                    versions_dest
+                );
+            }
+            false
+        };
+
+        (project.project_location.clone(), file_path, copied_versions)
     } else {
         // Standard build
-        (internal_dir.join("packager"), file_path)
+        (internal_dir.join("packager"), file_path, false)
     };
 
     let build_all = is_amd64 == is_arm64;
@@ -766,7 +921,9 @@ pub fn build_dockerfile(
             "Docker linux/amd64 image created successfully",
             || {
                 // For monorepo builds, we need to copy config files to workspace root
-                if build_context != internal_dir.join("packager") {
+                // Skip for custom Dockerfile builds where build_context == project_location
+                // (copying a file to itself is undefined behavior)
+                if monorepo_info_path.exists() {
                     copy_project_config_files(
                         &project.project_location,
                         &build_context,
@@ -779,6 +936,7 @@ pub fn build_dockerfile(
                     cli_version,
                     "linux/amd64",
                     "x86_64-unknown-linux-gnu",
+                    release_channel,
                 )
             },
             !project.is_production,
@@ -804,7 +962,9 @@ pub fn build_dockerfile(
             "Docker linux/arm64 image created successfully",
             || {
                 // For monorepo builds, we need to copy config files to workspace root
-                if build_context != internal_dir.join("packager") {
+                // Skip for custom Dockerfile builds where build_context == project_location
+                // (copying a file to itself is undefined behavior)
+                if monorepo_info_path.exists() {
                     copy_project_config_files(
                         &project.project_location,
                         &build_context,
@@ -817,6 +977,7 @@ pub fn build_dockerfile(
                     cli_version,
                     "linux/arm64",
                     "aarch64-unknown-linux-gnu",
+                    release_channel,
                 )
             },
             !project.is_production,
@@ -835,49 +996,44 @@ pub fn build_dockerfile(
         }
     }
 
-    // Clean up temporary files for monorepo builds
-    if build_context != internal_dir.join("packager") {
-        // Remove temporary Dockerfile
+    // Clean up temporary files for monorepo builds (NOT custom Dockerfile builds)
+    // Custom Dockerfile builds use project root as build_context but should NOT have their
+    // Dockerfile or config files deleted - those are user-owned files
+    let is_monorepo_build = monorepo_info_path.exists();
+    if is_monorepo_build {
+        // Remove temporary Dockerfile (only for monorepo builds where we create a temp Dockerfile)
         if dockerfile_path.exists()
             && dockerfile_path.file_name() == Some(std::ffi::OsStr::new("Dockerfile"))
         {
             fs::remove_file(&dockerfile_path).ok();
         }
 
-        // Remove temporary config files
+        // Remove temporary config files copied to workspace root
         let temp_project_toml = build_context.join("project.toml");
         let temp_moose_config = build_context.join("moose.config.toml");
         fs::remove_file(temp_project_toml).ok();
         fs::remove_file(temp_moose_config).ok();
 
         // Remove monorepo info file
-        fs::remove_file(monorepo_info_path).ok();
+        fs::remove_file(&monorepo_info_path).ok();
+    }
+
+    // Clean up versions directory only if we copied it (don't delete user's existing directory)
+    if copied_versions_dir {
+        let versions_dest = project.project_location.join("versions");
+        if versions_dest.exists() {
+            fs::remove_dir_all(&versions_dest).ok();
+            info!(
+                "Cleaned up temporary versions directory at {:?}",
+                versions_dest
+            );
+        }
     }
 
     Ok(RoutineSuccess::success(Message::new(
         "Successfully".to_string(),
         "created docker image for deployment".to_string(),
     )))
-}
-
-/// Detects if the project is part of a pnpm workspace by looking for pnpm-workspace.yaml
-fn find_pnpm_workspace_root(start_dir: &Path) -> Option<PathBuf> {
-    let mut current_dir = start_dir.to_path_buf();
-
-    loop {
-        let workspace_file = current_dir.join("pnpm-workspace.yaml");
-        if workspace_file.exists() {
-            debug!("Found pnpm-workspace.yaml at: {:?}", current_dir);
-            return Some(current_dir);
-        }
-
-        match current_dir.parent() {
-            Some(parent) => current_dir = parent.to_path_buf(),
-            None => break,
-        }
-    }
-
-    None
 }
 
 /// Reads and parses pnpm-workspace.yaml to get package patterns

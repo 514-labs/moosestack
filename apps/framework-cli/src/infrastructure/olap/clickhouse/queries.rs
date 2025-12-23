@@ -599,8 +599,9 @@ impl ClickhouseEngine {
                 });
             }
 
-            // Require at least 2 params if any are provided
-            if params.len() < 2 {
+            // Require at least 2 params if any are provided, and at most 4
+            // (keeper_path, replica_name, ver, is_deleted)
+            if params.len() < 2 || params.len() > 4 {
                 return Err(value);
             }
 
@@ -620,8 +621,8 @@ impl ClickhouseEngine {
         } else {
             // For SharedReplacingMergeTree with parentheses, keeper_path and replica_name are required
             // The 3rd and 4th params (if present) are ver and is_deleted.
-            // Require exactly 2 or more params (can't be empty with parentheses)
-            if params.len() < 2 {
+            // Require 2-4 params (can't be empty with parentheses, and max 4)
+            if params.len() < 2 || params.len() > 4 {
                 return Err(value);
             }
 
@@ -3677,8 +3678,13 @@ fn builds_field_context(columns: &[ClickHouseColumn]) -> Result<Vec<Value>, Clic
         .map(|column| {
             let field_type = basic_field_type_to_string(&column.column_type)?;
 
-            // Escape single quotes in comments for SQL safety
-            let escaped_comment = column.comment.as_ref().map(|c| c.replace('\'', "''"));
+            // Escape for ClickHouse SQL string literals:
+            // 1. First escape backslashes (\ → \\) to preserve them
+            // 2. Then escape single quotes (' → '') for SQL safety
+            let escaped_comment = column
+                .comment
+                .as_ref()
+                .map(|c| c.replace('\\', "\\\\").replace('\'', "''"));
 
             let field_ttl = column.ttl.as_ref();
             let field_codec = column.codec.as_ref();
@@ -5568,6 +5574,46 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         for input in invalid_cases {
             let result = ClickhouseEngine::try_from(input);
             assert!(result.is_err(), "Should fail for input: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_replacing_merge_tree_rejects_extra_params() {
+        // Guard against silent truncation: extra parameters beyond ver and is_deleted should error
+        let extra_param_cases = vec![
+            // ReplicatedReplacingMergeTree with 5 params (path, replica, ver, is_deleted, EXTRA)
+            "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', 'ver', 'is_deleted', 'extra')",
+            // SharedReplacingMergeTree with 5 params (path, replica, ver, is_deleted, EXTRA)
+            "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', 'ver', 'is_deleted', 'extra')",
+        ];
+
+        for input in extra_param_cases {
+            let result = ClickhouseEngine::try_from(input);
+            assert!(
+                result.is_err(),
+                "Should reject extra parameters for input: {}. Got: {:?}",
+                input,
+                result
+            );
+        }
+
+        // Guard against insufficient parameters: single-parameter forms should error
+        // Both engines require 2 params minimum when not using automatic configuration
+        let insufficient_param_cases = vec![
+            // ReplicatedReplacingMergeTree with 1 param (only path, missing replica)
+            "ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}')",
+            // SharedReplacingMergeTree with 1 param (only path, missing replica)
+            "SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}')",
+        ];
+
+        for input in insufficient_param_cases {
+            let result = ClickhouseEngine::try_from(input);
+            assert!(
+                result.is_err(),
+                "Should reject insufficient parameters for input: {}. Got: {:?}",
+                input,
+                result
+            );
         }
     }
 

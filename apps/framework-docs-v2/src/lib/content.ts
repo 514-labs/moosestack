@@ -31,7 +31,8 @@ export function getContentFiles(): string[] {
 
 /**
  * Recursively get all markdown files in a directory
- * Excludes the 'shared' folder
+ * Excludes the 'shared' folder and 'templates' folder
+ * (templates is now an explicit page in the app directory)
  */
 function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
   const files: string[] = [];
@@ -39,11 +40,12 @@ function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    // Skip the shared folder
-    if (entry.isDirectory() && entry.name === "shared") {
-      continue;
-    }
+    // Skip the shared folder and templates folder
+    // (templates is now an explicit page in app directory)
     if (entry.isDirectory()) {
+      if (entry.name === "shared" || entry.name === "templates") {
+        continue;
+      }
       files.push(...getAllMarkdownFiles(fullPath, baseDir));
     } else if (
       entry.isFile() &&
@@ -241,4 +243,53 @@ export function getAllSlugs(): string[] {
   // Remove duplicates (in case both .md and .mdx exist, prefer .mdx)
   const uniqueSlugs = Array.from(new Set(slugs));
   return uniqueSlugs;
+}
+
+/**
+ * Discover step files in a directory
+ * Returns step files matching the pattern: {number}-{name}.mdx
+ * Sorted by step number
+ */
+export function discoverStepFiles(slug: string): Array<{
+  slug: string;
+  stepNumber: number;
+  title: string;
+}> {
+  const dirPath = path.join(CONTENT_ROOT, slug);
+
+  if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) {
+    return [];
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  const steps: Array<{ slug: string; stepNumber: number; title: string }> = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+
+    // Match pattern: {number}-{name}.mdx
+    const stepMatch = entry.name.match(/^(\d+)-(.+)\.mdx$/);
+    if (!stepMatch) continue;
+
+    const stepNumber = parseInt(stepMatch[1]!, 10);
+    const stepName = stepMatch[2];
+    if (!stepName) continue;
+
+    const stepSlug = `${slug}/${entry.name.replace(/\.mdx$/, "")}`;
+
+    // Read front matter to get title
+    const filePath = path.join(dirPath, entry.name);
+    const fileContents = fs.readFileSync(filePath, "utf8");
+    const { data } = matter(fileContents);
+    const frontMatter = data as FrontMatter;
+
+    steps.push({
+      slug: stepSlug,
+      stepNumber,
+      title: (frontMatter.title as string) || stepName.replace(/-/g, " "),
+    });
+  }
+
+  // Sort by step number
+  return steps.sort((a, b) => a.stepNumber - b.stepNumber);
 }

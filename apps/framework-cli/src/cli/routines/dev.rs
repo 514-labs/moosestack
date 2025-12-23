@@ -5,12 +5,20 @@ use super::{
     },
     RoutineFailure, RoutineSuccess,
 };
-use crate::cli::display::{show_message_wrapper, with_spinner_completion, Message, MessageType};
+use crate::cli::display::{
+    show_message_wrapper, with_spinner_completion, with_timing, Message, MessageType,
+};
 use crate::cli::settings::Settings;
+use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
-use crate::utilities::constants::CLI_PROJECT_INTERNAL_DIR;
+use crate::utilities::constants::{CLI_PROJECT_INTERNAL_DIR, SHOW_TIMING};
+use crate::utilities::package_managers::{
+    check_local_pnpm_version_warning, detect_pnpm_deploy_mode, find_pnpm_workspace_root,
+    legacy_deploy_terminal_message, legacy_deploy_warning_message, PnpmDeployMode,
+};
 use crate::{cli::routines::util::ensure_docker_running, utilities::docker::DockerClient};
 use lazy_static::lazy_static;
+use std::sync::atomic::Ordering;
 
 pub fn run_local_infrastructure(
     project: &Project,
@@ -24,6 +32,31 @@ pub fn run_local_infrastructure(
         project.should_load_infra()
     );
     create_docker_compose_file(project, settings, docker_client)?.show();
+
+    // Warn about pnpm deploy configuration for TypeScript projects in pnpm workspaces
+    if project.language == SupportedLanguages::Typescript {
+        // Check local pnpm version (informational only - doesn't affect Docker builds)
+        if let Some(warning) = check_local_pnpm_version_warning() {
+            tracing::info!("{}", warning);
+        }
+
+        if let Some(workspace_root) = find_pnpm_workspace_root(&project.project_location) {
+            let deploy_mode = detect_pnpm_deploy_mode(&workspace_root);
+            if let PnpmDeployMode::Legacy(reason) = deploy_mode {
+                // Full message for logs
+                let warning_msg = legacy_deploy_warning_message(&reason);
+                tracing::warn!("{}", warning_msg);
+                // Condensed message for terminal
+                show_message_wrapper(
+                    MessageType::Warning,
+                    Message {
+                        action: "Warning".to_string(),
+                        details: legacy_deploy_terminal_message(&reason),
+                    },
+                );
+            }
+        }
+    }
 
     // Inform user if override file is present
     let override_file = project
@@ -93,12 +126,14 @@ lazy_static! {
 }
 
 pub fn run_containers(project: &Project, docker_client: &DockerClient) -> anyhow::Result<()> {
-    with_spinner_completion(
-        "Starting local infrastructure",
-        "Local infrastructure started successfully",
-        || docker_client.start_containers(project),
-        !project.is_production,
-    )
+    with_timing("Start Infra", || {
+        with_spinner_completion(
+            "Starting local infrastructure",
+            "Local infrastructure started successfully",
+            || docker_client.start_containers(project),
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+        )
+    })
 }
 
 pub fn create_docker_compose_file(

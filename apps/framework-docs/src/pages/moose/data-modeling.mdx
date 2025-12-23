@@ -20,9 +20,7 @@ Data Models are used to define:
 - [API Contracts](/moose/apis) (request/response validation and OpenAPI specs)
 - [Workflow Task Input and Output Types](/moose/workflows) (typed function inputs/outputs)
 
-## Philosophy
-
-### Problem: Analytical Backends are Prone to Schema Drift
+## Problem: Analytical Backends are Prone to Schema Drift
 Analytical backends are unique in that they typically have to coordinate schemas across multiple systems that each have their own type systems and constraints.
 
 Consider a typical pipeline for ingesting events into a ClickHouse table.
@@ -108,7 +106,7 @@ class EventsResponse(BaseModel):
 - Runtime errors
 - Data quality issues (validation gaps)
 
-### Solution: Model In Code, Reuse Everywhere
+## Solution: Model In Code, Reuse Everywhere
 
 With Moose you define your schemas in native language types with optional metadata. This lets you reuse your schemas across multiple systems:
 

@@ -728,3 +728,47 @@ if (adminApp) {
   console.log(`Mounted at: ${adminApp.config.mountPath}`);
 }
 ```
+
+### `getMaterializedViews()`
+Get all registered materialized views.
+```ts
+import { getMaterializedViews } from "@514labs/moose-lib";
+
+const mvs = getMaterializedViews();  // Returns Map<string, MaterializedView<any>>
+for (const [name, mv] of mvs) {
+  console.log(`MV: ${name}, target: ${mv.targetTable.name}`);
+}
+```
+
+### `getMaterializedView(name)`
+Get a specific materialized view by name.
+```ts
+import { getMaterializedView } from "@514labs/moose-lib";
+
+const mv = getMaterializedView("UserStatsMV");
+if (mv) {
+  console.log(`Target table: ${mv.targetTable.name}`);
+}
+```
+
+### `getViews()`
+Get all registered views.
+```ts
+import { getViews } from "@514labs/moose-lib";
+
+const views = getViews();  // Returns Map<string, View>
+for (const [name, view] of views) {
+  console.log(`View: ${name}`);
+}
+```
+
+### `getView(name)`
+Get a specific view by name.
+```ts
+import { getView } from "@514labs/moose-lib";
+
+const view = getView("ActiveUsersView");
+if (view) {
+  console.log(`View: ${view.name}`);
+}
+```

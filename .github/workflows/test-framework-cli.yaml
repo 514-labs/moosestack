@@ -119,7 +119,7 @@ jobs:
         run: cargo check
 
       - name: Check for unused dependencies
-        uses: bnjbvr/cargo-machete@main
+        uses: bnjbvr/cargo-machete@v0.9.1
 
       - name: Run cargo Build in release mode
         run: cargo build --release --locked

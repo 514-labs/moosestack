@@ -166,7 +166,7 @@ Register additional tools in `packages/moosestack-service/app/apis/mcp.ts` using
 
 ### Accessing MooseStack Utilities
 
-Use `getMooseUtils(req)` in your endpoint handlers to access the ClickHouse client (`client.query.execute()`) and SQL template function (`sql`) for safe query execution.
+Use `await getMooseUtils()` in your endpoint handlers to access the ClickHouse client (`client.query.execute()`) and SQL template function (`sql`) for safe query execution.
 
 ### Adding More Data Models
 

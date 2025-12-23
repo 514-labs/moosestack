@@ -19,7 +19,8 @@
 /// The webserver is configurable through the `LocalWebserverConfig` struct and
 /// can be started in both development and production modes.
 use super::display::{
-    with_spinner_completion, with_spinner_completion_async, Message, MessageType,
+    with_spinner_completion, with_spinner_completion_async, with_timing, with_timing_async,
+    Message, MessageType,
 };
 use super::routines::auth::validate_auth_token;
 use super::routines::scripts::{
@@ -38,6 +39,7 @@ use crate::framework::core::infrastructure_map::{InfraChanges, OlapChange, Table
 use crate::framework::versions::Version;
 use crate::metrics::Metrics;
 use crate::utilities::auth::{get_claims, validate_jwt};
+use crate::utilities::constants::SHOW_TIMING;
 
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::framework::typescript::bin::CliMessage;
@@ -1096,6 +1098,9 @@ async fn log_route(
                 match cli_message.message_type {
                     MessageType::Error => {
                         error!("{}: {}", message.action, message.details);
+                    }
+                    MessageType::Warning => {
+                        warn!("{}: {}", message.action, message.details);
                     }
                     MessageType::Success | MessageType::Info | MessageType::Highlight => {
                         info!("{}: {}", message.action, message.details);
@@ -2724,15 +2729,19 @@ async fn shutdown(
     // Step 1: Stop all managed processes (functions, syncing, consumption, orchestration workers)
     // This sends termination signals and waits with timeouts for all processes to exit
     // Note: This happens in BOTH dev and production - workers must always be stopped gracefully
-    let stop_result = with_spinner_completion_async(
-        "Stopping managed processes (functions, syncing, consumption, workers)",
-        "Managed processes stopped",
-        async {
-            let mut process_registry = process_registry.write().await;
-            process_registry.stop().await
-        },
-        !project.is_production, // Show spinner in dev only
-    )
+
+    let stop_result = with_timing_async("Stop Processes", async {
+        with_spinner_completion_async(
+            "Stopping managed processes (functions, syncing, consumption, workers)",
+            "Managed processes stopped",
+            async {
+                let mut process_registry = process_registry.write().await;
+                process_registry.stop().await
+            },
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+        )
+        .await
+    })
     .await;
 
     match stop_result {
@@ -2785,12 +2794,15 @@ async fn shutdown(
     //   running so other workers or future restarts can pick them up. Terminating production workflows
     //   should be an explicit operational decision, not automatic on every deployment.
     if !project.is_production && project.features.workflows {
-        let termination_result = with_spinner_completion_async(
-            "Stopping workflows",
-            "Workflows stopped",
-            async { terminate_all_workflows(project).await },
-            true, // Always show spinner in dev (this code only runs in dev)
-        )
+        let termination_result = with_timing_async("Stop Workflows", async {
+            with_spinner_completion_async(
+                "Stopping workflows",
+                "Workflows stopped",
+                async { terminate_all_workflows(project).await },
+                !SHOW_TIMING.load(Ordering::Relaxed),
+            )
+            .await
+        })
         .await;
 
         match termination_result {
@@ -2845,14 +2857,16 @@ async fn shutdown(
             let docker = DockerClient::new(settings);
             info!("Starting container shutdown process");
 
-            with_spinner_completion(
-                "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
-                "Docker containers stopped",
-                || {
-                    let _ = docker.stop_containers(project);
-                },
-                true,
-            );
+            with_timing("Stop Containers", || {
+                with_spinner_completion(
+                    "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
+                    "Docker containers stopped",
+                    || {
+                        let _ = docker.stop_containers(project);
+                    },
+                    !SHOW_TIMING.load(Ordering::Relaxed),
+                )
+            });
 
             info!("Container shutdown complete");
         } else if !project.should_load_infra() {
@@ -3318,6 +3332,11 @@ async fn get_admin_reconciled_inframap(
     let target_sql_resource_ids: HashSet<String> =
         current_map.sql_resources.keys().cloned().collect();
 
+    let target_materialized_view_ids: HashSet<String> =
+        current_map.materialized_views.keys().cloned().collect();
+
+    let target_view_ids: HashSet<String> = current_map.views.keys().cloned().collect();
+
     // Reconcile the loaded map with actual database state (single load, no race condition).
     // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
     // may support reconciliation of other infrastructure types (e.g., Kafka topics).
@@ -3329,6 +3348,8 @@ async fn get_admin_reconciled_inframap(
             &current_map,
             &target_table_ids,
             &target_sql_resource_ids,
+            &target_materialized_view_ids,
+            &target_view_ids,
             clickhouse_client,
         )
         .await?
@@ -3600,6 +3621,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3619,6 +3646,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3654,6 +3687,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();

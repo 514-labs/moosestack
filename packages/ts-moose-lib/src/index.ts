@@ -15,7 +15,12 @@ export * from "./blocks/helpers";
 export * from "./commons";
 export * from "./secrets";
 export * from "./consumption-apis/helpers";
-export * from "./consumption-apis/webAppHelpers";
+export {
+  expressMiddleware,
+  ExpressRequestWithMoose,
+  getMooseUtilsFromRequest,
+  getLegacyMooseUtils,
+} from "./consumption-apis/webAppHelpers";
 export * from "./scripts/task";
 
 export { createApi, createConsumptionApi } from "./consumption-apis/runner";
@@ -24,7 +29,8 @@ export { MooseCache } from "./clients/redisClient";
 
 export { ApiUtil, ConsumptionUtil } from "./consumption-apis/helpers";
 
-export { getMooseClients } from "./consumption-apis/standalone";
+export { getMooseUtils, getMooseClients } from "./consumption-apis/standalone";
+export type { MooseUtils } from "./consumption-apis/helpers";
 export { sql } from "./sqlHelpers";
 
 export * from "./utilities";

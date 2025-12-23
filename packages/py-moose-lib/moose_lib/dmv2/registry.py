@@ -23,7 +23,11 @@ from ._registry import (
     _api_name_aliases,
     _api_path_map,
     _web_apps,
+    _materialized_views,
+    _views,
 )
+from .materialized_view import MaterializedView
+from .view import View
 
 
 def get_tables() -> Dict[str, OlapTable]:
@@ -111,6 +115,26 @@ def get_web_apps() -> Dict[str, WebApp]:
 def get_web_app(name: str) -> Optional[WebApp]:
     """Get a registered WebApp by name."""
     return _web_apps.get(name)
+
+
+def get_materialized_views() -> Dict[str, "MaterializedView"]:
+    """Get all registered materialized views."""
+    return _materialized_views
+
+
+def get_materialized_view(name: str) -> Optional["MaterializedView"]:
+    """Get a registered materialized view by name."""
+    return _materialized_views.get(name)
+
+
+def get_views() -> Dict[str, "View"]:
+    """Get all registered views."""
+    return _views
+
+
+def get_view(name: str) -> Optional["View"]:
+    """Get a registered view by name."""
+    return _views.get(name)
 
 
 # Backward compatibility aliases (deprecated)

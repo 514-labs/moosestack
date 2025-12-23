@@ -7,22 +7,27 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { IconDatabase, IconCloud, IconSparkles } from "@tabler/icons-react";
+import {
+  IconDatabase,
+  IconCloud,
+  IconSparkles,
+  IconCode,
+} from "@tabler/icons-react";
 import { showHostingSection, showAiSection } from "@/flags";
 import { cn } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
+// export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   // Evaluate feature flags
   const [showHosting, showAi] = await Promise.all([
     showHostingSection().catch(() => false),
-    showAiSection().catch(() => true),
+    showAiSection().catch(() => false),
   ]);
 
   // Calculate number of visible cards based on flags
-  // MooseStack is always visible (1), plus conditional cards
-  const cardCount = 1 + (showHosting ? 1 : 0) + (showAi ? 1 : 0);
+  // MooseStack and Templates are always visible (2), plus conditional cards
+  const cardCount = 2 + (showHosting ? 1 : 0) + (showAi ? 1 : 0);
 
   const sections = [
     {
@@ -31,6 +36,13 @@ export default async function HomePage() {
         "The core framework for building data applications with OLAP, streaming, workflows, and APIs.",
       href: `/moosestack`,
       icon: IconDatabase,
+    },
+    {
+      title: "Templates",
+      description:
+        "Browse ready-to-use templates and example applications to jumpstart your MooseStack project.",
+      href: `/templates`,
+      icon: IconCode,
     },
     ...(showHosting ?
       [
@@ -71,6 +83,7 @@ export default async function HomePage() {
             "md:grid-cols-1 md:max-w-md md:mx-auto": cardCount === 1,
             "md:grid-cols-2": cardCount === 2,
             "md:grid-cols-3": cardCount === 3,
+            "md:grid-cols-2 lg:grid-cols-4": cardCount === 4,
           })}
         >
           {sections.map((section) => {

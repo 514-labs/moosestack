@@ -31,12 +31,12 @@ The documentation is built using MDX files located in the `content/` directory. 
 
 ## Code Snippets
 
-### Basic Code Block with Title
+### Basic Code Block
 
-To add a code block with a filename displayed, use the `title` attribute in the language tag for **static** (non-animated) code blocks:
+To add a code block with a filename displayed, use the `filename` or `title` attribute:
 
 ````markdown
-```typescript title="MyFile.ts"
+```typescript filename="MyFile.ts"
 const example = "Hello, World!";
 ```
 ````
@@ -45,14 +45,14 @@ This will automatically:
 - Display the filename at the top of the code block
 - Show a copy button
 - Render with syntax highlighting
-- **Remain static** (no animation)
+- **Remain static** (no animation by default)
 
-### Animated Code Editor (for demonstrations)
+### Animated Code Editor (opt-in)
 
-When you use the `filename` attribute instead, it becomes an **animated** code editor that types out the code. This is great for showcasing code:
+To create an **animated** code editor that types out the code, add the `animate` attribute:
 
 ````markdown
-```typescript filename="example.ts"
+```typescript filename="example.ts" animate
 import { OlapTable } from "@514labs/moose-lib";
 
 const table = new OlapTable<MyModel>("my_table");
@@ -60,20 +60,20 @@ const table = new OlapTable<MyModel>("my_table");
 ````
 
 **Rules for animated editors:**
-- ✅ Code blocks with `filename` attribute → Animated IDE/terminal
-- ✅ Terminal commands (bash, sh, shell) with `filename` → Animated terminal
-- ❌ Config files (toml, yaml, json) → Always static (never animated, even with `filename`)
+- ✅ Code blocks with `animate` attribute → Animated IDE/terminal
+- ❌ Code blocks without `animate` → Always static (default)
+- ❌ Config files (toml, yaml, json) → Always static (animation disabled)
 
-**Key difference:**
-- `title="..."` → Static code block with filename display
-- `filename="..."` → Animated code editor that types out the code
+**Key attributes:**
+- `filename="..."` or `title="..."` → Static code block with filename display
+- `animate` → Enables typing animation (opt-in)
 
-### Static Code Block (with copy button)
+### Static Code Block (default)
 
-If you want a static code block with a copy button but no animation, use `title` instead of `filename`, or omit both:
+All code blocks are static by default. Use `filename` or `title` to show a filename:
 
 ````markdown
-```typescript title="example.ts"
+```typescript filename="example.ts"
 const example = "Static code block with filename";
 ```
 
@@ -86,17 +86,7 @@ const example = "Static code block without filename";
 
 For terminal commands, simply use `bash`, `sh`, or `shell` as the language:
 
-**Animated terminal (uses `filename`):**
-
-````markdown
-```bash filename="Terminal"
-moose init my-project
-cd my-project
-moose dev
-```
-````
-
-**Static terminal snippet (no filename or title):**
+**Static terminal snippet (default):**
 
 ````markdown
 ```bash
@@ -104,28 +94,36 @@ npm install @514labs/moose-lib
 ```
 ````
 
-**Static terminal with title (uses `title`):**
+**Static terminal with filename:**
 
 ````markdown
-```bash title="Terminal"
+```bash filename="Terminal"
 # This command sets up the project
 npm install @514labs/moose-lib
 ```
 ````
 
-### Config Files
-
-Config files (TOML, YAML, JSON, etc.) always render as static code blocks, never animated. Use `title` for config files:
+**Animated terminal (opt-in with `animate`):**
 
 ````markdown
-```toml title="moose.config.toml"
+```bash filename="Terminal" animate
+moose init my-project
+cd my-project
+moose dev
+```
+````
+
+### Config Files
+
+Config files (TOML, YAML, JSON, etc.) always render as static code blocks, animation is disabled:
+
+````markdown
+```toml filename="moose.config.toml"
 [features]
 olap = true
 streaming = true
 ```
 ````
-
-**Note:** Config files ignore the `filename` attribute and always render statically.
 
 **Config file languages:** `toml`, `yaml`, `yml`, `json`, `jsonc`, `ini`, `properties`, `config`
 
@@ -133,12 +131,12 @@ streaming = true
 
 | Type | Syntax | Result |
 |------|--------|--------|
-| Animated IDE | ` ```ts filename="file.ts"` | Types out code, shows filename |
-| Animated Terminal | ` ```bash filename="Terminal"` | Types out command, terminal style |
-| Static with title | ` ```ts title="file.ts"` | Static code block with filename display |
-| Static without title | ` ```typescript` | Copyable code block, no filename |
-| Terminal snippet | ` ```bash` | Copyable terminal command, no filename |
-| Config file | ` ```toml title="config.toml"` | Static, never animated (ignores `filename`) |
+| Static with filename | ` ```ts filename="file.ts"` | Static code block with filename |
+| Animated IDE | ` ```ts filename="file.ts" animate` | Types out code, shows filename |
+| Animated Terminal | ` ```bash filename="Terminal" animate` | Types out command, terminal style |
+| Static without filename | ` ```typescript` | Copyable code block, no filename |
+| Terminal snippet | ` ```bash` | Copyable terminal command |
+| Config file | ` ```toml filename="config.toml"` | Static, animation disabled |
 
 ## Multi-Language Support
 
@@ -376,7 +374,7 @@ For advanced use cases, you can use `CodeEditorWrapper` directly to create anima
 - `duration`: Animation duration in seconds (default: `5` for IDE, `3` for terminal)
 - `delay`: Initial delay in seconds (default: `0.5` for IDE, `0.3` for terminal)
 
-**Note:** In most cases, you don't need to use `CodeEditorWrapper` directly. Use code blocks with `filename` attribute instead.
+**Note:** In most cases, you don't need to use `CodeEditorWrapper` directly. Use code blocks with `filename` and `animate` attributes instead.
 
 ## Style Guidelines
 
@@ -405,9 +403,9 @@ For advanced use cases, you can use `CodeEditorWrapper` directly to create anima
 
 ### Code Block Best Practices
 
-1. **Use `title` for static code blocks** when you want to show a filename
-2. **Use `filename` for animated demonstrations** when you want the code to type out
-3. **Always include filenames** when showing file contents (using `title` for static, `filename` for animated)
+1. **Use `filename` to show a filename** in code blocks
+2. **Use `animate` for demonstrations** when you want the code to type out (opt-in)
+3. **Always include filenames** when showing file contents
 4. **Use appropriate language tags** (`ts`, `py`, `bash`, `toml`, etc.)
 5. **Use LanguageTabs** for multi-language examples
 6. **Keep code examples focused** - show only what's necessary

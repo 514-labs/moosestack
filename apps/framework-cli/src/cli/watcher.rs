@@ -18,6 +18,8 @@
 /// 3. After a short delay (debouncing), changes are processed to update the infrastructure
 /// 4. The updated infrastructure is applied to the system
 use crate::framework;
+use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
+use display::with_timing_async;
 use notify::event::ModifyKind;
 use notify::{Event, EventHandler, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
@@ -26,8 +28,6 @@ use std::time::Duration;
 use std::{io::Error, path::PathBuf};
 use tokio::sync::RwLock;
 use tracing::info;
-
-use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 
 use super::display::{self, with_spinner_completion_async, Message, MessageType};
 use super::processing_coordinator::ProcessingCoordinator;
@@ -177,32 +177,48 @@ async fn watch(
                         "Processing Infrastructure changes from file watcher",
                         "Infrastructure changes processed successfully",
                         async {
-                            let plan_result =
-                                framework::core::plan::plan_changes(&**state_storage, &project).await;
+                            let plan_result = with_timing_async("Planning", async {
+                                framework::core::plan::plan_changes(&**state_storage, &project).await
+                            })
+                            .await;
 
                             match plan_result {
                                 Ok((_, plan_result)) => {
-
-                                    framework::core::plan_validator::validate(&project, &plan_result)?;
+                                    with_timing_async("Validation", async {
+                                        framework::core::plan_validator::validate(&project, &plan_result)
+                                    })
+                                    .await?;
 
                                     display::show_changes(&plan_result);
                                     let mut project_registries = project_registries.write().await;
-                                    match framework::core::execute::execute_online_change(
-                                        &project,
-                                        &plan_result,
-                                        route_update_channel.clone(),
-                                        webapp_update_channel.clone(),
-                                        &mut project_registries,
-                                        metrics.clone(),
-                                        &settings,
-                                    )
-                                    .await
-                                    {
-                                        Ok(_) => {
-                                            state_storage.store_infrastructure_map(&plan_result.target_infra_map).await?;
 
-                                            let _openapi_file =
-                                                openapi(&project, &plan_result.target_infra_map).await?;
+                                    let execution_result = with_timing_async("Execution", async {
+                                        framework::core::execute::execute_online_change(
+                                            &project,
+                                            &plan_result,
+                                            route_update_channel.clone(),
+                                            webapp_update_channel.clone(),
+                                            &mut project_registries,
+                                            metrics.clone(),
+                                            &settings,
+                                        )
+                                        .await
+                                    })
+                                    .await;
+
+                                    match execution_result {
+                                        Ok(_) => {
+                                            with_timing_async("Persist State", async {
+                                                state_storage
+                                                    .store_infrastructure_map(&plan_result.target_infra_map)
+                                                    .await
+                                            })
+                                            .await?;
+
+                                            with_timing_async("OpenAPI Gen", async {
+                                                openapi(&project, &plan_result.target_infra_map).await
+                                            })
+                                            .await?;
 
                                             let mut infra_ptr = infrastructure_map.write().await;
                                             *infra_ptr = plan_result.target_infra_map
@@ -234,7 +250,11 @@ async fn watch(
                             }
                             Ok(())
                         },
-                        !project.is_production,
+                        {
+                            use crate::utilities::constants::SHOW_TIMING;
+                            use std::sync::atomic::Ordering;
+                            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
+                        },
                     )
                     .await;
                     match result {

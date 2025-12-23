@@ -116,14 +116,22 @@ export function TopNav({
               href="https://www.fiveonefour.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center"
+              className="flex items-center px-2"
             >
               <Image
-                src="/fiveonefour-logo.png"
+                src="/logo-light.png"
                 alt="Fiveonefour"
                 width={32}
                 height={32}
-                className="h-8 w-8 rounded-lg"
+                className="h-4 w-4 object-cover hidden dark:block"
+                priority
+              />
+              <Image
+                src="/logo-dark.png"
+                alt="Fiveonefour"
+                width={32}
+                height={32}
+                className="h-4 w-4 object-cover block dark:hidden"
                 priority
               />
             </Link>

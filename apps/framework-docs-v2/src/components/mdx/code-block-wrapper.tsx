@@ -2,12 +2,6 @@
 
 import React from "react";
 import {
-  CodeBlock,
-  CodeBlockBody,
-  CodeBlockItem,
-  CodeBlockContent,
-} from "@/components/ui/shadcn-io/code-block";
-import {
   Snippet,
   SnippetCopyButton,
   SnippetHeader,
@@ -16,11 +10,10 @@ import {
   SnippetTabsTrigger,
 } from "@/components/ui/snippet";
 import { CodeSnippet } from "./code-snippet";
-import { CodeEditorWrapper } from "./code-editor-wrapper";
 import { cn } from "@/lib/utils";
 import { extractTextContent } from "@/lib/extract-text-content";
 
-// Shell languages that should use Snippet (copyable) or CodeEditor (animated with filename)
+// Shell languages that should use ShellSnippet (copyable terminal style)
 const SHELL_LANGUAGES = new Set([
   "bash",
   "sh",
@@ -66,6 +59,7 @@ interface MDXCodeBlockProps extends React.HTMLAttributes<HTMLPreElement> {
   "data-rehype-pretty-code-fragment"?: string;
   "data-rehype-pretty-code-title"?: string;
   "data-filename"?: string;
+  "data-title"?: string;
   "data-copy"?: string;
   children?: React.ReactNode;
 }
@@ -76,6 +70,8 @@ interface MDXCodeProps extends React.HTMLAttributes<HTMLElement> {
   "data-rehype-pretty-code-fragment"?: string;
   "data-rehype-pretty-code-title"?: string;
   "data-filename"?: string;
+  "data-title"?: string;
+  "data-copy"?: string;
   children?: React.ReactNode;
 }
 
@@ -365,7 +361,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
         props["data-rehype-pretty-code-title"] ||
         props["data-filename"] ||
         props["title"];
-      const hasCopy = props["data-copy"] !== undefined;
+      const hasCopy = props["data-copy"] !== "false";
       const isShell = SHELL_LANGUAGES.has(language);
       const isConfigFile = CONFIG_LANGUAGES.has(language);
 
@@ -377,23 +373,7 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
               code={codeText}
               language={language}
               filename={filename || undefined}
-              copyButton={true}
-            />
-          </div>
-        );
-      }
-
-      if (isShell && filename && !hasCopy) {
-        return (
-          <div className="not-prose">
-            <CodeEditorWrapper
-              code={codeText}
-              language={language}
-              filename={filename}
-              variant="terminal"
-              writing={true}
-              duration={3}
-              delay={0.3}
+              copyButton={hasCopy}
             />
           </div>
         );
@@ -407,30 +387,13 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
         );
       }
 
-      if (filename && !hasCopy) {
-        const isTerminalLang = SHELL_LANGUAGES.has(language);
-        return (
-          <div className="not-prose">
-            <CodeEditorWrapper
-              code={codeText}
-              language={language || "typescript"}
-              filename={filename}
-              variant={isTerminalLang ? "terminal" : "ide"}
-              writing={true}
-              duration={isTerminalLang ? 3 : 5}
-              delay={isTerminalLang ? 0.3 : 0.5}
-            />
-          </div>
-        );
-      }
-
       return (
         <div className="not-prose">
           <CodeSnippet
             code={codeText}
             language={language || "typescript"}
             filename={filename || undefined}
-            copyButton={true}
+            copyButton={hasCopy}
           />
         </div>
       );
@@ -448,24 +411,24 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
   const language = getLanguage(codeElement.props);
   const codeText = extractTextContent(codeElement.props.children).trim();
   // rehype-pretty-code uses "title" in markdown which becomes data-rehype-pretty-code-title
-  // We check for both title and filename for backwards compatibility
+  // rehypeCodeMeta parses code meta like `title="file.ts"` into `data-title="file.ts"`
+  // We check multiple sources for backwards compatibility.
   const filename =
     props["data-rehype-pretty-code-title"] ||
     props["data-filename"] ||
+    props["data-title"] ||
     props["title"]; // Also check for title prop directly
-  const hasCopy = props["data-copy"] !== undefined;
+  const hasCopy = props["data-copy"] !== "false";
   const isShell = SHELL_LANGUAGES.has(language);
   const isConfigFile = CONFIG_LANGUAGES.has(language);
 
   // Routing logic:
-  // 1. Config files (TOML, YAML, etc.) → Always use CodeSnippet (static, never animated)
-  // 2. Shell languages with filename → Use CodeEditor (animated terminal)
-  // 3. Shell languages without filename → Use Snippet (copyable, clearly marked as Terminal)
-  // 4. filename attribute + no copy → Use CodeEditor (animated, non-editable)
-  // 5. copy attribute → Use CodeSnippet (editable)
-  // 6. Default → Use CodeSnippet (editable by default)
+  // 1. Config files (TOML, YAML, etc.) → Always use CodeSnippet (static)
+  // 2. Shell languages → Use ShellSnippet (copyable, clearly marked as Terminal)
+  // 3. Default → Use CodeSnippet (static by default)
+  // Note: Animation is opt-in via explicit animate flag (handled in ServerCodeBlock)
 
-  // Config files should always use static CodeSnippet (never animated)
+  // Config files should always use static CodeSnippet
   if (isConfigFile) {
     return (
       <div className="not-prose">
@@ -473,30 +436,13 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
           code={codeText}
           language={language}
           filename={filename || undefined}
-          copyButton={true}
+          copyButton={hasCopy}
         />
       </div>
     );
   }
 
-  // Shell commands with filename should be animated terminals
-  if (isShell && filename && !hasCopy) {
-    return (
-      <div className="not-prose">
-        <CodeEditorWrapper
-          code={codeText}
-          language={language}
-          filename={filename}
-          variant="terminal"
-          writing={true}
-          duration={3}
-          delay={0.3}
-        />
-      </div>
-    );
-  }
-
-  // Shell commands without filename should be copyable snippets with Terminal label
+  // Shell commands should be copyable snippets with Terminal label
   if (isShell) {
     return (
       <div className="not-prose">
@@ -505,33 +451,14 @@ export function MDXPre({ children, ...props }: MDXCodeBlockProps) {
     );
   }
 
-  // If filename is provided and no copy attribute, use animated CodeEditor
-  if (filename && !hasCopy) {
-    // Determine if this is a terminal based on language
-    const isTerminalLang = SHELL_LANGUAGES.has(language);
-    return (
-      <div className="not-prose">
-        <CodeEditorWrapper
-          code={codeText}
-          language={language || "typescript"}
-          filename={filename}
-          variant={isTerminalLang ? "terminal" : "ide"}
-          writing={true}
-          duration={isTerminalLang ? 3 : 5}
-          delay={isTerminalLang ? 0.3 : 0.5}
-        />
-      </div>
-    );
-  }
-
-  // Default to CodeSnippet for editable code blocks (with or without copy attribute)
+  // Default to CodeSnippet (static code blocks)
   return (
     <div className="not-prose">
       <CodeSnippet
         code={codeText}
         language={language || "typescript"}
         filename={filename || undefined}
-        copyButton={true}
+        copyButton={hasCopy}
       />
     </div>
   );
@@ -543,9 +470,15 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
   const isInline = !className?.includes("language-") && !props["data-language"];
 
   if (isInline) {
-    // Inline code - render as normal code element
+    // Inline code - render as normal code element with proper styling
     return (
-      <code className={className} {...props}>
+      <code
+        className={cn(
+          "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm text-foreground not-prose",
+          className,
+        )}
+        {...props}
+      >
         {children}
       </code>
     );
@@ -572,6 +505,7 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
     // Config files use CodeSnippet
     const filename =
       props["data-rehype-pretty-code-title"] || props["data-filename"];
+    const hasCopy = props["data-copy"] !== "false";
 
     return (
       <div className="not-prose">
@@ -579,19 +513,20 @@ export function MDXCode({ children, className, ...props }: MDXCodeProps) {
           code={codeText}
           language={language}
           filename={filename}
-          copyButton={true}
+          copyButton={hasCopy}
         />
       </div>
     );
   }
 
   // Default to CodeSnippet for editable code blocks
+  const hasCopy = props["data-copy"] !== "false";
   return (
     <div className="not-prose">
       <CodeSnippet
         code={codeText}
         language={language || "typescript"}
-        copyButton={true}
+        copyButton={hasCopy}
       />
     </div>
   );

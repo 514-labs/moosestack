@@ -16,7 +16,7 @@ pub enum Commands {
         /// Template to use for the project
         #[arg(
             conflicts_with = "from_remote",
-            required_unless_present = "from_remote"
+            required_unless_present_any = ["from_remote", "language"]
         )]
         template: Option<String>,
 
@@ -31,7 +31,7 @@ pub enum Commands {
         /// Initialize from a remote database. E.g. https://play.clickhouse.com/?user=explorer
         #[arg(
             long,
-            required_unless_present = "template",
+            required_unless_present_any = ["template", "language"],
             value_name = "CONNECTION_STRING",
             num_args = 0..=1
         )]
@@ -40,6 +40,10 @@ pub enum Commands {
         /// Programming language to use for the project
         #[arg(long, conflicts_with = "template")]
         language: Option<String>,
+
+        /// Generate a custom Dockerfile at project root for customization
+        #[arg(long)]
+        custom_dockerfile: bool,
     },
     /// Builds your moose project
     Build {
@@ -120,6 +124,14 @@ pub enum Commands {
         /// Enable or disable the MCP (Model Context Protocol) server
         #[arg(long, default_value = "true")]
         mcp: bool,
+
+        /// Show HH:MM:SS.mmm timestamps on all output lines
+        #[arg(long)]
+        timestamps: bool,
+
+        /// Show elapsed time for operations (e.g., "completed in 234ms")
+        #[arg(long)]
+        timing: bool,
     },
     /// Start a remote environment for use in cloud deployments
     Prod {
