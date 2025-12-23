@@ -21,8 +21,6 @@ from moose_lib.dmv2 import (
     get_sql_resources,
     get_workflows,
     get_web_apps,
-    get_materialized_views,
-    get_views,
     OlapTable,
     OlapConfig,
     SqlResource,
@@ -458,7 +456,6 @@ class InfrastructureSignatureJson(BaseModel):
         "ApiEndpoint",
         "TopicToTableSyncProcess",
         "View",
-        "MaterializedView",
         "SqlResource",
     ]
 
@@ -487,50 +484,6 @@ class SqlResourceConfig(BaseModel):
     metadata: Optional[dict] = None
 
 
-class MaterializedViewJson(BaseModel):
-    """Internal representation of a structured Materialized View for serialization.
-
-    Attributes:
-        name: Name of the materialized view.
-        database: Optional database where the MV is created.
-        select_sql: The SELECT SQL statement.
-        source_tables: Names of source tables the SELECT reads from.
-        target_table: Name of the target table where data is written.
-        target_database: Optional database for the target table.
-        metadata: Optional metadata for the materialized view (e.g., description, source file).
-    """
-
-    model_config = model_config
-
-    name: str
-    database: Optional[str] = None
-    select_sql: str
-    source_tables: List[str]
-    target_table: str
-    target_database: Optional[str] = None
-    metadata: Optional[dict] = None
-
-
-class ViewJson(BaseModel):
-    """Internal representation of a structured Custom View for serialization.
-
-    Attributes:
-        name: Name of the view.
-        database: Optional database where the view is created.
-        select_sql: The SELECT SQL statement.
-        source_tables: Names of source tables the SELECT reads from.
-        metadata: Optional metadata for the view (e.g., description, source file).
-    """
-
-    model_config = model_config
-
-    name: str
-    database: Optional[str] = None
-    select_sql: str
-    source_tables: List[str]
-    metadata: Optional[dict] = None
-
-
 class InfrastructureMap(BaseModel):
     """Top-level model holding the configuration for all defined Moose resources.
 
@@ -544,8 +497,6 @@ class InfrastructureMap(BaseModel):
         sql_resources: Dictionary mapping SQL resource names to their configurations.
         workflows: Dictionary mapping workflow names to their configurations.
         web_apps: Dictionary mapping WebApp names to their configurations.
-        materialized_views: Dictionary mapping MV names to their structured configurations.
-        views: Dictionary mapping view names to their structured configurations.
     """
 
     model_config = model_config
@@ -557,8 +508,6 @@ class InfrastructureMap(BaseModel):
     sql_resources: dict[str, SqlResourceConfig]
     workflows: dict[str, WorkflowJson]
     web_apps: dict[str, WebAppJson]
-    materialized_views: dict[str, MaterializedViewJson]
-    views: dict[str, ViewJson]
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -590,10 +539,6 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
             # Explicitly cast for type hint checking if needed
             resource = r  # type: SqlResource
             return InfrastructureSignatureJson(id=resource.name, kind="SqlResource")
-        elif r.kind == "View":
-            return InfrastructureSignatureJson(id=r.name, kind="View")
-        elif r.kind == "MaterializedView":
-            return InfrastructureSignatureJson(id=r.name, kind="MaterializedView")
         else:
             raise TypeError(f"Unknown SQL resource kind: {r.kind} for object: {r}")
     else:
@@ -878,8 +823,6 @@ def to_infra_map() -> dict:
     sql_resources = {}
     workflows = {}
     web_apps = {}
-    materialized_views = {}
-    views = {}
 
     for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
@@ -979,7 +922,7 @@ def to_infra_map() -> dict:
 
     for name, api in get_ingest_apis().items():
         # Check if the Pydantic model allows extra fields (extra='allow')
-        # This is the Python equivalent of TypeScript's index signature `[key: string]: any`
+        # This is the Python equivalent of TypeScript's index signatures
         model_allows_extra = api._t.model_config.get("extra") == "allow"
 
         ingest_apis[name] = IngestApiConfig(
@@ -1046,26 +989,6 @@ def to_infra_map() -> dict:
             metadata=metadata,
         )
 
-    # Serialize materialized views with structured data
-    for name, mv in get_materialized_views().items():
-        materialized_views[name] = MaterializedViewJson(
-            name=mv.name,
-            select_sql=mv.select_sql,
-            source_tables=mv.source_tables,
-            target_table=mv.target_table.name,
-            target_database=getattr(mv.target_table.config, "database", None),
-            metadata=getattr(mv, "metadata", None),
-        )
-
-    # Serialize custom views with structured data
-    for name, view in get_views().items():
-        views[name] = ViewJson(
-            name=view.name,
-            select_sql=view.select_sql,
-            source_tables=view.source_tables,
-            metadata=getattr(view, "metadata", None),
-        )
-
     infra_map = InfrastructureMap(
         tables=tables,
         topics=topics,
@@ -1074,8 +997,6 @@ def to_infra_map() -> dict:
         sql_resources=sql_resources,
         workflows=workflows,
         web_apps=web_apps,
-        materialized_views=materialized_views,
-        views=views,
     )
 
     return infra_map.model_dump(by_alias=True, exclude_none=False)

@@ -12,6 +12,8 @@ use crossterm::{
 };
 use std::io::{stdout, Result as IoResult};
 
+use crate::utilities::display_config::load_display_config;
+
 /// Width of the action column in terminal output
 pub const ACTION_WIDTH: usize = 15;
 
@@ -183,11 +185,13 @@ impl StyledText {
 /// styled text with proper alignment and formatting. The action text is
 /// right-aligned in a fixed-width column for visual consistency.
 ///
+/// Display configuration (ANSI codes, timestamps) is automatically retrieved
+/// from the global display configuration.
+///
 /// # Arguments
 ///
 /// * `styled_text` - The styled text configuration for the action portion
 /// * `message` - The main message content to display
-/// * `no_ansi` - If true, disable ANSI color codes and formatting
 ///
 /// # Returns
 ///
@@ -203,7 +207,7 @@ impl StyledText {
 /// ```rust
 /// # use crate::cli::display::terminal::{StyledText, write_styled_line};
 /// let styled = StyledText::new("Success".to_string()).green().bold();
-/// write_styled_line(&styled, "Operation completed successfully", false)?;
+/// write_styled_line(&styled, "Operation completed successfully")?;
 /// # Ok::<(), std::io::Error>(())
 /// ```
 /// Internal helper that writes a styled action line to any writer.
@@ -269,14 +273,16 @@ fn write_styled_line_to<W: std::io::Write>(
     Ok(())
 }
 
-pub fn write_styled_line(
-    styled_text: &StyledText,
-    message: &str,
-    no_ansi: bool,
-    show_timestamps: bool,
-) -> IoResult<()> {
+pub fn write_styled_line(styled_text: &StyledText, message: &str) -> IoResult<()> {
+    let config = load_display_config();
     let mut stdout = stdout();
-    write_styled_line_to(&mut stdout, styled_text, message, no_ansi, show_timestamps)
+    write_styled_line_to(
+        &mut stdout,
+        styled_text,
+        message,
+        config.no_ansi,
+        config.show_timestamps,
+    )
 }
 
 #[cfg(test)]

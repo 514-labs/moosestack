@@ -218,12 +218,12 @@ fn add_tables(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap
     }
 }
 
-/// Add all DMv1 views (table aliases) to the compressed map
+/// Add all views to the compressed map
 fn add_views(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureMap) {
     use crate::framework::core::infrastructure::view::ViewType;
 
-    for (key, view) in &infra_map.dmv1_views {
-        // Dmv1Views are aliases to tables, so try to use the source table's file
+    for (key, view) in &infra_map.views {
+        // Views are aliases to tables, so try to use the source table's file
         let source_file = match &view.view_type {
             ViewType::TableAlias { source_table_name } => infra_map
                 .tables

@@ -177,97 +177,413 @@ class SensorData:
 
 ## Overview
 
-Materialized views in Moose are write-time transformations in ClickHouse. A static SELECT populates a destination table from one or more sources. You query the destination table like any other table. Moose handles DDL ordering, backfills, and migrations automatically.
+Materialized views in Moose provide a powerful way to transform and aggregate data directly in your database. They are automatically updated as new data arrives, making them perfect for real-time analytics and reporting.
 
-## MaterializedView
-
-Use `MaterializedView` to create a ClickHouse materialized view that transforms data on write.
+## Basic View Setup
 
 ```python
-from pydantic import BaseModel
-from moose_lib import MaterializedView, MaterializedViewOptions, OlapTable, OlapConfig
+from moose_lib import MaterializedView, Key
+from typing import Dict, Any
 
-# Source table
-class UserEvent(BaseModel):
-    id: str
+class UserEvent:
+    id: Key[str]
     user_id: str
-    rating: float
+    event_type: str
+    timestamp: str
 
-source_table = OlapTable[UserEvent]("user_events", OlapConfig(order_by_fields=["id"]))
+# Create a materialized view
+user_event_stats = MaterializedView(
+    name="user_event_stats",
+    query="""
+    SELECT
+        user_id,
+        COUNT(*) as event_count,
+        COUNT(DISTINCT event_type) as unique_event_types
+    FROM user_event_table
+    GROUP BY user_id
+    """
+)
+```
 
-# Target schema - must match the SELECT output
-class UserStats(BaseModel):
+## View Configuration
+
+The `MaterializedView` class accepts the following configuration:
+
+```python
+from typing import TypedDict, Optional
+
+class ViewConfig(TypedDict):
+    name: str            # Required: Name of the view
+    query: str          # Required: SQL query for the view
+    refresh_interval: Optional[int]  # Optional: Refresh interval in seconds
+    validation: Optional[Dict[str, bool]]  # Optional: Validation settings
+```
+
+## View Operations
+
+### Querying Views
+
+```python
+# Basic query
+results = await user_event_stats.query(
+    filter="event_count > 5",
+    limit=10
+)
+
+# Query with joins
+results = await user_event_stats.query(
+    select=["s.user_id", "s.event_count", "u.name"],
+    from_="user_event_stats s JOIN user_table u ON s.user_id = u.id",
+    filter="s.event_count > 5"
+)
+
+# Query with aggregations
+results = await user_event_stats.query(
+    select=["user_id", "SUM(event_count) as total_events"],
+    group_by=["user_id"],
+    having="total_events > 100"
+)
+
+# Query with time-based filtering
+results = await user_event_stats.query(
+    select=["user_id", "event_count"],
+    filter="timestamp >= '2024-03-01' AND timestamp < '2024-03-20'",
+    order_by="event_count DESC"
+)
+```
+
+### View Maintenance
+
+```python
+# Check view status
+status = await user_event_stats.get_status()
+print("View status:", status)
+
+# Refresh view manually
+await user_event_stats.refresh()
+
+# Drop view
+await user_event_stats.drop()
+
+# Get view metadata
+metadata = await user_event_stats.get_metadata()
+print("View metadata:", metadata)
+
+# Get view statistics
+stats = await user_event_stats.get_statistics()
+print("View statistics:", stats)
+```
+
+## Error Handling
+
+```python
+try:
+    # Query the view
+    results = await user_event_stats.query(filter="event_count > 5")
+except ViewNotFoundError as error:
+    print("View not found:", error.message)
+    # Create the view if it doesn't exist
+    await user_event_stats.create()
+except QueryError as error:
+    print("Query failed:", error.message)
+    # Handle query errors
+except RefreshError as error:
+    print("View refresh failed:", error.message)
+    # Handle refresh errors
+except Exception as error:
+    print("Unexpected error:", error)
+    # Handle other errors
+```
+
+## Best Practices
+
+1. **Query Design**
+
+   - Keep queries simple and focused
+   - Use appropriate aggregations
+   - Consider performance impact
+   - Test query performance
+   - Use indexes effectively
+   - Avoid complex joins when possible
+
+2. **Performance**
+
+   - Set appropriate refresh intervals
+   - Monitor view size
+   - Optimize query patterns
+   - Use appropriate indexes
+   - Consider materialization costs
+   - Monitor query performance
+
+3. **Maintenance**
+
+   - Monitor view health
+   - Check refresh status
+   - Clean up unused views
+   - Update refresh intervals
+   - Monitor disk usage
+   - Track view dependencies
+
+4. **Error Handling**
+   - Handle query errors
+   - Monitor refresh failures
+   - Set up alerts
+   - Log issues
+   - Implement retry logic
+   - Track error patterns
+
+## Example Usage
+
+### Event Statistics View
+
+```python
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional, List
+from moose_lib import MaterializedView, Key
+
+@dataclass
+class UserEvent:
+    id: Key[str]
     user_id: str
-    avg_rating: float
+    event_type: str
+    timestamp: datetime
+    value: Optional[float] = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'UserEvent':
+        """Create a UserEvent from a dictionary."""
+        return cls(
+            id=data['id'],
+            user_id=data['user_id'],
+            event_type=data['event_type'],
+            timestamp=datetime.fromisoformat(data['timestamp']),
+            value=data.get('value')
+        )
+
+# Create a view for event statistics
+event_stats = MaterializedView(
+    name="event_stats",
+    query="""
+    SELECT
+        event_type,
+        COUNT(*) as count,
+        COUNT(DISTINCT user_id) as unique_users,
+        MIN(timestamp) as first_seen,
+        MAX(timestamp) as last_seen,
+        AVG(CASE WHEN value IS NOT NULL THEN value ELSE 0 END) as avg_value
+    FROM user_event_table
+    GROUP BY event_type
+    """
+)
+
+async def get_event_statistics(min_count: int = 100, limit: int = 10) -> List[dict]:
+    """Get event statistics with error handling.
+
+    Args:
+        min_count: Minimum count threshold for events
+        limit: Maximum number of results to return
+
+    Returns:
+        List of event statistics
+    """
+    try:
+        results = await event_stats.query(
+            filter=f"count > {min_count}",
+            order_by="count DESC",
+            limit=limit
+        )
+        return results
+    except Exception as error:
+        print(f"Failed to query event statistics: {error}")
+        return []
+
+# Usage example
+async def main():
+    stats = await get_event_statistics(min_count=100, limit=10)
+    for stat in stats:
+        print(f"Event type: {stat['event_type']}, Count: {stat['count']}")
+```
+
+### User Activity View
+
+```python
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import List, Optional
+from moose_lib import MaterializedView, Key
+
+@dataclass
+class UserActivity:
+    user_id: str
+    event_type: str
+    date: datetime
+    daily_count: int
+    unique_events: int
+    first_activity: datetime
+    last_activity: datetime
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'UserActivity':
+        """Create a UserActivity from a dictionary."""
+        return cls(
+            user_id=data['user_id'],
+            event_type=data['event_type'],
+            date=datetime.fromisoformat(data['date']),
+            daily_count=data['daily_count'],
+            unique_events=data['unique_events'],
+            first_activity=datetime.fromisoformat(data['first_activity']),
+            last_activity=datetime.fromisoformat(data['last_activity'])
+        )
+
+# Create a view for user activity
+user_activity = MaterializedView(
+    name="user_activity",
+    query="""
+    SELECT
+        user_id,
+        event_type,
+        DATE_TRUNC('day', timestamp) as date,
+        COUNT(*) as daily_count,
+        COUNT(DISTINCT event_type) as unique_events,
+        MIN(timestamp) as first_activity,
+        MAX(timestamp) as last_activity
+    FROM user_event_table
+    GROUP BY user_id, event_type, DATE_TRUNC('day', timestamp)
+    """
+)
+
+async def get_user_activity(
+    start_date: datetime,
+    min_total_count: int = 10
+) -> List[UserActivity]:
+    """Get user activity statistics.
+
+    Args:
+        start_date: Start date for activity query
+        min_total_count: Minimum total count threshold
+
+    Returns:
+        List of UserActivity objects
+    """
+    try:
+        results = await user_activity.query(
+            select=[
+                "user_id",
+                "event_type",
+                "SUM(daily_count) as total_count"
+            ],
+            filter=f"date >= '{start_date.isoformat()}'",
+            group_by=["user_id", "event_type"],
+            having=f"total_count > {min_total_count}",
+            order_by="total_count DESC"
+        )
+        return [UserActivity.from_dict(result) for result in results]
+    except Exception as error:
+        print(f"Failed to query user activity: {error}")
+        return []
+
+# Usage example
+async def main():
+    start_date = datetime.now() - timedelta(days=30)
+    activities = await get_user_activity(start_date, min_total_count=10)
+    for activity in activities:
+        print(
+            f"User: {activity.user_id}, "
+            f"Event: {activity.event_type}, "
+            f"Total Count: {activity.daily_count}"
+        )
+```
+
+### Real-time Analytics View
+
+```python
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import List, Optional
+from moose_lib import MaterializedView, Key
+
+@dataclass
+class AnalyticsMetrics:
+    hour: datetime
+    event_type: str
     event_count: int
+    unique_users: int
+    avg_duration: float
+    max_duration: float
+    min_duration: float
 
-# Create the materialized view
-mv = MaterializedView[UserStats](MaterializedViewOptions(
-    select_statement=f"""
-        SELECT
-            user_id,
-            avg(rating) AS avg_rating,
-            count(*) AS event_count
-        FROM {source_table.name}
-        GROUP BY user_id
-    """,
-    select_tables=[source_table],
-    table_name="user_stats",
-    order_by_fields=["user_id"],
-    materialized_view_name="mv_user_stats",
-))
-```
+    @classmethod
+    def from_dict(cls, data: dict) -> 'AnalyticsMetrics':
+        """Create an AnalyticsMetrics from a dictionary."""
+        return cls(
+            hour=datetime.fromisoformat(data['hour']),
+            event_type=data['event_type'],
+            event_count=data['event_count'],
+            unique_users=data['unique_users'],
+            avg_duration=data['avg_duration'],
+            max_duration=data['max_duration'],
+            min_duration=data['min_duration']
+        )
 
-### MaterializedViewOptions
-
-```python
-class MaterializedViewOptions:
-    select_statement: str           # SQL SELECT query for the transformation
-    select_tables: list             # Source tables/views the SELECT reads from
-    materialized_view_name: str     # Name of the MV object in ClickHouse
-    table_name: str                 # Name of the destination table
-    order_by_fields: list[str]      # ORDER BY fields for the destination table
-    engine: ClickHouseEngines       # Optional: table engine (default: MergeTree)
-    metadata: dict                  # Optional: custom metadata
-```
-
-### Accessing the Target Table
-
-```python
-# The target table is accessible via the target_table property
-target = mv.target_table
-
-# Query the destination table in your APIs
-query = f"SELECT * FROM {mv.target_table.name} WHERE user_id = 'abc'"
-```
-
-## View (Read-time Projection)
-
-Use `View` for read-time projections without write-time transformation.
-
-```python
-from moose_lib import View
-
-# Create a view over source tables
-active_users_view = View(
-    "active_users",
-    f"""
-    SELECT user_id, name, email
-    FROM {users_table.name}
-    WHERE active = 1
-    """,
-    [users_table],
+# Create a real-time analytics view
+analytics_view = MaterializedView(
+    name="real_time_analytics",
+    query="""
+    SELECT
+        DATE_TRUNC('hour', timestamp) as hour,
+        event_type,
+        COUNT(*) as event_count,
+        COUNT(DISTINCT user_id) as unique_users,
+        AVG(duration) as avg_duration,
+        MAX(duration) as max_duration,
+        MIN(duration) as min_duration
+    FROM user_event_table
+    WHERE timestamp >= NOW() - INTERVAL 24 HOUR
+    GROUP BY DATE_TRUNC('hour', timestamp), event_type
+    """
 )
-```
 
-### View Constructor
+async def get_realtime_analytics(
+    hours_ago: int = 1,
+    limit: Optional[int] = None
+) -> List[AnalyticsMetrics]:
+    """Get real-time analytics data.
 
-```python
-View(
-    name: str,                      # Name of the view
-    select_statement: str,          # SQL SELECT query
-    base_tables: list,              # Source tables/views for DDL ordering
-)
+    Args:
+        hours_ago: Number of hours to look back
+        limit: Maximum number of results to return
+
+    Returns:
+        List of AnalyticsMetrics objects
+    """
+    try:
+        results = await analytics_view.query(
+            select=[
+                "hour",
+                "event_type",
+                "event_count",
+                "unique_users"
+            ],
+            filter=f"hour >= NOW() - INTERVAL {hours_ago} HOUR",
+            order_by="hour DESC, event_count DESC",
+            limit=limit
+        )
+        return [AnalyticsMetrics.from_dict(result) for result in results]
+    except Exception as error:
+        print(f"Failed to query real-time analytics: {error}")
+        return []
+
+# Usage example
+async def main():
+    metrics = await get_realtime_analytics(hours_ago=1)
+    for metric in metrics:
+        print(
+            f"Hour: {metric.hour}, "
+            f"Event: {metric.event_type}, "
+            f"Count: {metric.event_count}, "
+            f"Unique Users: {metric.unique_users}"
+        )
 ```
 
 ## Basic Constraint Setup
