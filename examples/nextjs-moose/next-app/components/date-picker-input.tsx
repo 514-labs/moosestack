@@ -18,7 +18,7 @@ function formatDateForInput(dateString: string): string {
 
   return date.toLocaleDateString("en-US", {
     day: "2-digit",
-    month: "long",
+    month: "short",
     year: "numeric",
   });
 }

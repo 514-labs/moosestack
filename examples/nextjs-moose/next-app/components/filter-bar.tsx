@@ -1,13 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { CalendarIcon } from "lucide-react";
 import { type DatePreset, getDateRangeForPreset } from "@/lib/date-utils";
 import { useDateFilter } from "@/lib/hooks";
 import { ExportButton } from "@/components/export-button";
-import { DateRangePicker } from "@/components/date-range-picker";
+import { DatePickerInput } from "@/components/date-picker-input";
 import { DatePresetSelector } from "@/components/date-preset-selector";
-
 export function FilterBar() {
   const { startDate, endDate, setStartDate, setEndDate } = useDateFilter();
   const [selectedPreset, setSelectedPreset] = React.useState<DatePreset>("30d");
@@ -25,31 +23,42 @@ export function FilterBar() {
     setEndDate(end);
   };
 
+  const handleStartDateChange = (date: string) => {
+    setStartDate(date);
+    setSelectedPreset("custom");
+  };
+
+  const handleEndDateChange = (date: string) => {
+    setEndDate(date);
+    setSelectedPreset("custom");
+  };
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <CalendarIcon className="text-muted-foreground h-4 w-4" />
-          <span className="text-sm font-medium">Date Range</span>
-        </div>
-
+      <div className="flex flex-wrap items-end gap-3">
         <DatePresetSelector
           value={selectedPreset}
           onValueChange={handlePresetChange}
+          label="Filter Date:"
         />
-
-        {selectedPreset === "custom" ?
-          <DateRangePicker
-            startDate={startDate}
-            endDate={endDate}
-            onStartDateChange={setStartDate}
-            onEndDateChange={setEndDate}
+        <div className="flex items-end gap-2">
+          <DatePickerInput
+            id="start-date"
+            label="From:"
+            value={startDate}
+            onChange={handleStartDateChange}
+            placeholder="Select start date"
+            className="w-[180px]"
           />
-        : <div className="text-muted-foreground text-sm">
-            {new Date(startDate).toLocaleDateString()} -{" "}
-            {new Date(endDate).toLocaleDateString()}
-          </div>
-        }
+          <DatePickerInput
+            id="end-date"
+            label="To:"
+            value={endDate}
+            onChange={handleEndDateChange}
+            placeholder="Select end date"
+            className="w-[180px]"
+          />
+        </div>
       </div>
 
       <ExportButton startDate={startDate} endDate={endDate} />
