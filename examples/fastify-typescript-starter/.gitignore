@@ -1,7 +1,0 @@
-dist
-node_modules
-.vscode
-
-# MooseStack generated files
-.moose/
-.ts-node/
