@@ -29,10 +29,15 @@ console.log(`Compiling TypeScript to ${outDir}...`);
 try {
   // Use tspc (ts-patch compiler CLI) which applies the plugins from tsconfig.json
   // Include source maps for better error messages in production
-  execSync(`npx tspc --outDir ${outDir} --sourceMap --inlineSources`, {
-    stdio: "inherit",
-    cwd: projectRoot,
-  });
+  // --skipLibCheck avoids type-checking node_modules (some packages have type issues)
+  // --rootDir . preserves directory structure (e.g., app/index.ts -> outDir/app/index.js)
+  execSync(
+    `npx tspc --outDir ${outDir} --rootDir . --sourceMap --inlineSources --skipLibCheck`,
+    {
+      stdio: "inherit",
+      cwd: projectRoot,
+    },
+  );
 
   console.log("Compilation complete.");
 } catch (error) {
