@@ -1,9 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { RefreshCwIcon } from "lucide-react";
 import { DateFilterProvider } from "@/components/dashboard-date-context";
-import { DashboardDateFilter } from "@/components/dashboard-with-filters";
-import { TimeSeriesChart } from "@/components/time-series-chart";
-import { PieChart } from "@/components/pie-chart";
+import { FilterBar } from "@/components/filter-bar";
+import { DashboardCharts } from "@/components/dashboard-charts";
 import { SeedButton } from "@/components/seed-button";
 import { DashboardStats } from "@/components/dashboard-stats";
 
@@ -29,22 +28,14 @@ export default function Page() {
             </div>
           </div>
 
-          {/* Date Filter Bar */}
-          <DashboardDateFilter />
+          {/* Filter Bar */}
+          <FilterBar />
 
           {/* Stats Grid */}
           <DashboardStats />
 
-          {/* Main Content Grid */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {/* Time Series Chart */}
-            <div className="lg:col-span-2">
-              <TimeSeriesChart />
-            </div>
-
-            {/* Events by Status Pie Chart */}
-            <PieChart />
-          </div>
+          {/* Charts */}
+          <DashboardCharts />
         </div>
       </div>
     </DateFilterProvider>

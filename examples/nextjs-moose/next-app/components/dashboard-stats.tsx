@@ -8,55 +8,19 @@ import {
   CheckCircleIcon,
   DollarSignIcon,
 } from "lucide-react";
-import { useDateFilter } from "@/components/dashboard-date-context";
-import { getMetrics } from "@/app/actions/metrics";
-
-interface Metrics {
-  totalEvents: number;
-  activeEvents: number;
-  completedEvents: number;
-  revenue: number;
-}
+import { useDateFilter } from "@/lib/hooks";
+import { useMetrics } from "@/lib/hooks";
 
 function formatNumber(num: number): string {
   return new Intl.NumberFormat("en-US").format(num);
 }
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
 export function DashboardStats() {
   const { startDate, endDate } = useDateFilter();
-  const [metrics, setMetrics] = React.useState<Metrics | null>(null);
-  const [loading, setLoading] = React.useState(true);
 
-  React.useEffect(() => {
-    if (!startDate || !endDate) return;
+  const { data: metrics, isLoading } = useMetrics(startDate, endDate);
 
-    setLoading(true);
-    getMetrics(startDate, endDate)
-      .then((data) => {
-        setMetrics({
-          totalEvents: data.totalEvents,
-          activeEvents: data.activeEvents,
-          completedEvents: data.completedEvents,
-          revenue: data.revenue,
-        });
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error fetching metrics:", error);
-        setLoading(false);
-      });
-  }, [startDate, endDate]);
-
-  if (loading || !metrics) {
+  if (isLoading || !metrics) {
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {[1, 2, 3, 4].map((i) => (
