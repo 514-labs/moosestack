@@ -1195,6 +1195,9 @@ export const dumpMooseInternal = async () => {
 };
 
 const loadIndex = () => {
+  // Check if we're using pre-compiled JavaScript (set during Docker build)
+  const useCompiled = process.env.MOOSE_USE_COMPILED === "true";
+
   // Clear the registry before loading to support hot reloading
   const registry = getMooseInternal();
   registry.tables.clear();
@@ -1207,16 +1210,27 @@ const loadIndex = () => {
   registry.materializedViews.clear();
   registry.views.clear();
 
-  // Clear require cache for app directory to pick up changes
-  const appDir = `${process.cwd()}/${getSourceDir()}`;
-  Object.keys(require.cache).forEach((key) => {
-    if (key.startsWith(appDir)) {
-      delete require.cache[key];
-    }
-  });
+  // Skip require.cache clearing in compiled mode (no hot reload needed in production)
+  if (!useCompiled) {
+    // Clear require cache for app directory to pick up changes
+    const appDir = `${process.cwd()}/${getSourceDir()}`;
+    Object.keys(require.cache).forEach((key) => {
+      if (key.startsWith(appDir)) {
+        delete require.cache[key];
+      }
+    });
+  }
 
   try {
-    require(`${process.cwd()}/${getSourceDir()}/index.ts`);
+    // Load from compiled directory if available, otherwise TypeScript
+    const sourceDir = getSourceDir();
+    if (useCompiled) {
+      // In compiled mode, load pre-compiled JavaScript from .moose/compiled/
+      require(`${process.cwd()}/.moose/compiled/${sourceDir}/index.js`);
+    } else {
+      // In development mode, load TypeScript via ts-node
+      require(`${process.cwd()}/${sourceDir}/index.ts`);
+    }
   } catch (error) {
     let hint: string | undefined;
     const details = error instanceof Error ? error.message : String(error);
