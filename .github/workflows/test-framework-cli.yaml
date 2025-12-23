@@ -34,40 +34,95 @@ jobs:
       - name: Fetch main branch
         run: git fetch origin main:main
 
-      - name: Check if merge queue tests can be skipped
+      # =============================================================================
+      # MERGE QUEUE CACHE SKIP OPTIMIZATION
+      # =============================================================================
+      # When a PR enters the merge queue, we check if this exact code combination
+      # (PR head SHA + base SHA) was already tested during PR checks.
+      #
+      # Cache key format: tests-passed-pr-{PR_HEAD_SHA}-base-{BASE_SHA}
+      #
+      # - PR_HEAD_SHA: The tip commit of the PR branch (works for any number of commits)
+      #   - During PR checks: github.event.pull_request.head.sha
+      #   - During merge queue: Retrieved via GitHub API (gh pr view --json headRefOid)
+      #     This is the ORIGINAL PR branch tip, NOT the squash commit created by the
+      #     merge queue. The squash commit is irrelevant for cache lookup.
+      #
+      # - BASE_SHA: The base branch SHA when PR was last synchronized
+      #   - During PR checks: github.event.pull_request.base.sha
+      #   - During merge queue: github.event.merge_group.base_sha
+      #
+      # This ensures we only skip when:
+      # - Same PR code (no force push, no rebase)
+      # - Same base branch state (no other PRs merged since PR was synchronized)
+      #
+      # Edge cases that correctly trigger a full test run (cache miss):
+      # - PR was force-pushed (new PR head SHA)
+      # - PR was rebased (new PR head SHA, new base SHA)
+      # - Main branch moved after PR sync (merge queue base_sha differs)
+      # - Other PRs ahead in merge queue (base_sha includes their changes)
+      # - PR tests failed (cache was never saved)
+      # =============================================================================
+
+      - name: Extract PR info for cache lookup
         if: github.event_name == 'merge_group'
-        id: check-merge-skip
+        id: merge-cache-check
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          # In merge queue, HEAD is a squashed commit with one parent:
-          # - HEAD~1 is the base (last commit in queue, or main if queue is empty)
-          #
-          # If there's no diff between HEAD~1 and origin/main, then:
-          # 1. No other PRs are ahead in the merge queue
-          # 2. Main hasn't moved since the PR was tested
-          # Therefore, the exact same code was already validated by PR checks.
+          # Extract PR number from merge group ref
+          # Format: gh-readonly-queue/main/pr-123-abc123def456
+          REF="${{ github.event.merge_group.head_ref }}"
+          PR_NUM=$(echo "$REF" | sed -n 's|.*/pr-\([0-9]*\)-.*|\1|p')
 
-          SQUASH_BASE=$(git rev-parse HEAD~1)
-          MAIN_HEAD=$(git rev-parse origin/main)
-
-          echo "Squash base: $SQUASH_BASE"
-          echo "Main branch head: $MAIN_HEAD"
-
-          if git diff --quiet HEAD~1 origin/main; then
-            echo "::notice title=⏭️ Skipping Merge Queue::No diff between squash base and main - PR checks already validated this code"
-            echo "skip_merge_queue=true" >> $GITHUB_OUTPUT
-          else
-            echo "::notice title=✅ Running Merge Queue::Base has changed or other PRs in queue - need to validate"
+          if [[ -z "$PR_NUM" ]]; then
+            echo "::warning::Could not extract PR number from ref: $REF"
             echo "skip_merge_queue=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Get the original PR branch's head SHA via GitHub API.
+          # This returns the tip of the PR branch (works for any number of commits),
+          # NOT the squash commit that the merge queue creates for testing.
+          PR_HEAD_SHA=$(gh pr view "$PR_NUM" --json headRefOid -q .headRefOid)
+          BASE_SHA="${{ github.event.merge_group.base_sha }}"
+
+          echo "pr_number=$PR_NUM" >> $GITHUB_OUTPUT
+          echo "pr_head_sha=$PR_HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+          echo "cache_key=tests-passed-pr-${PR_HEAD_SHA}-base-${BASE_SHA}" >> $GITHUB_OUTPUT
+
+          echo "::notice title=Merge Queue Info::PR #${PR_NUM}, HEAD=${PR_HEAD_SHA:0:8}, base=${BASE_SHA:0:8}"
+
+      - name: Check for cached successful test run
+        if: github.event_name == 'merge_group'
+        id: restore-test-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .test-passed-marker
+          key: ${{ steps.merge-cache-check.outputs.cache_key }}
+          lookup-only: true
+
+      - name: Evaluate merge queue skip condition
+        if: github.event_name == 'merge_group'
+        id: merge-skip
+        run: |
+          if [[ "${{ steps.restore-test-cache.outputs.cache-hit }}" == "true" ]]; then
+            echo "::notice title=Skip Merge Queue::Cache hit - PR #${{ steps.merge-cache-check.outputs.pr_number }} was already tested against main@${{ steps.merge-cache-check.outputs.base_sha }}"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "::notice title=Run Merge Queue::Cache miss - running full test suite"
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Check for relevant changes
         id: check-changes
         shell: bash
         run: |
-          # Skip if merge queue determined we can skip (same code already tested)
-          if [[ "${{ steps.check-merge-skip.outputs.skip_merge_queue }}" == "true" ]]; then
-            echo "::notice title=⏭️ Skipping Tests::Merge queue base equals main - PR checks already validated this code"
+          # Skip if merge queue cache indicates tests already passed for this exact code
+          if [[ "${{ steps.merge-skip.outputs.skip }}" == "true" ]]; then
+            echo "::notice title=Skipping Tests::Merge queue cache hit - identical code already validated"
             echo "should_run=false" >> $GITHUB_OUTPUT
             exit 0
           fi
@@ -999,6 +1054,57 @@ jobs:
 
           echo "Unexpected state in dependent jobs"
           exit 1
+
+  # =============================================================================
+  # CACHE TEST SUCCESS FOR MERGE QUEUE OPTIMIZATION
+  # =============================================================================
+  # After all tests pass on a PR, we save a cache entry keyed by:
+  #   tests-passed-pr-{PR_HEAD_SHA}-base-{BASE_SHA}
+  #
+  # - PR_HEAD_SHA: github.event.pull_request.head.sha
+  #   The tip of the PR branch. Works for PRs with any number of commits.
+  #   In the merge queue, we retrieve this same SHA via the GitHub API,
+  #   NOT the squash commit SHA that the merge queue creates.
+  #
+  # - BASE_SHA: github.event.pull_request.base.sha
+  #   The base branch commit the PR targets. This matches merge_group.base_sha
+  #   when the PR enters the merge queue (assuming main hasn't moved).
+  #
+  # The cache is only saved when:
+  # - Event is a pull_request (not merge_group or workflow_dispatch)
+  # - All tests passed (changes job succeeded)
+  #
+  # Cache TTL: 7 days (GitHub Actions default for unused caches)
+  # =============================================================================
+  cache-test-success:
+    name: Cache Test Success
+    needs: [changes]
+    if: github.event_name == 'pull_request' && needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Create marker file
+        run: |
+          echo "PR: ${{ github.event.pull_request.number }}" > .test-passed-marker
+          echo "Head: ${{ github.event.pull_request.head.sha }}" >> .test-passed-marker
+          echo "Base: ${{ github.event.pull_request.base.sha }}" >> .test-passed-marker
+          echo "Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> .test-passed-marker
+          echo "Workflow: ${{ github.run_id }}" >> .test-passed-marker
+
+      # We use github.event.pull_request.base.sha (not origin/main HEAD) because:
+      # - It's the base branch SHA from the PR event, representing the fork point
+      # - It matches what github.event.merge_group.base_sha will be in the merge queue
+      #   (assuming no other PRs merged between PR checks and merge queue entry)
+      - name: Save test success cache
+        uses: actions/cache/save@v4
+        with:
+          path: .test-passed-marker
+          key: tests-passed-pr-${{ github.event.pull_request.head.sha }}-base-${{ github.event.pull_request.base.sha }}
+
+      - name: Log cache key
+        run: |
+          echo "::notice title=Cache Saved::tests-passed-pr-${{ github.event.pull_request.head.sha }}-base-${{ github.event.pull_request.base.sha }}"
 
   notify-slack-on-failure:
     needs: [changes]
