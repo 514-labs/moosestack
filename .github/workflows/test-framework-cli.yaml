@@ -83,7 +83,7 @@ jobs:
     name: Check
     # This is doing both checks and compilation hence why there is a
     # Bigger machine
-    runs-on: ubuntu-22-8-core
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -137,7 +137,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [blacksmith-4vcpu-ubuntu-2404, macos-latest]
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -199,7 +199,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test TS Moose Lib (Node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -231,7 +231,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test Py Moose Lib (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -267,7 +267,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -358,7 +358,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
-    runs-on: ubuntu-22-8-core
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -431,7 +431,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Default Template (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -507,7 +507,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Tests Template (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -583,7 +583,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Backward Compatibility - TypeScript (Node 20)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -648,7 +648,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Backward Compatibility - Python (Python 3.13)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -721,7 +721,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Cluster Support - TypeScript (Node 20)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -783,7 +783,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Cluster Support - Python (Python 3.13)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -852,7 +852,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Lints
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
