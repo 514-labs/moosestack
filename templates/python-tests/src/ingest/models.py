@@ -974,7 +974,6 @@ class OlapInsertTestTrigger(BaseModel):
     """Trigger model for OlapTable.insert() consumer test."""
 
     id: Key[str]
-    timestamp: datetime
     value: int
 
 

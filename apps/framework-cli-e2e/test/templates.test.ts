@@ -594,7 +594,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         const testEventId = randomUUID();
         const testPayload = {
           id: testEventId,
-          timestamp: TEST_DATA.TIMESTAMP * 1000, // Convert to milliseconds
           value: 42,
         };
 

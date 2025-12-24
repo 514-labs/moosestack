@@ -802,7 +802,6 @@ export const nonDefaultDbTable = new OlapTable<NonDefaultDbRecord>(
 
 export interface OlapInsertTestTrigger {
   id: Key<string>;
-  timestamp: DateTime;
   value: number;
 }
 
