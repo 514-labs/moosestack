@@ -796,6 +796,63 @@ export const nonDefaultDbTable = new OlapTable<NonDefaultDbRecord>(
   },
 );
 
+/** =======OlapTable.insert() Consumer Tests========= */
+// Test that OlapTable.insert() works correctly in consumer functions
+// Tests both default database and non-default database inserts
+
+export interface OlapInsertTestRecord {
+  id: Key<string>;
+  timestamp: DateTime;
+  source: string;
+  value: number;
+}
+
+// Table in default database for testing OlapTable.insert()
+export const olapInsertTestTable = new OlapTable<OlapInsertTestRecord>(
+  "OlapInsertTestTable",
+  {
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+// Table in non-default database for testing OlapTable.insert()
+export const olapInsertTestNonDefaultTable =
+  new OlapTable<OlapInsertTestRecord>("OlapInsertTestNonDefaultTable", {
+    database: "analytics",
+    orderByFields: ["id", "timestamp"],
+  });
+
+// Stream to trigger consumer that tests OlapTable.insert()
+export const olapInsertTestStream = BarPipeline.stream;
+
+// Consumer that tests OlapTable.insert() for both default and non-default DBs
+olapInsertTestStream.addConsumer(
+  async (record) => {
+    const timestamp = new Date();
+
+    // Test insert to default database table
+    await olapInsertTestTable.insert([
+      {
+        id: `default-${record.primaryKey}`,
+        timestamp,
+        source: "consumer_default_db",
+        value: record.textLength,
+      },
+    ]);
+
+    // Test insert to non-default database table
+    await olapInsertTestNonDefaultTable.insert([
+      {
+        id: `analytics-${record.primaryKey}`,
+        timestamp,
+        source: "consumer_non_default_db",
+        value: record.textLength * 2,
+      },
+    ]);
+  },
+  { version: "olap-insert-test" },
+);
+
 /** =======LifeCycle Management Tests========= */
 // Test resources for verifying LifeCycle behavior:
 // - EXTERNALLY_MANAGED: Moose should never create/update/delete these resources

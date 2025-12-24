@@ -965,6 +965,73 @@ non_default_db_table = OlapTable[NonDefaultDbRecord](
 )
 
 
+# =======OlapTable.insert() Consumer Tests=========
+# Test that OlapTable.insert() works correctly in consumer functions
+# Tests both default database and non-default database inserts
+
+
+class OlapInsertTestRecord(BaseModel):
+    """Test model for OlapTable.insert() in consumers."""
+
+    id: Key[str]
+    timestamp: datetime
+    source: str
+    value: int
+
+
+# Table in default database for testing OlapTable.insert()
+olap_insert_test_table = OlapTable[OlapInsertTestRecord](
+    "OlapInsertTestTable", OlapConfig(order_by_fields=["id", "timestamp"])
+)
+
+# Table in non-default database for testing OlapTable.insert()
+olap_insert_test_non_default_table = OlapTable[OlapInsertTestRecord](
+    "OlapInsertTestNonDefaultTable",
+    OlapConfig(
+        database="analytics",  # Use non-default database
+        order_by_fields=["id", "timestamp"],
+    ),
+)
+
+
+# Consumer that tests OlapTable.insert() for both default and non-default DBs
+def olap_insert_test_consumer(record: Bar):
+    """Consumer that inserts records to both default and non-default DB tables."""
+    timestamp = datetime.now()
+
+    # Test insert to default database table
+    olap_insert_test_table.insert(
+        [
+            {
+                "id": f"default-{record.primary_key}",
+                "timestamp": timestamp,
+                "source": "consumer_default_db",
+                "value": record.text_length,
+            }
+        ]
+    )
+
+    # Test insert to non-default database table
+    olap_insert_test_non_default_table.insert(
+        [
+            {
+                "id": f"analytics-{record.primary_key}",
+                "timestamp": timestamp,
+                "source": "consumer_non_default_db",
+                "value": record.text_length * 2,
+            }
+        ]
+    )
+
+
+# Attach consumer to Bar stream
+from moose_lib import ConsumerConfig
+
+barModel.get_stream().add_consumer(
+    olap_insert_test_consumer, ConsumerConfig(version="olap-insert-test")
+)
+
+
 # =======Column Comments Test=========
 # Test that Field(description=...) comments are extracted and propagated to ClickHouse column comments
 

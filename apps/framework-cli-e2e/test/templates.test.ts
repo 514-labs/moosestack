@@ -583,6 +583,140 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
       });
 
+      it("should insert data via OlapTable.insert() in consumer for both default and non-default databases", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        // Wait for the OlapInsertTest tables to be created
+        await waitForDBWrite(
+          devProcess!,
+          "OlapInsertTestTable",
+          0,
+          30_000,
+          "local",
+        );
+        await waitForDBWrite(
+          devProcess!,
+          "OlapInsertTestNonDefaultTable",
+          0,
+          30_000,
+          "analytics",
+        );
+
+        testLogger.info("OlapInsertTest tables created, sending test data...");
+
+        // Send a test event to trigger the consumer
+        const testEventId = randomUUID();
+        const testPayload = {
+          primaryKey: testEventId,
+          timestamp: TEST_DATA.TIMESTAMP,
+          optionalText: "Test data for OlapTable.insert() consumer",
+        };
+
+        const ingestUrl = `${SERVER_CONFIG.url}/ingest/Foo`;
+        testLogger.info(`Sending test event to ${ingestUrl}...`);
+
+        const response = await fetch(ingestUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(testPayload),
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to ingest test event: ${response.status} ${response.statusText}`,
+          );
+        }
+
+        testLogger.info(
+          "Test event sent successfully, waiting for consumer to process...",
+        );
+
+        // Wait for the consumer to process and insert data into both tables
+        // The consumer inserts with id prefix "default-{primaryKey}" and "analytics-{primaryKey}"
+        const expectedDefaultId = `default-${testEventId}`;
+        const expectedAnalyticsId = `analytics-${testEventId}`;
+
+        // Verify insert to default database table
+        await withRetries(
+          async () => {
+            const client = createClient(CLICKHOUSE_CONFIG);
+            try {
+              const result = await client.query({
+                query: `SELECT * FROM OlapInsertTestTable WHERE id = '${expectedDefaultId}'`,
+                format: "JSONEachRow",
+              });
+              const rows: any[] = await result.json();
+
+              if (rows.length === 0) {
+                throw new Error(
+                  `Expected record with id '${expectedDefaultId}' in OlapInsertTestTable (default DB)`,
+                );
+              }
+
+              const record = rows[0];
+              if (record.source !== "consumer_default_db") {
+                throw new Error(
+                  `Expected source 'consumer_default_db', got '${record.source}'`,
+                );
+              }
+
+              testLogger.info(
+                `✅ OlapTable.insert() verified in default database: ${JSON.stringify(record)}`,
+              );
+            } finally {
+              await client.close();
+            }
+          },
+          {
+            attempts: 30,
+            delayMs: 1000,
+            operationName: "OlapTable.insert() to default database",
+          },
+        );
+
+        // Verify insert to non-default database table
+        await withRetries(
+          async () => {
+            const client = createClient(CLICKHOUSE_CONFIG);
+            try {
+              const result = await client.query({
+                query: `SELECT * FROM analytics.OlapInsertTestNonDefaultTable WHERE id = '${expectedAnalyticsId}'`,
+                format: "JSONEachRow",
+              });
+              const rows: any[] = await result.json();
+
+              if (rows.length === 0) {
+                throw new Error(
+                  `Expected record with id '${expectedAnalyticsId}' in OlapInsertTestNonDefaultTable (analytics DB)`,
+                );
+              }
+
+              const record = rows[0];
+              if (record.source !== "consumer_non_default_db") {
+                throw new Error(
+                  `Expected source 'consumer_non_default_db', got '${record.source}'`,
+                );
+              }
+
+              testLogger.info(
+                `✅ OlapTable.insert() verified in non-default database: ${JSON.stringify(record)}`,
+              );
+            } finally {
+              await client.close();
+            }
+          },
+          {
+            attempts: 30,
+            delayMs: 1000,
+            operationName: "OlapTable.insert() to non-default database",
+          },
+        );
+
+        testLogger.info(
+          "✅ OlapTable.insert() consumer test passed for both default and non-default databases",
+        );
+      });
+
       it("should create indexes defined in templates", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
