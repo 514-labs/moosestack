@@ -800,6 +800,12 @@ export const nonDefaultDbTable = new OlapTable<NonDefaultDbRecord>(
 // Test that OlapTable.insert() works correctly in consumer functions
 // Tests both default database and non-default database inserts
 
+export interface OlapInsertTestTrigger {
+  id: Key<string>;
+  timestamp: DateTime;
+  value: number;
+}
+
 export interface OlapInsertTestRecord {
   id: Key<string>;
   timestamp: DateTime;
@@ -822,31 +828,40 @@ export const olapInsertTestNonDefaultTable =
     orderByFields: ["id", "timestamp"],
   });
 
-// Stream to trigger consumer that tests OlapTable.insert()
-export const olapInsertTestStream = BarPipeline.stream;
+// Dedicated stream to trigger the consumer test (no hidden dependencies)
+export const olapInsertTestTriggerStream = new Stream<OlapInsertTestTrigger>(
+  "OlapInsertTestTrigger",
+);
+
+export const olapInsertTestTriggerApi = new IngestApi<OlapInsertTestTrigger>(
+  "olap-insert-test-trigger",
+  {
+    destination: olapInsertTestTriggerStream,
+  },
+);
 
 // Consumer that tests OlapTable.insert() for both default and non-default DBs
-olapInsertTestStream.addConsumer(
+olapInsertTestTriggerStream.addConsumer(
   async (record) => {
     const timestamp = new Date();
 
     // Test insert to default database table
     await olapInsertTestTable.insert([
       {
-        id: `default-${record.primaryKey}`,
+        id: `default-${record.id}`,
         timestamp,
         source: "consumer_default_db",
-        value: record.textLength,
+        value: record.value,
       },
     ]);
 
     // Test insert to non-default database table
     await olapInsertTestNonDefaultTable.insert([
       {
-        id: `analytics-${record.primaryKey}`,
+        id: `analytics-${record.id}`,
         timestamp,
         source: "consumer_non_default_db",
-        value: record.textLength * 2,
+        value: record.value * 2,
       },
     ]);
   },

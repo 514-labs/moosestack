@@ -586,33 +586,19 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       it("should insert data via OlapTable.insert() in consumer for both default and non-default databases", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-        // Wait for the OlapInsertTest tables to be created
-        await waitForDBWrite(
-          devProcess!,
-          "OlapInsertTestTable",
-          0,
-          30_000,
-          "local",
-        );
-        await waitForDBWrite(
-          devProcess!,
-          "OlapInsertTestNonDefaultTable",
-          0,
-          30_000,
-          "analytics",
+        testLogger.info(
+          "Sending trigger event for OlapTable.insert() consumer test...",
         );
 
-        testLogger.info("OlapInsertTest tables created, sending test data...");
-
-        // Send a test event to trigger the consumer
+        // Send a test event directly to the dedicated trigger stream
         const testEventId = randomUUID();
         const testPayload = {
-          primaryKey: testEventId,
-          timestamp: TEST_DATA.TIMESTAMP,
-          optionalText: "Test data for OlapTable.insert() consumer",
+          id: testEventId,
+          timestamp: TEST_DATA.TIMESTAMP * 1000, // Convert to milliseconds
+          value: 42,
         };
 
-        const ingestUrl = `${SERVER_CONFIG.url}/ingest/Foo`;
+        const ingestUrl = `${SERVER_CONFIG.url}/ingest/olap-insert-test-trigger`;
         testLogger.info(`Sending test event to ${ingestUrl}...`);
 
         const response = await fetch(ingestUrl, {
@@ -628,11 +614,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
 
         testLogger.info(
-          "Test event sent successfully, waiting for consumer to process...",
+          "Test event sent successfully, waiting for consumer to process and insert...",
         );
 
         // Wait for the consumer to process and insert data into both tables
-        // The consumer inserts with id prefix "default-{primaryKey}" and "analytics-{primaryKey}"
+        // The consumer inserts with id prefix "default-{id}" and "analytics-{id}"
         const expectedDefaultId = `default-${testEventId}`;
         const expectedAnalyticsId = `analytics-${testEventId}`;
 
@@ -658,6 +644,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                 throw new Error(
                   `Expected source 'consumer_default_db', got '${record.source}'`,
                 );
+              }
+
+              if (parseInt(record.value) !== 42) {
+                throw new Error(`Expected value 42, got ${record.value}`);
               }
 
               testLogger.info(
@@ -695,6 +685,12 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               if (record.source !== "consumer_non_default_db") {
                 throw new Error(
                   `Expected source 'consumer_non_default_db', got '${record.source}'`,
+                );
+              }
+
+              if (parseInt(record.value) !== 84) {
+                throw new Error(
+                  `Expected value 84 (42*2), got ${record.value}`,
                 );
               }
 

@@ -970,6 +970,14 @@ non_default_db_table = OlapTable[NonDefaultDbRecord](
 # Tests both default database and non-default database inserts
 
 
+class OlapInsertTestTrigger(BaseModel):
+    """Trigger model for OlapTable.insert() consumer test."""
+
+    id: Key[str]
+    timestamp: datetime
+    value: int
+
+
 class OlapInsertTestRecord(BaseModel):
     """Test model for OlapTable.insert() in consumers."""
 
@@ -993,9 +1001,19 @@ olap_insert_test_non_default_table = OlapTable[OlapInsertTestRecord](
     ),
 )
 
+# Dedicated stream to trigger the consumer test (no hidden dependencies)
+olap_insert_test_trigger_stream = Stream[OlapInsertTestTrigger](
+    "OlapInsertTestTrigger", StreamConfig(destination=None)
+)
+
+olap_insert_test_trigger_api = IngestApi[OlapInsertTestTrigger](
+    "olap-insert-test-trigger",
+    IngestConfigWithDestination(destination=olap_insert_test_trigger_stream),
+)
+
 
 # Consumer that tests OlapTable.insert() for both default and non-default DBs
-def olap_insert_test_consumer(record: Bar):
+def olap_insert_test_consumer(record: OlapInsertTestTrigger):
     """Consumer that inserts records to both default and non-default DB tables."""
     timestamp = datetime.now()
 
@@ -1003,10 +1021,10 @@ def olap_insert_test_consumer(record: Bar):
     olap_insert_test_table.insert(
         [
             {
-                "id": f"default-{record.primary_key}",
+                "id": f"default-{record.id}",
                 "timestamp": timestamp,
                 "source": "consumer_default_db",
-                "value": record.text_length,
+                "value": record.value,
             }
         ]
     )
@@ -1015,19 +1033,19 @@ def olap_insert_test_consumer(record: Bar):
     olap_insert_test_non_default_table.insert(
         [
             {
-                "id": f"analytics-{record.primary_key}",
+                "id": f"analytics-{record.id}",
                 "timestamp": timestamp,
                 "source": "consumer_non_default_db",
-                "value": record.text_length * 2,
+                "value": record.value * 2,
             }
         ]
     )
 
 
-# Attach consumer to Bar stream
+# Attach consumer to trigger stream
 from moose_lib import ConsumerConfig
 
-barModel.get_stream().add_consumer(
+olap_insert_test_trigger_stream.add_consumer(
     olap_insert_test_consumer, ConsumerConfig(version="olap-insert-test")
 )
 
