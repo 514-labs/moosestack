@@ -1,0 +1,13 @@
+{
+  "$schema": "../../docs/e2e-v2/capabilities.schema.json",
+  "capabilities": [
+    "lang:typescript",
+    "infra:clickhouse",
+    "infra:redpanda",
+    "infra:redis",
+    "feature:ingestion",
+    "feature:mcp",
+    "model:DataEvent"
+  ],
+  "testPort": 4016
+}

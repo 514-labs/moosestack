@@ -1,0 +1,15 @@
+{
+  "$schema": "../../docs/e2e-v2/capabilities.schema.json",
+  "capabilities": [
+    "lang:python",
+    "infra:clickhouse",
+    "infra:redpanda",
+    "infra:redis",
+    "infra:temporal",
+    "feature:consumption",
+    "feature:workflows",
+    "feature:web-apps"
+  ],
+  "testPort": 4025,
+  "skipScenarios": ["ingest-and-query"]
+}

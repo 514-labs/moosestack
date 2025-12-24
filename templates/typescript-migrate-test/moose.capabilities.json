@@ -1,0 +1,6 @@
+{
+  "$schema": "../../docs/e2e-v2/capabilities.schema.json",
+  "capabilities": ["lang:typescript", "infra:clickhouse", "feature:migrations"],
+  "testPort": 4020,
+  "skipScenarios": ["ingest-and-query"]
+}

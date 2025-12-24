@@ -931,15 +931,128 @@ async fn health_route(
         .body(Full::new(Bytes::from(json_response)))
 }
 
+/// Query parameters for the /ready endpoint
+#[derive(Debug, Default, Deserialize)]
+struct ReadyQueryParams {
+    /// If true, return detailed status including consumer lag and pending inserts
+    #[serde(default)]
+    detailed: bool,
+    /// If true, wait until services are ready and quiescent
+    #[serde(default)]
+    wait: bool,
+    /// Timeout in milliseconds for wait mode (default 30000)
+    #[serde(default = "default_ready_timeout")]
+    timeout: u64,
+}
+
+fn default_ready_timeout() -> u64 {
+    30000
+}
+
+/// Detailed status information for services
+#[derive(Debug, Serialize)]
+struct ReadyDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kafka: Option<KafkaReadyDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    clickhouse: Option<ClickHouseReadyDetails>,
+}
+
+#[derive(Debug, Serialize)]
+struct KafkaReadyDetails {
+    #[serde(rename = "consumerLag")]
+    consumer_lag: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct ClickHouseReadyDetails {
+    #[serde(rename = "pendingParts")]
+    pending_parts: u64,
+}
+
 async fn ready_route(
+    req: &Request<hyper::body::Incoming>,
     project: &Project,
     redis_client: &Arc<RedisClient>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    // Parse query parameters
+    let query_string = req.uri().query().unwrap_or("");
+    let params: ReadyQueryParams = serde_urlencoded::from_str(query_string).unwrap_or_default();
+
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_millis(params.timeout);
+
+    loop {
+        let (healthy, unhealthy, details) =
+            check_service_readiness(project, redis_client, params.detailed).await;
+
+        let is_ready = unhealthy.is_empty();
+        let is_quiescent = if params.detailed {
+            // Check if all services have settled (no lag, no pending operations)
+            let kafka_ok = details
+                .as_ref()
+                .and_then(|d| d.kafka.as_ref())
+                .map(|k| k.consumer_lag == 0)
+                .unwrap_or(true);
+            let ch_ok = details
+                .as_ref()
+                .and_then(|d| d.clickhouse.as_ref())
+                .map(|c| c.pending_parts == 0)
+                .unwrap_or(true);
+            kafka_ok && ch_ok
+        } else {
+            true
+        };
+
+        // If not waiting, or we're ready and quiescent, return
+        if !params.wait || (is_ready && is_quiescent) || start.elapsed() > timeout {
+            let status = if unhealthy.is_empty() {
+                StatusCode::OK
+            } else {
+                StatusCode::SERVICE_UNAVAILABLE
+            };
+
+            let mut response_json = serde_json::json!({
+                "healthy": healthy,
+                "unhealthy": unhealthy
+            });
+
+            if params.detailed {
+                if let Some(details) = details {
+                    response_json.as_object_mut().unwrap().insert(
+                        "details".to_string(),
+                        serde_json::to_value(details).unwrap(),
+                    );
+                }
+            }
+
+            let json_response = serde_json::to_string_pretty(&response_json)
+                .unwrap_or_else(|_| String::from("{\"error\":\"Failed to serialize response\"}"));
+
+            return Response::builder()
+                .status(status)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(json_response)));
+        }
+
+        // Wait before next check
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+}
+
+/// Check readiness of all services and optionally gather detailed metrics
+async fn check_service_readiness(
+    project: &Project,
+    redis_client: &Arc<RedisClient>,
+    detailed: bool,
+) -> (Vec<&'static str>, Vec<&'static str>, Option<ReadyDetails>) {
     // This endpoint validates that backing services are not only reachable but their
     // connections are warmed/ready for immediate use.
 
     let mut healthy = Vec::new();
     let mut unhealthy = Vec::new();
+    let mut kafka_details = None;
+    let mut ch_details = None;
 
     // Redis: explicit PING via connection manager
     let mut cm = redis_client.connection_manager.clone();
@@ -954,7 +1067,18 @@ async fn ready_route(
         match crate::infrastructure::stream::kafka::client::health_check(&project.redpanda_config)
             .await
         {
-            Ok(true) => healthy.push("Redpanda"),
+            Ok(true) => {
+                healthy.push("Redpanda");
+                if detailed {
+                    // Get consumer lag if detailed mode
+                    let lag = crate::infrastructure::stream::kafka::client::get_consumer_lag(
+                        &project.redpanda_config,
+                    )
+                    .await
+                    .unwrap_or(-1);
+                    kafka_details = Some(KafkaReadyDetails { consumer_lag: lag });
+                }
+            }
             Ok(false) | Err(_) => unhealthy.push("Redpanda"),
         }
     }
@@ -963,7 +1087,19 @@ async fn ready_route(
     if project.features.olap {
         let ch = clickhouse::create_client(project.clickhouse_config.clone());
         match clickhouse::check_ready(&ch).await {
-            Ok(_) => healthy.push("ClickHouse"),
+            Ok(_) => {
+                healthy.push("ClickHouse");
+                if detailed {
+                    // Get pending parts count if detailed mode
+                    let pending =
+                        clickhouse::get_pending_parts(&ch, &project.clickhouse_config.db_name)
+                            .await
+                            .unwrap_or(u64::MAX);
+                    ch_details = Some(ClickHouseReadyDetails {
+                        pending_parts: pending,
+                    });
+                }
+            }
             Err(e) => {
                 warn!("Ready check: ClickHouse not ready: {}", e);
                 unhealthy.push("ClickHouse")
@@ -991,22 +1127,186 @@ async fn ready_route(
         }
     }
 
-    let status = if unhealthy.is_empty() {
-        StatusCode::OK
+    let details = if detailed {
+        Some(ReadyDetails {
+            kafka: kafka_details,
+            clickhouse: ch_details,
+        })
     } else {
-        StatusCode::SERVICE_UNAVAILABLE
+        None
     };
 
-    let json_response = serde_json::to_string_pretty(&serde_json::json!({
-        "healthy": healthy,
-        "unhealthy": unhealthy
-    }))
-    .unwrap_or_else(|_| String::from("{\"error\":\"Failed to serialize response\"}"));
+    (healthy, unhealthy, details)
+}
+
+/// Default timeout for fixtures wait mode (30 seconds)
+fn default_fixtures_timeout() -> u64 {
+    30000
+}
+
+/// Request body for the fixtures load endpoint
+#[derive(Debug, Deserialize)]
+struct FixturesLoadRequest {
+    /// Fixture data to load
+    data: Vec<FixturesLoadData>,
+    /// Optional: wait for data to be queryable
+    #[serde(default)]
+    wait: bool,
+    /// Optional: timeout for wait mode in milliseconds (default: 30000)
+    #[serde(default = "default_fixtures_timeout")]
+    timeout: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct FixturesLoadData {
+    /// Target ingestion endpoint
+    target: String,
+    /// Records to insert
+    records: Vec<serde_json::Value>,
+}
+
+/// POST /moose/fixtures/load - Load test fixtures programmatically
+///
+/// This endpoint allows tests to load fixture data via HTTP instead of the CLI.
+/// It accepts the same format as the fixture JSON files.
+async fn fixtures_load_route(
+    req: Request<hyper::body::Incoming>,
+    project: &Project,
+    redis_client: &Arc<RedisClient>,
+    max_body_size: usize,
+) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    // Parse the request body using Limited to enforce size limit
+    let limited_body = Limited::new(req.into_body(), max_body_size);
+
+    let body = match limited_body.collect().await {
+        Ok(collected) => collected.to_bytes(),
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(format!(
+                    r#"{{"error": "Failed to read request body: {}"}}"#,
+                    e
+                ))));
+        }
+    };
+
+    let fixture_req: FixturesLoadRequest = match serde_json::from_slice(&body) {
+        Ok(req) => req,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(format!(
+                    r#"{{"error": "Invalid JSON: {}"}}"#,
+                    e
+                ))));
+        }
+    };
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(format!(
+                    r#"{{"error": "Failed to create HTTP client: {}"}}"#,
+                    e
+                ))));
+        }
+    };
+
+    let port = project.http_server_config.port;
+    let mut records_loaded = 0;
+
+    // Load each data set
+    for data in &fixture_req.data {
+        let target = if data.target.starts_with("ingest/") {
+            data.target.clone()
+        } else {
+            format!("ingest/{}", data.target)
+        };
+
+        let url = format!("http://localhost:{}/{}", port, target);
+
+        for record in &data.records {
+            let response = match client.post(&url).json(record).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    return Response::builder()
+                        .status(StatusCode::BAD_GATEWAY)
+                        .header("Content-Type", "application/json")
+                        .body(Full::new(Bytes::from(format!(
+                            r#"{{"error": "Failed to send to {}: {}"}}"#,
+                            target, e
+                        ))));
+                }
+            };
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                return Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .header("Content-Type", "application/json")
+                    .body(Full::new(Bytes::from(format!(
+                        r#"{{"error": "Target {} returned HTTP {}: {}"}}"#,
+                        target,
+                        status.as_u16(),
+                        body
+                    ))));
+            }
+
+            records_loaded += 1;
+        }
+    }
+
+    // Wait for data to be queryable if requested
+    if fixture_req.wait {
+        let start = std::time::Instant::now();
+        let timeout = std::time::Duration::from_millis(fixture_req.timeout);
+
+        loop {
+            let (_, unhealthy, details) =
+                check_service_readiness(project, redis_client, true).await;
+
+            let is_ready = unhealthy.is_empty();
+            let is_quiescent = {
+                // Check if all services have settled (no lag, no pending operations)
+                let kafka_ok = details
+                    .as_ref()
+                    .and_then(|d| d.kafka.as_ref())
+                    .map(|k| k.consumer_lag == 0)
+                    .unwrap_or(true);
+                let ch_ok = details
+                    .as_ref()
+                    .and_then(|d| d.clickhouse.as_ref())
+                    .map(|c| c.pending_parts == 0)
+                    .unwrap_or(true);
+                kafka_ok && ch_ok
+            };
+
+            // If ready and quiescent, or timeout exceeded, exit loop
+            if (is_ready && is_quiescent) || start.elapsed() > timeout {
+                break;
+            }
+
+            // Wait before next check
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
 
     Response::builder()
-        .status(status)
+        .status(StatusCode::OK)
         .header("Content-Type", "application/json")
-        .body(Full::new(Bytes::from(json_response)))
+        .body(Full::new(Bytes::from(format!(
+            r#"{{"success": true, "recordsLoaded": {}}}"#,
+            records_loaded
+        ))))
 }
 
 async fn admin_reality_check_route(
@@ -1755,7 +2055,16 @@ async fn router(
             }
         }
         (_, &hyper::Method::GET, ["health"]) => health_route(&project, &redis_client).await,
-        (_, &hyper::Method::GET, ["ready"]) => ready_route(&project, &redis_client).await,
+        (_, &hyper::Method::GET, ["ready"]) => ready_route(&req, &project, &redis_client).await,
+        (_, &hyper::Method::POST, ["moose", "fixtures", "load"]) => {
+            fixtures_load_route(
+                req,
+                &project,
+                &redis_client,
+                project.http_server_config.max_request_body_size,
+            )
+            .await
+        }
         (_, &hyper::Method::GET, ["admin", "reality-check"]) => {
             admin_reality_check_route(
                 req,

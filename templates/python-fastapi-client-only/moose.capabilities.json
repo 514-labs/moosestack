@@ -1,0 +1,13 @@
+{
+  "$schema": "../../docs/e2e-v2/capabilities.schema.json",
+  "capabilities": [
+    "lang:python",
+    "infra:clickhouse",
+    "feature:web-apps",
+    "feature:olap-engines",
+    "model:FooModel",
+    "model:BarModel"
+  ],
+  "testPort": 4024,
+  "skipScenarios": ["ingest-and-query"]
+}

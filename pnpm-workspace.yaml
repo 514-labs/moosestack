@@ -12,5 +12,6 @@ catalog:
   chai: "4.5.0"
   mocha: "10.8.2"
   ts-node: "10.9.2"
+  tsx: "4.21.0"
   typescript: "5.9.3"
   yaml: "2.8.2"

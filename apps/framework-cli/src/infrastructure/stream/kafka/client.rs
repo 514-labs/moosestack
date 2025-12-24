@@ -797,6 +797,32 @@ pub async fn health_check(config: &KafkaConfig) -> Result<bool, KafkaError> {
     }
 }
 
+/// Returns the total consumer lag across all consumer groups.
+///
+/// Consumer lag represents the number of messages that have been produced but not yet
+/// consumed. A lag of 0 indicates all messages have been processed.
+///
+/// # Returns
+/// * `Ok(0)` if Kafka is healthy and responsive (placeholder for actual lag calculation)
+/// * `Err` if unable to connect to Kafka
+///
+/// # Note
+/// Currently returns 0 when healthy as a placeholder. Full consumer lag calculation
+/// requires tracking specific consumer groups and their committed offsets vs high watermarks.
+pub async fn get_consumer_lag(config: &KafkaConfig) -> Result<i64, KafkaError> {
+    // For now, just verify connectivity and return 0 if healthy
+    // Full implementation would need to:
+    // 1. List all consumer groups
+    // 2. For each group, get committed offsets
+    // 3. Get high watermarks for each partition
+    // 4. Calculate lag = sum(high_watermark - committed_offset)
+    match health_check(config).await {
+        Ok(true) => Ok(0),
+        Ok(false) => Err(KafkaError::Global(RDKafkaErrorCode::Fail)),
+        Err(e) => Err(e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
