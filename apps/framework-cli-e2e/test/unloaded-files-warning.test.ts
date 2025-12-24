@@ -195,7 +195,7 @@ export const unloadedTable = OlapTable<UnloadedTestModel>({
       const warningFound = await waitForOutputMessage(
         devProcess,
         "Unloaded Files",
-        TIMEOUTS.INFRASTRUCTURE_TIMEOUT_MS,
+        INFRASTRUCTURE_TIMEOUT_MS,
       );
 
       expect(warningFound, "Should display unloaded files warning").to.be.true;
@@ -276,7 +276,7 @@ unloaded_table = OlapTable[UnloadedTestModel](
       const warningFound = await waitForOutputMessage(
         devProcess,
         "Unloaded Files",
-        TIMEOUTS.INFRASTRUCTURE_TIMEOUT_MS,
+        INFRASTRUCTURE_TIMEOUT_MS,
       );
 
       expect(warningFound, "Should display unloaded files warning").to.be.true;
