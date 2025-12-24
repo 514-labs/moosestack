@@ -11,6 +11,9 @@ from importlib import import_module
 from typing import Literal, Optional, List, Any, Dict, Union, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
+import os
+import sys
+from pathlib import Path
 from .data_models import Column, _to_columns
 from .blocks import EngineConfig, ClickHouseEngines
 from moose_lib.dmv2 import (
@@ -546,6 +549,7 @@ class InfrastructureMap(BaseModel):
         web_apps: Dictionary mapping WebApp names to their configurations.
         materialized_views: Dictionary mapping MV names to their structured configurations.
         views: Dictionary mapping view names to their structured configurations.
+        unloaded_files: List of source files that exist but weren't loaded.
     """
 
     model_config = model_config
@@ -559,6 +563,7 @@ class InfrastructureMap(BaseModel):
     web_apps: dict[str, WebAppJson]
     materialized_views: dict[str, MaterializedViewJson]
     views: dict[str, ViewJson]
+    unloaded_files: list[str] = []
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -794,6 +799,72 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
 
     # Fallback for any other EngineConfig subclass
     return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
+
+
+def _find_source_files(directory: str, extensions: tuple = (".py",)) -> list[str]:
+    """Recursively finds all Python files in a directory.
+
+    Args:
+        directory: The directory to search
+        extensions: Tuple of file extensions to include
+
+    Returns:
+        List of file paths relative to the current working directory
+    """
+    source_files = []
+    dir_path = Path(directory)
+
+    if not dir_path.exists():
+        return []
+
+    for item in dir_path.rglob("*"):
+        # Skip hidden directories and files, and __pycache__
+        if any(part.startswith(".") or part == "__pycache__" for part in item.parts):
+            continue
+
+        if item.is_file() and item.suffix in extensions:
+            try:
+                rel_path = item.relative_to(Path.cwd())
+                source_files.append(str(rel_path))
+            except ValueError:
+                # File is outside cwd, use absolute path
+                source_files.append(str(item))
+
+    return source_files
+
+
+def _find_unloaded_files(source_dir: str) -> list[str]:
+    """Checks for source files that exist but weren't loaded.
+
+    Args:
+        source_dir: The source directory to check (e.g., 'app')
+
+    Returns:
+        List of file paths that exist but weren't loaded
+    """
+    app_dir = Path.cwd() / source_dir
+
+    # Find all Python source files
+    all_source_files = set(_find_source_files(str(app_dir)))
+
+    # Get all loaded modules from sys.modules
+    loaded_files = set()
+    for module_name, module in sys.modules.items():
+        if hasattr(module, "__file__") and module.__file__:
+            try:
+                module_path = Path(module.__file__).resolve()
+                # Check if module is in our app directory
+                if str(app_dir.resolve()) in str(module_path):
+                    rel_path = module_path.relative_to(Path.cwd())
+                    loaded_files.add(str(rel_path))
+            except (ValueError, OSError):
+                # Module file is outside cwd or can't be resolved
+                pass
+
+    # Find files that exist but weren't loaded
+    unloaded = sorted(all_source_files - loaded_files)
+
+    return unloaded
 
 
 def _convert_engine_to_config_dict(
@@ -1100,7 +1171,11 @@ def load_models():
     import_module(f"{source_dir}.main")
 
     # Generate the infrastructure map
-    infra_map = to_infra_map()
+    infra_map_dict = to_infra_map()
+
+    # Check for unloaded files
+    unloaded_files = _find_unloaded_files(source_dir)
+    infra_map_dict["unloadedFiles"] = unloaded_files
 
     # Print in the format expected by the infrastructure system
-    print("___MOOSE_STUFF___start", json.dumps(infra_map), "end___MOOSE_STUFF___")
+    print("___MOOSE_STUFF___start", json.dumps(infra_map_dict), "end___MOOSE_STUFF___")
