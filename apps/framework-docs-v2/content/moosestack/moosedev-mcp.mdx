@@ -97,18 +97,22 @@ Windsurf supports native Streamable HTTP transport:
 
 **Option 1: Native HTTP Support (VS Code 1.102+)**
 
-Add to `.vscode/settings.json` or User Settings:
+Add to your project's `.vscode/mcp.json` or User Settings:
 
-```json filename=".vscode/settings.json" copy
+```json filename=".vscode/mcp.json" copy
 {
-  "mcp.servers": {
+  "servers": {
     "moose-dev": {
-      "transport": "http",
+      "type": "http",
       "url": "http://localhost:4000/mcp"
     }
   }
 }
 ```
+
+Confirm the server is running and integrated with VSCode by running `MCP: List Servers` command from the Command Palette.
+
+For other native options, see the [VSCode docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers#_add-an-mcp-server).
 
 **Option 2: Cline Extension**
 
