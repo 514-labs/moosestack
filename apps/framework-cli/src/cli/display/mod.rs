@@ -76,6 +76,7 @@ pub mod message_display;
 pub mod infrastructure;
 pub mod message;
 pub mod spinner;
+pub mod status;
 pub mod table;
 pub mod terminal;
 pub mod timing;

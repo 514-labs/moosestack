@@ -6,14 +6,14 @@ use crate::cli::routines::RoutineSuccess;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
-use crate::infrastructure::olap::clickhouse::config::{
-    parse_clickhouse_connection_string, ClickHouseConfig,
-};
+use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::project::Project;
-use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
-use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
+use crate::utilities::constants::ENV_REMOTE_CLICKHOUSE_URL;
 
+use crate::cli::display::status::{format_error, format_success, format_warning};
 use crate::framework::core::infrastructure::table::Table;
+use crate::infrastructure::olap::clickhouse::config_resolver;
+use crate::infrastructure::olap::clickhouse::remote::RemoteConnection;
 use std::cmp::min;
 use std::collections::HashSet;
 use tracing::{debug, info, warn};
@@ -32,14 +32,8 @@ fn validate_database_name(db_name: &str) -> Result<(), RoutineFailure> {
 }
 
 /// Builds SQL query to get remote tables
-fn build_remote_tables_query(
-    remote_host_and_port: &str,
-    remote_user: &str,
-    remote_password: &str,
-    remote_db: &str,
-    other_dbs: &[&str],
-) -> String {
-    let mut databases = vec![remote_db];
+fn build_remote_tables_query(remote: &RemoteConnection, other_dbs: &[&str]) -> String {
+    let mut databases = vec![remote.database.as_str()];
     databases.extend(other_dbs);
 
     let db_list = databases
@@ -49,8 +43,9 @@ fn build_remote_tables_query(
         .join(", ");
 
     format!(
-        "SELECT database, name FROM remoteSecure('{}', 'system', 'tables', '{}', '{}') WHERE database IN ({})",
-        remote_host_and_port, remote_user, remote_password, db_list
+        "SELECT database, name FROM {} WHERE database IN ({})",
+        remote.build_remote_secure_system("tables"),
+        db_list
     )
 }
 
@@ -94,41 +89,32 @@ fn should_skip_table(
 struct SeedingQueryParams<'a> {
     local_db: &'a str,
     table_name: &'a str,
-    remote_host_and_port: &'a str,
-    remote_db: &'a str,
-    remote_user: &'a str,
-    remote_password: &'a str,
+    remote: &'a RemoteConnection,
     order_by_clause: &'a str,
     limit: usize,
     offset: usize,
 }
 
 /// Builds the seeding SQL query for a specific table
-fn build_seeding_query(params: &SeedingQueryParams) -> String {
+fn build_seeding_query(params: &SeedingQueryParams, remote_db: &str) -> String {
     format!(
-        "INSERT INTO `{local_db}`.`{table_name}` SELECT * FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}') {order_by_clause} LIMIT {limit} OFFSET {offset}",
-        local_db = params.local_db,
-        table_name = params.table_name,
-        remote_host_and_port = params.remote_host_and_port,
-        remote_db = params.remote_db,
-        remote_user = params.remote_user,
-        remote_password = params.remote_password,
-        order_by_clause = params.order_by_clause,
-        limit = params.limit,
-        offset = params.offset
+        "INSERT INTO `{}`.`{}` SELECT * FROM {} {} LIMIT {} OFFSET {}",
+        params.local_db,
+        params.table_name,
+        params
+            .remote
+            .build_remote_secure(remote_db, params.table_name),
+        params.order_by_clause,
+        params.limit,
+        params.offset
     )
 }
 
 /// Builds the count query to get total rows for a table
-fn build_count_query(
-    remote_host_and_port: &str,
-    remote_db: &str,
-    table_name: &str,
-    remote_user: &str,
-    remote_password: &str,
-) -> String {
+fn build_count_query(remote: &RemoteConnection, remote_db: &str, table_name: &str) -> String {
     format!(
-        "SELECT count() FROM remoteSecure('{remote_host_and_port}', '{remote_db}', '{table_name}', '{remote_user}', '{remote_password}')"
+        "SELECT count() FROM {}",
+        remote.build_remote_secure(remote_db, table_name)
     )
 }
 
@@ -192,19 +178,11 @@ fn build_order_by_clause(
 /// Gets the total row count for a remote table
 async fn get_remote_table_count(
     local_clickhouse: &ClickHouseClient,
-    remote_host_and_port: &str,
+    remote: &RemoteConnection,
     remote_db: &str,
     table_name: &str,
-    remote_user: &str,
-    remote_password: &str,
 ) -> Result<usize, RoutineFailure> {
-    let count_sql = build_count_query(
-        remote_host_and_port,
-        remote_db,
-        table_name,
-        remote_user,
-        remote_password,
-    );
+    let count_sql = build_count_query(remote, remote_db, table_name);
 
     let body = match local_clickhouse.execute_sql(&count_sql).await {
         Ok(result) => result,
@@ -243,7 +221,7 @@ async fn seed_single_table(
     limit: Option<usize>,
     order_by: Option<&str>,
 ) -> Result<String, RoutineFailure> {
-    let remote_host_and_port = format!("{}:{}", remote_config.host, remote_config.native_port);
+    let remote = RemoteConnection::from_config(remote_config);
     let db = table.database.as_deref();
     let local_db = db.unwrap_or(&local_clickhouse.config().db_name);
     let batch_size: usize = 50_000;
@@ -251,11 +229,9 @@ async fn seed_single_table(
     // Get total row count
     let remote_total = get_remote_table_count(
         local_clickhouse,
-        &remote_host_and_port,
+        &remote,
         db.unwrap_or(&remote_config.db_name),
         &table.name,
-        &remote_config.user,
-        &remote_config.password,
     )
     .await
     .map_err(|e| {
@@ -287,17 +263,17 @@ async fn seed_single_table(
             Some(l) => min(l - copied_total, batch_size),
         };
 
-        let sql = build_seeding_query(&SeedingQueryParams {
-            local_db,
-            table_name: &table.name,
-            remote_host_and_port: &remote_host_and_port,
-            remote_db: db.unwrap_or(&remote_config.db_name),
-            remote_user: &remote_config.user,
-            remote_password: &remote_config.password,
-            order_by_clause: &order_by_clause,
-            limit: batch_limit,
-            offset: copied_total,
-        });
+        let sql = build_seeding_query(
+            &SeedingQueryParams {
+                local_db,
+                table_name: &table.name,
+                remote: &remote,
+                order_by_clause: &order_by_clause,
+                limit: batch_limit,
+                offset: copied_total,
+            },
+            db.unwrap_or(&remote_config.db_name),
+        );
 
         debug!(
             "Executing SQL: table={}, offset={copied_total}, limit={batch_limit}",
@@ -318,7 +294,7 @@ async fn seed_single_table(
         }
     }
 
-    Ok(format!("✓ {}: copied from remote", table.name))
+    Ok(format_success(&table.name, "copied from remote"))
 }
 
 /// Gets the list of tables to seed based on parameters
@@ -343,21 +319,13 @@ fn get_tables_to_seed(infra_map: &InfrastructureMap, table_name: Option<String>)
 /// table validation, and data copying
 async fn seed_clickhouse_operation(
     project: &Project,
-    clickhouse_url: &str,
+    remote_config: ClickHouseConfig,
     table: Option<String>,
     limit: Option<usize>,
     order_by: Option<&str>,
 ) -> Result<(String, String, Vec<String>), RoutineFailure> {
     // Load infrastructure map
     let infra_map = load_infrastructure_map(project).await?;
-
-    // Parse ClickHouse URL
-    let remote_config = parse_clickhouse_connection_string(clickhouse_url).map_err(|e| {
-        RoutineFailure::error(Message::new(
-            "SeedClickhouse".to_string(),
-            format!("Invalid ClickHouse URL: {e}"),
-        ))
-    })?;
 
     // Validate database name
     validate_database_name(&remote_config.db_name)?;
@@ -399,15 +367,9 @@ async fn get_remote_tables(
     remote_config: &ClickHouseConfig,
     other_dbs: &[&str],
 ) -> Result<HashSet<(String, String)>, RoutineFailure> {
-    let remote_host_and_port = format!("{}:{}", remote_config.host, remote_config.native_port);
+    let remote = RemoteConnection::from_config(remote_config);
 
-    let sql = build_remote_tables_query(
-        &remote_host_and_port,
-        &remote_config.user,
-        &remote_config.password,
-        &remote_config.db_name,
-        other_dbs,
-    );
+    let sql = build_remote_tables_query(&remote, other_dbs);
 
     debug!("Querying remote tables: {}", sql);
 
@@ -438,36 +400,36 @@ pub async fn handle_seed_command(
             table,
             order_by,
         }) => {
-            let resolved_clickhouse_url = match clickhouse_url {
-                Some(s) => s.clone(),
+            let remote_config = match config_resolver::resolve_remote_clickhouse_config(
+                project,
+                clickhouse_url.as_deref(),
+            )? {
+                Some(config) => config,
                 None => {
-                    let repo = KeyringSecretRepository;
-                    match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
-                        Ok(Some(s)) => s,
-                        Ok(None) => {
-                            return Err(RoutineFailure::error(Message::new(
-                                "SeedClickhouse".to_string(),
-                                "No ClickHouse URL provided and none saved. Pass --clickhouse-url or save one via `moose init --from-remote`.".to_string(),
-                            )))
-                        }
-                        Err(e) => {
-                            return Err(RoutineFailure::error(Message::new(
-                                "SeedClickhouse".to_string(),
-                                format!("Failed to read saved ClickHouse URL from keychain: {e:?}"),
-                            )))
-                        }
-                    }
+                    return Err(RoutineFailure::error(Message::new(
+                        "SeedClickhouse".to_string(),
+                        format!(
+                            "No remote ClickHouse URL configured. Options:\n\
+                                 • Pass --clickhouse-url flag (for this command)\n\
+                                 • Set {} environment variable (can be in .env.local)\n\
+                                 • Add [dev.remote_clickhouse] to moose.config.toml (recommended)",
+                            ENV_REMOTE_CLICKHOUSE_URL
+                        ),
+                    )))
                 }
             };
 
-            info!("Running seed clickhouse command with ClickHouse URL: {resolved_clickhouse_url}");
+            info!(
+                "Running seed clickhouse command with remote: {}@{}:{}",
+                remote_config.user, remote_config.host, remote_config.host_port
+            );
 
             let (local_db_name, remote_db_name, summary) = with_spinner_completion_async(
                 "Initializing database seeding operation...",
                 "Database seeding completed",
                 seed_clickhouse_operation(
                     project,
-                    &resolved_clickhouse_url,
+                    remote_config,
                     table.clone(),
                     if *all { None } else { Some(*limit) },
                     order_by.as_deref(),
@@ -551,7 +513,7 @@ pub async fn seed_clickhouse_tables(
                 "Table '{}' exists locally but not on remote - skipping",
                 table.name
             );
-            summary.push(format!("⚠️  {}: skipped (not found on remote)", table.name));
+            summary.push(format_warning(&table.name, "skipped (not found on remote)"));
             continue;
         }
 
@@ -567,12 +529,12 @@ pub async fn seed_clickhouse_tables(
                         "Table '{}' not found on remote database - skipping",
                         table.name
                     );
-                    summary.push(format!("⚠️  {}: skipped (not found on remote)", table.name));
+                    summary.push(format_warning(&table.name, "skipped (not found on remote)"));
                 } else {
                     // Other errors should be added as failures
-                    summary.push(format!(
-                        "✗ {}: failed to copy - {}",
-                        table.name, e.message.details
+                    summary.push(format_error(
+                        &table.name,
+                        &format!("failed to copy - {}", e.message.details),
                     ));
                 }
             }
@@ -580,6 +542,373 @@ pub async fn seed_clickhouse_tables(
     }
 
     info!("ClickHouse seeding completed");
+    Ok(summary)
+}
+
+/// Checks if a table exists locally in ClickHouse (with error handling)
+async fn table_exists_locally(client: &ClickHouseClient, database: &str, table_name: &str) -> bool {
+    match client.table_exists(database, table_name).await {
+        Ok(exists) => exists,
+        Err(e) => {
+            warn!(
+                "Failed to check if table '{}' exists locally: {:?}",
+                table_name, e
+            );
+            false
+        }
+    }
+}
+
+/// Drops a mirror table if it exists
+async fn drop_mirror_table(
+    client: &ClickHouseClient,
+    database: &str,
+    table_name: &str,
+) -> Result<(), String> {
+    debug!("Dropping existing mirror table '{}'", table_name);
+
+    client
+        .drop_table_if_exists(database, table_name)
+        .await
+        .map_err(|e| format!("Failed to drop table: {}", e))?;
+
+    debug!("Dropped existing mirror table '{}'", table_name);
+    Ok(())
+}
+
+/// Creates a schema-only mirror table using the provided context
+async fn create_mirror_schema(
+    ctx: &MirrorContext<'_>,
+    table_name: &str,
+    remote_db: &str,
+) -> Result<(), RoutineFailure> {
+    let create_sql = format!(
+        "CREATE TABLE `{}`.`{}` AS SELECT * FROM {} LIMIT 0",
+        ctx.local_db,
+        table_name,
+        ctx.remote.build_remote_secure(remote_db, table_name)
+    );
+
+    debug!("Creating mirror table '{}': {}", table_name, create_sql);
+
+    ctx.local_client
+        .execute_sql(&create_sql)
+        .await
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "CreateMirror".to_string(),
+                format!("Failed to create mirror schema: {}", e),
+            ))
+        })?;
+
+    debug!("Created mirror table schema for '{}'", table_name);
+    Ok(())
+}
+
+/// Seeds data into a mirror table using the provided context
+async fn seed_mirror_data(
+    ctx: &MirrorContext<'_>,
+    table_name: &str,
+    remote_db: &str,
+) -> Result<(), String> {
+    let insert_sql = format!(
+        "INSERT INTO `{}`.`{}` SELECT * FROM {} LIMIT {}",
+        ctx.local_db,
+        table_name,
+        ctx.remote.build_remote_secure(remote_db, table_name),
+        ctx.sample_size
+    );
+
+    debug!(
+        "Seeding mirror table '{}' with {} rows",
+        table_name, ctx.sample_size
+    );
+
+    ctx.local_client
+        .execute_sql(&insert_sql)
+        .await
+        .map_err(|e| format!("Failed to seed data: {}", e))?;
+
+    info!(
+        "Seeded mirror table '{}' with {} sample rows",
+        table_name, ctx.sample_size
+    );
+    Ok(())
+}
+
+/// Context for creating a single mirror table
+struct MirrorContext<'a> {
+    local_client: &'a ClickHouseClient,
+    local_db: String,
+    remote: RemoteConnection,
+    sample_size: usize,
+    refresh_on_startup: bool,
+}
+
+/// Creates a mirror for a single table
+async fn create_single_mirror(table: &Table, remote_db: &str, ctx: &MirrorContext<'_>) -> String {
+    // Check if table exists locally
+    let exists = table_exists_locally(ctx.local_client, &ctx.local_db, &table.name).await;
+
+    // Skip if exists and no refresh needed
+    if exists && !ctx.refresh_on_startup {
+        debug!(
+            "Table '{}' already exists locally and refresh_on_startup is false, skipping",
+            table.name
+        );
+        return format_success(&table.name, "already exists (skipped)");
+    }
+
+    // Drop if refreshing
+    if exists && ctx.refresh_on_startup {
+        if let Err(e) = drop_mirror_table(ctx.local_client, &ctx.local_db, &table.name).await {
+            warn!("Failed to drop mirror table '{}': {}", table.name, e);
+            return format_error(&table.name, &format!("failed to drop for refresh - {}", e));
+        }
+    }
+
+    // Create schema
+    match create_mirror_schema(ctx, &table.name, remote_db).await {
+        Ok(_) => {
+            // Seed data if configured
+            if ctx.sample_size > 0 {
+                match seed_mirror_data(ctx, &table.name, remote_db).await {
+                    Ok(_) => format_success(
+                        &table.name,
+                        &format!("mirrored with {} sample rows", ctx.sample_size),
+                    ),
+                    Err(e) => {
+                        warn!(
+                            "Created mirror table '{}' but failed to seed data: {}",
+                            table.name, e
+                        );
+                        format_warning(
+                            &table.name,
+                            &format!("created schema but seeding failed - {}", e),
+                        )
+                    }
+                }
+            } else {
+                info!("Created mirror table schema for '{}'", table.name);
+                format_success(&table.name, "schema mirrored")
+            }
+        }
+        Err(e) => {
+            let error_msg = e.message.details.clone();
+            if error_msg.contains("There is no table") || error_msg.contains("UNKNOWN_TABLE") {
+                warn!("Table '{}' not found on remote database", table.name);
+                format_warning(&table.name, "not found on remote (skipped)")
+            } else {
+                warn!(
+                    "Failed to create mirror for table '{}': {}",
+                    table.name, error_msg
+                );
+                format_error(&table.name, &format!("failed to create - {}", error_msg))
+            }
+        }
+    }
+}
+
+/// Creates local mirror tables for EXTERNALLY_MANAGED tables.
+/// This enables Materialized Views to reference these tables in dev mode.
+///
+/// # Arguments
+/// * `project` - The project configuration
+/// * `infra_map` - The infrastructure map containing table definitions
+/// * `remote_config` - The remote ClickHouse connection configuration
+///
+/// # Returns
+/// A vector of status messages for each table processed
+pub async fn create_external_table_mirrors(
+    project: &Project,
+    infra_map: &InfrastructureMap,
+    remote_config: &ClickHouseConfig,
+) -> Result<Vec<String>, RoutineFailure> {
+    let local_client = ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "ExternalMirrors".to_string(),
+            format!("Failed to create local ClickHouseClient: {e}"),
+        ))
+    })?;
+
+    let mirrorable_tables = infra_map.get_mirrorable_external_tables();
+
+    if mirrorable_tables.is_empty() {
+        debug!("No mirrorable EXTERNALLY_MANAGED tables found");
+        return Ok(Vec::new());
+    }
+
+    info!(
+        "Creating local mirrors for {} EXTERNALLY_MANAGED table(s)",
+        mirrorable_tables.len()
+    );
+
+    let ctx = MirrorContext {
+        local_client: &local_client,
+        local_db: local_client.config().db_name.clone(),
+        remote: RemoteConnection::from_config(remote_config),
+        sample_size: project.dev.externally_managed.tables.sample_size,
+        refresh_on_startup: project.dev.externally_managed.tables.refresh_on_startup,
+    };
+
+    let mut summary = Vec::new();
+    for table in mirrorable_tables {
+        let remote_db = table.database.as_deref().unwrap_or(&remote_config.db_name);
+        let status = create_single_mirror(table, remote_db, &ctx).await;
+        summary.push(status);
+    }
+
+    info!("External table mirror creation completed");
+    Ok(summary)
+}
+
+/// Checks if a table should be created or already exists
+///
+/// Returns:
+/// - Ok(true) = already exists, skip creation
+/// - Ok(false) = doesn't exist, should create
+/// - Err = failed to check
+async fn should_skip_existing_table(
+    client: &ClickHouseClient,
+    database: &str,
+    table_name: &str,
+) -> Result<bool, String> {
+    match client.table_exists(database, table_name).await {
+        Ok(true) => {
+            debug!("Table '{}' already exists, skipping", table_name);
+            Ok(true)
+        }
+        Ok(false) => Ok(false),
+        Err(e) => {
+            warn!("Failed to check if table '{}' exists: {:?}", table_name, e);
+            Err(format!("failed to check existence - {}", e))
+        }
+    }
+}
+
+/// Creates a single table from local schema
+async fn create_table_from_schema(
+    client: &ClickHouseClient,
+    table: &Table,
+    target_db: &str,
+    is_dev: bool,
+) -> Result<(), RoutineFailure> {
+    // Convert to ClickHouseTable format
+    let clickhouse_table =
+        crate::infrastructure::olap::clickhouse::mapper::std_table_to_clickhouse_table(table)
+            .map_err(|e| {
+                RoutineFailure::error(Message::new(
+                    "TableConversion".to_string(),
+                    format!("Failed to convert table {} schema: {}", table.name, e),
+                ))
+            })?;
+
+    // Generate CREATE TABLE SQL
+    let create_sql = crate::infrastructure::olap::clickhouse::queries::create_table_query(
+        target_db,
+        clickhouse_table,
+        is_dev,
+    )
+    .map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "CreateTable".to_string(),
+            format!(
+                "Failed to generate CREATE TABLE query for {}: {}",
+                table.name, e
+            ),
+        ))
+    })?;
+
+    debug!("Creating table '{}' from local schema", table.name);
+
+    client.execute_sql(&create_sql).await.map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "CreateTable".to_string(),
+            format!("Failed to execute CREATE TABLE for {}: {}", table.name, e),
+        ))
+    })?;
+
+    info!("Created table '{}' from local schema", table.name);
+    Ok(())
+}
+
+/// Creates EXTERNALLY_MANAGED tables from local schema definitions (no remote needed)
+///
+/// Use case: Developer needs table structure to exist (for Materialized Views)
+/// but doesn't have access to production database. Tables are created empty
+/// from the schema definitions in code.
+///
+/// # Arguments
+/// * `project` - The project configuration
+/// * `infra_map` - The infrastructure map containing table definitions
+///
+/// # Returns
+/// A vector of status messages for each table processed
+pub async fn create_external_tables_from_local_schema(
+    project: &Project,
+    infra_map: &InfrastructureMap,
+) -> Result<Vec<String>, RoutineFailure> {
+    let local_client = ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "ExternalTables".to_string(),
+            format!("Failed to create local ClickHouseClient: {e}"),
+        ))
+    })?;
+
+    let local_db = local_client.config().db_name.clone();
+    let mirrorable_tables = infra_map.get_mirrorable_external_tables();
+
+    if mirrorable_tables.is_empty() {
+        debug!("No EXTERNALLY_MANAGED tables found");
+        return Ok(Vec::new());
+    }
+
+    info!(
+        "Creating {} EXTERNALLY_MANAGED table(s) from local schema",
+        mirrorable_tables.len()
+    );
+
+    let mut summary = Vec::new();
+
+    for table in mirrorable_tables {
+        let target_db = table.database.as_deref().unwrap_or(&local_db);
+
+        // Check if already exists
+        match should_skip_existing_table(&local_client, target_db, &table.name).await {
+            Ok(true) => {
+                summary.push(format_success(&table.name, "already exists"));
+                continue;
+            }
+            Ok(false) => {
+                // Proceed to create
+            }
+            Err(e) => {
+                summary.push(format_error(&table.name, &e));
+                continue;
+            }
+        }
+
+        // Create table from local schema
+        match create_table_from_schema(&local_client, table, target_db, !project.is_production)
+            .await
+        {
+            Ok(_) => {
+                summary.push(format_success(
+                    &table.name,
+                    "created from local schema (empty)",
+                ));
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to create table '{}': {}",
+                    table.name, e.message.details
+                );
+                summary.push(format_error(&table.name, &e.message.details));
+            }
+        }
+    }
+
+    info!("External table local schema creation completed");
     Ok(summary)
 }
 
@@ -657,24 +986,96 @@ mod tests {
         }
     }
 
+    fn create_test_remote_connection() -> RemoteConnection {
+        RemoteConnection {
+            host: "host".to_string(),
+            port: 9440,
+            database: "mydb".to_string(),
+            user: "user".to_string(),
+            password: "pass".to_string(),
+        }
+    }
+
     #[test]
     fn test_build_remote_tables_query() {
-        let query = build_remote_tables_query("host:9440", "user", "pass", "mydb", &[]);
+        let remote = create_test_remote_connection();
+        let query = build_remote_tables_query(&remote, &[]);
         let expected = "SELECT database, name FROM remoteSecure('host:9440', 'system', 'tables', 'user', 'pass') WHERE database IN ('mydb')";
         assert_eq!(query, expected);
     }
 
     #[test]
     fn test_build_remote_tables_query_with_other_dbs() {
-        let query = build_remote_tables_query(
-            "host:9440",
-            "user",
-            "pass",
-            "mydb",
-            &["otherdb1", "otherdb2"],
-        );
+        let remote = create_test_remote_connection();
+        let query = build_remote_tables_query(&remote, &["otherdb1", "otherdb2"]);
         let expected = "SELECT database, name FROM remoteSecure('host:9440', 'system', 'tables', 'user', 'pass') WHERE database IN ('mydb', 'otherdb1', 'otherdb2')";
         assert_eq!(query, expected);
+    }
+
+    fn create_test_project(name: &str) -> Project {
+        use crate::framework::languages::SupportedLanguages;
+        use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
+        use std::path::PathBuf;
+
+        Project {
+            language: SupportedLanguages::Typescript,
+            source_dir: "app".to_string(),
+            redpanda_config: crate::infrastructure::stream::kafka::models::KafkaConfig::default(),
+            clickhouse_config: ClickHouseConfig::default(),
+            http_server_config: crate::cli::local_webserver::LocalWebserverConfig::default(),
+            redis_config: crate::infrastructure::redis::redis_client::RedisConfig::default(),
+            git_config: crate::utilities::git::GitConfig::default(),
+            temporal_config:
+                crate::infrastructure::orchestration::temporal::TemporalConfig::default(),
+            state_config: crate::project::StateConfig::default(),
+            migration_config: crate::project::MigrationConfig::default(),
+            language_project_config: crate::project::LanguageProjectConfig::Typescript(
+                crate::project::typescript_project::TypescriptProject::new(name.to_string()),
+            ),
+            project_location: PathBuf::from("/tmp/test"),
+            is_production: false,
+            supported_old_versions: HashMap::new(),
+            jwt: None,
+            authentication: crate::project::AuthenticationConfig::default(),
+            features: crate::project::ProjectFeatures::default(),
+            load_infra: None,
+            typescript_config: crate::project::TypescriptConfig::default(),
+            docker_config: crate::project::DockerConfig::default(),
+            dev: crate::project::DevConfig::default(),
+        }
+    }
+
+    #[test]
+    fn test_resolve_remote_config_explicit() {
+        let project = create_test_project("test_project");
+        let result = config_resolver::resolve_remote_clickhouse_config(
+            &project,
+            Some("http://localhost:8123?database=test"),
+        );
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.db_name, "test");
+    }
+
+    #[test]
+    fn test_resolve_remote_config_env_var() {
+        let project = create_test_project("test_project");
+        std::env::set_var(
+            ENV_REMOTE_CLICKHOUSE_URL,
+            "http://localhost:8123?database=test",
+        );
+        let result = config_resolver::resolve_remote_clickhouse_config(&project, None);
+        std::env::remove_var(ENV_REMOTE_CLICKHOUSE_URL);
+
+        assert!(result.is_ok());
+        let config = result.unwrap();
+        assert!(config.is_some());
+        let config = config.unwrap();
+        assert_eq!(config.host, "localhost");
+        assert_eq!(config.db_name, "test");
     }
 
     #[test]
@@ -759,25 +1160,24 @@ mod tests {
 
     #[test]
     fn test_build_seeding_query() {
+        let remote = create_test_remote_connection();
         let params = SeedingQueryParams {
             local_db: "local_db",
             table_name: "my_table",
-            remote_host_and_port: "host:9440",
-            remote_db: "remote_db",
-            remote_user: "user",
-            remote_password: "pass",
+            remote: &remote,
             order_by_clause: "ORDER BY id DESC",
             limit: 1000,
             offset: 500,
         };
-        let query = build_seeding_query(&params);
+        let query = build_seeding_query(&params, "remote_db");
         let expected = "INSERT INTO `local_db`.`my_table` SELECT * FROM remoteSecure('host:9440', 'remote_db', 'my_table', 'user', 'pass') ORDER BY id DESC LIMIT 1000 OFFSET 500";
         assert_eq!(query, expected);
     }
 
     #[test]
     fn test_build_count_query() {
-        let query = build_count_query("host:9440", "remote_db", "my_table", "user", "pass");
+        let remote = create_test_remote_connection();
+        let query = build_count_query(&remote, "remote_db", "my_table");
         let expected = "SELECT count() FROM remoteSecure('host:9440', 'remote_db', 'my_table', 'user', 'pass')";
         assert_eq!(query, expected);
     }
@@ -850,5 +1250,44 @@ mod tests {
 
         // Verify we copied exactly the expected amount
         assert_eq!(copied_total, total_rows);
+    }
+
+    #[test]
+    fn test_engine_supports_select_merge_tree() {
+        let engine = ClickhouseEngine::MergeTree;
+        assert!(engine.supports_select());
+    }
+
+    #[test]
+    fn test_engine_supports_select_kafka() {
+        let engine = ClickhouseEngine::Kafka {
+            broker_list: "localhost:9092".to_string(),
+            topic_list: "test_topic".to_string(),
+            group_name: "test_group".to_string(),
+            format: "JSONEachRow".to_string(),
+        };
+        assert!(!engine.supports_select());
+    }
+
+    #[test]
+    fn test_engine_supports_select_s3queue() {
+        let engine = ClickhouseEngine::S3Queue {
+            s3_path: "s3://bucket/path".to_string(),
+            format: "JSONEachRow".to_string(),
+            compression: None,
+            headers: None,
+            aws_access_key_id: None,
+            aws_secret_access_key: None,
+        };
+        assert!(!engine.supports_select());
+    }
+
+    #[test]
+    fn test_engine_supports_select_replicated_merge_tree() {
+        let engine = ClickhouseEngine::ReplicatedMergeTree {
+            keeper_path: Some("/clickhouse/tables/{shard}/test".to_string()),
+            replica_name: Some("{replica}".to_string()),
+        };
+        assert!(engine.supports_select());
     }
 }
