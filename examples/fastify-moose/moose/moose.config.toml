@@ -1,0 +1,24 @@
+language = "Typescript"
+source_dir = "src"
+ 
+[clickhouse_config]
+db_name = "local"
+user = "panda"
+password = "pandapass"
+use_ssl = false
+host = "localhost"
+host_port = 18123
+native_port = 9000
+ 
+[http_server_config]
+host = "localhost"
+port = 4000
+management_port = 5001
+ 
+# Key dev workflow: rebuild dist/ after moose reloads
+on_reload_complete_script = "pnpm build"
+ 
+[features]
+streaming_engine = false
+data_model_v2 = true
+ddl_plan = true

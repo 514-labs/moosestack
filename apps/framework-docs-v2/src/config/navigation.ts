@@ -125,37 +125,50 @@ const moosestackNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
   },
 
-  // Quick Start (moved to top level)
+  // Separator
+  { type: "separator" },
+
+  // Getting Started (top-level paths)
+  { type: "label", title: "Build a New App" },
+
+  // Build a new app
   {
     type: "page",
-    slug: "moosestack/quickstart",
-    title: "Quick Start",
-    icon: IconDatabase,
+    slug: "moosestack/getting-started/quickstart",
+    title: "5 Minute Quickstart",
+    icon: IconRocket,
     languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/getting-started/quickstart",
-        title: "5-Minute Quickstart",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/getting-started/from-clickhouse",
-        title: "Use with Existing ClickHouse",
-        languages: ["typescript", "python"],
-      },
-    ],
   },
-
-  // Templates / Examples (standalone page, shown in MooseStack nav with arrow)
   {
     type: "page",
     slug: "templates",
-    title: "Templates / Examples",
+    title: "Browse Templates",
     icon: IconCode,
     languages: ["typescript", "python"],
     external: true,
+  },
+  // Connect to an existing ClickHouse
+  {
+    type: "page",
+    slug: "moosestack/getting-started/from-clickhouse",
+    icon: IconDatabase,
+    title: "Existing ClickHouse",
+    languages: ["typescript", "python"],
+  },
+  // Embed in an existing app
+  { type: "separator" },
+  { type: "label", title: "Add to Existing App" },
+  {
+    type: "page",
+    slug: "moosestack/getting-started/existing-app/next-js",
+    title: "Next.js",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/getting-started/existing-app/fastify",
+    title: "Fastify",
+    languages: ["typescript", "python"],
   },
 
   // Separator
@@ -184,70 +197,8 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconDatabase,
     languages: ["typescript", "python"],
   },
-
-  // Separator
   { type: "separator" },
-
-  // MooseStack in your App section
-  { type: "label", title: "MooseStack in your App" },
-  {
-    type: "page",
-    slug: "moosestack/data-sources",
-    title: "Data sources",
-    icon: IconGitCompare,
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "moosestack/app-api-frameworks",
-    title: "App / API frameworks",
-    icon: IconCode,
-    languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/nextjs",
-        title: "Next.js",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/express",
-        title: "Express",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/fastify",
-        title: "Fastify",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/koa",
-        title: "Koa",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/raw-nodejs",
-        title: "Raw Node.js",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/fastapi",
-        title: "FastAPI",
-        languages: ["python"],
-      },
-    ],
-  },
-
-  // Separator
-  { type: "separator" },
-
-  // Modules section
-  { type: "label", title: "Modules" },
+  { type: "label", title: "Moose Modules" },
   {
     type: "page",
     slug: "moosestack/olap",
@@ -440,40 +391,28 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/apis",
-    title: "Moose APIs",
+    title: "Moose APIs & Web Apps",
     icon: IconCode,
     languages: ["typescript", "python"],
     children: [
-      {
-        type: "page",
-        slug: "moosestack/apis/auth",
-        title: "Auth",
-        languages: ["typescript", "python"],
-      },
+      { type: "separator" },
+      { type: "label", title: "Native APIs" },
       {
         type: "page",
         slug: "moosestack/apis/ingest-api",
-        title: "Ingest New Data",
+        title: "Ingest API",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/apis/analytics-api",
-        title: "Expose Analytics",
+        title: "Analytics API",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/apis/trigger-api",
-        title: "Trigger Workflows",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Client Libraries" },
-      {
-        type: "page",
-        slug: "moosestack/apis/openapi-sdk",
-        title: "OpenAPI SDK",
+        title: "Workflow Trigger",
         languages: ["typescript", "python"],
       },
       {
@@ -481,6 +420,52 @@ const moosestackNavigationConfig: NavigationConfig = [
         slug: "moosestack/apis/admin-api",
         title: "Admin APIs",
         languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/apis/auth",
+        title: "Authentication",
+        languages: ["typescript", "python"],
+      },
+
+      // Modules section
+      { type: "separator" },
+      { type: "label", title: "Use Your Web Framework" },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks",
+        title: "Overview",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/express",
+        title: "Express",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/fastify",
+        title: "Fastify",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/koa",
+        title: "Koa",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/raw-nodejs",
+        title: "Raw Node.js",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/fastapi",
+        title: "FastAPI",
+        languages: ["python"],
       },
     ],
   },
