@@ -479,7 +479,7 @@ pub async fn handle_seed_command(
             Ok(RoutineSuccess::success(Message::new(
                 "Seeded".to_string(),
                 format!(
-                    "Seeded '{}' from '{}'\n{}\n\nVerify exact counts with:\n  moose query \"SELECT name AS table, total_rows FROM system.tables WHERE database = currentDatabase() ORDER BY total_rows DESC\"",
+                    "Seeded '{}' from '{}'\n{}\n\nVerify row counts with:\n  moose query \"SELECT name AS table, sum(rows) AS total_rows FROM system.parts WHERE database = currentDatabase() AND active = 1 GROUP BY name ORDER BY total_rows DESC\"",
                     local_db_name,
                     remote_db_name,
                     summary.join("\n")
