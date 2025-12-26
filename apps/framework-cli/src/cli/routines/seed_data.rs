@@ -392,7 +392,7 @@ async fn seed_clickhouse_operation(
     Ok((local_db, remote_db, summary))
 }
 
-/// Verifies row counts by querying system.tables for the local database
+/// Verifies row counts by querying system.parts for the local database
 async fn verify_row_counts(project: &Project) -> Result<String, RoutineFailure> {
     let local_clickhouse = ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
         RoutineFailure::error(Message::new(
@@ -401,9 +401,9 @@ async fn verify_row_counts(project: &Project) -> Result<String, RoutineFailure> 
         ))
     })?;
 
-    let db_name = &local_clickhouse.config().db_name;
+    let db_name = local_clickhouse.config().db_name.replace('\'', "''");
     let sql = format!(
-        "SELECT name AS table_name, total_rows FROM system.tables WHERE database = '{}' AND total_rows > 0 ORDER BY total_rows DESC",
+        "SELECT name AS table_name, sum(rows) AS total_rows FROM system.parts WHERE database = '{}' AND active = 1 GROUP BY name ORDER BY total_rows DESC",
         db_name
     );
 
