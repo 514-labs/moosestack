@@ -318,7 +318,10 @@ async fn seed_single_table(
         }
     }
 
-    Ok(format!("✓ {}: copied from remote", table.name))
+    Ok(format!(
+        "✓ {}: copied {} rows from remote",
+        table.name, copied_total
+    ))
 }
 
 /// Gets the list of tables to seed based on parameters
