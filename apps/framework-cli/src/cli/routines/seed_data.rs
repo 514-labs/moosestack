@@ -404,7 +404,7 @@ async fn verify_row_counts(project: &Project) -> Result<String, RoutineFailure> 
     })?;
 
     // Parse the tab-separated results into a formatted table
-    let mut output = String::from("Row counts:\n");
+    let mut output = String::from("Row counts after seeding:\n");
     for line in result.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -418,7 +418,7 @@ async fn verify_row_counts(project: &Project) -> Result<String, RoutineFailure> 
         }
     }
 
-    if output == "Row counts:\n" {
+    if output == "Row counts after seeding:\n" {
         output.push_str("  (no tables with data found)\n");
     }
 
@@ -516,7 +516,7 @@ pub async fn handle_seed_command(
                     Err(e) => format!("\nVerification failed: {}", e.message.details),
                 }
             } else {
-                "\nVerify exact counts with:\n  moose query \"SELECT name AS table_name, total_rows FROM system.tables WHERE database = currentDatabase() ORDER BY total_rows DESC\"".to_string()
+                String::new()
             };
 
             Ok(RoutineSuccess::success(Message::new(
