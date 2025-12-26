@@ -101,12 +101,14 @@ moose clean
 ### Seed (ClickHouse)
 Seed your local ClickHouse from a remote ClickHouse instance.
 ```bash
-moose seed clickhouse [--clickhouse-url <URL>] [--table <name>] [--limit <n> | --all]
+moose seed clickhouse [--clickhouse-url <URL>] [--table <name>] [--limit <n> | --all] [--order-by <clause>] [--verify | --no-verify]
 ```
 - `--clickhouse-url`: Remote ClickHouse connection URL. If omitted, the CLI uses `MOOSE_SEED_CLICKHOUSE_URL`.
 - `--table`: Seed only the specified table (default: all Moose tables).
 - `--limit`: Copy up to N rows (mutually exclusive with `--all`). Large limits are automatically batched.
 - `--all`: Copy entire table(s) in batches (mutually exclusive with `--limit`).
+- `--order-by`: ORDER BY clause for the query (e.g., `--order-by 'timestamp DESC'`).
+- `--verify` / `--no-verify`: Verify row counts after seeding by querying `system.tables` (default: `--verify`).
 
 **Connection String Format:**
 The connection string must use ClickHouse native protocol:

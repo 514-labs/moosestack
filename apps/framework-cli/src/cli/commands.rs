@@ -398,6 +398,9 @@ pub enum SeedSubcommands {
         /// Only seed a specific table (optional)
         #[arg(long, value_name = "TABLE_NAME")]
         table: Option<String>,
+        /// Verify row counts after seeding by querying system.tables (use --no-verify to skip)
+        #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
+        verify: bool,
     },
 }
 
