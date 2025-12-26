@@ -318,7 +318,10 @@ async fn seed_single_table(
         }
     }
 
-    Ok(format!("✓ {}: copied from remote", table.name))
+    Ok(format!(
+        "✓ {}: copied approximately {} rows",
+        table.name, copied_total
+    ))
 }
 
 /// Gets the list of tables to seed based on parameters
@@ -479,7 +482,7 @@ pub async fn handle_seed_command(
             Ok(RoutineSuccess::success(Message::new(
                 "Seeded".to_string(),
                 format!(
-                    "Seeded '{}' from '{}'\n{}",
+                    "Seeded '{}' from '{}'\n{}\n\nVerify exact counts with:\n  moose query \"SELECT name AS table, total_rows FROM system.tables WHERE database = currentDatabase() ORDER BY total_rows DESC\"",
                     local_db_name,
                     remote_db_name,
                     summary.join("\n")
