@@ -403,7 +403,7 @@ async fn verify_row_counts(project: &Project) -> Result<String, RoutineFailure> 
 
     let db_name = local_clickhouse.config().db_name.replace('\'', "''");
     let sql = format!(
-        "SELECT name AS table_name, sum(rows) AS total_rows FROM system.parts WHERE database = '{}' AND active = 1 GROUP BY name ORDER BY total_rows DESC",
+        "SELECT table AS table_name, sum(rows) AS total_rows FROM system.parts WHERE database = '{}' AND active = 1 GROUP BY table ORDER BY total_rows DESC",
         db_name
     );
 
