@@ -108,7 +108,7 @@ moose seed clickhouse [--clickhouse-url <URL>] [--table <name>] [--limit <n> | -
 - `--limit`: Copy up to N rows (mutually exclusive with `--all`). Large limits are automatically batched.
 - `--all`: Copy entire table(s) in batches (mutually exclusive with `--limit`).
 - `--order-by`: ORDER BY clause for the query (e.g., `--order-by 'timestamp DESC'`).
-- `--verify`: Verify row counts after seeding (default: `true`). Use `--verify=false` to skip.
+- `--verify`: Verify row counts after seeding (default: `true`). Counts are shown for the default database; use `moose query` for tables in other databases. Use `--verify=false` to skip.
 
 **Connection String Format:**
 The connection string must use ClickHouse native protocol:

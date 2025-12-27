@@ -530,7 +530,7 @@ pub async fn handle_seed_command(
                 String::new()
             };
 
-            let manual_hint = "\nYou can validate the seed manually using moose query:\n  $ moose query \"SELECT count(*) FROM <table>\"";
+            let manual_hint = "\nYou can validate the seed manually (e.g., for tables in non-default databases):\n  $ moose query \"SELECT count(*) FROM <table>\"";
 
             Ok(RoutineSuccess::success(Message::new(
                 "Seeded".to_string(),
