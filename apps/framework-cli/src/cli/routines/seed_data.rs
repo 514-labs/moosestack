@@ -519,14 +519,17 @@ pub async fn handle_seed_command(
                 String::new()
             };
 
+            let manual_hint = "\nYou can validate the seed manually using moose query:\n  $ moose query \"SELECT count(*) FROM <table>\"";
+
             Ok(RoutineSuccess::success(Message::new(
                 "Seeded".to_string(),
                 format!(
-                    "Seeded '{}' from '{}'\n{}{}",
+                    "Seeded '{}' from '{}'\n{}{}{}",
                     local_db_name,
                     remote_db_name,
                     summary.join("\n"),
-                    verification_output
+                    verification_output,
+                    manual_hint
                 ),
             )))
         }
