@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build && pnpm run index:search",
     "postbuild": "next-sitemap",
-    "index:search": "pagefind --site .next/server/app --output-path public/pagefind",
+    "generate:search-content": "tsx scripts/generate-search-index.ts",
+    "index:search": "pnpm run generate:search-content && pagefind --site .search-index --output-path public/pagefind",
     "start": "next start",
     "lint": "next lint",
     "test:snippets": "tsx scripts/test-snippets.ts"
