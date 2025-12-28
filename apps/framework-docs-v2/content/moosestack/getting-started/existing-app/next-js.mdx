@@ -1,6 +1,6 @@
 ---
 title: Embed ClickHouse analytics in Next.js
-description: Add MooseStack to an existing Next.js app to model, migrate, and query ClickHouse from Server Components (no separate backend service).
+description: Add MooseStack to an existing Next.js app with a sibling `moose/` workspace package for ClickHouse schema + queries (no separate Moose production service).
 ---
 
 import { Callout, FileTree, BulletPointsCard } from "@/components/mdx";
@@ -9,58 +9,64 @@ import { Callout, FileTree, BulletPointsCard } from "@/components/mdx";
 
 ## Overview
 
-This guide shows how to add MooseStack to an existing Next.js (App Router) app as a library. You keep Next.js as your app runtime, but you get ClickHouse schema management as TypeScript code, type-safe query helpers you can import into server-side handlers, and a production migration workflow—without deploying a separate backend service.
+This quickstart shows how to embed MooseStack into an existing Next.js (App Router) app so you can define ClickHouse schema in TypeScript and serve type-safe analytics from Server Components and Server Actions—while keeping Next.js as your only deployed backend.
 
-#### Intended audience
-Developers with an existing Next.js app who want to **embed schema management + type-safe ClickHouse queries** without deploying a separate backend service.
+From this you will be able to:
+- Model ClickHouse schema in TypeScript, alongside your Next.js code
+- Integrate type-safe ClickHouse queries into your Server Components and Server Actions
+- Generate/apply migrations against production ClickHouse when you're ready to deploy
 
-#### What you’ll accomplish
-
-By the end of this guide, you’ll be able to:
-
-- Model ClickHouse schema in TypeScript in a `moose/` directory (tables, views/materialized views)
-- Query ClickHouse from your Next.js server-side code using type-safe query helpers
-- Run migrations against production ClickHouse with the Moose CLI as part of your existing deployment workflow
+<Callout type="info" title="What runs in production?">
+Only your Next.js app runs in production. MooseStack is used as a library + CLI to manage schema/migrations and to generate an importable package (`moose/dist`) that your Next.js runtime uses to query ClickHouse.
+</Callout>
 
 ### Guide outline
 
-- **[Get started](#get-started):** install and configure MooseStack in your Next.js repo, then set up your project so you can import the compiled output from `@/moose`.
-- **[Model table](#model-table):** define your ClickHouse table schema in TypeScript in `moose/index.ts`.
-- **[Start local ClickHouse](#start-local-clickhouse):** run `moose dev` to spin up a local ClickHouse instance and automatically instantiate (and hot-reload) your TypeScript models against it.
-- **[Write queries](#write-queries):** create type-safe query helpers that use your models, and set up the Moose ClickHouse client to connect to your local ClickHouse instance.
-- **[Use in Next.js](#use-in-nextjs):** import the compiled query helpers from `@/moose` into Server Components / Route Handlers, run your app, and see the query results render in your pages.
-- **[Deploy to production](#deploy-to-production):** use the Moose CLI to run migrations against production ClickHouse, then update your production environment variables to point at it.
-
-{/* ### What you’ll change in your repo
-
-You’ll touch a few things: dependencies + scripts, `moose.config.toml`, `tsconfig.moose.json`, some `tsconfig.json` / `next.config.*` configuration, `.env.local`, and the `moose/` directory itself. */}
+- **[Get started](#get-started):** add `moose/` as a sibling workspace and configure dependencies + env vars.
+- **[Model table](#model-table):** define a table model (for example, `Events`) in `moose/src/index.ts`.
+- **[Start local ClickHouse](#start-local-clickhouse):** run `pnpm dev:moose`.
+- **[Use in Next.js](#use-in-nextjs):** define a client + query helper in `moose/`, then call it from a Server Component or Server Action.
+- **[Deploy to production](#deploy-to-production):** generate/apply migrations and set production env vars.
 
 ---
 
 ## Project structure
 
+This guide's examples mirror our reference project at `examples/nextjs-moose/next-app/`:
+
+- The Next.js app is at the repo root (`./`)
+- A sibling `moose/` workspace package that contains your ClickHouse models and query helpers
+
+If you're applying this to an existing repo with a different layout, keep the **package name** `moose` the same and adjust only the paths/commands.
+
 <FileTree>
-  <FileTree.Folder name="your-nextjs-app" defaultOpen>
-    <FileTree.Folder name="app" defaultOpen>
-        <FileTree.File name="page.tsx" />
-    </FileTree.Folder>
-    <FileTree.Folder name="moose" defaultOpen>
-      <FileTree.File name="index.ts" />
-      <FileTree.File name="client.ts" />
-      <FileTree.Folder name="queries" defaultOpen>
-        <FileTree.File name="overview-metrics.ts" />
-      </FileTree.Folder>
-    </FileTree.Folder>
-    <FileTree.Folder name="dist">
-      <FileTree.File name="(auto-generated by build:moose)" />
-    </FileTree.Folder>
-    <FileTree.File name="moose.config.toml" />
-    <FileTree.File name="tsconfig.moose.json" />
-    <FileTree.File name=".env.local" />
-    <FileTree.File name=".gitignore" />
+  <FileTree.Folder name="nextjs-app" defaultOpen>
+    <FileTree.File name="pnpm-workspace.yaml" />
     <FileTree.File name="package.json" />
     <FileTree.File name="tsconfig.json" />
     <FileTree.File name="next.config.ts" />
+    <FileTree.File name=".env.local (optional)" />
+    <FileTree.Folder name="app" defaultOpen>
+      <FileTree.File name="page.tsx" />
+      <FileTree.Folder name="actions" defaultOpen>
+        <FileTree.File name="metrics.ts" />
+      </FileTree.Folder>
+    </FileTree.Folder>
+    <FileTree.Folder name="moose" defaultOpen>
+      <FileTree.File name="moose.config.toml" />
+      <FileTree.File name="package.json" />
+      <FileTree.File name="tsconfig.json" />
+      <FileTree.Folder name="src" defaultOpen>
+        <FileTree.File name="client.ts" />
+        <FileTree.File name="index.ts" />
+        <FileTree.File name="models.ts" />
+        <FileTree.File name="queries.ts" />
+      </FileTree.Folder>
+      <FileTree.Folder name="dist">
+        <FileTree.File name="(auto-generated by build)" />
+      </FileTree.Folder>
+    </FileTree.Folder>
+    <FileTree.File name=".gitignore" />
   </FileTree.Folder>
 </FileTree>
 
@@ -93,180 +99,109 @@ You’ll touch a few things: dependencies + scripts, `moose.config.toml`, `tscon
       description: "Using the App Router",
     },
     {
-      title: "pnpm (or npm/yarn)",
-      description: "Package manager",
+      title: "pnpm",
+      description: "Package manager (workspaces)",
     },
   ]}
 />
 
 ---
 
-## Get Started
+## Get started
 
-This section gets MooseStack running inside your existing Next.js project. You’ll install dependencies, configure TypeScript + Next.js, and create the Moose config needed to run `moose dev` locally.
+This section adds a **`moose/` workspace package** next to your Next.js app and configures it for local development.
 
-### Install dependencies + add scripts
+### Confirm your workspace setup (pnpm)
 
-Add MooseStack and its build tools:
+This guide assumes you're using **pnpm workspaces**. Your Next.js app package will depend on your local `moose` workspace package.
 
-```bash title="Terminal" copy
-pnpm add @514labs/moose-lib ts-patch tsconfig-paths typia
-pnpm add -D @514labs/moose-cli@latest @types/node
+In the Next.js example, `pnpm-workspace.yaml` lives at the repo root and includes **two packages**: the Next.js app (`.`) and the Moose package (`moose`).
+
+```yaml title="pnpm-workspace.yaml (nextjs-app)"
+packages:
+  - "."
+  - "moose"
 ```
 
-Add these scripts to your `package.json`:
+<Callout type="info" title="Fast path: copy the `moose/` package from our example">
+If you want the quickest setup, you can pull the `moose/` workspace package from our Next.js example and drop it next to your Next.js app (as `./moose`):
 
-```json title="package.json"
+```bash title="Terminal" copy
+pnpm dlx tiged 514-labs/moose/examples/nextjs-moose/next-app/moose moose
+```
+
+Then install dependencies and build the `moose` package:
+
+```bash title="Terminal" copy
+pnpm install
+pnpm -C moose run build
+```
+
+</Callout>
+
+#### Add your moose workspace as a dependency
+
+Add `moose` as a workspace dependency in your **Next.js app workspace** `package.json`:
+
+```json title="(your Next.js app workspace)/package.json"
 {
-  "scripts": {
-    "build:moose:types": "tspc -p tsconfig.moose.json --declaration --emitDeclarationOnly",
-    "build:moose": "pnpm build:moose:types && tspc -p tsconfig.moose.json",
+  "dependencies": {
+    "moose": "workspace:*"
+  }
+}
+```
 
-    "dev:next": "next dev",
-    "dev:moose": "moose-cli dev",
+#### Configure repo root package.json
 
-    "moose": "moose-cli",
+<Callout type="warning" title="Ensure workspace root">
+If your Next.js app is not at the repo root, add these configurations to your **repo root** `package.json` (not your Next.js app's `package.json`).
+</Callout>
 
-    "build": "pnpm build:moose && next build"
-  },
+Add the required `pnpm.onlyBuiltDependencies` configuration to your **repo root** `package.json`. Optionally, you can also add convenience scripts to run Moose commands from the repo root:
 
+```json title="package.json (repo root)"
+{
   "pnpm": {
     "onlyBuiltDependencies": [
       "@confluentinc/kafka-javascript",
       "@514labs/kafka-javascript"
     ]
-  }
-}
-```
-
-<Callout type="warning" title="Why tspc instead of tsc?">
-MooseStack uses compiler plugins to inject schemas into your models at build time. The `ts-patch` package provides `tspc`, which supports these plugins.
-</Callout>
-
-### Configure TypeScript (import compiled Moose output)
-
-Moose code must be imported from the compiled `dist/` output.
-
-#### Update `tsconfig.json`
-
-Add a `ts-node` block at the top level (if not already present):
-
-```json title="tsconfig.json"
-{
-  "ts-node": {
-    "compilerOptions": {
-      "module": "commonjs",
-      "moduleResolution": "node"
-    }
-  }
-}
-```
-
-Add these path mappings (both are required):
-
-```json title="tsconfig.json"
-{
-  "compilerOptions": {
-    "paths": {
-      "@/*": ["./*"],
-      "@/moose": ["./dist/index"],
-      "@/moose/*": ["./dist/*"]
-    }
-  }
-}
-```
-
-Exclude `moose` and `dist` directories from Next’s TypeScript compilation (Next will import the pre-compiled output from `dist/`):
-
-```json title="tsconfig.json"
-{
-  "exclude": ["node_modules", "dist", "moose"]
-}
-```
-
-<Callout type="info" title="Why the @/moose alias matters">
-Always import from `@/moose` (or `@/moose/*`) so Next.js uses the compiled output in `dist/` with injected schemas.
-</Callout>
-
-
-Create `tsconfig.moose.json` in your project root:
-
-```json title="tsconfig.moose.json"
-{
-  "compilerOptions": {
-    "outDir": "dist",
-    "noEmit": false,
-    "declaration": true,
-    "declarationMap": true,
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "isolatedModules": false,
-    "strictNullChecks": true,
-    "esModuleInterop": true,
-    "plugins": [
-      { "transform": "typia/lib/transform" },
-      {
-        "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js",
-        "transformProgram": true
-      }
-    ]
   },
-  "include": ["moose/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "scripts": {
+    "dev:moose": "pnpm -C moose run dev",
+    "build:moose": "pnpm -C moose run build",
+    "moose": "pnpm -C moose run moose"
+  }
 }
 ```
 
-#### Configure Next.js (server bundling)
+### Configure Next.js (server bundling)
 
 Update `next.config.ts` to avoid bundling server-only dependencies:
 
 ```typescript title="next.config.ts"
-const nextConfig = {
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   serverExternalPackages: [
+    "@514labs/moose-lib",
     "@confluentinc/kafka-javascript",
-    "@514labs/moose-lib"
-  ]
+    "@514labs/kafka-javascript",
+  ],
 };
 
 export default nextConfig;
 ```
 
-#### Create Moose config + environment variables
+### Configure environment variables (Next.js runtime)
 
-Create `moose.config.toml` in your project root:
+This step is **required**: the `moose` package initializes its ClickHouse client from environment variables, so these values must be present when your Next.js server starts.
 
-```toml title="moose.config.toml"
-language = "Typescript"
-source_dir = "moose"
+Create or update your Next.js app's `.env.local` file with the following ClickHouse connection details for your local development environment:
 
-[clickhouse_config]
-db_name = "local"
-user = "panda"
-password = "pandapass"
-use_ssl = false
-host = "localhost"
-host_port = 18123
-native_port = 9000
-
-[http_server_config]
-host = "localhost"
-port = 4000
-management_port = 5001
-
-# Key dev workflow: rebuild dist/ after moose reloads
-on_reload_complete_script = "pnpm build:moose"
-
-[features]
-streaming_engine = false
-data_model_v2 = true
-```
-Create or update ` .env.local` with your ClickHouse connection details:
-
-```bash title=".env.local"
-# Required: Run Moose in client-only mode
+```bash title=".env.local" copy
 MOOSE_CLIENT_ONLY=true
 
-# ClickHouse connection (matches moose.config.toml)
 MOOSE_CLICKHOUSE_CONFIG__DB_NAME=local
 MOOSE_CLICKHOUSE_CONFIG__HOST=localhost
 MOOSE_CLICKHOUSE_CONFIG__PORT=18123
@@ -275,11 +210,16 @@ MOOSE_CLICKHOUSE_CONFIG__PASSWORD=pandapass
 MOOSE_CLICKHOUSE_CONFIG__USE_SSL=false
 ```
 
-Update `.gitignore` to exclude MooseStack generated files:
+<Callout type="info" title="Configuring environment variables in Next.js">
+Next.js automatically loads environment variables from `.env.local` (and other `.env*` files) at runtime. These variables are available in `process.env` when your Server Components and Server Actions execute.
+</Callout>
+
+Update your `.gitignore` to exclude MooseStack generated files:
 
 ```text title=".gitignore"
 # MooseStack generated files
-/dist
+# ignore your moose workspace build output
+/moose/dist
 .moose/
 .ts-node/
 ```
@@ -288,177 +228,143 @@ Update `.gitignore` to exclude MooseStack generated files:
 
 ## Model table
 
-In this step you’ll define your first ClickHouse model as an `OlapTable` object. MooseStack uses these models as the source of truth for schema management. Create `moose/models/events.ts` with the following content:
+In this step you'll define your first ClickHouse model as an `OlapTable` object.
 
-```ts title="moose/models/events.ts"
+The starter `moose` package you copied into your repo already includes an example model at `moose/src/models.ts`:
+
+```ts title="moose/src/models.ts"
 import { OlapTable } from "@514labs/moose-lib";
 
 export interface EventModel {
-  transaction_id: string;
-  event_type: string;
-  product_id: number;
-  customer_id: string;
+  id: string;
   amount: number;
-  quantity: number;
   event_time: Date;
-  customer_email: string;
-  customer_name: string;
-  product_name: string;
-  status: string; // e.g. 'completed', 'active', 'inactive'
+  status: 'completed' | 'active' | 'inactive';
 }
 
 export const Events = new OlapTable<EventModel>("events", {
-  orderByFields: ["event_time"]
+  orderByFields: ["event_time"],
 });
 ```
+
+<Callout type="info" title="Adding more tables">
+Add more tables by exporting additional `OlapTable` objects from `moose/src/models.ts` (or create separate model files and re-export them). See [OlapTable Reference](/moosestack/olap/model-table).
+</Callout>
 
 ---
 
 ## Start local ClickHouse
 
-Now start the Moose Runtime in `dev` mode. This instantly brings up a local ClickHouse instance (via Docker) and automatically instantiates your models against it, giving you a fast feedback loop for iterating on your schema.
+Start the Moose Runtime in `dev` mode. This brings up a local ClickHouse instance (via Docker) and hot-reloads schema changes to it whenever you edit your models.
 
 Leave this running in its own terminal for the rest of the guide:
 
 ```bash title="Terminal" copy
+# run this from your repo root
 pnpm dev:moose
 ```
 
-As you update models and query helpers in `moose/`, Moose will apply schema changes to this instance and (based on your `moose.config.toml`) rebuild `dist/` after reload so Next.js can import the compiled output via `@/moose`.
+The provided `moose` workspace is configured to automatically rebuild the package for use inside your Next.js app whenever you make changes to your models.
+
+```toml title="moose/moose.config.toml"
+[http_server_config]
+on_reload_complete_script = "pnpm build"
+```
+
+See [Dev Environment Configuration](/moosestack/configuration/dev-environment) for more details.
 
 ---
 
-<span id="write-queries" />
+## Use in Next.js
 
-## Write queries
+#### 1) Set up a shared ClickHouse client in `moose/`
 
-This step is crucial to facilitate the interaction between your Next.js app and Clickhouse.
+First, create a shared ClickHouse client initializer inside your `moose` package. This keeps connection logic in one place and lets Next.js Server Components/Actions call simple query helpers.
 
-With the local ClickHouse instance running, you’ll instantiate the Moose ClickHouse client to connect to it. This is a singleton that will be used to connect to the ClickHouse instance for the duration of the application's lifecycle. You'll then leverage this client to write type-safe query helpers that use your `OlapTable` objects. 
+```ts title="moose/src/client.ts"
+import { getMooseClients, Sql, QueryClient } from "@514labs/moose-lib";
 
-#### Create a ClickHouse client helper
-
-Create `moose/client.ts`:
-
-```ts title="moose/client.ts"
-import { getMooseClients, Sql } from "@514labs/moose-lib";
-
-let clientsPromise:
-  | Promise<Awaited<ReturnType<typeof getMooseClients>>>
-  | undefined;
-
-async function getMoose() {
-  clientsPromise ??= getMooseClients({
+async function getClickhouseClient(): Promise<QueryClient> {
+  const { client } = await getMooseClients({
     host: process.env.MOOSE_CLICKHOUSE_CONFIG__HOST ?? "localhost",
     port: process.env.MOOSE_CLICKHOUSE_CONFIG__PORT ?? "18123",
     username: process.env.MOOSE_CLICKHOUSE_CONFIG__USER ?? "panda",
     password: process.env.MOOSE_CLICKHOUSE_CONFIG__PASSWORD ?? "pandapass",
     database: process.env.MOOSE_CLICKHOUSE_CONFIG__DB_NAME ?? "local",
-    useSSL:
-      (process.env.MOOSE_CLICKHOUSE_CONFIG__USE_SSL ?? "false") === "true",
+    useSSL: (process.env.MOOSE_CLICKHOUSE_CONFIG__USE_SSL ?? "false") === "true",
   });
 
-  return await clientsPromise;
+  return client.query;
 }
 
 export async function executeQuery<T>(query: Sql): Promise<T[]> {
-  const { client } = await getMoose();
-  const result = await client.query.execute(query);
+  const queryClient = await getClickhouseClient();
+  const result = await queryClient.execute(query);
   return result.json();
 }
 ```
 
-#### Create a query helper
+#### 2) Define a query helper in `moose/src/queries.ts`
 
-Create a file called `moose/queries/overview-metrics.ts` with the following content:
+Next, define a query helper that uses the shared client and export it from `"moose"`. The example defines a very basic query for you to use as a starting point:
 
-```ts title="moose/queries/overview-metrics.ts"
+```ts title="moose/src/queries.ts"
 import { sql } from "@514labs/moose-lib";
-import { Events } from "../models/events";
-import { executeQuery } from "../client";
+import { Events, EventModel } from "./models";
+import { executeQuery } from "./client";
 
-export interface DateRange {
-  start: Date;
-  end: Date;
-}
-
-export const getOverviewMetrics = async (dateRange?: DateRange) => {
-  const startDate = dateRange?.start.toISOString().split("T")[0];
-  const endDate = dateRange?.end.toISOString().split("T")[0];
-
-  interface SalesRow {
-    total_revenue: number;
-    total_sales: number;
-  }
-
-  const dateFilter =
-    dateRange ?
-      sql`AND event_time >= toDate(${startDate!}) AND event_time <= toDate(${endDate!})`
-    : sql``;
-
-  const sales = await executeQuery<SalesRow>(
-    sql`
-      SELECT
-        sum(amount) as total_revenue,
-        count(*) as total_sales
-      FROM ${Events}
-      WHERE event_type = 'purchase' ${dateFilter}
-    `,
+export async function getEvents(limit: number = 10): Promise<EventModel[]> {
+  return await executeQuery<EventModel>(
+    sql`SELECT * FROM ${Events} ORDER BY ${Events.columns.event_time} DESC LIMIT ${limit}`,
   );
-
-  const activeUsers = await executeQuery<{
-    active_users: number;
-  }>(sql`
-    SELECT uniq(customer_id) as active_users
-    FROM ${Events}
-    WHERE event_time > now() - interval 1 hour
-  `);
-
-  return {
-    totalRevenue: sales?.[0]?.total_revenue ?? 0,
-    totalSales: sales?.[0]?.total_sales ?? 0,
-    activeNow: activeUsers?.[0]?.active_users ?? 0,
-  };
-};
+}
 ```
 
-#### Export from `moose/index.ts`
+#### 3) Export from `moose/src/index.ts`
 
-Create `moose/index.ts` to re-export your models and queries:
+Make sure your `moose` package exports the models and queries:
 
-```ts title="moose/index.ts"
-export * from "./models/events";
-export * from "./queries/overview-metrics";
+```ts title="moose/src/index.ts"
+export * from "./models";
+export * from "./queries";
 ```
 
----
+#### 4) Import and use the helper in Next.js
 
-## Use in Next Page
+Now your Next.js app can import and use the helper from `"moose"` in any Server Component or Server Action, like this:
 
-Keep `pnpm dev:moose` running. In a second terminal, start your Next.js app:
+**Server Component example:**
 
-```bash title="Terminal" copy
-pnpm dev:next
-```
-
-Now import and call your Moose query helper from a **Server Component** in your Next.js app:
-
-```typescript title="app/analytics/page.tsx"
-import { getOverviewMetrics } from "@/moose";
+```ts title="app/analytics/page.tsx"
+import { getEvents } from "moose";
 
 export default async function AnalyticsPage() {
-  const { totalRevenue, totalSales, activeNow } = await getOverviewMetrics();
+  const events = await getEvents(10);
 
   return (
     <div>
-      <h1>Analytics</h1>
-      <div>
-        <p>Total Revenue: {totalRevenue}</p>
-        <p>Total Sales: {totalSales}</p>
-        <p>Active Users (last hour): {activeNow}</p>
-      </div>
+      <h1>Recent Events</h1>
+      <ul>
+        {events.map((event) => (
+          <li key={event.id}>
+            {event.id}: {event.amount} ({event.status})
+          </li>
+        ))}
+      </ul>
     </div>
   );
+}
+```
+
+**Server Action example:**
+
+```ts title="app/actions/metrics.ts"
+"use server";
+
+import { getEvents } from "moose";
+
+export async function getRecentEvents(limit: number = 10) {
+  return await getEvents(limit);
 }
 ```
 
@@ -466,26 +372,20 @@ export default async function AnalyticsPage() {
 Do not call ClickHouse from the browser. Use Server Components, Route Handlers, or Server Actions so credentials remain server-side.
 </Callout>
 
-**Success checklist:**
-
-- `pnpm build:moose` creates `dist/index.js` (and types)
-- Next can resolve `@/moose`
-- Your `/analytics` page renders without runtime errors
-
 ---
 
-## Deploy to Production
+## Deploy to production
 
-In this setup, your Next.js app connects directly to ClickHouse—there’s no separate production Moose Runtime to deploy. You just need to:
+There's no separate production Moose Runtime to deploy. You just need to:
 
 1. Apply your schema to production ClickHouse
-2. Configure your Next.js production environment with production credentials
+2. Configure your production environment with production credentials
 
 #### Enable planned migrations
 
-Add `ddl_plan = true` to `[features]` in `moose.config.toml`:
+Make sure `ddl_plan = true` is set in `[features]` in `moose/moose.config.toml`:
 
-```toml title="moose.config.toml"
+```toml title="moose/moose.config.toml"
 [features]
 streaming_engine = false
 data_model_v2 = true
@@ -493,6 +393,10 @@ ddl_plan = true
 ```
 
 #### Generate a migration plan
+
+<Callout type="warning" title="Important: Use production credentials">
+This command connects to the ClickHouse instance you specify in `--clickhouse-url` and generates a migration plan *for that database*. Use your **production** ClickHouse URL + credentials if you intend to deploy these schema changes to production.
+</Callout>
 
 ```bash title="Terminal" copy
 pnpm moose generate migration \
@@ -511,7 +415,7 @@ pnpm moose migrate \
 
 #### Configure production environment
 
-Set these in your deployment platform (Vercel, Railway, etc.):
+In production, set these environment variables in your deployment platform (Vercel, Railway, etc.). Make sure to use your **production** ClickHouse URL + credentials.
 
 ```bash title="Production Environment Variables"
 MOOSE_CLIENT_ONLY=true
@@ -527,19 +431,14 @@ MOOSE_CLICKHOUSE_CONFIG__USE_SSL=true
 
 ## Troubleshooting
 
-**"Module not found: Can't resolve '@/moose/..."**
-- Run `pnpm build:moose` to generate `dist/`
-- Verify `tsconfig.json` has both `"@/moose": ["./dist/index"]` and `"@/moose/*": ["./dist/*"]`
+If you see import errors for `import ... from "moose"`, confirm:
 
-**"Supply the type param T so that the schema is inserted..."**
-- Check imports use `@/moose/*`, not `moose/*`
-- Ensure `ts-patch` is installed and `tspc` is used in build scripts
-
-**"ERR_UNSUPPORTED_DIR_IMPORT"**
-- Add the `ts-node` block to `tsconfig.json` (see Configure TypeScript above)
+- Your root `pnpm-workspace.yaml` includes both your Next.js app and the `moose` workspace
+- You ran `pnpm install` so `workspace:*` links are created
+- You ran `pnpm -C moose run build` (or your equivalent script) to generate `moose/dist/`
 
 **Native module errors (NODE_MODULE_VERSION)**
-- Ensure Node.js v20, delete `node_modules`, run `pnpm install`
+- Ensure Node.js v20+, delete `node_modules`, run `pnpm install`
 
 ---
 
