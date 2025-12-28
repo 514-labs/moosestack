@@ -5,6 +5,7 @@ import { FilterBar } from "@/components/filter-bar";
 import { DashboardCharts } from "@/components/dashboard-charts";
 import { SeedButton } from "@/components/seed-button";
 import { DashboardStats } from "@/components/dashboard-stats";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Page() {
   return (
@@ -21,6 +22,7 @@ export default function Page() {
             </div>
             <div className="flex items-center gap-2">
               <SeedButton />
+              <ThemeToggle />
               <Button variant="outline">
                 <RefreshCwIcon />
                 Refresh

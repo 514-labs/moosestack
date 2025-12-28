@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -10,6 +9,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 function formatDateForInput(dateString: string): string {
   if (!dateString) return "";
@@ -120,15 +121,14 @@ export function DatePickerInput({
           }}
         />
         <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              className="absolute top-1/2 right-2 size-6 -translate-y-1/2"
-            >
-              <CalendarIcon className="size-3.5" />
-              <span className="sr-only">Select date</span>
-            </Button>
+          <PopoverTrigger
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon" }),
+              "absolute top-1/2 right-2 size-6 -translate-y-1/2",
+            )}
+          >
+            <CalendarIcon className="size-3.5" />
+            <span className="sr-only">Select date</span>
           </PopoverTrigger>
           <PopoverContent
             className="w-auto overflow-hidden p-0"
