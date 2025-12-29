@@ -6,10 +6,15 @@ type HasFunctionField<T> =
   T extends object ?
     {
       [K in keyof T]: T[K] extends Function ? true : false;
-    }[keyof T] extends false ?
+    }[keyof T] extends false | undefined ?
       false
     : true
   : false;
+
+// google homomorphic type for a rabbit hole
+type OptionalToUndefined<T> = { [K in {} & keyof T]: T[K] };
+
+type StripInterfaceFields<T> = { [K in keyof T]: StripDateIntersection<T[K]> };
 
 /**
  * `Date & ...` is considered "nonsensible intersection" by typia,
@@ -31,7 +36,7 @@ export type StripDateIntersection<T> =
     : T // this catchall should be unreachable
   : // do not touch other classes
   true extends HasFunctionField<T> ? T
-  : T extends object ? { [K in keyof T]: StripDateIntersection<T[K]> }
+  : T extends object ? StripInterfaceFields<OptionalToUndefined<T>>
   : T;
 
 // infer fails in a recursive definition if an intersection type tag is present
