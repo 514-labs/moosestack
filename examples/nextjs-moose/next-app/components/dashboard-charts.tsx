@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { TimeSeriesChart } from "@/components/time-series-chart";
-import { ChartPieDonutText } from "@/components/donut-chart";
+import { DonutChart } from "@/components/donut-chart";
 import { useDateFilter } from "@/lib/hooks";
 import { useMetrics, useEventsOverTime } from "@/lib/hooks";
 import type { EventsOverTimeBucket } from "@/app/actions/events";
@@ -39,23 +39,25 @@ export function DashboardCharts() {
 
   const { data: metrics } = useMetrics(startDate, endDate);
 
-  const pieData = metrics?.eventsByStatus ?? [];
+  const eventStatusData = metrics?.eventsByStatus ?? [];
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {/* Time Series Chart */}
-      <div className="lg:col-span-2">
-        <TimeSeriesChart
-          title="Events over time"
-          description="COUNT(events) grouped by time bucket"
-          data={timeSeriesData}
-        />
-      </div>
+      <TimeSeriesChart
+        title="Events over time"
+        description="COUNT(events) grouped by time bucket"
+        data={timeSeriesData}
+        chartId="events-over-time"
+        gridSpan={{ lg: 2 }}
+      />
 
-      {/* Events by Status Pie Chart */}
-      <ChartPieDonutText
-        data={pieData}
+      {/* Events by Status Chart */}
+      <DonutChart
+        data={eventStatusData}
         totalEvents={metrics?.totalEvents ?? 0}
+        chartId="events-by-status"
+        gridSpan={{ lg: 1 }}
       />
     </div>
   );

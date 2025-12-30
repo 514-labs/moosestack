@@ -1,23 +1,13 @@
 "use client";
 
-import { Label, Pie, PieChart } from "recharts";
-
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  CardFooter,
-} from "@/components/ui/card";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
+import * as React from "react";
+import { Pie, PieChart, ResponsiveContainer, Cell, Sector } from "recharts";
+import { type ChartConfig } from "@/components/ui/chart";
+import { cn } from "@/lib/utils";
+import { ChartLine } from "lucide-react";
+import { DashboardChartWidget } from "@/components/dashboard-chart-widget";
+import { chartTypeConfigs } from "@/components/chart-type-configs";
+import type { ChartDisplayOptions } from "./chart-types";
 
 interface PieData {
   status: string;
@@ -43,100 +33,216 @@ const chartConfig = {
 
 const ALL_STATUSES: Status[] = ["completed", "active", "inactive"];
 
-export function ChartPieDonutText({
-  data,
+interface ChartDataItem {
+  name: string;
+  value: number;
+  color: string;
+}
+
+interface PieChartVisualProps {
+  chartData: ChartDataItem[];
+  activeIndex: number | null;
+  onPieEnter: (_: unknown, index: number) => void;
+  onPieLeave: () => void;
+  renderActiveShape: (props: unknown) => React.ReactElement;
+}
+
+function PieChartVisual({
+  chartData,
+  activeIndex,
+  onPieEnter,
+  onPieLeave,
+  renderActiveShape,
+}: PieChartVisualProps) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <PieChart>
+        <Pie
+          data={chartData}
+          cx="50%"
+          cy="50%"
+          innerRadius="42%"
+          outerRadius="70%"
+          paddingAngle={2}
+          dataKey="value"
+          strokeWidth={0}
+          activeIndex={activeIndex !== null ? activeIndex : undefined}
+          activeShape={renderActiveShape}
+          onMouseEnter={onPieEnter}
+          onMouseLeave={onPieLeave}
+        >
+          {chartData.map((entry: ChartDataItem, index: number) => (
+            <Cell key={`cell-${index}`} fill={entry.color} />
+          ))}
+        </Pie>
+      </PieChart>
+    </ResponsiveContainer>
+  );
+}
+
+interface ChartCenterLabelProps {
+  totalEvents: number;
+}
+
+function ChartCenterLabel({ totalEvents }: ChartCenterLabelProps) {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+      <span className="text-lg @[400px]:text-xl font-semibold">
+        {totalEvents.toLocaleString()}
+      </span>
+      <span className="text-[10px] @[400px]:text-xs text-muted-foreground">
+        Total Events
+      </span>
+    </div>
+  );
+}
+
+interface ChartLabelsProps {
+  chartData: ChartDataItem[];
+  activeIndex: number | null;
+  onItemHover: (index: number | null) => void;
+  showLabels?: boolean;
+}
+
+function ChartLabels({
+  chartData,
+  activeIndex,
+  onItemHover,
+  showLabels = true,
+}: ChartLabelsProps) {
+  if (!showLabels) {
+    return null;
+  }
+  return (
+    <div className="flex-1 w-full grid grid-cols-1 gap-2 @[400px]:gap-4">
+      {chartData.map((item: ChartDataItem, index: number) => (
+        <div
+          key={item.name}
+          className={cn(
+            "flex items-center gap-2 @[400px]:gap-2.5 cursor-pointer transition-opacity",
+            activeIndex !== null && activeIndex !== index ? "opacity-50" : "",
+          )}
+          onMouseEnter={() => onItemHover(index)}
+          onMouseLeave={() => onItemHover(null)}
+        >
+          <div
+            className="w-1 h-4 @[400px]:h-5 rounded-sm shrink-0"
+            style={{ backgroundColor: item.color }}
+          />
+          <span className="flex-1 text-xs @[400px]:text-sm text-muted-foreground truncate">
+            {item.name}
+          </span>
+          <span className="text-xs @[400px]:text-sm font-semibold tabular-nums">
+            {item.value.toLocaleString()}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function DonutChart({
+  data: eventStatusData,
   totalEvents,
+  chartId = "events-by-status",
+  gridSpan,
 }: {
   data: PieData[];
   totalEvents: number;
+  chartId?: string;
+  gridSpan?: { sm?: number; md?: number; lg?: number; xl?: number };
 }) {
-  const chartData = ALL_STATUSES.map((status) => {
-    const dataItem = data.find((item) => item.status === status);
-    return {
-      status,
-      count: dataItem?.count ?? 0,
-      fill: chartConfig[status].color,
+  const [activeIndex, setActiveIndex] = React.useState<number | null>(null);
+
+  // Transform event status data into chart format
+  const chartData: ChartDataItem[] = React.useMemo(
+    () =>
+      ALL_STATUSES.map((status) => {
+        const dataItem = eventStatusData.find((item) => item.status === status);
+        const count = dataItem?.count ?? 0;
+        return {
+          name: chartConfig[status].label,
+          value: count,
+          color: chartConfig[status].color,
+        };
+      }),
+    [eventStatusData],
+  );
+
+  const handlePieEnter = React.useCallback((_: unknown, index: number) => {
+    setActiveIndex(index);
+  }, []);
+
+  const handlePieLeave = React.useCallback(() => {
+    setActiveIndex(null);
+  }, []);
+
+  const handleItemHover = React.useCallback((index: number | null) => {
+    setActiveIndex(index);
+  }, []);
+
+  const renderActiveShape = React.useCallback((props: unknown) => {
+    const typedProps = props as {
+      cx: number;
+      cy: number;
+      innerRadius: number;
+      outerRadius: number;
+      startAngle: number;
+      endAngle: number;
+      fill: string;
     };
-  });
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } =
+      typedProps;
+    return (
+      <g>
+        <Sector
+          cx={cx}
+          cy={cy}
+          innerRadius={innerRadius}
+          outerRadius={outerRadius + 8}
+          startAngle={startAngle}
+          endAngle={endAngle}
+          fill={fill}
+        />
+      </g>
+    );
+  }, []);
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="items-center pb-0">
-        <CardTitle>Events by Status</CardTitle>
-        <CardDescription>Distribution of event statuses</CardDescription>
-      </CardHeader>
-      <CardContent className="flex-1 pb-0">
-        <ChartContainer
-          config={chartConfig}
-          className="mx-auto aspect-square max-h-[250px]"
-        >
-          <PieChart>
-            <ChartTooltip
-              cursor={false}
-              content={<ChartTooltipContent hideLabel />}
+    <DashboardChartWidget
+      chartId={chartId}
+      chartType="donut"
+      title="Events by Status"
+      icon={
+        <ChartLine className="size-4 sm:size-[18px] text-muted-foreground" />
+      }
+      gridSpan={gridSpan}
+      chartConfig={chartTypeConfigs.donut}
+      chartData={eventStatusData}
+      className="@container flex flex-col gap-4 w-full xl:w-[410px]"
+      triggerSize="sm"
+    >
+      {({ options }: { options: ChartDisplayOptions }) => (
+        <div className="flex flex-col @[400px]:flex-row items-center gap-4 @[400px]:gap-6">
+          <div className="relative shrink-0 size-[220px]">
+            <PieChartVisual
+              chartData={chartData}
+              activeIndex={activeIndex}
+              onPieEnter={handlePieEnter}
+              onPieLeave={handlePieLeave}
+              renderActiveShape={renderActiveShape}
             />
-            <Pie
-              data={chartData}
-              dataKey="count"
-              nameKey="status"
-              innerRadius={60}
-              strokeWidth={5}
-            >
-              <Label
-                content={({ viewBox }) => {
-                  if (
-                    !viewBox ||
-                    !("cx" in viewBox) ||
-                    !("cy" in viewBox) ||
-                    typeof viewBox.cx !== "number" ||
-                    typeof viewBox.cy !== "number"
-                  ) {
-                    return null;
-                  }
-
-                  const { cx, cy } = viewBox;
-
-                  return (
-                    <text
-                      x={cx}
-                      y={cy}
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                    >
-                      <tspan
-                        x={cx}
-                        y={cy}
-                        className="fill-foreground text-3xl font-bold"
-                      >
-                        {totalEvents.toLocaleString()}
-                      </tspan>
-                      <tspan
-                        x={cx}
-                        y={cy + 24}
-                        className="fill-muted-foreground text-sm"
-                      >
-                        Events
-                      </tspan>
-                    </text>
-                  );
-                }}
-              />
-            </Pie>
-          </PieChart>
-        </ChartContainer>
-      </CardContent>
-      <CardFooter className="flex flex-col items-start gap-2 text-sm">
-        {chartData.map((item) => (
-          <div key={item.status} className="flex items-center gap-2">
-            <div
-              className="w-2 h-2 rounded-sm"
-              style={{ backgroundColor: item.fill }}
-            />
-            <span>{item.status}</span>
-            <span className="text-muted-foreground">{item.count}</span>
+            <ChartCenterLabel totalEvents={totalEvents} />
           </div>
-        ))}
-      </CardFooter>
-    </Card>
+
+          <ChartLabels
+            chartData={chartData}
+            activeIndex={activeIndex}
+            onItemHover={handleItemHover}
+            showLabels={options.showLabels ?? true}
+          />
+        </div>
+      )}
+    </DashboardChartWidget>
   );
 }
