@@ -214,6 +214,7 @@ export const TYPESCRIPT_TEST_SCHEMAS: ExpectedTableSchema[] = [
       { name: "booleanField", type: "Bool" },
       { name: "optionalString", type: "Nullable(String)", nullable: true },
       { name: "nullableNumber", type: "Nullable(Float64)", nullable: true },
+      { name: "optionalTaggedDate", type: /DateTime64\(3/, nullable: true },
     ],
   },
   {
