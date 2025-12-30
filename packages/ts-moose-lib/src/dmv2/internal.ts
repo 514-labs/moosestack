@@ -1219,16 +1219,37 @@ const loadIndex = () => {
     require(`${process.cwd()}/${getSourceDir()}/index.ts`);
   } catch (error) {
     let hint: string | undefined;
+    let includeDetails = true;
     const details = error instanceof Error ? error.message : String(error);
-    if (details.includes("ERR_REQUIRE_ESM") || details.includes("ES Module")) {
+
+    // Check for typia configuration errors
+    if (
+      details.includes("no transform has been configured") ||
+      details.includes("NoTransformConfigurationError")
+    ) {
+      hint =
+        "🔴 Typia Transformation Error\n\n" +
+        "This is likely a bug in Moose. The Typia type transformer failed to process your code.\n\n" +
+        "Please report this issue:\n" +
+        "  • Moose Slack: https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg\n" +
+        "  • Include the stack trace below and the file being processed\n\n";
+      includeDetails = false;
+    } else if (
+      details.includes("ERR_REQUIRE_ESM") ||
+      details.includes("ES Module")
+    ) {
       hint =
         "The file or its dependencies are ESM-only. Switch to packages that dual-support CJS & ESM, or upgrade to Node 22.12+. " +
         "If you must use Node 20, you may try Node 20.19\n\n";
     }
 
-    const errorMsg = `${hint ?? ""}${details}`;
-    const cause = error instanceof Error ? error : undefined;
-    throw new Error(errorMsg, { cause });
+    if (hint === undefined) {
+      throw error;
+    } else {
+      const errorMsg = includeDetails ? `${hint}${details}` : hint;
+      const cause = error instanceof Error ? error : undefined;
+      throw new Error(errorMsg, { cause });
+    }
   }
 };
 
