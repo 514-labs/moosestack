@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,61 @@ type CategoryFilter = ("starter" | "framework" | "example")[];
 type TypeFilter = "template" | "app" | null;
 
 export function TemplateGrid({ items, className }: TemplateGridProps) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [searchQuery, setSearchQuery] = React.useState("");
+
+  // Get search query from URL params
+  const urlSearchQuery = searchParams.get("q") || "";
+
+  // Local state for input value (synced with URL)
+  const [inputValue, setInputValue] = React.useState(urlSearchQuery);
+
+  // Sync local state when URL changes (e.g., browser back/forward)
+  React.useEffect(() => {
+    setInputValue(urlSearchQuery);
+  }, [urlSearchQuery]);
+
+  // Update URL with debouncing
+  const updateUrlRef = React.useRef<NodeJS.Timeout | null>(null);
+  const updateUrl = React.useCallback(
+    (query: string) => {
+      if (updateUrlRef.current) {
+        clearTimeout(updateUrlRef.current);
+      }
+      updateUrlRef.current = setTimeout(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        if (query.trim()) {
+          params.set("q", query);
+        } else {
+          params.delete("q");
+        }
+        router.push(`${pathname}?${params.toString()}`, { scroll: false });
+      }, 300);
+    },
+    [router, pathname, searchParams],
+  );
+
+  // Handle input change
+  const handleSearchChange = React.useCallback(
+    (value: string) => {
+      setInputValue(value);
+      updateUrl(value);
+    },
+    [updateUrl],
+  );
+
+  // Handle clear button
+  const handleClear = React.useCallback(() => {
+    setInputValue("");
+    // Update URL immediately on clear
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("q");
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [router, pathname, searchParams]);
+
+  // Use local input value for filtering (instant feedback)
+  const searchQuery = inputValue;
 
   // Read filters from URL params (set by TemplatesSideNav)
   const typeFilter = React.useMemo(() => {
@@ -125,16 +178,16 @@ export function TemplateGrid({ items, className }: TemplateGridProps) {
           <Input
             type="text"
             placeholder="Search templates and apps..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={inputValue}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9 pr-9"
           />
-          {searchQuery && (
+          {inputValue && (
             <Button
               variant="ghost"
               size="icon"
               className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2"
-              onClick={() => setSearchQuery("")}
+              onClick={handleClear}
               aria-label="Clear search"
             >
               <IconX className="h-4 w-4" />
