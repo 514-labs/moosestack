@@ -338,12 +338,6 @@ fn validate_table_databases_and_clusters(
             SerializableOlapOperation::RawSql { .. } => {
                 // RawSql doesn't reference specific tables/databases/clusters, skip validation
             }
-            SerializableOlapOperation::CreateMaterializedView { .. }
-            | SerializableOlapOperation::DropMaterializedView { .. }
-            | SerializableOlapOperation::CreateView { .. }
-            | SerializableOlapOperation::DropView { .. } => {
-                // Moose does not have cluster support for MV/View, skip validation
-            }
         }
     }
 
@@ -598,15 +592,6 @@ pub async fn execute_migration(
             let target_sql_resource_ids: HashSet<String> =
                 current_infra_map.sql_resources.keys().cloned().collect();
 
-            let target_materialized_view_ids: HashSet<String> = current_infra_map
-                .materialized_views
-                .keys()
-                .cloned()
-                .collect();
-
-            let target_view_ids: HashSet<String> =
-                current_infra_map.views.keys().cloned().collect();
-
             let olap_client = create_client(clickhouse_config.clone());
 
             // We already have the current_infra_map loaded, so reconcile it directly
@@ -616,8 +601,6 @@ pub async fn execute_migration(
                 &current_infra_map,
                 &target_table_ids,
                 &target_sql_resource_ids,
-                &target_materialized_view_ids,
-                &target_view_ids,
                 olap_client,
             )
             .await
