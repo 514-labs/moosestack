@@ -1,0 +1,6 @@
+packages:
+  - .
+  - moose
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
