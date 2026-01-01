@@ -226,6 +226,42 @@ impl ClickHouseClient {
     pub async fn execute_sql(&self, sql: &str) -> anyhow::Result<String> {
         self.execute_sql_with_database(sql, None).await
     }
+
+    /// Checks if a table exists in the specified database
+    ///
+    /// # Arguments
+    /// * `database` - The database name
+    /// * `table_name` - The table name
+    ///
+    /// # Returns
+    /// `Ok(true)` if the table exists, `Ok(false)` if it doesn't, `Err` on query failure
+    pub async fn table_exists(&self, database: &str, table_name: &str) -> anyhow::Result<bool> {
+        let result = self
+            .execute_sql(&format!("EXISTS TABLE `{}`.`{}`", database, table_name))
+            .await?;
+        Ok(result.trim() == "1")
+    }
+
+    /// Drops a table if it exists in the specified database
+    ///
+    /// # Arguments
+    /// * `database` - The database name
+    /// * `table_name` - The table name
+    ///
+    /// # Returns
+    /// `Ok(())` on success, `Err` on failure
+    pub async fn drop_table_if_exists(
+        &self,
+        database: &str,
+        table_name: &str,
+    ) -> anyhow::Result<()> {
+        self.execute_sql(&format!(
+            "DROP TABLE IF EXISTS `{}`.`{}`",
+            database, table_name
+        ))
+        .await?;
+        Ok(())
+    }
 }
 
 const DDL_COMMANDS: &[&str] = &["INSERT", "CREATE", "ALTER", "DROP", "TRUNCATE"];
