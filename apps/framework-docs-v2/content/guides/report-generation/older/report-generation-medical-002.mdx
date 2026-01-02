@@ -1,0 +1,641 @@
+# Document Processing Automation with MooseStack
+
+Build a production-grade document processing and retrieval automation system using MooseStack, Temporal workflows, and OLAP analytics.
+
+## What You'll Build
+
+A document retrieval system that:
+- Monitors queues for document requests
+- Searches networked file shares or OLAP indexes for documents
+- Aggregates multi-format files (PDF, TIFF, images) into single PDFs
+- Tracks status in PostgreSQL with idempotency
+- Orchestrates retry-able workflows via Temporal
+- Notifies downstream systems via webhooks
+
+**Tech stack**: Python, MooseStack (DMv2), Temporal, PostgreSQL, ClickHouse, Redpanda, Docker
+
+## Why Moose?
+
+Traditional data engineering stitches together disparate tools:
+- **Kafka/Redpanda** for streaming
+- **Airflow/Prefect** for orchestration
+- **dbt** for transformations
+- **Custom glue code** holding it together
+
+**MooseStack consolidates this complexity** into a single, type-safe Python framework:
+
+### Infrastructure from Code
+Define data models once in Python → Moose auto-provisions:
+- ClickHouse tables (OLAP)
+- Redpanda topics (streaming)
+- REST APIs (ingest/consume)
+- Type validation
+
+### Built-in Workflow Orchestration
+Temporal integration provides:
+- Durable execution that survives crashes
+- Automatic retries with backoff
+- Timeout management
+- Workflow versioning
+
+### Developer Experience
+- Hot reload in development
+- Type-safe data models (Pydantic/SQLModel)
+- Single `moose.config.toml` configuration
+- Docker-based local dev matching production
+
+### Cost & Operational Benefits
+- Fewer moving parts = less operational overhead
+- ClickHouse's columnar storage = 10-100x query performance vs row-based DBs
+- Redpanda's Kafka compatibility without JVM overhead
+- Deploy to managed Boreal or self-host
+
+**When to use Moose**: Document processing pipelines, event-driven systems, real-time analytics, workflow automation with data persistence.
+
+## Setup
+
+### Quick Start
+
+```bash
+# Install Moose CLI
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+
+# Initialize project
+moose init <project-name> --language python
+cd <project-name>
+
+# Setup environment
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Configure Platform
+
+Edit `moose.config.toml`:
+
+```toml
+[project]
+language = "python"
+name = "<project-name>"
+
+[datamodels]
+version = "2"  # Enable DMv2
+
+[temporal]
+host = "localhost"
+port = 7233
+
+[databases.olap]
+host = "clickhouse-0"
+user = "moose"
+
+[databases.oltp]
+host = "postgres-app"
+user = "app_user"
+```
+
+### Environment Variables
+
+Key configuration in `.env.local`:
+
+```bash
+POSTGRES_PASSWORD=<strong-password>
+MOOSE_CLICKHOUSE_PASSWORD=<password>
+TEMPORAL_PORT=7233
+DOCUMENT_MOUNT=/path/to/test-data
+WEBHOOK_URL=https://hooks.slack.com/...
+```
+
+### Start Stack
+
+```bash
+# Build and start
+moose build --docker --arm64  # or without --arm64
+docker tag moose-df-deployment-*:latest doc-automation:latest
+./startup.sh
+
+# Verify
+curl -s http://localhost:4000/health | jq
+```
+
+## Data Modeling Architecture
+
+### Dual Database Pattern
+
+MooseStack uses two databases with distinct purposes:
+
+**PostgreSQL (OLTP)**: Operational data
+- Document retrieval status tracking
+- Queue monitoring
+- Real-time writes and updates
+
+**ClickHouse (OLAP)**: Analytical data
+- Entity and document indexes
+- Fast queries across millions of records
+- Aggregations and analytics
+
+**Decision Point**: Use PostgreSQL for transactional workflows, ClickHouse for search/analytics. Don't try to use one for both.
+
+### Operational Storage Models
+
+PostgreSQL tracks document retrievals and source queues:
+
+```python
+from sqlmodel import Field, SQLModel
+from enum import Enum
+
+class RetrievalStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    SUCCESS = "SUCCESS"
+    NOT_FOUND = "NOT_FOUND"
+    ERROR = "ERROR"
+
+class DocumentRetrieval(SQLModel, table=True):
+    request_id: str = Field(primary_key=True)
+    source_id: int
+    entity_first_name: str
+    entity_last_name: str
+    entity_dob: str
+    status: RetrievalStatus
+    processed_file_path: Optional[str]
+    last_updated: datetime
+```
+
+**Key Pattern**: Use enums for status tracking, timestamps for observability, optional fields for results.
+
+### OLAP Index Models
+
+ClickHouse stores searchable indexes for fast retrieval:
+
+```python
+from moose_lib import Key, moose_data_model
+
+@moose_data_model
+class EntityIndex:
+    eventId: Key[str]
+    source_id: int
+    entity_id: str
+    entity_first_name: str
+    entity_last_name: str
+    entity_dob: str
+    entity_folder_path: Optional[str]
+    indexed_at: datetime
+```
+
+**What Moose Does**: Auto-provisions ClickHouse tables, Redpanda topics, and ingest APIs from these models.
+
+**Decision Point**: Index sources with structured data (databases, APIs) into ClickHouse. Use filesystem search for unstructured/unmapped sources.
+
+### Repository Pattern
+
+Abstract database operations with repositories:
+
+```python
+class DocumentRetrievalRepo:
+    def __init__(self, engine):
+        self.engine = engine
+
+    def create_or_update(self, retrieval: DocumentRetrieval):
+        # Upsert logic with session management
+        pass
+
+    def get_by_id(self, request_id: str):
+        # Fetch by primary key
+        pass
+
+    def get_by_status(self, status: RetrievalStatus):
+        # Query by status for monitoring
+        pass
+```
+
+**Key Pattern**: Repositories encapsulate database logic, making it easy to swap implementations or add caching.
+
+### Storage Service
+
+Unify access with a storage service:
+
+```python
+class AutomationStorage:
+    def __init__(self):
+        self.engine = create_engine(postgres_url)
+        self.document_retrieval = DocumentRetrievalRepo(self.engine)
+        self.source_queue = SourceQueueRepo(self.engine)
+
+storage = AutomationStorage()  # Singleton
+```
+
+**Usage**: `storage.document_retrieval.get_by_id(request_id)`
+
+## OLAP Indexing Strategy
+
+### Why OLAP for Document Search
+
+Traditional filesystem search limitations:
+- Linear scan performance (O(n))
+- No fuzzy matching optimization
+- Limited metadata queries
+- No analytics capabilities
+
+**ClickHouse advantages**:
+- Columnar storage for fast scans
+- Built-in fuzzy matching functions
+- Sub-second queries on millions of records
+- Aggregate analytics on document metadata
+
+### Indexing Architecture
+
+**Index Pipeline**:
+1. Extract entity data from source systems (APIs, databases, files)
+2. Stream to Redpanda topics
+3. Transform and enrich
+4. Load into ClickHouse tables
+5. Query via ClickHouse client
+
+**Decision Point**:
+- **High-volume sources** (>10k entities): Use OLAP indexing
+- **Low-volume/ad-hoc sources**: Use filesystem search
+- **Hybrid approach**: Index structured sources, search filesystem for unmapped
+
+### ClickHouse Integration
+
+Query indexed data:
+
+```python
+class ClickHouseClient:
+    def find_entity_id(self, source_id, first_name, last_name, dob):
+        query = """
+        SELECT entity_id, entity_folder_path FROM entity_index
+        WHERE source_id = {source_id:Int32}
+          AND lower(entity_first_name) = lower({first_name:String})
+          AND lower(entity_last_name) = lower({last_name:String})
+        LIMIT 1
+        """
+        result = self.client.query(query, parameters={...})
+        return result.first_row[0] if result.row_count > 0 else None
+```
+
+**Key Pattern**: Parameterized queries prevent injection, case-insensitive matching improves hit rate.
+
+### Filesystem Search Fallback
+
+For unmapped sources, implement convention-based search:
+
+```python
+def find_directory_by_convention(root_path, last_name, first_name, dob):
+    """
+    Search pattern: Last, First - YYYY-MM-DD
+    Falls back to fuzzy matching if exact match fails
+    """
+    expected_name = f"{last_name}, {first_name} - {normalize_dob(dob)}"
+
+    # Try exact match
+    # Try case-insensitive
+    # Try fuzzy matching (rapidfuzz with threshold)
+
+    return matched_path or None
+```
+
+**Decision Point**: Set fuzzy threshold based on name quality. Start at 85%, adjust based on false positive/negative rates.
+
+## Workflow Orchestration
+
+### Temporal Workflow Architecture
+
+Temporal provides durable, retry-able execution:
+
+**Workflow = Business Logic**
+- Orchestrates activities
+- Maintains state across failures
+- Handles long-running operations
+- Supports versioning
+
+**Activity = External Operation**
+- Database queries
+- API calls
+- File operations
+- Idempotent by design
+
+### Document Retrieval Workflow
+
+Core workflow structure:
+
+```python
+@workflow.defn
+class DocumentRetrievalWorkflow:
+    @workflow.run
+    async def run(self, request_id, source_id, entity_name, ...):
+        # Phase 1: Update status to PROCESSING
+        await workflow.execute_activity(update_status, ...)
+
+        # Phase 2: Search for documents (OLAP or filesystem)
+        folder_path = await workflow.execute_activity(search_documents, ...)
+
+        if not folder_path:
+            # Handle NOT_FOUND case
+            return {"status": "NOT_FOUND"}
+
+        # Phase 3: Aggregate to PDF
+        pdf_path = await workflow.execute_activity(convert_to_pdf, ...)
+
+        # Phase 4: Update status to SUCCESS and notify
+        await workflow.execute_activity(update_status, ...)
+        await workflow.execute_activity(send_notification, ...)
+
+        return {"status": "SUCCESS", "pdf_path": pdf_path}
+```
+
+**Key Patterns**:
+- Each phase is an activity (can retry independently)
+- Status updates after each phase (observability)
+- Early returns for error cases
+- Final notification on success
+
+### Activity Implementation
+
+Activities encapsulate external operations:
+
+```python
+@activity.defn
+async def search_documents(root_path, entity_name):
+    # Try OLAP index first
+    result = clickhouse_client.find_entity(...)
+    if result:
+        return result.folder_path
+
+    # Fallback to filesystem
+    return find_directory_by_convention(...)
+```
+
+**Decision Point**:
+- **Idempotent activities**: Safe to retry (database reads, idempotent writes)
+- **Non-idempotent activities**: Need deduplication logic (external API calls)
+
+### Retry Policies
+
+Configure retries per activity:
+
+```python
+await workflow.execute_activity(
+    search_documents,
+    args=[...],
+    start_to_close_timeout=timedelta(minutes=5),
+    retry_policy={
+        "maximum_attempts": 3,
+        "initial_interval": timedelta(seconds=1),
+        "backoff_coefficient": 2.0
+    }
+)
+```
+
+**Decision Point**:
+- **Transient failures** (network): Aggressive retries (3-5 attempts)
+- **Permanent failures** (not found): No retries or 1 attempt
+- **External APIs**: Exponential backoff to avoid rate limits
+
+### Queue Monitoring Workflow
+
+Periodic workflow to discover new requests:
+
+```python
+@workflow.defn
+class QueueMonitorWorkflow:
+    @workflow.run
+    async def run(self):
+        sources = await get_monitored_sources()
+
+        for source in sources:
+            pending_requests = await fetch_pending_requests(source.id)
+
+            for request in pending_requests:
+                # Spawn child workflow for each request
+                await workflow.execute_child_workflow(
+                    DocumentRetrievalWorkflow.run,
+                    args=[request.id, ...]
+                )
+
+        return {"requests_enqueued": count}
+```
+
+**Key Pattern**: Parent workflow orchestrates, child workflows execute. Failures isolated per request.
+
+## Consumption APIs
+
+### Workflow Trigger API
+
+HTTP endpoint to start workflows:
+
+```python
+from moose_lib import MooseApp
+from temporalio.client import Client
+
+app = MooseApp()
+
+@app.get("/api/retrieval_trigger")
+async def trigger_retrieval(request_id, source_id, entity_name, ...):
+    temporal_client = await Client.connect("localhost:7233")
+
+    handle = await temporal_client.start_workflow(
+        "DocumentRetrievalWorkflow",
+        args=[request_id, source_id, ...],
+        id=f"retrieval-{request_id}",
+        task_queue="moose-workflows"
+    )
+
+    return {"workflow_id": handle.id, "status": "started"}
+```
+
+**Key Pattern**: Decouple API from workflow execution. API returns immediately, workflow runs async.
+
+### Queue Management API
+
+Manage monitored sources:
+
+```python
+@app.get("/api/add_source")
+async def add_source(source_id, data_path, source_name, source_type):
+    source = SourceQueueMonitor(
+        source_id=source_id,
+        data_file_path=data_path,
+        source_type=source_type  # MAPPED or INDEXED
+    )
+    storage.source_queue.upsert(source)
+    return {"status": "success"}
+```
+
+## Testing Strategy
+
+### Local Testing
+
+Create test data structure:
+
+```bash
+mkdir -p ${DOCUMENT_MOUNT}/demo/Documents
+mkdir -p "${DOCUMENT_MOUNT}/demo/Documents/Doe, Jane - 1980-08-26"
+cp sample.pdf "${DOCUMENT_MOUNT}/demo/Documents/Doe, Jane - 1980-08-26/"
+```
+
+Test API:
+
+```bash
+curl -G 'http://localhost:4000/api/retrieval_trigger' \
+  --data-urlencode 'request_id=test-123' \
+  --data-urlencode 'entity_first_name=Jane' \
+  --data-urlencode 'entity_last_name=Doe' | jq
+```
+
+Monitor workflow:
+- Temporal UI: http://localhost:8081
+- Logs: `./dc.sh logs moose -f`
+- Database: Query `document_retrievals` table
+
+## Deployment
+
+### Production Considerations
+
+**Environment**:
+- Strong passwords for databases
+- Production webhook URLs
+- Verified file share paths
+
+**Docker Compose**:
+```bash
+moose build --docker
+docker tag moose-df-deployment-*:latest doc-automation:production
+docker compose -f docker-compose.yaml up -d
+```
+
+**Managed Deployment** (Boreal):
+1. Create account at boreal.cloud
+2. Import project from Git
+3. Configure environment variables
+4. Deploy (auto-provisions ClickHouse, Redpanda)
+
+## Advanced Patterns
+
+### Idempotency
+
+Prevent duplicate processing:
+
+```python
+@workflow.defn
+class DocumentRetrievalWorkflow:
+    async def run(self, request_id, ...):
+        existing = storage.document_retrieval.get_by_id(request_id)
+        if existing and existing.status == RetrievalStatus.SUCCESS:
+            return {"status": "ALREADY_PROCESSED"}
+        # Continue...
+```
+
+**Decision Point**: Implement at workflow level for efficiency, or activity level for granularity.
+
+### Batch Processing
+
+For high-volume sources:
+
+```python
+@workflow.defn
+class BatchRetrievalWorkflow:
+    async def run(self, request_ids):
+        tasks = [
+            workflow.execute_child_workflow(
+                DocumentRetrievalWorkflow.run,
+                args=[request_id, ...]
+            )
+            for request_id in request_ids[:100]
+        ]
+        return await asyncio.gather(*tasks)
+```
+
+**Decision Point**:
+- **Low volume** (<100 requests/hour): Individual workflows
+- **Medium volume** (100-1000/hour): Batch in groups of 10-50
+- **High volume** (>1000/hour): Batch + rate limiting
+
+### Structured Logging
+
+Observability through structured logs:
+
+```python
+workflow.logger.info(
+    "document_found",
+    extra={
+        "event": "document_found",
+        "request_id": request_id,
+        "processing_time_ms": elapsed_ms
+    }
+)
+```
+
+Query with jq: `./dc.sh logs moose | grep document_found | jq`
+
+## Troubleshooting
+
+### Workflow Stuck
+
+Check Temporal:
+```bash
+./dc.sh exec temporal-admin-tools tctl workflow describe --workflow_id <id>
+```
+
+Query database:
+```bash
+psql -c "SELECT request_id, status FROM document_retrievals WHERE status='PROCESSING'"
+```
+
+### Documents Not Found
+
+**OLAP index issue**: Query ClickHouse directly
+```bash
+./dc.sh exec clickhouse-0 clickhouse-client --query "SELECT count() FROM entity_index"
+```
+
+**Filesystem issue**: Verify mount accessibility
+```bash
+./dc.sh exec moose ls -la /mnt/documents/
+```
+
+### Performance Issues
+
+**ClickHouse slow queries**:
+```bash
+./dc.sh exec clickhouse-0 clickhouse-client --query "
+SELECT query, query_duration_ms FROM system.query_log
+ORDER BY query_duration_ms DESC LIMIT 5"
+```
+
+**Connection pool exhausted**:
+Increase pool size in storage service configuration.
+
+## Key Takeaways
+
+### Architecture
+- **Dual database**: PostgreSQL for operations, ClickHouse for search
+- **Workflow orchestration**: Temporal for durable execution
+- **OLAP indexing**: 10-100x faster than filesystem search at scale
+
+### Decision Framework
+- Index high-volume structured sources
+- Search filesystem for unmapped/low-volume sources
+- Batch processing for >100 requests/hour
+- Aggressive retries for transient failures only
+
+### MooseStack Value
+- Infrastructure from code (no manual provisioning)
+- Type-safe data models (catch errors early)
+- Hot reload development (fast iteration)
+- Single framework (less operational complexity)
+
+### When to Use This Pattern
+- Document aggregation pipelines
+- Multi-source data retrieval
+- Workflow automation with state
+- Event-driven systems with analytics
+
+### Next Steps
+1. Define your data models
+2. Choose indexing strategy (OLAP vs filesystem)
+3. Implement core workflow
+4. Add monitoring and observability
+5. Deploy and iterate

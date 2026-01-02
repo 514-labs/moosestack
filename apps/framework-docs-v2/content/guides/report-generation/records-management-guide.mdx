@@ -1,0 +1,453 @@
+---
+title: Records Management
+description: Building medical records lifecycle management systems with MooseStack
+---
+
+# Records Management
+
+Records management systems track the complete lifecycle of document retrieval requests from initial intake through successful delivery or failure. MooseStack provides the operational storage, workflow orchestration, and observability infrastructure to build reliable records management systems.
+
+## Overview
+
+Document retrieval workflows require tracking requests through multiple states, handling idempotency for duplicate requests, supporting multiple source types with different retrieval strategies, and providing audit trails for compliance. A comprehensive records management layer uses Postgres for operational state and Temporal for workflow orchestration.
+
+> **Note**: While this guide uses medical records as an example domain, the patterns apply to any records management scenario: legal discovery, insurance claims, financial audits, HR document requests, or enterprise content management.
+
+## Key Concepts
+
+- **Record Lifecycle**: State machine tracking requests through PENDING → PROCESSING → SUCCESS/NOT_FOUND/FAILURE/FAILED_TO_CONVERT
+- **Practice Types**: Different retrieval strategies for PREMAPPED (directory convention) vs ECW3 (ClickHouse index lookup)
+- **Idempotency**: Terminal state detection prevents duplicate processing and notification spam
+- **Practice Queue Monitoring**: Scheduled polling of active sources with external request API integration
+- **Audit Trail**: Timestamped status updates with metadata for compliance and debugging
+
+## Prerequisites
+
+- MooseStack project initialized with Python
+- PostgreSQL for operational storage (record_retrievals, practice_queue_monitors tables)
+- Temporal server for workflow orchestration
+- ClickHouse for document indexes (ECW3 practices)
+
+## Implementation
+
+### Step 1: Define Record Status Enum
+
+Create the state machine for record retrieval lifecycle.
+
+```python
+# app/helpers/automation_storage/enums.py
+from enum import Enum
+
+class RetrievalStatus(str, Enum):
+    PENDING = "PENDING"              # Initial state, awaiting processing
+    PROCESSING = "PROCESSING"        # Actively searching/converting
+    SUCCESS = "SUCCESS"              # Records retrieved and aggregated
+    NOT_FOUND = "NOT_FOUND"          # Patient folder not located
+    FAILURE = "FAILURE"              # System error during retrieval
+    FAILED_TO_CONVERT = "FAILED_TO_CONVERT"  # PDF aggregation failed
+    AGGREGATING_PDF = "AGGREGATING_PDF"      # PDF merge in progress
+
+class PracticeType(str, Enum):
+    ECW3 = "ECW3"           # ClickHouse-indexed practice
+    PREMAPPED = "PREMAPPED" # Directory convention practice
+```
+
+### Step 2: Define Record Retrieval Model
+
+Create the SQLModel for tracking individual retrieval requests.
+
+```python
+# app/helpers/automation_storage/models/record_retrieval.py
+from datetime import datetime
+from typing import Optional
+from sqlmodel import SQLModel, Field
+from ..enums import RetrievalStatus
+
+class RecordRetrieval(SQLModel, table=True):
+    """Model for tracking patient record retrieval requests"""
+    __tablename__ = "record_retrievals"
+
+    patient_request_id: int = Field(
+        primary_key=True,
+        description="Unique identifier for the request"
+    )
+    practice_id: int = Field(
+        nullable=False,
+        description="Practice where records are being retrieved"
+    )
+    patient_first_name: Optional[str] = Field(default=None)
+    patient_last_name: Optional[str] = Field(default=None)
+    patient_dob: Optional[str] = Field(default=None)
+    practice_name: Optional[str] = Field(default=None)
+    last_updated_status: datetime = Field(
+        default_factory=datetime.now,
+        description="Timestamp of last status update"
+    )
+    completed_time: Optional[datetime] = Field(default=None)
+    status: RetrievalStatus = Field(
+        default=RetrievalStatus.PENDING,
+        description="Current lifecycle status"
+    )
+    error_message: Optional[str] = Field(default=None)
+    record_metadata: Optional[str] = Field(
+        default=None,
+        description="JSON metadata about the retrieval"
+    )
+    processed_patient_data_file_path: Optional[str] = Field(default=None)
+    additional_notes: Optional[str] = Field(default=None)
+```
+
+### Step 3: Define Practice Queue Monitor Model
+
+Create the model for tracking which practices are actively monitored.
+
+```python
+# app/helpers/automation_storage/models/practice_queue_monitor.py
+from datetime import datetime
+from typing import Optional
+from sqlmodel import SQLModel, Field
+from ..enums import PracticeType
+
+class PracticeQueueMonitor(SQLModel, table=True):
+    """Model for practices in the automated retrieval queue"""
+    __tablename__ = "practice_queue_monitors"
+
+    id: Optional[int] = Field(primary_key=True, default=None)
+    practice_id: int = Field(
+        unique=True,
+        nullable=False,
+        description="Unique practice identifier"
+    )
+    patient_data_file_path: str = Field(
+        nullable=False,
+        description="Path to practice's patient data directory"
+    )
+    practice_type: PracticeType = Field(
+        nullable=False,
+        description="Retrieval strategy type"
+    )
+    last_retrieval_date: Optional[datetime] = Field(default=None)
+    practice_name: str = Field(nullable=False)
+    is_mapped: bool = Field(
+        default=True,
+        description="Whether practice has been indexed"
+    )
+```
+
+### Step 4: Implement Storage Service
+
+Create a unified service for record management operations.
+
+```python
+# app/helpers/automation_storage/service.py
+from typing import Optional, List, Dict, Tuple
+from datetime import datetime
+from .connection import get_session_context
+from .enums import RetrievalStatus, PracticeType
+from .db_logic.record_retrieval_repo import RecordRetrievalTable
+from .db_logic.practice_queue_repo import PracticeQueueTable
+
+class AutomationStorage:
+    """Unified service for automation storage operations"""
+
+    def record_retrieval_is_successfully_retrieved(
+        self, patient_request_id: int
+    ) -> bool:
+        """Check if record already successfully retrieved (idempotency)"""
+        with get_session_context() as session:
+            repo = RecordRetrievalTable(session)
+            return repo.is_successfully_retrieved(patient_request_id)
+
+    def record_retrieval_is_in_terminal_state(
+        self, patient_request_id: int
+    ) -> bool:
+        """Check if request is in terminal state (should not retry)
+
+        Terminal states: SUCCESS, NOT_FOUND, FAILURE, FAILED_TO_CONVERT
+        Prevents duplicate processing and notification spam.
+        """
+        with get_session_context() as session:
+            repo = RecordRetrievalTable(session)
+            return repo.is_in_terminal_state(patient_request_id)
+
+    def record_retrieval_create_or_update(
+        self,
+        practice_id: int,
+        patient_request_id: int,
+        patient_first_name: Optional[str] = None,
+        patient_last_name: Optional[str] = None,
+        patient_dob: Optional[str] = None,
+        practice_name: Optional[str] = None,
+        metadata: Optional[Dict] = None
+    ) -> Tuple[int, bool]:
+        """Create new record or update existing (upsert pattern)"""
+        with get_session_context() as session:
+            repo = RecordRetrievalTable(session)
+            record, was_created = repo.create_or_update(
+                practice_id=practice_id,
+                patient_request_id=patient_request_id,
+                patient_first_name=patient_first_name,
+                patient_last_name=patient_last_name,
+                patient_dob=patient_dob,
+                practice_name=practice_name,
+                metadata=metadata
+            )
+            return record.patient_request_id, was_created
+
+    def record_retrieval_update_status(
+        self,
+        patient_request_id: int,
+        status: RetrievalStatus,
+        error_message: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        processed_patient_data_file_path: Optional[str] = None
+    ) -> bool:
+        """Update retrieval status with optional metadata"""
+        with get_session_context() as session:
+            repo = RecordRetrievalTable(session)
+            return repo.update_status(
+                patient_request_id=patient_request_id,
+                status=status,
+                error_message=error_message,
+                metadata=metadata,
+                processed_patient_data_file_path=processed_patient_data_file_path
+            )
+
+    def practice_queue_monitor_get_all_active(
+        self
+    ) -> List[PracticeQueueMonitor]:
+        """Get all actively monitored practices"""
+        with get_session_context() as session:
+            repo = PracticeQueueTable(session)
+            records = repo.get_all()
+            return [record.model_copy() for record in records]
+```
+
+### Step 5: Implement Workflow with Lifecycle Management
+
+Connect records management to the retrieval workflow.
+
+```python
+# app/workflows/premapped_record_retrieval_automation.py
+from app.helpers.automation_storage.service import AutomationStorage
+from app.helpers.automation_storage.enums import RetrievalStatus, PracticeType
+
+def run_premapped_retrieval(ctx: TaskContext[PremappedRetrievalInput]) -> None:
+    storage = AutomationStorage()
+    i = ctx.input
+
+    # === IDEMPOTENCY CHECK ===
+    if storage.record_retrieval_is_successfully_retrieved(i.request_id):
+        logger.info(f"Already retrieved request_id={i.request_id}, skipping")
+        return None
+
+    # Create/update tracking record
+    storage.record_retrieval_create_or_update(
+        practice_id=i.practice_id,
+        patient_request_id=i.request_id,
+        patient_first_name=i.patient_first_name,
+        patient_last_name=i.patient_last_name,
+        patient_dob=i.patient_dob,
+        practice_name=i.practice_name
+    )
+
+    # === PRACTICE VALIDATION ===
+    practice = storage.practice_queue_monitor_get_by_practice_id(i.practice_id)
+    if not practice:
+        storage.record_retrieval_update_status(
+            patient_request_id=i.request_id,
+            status=RetrievalStatus.FAILURE,
+            error_message=f"Practice {i.practice_id} not found"
+        )
+        return None
+
+    # Set status to PROCESSING
+    storage.record_retrieval_update_status(
+        patient_request_id=i.request_id,
+        status=RetrievalStatus.PROCESSING,
+        metadata={"stage": "PM-RR-2", "practice_type": str(practice.practice_type)}
+    )
+
+    # === PRACTICE TYPE BRANCHING ===
+    if practice.practice_type == PracticeType.PREMAPPED:
+        patient_dir = _handle_premapped_retrieval(i, storage, logger)
+    elif practice.practice_type == PracticeType.ECW3:
+        patient_dir = _handle_ecw3_retrieval(i, storage, logger)
+    else:
+        storage.record_retrieval_update_status(
+            patient_request_id=i.request_id,
+            status=RetrievalStatus.FAILURE,
+            error_message=f"Unsupported practice type: {practice.practice_type}"
+        )
+        return None
+
+    # === NOT_FOUND HANDLING ===
+    if not patient_dir:
+        # Already marked NOT_FOUND in handler
+        return None
+
+    # === PDF AGGREGATION ===
+    storage.record_retrieval_update_status(
+        patient_request_id=i.request_id,
+        status=RetrievalStatus.PROCESSING,
+        metadata={"stage": "PM-RR-3", "action": "aggregating_pdf"}
+    )
+
+    try:
+        pdf_result = python2pdf.merge_to_pdf(
+            src=str(patient_dir),
+            dst=i.processed_pdf_output_root_path,
+            filename=output_filename
+        )
+
+        if not pdf_result.get("final_pdf"):
+            storage.record_retrieval_update_status(
+                patient_request_id=i.request_id,
+                status=RetrievalStatus.FAILED_TO_CONVERT,
+                error_message="PDF conversion produced no output"
+            )
+            return None
+
+        # === SUCCESS ===
+        storage.record_retrieval_update_status(
+            patient_request_id=i.request_id,
+            status=RetrievalStatus.SUCCESS,
+            processed_patient_data_file_path=str(patient_dir),
+            metadata={"aggregated_pdf_output_path": pdf_result["final_pdf"]}
+        )
+
+    except Exception as e:
+        storage.record_retrieval_update_status(
+            patient_request_id=i.request_id,
+            status=RetrievalStatus.FAILED_TO_CONVERT,
+            error_message=str(e)
+        )
+```
+
+### Step 6: Implement Practice Queue Monitoring
+
+Create the cron workflow for polling practices and processing requests.
+
+```python
+# app/workflows/cron_request_queue_monitor.py
+from app.helpers.automation_storage.service import AutomationStorage
+from app.integrations.request_api import RequestAPIClient
+
+def run_cron_monitor(ctx: TaskContext[None]) -> None:
+    automation_storage = AutomationStorage()
+
+    # Aggregate metrics for observability
+    total_practices = 0
+    total_requests_enqueued = 0
+
+    practice_list = automation_storage.practice_queue_monitor_get_all_active()
+
+    for practice in practice_list:
+        total_practices += 1
+
+        try:
+            # Fetch RECEIVED requests from external API
+            api_client = RequestAPIClient()
+            requests = api_client.get_pending_requests(
+                practice_id=practice.practice_id,
+                status="RECEIVED"
+            )
+
+            for request in requests:
+                # Idempotency: skip terminal states
+                if automation_storage.record_retrieval_is_in_terminal_state(
+                    request.request_id
+                ):
+                    continue
+
+                # Trigger retrieval workflow
+                workflow_client.execute(
+                    name="premapped-record-retrieval-automation",
+                    input_data={
+                        "request_id": request.request_id,
+                        "practice_id": practice.practice_id,
+                        "practice_name": practice.practice_name,
+                        "patient_first_name": request.patient_first_name,
+                        "patient_last_name": request.patient_last_name,
+                        "patient_dob": request.patient_dob,
+                        "practice_file_path": practice.patient_data_file_path,
+                        "processed_pdf_output_root_path": practice.patient_data_file_path
+                    }
+                )
+                total_requests_enqueued += 1
+
+            # Update last retrieval timestamp
+            automation_storage.practice_queue_monitor_update_last_retrieval(
+                practice_id=practice.practice_id
+            )
+
+        except Exception as e:
+            # Error isolation: continue with next practice
+            logger.error(f"Practice {practice.practice_id} failed: {e}")
+
+    logger.info(
+        f"event=cron_monitor_complete "
+        f"practices_total={total_practices} "
+        f"requests_enqueued={total_requests_enqueued}"
+    )
+```
+
+## Verification
+
+After implementing records management:
+
+1. **Check database tables**:
+   ```bash
+   ./dc.sh exec postgres-mrm psql -U mrm_automations -d mrm_automations \
+     -c "SELECT status, COUNT(*) FROM record_retrievals GROUP BY status"
+   ```
+
+2. **Monitor workflow logs**:
+   ```bash
+   ./dc.sh logs moose --since 10m | grep "event=cron_monitor_complete"
+   ```
+
+3. **Verify idempotency**: Re-trigger same request_id and confirm it's skipped
+
+## State Machine Diagram
+
+```
+                    ┌─────────────┐
+                    │   PENDING   │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+            ┌───────┤ PROCESSING  ├───────┐
+            │       └──────┬──────┘       │
+            │              │              │
+            ▼              ▼              ▼
+     ┌───────────┐  ┌───────────┐  ┌────────────────┐
+     │ NOT_FOUND │  │  SUCCESS  │  │    FAILURE     │
+     └───────────┘  └───────────┘  └────────────────┘
+                                          │
+                                          ▼
+                                   ┌──────────-──────┐
+                                   │FAILED_TO_CONVERT│
+                                   └───────────-─────┘
+```
+
+## MooseStack Integration
+
+Records management leverages several MooseStack features:
+
+- **Workflows** (`/moosestack/workflows`): Temporal orchestration for multi-step retrieval with retries
+- **APIs** (`/moosestack/building-blocks/consumption-apis`): HTTP endpoints for triggering retrievals and queue management
+- **OLAP** (`/moosestack/building-blocks/olap`): ClickHouse storage for ECW3 patient/document indexes
+
+## Benefits
+
+- **Reliable State Tracking**: Every request tracked from intake to completion
+- **Duplicate Prevention**: Terminal state checks prevent reprocessing completed requests
+- **Practice Flexibility**: Different strategies for different practice management systems
+- **Observability**: Structured logging with aggregated metrics for monitoring
+- **Error Isolation**: Single practice/request failures don't impact others
+
+## Next Steps
+
+Learn more about [Temporal workflows](/moosestack/workflows) for building durable retrieval orchestration and [consumption APIs](/moosestack/building-blocks/consumption-apis) for exposing record status endpoints.
