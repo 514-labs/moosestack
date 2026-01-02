@@ -27,7 +27,13 @@ import {
   setupPythonProject,
   logger,
 } from "./utils";
-import { stopDevProcess, killRemainingProcesses } from "./utils/process-utils";
+import {
+  stopDevProcess,
+  killRemainingProcesses,
+  waitForOutputMessage,
+  captureProcessOutput,
+  waitForServerStart,
+} from "./utils/process-utils";
 
 const testLogger = logger.scope("unloaded-files-test");
 
@@ -44,85 +50,6 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 // Add these constants for timeouts
 const INFRASTRUCTURE_TIMEOUT_MS = 90_000; // 90 seconds
 const SUITE_TIMEOUT_MS = 300_000; // 5 minutes
-
-/**
- * Waits for a specific message in the dev process output
- */
-const waitForOutputMessage = async (
-  devProcess: ChildProcess,
-  expectedMessage: string,
-  timeout: number,
-): Promise<boolean> => {
-  return new Promise<boolean>((resolve, reject) => {
-    let messageFound = false;
-    let timeoutId: any = null;
-    let outputBuffer = "";
-
-    const cleanup = () => {
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      devProcess.stdout?.off("data", onStdout);
-      devProcess.stderr?.off("data", onStderr);
-      devProcess.off("exit", onExit);
-    };
-
-    const onStdout = (data: any) => {
-      const output = data.toString();
-      outputBuffer += output;
-      testLogger.debug("Dev process stdout", { output: output.trim() });
-
-      if (output.includes(expectedMessage)) {
-        messageFound = true;
-        cleanup();
-        resolve(true);
-      }
-    };
-
-    const onStderr = (data: any) => {
-      const output = data.toString();
-      outputBuffer += output;
-      testLogger.debug("Dev process stderr", { stderr: output.trim() });
-
-      if (output.includes(expectedMessage)) {
-        messageFound = true;
-        cleanup();
-        resolve(true);
-      }
-    };
-
-    const onExit = (code: number | null) => {
-      cleanup();
-      if (!messageFound) {
-        testLogger.error("Process exited without finding message", {
-          exitCode: code,
-          outputBuffer: outputBuffer.slice(0, 1000),
-        });
-        reject(
-          new Error(
-            `Process exited with code ${code} before message was found`,
-          ),
-        );
-      }
-    };
-
-    devProcess.stdout?.on("data", onStdout);
-    devProcess.stderr?.on("data", onStderr);
-    devProcess.on("exit", onExit);
-
-    timeoutId = setTimeout(() => {
-      cleanup();
-      if (!messageFound) {
-        testLogger.error("Timeout waiting for message", {
-          expectedMessage,
-          receivedOutput: outputBuffer.slice(0, 1000),
-        });
-        resolve(false);
-      }
-    }, timeout);
-  });
-};
 
 describe("Unloaded Files Warning", () => {
   let testDir: string;
@@ -196,6 +123,7 @@ export const unloadedTable = OlapTable<UnloadedTestModel>({
         devProcess,
         "Unloaded Files",
         INFRASTRUCTURE_TIMEOUT_MS,
+        { logger: testLogger },
       );
 
       expect(warningFound, "Should display unloaded files warning").to.be.true;
@@ -205,6 +133,7 @@ export const unloadedTable = OlapTable<UnloadedTestModel>({
         devProcess,
         "unloaded_table.ts",
         5000,
+        { logger: testLogger },
       );
 
       expect(fileNameFound, "Should mention the unloaded file name").to.be.true;
@@ -277,6 +206,7 @@ unloaded_table = OlapTable[UnloadedTestModel](
         devProcess,
         "Unloaded Files",
         INFRASTRUCTURE_TIMEOUT_MS,
+        { logger: testLogger },
       );
 
       expect(warningFound, "Should display unloaded files warning").to.be.true;
@@ -286,6 +216,7 @@ unloaded_table = OlapTable[UnloadedTestModel](
         devProcess,
         "unloaded_table.py",
         5000,
+        { logger: testLogger },
       );
 
       expect(fileNameFound, "Should mention the unloaded file name").to.be.true;
@@ -349,7 +280,6 @@ export const myTable = OlapTable<MyModel>({
 
       // Start moose dev and capture output
       testLogger.debug("Starting moose dev");
-      let capturedOutput = "";
 
       devProcess = spawn(CLI_PATH, ["dev"], {
         cwd: testDir,
@@ -359,20 +289,19 @@ export const myTable = OlapTable<MyModel>({
         },
       });
 
-      // Capture all output for a period of time
-      const capturePromise = new Promise<void>((resolve) => {
-        devProcess!.stdout?.on("data", (data) => {
-          capturedOutput += data.toString();
-        });
-        devProcess!.stderr?.on("data", (data) => {
-          capturedOutput += data.toString();
-        });
+      // Capture all output
+      const output = captureProcessOutput(devProcess);
 
-        // Wait for server to start
-        setTimeout(resolve, 30000);
-      });
+      // Wait for server to start
+      await waitForServerStart(
+        devProcess,
+        INFRASTRUCTURE_TIMEOUT_MS,
+        "started successfully",
+        "http://localhost:4000",
+        { logger: testLogger },
+      );
 
-      await capturePromise;
+      const capturedOutput = output.stdout + output.stderr;
 
       // Verify no warning was shown
       expect(
