@@ -11,7 +11,7 @@ type HasFunctionField<T> =
     : true
   : false;
 
-// convert `field?: Type` to `field: Type | undefined` fo avoid homomorphic type
+// convert `field?: Type` to `field: Type | undefined` to avoid homomorphic type
 type OptionalToUndefinedable<T> = { [K in {} & keyof T]: T[K] };
 type StripInterfaceFields<T> = { [K in keyof T]: StripDateIntersection<T[K]> };
 
