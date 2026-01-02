@@ -332,3 +332,103 @@ export const waitForInfrastructureReady = async (
     },
   );
 };
+
+/**
+ * Waits for a specific message to appear in process output (stdout or stderr)
+ * Returns true if the message is found, false if timeout occurs
+ */
+export const waitForOutputMessage = async (
+  devProcess: ChildProcess,
+  expectedMessage: string,
+  timeout: number,
+  options: ProcessOptions = {},
+): Promise<boolean> => {
+  const log = options.logger ?? processLogger;
+
+  return new Promise<boolean>((resolve, reject) => {
+    let messageFound = false;
+    let timeoutId: any = null;
+    let outputBuffer = "";
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      devProcess.stdout?.off("data", onStdout);
+      devProcess.stderr?.off("data", onStderr);
+      devProcess.off("exit", onExit);
+    };
+
+    const onStdout = (data: any) => {
+      const output = data.toString();
+      outputBuffer += output;
+      log.debug("Dev process stdout", { output: output.trim() });
+
+      if (output.includes(expectedMessage)) {
+        messageFound = true;
+        cleanup();
+        resolve(true);
+      }
+    };
+
+    const onStderr = (data: any) => {
+      const output = data.toString();
+      outputBuffer += output;
+      log.debug("Dev process stderr", { stderr: output.trim() });
+
+      if (output.includes(expectedMessage)) {
+        messageFound = true;
+        cleanup();
+        resolve(true);
+      }
+    };
+
+    const onExit = (code: number | null) => {
+      cleanup();
+      if (!messageFound) {
+        log.error("Process exited without finding message", {
+          exitCode: code,
+          outputBuffer: outputBuffer.slice(0, 1000),
+        });
+        reject(
+          new Error(
+            `Process exited with code ${code} before message was found`,
+          ),
+        );
+      }
+    };
+
+    devProcess.stdout?.on("data", onStdout);
+    devProcess.stderr?.on("data", onStderr);
+    devProcess.on("exit", onExit);
+
+    timeoutId = setTimeout(() => {
+      cleanup();
+      if (!messageFound) {
+        log.error("Timeout waiting for message", {
+          expectedMessage,
+          receivedOutput: outputBuffer.slice(0, 1000),
+        });
+        resolve(false);
+      }
+    }, timeout);
+  });
+};
+
+/**
+ * Captures all stdout and stderr output from a process
+ */
+export const captureProcessOutput = (devProcess: ChildProcess) => {
+  const output = { stdout: "", stderr: "" };
+
+  devProcess.stdout?.on("data", (data: any) => {
+    output.stdout += data.toString();
+  });
+
+  devProcess.stderr?.on("data", (data: any) => {
+    output.stderr += data.toString();
+  });
+
+  return output;
+};

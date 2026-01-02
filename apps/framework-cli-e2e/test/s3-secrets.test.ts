@@ -30,6 +30,7 @@ import {
   cleanupTestSuite,
   logger,
 } from "./utils";
+import { captureProcessOutput } from "./utils/process-utils";
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
 const MOOSE_LIB_PATH = path.resolve(
@@ -153,16 +154,7 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       });
 
       // Capture both stdout and stderr to check for error messages
-      let stdoutOutput = "";
-      let stderrOutput = "";
-
-      devProcess.stdout?.on("data", (data) => {
-        stdoutOutput += data.toString();
-      });
-
-      devProcess.stderr?.on("data", (data) => {
-        stderrOutput += data.toString();
-      });
+      const output = captureProcessOutput(devProcess);
 
       // Wait for the process to exit with a timeout
       const exitPromise = new Promise<number>((resolve, reject) => {
@@ -184,18 +176,18 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
         expect(exitCode).to.not.equal(0);
 
         // Combine stdout and stderr for checking
-        const output = stdoutOutput + stderrOutput;
+        const combined = output.stdout + output.stderr;
 
         // Log captured output for debugging
         testLogger.info("=== Captured stdout ===");
-        testLogger.info(stdoutOutput);
+        testLogger.info(output.stdout);
         testLogger.info("=== Captured stderr ===");
-        testLogger.info(stderrOutput);
+        testLogger.info(output.stderr);
 
         // Verify error message includes table name, field name, and env var name
-        expect(output).to.include("S3QueueWithSecrets");
-        expect(output).to.match(/awsAccessKeyId|awsSecretAccessKey/);
-        expect(output).to.match(
+        expect(combined).to.include("S3QueueWithSecrets");
+        expect(combined).to.match(/awsAccessKeyId|awsSecretAccessKey/);
+        expect(combined).to.match(
           /TEST_AWS_ACCESS_KEY_ID|TEST_AWS_SECRET_ACCESS_KEY/,
         );
 
@@ -203,9 +195,9 @@ describe("typescript template tests - S3Queue Runtime Environment Variable Resol
       } catch (error) {
         // Log captured output even on timeout
         testLogger.info("=== Process timed out - captured stdout ===");
-        testLogger.info(stdoutOutput);
+        testLogger.info(output.stdout);
         testLogger.info("=== Process timed out - captured stderr ===");
-        testLogger.info(stderrOutput);
+        testLogger.info(output.stderr);
         throw error;
       } finally {
         // Cleanup
@@ -330,16 +322,7 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
       });
 
       // Capture both stdout and stderr to check for error messages
-      let stdoutOutput = "";
-      let stderrOutput = "";
-
-      devProcess.stdout?.on("data", (data) => {
-        stdoutOutput += data.toString();
-      });
-
-      devProcess.stderr?.on("data", (data) => {
-        stderrOutput += data.toString();
-      });
+      const output = captureProcessOutput(devProcess);
 
       // Wait for the process to exit with a timeout
       const exitPromise = new Promise<number>((resolve, reject) => {
@@ -361,18 +344,18 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
         expect(exitCode).to.not.equal(0);
 
         // Combine stdout and stderr for checking
-        const output = stdoutOutput + stderrOutput;
+        const combined = output.stdout + output.stderr;
 
         // Log captured output for debugging
         testLogger.info("=== Captured stdout ===");
-        testLogger.info(stdoutOutput);
+        testLogger.info(output.stdout);
         testLogger.info("=== Captured stderr ===");
-        testLogger.info(stderrOutput);
+        testLogger.info(output.stderr);
 
         // Verify error message includes table name, field name, and env var name
-        expect(output).to.include("S3QueueWithSecrets");
-        expect(output).to.match(/awsAccessKeyId|awsSecretAccessKey/);
-        expect(output).to.match(
+        expect(combined).to.include("S3QueueWithSecrets");
+        expect(combined).to.match(/awsAccessKeyId|awsSecretAccessKey/);
+        expect(combined).to.match(
           /TEST_AWS_ACCESS_KEY_ID|TEST_AWS_SECRET_ACCESS_KEY/,
         );
 
@@ -380,9 +363,9 @@ describe("python template tests - S3Queue Runtime Environment Variable Resolutio
       } catch (error) {
         // Log captured output even on timeout
         testLogger.info("=== Process timed out - captured stdout ===");
-        testLogger.info(stdoutOutput);
+        testLogger.info(output.stdout);
         testLogger.info("=== Process timed out - captured stderr ===");
-        testLogger.info(stderrOutput);
+        testLogger.info(output.stderr);
         throw error;
       } finally {
         // Cleanup

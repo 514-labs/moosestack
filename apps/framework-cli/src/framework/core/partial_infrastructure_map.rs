@@ -557,6 +557,8 @@ pub struct PartialInfrastructureMap {
     >,
     #[serde(default)]
     views: HashMap<String, crate::framework::core::infrastructure::view::View>,
+    #[serde(default, rename = "unloadedFiles")]
+    pub unloaded_files: Vec<String>,
 }
 
 impl PartialInfrastructureMap {

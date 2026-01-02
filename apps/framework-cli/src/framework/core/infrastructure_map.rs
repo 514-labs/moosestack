@@ -3255,6 +3255,32 @@ impl InfrastructureMap {
         } else {
             load_main_py(project, &project.project_location).await?
         };
+
+        // Warn about unloaded files in dev mode
+        if !project.is_production && !partial.unloaded_files.is_empty() {
+            let file_list = if partial.unloaded_files.len() <= 5 {
+                partial.unloaded_files.join(", ")
+            } else {
+                format!(
+                    "{} and {} more",
+                    partial.unloaded_files[..5].join(", "),
+                    partial.unloaded_files.len() - 5
+                )
+            };
+
+            show_message_wrapper(
+                MessageType::Warning,
+                Message {
+                    action: "Unloaded Files".to_string(),
+                    details: format!(
+                        "Found {} source file(s) that weren't loaded: {}. These files may contain resources that won't be registered.",
+                        partial.unloaded_files.len(),
+                        file_list
+                    ),
+                },
+            );
+        }
+
         let mut infra_map = partial.into_infra_map(
             project.language,
             &project.main_file(),
