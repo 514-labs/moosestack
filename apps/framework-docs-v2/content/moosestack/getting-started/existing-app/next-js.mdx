@@ -1,0 +1,34 @@
+---
+title: Embed ClickHouse analytics in Next.js
+description: Add MooseStack to an existing Next.js app (Coming Soon)
+order: 2
+---
+
+import { Callout } from "@/components/mdx";
+
+# Embed ClickHouse analytics in your Next.js app
+
+<Callout type="info" title="Coming Soon">
+The Next.js integration guide is currently under development. In the meantime, check out our **[Fastify integration guide](/moosestack/getting-started/existing-app/fastify)** which demonstrates similar patterns for integrating MooseStack with a TypeScript web framework.
+</Callout>
+
+## Why Embed ClickHouse in Next.js?
+
+If you need to track user events, run analytics queries, or build dashboards without deploying a separate analytics service, MooseStack lets you embed ClickHouse directly in your Next.js app with type-safe TypeScript models and queries. You keep Next.js as your only runtime while getting production-ready OLAP database capabilities.
+
+## What's Coming
+
+This guide will show you how to:
+
+- Add MooseStack to an existing Next.js (App Router) app as a library
+- Model ClickHouse schema in TypeScript in a `moose/` directory
+- Query ClickHouse from your Next.js server-side code using type-safe query helpers
+- Run migrations against production ClickHouse with the Moose CLI
+
+## Similar Patterns
+
+The **[Fastify integration guide](/moosestack/getting-started/existing-app/fastify)** demonstrates the same patterns for integrating MooseStack with a TypeScript web framework. 
+
+You can use the same `moose/` directory structure and TypeScript configuration as shown in the [example](https://github.com/514-labs/moosestack/tree/main/examples/fastify-moose/moose) for your Next.js app. The only difference is on integration point: you will call queries from your Next.js server-side code instead of your Fastify routes.
+
+Full example coming soon.
