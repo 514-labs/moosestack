@@ -83,6 +83,7 @@ export interface BasicTypes {
   booleanField: boolean;
   optionalString?: string;
   nullableNumber: number | null;
+  optionalTaggedDate?: DateTime64<3>;
 }
 
 /** Test 2: Simple arrays of primitives */
