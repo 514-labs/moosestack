@@ -12,8 +12,9 @@ interface FooWorkflow {
 // Create OLAP Table
 const workflowTable = new OlapTable<FooWorkflow>("FooWorkflow");
 
-export const ingest = new Task<null, void>("ingest", {
+export const ingest = new Task<null, number>("ingest", {
   run: async () => {
+    let recordCount = 0;
     for (let i = 0; i < 1000; i++) {
       const foo: Foo = {
         primaryKey: faker.string.uuid(),
@@ -40,6 +41,8 @@ export const ingest = new Task<null, void>("ingest", {
           workflowTable.insert([
             { id: "1", success: false, message: response.statusText },
           ]);
+        } else {
+          recordCount++;
         }
       } catch (error) {
         console.log(`Error ingesting record ${i}: ${error}`);
@@ -57,9 +60,34 @@ export const ingest = new Task<null, void>("ingest", {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
+    return recordCount;
   },
+  onComplete: [notifyComplete],
   retries: 3,
   timeout: "30s",
+});
+
+// onComplete task that runs after ingest finishes
+// Demonstrates how to schedule follow-up actions when a workflow task completes
+const notifyComplete = new Task<number, void>("notifyComplete", {
+  run: async ({ input }) => {
+    console.log(
+      `✅ Workflow completed! Successfully ingested ${input} records`,
+    );
+
+    // This is where you can trigger any post-completion actions:
+    // - Send a webhook notification to an external service
+    // - Post an event to trigger another workflow
+    // - Update a status dashboard
+    // - Send alerts or notifications
+    // - Example:
+    //   await fetch("https://your-webhook-endpoint.com/workflow-complete", {
+    //     method: "POST",
+    //     body: JSON.stringify({ recordsIngested: input, timestamp: Date.now() })
+    //   });
+  },
+  retries: 2,
+  timeout: "10s",
 });
 
 export const workflow = new Workflow("generator", {
