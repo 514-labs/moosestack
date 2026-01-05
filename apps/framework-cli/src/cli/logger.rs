@@ -91,8 +91,8 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
-use std::sync::atomic::Ordering;
+use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID};
+use crate::utilities::display_config::{update_display_config, DisplayConfig};
 
 use super::settings::user_directory;
 
@@ -462,8 +462,16 @@ fn create_rolling_file_appender(date_format: &str) -> DateBasedWriter {
 pub fn setup_logging(settings: &LoggerSettings) {
     clean_old_logs();
 
-    // Set global NO_ANSI flag for terminal display functions
-    NO_ANSI.store(settings.no_ansi, Ordering::Relaxed);
+    // Initialize global display configuration for terminal display functions.
+    // This is a two-phase initialization:
+    // 1. Logger sets no_ansi from settings (needed before any terminal output)
+    // 2. CLI commands will update show_timestamps and show_timing later in cli.rs
+    //    based on the --timestamps and --timing flags from the dev command
+    update_display_config(DisplayConfig {
+        no_ansi: settings.no_ansi,
+        show_timestamps: false,
+        show_timing: false,
+    });
 
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 

@@ -87,13 +87,13 @@ impl TopicToTableSyncProcess {
 }
 
 impl DataLineage for TopicToTableSyncProcess {
-    fn pulls_data_from(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
+    fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
         vec![InfrastructureSignature::Topic {
             id: self.source_topic_id.clone(),
         }]
     }
 
-    fn pushes_data_to(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
+    fn pushes_data_to(&self) -> Vec<InfrastructureSignature> {
         vec![InfrastructureSignature::Table {
             id: self.target_table_id.clone(),
         }]
@@ -146,13 +146,13 @@ impl TopicToTopicSyncProcess {
 }
 
 impl DataLineage for TopicToTopicSyncProcess {
-    fn pulls_data_from(&self, _default_database: &str) -> Vec<super::InfrastructureSignature> {
+    fn pulls_data_from(&self) -> Vec<super::InfrastructureSignature> {
         vec![InfrastructureSignature::Topic {
             id: self.source_topic_id.clone(),
         }]
     }
 
-    fn pushes_data_to(&self, _default_database: &str) -> Vec<super::InfrastructureSignature> {
+    fn pushes_data_to(&self) -> Vec<super::InfrastructureSignature> {
         vec![InfrastructureSignature::Topic {
             id: self.target_topic_id.clone(),
         }]

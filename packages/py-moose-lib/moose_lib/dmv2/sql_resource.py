@@ -11,8 +11,6 @@ from pydantic import BaseModel
 from .olap_table import OlapTable
 from ._registry import _sql_resources
 from ._source_capture import get_source_file_from_stack
-from .view import View
-from .materialized_view import MaterializedView
 
 
 class SqlResource:
@@ -35,8 +33,8 @@ class SqlResource:
     teardown: list[str]
     name: str
     kind: str = "SqlResource"
-    pulls_data_from: list[Union[OlapTable, View, MaterializedView, "SqlResource"]]
-    pushes_data_to: list[Union[OlapTable, View, MaterializedView, "SqlResource"]]
+    pulls_data_from: list[Union[OlapTable, "SqlResource"]]
+    pushes_data_to: list[Union[OlapTable, "SqlResource"]]
     source_file: Optional[str]
 
     def __init__(
@@ -44,13 +42,9 @@ class SqlResource:
         name: str,
         setup: list[str],
         teardown: list[str],
-        pulls_data_from: Optional[
-            list[Union[OlapTable, View, MaterializedView, "SqlResource"]]
-        ] = None,
-        pushes_data_to: Optional[
-            list[Union[OlapTable, View, MaterializedView, "SqlResource"]]
-        ] = None,
-        metadata: Optional[dict] = None,
+        pulls_data_from: Optional[list[Union[OlapTable, "SqlResource"]]] = None,
+        pushes_data_to: Optional[list[Union[OlapTable, "SqlResource"]]] = None,
+        metadata: dict = None,
     ):
         self.name = name
         self.setup = setup

@@ -32,6 +32,7 @@ use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaStreamConfig;
 use crate::metrics::MetricEvent;
 
+use crate::cli::display::should_show_spinner;
 use crate::framework::core::infrastructure::api_endpoint::APIType;
 use crate::framework::core::infrastructure_map::Change;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
@@ -39,7 +40,7 @@ use crate::framework::core::infrastructure_map::{InfraChanges, OlapChange, Table
 use crate::framework::versions::Version;
 use crate::metrics::Metrics;
 use crate::utilities::auth::{get_claims, validate_jwt};
-use crate::utilities::constants::SHOW_TIMING;
+use crate::utilities::display_config::load_display_config;
 
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::framework::typescript::bin::CliMessage;
@@ -2738,7 +2739,7 @@ async fn shutdown(
                 let mut process_registry = process_registry.write().await;
                 process_registry.stop().await
             },
-            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+            should_show_spinner(project.is_production),
         )
         .await
     })
@@ -2799,7 +2800,7 @@ async fn shutdown(
                 "Stopping workflows",
                 "Workflows stopped",
                 async { terminate_all_workflows(project).await },
-                !SHOW_TIMING.load(Ordering::Relaxed),
+                !load_display_config().show_timing,
             )
             .await
         })
@@ -2864,7 +2865,7 @@ async fn shutdown(
                     || {
                         let _ = docker.stop_containers(project);
                     },
-                    !SHOW_TIMING.load(Ordering::Relaxed),
+                    !load_display_config().show_timing,
                 )
             });
 
@@ -3332,11 +3333,6 @@ async fn get_admin_reconciled_inframap(
     let target_sql_resource_ids: HashSet<String> =
         current_map.sql_resources.keys().cloned().collect();
 
-    let target_materialized_view_ids: HashSet<String> =
-        current_map.materialized_views.keys().cloned().collect();
-
-    let target_view_ids: HashSet<String> = current_map.views.keys().cloned().collect();
-
     // Reconcile the loaded map with actual database state (single load, no race condition).
     // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
     // may support reconciliation of other infrastructure types (e.g., Kafka topics).
@@ -3348,8 +3344,6 @@ async fn get_admin_reconciled_inframap(
             &current_map,
             &target_table_ids,
             &target_sql_resource_ids,
-            &target_materialized_view_ids,
-            &target_view_ids,
             clickhouse_client,
         )
         .await?
@@ -3621,12 +3615,6 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
-            unmapped_materialized_views: vec![],
-            missing_materialized_views: vec![],
-            mismatched_materialized_views: vec![],
-            unmapped_views: vec![],
-            missing_views: vec![],
-            mismatched_views: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3646,12 +3634,6 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
-            unmapped_materialized_views: vec![],
-            missing_materialized_views: vec![],
-            mismatched_materialized_views: vec![],
-            unmapped_views: vec![],
-            missing_views: vec![],
-            mismatched_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3687,12 +3669,6 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
-            unmapped_materialized_views: vec![],
-            missing_materialized_views: vec![],
-            mismatched_materialized_views: vec![],
-            unmapped_views: vec![],
-            missing_views: vec![],
-            mismatched_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
