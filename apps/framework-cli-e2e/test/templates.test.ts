@@ -61,7 +61,7 @@ import {
   performGlobalCleanup,
   logger,
 } from "./utils";
-import { triggerWorkflow } from "./utils/workflow-utils";
+import { triggerWorkflow, getWorkflowStatus } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
 import { createClient } from "@clickhouse/client";
@@ -993,6 +993,51 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
 
         await triggerWorkflow("generator");
+
+        // Test workflow status endpoint
+        testLogger.info("Testing workflow status endpoint...");
+
+        // Test 1: Basic status query
+        const status = await getWorkflowStatus("generator");
+        expect(status.workflow_name).toBe("generator");
+        expect(status.run_id).toBeDefined();
+        expect(status.run_id.length).toBeGreaterThan(0);
+        expect(status.status).toBeDefined();
+        expect(status.status_emoji).toBeDefined();
+        expect(typeof status.execution_time_seconds).toBe("number");
+        expect(status.start_time).toBeDefined();
+
+        // Test 2: Verbose mode includes events
+        const verboseStatus = await getWorkflowStatus("generator", {
+          verbose: true,
+        });
+        expect(verboseStatus.workflow_name).toBe("generator");
+        expect(verboseStatus.events).toBeDefined();
+        expect(Array.isArray(verboseStatus.events)).toBe(true);
+        expect(verboseStatus.events!.length).toBeGreaterThan(0);
+
+        // Validate event structure
+        const firstEvent = verboseStatus.events![0];
+        expect(firstEvent.timestamp).toBeDefined();
+        expect(firstEvent.type).toBeDefined();
+
+        // Test 3: Specific run_id query
+        const runIdStatus = await getWorkflowStatus("generator", {
+          runId: status.run_id,
+        });
+        expect(runIdStatus.run_id).toBe(status.run_id);
+        expect(runIdStatus.workflow_name).toBe("generator");
+
+        // Test 4: Nonexistent workflow returns error
+        try {
+          await getWorkflowStatus("nonexistent-workflow");
+          throw new Error("Should have thrown error for nonexistent workflow");
+        } catch (error: any) {
+          expect(error.message).toContain("500");
+        }
+
+        testLogger.info("✓ Workflow status endpoint tests passed");
+
         await waitForMaterializedViewUpdate(
           "BarAggregated",
           1,

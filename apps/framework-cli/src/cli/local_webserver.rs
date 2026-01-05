@@ -24,8 +24,8 @@ use super::display::{
 };
 use super::routines::auth::validate_auth_token;
 use super::routines::scripts::{
-    get_workflow_history, run_workflow_and_get_run_ids, temporal_dashboard_url,
-    terminate_all_workflows, terminate_workflow,
+    get_workflow_history, get_workflow_status, run_workflow_and_get_run_ids,
+    temporal_dashboard_url, terminate_all_workflows, terminate_workflow,
 };
 use super::settings::Settings;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -648,6 +648,12 @@ struct WorkflowQueryParams {
     limit: Option<u32>,
 }
 
+#[derive(Deserialize, Default)]
+struct WorkflowStatusQueryParams {
+    run_id: Option<String>,
+    verbose: Option<bool>,
+}
+
 async fn workflows_history_route(
     req: Request<hyper::body::Incoming>,
     is_prod: bool,
@@ -810,6 +816,66 @@ async fn workflows_terminate_route(
                 }))
                 .unwrap(),
             ))),
+    }
+}
+
+async fn workflows_status_route(
+    req: Request<hyper::body::Incoming>,
+    is_prod: bool,
+    project: Arc<Project>,
+    workflow_id: String,
+) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    // Auth check (prod only)
+    if is_prod {
+        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
+            return add_cors_headers(Response::builder())
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Full::new(Bytes::from(
+                    "Unauthorized: Invalid or missing token",
+                )));
+        }
+    }
+
+    // Parse query params
+    let query_params: WorkflowStatusQueryParams = req
+        .uri()
+        .query()
+        .map(|q| serde_urlencoded::from_str(q).unwrap_or_default())
+        .unwrap_or_default();
+
+    let verbose = query_params.verbose.unwrap_or(false);
+
+    // Call existing function (always json=true for HTTP)
+    match get_workflow_status(
+        &project,
+        &workflow_id,
+        query_params.run_id,
+        verbose,
+        true, // json=true
+    )
+    .await
+    {
+        Ok(success) => {
+            add_cors_headers(Response::builder())
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(success.message.details)))
+        }
+        Err(failure) => {
+            error!("Failed to get workflow status: {:?}", failure);
+            let error_response = json!({
+                "error": "Failed to retrieve workflow status",
+                "details": failure.message.details,
+            });
+
+            add_cors_headers(Response::builder())
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header("Content-Type", "application/json")
+                .body(Full::new(Bytes::from(
+                    serde_json::to_string(&error_response).unwrap(),
+                )))
+        }
     }
 }
 
@@ -1782,6 +1848,11 @@ async fn router(
             if project.features.workflows =>
         {
             workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
+        }
+        (_, &hyper::Method::GET, ["workflows", workflow_id, "status"])
+            if project.features.workflows =>
+        {
+            workflows_status_route(req, is_prod, project.clone(), workflow_id.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
         (_, _method, _) => {
