@@ -207,7 +207,9 @@ services:
       - clickhouse-1-data:/var/lib/clickhouse/
       - clickhouse-1-logs:/var/log/clickhouse-server/
       - clickhouse-1-users:/etc/clickhouse-server/users.d
+      {{#if clickhouse_clusters_file}}
       - "{{clickhouse_clusters_file}}:/etc/clickhouse-server/config.d/clusters.xml:ro"
+      {{/if}}
     environment:
       - CLICKHOUSE_DB=${DB_NAME:-local}
       - CLICKHOUSE_USER=${CLICKHOUSE_USER:-panda}
