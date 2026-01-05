@@ -856,12 +856,10 @@ async fn workflows_status_route(
     )
     .await
     {
-        Ok(success) => {
-            add_cors_headers(Response::builder())
-                .status(StatusCode::OK)
-                .header("Content-Type", "application/json")
-                .body(Full::new(Bytes::from(success.message.details)))
-        }
+        Ok(success) => add_cors_headers(Response::builder())
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .body(Full::new(Bytes::from(success.message.details))),
         Err(failure) => {
             error!("Failed to get workflow status: {:?}", failure);
             let error_response = json!({
