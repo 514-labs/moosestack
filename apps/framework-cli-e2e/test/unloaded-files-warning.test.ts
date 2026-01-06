@@ -301,5 +301,94 @@ export const myTable = OlapTable<MyModel>({
         "✓ No false warning test passed for fully loaded TypeScript project",
       );
     });
+
+    it("should NOT warn about TypeScript declaration files (.d.ts)", async function () {
+      this.timeout(SUITE_TIMEOUT_MS);
+
+      testLogger.info(
+        "🧪 Testing that .d.ts files don't trigger false warnings",
+      );
+
+      // Create a temporary test directory
+      testDir = createTempTestDirectory("declaration-files-ts");
+      testLogger.debug("Created test directory", { testDir });
+
+      // Set up a basic TypeScript project
+      await setupTypeScriptProject(
+        testDir,
+        TEMPLATE_NAMES.TYPESCRIPT_DEFAULT,
+        CLI_PATH,
+        MOOSE_LIB_PATH,
+        "test-declaration-files-ts",
+        "npm",
+      );
+      testLogger.debug("Set up TypeScript project");
+
+      // Create declaration files (.d.ts, .d.mts, .d.cts)
+      const declarationFiles = [
+        path.join(testDir, "src", "types.d.ts"),
+        path.join(testDir, "src", "global.d.mts"),
+        path.join(testDir, "src", "module.d.cts"),
+      ];
+
+      const declarationContent = `
+// This is a TypeScript declaration file
+// It should NOT be flagged as unloaded since it's never loaded at runtime
+declare module "some-module" {
+  export const something: string;
+}
+`;
+
+      for (const filePath of declarationFiles) {
+        fs.writeFileSync(filePath, declarationContent);
+        testLogger.debug("Created declaration file", { filePath });
+      }
+
+      // Start moose dev and capture output
+      testLogger.debug("Starting moose dev");
+
+      devProcess = spawn(CLI_PATH, ["dev"], {
+        cwd: testDir,
+        env: DEFAULT_DEV_ENV,
+      });
+
+      // Capture all output
+      const output = captureProcessOutput(devProcess);
+
+      // Wait for server to start
+      await waitForServerStart(
+        devProcess,
+        INFRASTRUCTURE_TIMEOUT_MS,
+        "started successfully",
+        "http://localhost:4000",
+        { logger: testLogger },
+      );
+
+      const capturedOutput = output.stdout + output.stderr;
+
+      // Verify no warning was shown for declaration files
+      expect(
+        capturedOutput.includes("Unloaded Files"),
+        "Should NOT display unloaded files warning for .d.ts files",
+      ).to.be.false;
+
+      // Also verify the specific file names aren't mentioned
+      expect(
+        capturedOutput.includes("types.d.ts"),
+        "Should NOT mention types.d.ts as unloaded",
+      ).to.be.false;
+      expect(
+        capturedOutput.includes("global.d.mts"),
+        "Should NOT mention global.d.mts as unloaded",
+      ).to.be.false;
+      expect(
+        capturedOutput.includes("module.d.cts"),
+        "Should NOT mention module.d.cts as unloaded",
+      ).to.be.false;
+
+      testLogger.info(
+        "✓ Declaration files test passed - no false warnings for .d.ts files",
+      );
+    });
   });
 });

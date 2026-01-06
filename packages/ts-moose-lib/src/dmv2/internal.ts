@@ -70,6 +70,16 @@ function findSourceFiles(
           files.push(...findSourceFiles(fullPath, extensions));
         }
       } else if (entry.isFile()) {
+        // Skip TypeScript declaration files (.d.ts, .d.mts, .d.cts)
+        // These are never loaded at runtime, only used for type-checking
+        if (
+          entry.name.endsWith(".d.ts") ||
+          entry.name.endsWith(".d.mts") ||
+          entry.name.endsWith(".d.cts")
+        ) {
+          continue;
+        }
+
         const ext = path.extname(entry.name);
         if (extensions.includes(ext)) {
           files.push(fullPath);

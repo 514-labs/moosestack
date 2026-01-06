@@ -819,7 +819,15 @@ def _find_source_files(directory: str, extensions: tuple = (".py",)) -> list[str
 
     for item in dir_path.rglob("*"):
         # Skip hidden directories and files, and __pycache__
-        if any(part.startswith(".") or part == "__pycache__" for part in item.parts):
+        # Only check parts relative to the search directory, not the full absolute path
+        try:
+            relative_parts = item.relative_to(dir_path).parts
+            if any(
+                part.startswith(".") or part == "__pycache__" for part in relative_parts
+            ):
+                continue
+        except ValueError:
+            # item is not relative to dir_path, skip it
             continue
 
         if item.is_file() and item.suffix in extensions:
