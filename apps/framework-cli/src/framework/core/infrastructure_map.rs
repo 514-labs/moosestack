@@ -61,6 +61,7 @@ use crate::infrastructure::olap::clickhouse::IgnorableOperation;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use crate::proto::infrastructure_map::InfrastructureMap as ProtoInfrastructureMap;
+use crate::utilities::constants::{PYTHON_MAIN_FILE, TYPESCRIPT_MAIN_FILE};
 use crate::utilities::secrets::CREDENTIAL_PLACEHOLDER;
 use anyhow::{Context, Result};
 use protobuf::{EnumOrUnknown, Message as ProtoMessage};
@@ -3261,10 +3262,29 @@ impl InfrastructureMap {
             let file_list = if partial.unloaded_files.len() <= 5 {
                 partial.unloaded_files.join(", ")
             } else {
+                let first_five = partial
+                    .unloaded_files
+                    .iter()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 format!(
                     "{} and {} more",
-                    partial.unloaded_files[..5].join(", "),
-                    partial.unloaded_files.len() - 5
+                    first_five,
+                    partial.unloaded_files.len() - 5,
+                )
+            };
+
+            let advice = if project.language == SupportedLanguages::Typescript {
+                format!(
+                    "Make sure they're imported or re-exported in {}/{}.",
+                    project.source_dir, TYPESCRIPT_MAIN_FILE
+                )
+            } else {
+                format!(
+                    "Make sure they're imported in {}/{}.",
+                    project.source_dir, PYTHON_MAIN_FILE
                 )
             };
 
@@ -3273,9 +3293,10 @@ impl InfrastructureMap {
                 Message {
                     action: "Unloaded Files".to_string(),
                     details: format!(
-                        "Found {} source file(s) that weren't loaded: {}. These files may contain resources that won't be registered.",
+                        "Found {} source file(s) that weren't loaded: {}. These files may contain resources that won't be registered. {}",
                         partial.unloaded_files.len(),
-                        file_list
+                        file_list,
+                        advice
                     ),
                 },
             );
