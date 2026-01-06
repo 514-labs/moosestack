@@ -118,25 +118,20 @@ export const unloadedTable = OlapTable<UnloadedTestModel>({
         },
       });
 
-      // Wait for the unloaded files warning
-      const warningFound = await waitForOutputMessage(
+      // Wait for both the warning message and the specific file name
+      // Using a single call avoids race conditions where both strings
+      // might appear in the same output chunk
+      const messagesFound = await waitForOutputMessage(
         devProcess,
-        "Unloaded Files",
+        ["Unloaded Files", "unloaded_table.ts"],
         INFRASTRUCTURE_TIMEOUT_MS,
         { logger: testLogger },
       );
 
-      expect(warningFound, "Should display unloaded files warning").to.be.true;
-
-      // Also verify the specific file is mentioned
-      const fileNameFound = await waitForOutputMessage(
-        devProcess,
-        "unloaded_table.ts",
-        5000,
-        { logger: testLogger },
-      );
-
-      expect(fileNameFound, "Should mention the unloaded file name").to.be.true;
+      expect(
+        messagesFound,
+        "Should display unloaded files warning and mention the file name",
+      ).to.be.true;
 
       testLogger.info("✓ Unloaded files warning test passed for TypeScript");
     });
@@ -201,25 +196,20 @@ unloaded_table = OlapTable[UnloadedTestModel](
         },
       });
 
-      // Wait for the unloaded files warning
-      const warningFound = await waitForOutputMessage(
+      // Wait for both the warning message and the specific file name
+      // Using a single call avoids race conditions where both strings
+      // might appear in the same output chunk
+      const messagesFound = await waitForOutputMessage(
         devProcess,
-        "Unloaded Files",
+        ["Unloaded Files", "unloaded_table.py"],
         INFRASTRUCTURE_TIMEOUT_MS,
         { logger: testLogger },
       );
 
-      expect(warningFound, "Should display unloaded files warning").to.be.true;
-
-      // Also verify the specific file is mentioned
-      const fileNameFound = await waitForOutputMessage(
-        devProcess,
-        "unloaded_table.py",
-        5000,
-        { logger: testLogger },
-      );
-
-      expect(fileNameFound, "Should mention the unloaded file name").to.be.true;
+      expect(
+        messagesFound,
+        "Should display unloaded files warning and mention the file name",
+      ).to.be.true;
 
       testLogger.info("✓ Unloaded files warning test passed for Python");
     });

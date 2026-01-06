@@ -334,19 +334,33 @@ export const waitForInfrastructureReady = async (
 };
 
 /**
- * Waits for a specific message to appear in process output (stdout or stderr)
- * Returns true if the message is found, false if timeout occurs
+ * Waits for one or more specific messages to appear in process output (stdout or stderr)
+ *
+ * @param devProcess - The child process to monitor
+ * @param expectedMessages - A single string or array of strings to wait for
+ * @param timeout - Maximum time to wait in milliseconds
+ * @param options - Additional options including logger
+ * @returns Promise<boolean> - true if all messages found, false if timeout occurs
+ *
+ * @example
+ * // Wait for a single message
+ * await waitForOutputMessage(process, "Server started", 5000);
+ *
+ * // Wait for multiple messages (avoids race conditions)
+ * await waitForOutputMessage(process, ["Unloaded Files", "myfile.ts"], 5000);
  */
 export const waitForOutputMessage = async (
   devProcess: ChildProcess,
-  expectedMessage: string,
+  expectedMessages: string | string[],
   timeout: number,
   options: ProcessOptions = {},
 ): Promise<boolean> => {
   const log = options.logger ?? processLogger;
+  const messagesToFind =
+    Array.isArray(expectedMessages) ? expectedMessages : [expectedMessages];
+  const messagesFound = new Set<string>();
 
   return new Promise<boolean>((resolve, reject) => {
-    let messageFound = false;
     let timeoutId: any = null;
     let outputBuffer = "";
 
@@ -360,40 +374,53 @@ export const waitForOutputMessage = async (
       devProcess.off("exit", onExit);
     };
 
+    const checkMessages = (output: string) => {
+      // Check which messages are in the current output
+      for (const message of messagesToFind) {
+        if (output.includes(message) || outputBuffer.includes(message)) {
+          messagesFound.add(message);
+        }
+      }
+
+      // If all messages found, resolve
+      if (messagesFound.size === messagesToFind.length) {
+        log.debug("All expected messages found", {
+          messages: messagesToFind,
+        });
+        cleanup();
+        resolve(true);
+      }
+    };
+
     const onStdout = (data: any) => {
       const output = data.toString();
       outputBuffer += output;
       log.debug("Dev process stdout", { output: output.trim() });
-
-      if (output.includes(expectedMessage)) {
-        messageFound = true;
-        cleanup();
-        resolve(true);
-      }
+      checkMessages(output);
     };
 
     const onStderr = (data: any) => {
       const output = data.toString();
       outputBuffer += output;
       log.debug("Dev process stderr", { stderr: output.trim() });
-
-      if (output.includes(expectedMessage)) {
-        messageFound = true;
-        cleanup();
-        resolve(true);
-      }
+      checkMessages(output);
     };
 
     const onExit = (code: number | null) => {
       cleanup();
-      if (!messageFound) {
-        log.error("Process exited without finding message", {
+      if (messagesFound.size < messagesToFind.length) {
+        const missingMessages = messagesToFind.filter(
+          (msg) => !messagesFound.has(msg),
+        );
+        log.error("Process exited without finding all messages", {
           exitCode: code,
+          found: Array.from(messagesFound),
+          missing: missingMessages,
           outputBuffer: outputBuffer.slice(0, 1000),
         });
         reject(
           new Error(
-            `Process exited with code ${code} before message was found`,
+            `Process exited with code ${code} before all messages were found. Missing: ${missingMessages.join(", ")}`,
           ),
         );
       }
@@ -405,9 +432,14 @@ export const waitForOutputMessage = async (
 
     timeoutId = setTimeout(() => {
       cleanup();
-      if (!messageFound) {
-        log.error("Timeout waiting for message", {
-          expectedMessage,
+      if (messagesFound.size < messagesToFind.length) {
+        const missingMessages = messagesToFind.filter(
+          (msg) => !messagesFound.has(msg),
+        );
+        log.error("Timeout waiting for messages", {
+          expectedMessages: messagesToFind,
+          found: Array.from(messagesFound),
+          missing: missingMessages,
           receivedOutput: outputBuffer.slice(0, 1000),
         });
         resolve(false);
