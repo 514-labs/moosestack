@@ -47,7 +47,7 @@ use sql_parser::{
     extract_source_tables_from_query, extract_source_tables_from_query_regex,
     extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::LazyLock;
 use tracing::{debug, info, warn};
@@ -372,19 +372,55 @@ pub async fn execute_changes(
 
     let db_name = &project.clickhouse_config.db_name;
 
+    // Scan setup_plan to find which databases need which clusters
+    let mut db_to_clusters: HashMap<String, HashSet<String>> = HashMap::new();
+
+    for op in setup_plan {
+        if let AtomicOlapOperation::CreateTable { table, .. } = op {
+            // Get database (defaults to project.clickhouse_config.db_name)
+            let db = table.database.as_ref().unwrap_or(db_name);
+
+            // If table has cluster, track it
+            if let Some(cluster) = &table.cluster_name {
+                db_to_clusters
+                    .entry(db.clone())
+                    .or_default()
+                    .insert(cluster.clone());
+            }
+        }
+    }
+
     // Create all configured databases
     let mut all_databases = vec![db_name.clone()];
     all_databases.extend(project.clickhouse_config.additional_databases.clone());
 
     for database in &all_databases {
-        let create_db_query = format!("CREATE DATABASE IF NOT EXISTS `{}`", database);
-        info!("Creating database: {}", database);
-        run_query(&create_db_query, &client).await.map_err(|e| {
-            ClickhouseChangesError::ClickhouseClient {
-                error: e,
-                resource: Some(format!("database:{}", database)),
+        if let Some(clusters) = db_to_clusters.get(database) {
+            // Database has tables with clusters - create on each cluster
+            for cluster in clusters {
+                let create_db_query = format!(
+                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER {}",
+                    database, cluster
+                );
+                info!("Creating database {} on cluster {}", database, cluster);
+                run_query(&create_db_query, &client).await.map_err(|e| {
+                    ClickhouseChangesError::ClickhouseClient {
+                        error: e,
+                        resource: Some(format!("database:{}@cluster:{}", database, cluster)),
+                    }
+                })?;
             }
-        })?;
+        } else {
+            // No clusters for this database - create normally
+            let create_db_query = format!("CREATE DATABASE IF NOT EXISTS `{}`", database);
+            info!("Creating database: {}", database);
+            run_query(&create_db_query, &client).await.map_err(|e| {
+                ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(format!("database:{}", database)),
+                }
+            })?;
+        }
     }
 
     // Execute Teardown Plan
