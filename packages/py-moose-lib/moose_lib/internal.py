@@ -849,7 +849,7 @@ def _find_unloaded_files(source_dir: str) -> list[str]:
 
     # Get all loaded modules from sys.modules
     loaded_files = set()
-    for module_name, module in sys.modules.items():
+    for _module_name, module in sys.modules.items():
         if hasattr(module, "__file__") and module.__file__:
             try:
                 module_path = Path(module.__file__).resolve()
