@@ -68,7 +68,7 @@ const testLogger = logger.scope("cluster-test");
 interface ExpectedTableConfig {
   name: string;
   cluster: string | null;
-  database?: string;
+  database: string | null;
 }
 
 /**
@@ -147,7 +147,7 @@ async function verifyInfraMapClusters(
   testLogger.info("InfraMap tables:", Object.keys(infraMap.tables));
 
   for (const expectedTable of expectedTables) {
-    const database = expectedTable.database || CLICKHOUSE_CONFIG.database;
+    const database = expectedTable.database ?? CLICKHOUSE_CONFIG.database;
     const tableKey = `${database}_${expectedTable.name}`;
     const table = infraMap.tables[tableKey];
 
@@ -187,31 +187,6 @@ function verifyClusterXmlGenerated(projectDir: string): void {
   expect(xmlContent).to.include("<cluster_b>");
   expect(xmlContent).to.include("<shard>");
   expect(xmlContent).to.include("<replica>");
-}
-
-/**
- * Verify table exists in ClickHouse
- *
- * Note: ON CLUSTER is a DDL execution directive and is NOT stored in the table schema.
- * SHOW CREATE TABLE will never display ON CLUSTER, even if it was used during creation.
- * To verify cluster support, we rely on:
- * 1. The inframap showing cluster_name (preserved in our state)
- * 2. The table being successfully created (which would fail if cluster was misconfigured)
- */
-async function verifyTableExists(tableName: string): Promise<void> {
-  await withClickHouseClient(async (client) => {
-    const result = await client.query({
-      query: `SELECT name, engine FROM system.tables WHERE database = '${CLICKHOUSE_CONFIG.database}' AND name = '${tableName}'`,
-      format: "JSONEachRow",
-    });
-
-    const rows = await result.json<{ name: string; engine: string }>();
-    expect(
-      rows.length,
-      `Table ${tableName} should exist in ClickHouse`,
-    ).to.equal(1);
-    testLogger.info(`Table ${tableName} exists with engine: ${rows[0].engine}`);
-  });
 }
 
 /**
@@ -376,11 +351,11 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
       await verifyInfraMapClusters([
-        { name: "TableA", cluster: "cluster_a" },
-        { name: "TableB", cluster: "cluster_b" },
-        { name: "TableC", cluster: null },
-        { name: "TableD", cluster: null },
-        { name: "TableE", cluster: null },
+        { name: "TableA", cluster: "cluster_a", database: null },
+        { name: "TableB", cluster: "cluster_b", database: null },
+        { name: "TableC", cluster: null, database: null },
+        { name: "TableD", cluster: null, database: null },
+        { name: "TableE", cluster: null, database: null },
         { name: "TableF", cluster: "cluster_a", database: "analytics" },
       ]);
     });
@@ -531,7 +506,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       // Verify TableD was created with explicit keeper_path and replica_name
       await withClickHouseClient(async (client) => {
         const result = await client.query({
-          query: `SHOW CREATE TABLE ${CLICKHOUSE_CONFIG.database}.TableD`,
+          query: `SHOW CREATE TABLE TableD`,
           format: "JSONEachRow",
         });
 
@@ -557,7 +532,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       // Verify TableE was created with ReplicatedMergeTree and auto-injected params
       await withClickHouseClient(async (client) => {
         const result = await client.query({
-          query: `SHOW CREATE TABLE ${CLICKHOUSE_CONFIG.database}.TableE`,
+          query: `SHOW CREATE TABLE TableE`,
           format: "JSONEachRow",
         });
 
