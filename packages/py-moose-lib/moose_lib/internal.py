@@ -863,8 +863,6 @@ def _find_unloaded_files(source_dir: str) -> list[str]:
                 except (ValueError, OSError):
                     # Module file is outside cwd or can't be resolved
                     pass
-                    rel_path = module_path.relative_to(Path.cwd())
-                    loaded_files.add(str(rel_path))
             except (ValueError, OSError):
                 # Module file is outside cwd or can't be resolved
                 pass
