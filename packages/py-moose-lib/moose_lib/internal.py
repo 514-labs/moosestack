@@ -854,7 +854,15 @@ def _find_unloaded_files(source_dir: str) -> list[str]:
             try:
                 module_path = Path(module.__file__).resolve()
                 # Check if module is in our app directory
-                if str(app_dir.resolve()) in str(module_path):
+                try:
+                    module_path = Path(module.__file__).resolve()
+                    # Check if module is in our app directory
+                    if module_path.is_relative_to(app_dir.resolve()):
+                        rel_path = module_path.relative_to(Path.cwd())
+                        loaded_files.add(str(rel_path))
+                except (ValueError, OSError):
+                    # Module file is outside cwd or can't be resolved
+                    pass
                     rel_path = module_path.relative_to(Path.cwd())
                     loaded_files.add(str(rel_path))
             except (ValueError, OSError):
