@@ -51,6 +51,13 @@ const MOOSE_PY_LIB_PATH = path.resolve(
 const INFRASTRUCTURE_TIMEOUT_MS = 90_000; // 90 seconds
 const SUITE_TIMEOUT_MS = 300_000; // 5 minutes
 
+// Default environment variables for dev processes
+const DEFAULT_DEV_ENV = {
+  ...process.env,
+  MOOSE_LOGGER__LEVEL: "Debug",
+  MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+};
+
 describe("Unloaded Files Warning", () => {
   let testDir: string;
   let devProcess: ChildProcess | null = null;
@@ -112,10 +119,7 @@ export const unloadedTable = OlapTable<UnloadedTestModel>({
       testLogger.debug("Starting moose dev");
       devProcess = spawn(CLI_PATH, ["dev"], {
         cwd: testDir,
-        env: {
-          ...process.env,
-          MOOSE_LOGGER__LEVEL: "Debug",
-        },
+        env: DEFAULT_DEV_ENV,
       });
 
       // Wait for both the warning message and the specific file name
@@ -190,10 +194,7 @@ unloaded_table = OlapTable[UnloadedTestModel](
       testLogger.debug("Starting moose dev");
       devProcess = spawn(CLI_PATH, ["dev"], {
         cwd: testDir,
-        env: {
-          ...process.env,
-          MOOSE_LOGGER__LEVEL: "Debug",
-        },
+        env: DEFAULT_DEV_ENV,
       });
 
       // Wait for both the warning message and the specific file name
@@ -273,10 +274,7 @@ export const myTable = OlapTable<MyModel>({
 
       devProcess = spawn(CLI_PATH, ["dev"], {
         cwd: testDir,
-        env: {
-          ...process.env,
-          MOOSE_LOGGER__LEVEL: "Debug",
-        },
+        env: DEFAULT_DEV_ENV,
       });
 
       // Capture all output
