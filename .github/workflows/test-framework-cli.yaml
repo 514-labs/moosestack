@@ -83,7 +83,7 @@ jobs:
     name: Check
     # This is doing both checks and compilation hence why there is a
     # Bigger machine
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -358,7 +358,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -431,7 +431,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Default Template (Python ${{ matrix.python-version }})
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -507,7 +507,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Tests Template (Python ${{ matrix.python-version }})
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
