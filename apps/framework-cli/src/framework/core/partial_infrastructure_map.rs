@@ -557,6 +557,11 @@ pub struct PartialInfrastructureMap {
     >,
     #[serde(default)]
     views: HashMap<String, crate::framework::core::infrastructure::view::View>,
+    /// List of source files that exist in the project but were not loaded during the build process.
+    /// This is used to warn developers about potentially missing imports or configuration issues.
+    /// File paths should be relative to the project root.
+    #[serde(default, rename = "unloadedFiles")]
+    pub unloaded_files: Vec<String>,
 }
 
 impl PartialInfrastructureMap {
