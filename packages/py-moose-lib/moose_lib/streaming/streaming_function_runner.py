@@ -525,8 +525,10 @@ def main():
                             )
 
                             # Log payload before transformation if enabled
-                            if getattr(args, 'log_payloads', False):
-                                log(f"[PAYLOAD:STREAM_IN] {json.dumps(input_data, cls=EnhancedJSONEncoder)}")
+                            if getattr(args, "log_payloads", False):
+                                log(
+                                    f"[PAYLOAD:STREAM_IN] {json.dumps(input_data, cls=EnhancedJSONEncoder)}"
+                                )
 
                             # Run the flow
                             all_outputs = []
@@ -593,13 +595,19 @@ def main():
                                 )
 
                             # Log payload after transformation if enabled (what we're actually sending to Kafka)
-                            if getattr(args, 'log_payloads', False):
+                            if getattr(args, "log_payloads", False):
                                 # Filter out None values to match what actually gets sent
-                                outgoing_data = [item for item in all_outputs if item is not None]
+                                outgoing_data = [
+                                    item for item in all_outputs if item is not None
+                                ]
                                 if len(outgoing_data) > 0:
-                                    log(f"[PAYLOAD:STREAM_OUT] {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}")
+                                    log(
+                                        f"[PAYLOAD:STREAM_OUT] {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}"
+                                    )
                                 else:
-                                    log("[PAYLOAD:STREAM_OUT] (no output from streaming function)")
+                                    log(
+                                        "[PAYLOAD:STREAM_OUT] (no output from streaming function)"
+                                    )
 
                             if producer is not None:
                                 for item in all_outputs:
