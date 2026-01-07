@@ -1532,6 +1532,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_templates() {
+        crate::test_utils::ensure_test_environment();
+
         let cli = Cli::parse_from(["moose", "template", "list"]);
 
         let config = read_settings().unwrap();
@@ -1539,7 +1541,11 @@ mod tests {
 
         let result = top_command_handler(config, &cli.command, machine_id).await;
 
-        assert!(result.is_ok());
+        assert!(
+            result.is_ok(),
+            "Failed to list templates: {:?}",
+            result.err()
+        );
         let success_message = result.unwrap().message.details;
 
         // Basic check to see if the output contains expected template info structure
