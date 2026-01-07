@@ -15,7 +15,6 @@ The runner handles:
 
 import argparse
 import dataclasses
-import os
 import traceback
 from datetime import datetime, timezone
 from importlib import import_module

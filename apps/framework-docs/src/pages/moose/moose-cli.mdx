@@ -47,7 +47,7 @@ moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads]
 - `--no-infra`: Skip starting docker containers for infrastructure
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
 - `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2.3s" (default: false)
-- `--log-payloads`: Log payloads for debugging data flow
+- `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 
