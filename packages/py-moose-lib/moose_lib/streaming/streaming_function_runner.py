@@ -42,6 +42,12 @@ sys.stdout = io.TextIOWrapper(
     open(sys.stdout.fileno(), "wb", 0), write_through=True, line_buffering=True
 )
 
+# Constants for consumer initialization
+# Maximum time (seconds) to wait for partition assignment during eager initialization
+PARTITION_ASSIGNMENT_TIMEOUT_SECONDS = 60
+# Polling interval (seconds) when waiting for partition assignment
+PARTITION_ASSIGNMENT_POLL_INTERVAL_SECONDS = 0.1
+
 
 @dataclasses.dataclass
 class KafkaTopicConfig:
@@ -498,7 +504,6 @@ def main():
             # kafka-python is lazy - first poll() triggers connection and group join
             # We do this explicitly to ensure consumer is fully ready before processing
             log("Waiting for consumer group assignment...")
-            max_wait_seconds = 60
             start_time = time.time()
             got_assignment = False
             while running.is_set():
@@ -511,11 +516,11 @@ def main():
                     )
                     got_assignment = True
                     break
-                if time.time() - start_time > max_wait_seconds:
+                if time.time() - start_time > PARTITION_ASSIGNMENT_TIMEOUT_SECONDS:
                     raise RuntimeError(
-                        f"Consumer failed to get partition assignment within {max_wait_seconds}s"
+                        f"Consumer failed to get partition assignment within {PARTITION_ASSIGNMENT_TIMEOUT_SECONDS}s"
                     )
-                time.sleep(0.1)
+                time.sleep(PARTITION_ASSIGNMENT_POLL_INTERVAL_SECONDS)
 
             # If we exited because of shutdown signal, don't proceed to main loop
             if not got_assignment:
