@@ -1523,6 +1523,7 @@ async fn check_authorization(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ingest_route(
     req: Request<hyper::body::Incoming>,
     route: PathBuf,

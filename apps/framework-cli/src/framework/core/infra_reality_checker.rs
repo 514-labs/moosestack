@@ -841,6 +841,7 @@ mod tests {
             language_project_config: crate::project::LanguageProjectConfig::default(),
             project_location: std::path::PathBuf::new(),
             is_production: false,
+            log_payloads: false,
             supported_old_versions: std::collections::HashMap::new(),
             jwt: None,
             authentication: crate::project::AuthenticationConfig::default(),
