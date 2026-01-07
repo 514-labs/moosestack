@@ -60,6 +60,7 @@ import {
   cleanupTestSuite,
   performGlobalCleanup,
   logger,
+  waitForInfrastructureChanges,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
@@ -1052,7 +1053,22 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               'count: Annotated[int, "uint32"]',
             );
         }
+
+        // Start listening for infrastructure changes before modifying the file
+        const infrastructureChangesPromise = waitForInfrastructureChanges(
+          devProcess!,
+          60_000,
+        );
+
         await fs.promises.writeFile(engineTestsPath, contents, "utf8");
+
+        // Wait for infrastructure changes to complete before proceeding
+        // This ensures all streaming functions have restarted and stabilized
+        testLogger.info(
+          "Waiting for infrastructure changes to complete after file modification...",
+        );
+        await infrastructureChangesPromise;
+        testLogger.info("Infrastructure changes completed");
 
         // Verify DDL reflects removed DEFAULT settings
         await withRetries(

@@ -504,14 +504,23 @@ def main():
                     if not messages:
                         continue
 
+                    # Accumulate all outputs from all messages in this poll batch
+                    # We process all messages before committing to ensure at-least-once semantics
+                    batch_outputs = []
+                    batch_processed = True
+
                     # Process each partition's messages
                     for partition_messages in messages.values():
+                        if not batch_processed:
+                            break
                         for message in partition_messages:
                             log(
                                 f"Message partition={message.partition} offset={message.offset}"
                             )
                             if not running.is_set():
-                                return
+                                # Shutdown requested - don't commit, messages will be reprocessed
+                                batch_processed = False
+                                break
 
                             # Parse the message into the input type
                             input_data = parse_input(
@@ -519,7 +528,7 @@ def main():
                             )
 
                             # Run the flow
-                            all_outputs = []
+                            message_outputs = []
                             for (
                                 streaming_function_callable,
                                 dlq,
@@ -570,7 +579,7 @@ def main():
                                     if isinstance(output_data, list)
                                     else [output_data]
                                 )
-                                all_outputs.extend(output_data_list)
+                                message_outputs.extend(output_data_list)
 
                                 with metrics_lock:
                                     metrics["count_in"] += len(output_data_list)
@@ -582,26 +591,33 @@ def main():
                                     )
                                 )
 
-                            if producer is not None:
-                                for item in all_outputs:
-                                    # Ignore flow function returning null
-                                    if item is not None:
-                                        record = json.dumps(
-                                            item, cls=EnhancedJSONEncoder
-                                        ).encode("utf-8")
+                            batch_outputs.extend(message_outputs)
 
-                                        producer.send(target_topic.name, record)
+                    # Only send outputs and commit if we processed the entire batch
+                    if batch_processed and producer is not None:
+                        for item in batch_outputs:
+                            # Ignore flow function returning null
+                            if item is not None:
+                                record = json.dumps(
+                                    item, cls=EnhancedJSONEncoder
+                                ).encode("utf-8")
 
-                                        with metrics_lock:
-                                            metrics["bytes_count"] += len(record)
-                                            metrics["count_out"] += 1
+                                producer.send(target_topic.name, record)
 
-                                # Flush producer to ensure messages are sent before committing
-                                producer.flush()
+                                with metrics_lock:
+                                    metrics["bytes_count"] += len(record)
+                                    metrics["count_out"] += 1
 
-                            # Commit offset only after successful processing and flushing
-                            # This ensures at-least-once delivery semantics
-                            consumer.commit()
+                        # Flush producer to ensure messages are sent before committing
+                        producer.flush()
+
+                    # Commit offset only after ALL messages in the batch are successfully
+                    # processed and flushed. This ensures at-least-once delivery semantics.
+                    # In kafka-python, commit() without args commits the current consumer
+                    # position (the offset after all polled messages), so we must only call
+                    # it after processing the entire batch.
+                    if batch_processed:
+                        consumer.commit()
 
                 except Exception as e:
                     cli_log(

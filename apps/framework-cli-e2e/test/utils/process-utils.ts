@@ -30,6 +30,83 @@ const execAsync = (
 const setTimeoutAsync = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+export interface WaitForStdoutOptions extends ProcessOptions {
+  /** Message to match for success (resolves the promise) */
+  successMessage: string;
+  /** Messages that indicate failure (rejects the promise with corresponding error) */
+  errorPatterns?: Array<{ pattern: string; error: string }>;
+  /** Optional custom log message on success */
+  successLog?: string;
+  /** Optional custom log message on timeout */
+  timeoutLog?: string;
+}
+
+/**
+ * Generic utility to wait for a specific message in a process's stdout.
+ * Resolves when successMessage is found, rejects on error patterns or timeout.
+ */
+export const waitForStdoutMessage = async (
+  process: ChildProcess,
+  timeoutMs: number,
+  options: WaitForStdoutOptions,
+): Promise<void> => {
+  const log = options.logger ?? processLogger;
+  const {
+    successMessage,
+    errorPatterns = [],
+    successLog,
+    timeoutLog,
+  } = options;
+
+  return new Promise<void>((resolve, reject) => {
+    let completed = false;
+    let timeoutId: any = null;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      process.stdout?.off("data", onStdout);
+    };
+
+    const onStdout = (data: any) => {
+      if (completed) return;
+      const output = data.toString();
+
+      if (output.includes(successMessage)) {
+        completed = true;
+        log.debug(successLog ?? `✓ Found: "${successMessage}"`);
+        cleanup();
+        resolve();
+        return;
+      }
+
+      for (const { pattern, error } of errorPatterns) {
+        if (output.includes(pattern)) {
+          completed = true;
+          cleanup();
+          reject(new Error(error));
+          return;
+        }
+      }
+    };
+
+    process.stdout?.on("data", onStdout);
+
+    timeoutId = setTimeout(() => {
+      if (completed) return;
+      log.error(timeoutLog ?? `Timeout waiting for: "${successMessage}"`, {
+        timeoutMs,
+      });
+      cleanup();
+      reject(
+        new Error(`Timeout waiting for stdout message: "${successMessage}"`),
+      );
+    }, timeoutMs);
+  });
+};
+
 /**
  * Stops a moose process with graceful shutdown and forced termination fallback
  */
@@ -175,6 +252,38 @@ export const waitForServerStart = async (
       cleanup();
       reject(new Error("Moose server timeout"));
     }, timeout);
+  });
+};
+
+/**
+ * Waits for infrastructure changes to be fully processed after a file modification.
+ * This monitors the dev process stdout for the "Infrastructure changes processed successfully"
+ * message that appears after the file watcher processes changes.
+ *
+ * @param devProcess - The child process running `moose dev`
+ * @param timeoutMs - Maximum time to wait for infrastructure changes
+ * @param options - Optional logger configuration
+ */
+export const waitForInfrastructureChanges = async (
+  devProcess: ChildProcess,
+  timeoutMs: number = 60_000,
+  options: ProcessOptions = {},
+): Promise<void> => {
+  return waitForStdoutMessage(devProcess, timeoutMs, {
+    ...options,
+    successMessage: "Infrastructure changes processed successfully",
+    successLog: "✓ Infrastructure changes processed successfully",
+    timeoutLog: "Infrastructure changes did not complete in time",
+    errorPatterns: [
+      {
+        pattern: "Planning changes to the infrastructure failed",
+        error: "Infrastructure planning failed - check logs for details",
+      },
+      {
+        pattern: "Executing changes to the infrastructure failed",
+        error: "Infrastructure execution failed - check logs for details",
+      },
+    ],
   });
 };
 
