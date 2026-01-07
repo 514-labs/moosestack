@@ -392,11 +392,11 @@ async fn seed_clickhouse_operation(
     Ok((local_db, remote_db, summary))
 }
 
-/// Verifies row counts by querying system.parts for the local database
-async fn verify_row_counts(project: &Project) -> Result<String, RoutineFailure> {
+/// Reports row counts by querying system.parts for the local database
+async fn report_row_counts(project: &Project) -> Result<String, RoutineFailure> {
     let local_clickhouse = ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
         RoutineFailure::error(Message::new(
-            "VerifyRowCounts".to_string(),
+            "ReportRowCounts".to_string(),
             format!("Failed to create local ClickHouseClient: {e}"),
         ))
     })?;
@@ -409,7 +409,7 @@ async fn verify_row_counts(project: &Project) -> Result<String, RoutineFailure> 
 
     let result = local_clickhouse.execute_sql(&sql).await.map_err(|e| {
         RoutineFailure::error(Message::new(
-            "VerifyRowCounts".to_string(),
+            "ReportRowCounts".to_string(),
             format!("Failed to query row counts: {e}"),
         ))
     })?;
@@ -481,7 +481,7 @@ pub async fn handle_seed_command(
             all,
             table,
             order_by,
-            verify,
+            report,
         }) => {
             let resolved_clickhouse_url = match clickhouse_url {
                 Some(s) => s.clone(),
@@ -521,10 +521,10 @@ pub async fn handle_seed_command(
             )
             .await?;
 
-            let verification_output = if *verify {
-                match verify_row_counts(project).await {
+            let report_output = if *report {
+                match report_row_counts(project).await {
                     Ok(counts) => format!("\n{}", counts),
-                    Err(e) => format!("\nVerification failed: {}", e.message.details),
+                    Err(e) => format!("\nReport failed: {}", e.message.details),
                 }
             } else {
                 String::new()
@@ -539,7 +539,7 @@ pub async fn handle_seed_command(
                     local_db_name,
                     remote_db_name,
                     summary.join("\n"),
-                    verification_output,
+                    report_output,
                     manual_hint
                 ),
             )))
