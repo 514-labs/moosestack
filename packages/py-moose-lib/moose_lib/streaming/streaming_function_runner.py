@@ -522,6 +522,11 @@ def main():
                             log(
                                 f"Message partition={message.partition} offset={message.offset}"
                             )
+
+                            # Count input messages consumed from Kafka
+                            with metrics_lock:
+                                metrics["count_in"] += 1
+
                             if not running.is_set():
                                 # Shutdown requested - don't commit, messages will be reprocessed
                                 batch_processed = False
@@ -591,9 +596,6 @@ def main():
                                     else [output_data]
                                 )
                                 message_outputs.extend(output_data_list)
-
-                                with metrics_lock:
-                                    metrics["count_in"] += len(output_data_list)
 
                                 cli_log(
                                     CliLogData(
