@@ -1063,12 +1063,17 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         await fs.promises.writeFile(engineTestsPath, contents, "utf8");
 
         // Wait for infrastructure changes to complete before proceeding
-        // This ensures all streaming functions have restarted and stabilized
         testLogger.info(
           "Waiting for infrastructure changes to complete after file modification...",
         );
         await infrastructureChangesPromise;
         testLogger.info("Infrastructure changes completed");
+
+        // Wait for streaming functions to stabilize after restart
+        // The infrastructure changes message fires before process restarts complete
+        testLogger.info("Waiting for streaming functions to stabilize...");
+        await waitForStreamingFunctions(180_000);
+        testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects removed DEFAULT settings
         await withRetries(
