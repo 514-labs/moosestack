@@ -500,6 +500,7 @@ def main():
             log("Waiting for consumer group assignment...")
             max_wait_seconds = 60
             start_time = time.time()
+            got_assignment = False
             while running.is_set():
                 # poll(0) triggers group join without blocking
                 consumer.poll(timeout_ms=0)
@@ -508,12 +509,18 @@ def main():
                     log(
                         f"Consumer ready with {len(assignment)} partition(s): {assignment}"
                     )
+                    got_assignment = True
                     break
                 if time.time() - start_time > max_wait_seconds:
                     raise RuntimeError(
                         f"Consumer failed to get partition assignment within {max_wait_seconds}s"
                     )
                 time.sleep(0.1)
+
+            # If we exited because of shutdown signal, don't proceed to main loop
+            if not got_assignment:
+                log("Shutdown requested during initialization, exiting")
+                return
 
             log("Kafka consumer and producer initialized in processing thread")
 
