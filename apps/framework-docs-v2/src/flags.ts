@@ -44,3 +44,12 @@ export const showDataSourcesPage = flag<boolean>({
   origin: "https://us.i.posthog.com",
   identify,
 });
+
+export const showCopyAsMarkdown = flag<boolean>({
+  key: "show-copy-as-markdown",
+  adapter: postHogAdapter.isFeatureEnabled(),
+  defaultValue: false,
+  description: "Show Copy as Markdown button in TOC sidebar",
+  origin: "https://us.i.posthog.com",
+  identify,
+});

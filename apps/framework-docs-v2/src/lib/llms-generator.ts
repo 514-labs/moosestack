@@ -91,7 +91,7 @@ function collectMarkdownFiles(dir: string, baseDir: string): string[] {
 /**
  * Clean markdown content for LLM consumption
  */
-function cleanContent(content: string): string {
+export function cleanContent(content: string): string {
   let cleaned = content;
 
   // Remove import statements
@@ -100,11 +100,13 @@ function cleanContent(content: string): string {
   // Remove export statements
   cleaned = cleaned.replace(/^export (default|const) .*$/gm, "");
 
-  // Remove JSX components
+  // Remove JSX components and HTML tags
   cleaned = cleaned.replace(/<>|<\/>/g, "");
   cleaned = cleaned.replace(/<[A-Z][A-Za-z0-9]*(?:\s[^<>]*)?\/>/g, "");
   cleaned = cleaned.replace(/<[A-Z][A-Za-z0-9]*(?:\s[^<>]*)?>/g, "");
   cleaned = cleaned.replace(/<\/[A-Z][A-Za-z0-9]*>/g, "");
+  cleaned = cleaned.replace(/<[a-z][a-z0-9]*(?:\s[^<>]*)?>/gi, "");
+  cleaned = cleaned.replace(/<\/[a-z][a-z0-9]*>/gi, "");
 
   // Remove HTML comments (apply repeatedly to catch nested/fragmented cases)
   let prev: string;
