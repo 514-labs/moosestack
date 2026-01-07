@@ -302,6 +302,9 @@ pub struct Project {
     /// Whether the project is running in production mode
     #[serde(skip, default = "Project::default_production")]
     pub is_production: bool,
+    /// Whether to log payloads for debugging (not serialized, set at runtime)
+    #[serde(skip)]
+    pub log_payloads: bool,
     /// Map of supported old versions and their locations
     #[serde(default = "HashMap::new")]
     pub supported_old_versions: HashMap<Version, String>,
@@ -386,6 +389,7 @@ impl Project {
         Project {
             language,
             is_production: false,
+            log_payloads: false,
             project_location: location.clone(),
             redpanda_config: KafkaConfig::default(),
             clickhouse_config: ClickHouseConfig::default(),

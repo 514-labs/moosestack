@@ -106,6 +106,7 @@ export interface StreamingFunctionArgs {
   broker: string; // Comma-separated list of Kafka broker addresses (e.g., "broker1:9092, broker2:9092"). Whitespace around commas is automatically trimmed.
   maxSubscriberCount: number;
   isDmv2: boolean;
+  logPayloads?: boolean;
   saslUsername?: string;
   saslPassword?: string;
   saslMechanism?: string;
@@ -256,6 +257,7 @@ const handleMessage = async (
   message: KafkaMessage,
   producer: Producer,
   fieldMutations?: FieldMutations,
+  logPayloads?: boolean,
 ): Promise<KafkaMessageWithLineage[] | undefined> => {
   if (message.value === undefined || message.value === null) {
     logger.log(`Received message with no value, skipping...`);
@@ -277,7 +279,7 @@ const handleMessage = async (
     mutateParsedJson(parsedData, fieldMutations);
 
     // Log payload before transformation if enabled
-    if (process.env.MOOSE_LOG_PAYLOADS === "true") {
+    if (logPayloads) {
       logger.log(`[PAYLOAD:STREAM_IN] ${JSON.stringify(parsedData)}`);
     }
 
@@ -369,7 +371,7 @@ const handleMessage = async (
       .filter((item) => item !== undefined && item !== null);
 
     // Log payload after transformation if enabled (what we're actually sending to Kafka)
-    if (process.env.MOOSE_LOG_PAYLOADS === "true") {
+    if (logPayloads) {
       if (processedMessages.length > 0) {
         // msg.value is already JSON stringified, just construct array format
         const outgoingJsonStrings = processedMessages.map((msg) => msg.value);
@@ -745,6 +747,7 @@ const startConsumer = async (
                 message,
                 producer,
                 fieldMutations,
+                args.logPayloads,
               );
             },
             {

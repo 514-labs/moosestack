@@ -616,14 +616,13 @@ pub async fn top_command_handler(
             SHOW_TIMESTAMPS.store(*timestamps, Ordering::Relaxed);
             SHOW_TIMING.store(*timing, Ordering::Relaxed);
 
-            // Set environment variable for payload logging if flag is enabled
-            if *log_payloads {
-                std::env::set_var("MOOSE_LOG_PAYLOADS", "true");
-                info!("Payload logging enabled");
-            }
-
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
+            project.log_payloads = *log_payloads;
+
+            if *log_payloads {
+                info!("Payload logging enabled");
+            }
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(
