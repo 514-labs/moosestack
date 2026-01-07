@@ -1,0 +1,240 @@
+---
+title: Document Processing
+description: Building document processing pipelines for medical records with MooseStack
+---
+
+# Document Processing
+
+Document processing pipelines transform heterogeneous medical record files into unified, searchable PDF outputs. MooseStack provides the streaming infrastructure, workflow orchestration, and storage capabilities to build reliable document processing systems at scale.
+
+## Overview
+
+Document processing systems must handle diverse file formats from varied source systems. A robust processing layer converts PDFs, images, Office documents, text files, and legacy formats into aggregated outputs ready for delivery.
+
+> **Note**: While this guide uses medical records as an example domain, the patterns and concepts apply equally to legal document management, insurance claims processing, financial records, HR documentation, and any scenario requiring multi-format document aggregation.
+
+## Key Concepts
+
+- **Multi-Format Conversion**: Automatic detection and conversion of 40+ file types including PDF, TIFF, JPEG, PNG, DOCX, XLSX, HTML, MHT, RTF, CSV, HL7, and DICOM
+- **PDF Aggregation**: Combining multiple source files into a single patient record PDF with bookmarks and folder-based organization
+- **Format-Specific Handlers**: Specialized converters for TIFF (tiff2pdf, ImageMagick, Pillow fallback), HTML/MHT (Chromium headless), Office (LibreOffice), and medical imaging (pydicom)
+- **Conversion Verification**: Stats-based validation ensuring all eligible files are processed with detailed failure reporting
+- **Parallel Processing**: ThreadPool-based concurrent conversion with configurable worker count
+- **Error Isolation**: Individual file failures don't abort the entire aggregation process
+
+## Prerequisites
+
+- MooseStack project initialized with Python
+- Document conversion tools installed: ImageMagick, LibreOffice, Ghostscript, qpdf
+- Chromium-based browser for HTML/MHT rendering (Edge, Chrome, or Chromium)
+- Optional: pydicom + numpy for DICOM support, pillow-heif for HEIC images
+
+## Implementation
+
+### Step 1: Define Document Schema
+
+Create data models for tracking document metadata and processing status.
+
+```python
+# app/ingest/models.py
+from moose_lib import Key, IngestPipeline, IngestPipelineConfig
+from pydantic import BaseModel
+from typing import Optional
+
+class ecw3_document_index(BaseModel):
+    """Document index for mapping documents to patients"""
+    practice_str_identifier: Key[str]
+    practice_id: int
+    patient_folder_index: str
+    patient_last_name: str
+    patient_first_name: str
+    patient_dob: str
+    patient_id: str
+    source_document_path: str
+    document_name: str
+    found_in_filesystem: bool
+
+# Configure ingestion pipeline with streaming and OLAP storage
+ecw3_document_index_pipeline = IngestPipeline[ecw3_document_index](
+    "ecw3_document_index",
+    IngestPipelineConfig(
+        ingest_api=True,
+        stream=True,
+        table=True,
+        dead_letter_queue=True
+    )
+)
+```
+
+### Step 2: Configure Document Conversion
+
+The `python2pdf` module handles multi-format conversion with automatic format detection.
+
+```python
+# app/mrm_automation/python2pdf.py - Key patterns
+
+# Supported file extensions by category
+SUPPORTED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp", ".heic"}
+OFFICE_EXTS = {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp"}
+PLAIN_TEXT_EXTS = {".txt", ".csv", ".log", ".hl7", ".gl7"}
+HTML_EXTS = {".html", ".htm"}
+MHTML_EXTS = {".mht", ".mhtml"}
+RTF_EXTS = {".rtf"}
+PDF_EXTS = {".pdf"}
+DICOM_EXTS = {".dcm", ".dicom"}
+
+# Tool availability detection
+class Tools:
+    soffice: Optional[str] = shutil.which("soffice")      # LibreOffice
+    unrtf: Optional[str] = shutil.which("unrtf")          # RTF converter
+    qpdf: Optional[str] = shutil.which("qpdf")            # PDF repair/flatten
+    gs: Optional[str] = shutil.which("gs")                # Ghostscript
+    tiff2pdf: Optional[str] = shutil.which("tiff2pdf")    # TIFF native
+    magick: Optional[str] = shutil.which("magick")        # ImageMagick
+```
+
+### Step 3: Implement PDF Aggregation
+
+The main aggregation function converts all files in a patient directory and merges them.
+
+```python
+# Usage pattern in workflows
+from app.mrm_automation import python2pdf
+
+def aggregate_patient_documents(
+    source_dir: str,
+    output_dir: str,
+    output_filename: str
+) -> dict:
+    """
+    Aggregate all documents from a patient folder into a single PDF.
+
+    Returns:
+        dict with keys: final_pdf, pages, parts, stats, failed_list
+    """
+    result = python2pdf.merge_to_pdf(
+        src=source_dir,
+        dst=output_dir,
+        filename=output_filename,
+        config={
+            "scan_subfolders": True,    # Recursively scan patient folder
+            "separators": False,         # No folder separator pages
+            "bookmarks": "by-folder",    # Bookmark by subfolder
+            "jobs": 4,                   # Parallel conversion workers
+            "sort": "date_d",            # Newest files first
+        }
+    )
+
+    # Validate conversion results
+    stats = result.get("stats", {})
+    if not result.get("final_pdf") or stats.get("failed_conversions", 0) > 0:
+        raise ValueError(f"PDF conversion failed: {stats}")
+
+    return result
+```
+
+### Step 4: Handle Format-Specific Conversion
+
+TIFF files require special handling due to multi-page and photometric variations.
+
+```python
+# TIFF conversion cascade (falls through on failure)
+def convert_tiff(tif_path: Path, out_pdf: str, tmpdir: str) -> bool:
+    # 1. Try native tiff2pdf (fastest, preserves quality)
+    if _tiff_via_tiff2pdf(tif_path, out_pdf):
+        return True
+
+    # 2. Try tifffile + numpy for complex TIFFs
+    pngs = _tiff_via_tifffile_to_pngs(tif_path, tmpdir)
+    if pngs:
+        images_to_pdf(pngs, out_pdf)
+        return True
+
+    # 3. Fall back to Pillow (handles most cases)
+    pngs = _tiff_via_pillow_to_pngs(tif_path, tmpdir)
+    if pngs:
+        images_to_pdf(pngs, out_pdf)
+        return True
+
+    # 4. Last resort: ImageMagick
+    if _tiff_via_imagemagick_to_pdf(tif_path, out_pdf):
+        return True
+
+    return False
+```
+
+### Step 5: Integrate with Temporal Workflows
+
+Connect document processing to the retrieval workflow orchestration.
+
+```python
+# app/workflows/premapped_record_retrieval_automation.py
+from app.mrm_automation import python2pdf
+
+def run_premapped_retrieval(ctx: TaskContext[PremappedRetrievalInput]) -> None:
+    # ... patient folder discovery ...
+
+    # Redirect python2pdf logging to Moose logger
+    python2pdf.log = lambda msg, level=20: logger.info(msg)
+
+    # Aggregate documents to PDF
+    pdf_result = python2pdf.merge_to_pdf(
+        src=str(patient_dir),
+        dst=processed_pdf_output_root_path,
+        filename=output_filename
+    )
+
+    # Parse and log results
+    stats = pdf_result.get("stats", {})
+    logger.info(
+        f"event=pdf_stats request_id={request_id} "
+        f"scanned={stats.get('total_files_scanned', 0)} "
+        f"eligible={stats.get('eligible_source_files', 0)} "
+        f"failed={stats.get('failed_conversions', 0)} "
+        f"pages={pdf_result.get('pages', 0)}"
+    )
+
+    # Validate output
+    if not pdf_result.get("final_pdf"):
+        storage.record_retrieval_update_status(
+            patient_request_id=request_id,
+            status=RetrievalStatus.FAILED_TO_CONVERT,
+            error_message=f"PDF conversion failed: {stats}"
+        )
+        return None
+```
+
+## Verification
+
+After implementing document processing:
+
+1. **Check tool availability**: Review startup logs for tool detection
+   ```
+   [TOOLS] PDF processing tools available: soffice=✓ magick=✓ gs=✓ qpdf=✓
+   ```
+
+2. **Monitor conversion stats**: Every aggregation logs verification
+   ```
+   [VERIFY] scanned=15 eligible=12 failed=0 produced_items=12 PASS
+   ```
+
+3. **Review failed conversions**: Check `failed_list` in result dict for files that couldn't convert
+
+## MooseStack Integration
+
+Document processing leverages several MooseStack features:
+
+- **Workflows** (`/moosestack/workflows`): Temporal orchestration with retry policies for long-running conversions
+- **Streaming** (`/moosestack/streaming`): Document index ingestion via Redpanda topics
+- **OLAP** (`/moosestack/building-blocks/olap`): ClickHouse storage for document indexes enabling fast patient lookups
+
+## Benefits
+
+- **Format Agnostic**: Single pipeline handles all medical record formats from any practice system
+- **Reliable Delivery**: Automatic retries, fallback converters, and detailed failure tracking
+- **Auditable**: Complete stats on every aggregation with verification pass/fail status
+- **Scalable**: Parallel conversion with configurable concurrency adapts to workload
+
+## Next Steps
+
+Learn more about [Temporal workflows](/moosestack/workflows) for orchestrating multi-step document processing and [OLAP storage](/moosestack/building-blocks/olap) for building document search capabilities.
