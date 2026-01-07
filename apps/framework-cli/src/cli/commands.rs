@@ -132,6 +132,10 @@ pub enum Commands {
         /// Show elapsed time for operations (e.g., "completed in 234ms")
         #[arg(long)]
         timing: bool,
+
+        /// Log payloads at ingest API and streaming functions for debugging
+        #[arg(long)]
+        log_payloads: bool,
     },
     /// Start a remote environment for use in cloud deployments
     Prod {

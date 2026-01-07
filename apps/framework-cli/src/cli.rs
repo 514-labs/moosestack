@@ -607,6 +607,7 @@ pub async fn top_command_handler(
             mcp,
             timestamps,
             timing,
+            log_payloads,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -617,6 +618,11 @@ pub async fn top_command_handler(
 
             let mut project = load_project(commands)?;
             project.set_is_production_env(false);
+            project.log_payloads = *log_payloads;
+
+            if *log_payloads {
+                info!("Payload logging enabled");
+            }
             let project_arc = Arc::new(project);
 
             let capture_handle = crate::utilities::capture::capture_usage(

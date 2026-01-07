@@ -268,6 +268,11 @@ parser.add_argument(
     type=bool,
     help="Whether to use the DMV2 format for the streaming function",
 )
+parser.add_argument(
+    "--log-payloads",
+    action="store_true",
+    help="Log payloads for debugging",
+)
 
 args: argparse.Namespace = parser.parse_args()
 
@@ -527,6 +532,12 @@ def main():
                                 streaming_function_input_type, message.value
                             )
 
+                            # Log payload before transformation if enabled
+                            if getattr(args, "log_payloads", False):
+                                log(
+                                    f"[PAYLOAD:STREAM_IN] {json.dumps(input_data, cls=EnhancedJSONEncoder)}"
+                                )
+
                             # Run the flow
                             message_outputs = []
                             for (
@@ -595,6 +606,20 @@ def main():
 
                     # Only send outputs and commit if we processed the entire batch
                     if batch_processed and producer is not None:
+                        # Log payload after transformation if enabled (what we're actually sending to Kafka)
+                        if getattr(args, "log_payloads", False):
+                            # Filter out None values to match what actually gets sent
+                            outgoing_data = [
+                                item for item in batch_outputs if item is not None
+                            ]
+                            if len(outgoing_data) > 0:
+                                log(
+                                    f"[PAYLOAD:STREAM_OUT] {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}"
+                                )
+                            else:
+                                log(
+                                    "[PAYLOAD:STREAM_OUT] (no output from streaming function)"
+                                )
                         for item in batch_outputs:
                             # Ignore flow function returning null
                             if item is not None:
