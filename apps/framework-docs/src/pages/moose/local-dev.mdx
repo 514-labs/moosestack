@@ -46,6 +46,21 @@ workflows = false        # Controls Temporal startup
 apis = true              # Enables Analytics APIs server
 ```
 
+### Debugging Data Flow
+
+To debug data as it flows through your pipeline, use the `--log-payloads` flag:
+
+```bash
+moose dev --log-payloads
+```
+
+This logs payloads at three key points with searchable prefixes:
+- `PAYLOAD:INGEST` - Data received at ingest API
+- `PAYLOAD:STREAM_IN` - Data before streaming function
+- `PAYLOAD:STREAM_OUT` - Data after streaming function
+
+All logs appear in Moose logs and can be viewed using `moose logs --tail`.
+
 ### Extending Docker Infrastructure
 
 You can extend Moose's Docker Compose configuration with custom services by creating a `docker-compose.dev.override.yaml` file in your project root. This allows you to add additional infrastructure (databases, monitoring tools, etc.) that runs alongside your Moose development environment.
