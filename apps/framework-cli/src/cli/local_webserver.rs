@@ -1326,6 +1326,7 @@ async fn handle_json_array_body(
     jwt_config: &Option<JwtConfig>,
     max_request_body_size: usize,
     schema_registry_schema_id: Option<i32>,
+    log_payloads: bool,
 ) -> Response<Full<Bytes>> {
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
     let jwt_claims = get_claims(auth_header, jwt_config);
@@ -1377,6 +1378,25 @@ async fn handle_json_array_body(
         .deserialize_any(&mut DataModelArrayVisitor { inner: visitor });
 
     debug!("parsed json array for {}", topic_name);
+
+    // Log payload if enabled (compact JSON on one line)
+    if log_payloads {
+        match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(json_value) => {
+                if let Ok(compact_json) = serde_json::to_string(&json_value) {
+                    info!("[PAYLOAD:INGEST] {}: {}", topic_name, compact_json);
+                }
+            }
+            Err(_) => {
+                // If we can't parse it, log the raw body (shouldn't happen since we already parsed it above)
+                info!(
+                    "[PAYLOAD:INGEST] {}: {}",
+                    topic_name,
+                    String::from_utf8_lossy(&body)
+                );
+            }
+        }
+    }
 
     let mut records = match parsed {
         Err(e) => {
@@ -1503,6 +1523,7 @@ async fn check_authorization(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ingest_route(
     req: Request<hyper::body::Incoming>,
     route: PathBuf,
@@ -1511,6 +1532,7 @@ async fn ingest_route(
     is_prod: bool,
     jwt_config: Option<JwtConfig>,
     max_request_body_size: usize,
+    log_payloads: bool,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     show_message!(
         MessageType::Info,
@@ -1550,6 +1572,7 @@ async fn ingest_route(
             &jwt_config,
             max_request_body_size,
             route_meta.schema_registry_schema_id,
+            log_payloads,
         )
         .await),
         None => {
@@ -1658,6 +1681,7 @@ async fn router(
                             is_prod,
                             jwt_config,
                             project.http_server_config.max_request_body_size,
+                            project.log_payloads,
                         )
                         .await
                     }
@@ -1671,6 +1695,7 @@ async fn router(
                             is_prod,
                             jwt_config,
                             project.http_server_config.max_request_body_size,
+                            project.log_payloads,
                         )
                         .await
                     }
@@ -1685,6 +1710,7 @@ async fn router(
                     is_prod,
                     jwt_config,
                     project.http_server_config.max_request_body_size,
+                    project.log_payloads,
                 )
                 .await
             } else {
@@ -1697,6 +1723,7 @@ async fn router(
                     is_prod,
                     jwt_config,
                     project.http_server_config.max_request_body_size,
+                    project.log_payloads,
                 )
                 .await
             }

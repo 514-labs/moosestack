@@ -126,6 +126,7 @@ mod tests {
             language_project_config: crate::project::LanguageProjectConfig::default(),
             project_location: PathBuf::from("/test"),
             is_production: false,
+            log_payloads: false,
             supported_old_versions: HashMap::new(),
             jwt: None,
             authentication: crate::project::AuthenticationConfig::default(),

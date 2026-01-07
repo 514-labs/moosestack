@@ -41,16 +41,17 @@ moose build [--docker] [--amd64] [--arm64]
 ### Dev
 Starts a local development environment with hot reload and automatic infrastructure management.
 ```bash
-moose dev [--mcp] [--docker] [--timestamps] [--timing]
+moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads]
 ```
 - `--mcp`: Enable or disable the MCP (Model Context Protocol) server (default: true). The MCP server provides AI-assisted development tools at `http://localhost:4000/mcp`. See [MCP Server documentation](/moose/mcp-server) for details.
-- `--docker`: Use Docker for infrastructure (default behavior in dev mode)
+- `--no-infra`: Skip starting docker containers for infrastructure
 - `--timestamps`: Show HH:MM:SS.mmm timestamps on all output lines (default: false)
 - `--timing`: Show elapsed time for operations, e.g., "finished in 234ms" or "finished in 2.3s" (default: false)
+- `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
 
-**Example with timing flags:**
+**Example with debugging flags:**
 ```bash
 # Basic dev mode
 moose dev
@@ -63,6 +64,9 @@ moose dev --timing
 
 # Both together for detailed monitoring
 moose dev --timestamps --timing
+
+# With payload logging for data flow debugging
+moose dev --log-payloads
 ```
 
 **Sample output with `--timing`:**

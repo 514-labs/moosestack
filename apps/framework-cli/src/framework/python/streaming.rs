@@ -53,6 +53,9 @@ pub fn run(
     if is_dmv2 {
         args.push("--dmv2".to_string());
     }
+    if project.log_payloads {
+        args.push("--log-payloads".to_string());
+    }
 
     let mut streaming_function_process = executor::run_python_command(
         project,

@@ -44,6 +44,21 @@ on_first_start_script = "moose db pull --clickhouse-url $REMOTE_DB_URL"
 on_reload_complete_script = "openapi-generator-cli generate -i .moose/openapi.yaml ..."
 ```
 
+## Debugging Data Flow
+
+To debug data as it flows through your pipeline, use the `--log-payloads` flag:
+
+```bash
+moose dev --log-payloads
+```
+
+This logs payloads at three key points with searchable prefixes:
+- `PAYLOAD:INGEST` - Data received at ingest API
+- `PAYLOAD:STREAM_IN` - Data before streaming function
+- `PAYLOAD:STREAM_OUT` - Data after streaming function
+
+All logs appear in Moose logs and can be viewed using `moose logs --tail`.
+
 ## Docker Infrastructure Extensions
 
 Extend the default Moose development infrastructure by creating a specific override file in your project root.

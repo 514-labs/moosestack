@@ -196,6 +196,7 @@ program
   .option("--sasl-mechanism <mechanism>", "SASL mechanism")
   .option("--security-protocol <protocol>", "Security protocol")
   .option("--is-dmv2", "Whether this is a DMv2 function", false)
+  .option("--log-payloads", "Log payloads for debugging", false)
   .action(
     (sourceTopic, functionFilePath, broker, maxSubscriberCount, options) => {
       const config: StreamingFunctionArgs = {
@@ -206,6 +207,7 @@ program
         broker,
         maxSubscriberCount: parseInt(maxSubscriberCount),
         isDmv2: options.isDmv2,
+        logPayloads: options.logPayloads,
         saslUsername: options.saslUsername,
         saslPassword: options.saslPassword,
         saslMechanism: options.saslMechanism,

@@ -12,6 +12,8 @@
  *           Its API might change without notice.
  */
 import process from "process";
+import * as fs from "fs";
+import * as path from "path";
 import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
 import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
 import { Column } from "../dataModels/dataModelTypes";
@@ -45,6 +47,76 @@ import { View } from "./sdk/view";
  */
 function getSourceDir(): string {
   return process.env.MOOSE_SOURCE_DIR || "app";
+}
+
+/**
+ * Recursively finds all TypeScript/JavaScript files in a directory
+ */
+function findSourceFiles(
+  dir: string,
+  extensions: string[] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"],
+): string[] {
+  const files: string[] = [];
+
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        // Skip node_modules and hidden directories
+        if (entry.name !== "node_modules" && !entry.name.startsWith(".")) {
+          files.push(...findSourceFiles(fullPath, extensions));
+        }
+      } else if (entry.isFile()) {
+        // Skip TypeScript declaration files (.d.ts, .d.mts, .d.cts)
+        // These are never loaded at runtime, only used for type-checking
+        if (
+          entry.name.endsWith(".d.ts") ||
+          entry.name.endsWith(".d.mts") ||
+          entry.name.endsWith(".d.cts")
+        ) {
+          continue;
+        }
+
+        const ext = path.extname(entry.name);
+        if (extensions.includes(ext)) {
+          files.push(fullPath);
+        }
+      }
+    }
+  } catch (error) {
+    // Directory doesn't exist or can't be read
+    compilerLog(`Warning: Could not read directory ${dir}: ${error}`);
+  }
+
+  return files;
+}
+
+/**
+ * Checks for source files that exist but weren't loaded
+ */
+function findUnloadedFiles(): string[] {
+  const appDir = path.resolve(process.cwd(), getSourceDir());
+
+  // Find all source files in the directory
+  const allSourceFiles = findSourceFiles(appDir);
+
+  // Get all loaded files from require.cache
+  const loadedFiles = new Set(
+    Object.keys(require.cache)
+      .filter((key) => key.startsWith(appDir))
+      .map((key) => path.resolve(key)),
+  );
+
+  // Find files that exist but weren't loaded
+  const unloadedFiles = allSourceFiles
+    .map((file) => path.resolve(file))
+    .filter((file) => !loadedFiles.has(file))
+    .map((file) => path.relative(process.cwd(), file));
+
+  return unloadedFiles;
 }
 
 /**
@@ -1158,6 +1230,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     webApps,
     materializedViews,
     views,
+    unloadedFiles: [] as string[], // Will be populated by dumpMooseInternal
   };
 };
 
@@ -1187,9 +1260,15 @@ if (getMooseInternal() === undefined) {
 export const dumpMooseInternal = async () => {
   loadIndex();
 
+  const infraMap = toInfraMap(getMooseInternal());
+
+  // Check for unloaded files
+  const unloadedFiles = findUnloadedFiles();
+  infraMap.unloadedFiles = unloadedFiles;
+
   console.log(
     "___MOOSE_STUFF___start",
-    JSON.stringify(toInfraMap(getMooseInternal())),
+    JSON.stringify(infraMap),
     "end___MOOSE_STUFF___",
   );
 };
@@ -1219,16 +1298,37 @@ const loadIndex = () => {
     require(`${process.cwd()}/${getSourceDir()}/index.ts`);
   } catch (error) {
     let hint: string | undefined;
+    let includeDetails = true;
     const details = error instanceof Error ? error.message : String(error);
-    if (details.includes("ERR_REQUIRE_ESM") || details.includes("ES Module")) {
+
+    // Check for typia configuration errors
+    if (
+      details.includes("no transform has been configured") ||
+      details.includes("NoTransformConfigurationError")
+    ) {
+      hint =
+        "🔴 Typia Transformation Error\n\n" +
+        "This is likely a bug in Moose. The Typia type transformer failed to process your code.\n\n" +
+        "Please report this issue:\n" +
+        "  • Moose Slack: https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg\n" +
+        "  • Include the stack trace below and the file being processed\n\n";
+      includeDetails = false;
+    } else if (
+      details.includes("ERR_REQUIRE_ESM") ||
+      details.includes("ES Module")
+    ) {
       hint =
         "The file or its dependencies are ESM-only. Switch to packages that dual-support CJS & ESM, or upgrade to Node 22.12+. " +
         "If you must use Node 20, you may try Node 20.19\n\n";
     }
 
-    const errorMsg = `${hint ?? ""}${details}`;
-    const cause = error instanceof Error ? error : undefined;
-    throw new Error(errorMsg, { cause });
+    if (hint === undefined) {
+      throw error;
+    } else {
+      const errorMsg = includeDetails ? `${hint}${details}` : hint;
+      const cause = error instanceof Error ? error : undefined;
+      throw new Error(errorMsg, { cause });
+    }
   }
 };
 
