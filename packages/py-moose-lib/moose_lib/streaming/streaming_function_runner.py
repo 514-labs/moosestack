@@ -494,6 +494,27 @@ def main():
 
             consumer.subscribe([source_topic.name])
 
+            # Force eager initialization: trigger group join and wait for partition assignment
+            # kafka-python is lazy - first poll() triggers connection and group join
+            # We do this explicitly to ensure consumer is fully ready before processing
+            log("Waiting for consumer group assignment...")
+            max_wait_seconds = 60
+            start_time = time.time()
+            while running.is_set():
+                # poll(0) triggers group join without blocking
+                consumer.poll(timeout_ms=0)
+                assignment = consumer.assignment()
+                if assignment:
+                    log(
+                        f"Consumer ready with {len(assignment)} partition(s): {assignment}"
+                    )
+                    break
+                if time.time() - start_time > max_wait_seconds:
+                    raise RuntimeError(
+                        f"Consumer failed to get partition assignment within {max_wait_seconds}s"
+                    )
+                time.sleep(0.1)
+
             log("Kafka consumer and producer initialized in processing thread")
 
             while running.is_set():
