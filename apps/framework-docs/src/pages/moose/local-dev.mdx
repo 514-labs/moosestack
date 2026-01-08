@@ -276,6 +276,39 @@ Notes:
 - Use `&&` to chain multiple commands or point to a custom script.
 - Prefer passing credentials via environment variables or your secret manager.
 
+### Use case: automatic mirroring of external tables
+
+If you work with `EXTERNALLY_MANAGED` tables (e.g., from CDC services), you can configure Moose to automatically create local copies during development:
+
+```toml filename="moose.config.toml" copy
+[dev.remote_clickhouse]
+host = "prod.clickhouse.cloud"
+database = "production"
+user = "readonly_user"
+use_ssl = true
+# Password prompted once, stored in keychain
+
+[dev.externally_managed.tables]
+create_local_mirrors = true
+sample_size = 1000  # Copy sample data for testing
+```
+
+**Benefits:**
+- ✅ **Materialized Views work** with external source tables
+- ✅ **Test with real production data** (sample size configurable)
+- ✅ **Automatic fallback** - Creates empty tables from code schema if no remote access
+- ✅ **Secure** - Password stored in keychain, never in config files
+
+**How it works:**
+1. First run: Prompts for password (with context: host/user/database)
+2. Stores password securely in system keychain
+3. Creates local copies with sample data
+4. Materialized Views can reference these tables
+
+<Callout type="info" title="Learn more" ctaLink="/moose/olap/external-tables#development-mode-configuration">
+See the [External Tables documentation](/moose/olap/external-tables#development-mode-configuration) for complete configuration options.
+</Callout>
+
 ### Use case: keep external models in sync (DB Pull)
 
 Refresh `EXTERNALLY_MANAGED` table models from a remote ClickHouse on dev start so your local code matches the live schema.

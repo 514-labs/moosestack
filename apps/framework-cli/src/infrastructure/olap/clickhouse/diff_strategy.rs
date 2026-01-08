@@ -374,11 +374,17 @@ fn is_only_required_change_for_special_column_type(before: &Column, after: &Colu
 
 impl ClickHouseTableDiffStrategy {
     /// Check if a table uses the S3Queue engine
+    ///
+    /// Note: For checking if a table supports SELECT queries, use `table.engine.supports_select()` instead.
+    /// This method is kept for specific S3Queue-related ALTER TABLE restrictions.
     pub fn is_s3queue_table(table: &Table) -> bool {
         matches!(&table.engine, ClickhouseEngine::S3Queue { .. })
     }
 
     /// Check if a table uses the Kafka engine
+    ///
+    /// Note: For checking if a table supports SELECT queries, use `table.engine.supports_select()` instead.
+    /// This method is kept for specific Kafka-related ALTER TABLE restrictions.
     pub fn is_kafka_table(table: &Table) -> bool {
         matches!(&table.engine, ClickhouseEngine::Kafka { .. })
     }
@@ -405,9 +411,8 @@ impl ClickHouseTableDiffStrategy {
                     if let InfrastructureSignature::Table { id } = source {
                         // First try direct lookup with plain table name
                         if let Some(table) = tables.get(id) {
-                            let is_s3queue = Self::is_s3queue_table(table);
-                            let is_kafka = Self::is_kafka_table(table);
-                            return is_s3queue || is_kafka;
+                            // Check if the source table's engine supports SELECT
+                            return !table.engine.supports_select();
                         }
 
                         // Try finding by searching for keys ending with the table name
@@ -418,9 +423,8 @@ impl ClickHouseTableDiffStrategy {
                         if let Some((_key, table)) =
                             tables.iter().find(|(key, _)| key.ends_with(&table_suffix))
                         {
-                            let is_s3queue = Self::is_s3queue_table(table);
-                            let is_kafka = Self::is_kafka_table(table);
-                            is_s3queue || is_kafka
+                            // Check if the source table's engine supports SELECT
+                            !table.engine.supports_select()
                         } else {
                             false
                         }
@@ -430,7 +434,7 @@ impl ClickHouseTableDiffStrategy {
                 });
 
                 // Only populate in dev for new MVs with supported source tables
-                // (S3Queue/Kafka don't support SELECT)
+                // (Engines that don't support SELECT cannot be populated)
                 if is_new && !has_unpopulatable_source && !is_production {
                     tracing::info!(
                         "Adding population operation for materialized view '{}'",
@@ -664,7 +668,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
             }
 
             // Kafka engine doesn't support ALTER TABLE MODIFY SETTING
-            if matches!(&before.engine, ClickhouseEngine::Kafka { .. }) {
+            if Self::is_kafka_table(before) {
                 tracing::warn!(
                     "ClickHouse: Settings changed for Kafka table '{}', requiring drop+create (Kafka engine doesn't support ALTER TABLE MODIFY SETTING)",
                     before.name
@@ -690,8 +694,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
 
         // Check if this is an S3Queue table with column changes
         // S3Queue only supports MODIFY/RESET SETTING, not column operations
-        if !column_changes.is_empty() && matches!(&before.engine, ClickhouseEngine::S3Queue { .. })
-        {
+        if !column_changes.is_empty() && Self::is_s3queue_table(before) {
             tracing::warn!(
                 "ClickHouse: S3Queue table '{}' has column changes, requiring drop+create (S3Queue doesn't support ALTER TABLE for columns)",
                 before.name
@@ -703,7 +706,7 @@ impl TableDiffStrategy for ClickHouseTableDiffStrategy {
         }
 
         // Kafka engine doesn't support ALTER TABLE for columns
-        if !column_changes.is_empty() && matches!(&before.engine, ClickhouseEngine::Kafka { .. }) {
+        if !column_changes.is_empty() && Self::is_kafka_table(before) {
             tracing::warn!(
                 "ClickHouse: Kafka table '{}' has column changes, requiring drop+create (Kafka doesn't support ALTER TABLE for columns)",
                 before.name
@@ -1726,7 +1729,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_s3queue_table() {
+    fn test_s3queue_table_detection() {
         use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
         use crate::framework::core::partial_infrastructure_map::LifeCycle;
         use std::collections::HashMap;
@@ -1765,12 +1768,19 @@ mod tests {
             primary_key_expression: None,
         };
 
+        // Test legacy helper method
         assert!(ClickHouseTableDiffStrategy::is_s3queue_table(&s3_table));
+
+        // Test new engine method (preferred approach)
+        assert!(!s3_table.engine.supports_select());
 
         let regular_table = create_test_table("regular", vec![], false);
         assert!(!ClickHouseTableDiffStrategy::is_s3queue_table(
             &regular_table
         ));
+
+        // Regular MergeTree supports SELECT
+        assert!(regular_table.engine.supports_select());
     }
 
     #[test]
