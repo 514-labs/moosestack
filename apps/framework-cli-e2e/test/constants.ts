@@ -66,7 +66,7 @@ export const RETRY_CONFIG = {
 
 // Test data configuration
 export const TEST_DATA = {
-  // Fixed timestamp for consistent testing (October 19, 2025 00:00:00 UTC)
+  // Fixed timestamp for consistent testing (October 18, 2025 08:00:00 UTC)
   // This is in seconds. If typescript, make sure to convert to milliseconds for Date constructor.
   // If python, datetime.fromtimestamp already expects seconds.
   TIMESTAMP: 1739865600,

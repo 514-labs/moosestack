@@ -1150,11 +1150,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "local",
         );
         await verifyConsumptionApi(
-          "bar?orderBy=totalRows&startDay=19&endDay=19&limit=1",
+          "bar?orderBy=totalRows&startDay=18&endDay=18&limit=1",
           [
             {
               // output_format_json_quote_64bit_integers is true by default in ClickHouse
-              dayOfMonth: "19",
+              dayOfMonth: "18",
               totalRows: "1",
             },
           ],
@@ -1162,18 +1162,18 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Test versioned API (V1)
         await verifyVersionedConsumptionApi(
-          "bar/1?orderBy=totalRows&startDay=19&endDay=19&limit=1",
+          "bar/1?orderBy=totalRows&startDay=18&endDay=18&limit=1",
           [
             {
-              dayOfMonth: "19",
+              dayOfMonth: "18",
               totalRows: "1",
               metadata: {
                 version: "1.0",
                 queryParams: {
                   orderBy: "totalRows",
                   limit: 1,
-                  startDay: 19,
-                  endDay: 19,
+                  startDay: 18,
+                  endDay: 18,
                 },
               },
             },
@@ -1914,10 +1914,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "local",
         );
         await verifyConsumptionApi(
-          "bar?order_by=total_rows&start_day=19&end_day=19&limit=1",
+          "bar?order_by=total_rows&start_day=18&end_day=18&limit=1",
           [
             {
-              day_of_month: 19,
+              day_of_month: 18,
               total_rows: 1,
               // Just verify structure - don't check exact values since generator adds random data
               // Similar to typescript test
@@ -1927,10 +1927,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Test versioned API (V1)
         await verifyVersionedConsumptionApi(
-          "bar/1?order_by=total_rows&start_day=19&end_day=19&limit=1",
+          "bar/1?order_by=total_rows&start_day=18&end_day=18&limit=1",
           [
             {
-              day_of_month: 19,
+              day_of_month: 18,
               total_rows: 1,
               // Just verify structure - don't check exact values since generator adds random data
               // Similar to typescript test
@@ -1939,8 +1939,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                 query_params: {
                   order_by: "total_rows",
                   limit: 1,
-                  start_day: 19,
-                  end_day: 19,
+                  start_day: 18,
+                  end_day: 18,
                 },
               },
             },
