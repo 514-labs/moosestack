@@ -14,6 +14,7 @@ import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
 import { showCopyAsMarkdown } from "@/flags";
 import { CopyPageButton } from "@/components/copy-page-button";
+import { cleanContent } from "@/lib/llms-generator";
 
 // export const dynamic = "force-dynamic";
 
@@ -106,6 +107,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   );
 
   const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  const cleanedContent = cleanContent(content.content);
 
   // Check if this is a dynamic guide by checking for guide.toml
   const guideManifest = await parseGuideManifest(slug);
@@ -150,7 +152,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
         <div className="flex w-full flex-col gap-6 pt-4">
           <div className="flex items-center justify-between">
             <DocBreadcrumbs items={breadcrumbs} />
-            {showCopyButton && <CopyPageButton />}
+            {showCopyButton && <CopyPageButton content={cleanedContent} />}
           </div>
           <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
             {content.isMDX ?
@@ -230,7 +232,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
       <div className="flex w-full flex-col gap-6 pt-4">
         <div className="flex items-center justify-between">
           <DocBreadcrumbs items={breadcrumbs} />
-          {showCopyButton && <CopyPageButton />}
+          {showCopyButton && <CopyPageButton content={cleanedContent} />}
         </div>
         <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
           {content.isMDX ?

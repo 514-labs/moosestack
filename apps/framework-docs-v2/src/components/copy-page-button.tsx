@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { IconCopy, IconCheck } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,38 +10,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-export function CopyPageButton() {
+interface CopyPageButtonProps {
+  content: string;
+}
+
+export function CopyPageButton({ content }: CopyPageButtonProps) {
   const [copied, setCopied] = useState(false);
-  const [markdown, setMarkdown] = useState<string | null>(null);
-  const pathname = usePathname();
-
-  // Fetch markdown when page loads
-  useEffect(() => {
-    if (!pathname) return;
-
-    const slug = pathname.replace(/^\//, "");
-
-    const fetchMarkdown = async () => {
-      try {
-        const response = await fetch(`/api/markdown/${slug}`);
-        if (!response.ok) {
-          throw new Error("Failed to fetch markdown");
-        }
-        const text = await response.text();
-        setMarkdown(text);
-      } catch (error) {
-        console.error("Error fetching markdown:", error);
-      }
-    };
-
-    fetchMarkdown();
-  }, [pathname]);
 
   const handleCopyMarkdown = async () => {
-    if (!markdown) return;
-
     try {
-      await navigator.clipboard.writeText(markdown);
+      await navigator.clipboard.writeText(content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {

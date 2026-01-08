@@ -7,6 +7,7 @@ import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { showCopyAsMarkdown } from "@/flags";
 import { CopyPageButton } from "@/components/copy-page-button";
+import { cleanContent } from "@/lib/llms-generator";
 
 // export const dynamic = "force-dynamic";
 
@@ -107,13 +108,14 @@ export default async function DocPage({ params }: PageProps) {
   );
 
   const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  const cleanedContent = cleanContent(content.content);
 
   return (
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
         <div className="flex items-center justify-between">
           <DocBreadcrumbs items={breadcrumbs} />
-          {showCopyButton && <CopyPageButton />}
+          {showCopyButton && <CopyPageButton content={cleanedContent} />}
         </div>
         <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
           {content.isMDX ?
