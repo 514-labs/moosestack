@@ -98,9 +98,21 @@ export const setupPythonProject = async (
   log.info("Setting up Python virtual environment and installing dependencies");
   await new Promise<void>((resolve, reject) => {
     const setupCmd = process.platform === "win32" ? "python" : "python3";
+    console.log("asdfasdf", JSON.stringify(process.env));
+    spawn("python3", ["--version"], {
+      stdio: "inherit",
+      cwd: projectDir,
+      env: {
+        ...process.env,
+      },
+    });
+
     const venvCmd = spawn(setupCmd, ["-m", "venv", ".venv"], {
       stdio: "inherit",
       cwd: projectDir,
+      env: {
+        ...process.env,
+      },
     });
     venvCmd.on("close", async (code) => {
       if (code !== 0) {
@@ -108,11 +120,24 @@ export const setupPythonProject = async (
         return;
       }
 
+      const withVenv = {
+        ...process.env,
+        VIRTUAL_ENV: path.join(projectDir, ".venv"),
+        PATH: `${path.join(projectDir, ".venv", "bin")}:${process.env.PATH}`,
+      };
+
+      spawn("python3", ["--version"], {
+        env: withVenv,
+        stdio: "inherit",
+        cwd: projectDir,
+      });
+
       // First install project dependencies from requirements.txt
       const pipReqCmd = spawn(
         process.platform === "win32" ? ".venv\\Scripts\\pip" : ".venv/bin/pip",
         ["install", "-r", "requirements.txt"],
         {
+          env: withVenv,
           stdio: "inherit",
           cwd: projectDir,
         },
@@ -129,18 +154,19 @@ export const setupPythonProject = async (
         }
 
         // Then install the local moose lib
-        const pipMooseCmd = spawn(
+        const pipLocalMooseCmd = spawn(
           process.platform === "win32" ?
             ".venv\\Scripts\\pip"
           : ".venv/bin/pip",
           ["install", "-e", moosePyLibPath],
           {
+            env: withVenv,
             stdio: "inherit",
             cwd: projectDir,
           },
         );
 
-        pipMooseCmd.on("close", (moosePipCode) => {
+        pipLocalMooseCmd.on("close", (moosePipCode) => {
           if (moosePipCode !== 0) {
             reject(
               new Error(

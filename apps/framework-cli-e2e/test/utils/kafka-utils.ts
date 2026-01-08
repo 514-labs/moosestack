@@ -25,7 +25,7 @@ export const isKafkaReady = async (
   try {
     // Try to establish a TCP connection to Kafka
     // We use a simple timeout-based nc (netcat) command to check if the port is open and responsive
-    const command = `timeout 2 bash -c "echo > /dev/tcp/${KAFKA_HOST}/${KAFKA_PORT}" 2>/dev/null && echo "success" || echo "failed"`;
+    const command = `bash -c "echo > /dev/tcp/${KAFKA_HOST}/${KAFKA_PORT}" 2>/dev/null && echo "success" || echo "failed"`;
 
     const { stdout } = await execAsync(command, { timeout: 3000 });
     const ready = stdout.trim() === "success";

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "E2E tests for framework-cli",
   "scripts": {
-    "pretest": "cd ../.. && cargo build && pnpm run build --filter=@514labs/moose-lib && ./scripts/package-templates.js",
+    "pretest": "cd ../.. && cargo build && pnpm run build --filter=@514labs/moose-lib && [ -n \"$SKIP_PACKAGE_TEMPLATES\" ] || ./scripts/package-templates.js",
     "test": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 180000 --async-only --timeout 240000"
   },
   "devDependencies": {

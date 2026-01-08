@@ -158,7 +158,7 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
   const testName =
     config.isTestsVariant ?
-      `${config.language} template tests`
+      `${config.language} template tests main`
     : `${config.language} template default`;
 
   describe(testName, () => {
