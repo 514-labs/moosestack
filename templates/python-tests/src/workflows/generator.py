@@ -25,6 +25,12 @@ workflow_table = OlapTable[FooWorkflow]("foo_workflow")
 
 
 def run_task(ctx: TaskContext[None]) -> None:
+    # TEMPORARY: Force failure to test error reporting in CI
+    raise RuntimeError(
+        "TEMPORARY TEST FAILURE: Testing workflow error reporting in CI. "
+        "This error should appear in the test output with full details."
+    )
+
     fake = Faker()
     # Use three fixed timestamps for E2E tests to add variability
     # while ensuring predictable results for consumption API tests

@@ -62,7 +62,7 @@ import {
   logger,
   waitForInfrastructureChanges,
 } from "./utils";
-import { triggerWorkflow } from "./utils/workflow-utils";
+import { triggerWorkflowAndWait } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
 import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
 import { createClient } from "@clickhouse/client";
@@ -1142,7 +1142,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         );
         await verifyClickhouseData("Bar", eventId, "primaryKey", "local");
 
-        await triggerWorkflow("generator");
+        await triggerWorkflowAndWait("generator");
         await waitForMaterializedViewUpdate(
           "BarAggregated",
           1,
@@ -1906,7 +1906,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         );
         await verifyClickhouseData("Bar", eventId, "primary_key", "local");
 
-        await triggerWorkflow("generator");
+        await triggerWorkflowAndWait("generator");
         await waitForMaterializedViewUpdate(
           "bar_aggregated",
           1,

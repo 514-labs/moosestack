@@ -14,6 +14,12 @@ const workflowTable = new OlapTable<FooWorkflow>("FooWorkflow");
 
 export const ingest = new Task<null, void>("ingest", {
   run: async () => {
+    // TEMPORARY: Force failure to test error reporting in CI
+    throw new Error(
+      "TEMPORARY TEST FAILURE: Testing workflow error reporting in CI. " +
+        "This error should appear in the test output with full details.",
+    );
+
     // Use three fixed timestamps for E2E tests to add variability
     // while ensuring predictable results for consumption API tests
     const timestamps = [
