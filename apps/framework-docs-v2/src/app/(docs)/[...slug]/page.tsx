@@ -1,13 +1,13 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
+import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
+import { cleanContent } from "@/lib/llms-generator";
+import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
-import { showCopyAsMarkdown } from "@/flags";
 import { CopyPageButton } from "@/components/copy-page-button";
-import { cleanContent } from "@/lib/llms-generator";
 
 // export const dynamic = "force-dynamic";
 
@@ -108,14 +108,19 @@ export default async function DocPage({ params }: PageProps) {
   );
 
   const showCopyButton = await showCopyAsMarkdown().catch(() => false);
-  const cleanedContent = cleanContent(content.content);
 
   return (
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
         <div className="flex items-center justify-between">
           <DocBreadcrumbs items={breadcrumbs} />
-          {showCopyButton && <CopyPageButton content={cleanedContent} />}
+          {showCopyButton && (
+            <CopyPageButton
+              content={
+                content.isMDX ? cleanContent(content.content) : content.content
+              }
+            />
+          )}
         </div>
         <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
           {content.isMDX ?
