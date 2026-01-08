@@ -209,15 +209,19 @@ export const killRemainingProcesses = async (
 };
 
 /**
- * Wait for streaming functions to start by checking Redpanda consumer groups.
+ * Wait for streaming functions and ClickHouse sync to start by checking Redpanda consumer groups.
  *
- * This approach directly verifies that streaming function consumers have:
+ * This approach directly verifies that consumers have:
  * 1. Connected to Kafka/Redpanda
  * 2. Joined their consumer groups
  * 3. Reached a "Stable" state (ready to process messages)
  *
- * Streaming functions create consumer groups with names starting with "flow-".
- * We poll `rpk group list` until we find at least one such group in Stable state.
+ * We wait for two types of consumer groups:
+ * - "flow-*" groups: Streaming function consumers (transform data between topics)
+ * - "clickhouse_sync" group: Syncs data from Kafka topics to ClickHouse tables
+ *
+ * Both must be stable before data can flow end-to-end from ingestion to ClickHouse.
+ * We poll `rpk group list` until all required groups are in Stable state.
  */
 export const waitForStreamingFunctions = async (
   timeoutMs: number = 120000,
@@ -253,36 +257,51 @@ export const waitForStreamingFunctions = async (
 
       log.debug("Redpanda consumer groups", { groupList: groupList.trim() });
 
-      // Parse for Stable flow-* groups
+      // Parse for Stable groups
       // Expected format: "BROKER  GROUP  STATE"
       // Example: "0  flow-Foo-  Stable"
       const lines = groupList.split("\n").slice(1); // Skip header
+
+      // Check flow-* groups (streaming functions)
       const flowGroups = lines.filter((line) => line.includes("flow-"));
       const stableFlowGroups = flowGroups.filter((line) =>
         line.includes("Stable"),
       );
 
-      // Wait for ALL flow- groups to be stable, not just ANY
-      if (
-        flowGroups.length > 0 &&
-        stableFlowGroups.length === flowGroups.length
-      ) {
+      // Check clickhouse_sync groups (Kafka to ClickHouse sync)
+      // These are critical for data to actually appear in ClickHouse tables
+      const clickhouseSyncGroups = lines.filter((line) =>
+        line.includes("clickhouse_sync"),
+      );
+      const stableClickhouseSyncGroups = clickhouseSyncGroups.filter((line) =>
+        line.includes("Stable"),
+      );
+
+      // Wait for ALL flow- groups AND clickhouse_sync groups to be stable
+      const allFlowGroupsStable =
+        flowGroups.length > 0 && stableFlowGroups.length === flowGroups.length;
+      const allClickhouseSyncGroupsStable =
+        clickhouseSyncGroups.length === 0 ||
+        stableClickhouseSyncGroups.length === clickhouseSyncGroups.length;
+
+      if (allFlowGroupsStable && allClickhouseSyncGroupsStable) {
         log.debug(
-          `Found ${stableFlowGroups.length} active streaming function(s)`,
+          `Found ${stableFlowGroups.length} active streaming function(s) and ${stableClickhouseSyncGroups.length} clickhouse sync group(s)`,
           {
             functions: stableFlowGroups.map((g) => g.trim()),
+            clickhouseSync: stableClickhouseSyncGroups.map((g) => g.trim()),
           },
         );
 
-        // Grace period for consumer group to fully stabilize
+        // Grace period for consumer groups to fully stabilize
         log.debug("Waiting for consumer groups to stabilize");
         await setTimeoutAsync(3000);
-        log.debug("✓ Streaming functions ready");
+        log.debug("✓ Streaming functions and ClickHouse sync ready");
         return;
       }
 
       log.debug(
-        `Waiting for all streaming functions to be stable (${stableFlowGroups.length}/${flowGroups.length} ready)`,
+        `Waiting for all groups to be stable (flow: ${stableFlowGroups.length}/${flowGroups.length}, clickhouse_sync: ${stableClickhouseSyncGroups.length}/${clickhouseSyncGroups.length})`,
       );
       await setTimeoutAsync(1000);
     } catch (error) {
@@ -296,7 +315,7 @@ export const waitForStreamingFunctions = async (
   }
 
   throw new Error(
-    `Streaming functions did not reach Stable state within ${timeoutMs / 1000}s`,
+    `Streaming functions and ClickHouse sync did not reach Stable state within ${timeoutMs / 1000}s`,
   );
 };
 
