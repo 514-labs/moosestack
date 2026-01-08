@@ -12,6 +12,10 @@ export function CopyPageButton({ content }: CopyPageButtonProps) {
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = async () => {
+    if (typeof window === "undefined" || !navigator.clipboard.writeText) {
+      return;
+    }
+
     try {
       await navigator.clipboard.writeText(content);
       setCopied(true);
@@ -32,6 +36,7 @@ export function CopyPageButton({ content }: CopyPageButtonProps) {
         <IconCheck className="h-4 w-4" />
       : <IconCopy className="h-4 w-4" />}
       Copy Page
+      <span className="sr-only">Copy Page</span>
     </Button>
   );
 }
