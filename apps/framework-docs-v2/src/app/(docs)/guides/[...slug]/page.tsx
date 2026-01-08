@@ -7,7 +7,7 @@ import {
 } from "@/lib/content";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
-import { cleanContent } from "@/lib/llms-generator";
+import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
 import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
@@ -107,6 +107,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   );
 
   const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  const langParam = resolvedSearchParams?.lang;
 
   // Check if this is a dynamic guide by checking for guide.toml
   const guideManifest = await parseGuideManifest(slug);
@@ -155,7 +156,9 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
               <CopyPageButton
                 content={
                   content.isMDX ?
-                    cleanContent(content.content)
+                    cleanContent(
+                      filterLanguageContent(content.content, langParam),
+                    )
                   : content.content
                 }
               />
@@ -242,7 +245,11 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
           {showCopyButton && (
             <CopyPageButton
               content={
-                content.isMDX ? cleanContent(content.content) : content.content
+                content.isMDX ?
+                  cleanContent(
+                    filterLanguageContent(content.content, langParam),
+                  )
+                : content.content
               }
             />
           )}

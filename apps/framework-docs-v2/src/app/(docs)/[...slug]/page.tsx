@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
-import { cleanContent } from "@/lib/llms-generator";
+import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
 import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
@@ -77,7 +77,7 @@ export async function generateMetadata({
   }
 }
 
-export default async function DocPage({ params }: PageProps) {
+export default async function DocPage({ params, searchParams }: PageProps) {
   const resolvedParams = await params;
   const slugArray = resolvedParams.slug;
 
@@ -108,6 +108,8 @@ export default async function DocPage({ params }: PageProps) {
   );
 
   const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  const resolvedSearchParams = await searchParams;
+  const langParam = resolvedSearchParams?.lang;
 
   return (
     <>
@@ -117,7 +119,11 @@ export default async function DocPage({ params }: PageProps) {
           {showCopyButton && (
             <CopyPageButton
               content={
-                content.isMDX ? cleanContent(content.content) : content.content
+                content.isMDX ?
+                  cleanContent(
+                    filterLanguageContent(content.content, langParam),
+                  )
+                : content.content
               }
             />
           )}
