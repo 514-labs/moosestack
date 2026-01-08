@@ -1178,24 +1178,3 @@ def load_models() -> str:
     source_dir = os.environ.get("MOOSE_SOURCE_DIR", "app")
     import_module(f"{source_dir}.main")
     return source_dir
-
-
-def serialize_infrastructure() -> dict:
-    """Generates the infrastructure map and checks for unloaded files.
-
-    This should be called after load_models() to serialize all registered
-    resources into the format expected by the Moose infrastructure system.
-
-    Returns:
-        A dictionary representing the infrastructure map.
-    """
-    source_dir = os.environ.get("MOOSE_SOURCE_DIR", "app")
-
-    # Generate the infrastructure map
-    infra_map_dict = to_infra_map()
-
-    # Check for unloaded files
-    unloaded_files = _find_unloaded_files(source_dir)
-    infra_map_dict["unloadedFiles"] = unloaded_files
-
-    return infra_map_dict
