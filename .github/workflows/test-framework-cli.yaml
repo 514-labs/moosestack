@@ -110,8 +110,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Run cargo check
         run: cargo check
@@ -167,8 +165,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Run pnpm install
         run: pnpm install --filter=@repo/scripts # for package-templates.js
@@ -325,8 +321,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Run TypeScript E2E Tests (Default Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template default"
@@ -396,8 +390,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Run TypeScript E2E Tests (Tests Template)
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "typescript template tests"
@@ -462,8 +454,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
@@ -536,8 +526,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Setup Python ${{ matrix.python-version }} for E2E tests
         uses: actions/setup-python@v4
@@ -605,8 +593,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Run TypeScript Backward Compatibility Test
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "TypeScript Tests Template - Upgrade"
@@ -668,8 +654,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Setup Python 3.13 for E2E tests
         uses: actions/setup-python@v4
@@ -739,8 +723,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Run TypeScript Cluster E2E Tests
         run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "TypeScript Cluster Template"
@@ -799,8 +781,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       - name: Setup Python 3.13
         uses: actions/setup-python@v4
@@ -852,8 +832,6 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
-          # Only save cache from main branch or merge queue to avoid PR cache pollution
-          cache-save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
 
       # to trigger code gen
       - name: Run cargo build
