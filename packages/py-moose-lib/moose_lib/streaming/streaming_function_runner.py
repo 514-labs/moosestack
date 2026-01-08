@@ -647,9 +647,12 @@ def main():
                         consumer.commit()
 
                 except Exception as e:
+                    traceback.print_exc()
                     cli_log(
                         CliLogData(
-                            action="Function", message=str(e), message_type="Error"
+                            action="Function Error",
+                            message=str(e),
+                            message_type="Error",
                         )
                     )
                     if not running.is_set():
