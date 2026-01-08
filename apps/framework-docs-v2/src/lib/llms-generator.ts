@@ -100,13 +100,13 @@ export function cleanContent(content: string): string {
   // Remove export statements
   cleaned = cleaned.replace(/^export (default|const) .*$/gm, "");
 
-  // Remove JSX components and HTML tags
+  // Remove JSX components
   cleaned = cleaned.replace(/<>|<\/>/g, "");
   cleaned = cleaned.replace(/<[A-Z][A-Za-z0-9]*(?:\s[^<>]*)?\/>/g, "");
   cleaned = cleaned.replace(/<[A-Z][A-Za-z0-9]*(?:\s[^<>]*)?>/g, "");
   cleaned = cleaned.replace(/<\/[A-Z][A-Za-z0-9]*>/g, "");
-  cleaned = cleaned.replace(/<[a-z][a-z0-9]*(?:\s[^<>]*)?>/gi, "");
-  cleaned = cleaned.replace(/<\/[a-z][a-z0-9]*>/gi, "");
+  // Remove HTML tags (like <div>, <script>, <span>)
+  cleaned = cleaned.replace(/(^|\s)<\/?[a-z][a-z0-9]*(?:\s[^>]*)?>/gm, "$1");
 
   // Remove HTML comments (apply repeatedly to catch nested/fragmented cases)
   let prev: string;
@@ -114,10 +114,6 @@ export function cleanContent(content: string): string {
     prev = cleaned;
     cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, "");
   } while (cleaned !== prev);
-
-  // As a final safeguard, remove any remaining angle brackets to avoid
-  // partially stripped or fragmented tags (e.g. leftover "<script").
-  cleaned = cleaned.replace(/[<>]/g, "");
 
   // Clean up excessive whitespace
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
