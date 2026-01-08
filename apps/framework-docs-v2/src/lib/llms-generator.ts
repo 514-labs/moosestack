@@ -158,6 +158,7 @@ export function cleanContent(content: string): string {
   } while (cleaned !== prev);
 
   // Clean up excessive whitespace
+  cleaned = cleaned.replace(/^[ \t]+$/gm, "");
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
   cleaned = cleaned.trim();
 
