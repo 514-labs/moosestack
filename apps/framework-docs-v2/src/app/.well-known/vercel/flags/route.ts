@@ -49,6 +49,14 @@ export const GET = createFlagsDiscoveryEndpoint(async () => {
           { value: true, label: "On" },
         ],
       },
+      "show-copy-as-markdown": {
+        description: "Show Copy Page button in doc & guide pages",
+        origin: "https://us.i.posthog.com",
+        options: [
+          { value: false, label: "Off" },
+          { value: true, label: "On" },
+        ],
+      },
     },
   };
 });

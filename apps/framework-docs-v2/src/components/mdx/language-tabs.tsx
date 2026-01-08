@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, Suspense, useState, useEffect, useRef } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLanguage } from "@/hooks/use-language";
 import { toast } from "sonner";
@@ -15,6 +16,9 @@ function LanguageTabsInner({
   items = ["TypeScript", "Python"],
 }: LanguageTabsProps) {
   const { language, setLanguage } = useLanguage();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   // Local state for this tab group - initializes from global language
   const [localLanguage, setLocalLanguage] = useState<string>(
@@ -51,6 +55,11 @@ function LanguageTabsInner({
         duration: 5000,
       });
     }
+
+    // Always update URL immediately so Copy Page button works correctly
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    params.set("lang", newLang);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
   return (
