@@ -49,7 +49,7 @@ export const showCopyAsMarkdown = flag<boolean>({
   key: "show-copy-as-markdown",
   adapter: postHogAdapter.isFeatureEnabled(),
   defaultValue: false,
-  description: "Show Copy as Markdown button in TOC sidebar",
+  description: "Show Copy Page button in doc & guide pages",
   origin: "https://us.i.posthog.com",
   identify,
 });

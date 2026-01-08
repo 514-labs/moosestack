@@ -50,7 +50,7 @@ export const GET = createFlagsDiscoveryEndpoint(async () => {
         ],
       },
       "show-copy-as-markdown": {
-        description: "Show Copy as Markdown button in TOC sidebar",
+        description: "Show Copy Page button in doc & guide pages",
         origin: "https://us.i.posthog.com",
         options: [
           { value: false, label: "Off" },

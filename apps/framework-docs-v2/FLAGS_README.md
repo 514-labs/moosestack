@@ -26,7 +26,7 @@
 - `show-ai-section` - Controls AI tab visibility (default: off)
 - `show-data-sources-page` - Controls Data sources page visibility in navigation (default: off)
 - `show-template-deploy-button` - Show Deploy button on template cards; only turn on once Boreal template deploy is functional (default: off)
-- `show-copy-as-markdown` - Show Copy as Markdown button in TOC sidebar (default: off)
+- `show-copy-as-markdown` - Show Copy Page button in doc & guide pages (default: off)
 
 ## How It Works
 
