@@ -13,6 +13,7 @@ import { GuideStepsWrapper } from "@/components/guides/guide-steps-wrapper";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
 import { showCopyAsMarkdown } from "@/flags";
+import { CopyPageButton } from "@/components/copy-page-button";
 
 // export const dynamic = "force-dynamic";
 
@@ -147,7 +148,10 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     return (
       <>
         <div className="flex w-full flex-col gap-6 pt-4">
-          <DocBreadcrumbs items={breadcrumbs} />
+          <div className="flex items-center justify-between">
+            <DocBreadcrumbs items={breadcrumbs} />
+            {showCopyButton && <CopyPageButton />}
+          </div>
           <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
             {content.isMDX ?
               <MDXRenderer source={content.content} />
@@ -171,7 +175,6 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
         <TOCNav
           headings={allHeadings}
           helpfulLinks={content.frontMatter.helpfulLinks}
-          showCopyButton={showCopyButton}
         />
       </>
     );
@@ -225,7 +228,10 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   return (
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
-        <DocBreadcrumbs items={breadcrumbs} />
+        <div className="flex items-center justify-between">
+          <DocBreadcrumbs items={breadcrumbs} />
+          {showCopyButton && <CopyPageButton />}
+        </div>
         <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
@@ -244,7 +250,6 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
       <TOCNav
         headings={allHeadings}
         helpfulLinks={content.frontMatter.helpfulLinks}
-        showCopyButton={showCopyButton}
       />
     </>
   );

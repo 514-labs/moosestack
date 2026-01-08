@@ -8,8 +8,6 @@ import {
   IconExternalLink,
   IconPlus,
   IconInfoCircle,
-  IconCopy,
-  IconCheck,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,42 +31,14 @@ interface TOCNavProps {
     title: string;
     url: string;
   }>;
-  showCopyButton?: boolean;
 }
 
-export function TOCNav({
-  headings,
-  helpfulLinks,
-  showCopyButton,
-}: TOCNavProps) {
+export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
   const [activeId, setActiveId] = useState<string>("");
   const [scope, setScope] = useState<"initiative" | "project">("initiative");
-  const [copied, setCopied] = useState(false);
-  const [markdown, setMarkdown] = useState<string>("");
   const pathname = usePathname();
   const isGuidePage =
     pathname?.startsWith("/guides/") && pathname !== "/guides";
-
-  useEffect(() => {
-    if (!pathname) return;
-
-    const slug = pathname.replace(/^\//, "");
-
-    const fetchMarkdown = async () => {
-      try {
-        const response = await fetch(`/api/markdown/${slug}`);
-        if (!response.ok) {
-          throw new Error("Failed to fetch markdown");
-        }
-        const text = await response.text();
-        setMarkdown(text);
-      } catch (error) {
-        console.error("Error fetching markdown:", error);
-      }
-    };
-
-    fetchMarkdown();
-  }, [pathname]);
 
   useEffect(() => {
     if (headings.length === 0) return;
@@ -172,18 +142,6 @@ export function TOCNav({
     };
   }, [headings]);
 
-  const handleCopyMarkdown = async () => {
-    if (!markdown) return;
-
-    try {
-      await navigator.clipboard.writeText(markdown);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error("Copy failed:", error);
-    }
-  };
-
   if (headings.length === 0 && (!helpfulLinks || helpfulLinks.length === 0)) {
     return null;
   }
@@ -193,32 +151,7 @@ export function TOCNav({
       <div className="pt-6 lg:pt-10 pb-6 pr-2">
         {headings.length > 0 && (
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold">On this page</h4>
-
-              {showCopyButton && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        onClick={handleCopyMarkdown}
-                        size="icon"
-                        variant="ghost"
-                        className="h-6 w-6"
-                      >
-                        {copied ?
-                          <IconCheck className="h-3 w-3 text-muted-foreground" />
-                        : <IconCopy className="h-3 w-3 text-muted-foreground" />
-                        }
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{copied ? "Copied!" : "Copy as Markdown"}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-            </div>
+            <h4 className="mb-3 text-sm font-semibold">On this page</h4>
             <nav className="space-y-2">
               {headings.map((heading, index) => (
                 <a

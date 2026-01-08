@@ -6,6 +6,7 @@ import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { showCopyAsMarkdown } from "@/flags";
+import { CopyPageButton } from "@/components/copy-page-button";
 
 // export const dynamic = "force-dynamic";
 
@@ -110,7 +111,10 @@ export default async function DocPage({ params }: PageProps) {
   return (
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
-        <DocBreadcrumbs items={breadcrumbs} />
+        <div className="flex items-center justify-between">
+          <DocBreadcrumbs items={breadcrumbs} />
+          {showCopyButton && <CopyPageButton />}
+        </div>
         <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
@@ -120,7 +124,6 @@ export default async function DocPage({ params }: PageProps) {
       <TOCNav
         headings={content.headings}
         helpfulLinks={content.frontMatter.helpfulLinks}
-        showCopyButton={showCopyButton}
       />
     </>
   );
