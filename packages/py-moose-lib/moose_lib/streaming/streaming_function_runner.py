@@ -42,6 +42,12 @@ sys.stdout = io.TextIOWrapper(
     open(sys.stdout.fileno(), "wb", 0), write_through=True, line_buffering=True
 )
 
+# Constants for consumer initialization
+# Maximum time (seconds) to wait for partition assignment during eager initialization
+PARTITION_ASSIGNMENT_TIMEOUT_SECONDS = 60
+# Polling interval (seconds) when waiting for partition assignment
+PARTITION_ASSIGNMENT_POLL_INTERVAL_SECONDS = 0.1
+
 
 @dataclasses.dataclass
 class KafkaTopicConfig:
@@ -498,6 +504,33 @@ def main():
             kafka_refs["producer"] = producer
 
             consumer.subscribe([source_topic.name])
+
+            # Force eager initialization: trigger group join and wait for partition assignment
+            # kafka-python is lazy - first poll() triggers connection and group join
+            # We do this explicitly to ensure consumer is fully ready before processing
+            log("Waiting for consumer group assignment...")
+            start_time = time.time()
+            got_assignment = False
+            while running.is_set():
+                # poll(0) triggers group join without blocking
+                consumer.poll(timeout_ms=0)
+                assignment = consumer.assignment()
+                if assignment:
+                    log(
+                        f"Consumer ready with {len(assignment)} partition(s): {assignment}"
+                    )
+                    got_assignment = True
+                    break
+                if time.time() - start_time > PARTITION_ASSIGNMENT_TIMEOUT_SECONDS:
+                    raise RuntimeError(
+                        f"Consumer failed to get partition assignment within {PARTITION_ASSIGNMENT_TIMEOUT_SECONDS}s"
+                    )
+                time.sleep(PARTITION_ASSIGNMENT_POLL_INTERVAL_SECONDS)
+
+            # If we exited because of shutdown signal, don't proceed to main loop
+            if not got_assignment:
+                log("Shutdown requested during initialization, exiting")
+                return
 
             log("Kafka consumer and producer initialized in processing thread")
 
