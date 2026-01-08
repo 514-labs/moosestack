@@ -12,7 +12,8 @@ export function CopyPageButton({ content }: CopyPageButtonProps) {
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = async () => {
-    if (typeof window === "undefined" || !navigator.clipboard.writeText) {
+    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
+      console.error("Clipboard API not available");
       return;
     }
 
@@ -21,7 +22,7 @@ export function CopyPageButton({ content }: CopyPageButtonProps) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error("Copy failed:", error);
+      console.error("Failed to copy:", error);
     }
   };
 
@@ -36,7 +37,6 @@ export function CopyPageButton({ content }: CopyPageButtonProps) {
         <IconCheck className="h-4 w-4" />
       : <IconCopy className="h-4 w-4" />}
       Copy Page
-      <span className="sr-only">Copy Page</span>
     </Button>
   );
 }
