@@ -167,6 +167,9 @@ message Table {
   // Hash of table settings for change detection (including sensitive settings)
   // Used to detect settings changes without storing plaintext sensitive values
   optional string table_settings_hash = 20;
+
+  // Optional ClickHouse projections for query optimization
+  repeated TableProjection projections = 21;
 }
 
 // Structured representation of ORDER BY to support either explicit fields
@@ -191,6 +194,35 @@ message TableIndex {
   string type = 3;
   repeated string arguments = 4;
   uint64 granularity = 5;
+}
+
+// Projection clause - either explicit fields or SQL expression
+message ProjectionClause {
+  oneof clause {
+    // List of field names (e.g., ["user_id", "timestamp"])
+    ProjectionFields fields = 1;
+    // SQL expression (e.g., "toStartOfHour(timestamp) as hour, count() as cnt")
+    string expression = 2;
+  }
+}
+
+// Wrapper for repeated field names in projections
+message ProjectionFields {
+  // Field names to include in the projection
+  repeated string field = 1;
+}
+
+// ClickHouse projection for query optimization
+// Projections duplicate data with different sort orders or pre-computed aggregations
+message TableProjection {
+  // Unique name for the projection
+  string name = 1;
+  // Columns or expression to project (required)
+  ProjectionClause select = 2;
+  // Optional ordering for non-aggregate projections (mutually exclusive with group_by)
+  ProjectionClause order_by = 3;
+  // Optional grouping for aggregate projections (mutually exclusive with order_by)
+  optional ProjectionClause group_by = 4;
 }
 
 message Dmv1View {

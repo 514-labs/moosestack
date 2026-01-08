@@ -32,6 +32,9 @@ const rawMeta = {
   indexes: {
     title: "Secondary & Data-skipping Indexes",
   },
+  projections: {
+    title: "Projections",
+  },
   "---Remote DB---": {
     title: "Remote ClickHouse",
     type: "separator",

@@ -36,7 +36,8 @@
 
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::{
-    ColumnChange, FilteredChange, OlapChange, TableChange,
+    ColumnChange, FilteredChange, OlapChange, OrderByChange, PartitionByChange, ProjectionChange,
+    TableChange,
 };
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use std::collections::HashSet;
@@ -120,6 +121,7 @@ fn filter_single_change(
         OlapChange::Table(TableChange::Updated {
             name,
             column_changes,
+            projection_changes,
             order_by_change,
             partition_by_change,
             before,
@@ -128,6 +130,7 @@ fn filter_single_change(
             filter_table_update(
                 name,
                 column_changes,
+                projection_changes,
                 order_by_change,
                 partition_by_change,
                 before,
@@ -195,20 +198,24 @@ fn create_orphan_create_filtered_change(table: Table) -> FilteredChange {
 fn filter_table_update(
     name: String,
     column_changes: Vec<ColumnChange>,
-    order_by_change: crate::framework::core::infrastructure_map::OrderByChange,
-    partition_by_change: crate::framework::core::infrastructure_map::PartitionByChange,
+    projection_changes: Vec<ProjectionChange>,
+    order_by_change: OrderByChange,
+    partition_by_change: PartitionByChange,
     before: Table,
     after: Table,
     applied: &mut Vec<OlapChange>,
     filtered: &mut Vec<FilteredChange>,
 ) {
     let (allowed_columns, blocked_columns) = filter_column_changes(column_changes, &after);
+    let (allowed_projections, blocked_projections) =
+        filter_projection_changes(projection_changes, &after);
 
-    // Record blocked column changes
-    if !blocked_columns.is_empty() {
+    // Record blocked changes (columns or projections)
+    if !blocked_columns.is_empty() || !blocked_projections.is_empty() {
         filtered.push(create_column_changes_filtered_change(
             &name,
             blocked_columns,
+            blocked_projections,
             order_by_change.clone(),
             partition_by_change.clone(),
             before.clone(),
@@ -216,10 +223,11 @@ fn filter_table_update(
         ));
     }
 
-    // Always pass through the Updated change with filtered column_changes
+    // Always pass through the Updated change with filtered column_changes and projection_changes
     applied.push(OlapChange::Table(TableChange::Updated {
         name,
         column_changes: allowed_columns,
+        projection_changes: allowed_projections,
         order_by_change,
         partition_by_change,
         before,
@@ -227,12 +235,13 @@ fn filter_table_update(
     }));
 }
 
-/// Creates a FilteredChange for blocked column changes
+/// Creates a FilteredChange for blocked column or projection changes
 fn create_column_changes_filtered_change(
     table_name: &str,
     blocked_columns: Vec<ColumnChange>,
-    order_by_change: crate::framework::core::infrastructure_map::OrderByChange,
-    partition_by_change: crate::framework::core::infrastructure_map::PartitionByChange,
+    blocked_projections: Vec<ProjectionChange>,
+    order_by_change: OrderByChange,
+    partition_by_change: PartitionByChange,
     before: Table,
     after: Table,
 ) -> FilteredChange {
@@ -245,17 +254,41 @@ fn create_column_changes_filtered_change(
         })
         .collect();
 
-    FilteredChange {
-        reason: format!(
-            "Table '{}' has {:?} lifecycle - {} column change(s) blocked: {}",
-            after.display_name(),
-            after.life_cycle,
+    let blocked_projection_names: Vec<String> = blocked_projections
+        .iter()
+        .map(|p| match p {
+            ProjectionChange::Removed { projection_name } => projection_name.clone(),
+            ProjectionChange::Added { projection } => projection.name.clone(),
+        })
+        .collect();
+
+    let mut reasons = Vec::new();
+    if !blocked_column_names.is_empty() {
+        reasons.push(format!(
+            "{} column change(s): {}",
             blocked_column_names.len(),
             blocked_column_names.join(", ")
+        ));
+    }
+    if !blocked_projection_names.is_empty() {
+        reasons.push(format!(
+            "{} projection change(s): {}",
+            blocked_projection_names.len(),
+            blocked_projection_names.join(", ")
+        ));
+    }
+
+    FilteredChange {
+        reason: format!(
+            "Table '{}' has {:?} lifecycle - {} blocked",
+            after.display_name(),
+            after.life_cycle,
+            reasons.join(" and ")
         ),
         change: OlapChange::Table(TableChange::Updated {
             name: table_name.to_string(),
             column_changes: blocked_columns,
+            projection_changes: blocked_projections,
             order_by_change,
             partition_by_change,
             before,
@@ -337,6 +370,63 @@ fn filter_column_changes(
     if !blocked.is_empty() {
         tracing::debug!(
             "Filtered {} column removals for {:?} table '{}'",
+            blocked.len(),
+            after_table.life_cycle,
+            after_table.display_name()
+        );
+    }
+
+    (allowed, blocked)
+}
+
+/// Filters projection changes based on lifecycle policies
+///
+/// Similar to column filtering:
+/// - ExternallyManaged: blocks ALL projection changes
+/// - DeletionProtected: blocks only projection removals
+///
+/// # Arguments
+/// * `projection_changes` - The projection changes to filter
+/// * `after_table` - The table state AFTER the changes (contains lifecycle policy)
+///
+/// # Returns
+/// A tuple of (allowed_changes, blocked_changes)
+fn filter_projection_changes(
+    projection_changes: Vec<ProjectionChange>,
+    after_table: &Table,
+) -> (Vec<ProjectionChange>, Vec<ProjectionChange>) {
+    // ExternallyManaged: block ALL projection changes
+    if after_table.life_cycle.is_any_modification_protected() {
+        if !projection_changes.is_empty() {
+            tracing::debug!(
+                "Filtered {} projection changes for {:?} table '{}' (no modifications allowed)",
+                projection_changes.len(),
+                after_table.life_cycle,
+                after_table.display_name()
+            );
+        }
+        return (Vec::new(), projection_changes);
+    }
+
+    // DeletionProtected: block only projection removals
+    if !after_table.life_cycle.is_column_removal_protected() {
+        return (projection_changes, Vec::new());
+    }
+
+    let mut allowed = Vec::new();
+    let mut blocked = Vec::new();
+
+    for change in projection_changes {
+        if matches!(change, ProjectionChange::Removed { .. }) {
+            blocked.push(change);
+        } else {
+            allowed.push(change);
+        }
+    }
+
+    if !blocked.is_empty() {
+        tracing::debug!(
+            "Filtered {} projection removals for {:?} table '{}'",
             blocked.len(),
             after_table.life_cycle,
             after_table.display_name()
@@ -503,10 +593,12 @@ fn check_table_change_compliance(
         TableChange::Updated {
             name,
             column_changes,
+            projection_changes,
             after,
             ..
         } => {
             check_column_changes_compliance(name, column_changes, after, violations);
+            check_projection_changes_compliance(name, projection_changes, after, violations);
         }
         TableChange::SettingsChanged { table, name, .. } => {
             check_settings_change_compliance(table, name, violations);
@@ -599,6 +691,36 @@ fn check_column_changes_compliance(
     }
 }
 
+/// Checks if projection changes violate lifecycle policies
+fn check_projection_changes_compliance(
+    table_name: &str,
+    projection_changes: &[ProjectionChange],
+    table: &Table,
+    violations: &mut Vec<LifecycleViolation>,
+) {
+    if table.life_cycle.is_any_modification_protected() {
+        // ExternallyManaged: block ALL projection changes
+        for projection_change in projection_changes {
+            violations.push(create_projection_change_violation(
+                table_name,
+                projection_change,
+                table,
+            ));
+        }
+    } else if table.life_cycle.is_column_removal_protected() {
+        // DeletionProtected: only block projection removals
+        for projection_change in projection_changes {
+            if let ProjectionChange::Removed { projection_name } = projection_change {
+                violations.push(create_projection_removal_violation(
+                    table_name,
+                    projection_name,
+                    table,
+                ));
+            }
+        }
+    }
+}
+
 /// Creates a violation for an illegal column change on ExternallyManaged table
 fn create_column_change_violation(
     table_name: &str,
@@ -641,6 +763,59 @@ fn create_column_removal_violation(
             {:?} lifecycle. This is a bug - the diff/filter \
             pipeline should have blocked this.",
             column.name,
+            table.display_name(),
+            table.life_cycle
+        ),
+        table_name: table_name.to_string(),
+        database: table.database.clone(),
+        life_cycle: table.life_cycle,
+        violation_type: ViolationType::ColumnRemoval,
+    }
+}
+
+/// Creates a violation for an illegal projection change on ExternallyManaged table
+fn create_projection_change_violation(
+    table_name: &str,
+    projection_change: &ProjectionChange,
+    table: &Table,
+) -> LifecycleViolation {
+    let (proj_name, violation_type) = match projection_change {
+        ProjectionChange::Removed { projection_name } => {
+            (projection_name.clone(), ViolationType::ColumnRemoval)
+        }
+        ProjectionChange::Added { projection } => {
+            (projection.name.clone(), ViolationType::ColumnAddition)
+        }
+    };
+
+    LifecycleViolation {
+        message: format!(
+            "Attempted to modify projection '{}' on table '{}' which has \
+            {:?} lifecycle. This is a bug - the diff/filter \
+            pipeline should have blocked this.",
+            proj_name,
+            table.display_name(),
+            table.life_cycle
+        ),
+        table_name: table_name.to_string(),
+        database: table.database.clone(),
+        life_cycle: table.life_cycle,
+        violation_type,
+    }
+}
+
+/// Creates a violation for an illegal projection removal on DeletionProtected table
+fn create_projection_removal_violation(
+    table_name: &str,
+    projection_name: &str,
+    table: &Table,
+) -> LifecycleViolation {
+    LifecycleViolation {
+        message: format!(
+            "Attempted to DROP PROJECTION '{}' from table '{}' which has \
+            {:?} lifecycle. This is a bug - the diff/filter \
+            pipeline should have blocked this.",
+            projection_name,
             table.display_name(),
             table.life_cycle
         ),
@@ -703,7 +878,7 @@ fn create_table_modification_violation(
 mod tests {
     use super::*;
     use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType, OrderBy};
-    use crate::framework::core::infrastructure_map::{OrderByChange, PartitionByChange};
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::versions::Version;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
@@ -728,10 +903,9 @@ mod tests {
             sample_by: None,
             engine: ClickhouseEngine::MergeTree,
             version: Some(Version::from_string("1.0.0".to_string())),
-            source_primitive: crate::framework::core::infrastructure_map::PrimitiveSignature {
+            source_primitive: PrimitiveSignature {
                 name: "test".to_string(),
-                primitive_type:
-                    crate::framework::core::infrastructure_map::PrimitiveTypes::DataModel,
+                primitive_type: PrimitiveTypes::DataModel,
             },
             metadata: None,
             life_cycle,
@@ -739,6 +913,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -819,6 +994,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -847,6 +1023,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -877,6 +1054,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -1082,6 +1260,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -1112,6 +1291,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];
@@ -1143,6 +1323,7 @@ mod tests {
                 before: None,
                 after: None,
             },
+            projection_changes: vec![],
             before,
             after,
         })];

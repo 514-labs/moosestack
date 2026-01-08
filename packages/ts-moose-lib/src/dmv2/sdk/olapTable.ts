@@ -26,6 +26,48 @@ export interface TableIndex {
 }
 
 /**
+ * Defines a ClickHouse projection for optimizing specific query patterns.
+ * Projections duplicate data with different sort orders or pre-computed aggregations.
+ *
+ * ClickHouse rules:
+ * - Non-aggregate projections: Must have ORDER BY
+ * - Aggregate projections (with GROUP BY): Cannot have ORDER BY (ordering is implicit from GROUP BY)
+ */
+export type TableProjection<T = any> = {
+  /** Unique name for the projection */
+  name: string;
+} & (
+  | {
+      /** List of column names to include in non-aggregate projection */
+      select: (keyof T & string)[];
+      /** Columns to order by (required for non-aggregate projections) */
+      orderBy: (keyof T & string)[];
+      groupBy?: never;
+    }
+  | {
+      /** List of column names to include in aggregate projection */
+      select: (keyof T & string)[];
+      /** GROUP BY columns (for aggregate projections). ORDER BY is implicit from this. */
+      groupBy: (keyof T & string)[];
+      orderBy?: never;
+    }
+  | {
+      /** SQL expression for SELECT clause (non-aggregate) */
+      select: string;
+      /** SQL expression for ORDER BY clause (required for non-aggregate projections) */
+      orderBy: string;
+      groupBy?: never;
+    }
+  | {
+      /** SQL expression for SELECT clause (aggregate) */
+      select: string;
+      /** SQL expression for GROUP BY clause (for aggregate projections). ORDER BY is implicit from this. */
+      groupBy: string;
+      orderBy?: never;
+    }
+);
+
+/**
  * Represents a failed record during insertion with error details
  */
 export interface FailedRecord<T> {
@@ -235,6 +277,11 @@ export type BaseOlapConfig<T> = (
   ttl?: string;
   /** Optional secondary/data-skipping indexes */
   indexes?: TableIndex[];
+  /**
+   * Optional projections for optimizing specific query patterns.
+   * Projections store duplicate data with different sort orders or pre-computed aggregations.
+   */
+  projections?: TableProjection<T>[];
   /**
    * Optional database name for multi-database support.
    * When not specified, uses the global ClickHouse config database.
@@ -700,6 +747,31 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
         `OlapTable ${name}: Cannot specify both 'cluster' and explicit replication params ('keeperPath' or 'replicaName'). ` +
           `Use 'cluster' for auto-injected params, or use explicit 'keeperPath' and 'replicaName' without 'cluster'.`,
       );
+    }
+
+    // Validate that projections are only used with MergeTree family engines
+    const projections = (resolvedConfig as any).projections;
+    if (projections && Array.isArray(projections) && projections.length > 0) {
+      const engine = resolvedConfig.engine;
+      const nonMergeTreeEngines = [
+        ClickHouseEngines.S3,
+        ClickHouseEngines.S3Queue,
+        ClickHouseEngines.Buffer,
+        ClickHouseEngines.Distributed,
+        ClickHouseEngines.IcebergS3,
+        ClickHouseEngines.Kafka,
+      ];
+
+      if (
+        typeof engine === "string" &&
+        nonMergeTreeEngines.includes(engine as ClickHouseEngines)
+      ) {
+        throw new Error(
+          `OlapTable ${name}: ${engine} engine does not support PROJECTION clauses. ` +
+            `Projections are only supported on MergeTree family engines. ` +
+            `Remove projections from your configuration.`,
+        );
+      }
     }
 
     super(name, resolvedConfig, schema, columns, validators);

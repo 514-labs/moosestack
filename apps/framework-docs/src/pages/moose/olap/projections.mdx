@@ -1,0 +1,100 @@
+---
+title: Projections
+description: Optimize query performance with ClickHouse projections
+---
+
+## Projections for ClickHouse tables
+
+Moose lets you declare projections directly in your table definitions. Projections duplicate data with different sort orders or pre-computed aggregations to optimize specific query patterns.
+
+### When to use projections
+
+- **Different sort orders**: Speed up queries that filter/sort by columns not in your main ORDER BY
+- **Pre-aggregated metrics**: Compute rollups (counts, sums, averages) at write time for instant query performance
+- **User-specific queries**: Optimize queries grouped by user_id, session_id, or other high-cardinality dimensions
+
+### ClickHouse Rules
+
+- **Non-aggregate projections**: Must have ORDER BY (for re-sorting data)
+- **Aggregate projections**: Cannot have ORDER BY (ordering is implicit from GROUP BY)
+
+### TypeScript
+
+```ts
+import { OlapTable, ClickHouseEngines, DateTime } from "@514labs/moose-lib";
+
+interface UserEvents {
+  userId: string;
+  timestamp: DateTime;
+  eventType: string;
+  value: number;
+}
+
+export const EventsTable = new OlapTable<UserEvents>("UserEvents", {
+  engine: ClickHouseEngines.MergeTree,
+  orderByFields: ["timestamp", "userId"],
+  projections: [
+    // Non-aggregate: Re-sort for user-specific queries
+    {
+      name: "by_user",
+      select: ["userId", "timestamp", "eventType"],
+      orderBy: ["userId", "timestamp"],
+    },
+    // Aggregate: Pre-compute hourly metrics
+    {
+      name: "hourly_metrics",
+      select: "toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
+      groupBy: "hour",
+    },
+  ],
+});
+```
+
+### Python
+
+```python
+from moose_lib import OlapTable, OlapConfig, TableProjection
+from moose_lib.blocks import MergeTreeEngine
+from pydantic import BaseModel
+from datetime import datetime
+
+class UserEvents(BaseModel):
+    userId: str
+    timestamp: datetime
+    eventType: str
+    value: float
+
+events_table = OlapTable[UserEvents](
+    "UserEvents",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["timestamp", "userId"],
+        projections=[
+            # Non-aggregate: Re-sort for user-specific queries
+            TableProjection(
+                name="by_user",
+                select=["userId", "timestamp", "eventType"],
+                order_by=["userId", "timestamp"]
+            ),
+            # Aggregate: Pre-compute hourly metrics
+            TableProjection(
+                name="hourly_metrics",
+                select="toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
+                group_by="hour"
+            ),
+        ],
+    ),
+)
+```
+
+### How Moose applies changes
+
+- On create, Moose emits `PROJECTION ...` entries inside `CREATE TABLE` and automatically materializes them
+- On change, Moose plans `ALTER TABLE DROP PROJECTION <name>` then `ADD PROJECTION ...` and `MATERIALIZE PROJECTION ...`
+- The `MATERIALIZE` step backfills the projection with existing table data (without this, projections would only contain new inserts)
+
+### Performance considerations
+
+- Projections increase write latency and storage (data is duplicated)
+- Best for read-heavy workloads where query speed outweighs write overhead
+- Use aggregate projections for dashboard metrics that would otherwise require expensive GROUP BY queries

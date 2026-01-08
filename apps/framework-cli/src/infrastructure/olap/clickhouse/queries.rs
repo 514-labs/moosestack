@@ -125,7 +125,8 @@ CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
 ON CLUSTER {{cluster_name}}{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_materialized}} MATERIALIZED {{{field_materialized}}}{{/if}}{{#if field_codec}} CODEC({{{field_codec}}}){{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},
-{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
+{{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}{{#if has_projections}}{{#each projections}},
+ {{{this}}}{{/each}}{{/if}}
 )
 ENGINE = {{engine}}{{#if primary_key_string}}
 PRIMARY KEY ({{primary_key_string}}){{/if}}{{#if partition_by}}
@@ -3349,6 +3350,32 @@ pub fn create_table_query(
         (true, items)
     };
 
+    // Prepare projection strings like: PROJECTION name (SELECT ... GROUP BY ... ORDER BY ...)
+    // Projections are only supported on MergeTree family engines
+    let supports_projections = table.engine.is_merge_tree_family();
+    let (has_projections, projection_strings): (bool, Vec<String>) =
+        if !supports_projections || table.projections.is_empty() {
+            (false, vec![])
+        } else {
+            let mut items = Vec::with_capacity(table.projections.len());
+            for proj in &table.projections {
+                let mut clauses = Vec::new();
+
+                clauses.push(format!("SELECT {}", proj.select.to_sql()));
+
+                // ClickHouse rule: Aggregate projections (with GROUP BY) cannot have ORDER BY
+                if let Some(ref group_by) = proj.group_by {
+                    clauses.push(format!("GROUP BY {}", group_by.to_sql()));
+                } else if let Some(ref order_by) = proj.order_by {
+                    // ORDER BY only allowed for non-aggregate projections
+                    clauses.push(format!("ORDER BY {}", order_by.to_sql()));
+                }
+
+                items.push(format!("PROJECTION {} ({})", proj.name, clauses.join(" ")));
+            }
+            (true, items)
+        };
+
     // Different engines support different clauses:
     // - MergeTree family: Supports all clauses (ORDER BY, PRIMARY KEY, PARTITION BY, SAMPLE BY)
     // - S3: Supports PARTITION BY and SETTINGS, but not ORDER BY, PRIMARY KEY, or SAMPLE BY
@@ -3382,6 +3409,8 @@ pub fn create_table_query(
         "has_fields": !table.columns.is_empty(),
         "has_indexes": has_indexes,
         "indexes": index_strings,
+        "has_projections": has_projections,
+        "projections": projection_strings,
         "primary_key_string": if supports_primary_key {
             primary_key_str
         } else {
@@ -3725,8 +3754,30 @@ mod tests {
     use std::vec;
 
     use super::*;
-    use crate::framework::core::infrastructure::table::{DataEnum, EnumMember};
+    use crate::framework::core::infrastructure::table::{
+        DataEnum, EnumMember, ProjectionClause, TableProjection,
+    };
     use crate::framework::versions::Version;
+
+    // Helper to create a basic column for testing
+    fn create_test_column(
+        name: &str,
+        column_type: ClickHouseColumnType,
+        required: bool,
+    ) -> ClickHouseColumn {
+        ClickHouseColumn {
+            name: name.to_string(),
+            column_type,
+            required,
+            primary_key: false,
+            unique: false,
+            default: None,
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        }
+    }
 
     #[test]
     fn test_nested_query_generator() {
@@ -3935,6 +3986,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3948,6 +4000,94 @@ ENGINE = MergeTree
 PRIMARY KEY (`id`)
 "#;
         assert_eq!(query.trim(), expected.trim());
+    }
+
+    #[test]
+    fn test_create_table_query_with_projections() {
+        let table = ClickHouseTable {
+            version: Some(Version::from_string("1".to_string())),
+            name: "test_table".to_string(),
+            columns: vec![
+                create_test_column(
+                    "id",
+                    ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    true,
+                ),
+                create_test_column(
+                    "user_id",
+                    ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    true,
+                ),
+                create_test_column("timestamp", ClickHouseColumnType::DateTime, true),
+                create_test_column(
+                    "value",
+                    ClickHouseColumnType::ClickhouseInt(ClickHouseInt::Int32),
+                    true,
+                ),
+            ],
+            order_by: OrderBy::Fields(vec!["id".to_string(), "timestamp".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            projections: vec![
+                // Non-aggregate projection with field list
+                TableProjection {
+                    name: "by_user".to_string(),
+                    select: ProjectionClause::Fields(vec![
+                        "user_id".to_string(),
+                        "timestamp".to_string(),
+                    ]),
+                    order_by: Some(ProjectionClause::Fields(vec![
+                        "user_id".to_string(),
+                        "timestamp".to_string(),
+                    ])),
+                    group_by: None,
+                },
+                // Aggregate projection with expression and GROUP BY
+                TableProjection {
+                    name: "hourly_agg".to_string(),
+                    select: ProjectionClause::Expression(
+                        "toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total"
+                            .to_string(),
+                    ),
+                    order_by: None,
+                    group_by: Some(ProjectionClause::Expression("hour".to_string())),
+                },
+            ],
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+
+        // Verify the query contains the PROJECTION blocks
+        assert!(
+            query.contains(
+                "PROJECTION by_user (SELECT user_id, timestamp ORDER BY user_id, timestamp)"
+            ),
+            "Expected non-aggregate projection not found in:\n{}",
+            query
+        );
+        assert!(
+            query.contains(
+                "PROJECTION hourly_agg (SELECT toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total GROUP BY hour)"
+            ),
+            "Expected aggregate projection not found in:\n{}",
+            query
+        );
+
+        // Verify projections come after columns but before ENGINE
+        let projection_index = query
+            .find("PROJECTION")
+            .expect("PROJECTION keyword not found");
+        let engine_index = query.find("ENGINE").expect("ENGINE keyword not found");
+        assert!(
+            projection_index < engine_index,
+            "PROJECTION should appear before ENGINE"
+        );
     }
 
     #[test]
@@ -3976,6 +4116,7 @@ PRIMARY KEY (`id`)
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4016,6 +4157,7 @@ ENGINE = MergeTree
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4083,6 +4225,7 @@ ENGINE = MergeTree
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4127,6 +4270,7 @@ ENGINE = MergeTree
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4170,6 +4314,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let result = create_table_query("test_db", table, false);
@@ -4222,6 +4367,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4292,6 +4438,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4337,6 +4484,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let result = create_table_query("test_db", table, false);
@@ -4504,6 +4652,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4572,6 +4721,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("(user_id, cityHash64(event_id))".to_string()),
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4615,6 +4765,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("product_id".to_string()),
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4678,6 +4829,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -5154,6 +5306,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -5740,6 +5893,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_ttl_setting: None,
             cluster_name: Some("test_cluster".to_string()),
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -5787,6 +5941,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -6807,6 +6962,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             indexes: vec![],
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -6869,6 +7025,7 @@ ORDER BY (`id`)
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -6934,6 +7091,7 @@ ORDER BY (`event_time`)
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            projections: vec![],
         };
 
         let query = create_table_query("test_db", table, false).unwrap();

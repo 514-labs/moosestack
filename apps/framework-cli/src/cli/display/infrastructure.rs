@@ -31,7 +31,8 @@ use super::terminal::{write_styled_line, StyledText, ACTION_WIDTH};
 use crate::framework::core::{
     infrastructure::table::{ColumnType, EnumValue},
     infrastructure_map::{
-        ApiChange, Change, FilteredChange, OlapChange, ProcessChange, StreamingChange, TableChange,
+        ApiChange, Change, FilteredChange, OlapChange, ProcessChange, ProjectionChange,
+        StreamingChange, TableChange,
     },
     plan::InfraPlan,
 };
@@ -240,6 +241,19 @@ fn format_table_display(
         details.push(format!("Order by: {}", table.order_by));
     }
 
+    // Projections section (if present)
+    if !table.projections.is_empty() {
+        details.push("Projections:".to_string());
+        for projection in &table.projections {
+            let proj_type = if projection.is_aggregate() {
+                "aggregate"
+            } else {
+                "non-aggregate"
+            };
+            details.push(format!("  {} ({})", projection.name, proj_type));
+        }
+    }
+
     // Cluster section (if present)
     if let Some(ref cluster) = table.cluster_name {
         details.push(format!("Cluster: {}", cluster));
@@ -423,6 +437,7 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
         OlapChange::Table(TableChange::Updated {
             name,
             column_changes,
+            projection_changes,
             ..
         }) => {
             let mut details = Vec::new();
@@ -521,6 +536,21 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                                     )
                                 }
                             }
+                        }
+                    };
+                    details.push(change_line);
+                }
+            }
+
+            if !projection_changes.is_empty() {
+                details.push("Projection changes:".to_string());
+                for change in projection_changes {
+                    let change_line = match change {
+                        ProjectionChange::Added { projection } => {
+                            format!("  + Projection: {}", projection.name)
+                        }
+                        ProjectionChange::Removed { projection_name } => {
+                            format!("  - Projection: {}", projection_name)
                         }
                     };
                     details.push(change_line);
@@ -792,6 +822,7 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_databa
             }
             OlapChange::Table(TableChange::Updated {
                 column_changes,
+                projection_changes,
                 after,
                 ..
             }) => {
@@ -823,6 +854,25 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_databa
                                     before.name,
                                     format_column_type(&before.data_type),
                                     format_column_type(&after.data_type)
+                                ));
+                            }
+                        }
+                    }
+                }
+                if !projection_changes.is_empty() {
+                    details.push("  Blocked projection changes:".to_string());
+                    for change in projection_changes {
+                        match change {
+                            ProjectionChange::Added { projection } => {
+                                details.push(format!(
+                                    "    + Projection: {} (add blocked)",
+                                    projection.name
+                                ));
+                            }
+                            ProjectionChange::Removed { projection_name } => {
+                                details.push(format!(
+                                    "    - Projection: {} (removal blocked)",
+                                    projection_name
                                 ));
                             }
                         }

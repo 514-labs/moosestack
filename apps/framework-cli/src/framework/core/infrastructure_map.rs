@@ -39,7 +39,7 @@ use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::olap_process::OlapProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
 use super::infrastructure::sql_resource::SqlResource;
-use super::infrastructure::table::{Column, OrderBy, Table};
+use super::infrastructure::table::{Column, OrderBy, Table, TableProjection};
 use super::infrastructure::topic::Topic;
 use super::infrastructure::topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess};
 use super::infrastructure::view::{Dmv1View, View};
@@ -126,6 +126,7 @@ impl TableDiffStrategy for DefaultTableDiffStrategy {
         vec![OlapChange::Table(TableChange::Updated {
             name: before.name.clone(),
             column_changes,
+            projection_changes: vec![],
             order_by_change,
             partition_by_change,
             before: before.clone(),
@@ -269,6 +270,17 @@ pub enum ColumnChange {
     Updated { before: Column, after: Column },
 }
 
+/// Represents a change to a projection in a table
+///
+/// Used to track additions and removals of projections during table updates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ProjectionChange {
+    /// A new projection has been added
+    Added { projection: TableProjection },
+    /// An existing projection has been removed
+    Removed { projection_name: String },
+}
+
 /// Represents changes to the order_by configuration of a table
 ///
 /// Tracks the before and after states of the ordering columns.
@@ -308,6 +320,8 @@ pub enum TableChange {
         name: String,
         /// List of column-level changes
         column_changes: Vec<ColumnChange>,
+        /// List of projection-level changes
+        projection_changes: Vec<ProjectionChange>,
         /// Changes to the ordering columns
         order_by_change: OrderByChange,
         /// Changes to the partitioning expression
@@ -2069,6 +2083,7 @@ impl InfrastructureMap {
                         );
                         // Record the blocked update in filtered_changes for user visibility
                         let column_changes = compute_table_columns_diff(table, target_table);
+                        let projection_changes = compute_projection_diff(table, target_table);
                         let order_by_change = OrderByChange {
                             before: table.order_by.clone(),
                             after: target_table.order_by.clone(),
@@ -2081,6 +2096,7 @@ impl InfrastructureMap {
                             change: OlapChange::Table(TableChange::Updated {
                                 name: table.name.clone(),
                                 column_changes,
+                                projection_changes,
                                 order_by_change,
                                 partition_by_change,
                                 before: table.clone(),
@@ -2156,6 +2172,8 @@ impl InfrastructureMap {
                         let table_settings_changed =
                             table.table_settings != target_table.table_settings;
 
+                        let projections_changed = table.projections != target_table.projections;
+
                         // Only process changes if there are actual differences to report
                         // Note: cluster_name changes are intentionally excluded - they don't trigger operations
                         if !column_changes.is_empty()
@@ -2164,6 +2182,7 @@ impl InfrastructureMap {
                             || engine_changed
                             || indexes_changed
                             || table_settings_changed
+                            || projections_changed
                         {
                             // Use the strategy to determine the appropriate changes
                             let strategy_changes = strategy.diff_table_update(
@@ -2364,15 +2383,21 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
+        // Detect projection changes
+        let projection_changes = compute_projection_diff(table, target_table);
+        let projections_changed = !projection_changes.is_empty();
+
         if !column_changes.is_empty()
             || order_by_changed
             || partition_by_changed
             || indexes_changed
             || ttl_changed
+            || projections_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
+                projection_changes,
                 order_by_change,
                 partition_by_change,
                 before: table.clone(),
@@ -2458,16 +2483,22 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
+        // Detect projection changes
+        let projection_changes = compute_projection_diff(table, target_table);
+        let projections_changed = !projection_changes.is_empty();
+
         // Only return changes if there are actual differences to report
         if !column_changes.is_empty()
             || order_by_changed
             || partition_by_changed
             || indexes_changed
             || ttl_changed
+            || projections_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
                 column_changes,
+                projection_changes,
                 order_by_change,
                 partition_by_change,
                 before: table.clone(),
@@ -3663,6 +3694,53 @@ pub fn compute_table_columns_diff(before: &Table, after: &Table) -> Vec<ColumnCh
     diff
 }
 
+/// Computes the differences between two tables' projections
+///
+/// # Arguments
+/// * `before` - The original table
+/// * `after` - The updated table
+///
+/// # Returns
+/// A vector of projection changes (additions, removals, and updates)
+pub fn compute_projection_diff(before: &Table, after: &Table) -> Vec<ProjectionChange> {
+    let mut projection_changes = Vec::new();
+
+    // Check for removed projections
+    for before_proj in &before.projections {
+        if !after.projections.iter().any(|p| p.name == before_proj.name) {
+            projection_changes.push(ProjectionChange::Removed {
+                projection_name: before_proj.name.clone(),
+            });
+        }
+    }
+
+    // Check for added and updated projections
+    for after_proj in &after.projections {
+        if let Some(before_proj) = before
+            .projections
+            .iter()
+            .find(|p| p.name == after_proj.name)
+        {
+            // If projection exists but is different, remove old and add new
+            if before_proj != after_proj {
+                projection_changes.push(ProjectionChange::Removed {
+                    projection_name: before_proj.name.clone(),
+                });
+                projection_changes.push(ProjectionChange::Added {
+                    projection: after_proj.clone(),
+                });
+            }
+        } else {
+            // New projection
+            projection_changes.push(ProjectionChange::Added {
+                projection: after_proj.clone(),
+            });
+        }
+    }
+
+    projection_changes
+}
+
 #[cfg(test)]
 impl Default for InfrastructureMap {
     /// Creates a default empty infrastructure map
@@ -3835,6 +3913,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -3899,6 +3978,7 @@ mod tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -4384,10 +4464,14 @@ mod tests {
 #[cfg(test)]
 mod diff_tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{Column, ColumnType, FloatType, IntType};
+    use crate::framework::core::infrastructure::table::{
+        Column, ColumnType, FloatType, IntType, ProjectionClause, TableProjection,
+    };
     use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use serde_json::Value as JsonValue;
+    use std::collections::HashMap;
 
     // Helper function to create a basic test table
     pub fn create_test_table(name: &str, version: &str) -> Table {
@@ -4409,6 +4493,7 @@ mod diff_tests {
             table_settings_hash: None,
             table_settings: None,
             indexes: vec![],
+            projections: vec![],
             database: None,
             table_ttl_setting: None,
             cluster_name: None,
@@ -5984,6 +6069,167 @@ mod diff_tests {
             .count();
         assert_eq!(ttl_not_ignored, 1, "TTL should be detected");
     }
+
+    #[test]
+    fn test_table_diff_detects_projection_added() {
+        let mut before = create_test_table("test_table", "1.0");
+        let mut after = before.clone();
+        after.projections = vec![TableProjection {
+            name: "test_projection".to_string(),
+            select: ProjectionClause::Fields(vec!["id".to_string()]),
+            order_by: Some(ProjectionClause::Fields(vec!["id".to_string()])),
+            group_by: None,
+        }];
+
+        before.database = Some(DEFAULT_DATABASE_NAME.to_string());
+        after.database = Some(DEFAULT_DATABASE_NAME.to_string());
+
+        let before_id = before.id(DEFAULT_DATABASE_NAME);
+        let after_id = after.id(DEFAULT_DATABASE_NAME);
+
+        let mut changes = Vec::new();
+        let mut filtered = Vec::new();
+        InfrastructureMap::diff_tables_with_strategy(
+            &HashMap::from([(before_id, before)]),
+            &HashMap::from([(after_id, after)]),
+            &mut changes,
+            &mut filtered,
+            &ClickHouseTableDiffStrategy,
+            true,
+            DEFAULT_DATABASE_NAME,
+            &[],
+        );
+
+        assert_eq!(changes.len(), 1, "Expected one change");
+        match &changes[0] {
+            OlapChange::Table(TableChange::Updated {
+                projection_changes, ..
+            }) => {
+                assert_eq!(
+                    projection_changes.len(),
+                    1,
+                    "Expected one projection change"
+                );
+                match &projection_changes[0] {
+                    ProjectionChange::Added { projection } => {
+                        assert_eq!(projection.name, "test_projection");
+                    }
+                    _ => panic!("Expected ProjectionChange::Added"),
+                }
+            }
+            _ => panic!("Expected Updated change"),
+        }
+    }
+
+    #[test]
+    fn test_table_diff_detects_projection_removed() {
+        let mut before = create_test_table("test_table", "1.0");
+        before.projections = vec![TableProjection {
+            name: "test_projection".to_string(),
+            select: ProjectionClause::Fields(vec!["id".to_string()]),
+            order_by: Some(ProjectionClause::Fields(vec!["id".to_string()])),
+            group_by: None,
+        }];
+        let mut after = create_test_table("test_table", "1.0");
+
+        before.database = Some(DEFAULT_DATABASE_NAME.to_string());
+        after.database = Some(DEFAULT_DATABASE_NAME.to_string());
+
+        let before_id = before.id(DEFAULT_DATABASE_NAME);
+        let after_id = after.id(DEFAULT_DATABASE_NAME);
+
+        let mut changes = Vec::new();
+        let mut filtered = Vec::new();
+        InfrastructureMap::diff_tables_with_strategy(
+            &HashMap::from([(before_id, before)]),
+            &HashMap::from([(after_id, after)]),
+            &mut changes,
+            &mut filtered,
+            &ClickHouseTableDiffStrategy,
+            true,
+            DEFAULT_DATABASE_NAME,
+            &[],
+        );
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            OlapChange::Table(TableChange::Updated {
+                projection_changes, ..
+            }) => {
+                assert_eq!(projection_changes.len(), 1);
+                match &projection_changes[0] {
+                    ProjectionChange::Removed { projection_name } => {
+                        assert_eq!(projection_name, "test_projection");
+                    }
+                    _ => panic!("Expected ProjectionChange::Removed"),
+                }
+            }
+            _ => panic!("Expected Updated change"),
+        }
+    }
+
+    #[test]
+    fn test_table_diff_detects_projection_updated() {
+        let mut before = create_test_table("test_table", "1.0");
+        before.projections = vec![TableProjection {
+            name: "test_projection".to_string(),
+            select: ProjectionClause::Fields(vec!["id".to_string()]),
+            order_by: Some(ProjectionClause::Fields(vec!["id".to_string()])),
+            group_by: None,
+        }];
+        let mut after = create_test_table("test_table", "1.0");
+        after.projections = vec![TableProjection {
+            name: "test_projection".to_string(),
+            select: ProjectionClause::Fields(vec!["id".to_string(), "name".to_string()]),
+            order_by: Some(ProjectionClause::Fields(vec!["name".to_string()])),
+            group_by: None,
+        }];
+
+        before.database = Some(DEFAULT_DATABASE_NAME.to_string());
+        after.database = Some(DEFAULT_DATABASE_NAME.to_string());
+
+        let before_id = before.id(DEFAULT_DATABASE_NAME);
+        let after_id = after.id(DEFAULT_DATABASE_NAME);
+
+        let mut changes = Vec::new();
+        let mut filtered = Vec::new();
+        InfrastructureMap::diff_tables_with_strategy(
+            &HashMap::from([(before_id, before)]),
+            &HashMap::from([(after_id, after)]),
+            &mut changes,
+            &mut filtered,
+            &ClickHouseTableDiffStrategy,
+            true,
+            DEFAULT_DATABASE_NAME,
+            &[],
+        );
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            OlapChange::Table(TableChange::Updated {
+                projection_changes, ..
+            }) => {
+                assert_eq!(projection_changes.len(), 2, "Expected Removed + Added");
+                match &projection_changes[0] {
+                    ProjectionChange::Removed { projection_name } => {
+                        assert_eq!(projection_name, "test_projection");
+                    }
+                    _ => panic!("Expected first change to be ProjectionChange::Removed"),
+                }
+                match &projection_changes[1] {
+                    ProjectionChange::Added { projection } => {
+                        assert_eq!(projection.name, "test_projection");
+                        assert_eq!(
+                            projection.select,
+                            ProjectionClause::Fields(vec!["id".to_string(), "name".to_string()])
+                        );
+                    }
+                    _ => panic!("Expected second change to be ProjectionChange::Added"),
+                }
+            }
+            _ => panic!("Expected Updated change"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -7283,6 +7529,7 @@ mod diff_orchestration_worker_tests {
             engine_params_hash: None,
             table_settings_hash: None,
             indexes: vec![],
+            projections: vec![],
             metadata: None,
             source_primitive: PrimitiveSignature {
                 name: "s3queue_test".to_string(),
@@ -7317,6 +7564,7 @@ mod diff_orchestration_worker_tests {
             engine_params_hash: None,
             table_settings_hash: None,
             indexes: vec![],
+            projections: vec![],
             metadata: None,
             source_primitive: PrimitiveSignature {
                 name: "kafka_test".to_string(),

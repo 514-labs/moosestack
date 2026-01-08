@@ -28,6 +28,7 @@ from moose_lib import (
     ClickhousePrecision,
     IngestApi,
     IngestConfigWithDestination,
+    TableProjection,
 )
 from datetime import datetime, date
 from typing import Optional, Annotated, Any
@@ -1020,4 +1021,49 @@ class EnumColumnCommentsTest(BaseModel):
 enum_column_comments_test_table = OlapTable[EnumColumnCommentsTest](
     "EnumColumnCommentsTest",
     OlapConfig(order_by_fields=["id", "timestamp"]),
+)
+
+
+class ProjectionTest(BaseModel):
+    """Test model for ClickHouse projections.
+
+    Projections are pre-aggregated or differently sorted copies of data
+    that improve query performance for specific access patterns.
+    """
+
+    id: Key[str]
+    user_id: str
+    timestamp: datetime
+    event_type: str
+    value: float
+
+
+projection_test_table = OlapTable[ProjectionTest](
+    "ProjectionTest",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["id", "timestamp"],
+        projections=[
+            TableProjection(
+                name="by_user_fields",
+                select=["user_id", "timestamp", "event_type"],
+                order_by=["user_id", "timestamp"],
+            ),
+            TableProjection(
+                name="by_user_expr",
+                select="user_id, timestamp, event_type",
+                order_by="user_id, timestamp",
+            ),
+            TableProjection(
+                name="hourly_agg",
+                select="toStartOfHour(timestamp) as hour, count() as cnt, sum(value) as total",
+                group_by="hour",
+            ),
+            TableProjection(
+                name="daily_stats",
+                select="toDate(timestamp) as date, event_type, count() as cnt, avg(value) as avg_val",
+                group_by="date, event_type",
+            ),
+        ],
+    ),
 )
