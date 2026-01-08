@@ -5322,7 +5322,7 @@ dependencies = [
 [[package]]
 name = "sqlparser"
 version = "0.60.0"
-source = "git+https://github.com/514-labs/datafusion-sqlparser-rs?branch=nicolas%2F0.60.1-clickhouse-specific-dialect-serialization#f84bd06a38438070f1566fb9f0146535d6e4e029"
+source = "git+https://github.com/514-labs/datafusion-sqlparser-rs?rev=f84bd06#f84bd06a38438070f1566fb9f0146535d6e4e029"
 dependencies = [
  "log",
  "recursive",
@@ -5332,7 +5332,7 @@ dependencies = [
 [[package]]
 name = "sqlparser_derive"
 version = "0.4.0"
-source = "git+https://github.com/514-labs/datafusion-sqlparser-rs?branch=nicolas%2F0.60.1-clickhouse-specific-dialect-serialization#f84bd06a38438070f1566fb9f0146535d6e4e029"
+source = "git+https://github.com/514-labs/datafusion-sqlparser-rs?rev=f84bd06#f84bd06a38438070f1566fb9f0146535d6e4e029"
 dependencies = [
  "proc-macro2",
  "quote",

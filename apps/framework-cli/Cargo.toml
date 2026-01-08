@@ -12,7 +12,11 @@ homepage = "https://www.fiveonefour.com/moose"
 
 [dependencies]
 posthog514client-rs = { path = "../../packages/posthog514client-rs" }
-sqlparser = { git = "https://github.com/514-labs/datafusion-sqlparser-rs", branch = "nicolas/0.60.1-clickhouse-specific-dialect-serialization", features = ["visitor"] }
+# FORK: Using patched sqlparser with ToSql trait for dialect-aware serialization.
+# ClickHouse requires PascalCase types (Int64, String) but Display uppercases them.
+# Upstream issue: https://github.com/apache/datafusion-sqlparser-rs/issues/2153
+# Remove this fork once upstream adds dialect-aware serialization.
+sqlparser = { git = "https://github.com/514-labs/datafusion-sqlparser-rs", rev = "f84bd06", features = ["visitor"] }
 itertools = "0.13.0"
 openssl = { version = "0.10", features = ["vendored"] }
 clap = { version = "4.3.17", features = ["derive"] }
