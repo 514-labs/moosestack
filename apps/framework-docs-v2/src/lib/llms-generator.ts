@@ -115,6 +115,10 @@ export function cleanContent(content: string): string {
     cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, "");
   } while (cleaned !== prev);
 
+  // As a final safeguard, remove any remaining angle brackets to avoid
+  // partially stripped or fragmented tags (e.g. leftover "<script").
+  cleaned = cleaned.replace(/[<>]/g, "");
+
   // Clean up excessive whitespace
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
   cleaned = cleaned.trim();
