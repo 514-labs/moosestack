@@ -508,12 +508,26 @@ def main():
             # Force eager initialization: trigger group join and wait for partition assignment
             # kafka-python is lazy - first poll() triggers connection and group join
             # We do this explicitly to ensure consumer is fully ready before processing
+            #
+            # IMPORTANT: poll() during assignment wait might return messages. We must
+            # save these and process them first, otherwise they would be lost!
             log("Waiting for consumer group assignment...")
             start_time = time.time()
             got_assignment = False
+            initial_messages = {}  # Save any messages received during assignment wait
+
             while running.is_set():
                 # poll(0) triggers group join without blocking
-                consumer.poll(timeout_ms=0)
+                # We save any returned messages to process after assignment is complete
+                poll_result = consumer.poll(timeout_ms=0)
+                if poll_result:
+                    # Merge any messages into our initial buffer
+                    for tp, msgs in poll_result.items():
+                        if tp in initial_messages:
+                            initial_messages[tp].extend(msgs)
+                        else:
+                            initial_messages[tp] = list(msgs)
+
                 assignment = consumer.assignment()
                 if assignment:
                     log(
@@ -532,12 +546,27 @@ def main():
                 log("Shutdown requested during initialization, exiting")
                 return
 
+            # Log how many messages we received during assignment wait (if any)
+            initial_msg_count = sum(len(msgs) for msgs in initial_messages.values())
+            if initial_msg_count > 0:
+                log(
+                    f"Processing {initial_msg_count} message(s) received during assignment wait"
+                )
+
             log("Kafka consumer and producer initialized in processing thread")
+
+            # Track whether we need to process initial messages first
+            pending_initial_messages = initial_messages if initial_messages else None
 
             while running.is_set():
                 try:
-                    # Poll with timeout to allow checking running state
-                    messages = consumer.poll(timeout_ms=1000)
+                    # First process any messages received during assignment wait
+                    if pending_initial_messages:
+                        messages = pending_initial_messages
+                        pending_initial_messages = None
+                    else:
+                        # Poll with timeout to allow checking running state
+                        messages = consumer.poll(timeout_ms=1000)
 
                     if not messages:
                         continue
