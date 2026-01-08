@@ -98,14 +98,6 @@ export const setupPythonProject = async (
   log.info("Setting up Python virtual environment and installing dependencies");
   await new Promise<void>((resolve, reject) => {
     const setupCmd = process.platform === "win32" ? "python" : "python3";
-    console.log("asdfasdf", JSON.stringify(process.env));
-    spawn("python3", ["--version"], {
-      stdio: "inherit",
-      cwd: projectDir,
-      env: {
-        ...process.env,
-      },
-    });
 
     const venvCmd = spawn(setupCmd, ["-m", "venv", ".venv"], {
       stdio: "inherit",
@@ -125,12 +117,6 @@ export const setupPythonProject = async (
         VIRTUAL_ENV: path.join(projectDir, ".venv"),
         PATH: `${path.join(projectDir, ".venv", "bin")}:${process.env.PATH}`,
       };
-
-      spawn("python3", ["--version"], {
-        env: withVenv,
-        stdio: "inherit",
-        cwd: projectDir,
-      });
 
       // First install project dependencies from requirements.txt
       const pipReqCmd = spawn(
