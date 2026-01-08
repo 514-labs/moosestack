@@ -5,6 +5,7 @@ import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
+import { showCopyAsMarkdown } from "@/flags";
 
 // export const dynamic = "force-dynamic";
 
@@ -104,6 +105,8 @@ export default async function DocPage({ params }: PageProps) {
     : undefined,
   );
 
+  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+
   return (
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
@@ -117,6 +120,7 @@ export default async function DocPage({ params }: PageProps) {
       <TOCNav
         headings={content.headings}
         helpfulLinks={content.frontMatter.helpfulLinks}
+        showCopyButton={showCopyButton}
       />
     </>
   );

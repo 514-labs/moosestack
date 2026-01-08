@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { usePostHog } from "posthog-js/react";
 import { cn } from "@/lib/utils";
 import type { Heading } from "@/lib/content-types";
 import {
@@ -34,16 +33,19 @@ interface TOCNavProps {
     title: string;
     url: string;
   }>;
+  showCopyButton?: boolean;
 }
 
-export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
+export function TOCNav({
+  headings,
+  helpfulLinks,
+  showCopyButton,
+}: TOCNavProps) {
   const [activeId, setActiveId] = useState<string>("");
   const [scope, setScope] = useState<"initiative" | "project">("initiative");
   const [copied, setCopied] = useState(false);
   const [markdown, setMarkdown] = useState<string>("");
   const pathname = usePathname();
-  const posthog = usePostHog();
-  const showCopyButton = posthog.isFeatureEnabled?.("show-copy-as-markdown");
   const isGuidePage =
     pathname?.startsWith("/guides/") && pathname !== "/guides";
 

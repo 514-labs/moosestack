@@ -12,6 +12,7 @@ import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { GuideStepsWrapper } from "@/components/guides/guide-steps-wrapper";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
+import { showCopyAsMarkdown } from "@/flags";
 
 // export const dynamic = "force-dynamic";
 
@@ -103,6 +104,8 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     : undefined,
   );
 
+  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+
   // Check if this is a dynamic guide by checking for guide.toml
   const guideManifest = await parseGuideManifest(slug);
 
@@ -168,6 +171,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
         <TOCNav
           headings={allHeadings}
           helpfulLinks={content.frontMatter.helpfulLinks}
+          showCopyButton={showCopyButton}
         />
       </>
     );
@@ -240,6 +244,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
       <TOCNav
         headings={allHeadings}
         helpfulLinks={content.frontMatter.helpfulLinks}
+        showCopyButton={showCopyButton}
       />
     </>
   );
