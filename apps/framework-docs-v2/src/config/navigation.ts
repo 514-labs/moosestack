@@ -485,7 +485,7 @@ const moosestackNavigationConfig: NavigationConfig = [
       { type: "label", title: "Migration Modes" },
       {
         type: "page",
-        slug: "moosestack/migrate/auto-inferred",
+        slug: "moosestack/migrate/automatic",
         title: "Automatic Migrations",
         languages: ["typescript", "python"],
       },

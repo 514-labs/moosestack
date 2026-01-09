@@ -24,8 +24,8 @@ workflows = false
 olap = true
 # Enable Analytics APIs server (Default: true)
 apis = true
-# Enable data model V2 (Default: false)
-data_model_v2 = false
+# Enable data model V2 (Default: true)
+data_model_v2 = true
 # Enable DDL plan execution (Default: false)
 ddl_plan = false
 ```
@@ -36,5 +36,5 @@ ddl_plan = false
 | `workflows` | `MOOSE_FEATURES__WORKFLOWS` | false | Enables Temporal workflow integration. |
 | `olap` | `MOOSE_FEATURES__OLAP` | true | Enables ClickHouse integration and management. |
 | `apis` | `MOOSE_FEATURES__APIS` | true | Enables the API server for ingestion and consumption endpoints. |
-| `data_model_v2` | `MOOSE_FEATURES__DATA_MODEL_V2` | false | Enables the next-generation data modeling system (experimental). |
+| `data_model_v2` | `MOOSE_FEATURES__DATA_MODEL_V2` | true | Enables the next-generation data modeling system. |
 | `ddl_plan` | `MOOSE_FEATURES__DDL_PLAN` | false | Requires explicit approval for DDL changes. |
