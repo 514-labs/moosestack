@@ -186,67 +186,17 @@ Make sure `moose dev` is running before using the MCP tools. The AI client will 
 
 ## Available Tools
 
-The Moose MCP server provides five tools for interacting with your local development environment.
+The Moose MCP server provides five tools for interacting with your local development environment. Start with `get_infra_map` to understand your project structure, then use the other tools to query data, inspect streams, check logs, and diagnose issues.
 
-**Recommended workflow**: Always start with `get_infra_map` to understand project structure and locate files.
+### get_infra_map (start here)
 
-### `get_logs`
+Get complete project topology showing all components with source file locations and data flow connections. This should be the first tool used.
 
-Retrieve and filter Moose development server logs for debugging and monitoring.
-
-**What you can ask for:**
-- Filter by log level (ERROR, WARN, INFO, DEBUG, TRACE)
-- Limit the number of log lines returned
-- Search for specific text patterns in logs
-
-**Example prompts:**
-
-*"Show me the last 10 ERROR logs"*
-
-```
-Showing 10 most recent log entries from /Users/user/.moose/2025-10-10-cli.log
-Filters applied:
-  - Level: ERROR
-
-[2025-10-10T17:44:42Z ERROR] Foo -> Bar (worker 1): Unsupported SASL mechanism: undefined
-[2025-10-10T17:44:43Z ERROR] FooDeadLetterQueue (consumer) (worker 1): Unsupported SASL mechanism
-[2025-10-10T17:51:48Z ERROR] server error on API server (port 4000): connection closed
-...
-```
-
-*"What WARN level logs do I have?"*
-
-```
-Showing 6 most recent log entries
-Filters applied:
-  - Level: WARN
-
-[2025-10-10T16:45:04Z WARN] HTTP client not configured - missing API_KEY
-[2025-10-10T16:50:05Z WARN] HTTP client not configured - missing API_KEY
-...
-```
-
-<Callout type="info">
-**Tip**: Combine filters for better results. For example: "Show me ERROR logs with 'ClickHouse' in them" combines level filtering with search.
-</Callout>
-
-**Use cases:**
-- Debugging application errors
-- Monitoring infrastructure health
-- Tracking data processing issues
-- Finding specific events or patterns
-
----
-
-### `get_infra_map` - **START HERE**
-
-Get complete project topology showing all components with source file locations and data flow connections.
-
-**Why use this first:**
-- See all tables, topics, APIs, functions, workflows in one view
-- Find where components are defined (`source_file` shows file paths)
-- Understand data flow through connections
-- Verify your code changes are reflected in infrastructure
+**What you get:**
+- All tables, topics, APIs, functions, and workflows in one view
+- Source file paths showing where each component is defined
+- Data flow connections between components
+- Verification that your code changes are reflected in infrastructure
 
 **Optional search parameter:**
 - Fuzzy, case-insensitive matching on component IDs and names
@@ -301,14 +251,58 @@ Search: 'Bar' | Matched: 8 component(s), 6 connection(s)
 </Callout>
 
 **Use cases:**
-- **First step when starting work** - understand project structure
+- Understand project structure when starting work
 - Find where components are defined (source_file paths)
 - Trace data flow through connections
 - Verify code changes are reflected
 
----
+### get_logs
 
-### `query_olap`
+Retrieve and filter Moose development server logs for debugging and monitoring.
+
+**What you can ask for:**
+- Filter by log level (ERROR, WARN, INFO, DEBUG, TRACE)
+- Limit the number of log lines returned
+- Search for specific text patterns in logs
+
+**Example prompts:**
+
+*"Show me the last 10 ERROR logs"*
+
+```
+Showing 10 most recent log entries from /Users/user/.moose/2025-10-10-cli.log
+Filters applied:
+  - Level: ERROR
+
+[2025-10-10T17:44:42Z ERROR] Foo -> Bar (worker 1): Unsupported SASL mechanism: undefined
+[2025-10-10T17:44:43Z ERROR] FooDeadLetterQueue (consumer) (worker 1): Unsupported SASL mechanism
+[2025-10-10T17:51:48Z ERROR] server error on API server (port 4000): connection closed
+...
+```
+
+*"What WARN level logs do I have?"*
+
+```
+Showing 6 most recent log entries
+Filters applied:
+  - Level: WARN
+
+[2025-10-10T16:45:04Z WARN] HTTP client not configured - missing API_KEY
+[2025-10-10T16:50:05Z WARN] HTTP client not configured - missing API_KEY
+...
+```
+
+<Callout type="info">
+**Tip**: Combine filters for better results. For example: "Show me ERROR logs with 'ClickHouse' in them" combines level filtering with search.
+</Callout>
+
+**Use cases:**
+- Debugging application errors
+- Monitoring infrastructure health
+- Tracking data processing issues
+- Finding specific events or patterns
+
+### query_olap
 
 Execute read-only SQL queries against your local ClickHouse database.
 
@@ -323,41 +317,38 @@ Execute read-only SQL queries against your local ClickHouse database.
 
 *"What columns are in the UserEvents_1_0 table?"*
 
-```
+```text
 Query executed successfully. Rows returned: 4
 
-| name      | type              | default_type | default_expression | comment | ...
-|-----------|-------------------|--------------|-------------------|---------|
-| userId    | String            |              |                   |         |
-| eventType | String            |              |                   |         |
-| timestamp | Float64           |              |                   |         |
-| metadata  | Nullable(String)  |              |                   |         |
+name        type               default_type  default_expression  comment
+userId      String
+eventType   String
+timestamp   Float64
+metadata    Nullable(String)
 ```
 
 *"List all tables and their engines"*
 
-```
+```text
 Query executed successfully. Rows returned: 29
 
-| name                        | engine                       |
-|-----------------------------|------------------------------|
-| Bar                         | MergeTree                    |
-| BasicTypes                  | MergeTree                    |
-| UserEvents_1_0              | MergeTree                    |
-| UserEvents_2_0              | ReplacingMergeTree           |
-| ReplicatedMergeTreeTest     | ReplicatedMergeTree          |
-| BarAggregated_MV            | MaterializedView             |
+name                         engine
+Bar                          MergeTree
+BasicTypes                   MergeTree
+UserEvents_1_0               MergeTree
+UserEvents_2_0               ReplacingMergeTree
+ReplicatedMergeTreeTest      ReplicatedMergeTree
+BarAggregated_MV             MaterializedView
 ...
 ```
 
 *"Count the number of rows in Bar"*
 
-```
+```text
 Query executed successfully. Rows returned: 1
 
-| total_rows |
-|------------|
-| 0          |
+total_rows
+0
 ```
 
 <Callout type="info">
@@ -374,9 +365,7 @@ Query executed successfully. Rows returned: 1
 **Safety:**
 Only read-only operations are permitted (SELECT, SHOW, DESCRIBE, EXPLAIN). Write operations (INSERT, UPDATE, DELETE) and DDL statements (CREATE, ALTER, DROP) are blocked.
 
----
-
-### `get_stream_sample`
+### get_stream_sample
 
 Sample recent messages from Kafka/Redpanda streaming topics.
 
@@ -415,12 +404,12 @@ Sample recent messages from Kafka/Redpanda streaming topics.
 
 *"What data is flowing through the BasicTypes stream?"* (pretty format)
 
-```markdown
+```
 # Stream Sample: BasicTypes
 
 Retrieved 3 message(s) from 1 partition(s)
 
-## Message 1
+Message 1
 {
   "id": "bt-001",
   "timestamp": "2024-10-09T12:00:00Z",
@@ -429,7 +418,7 @@ Retrieved 3 message(s) from 1 partition(s)
   "booleanField": true
 }
 
-## Message 2
+Message 2
 {
   "id": "bt-002",
   "timestamp": "2024-10-09T12:05:00Z",
@@ -450,9 +439,7 @@ Retrieved 3 message(s) from 1 partition(s)
 - Inspecting message formats
 - Troubleshooting pipeline failures
 
----
-
-### `get_issues`
+### get_issues
 
 Proactively scan your Moose project for health issues and operational problems.
 
@@ -498,8 +485,6 @@ summary:
 - Performance degradation investigation
 - Proactive health monitoring
 - Pre-deployment validation
-
----
 
 ## Example Workflows
 
