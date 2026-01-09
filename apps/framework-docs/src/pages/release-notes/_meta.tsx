@@ -7,6 +7,9 @@ const rawMeta = {
       breadcrumb: false,
     },
   },
+  "2026-01-09": {
+    title: "January 9, 2026",
+  },
   "2025-12-22": {
     title: "December 22, 2025",
   },
