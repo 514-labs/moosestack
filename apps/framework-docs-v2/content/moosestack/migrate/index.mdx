@@ -34,7 +34,7 @@ Migrations in Moose revolve around three key decisions:
 | Concept | What it is | Where to go |
 | :--- | :--- | :--- |
 | [Lifecycle Management](#lifecycle-management) | Controlling *what* changes are allowed (e.g., preventing data deletion). | [Overview](/moosestack/migrate/lifecycle) • [Fully Managed](/moosestack/migrate/lifecycle-fully-managed) • [Deletion Protected](/moosestack/migrate/lifecycle-deletion-protected) • [Externally Managed](/moosestack/migrate/lifecycle-externally-managed) |
-| [Generating Migrations](#generating-migrations) | Deciding *how* changes are generated. | [Overview](/moosestack/migrate/modes) • [Auto-Inferred](/moosestack/migrate/auto-inferred) • [Planned](/moosestack/migrate/planned-migrations) |
+| [Generating Migrations](#generating-migrations) | Deciding *how* changes are generated. | [Overview](/moosestack/migrate/modes) • [Automatic](/moosestack/migrate/automatic) • [Planned](/moosestack/migrate/planned-migrations) |
 | [Applying Changes](#applying-changes-to-production) | The workflow for executing migrations: serverless (`moose migrate`) vs server runtime (`moose prod`). | [Serverless](/moosestack/migrate/apply-planned-migrations-cli) • [Server Runtime](/moosestack/migrate/apply-planned-migrations-service) |
 
 
@@ -96,7 +96,7 @@ Moose Migrate provides two complementary ways to generate migrations. Each is de
 
 | Option | Behavior | Use Case |
 | :--- | :--- | :--- |
-| [Auto-Inferred](/moosestack/migrate/auto-inferred) | Updates database instantly on file save. Fast iteration, but can be destructive. | Local development, fast prototyping |
+| [Automatic](/moosestack/migrate/automatic) | Updates database instantly on file save. Fast iteration, but can be destructive. | Local development, fast prototyping |
 | [Planned](/moosestack/migrate/planned-migrations) | Generates reviewable plan files. Safe, deterministic, with drift detection. | Production deployment, CI/CD |
 
 

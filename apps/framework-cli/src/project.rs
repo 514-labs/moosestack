@@ -225,8 +225,8 @@ pub struct ProjectFeatures {
     #[serde(default)]
     pub workflows: bool,
 
-    /// ongoing redesign of data models
-    #[serde(default)]
+    /// Whether data model v2 is enabled
+    #[serde(default = "_true")]
     pub data_model_v2: bool,
 
     /// Whether OLAP (ClickHouse) is enabled
@@ -247,7 +247,7 @@ impl Default for ProjectFeatures {
         ProjectFeatures {
             streaming_engine: true,
             workflows: false,
-            data_model_v2: false,
+            data_model_v2: true,
             olap: true,
             ddl_plan: false,
             apis: true,

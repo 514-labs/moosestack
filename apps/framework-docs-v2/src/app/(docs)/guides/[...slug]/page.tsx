@@ -5,13 +5,16 @@ import {
   parseMarkdownContent,
   discoverStepFiles,
 } from "@/lib/content";
+import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
+import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
+import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
+import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { GuideStepsWrapper } from "@/components/guides/guide-steps-wrapper";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
-import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
+import { CopyPageButton } from "@/components/copy-page-button";
 
 // export const dynamic = "force-dynamic";
 
@@ -103,6 +106,9 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     : undefined,
   );
 
+  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  const langParam = resolvedSearchParams?.lang;
+
   // Check if this is a dynamic guide by checking for guide.toml
   const guideManifest = await parseGuideManifest(slug);
 
@@ -144,7 +150,20 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     return (
       <>
         <div className="flex w-full flex-col gap-6 pt-4">
-          <DocBreadcrumbs items={breadcrumbs} />
+          <div className="flex items-center justify-between">
+            <DocBreadcrumbs items={breadcrumbs} />
+            {showCopyButton && (
+              <CopyPageButton
+                content={
+                  content.isMDX ?
+                    cleanContent(
+                      filterLanguageContent(content.content, langParam),
+                    )
+                  : content.content
+                }
+              />
+            )}
+          </div>
           <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
             {content.isMDX ?
               <MDXRenderer source={content.content} />
@@ -221,7 +240,20 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   return (
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
-        <DocBreadcrumbs items={breadcrumbs} />
+        <div className="flex items-center justify-between">
+          <DocBreadcrumbs items={breadcrumbs} />
+          {showCopyButton && (
+            <CopyPageButton
+              content={
+                content.isMDX ?
+                  cleanContent(
+                    filterLanguageContent(content.content, langParam),
+                  )
+                : content.content
+              }
+            />
+          )}
+        </div>
         <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
