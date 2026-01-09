@@ -275,8 +275,19 @@ pub fn write_styled_line(
     no_ansi: bool,
     show_timestamps: bool,
 ) -> IoResult<()> {
-    let mut stdout = stdout();
-    write_styled_line_to(&mut stdout, styled_text, message, no_ansi, show_timestamps)
+    use crate::utilities::constants::QUIET_STDOUT;
+    use std::io::stderr;
+    use std::sync::atomic::Ordering;
+
+    // When QUIET_STDOUT is set, redirect messages to stderr to keep stdout clean
+    // for structured/JSON output
+    if QUIET_STDOUT.load(Ordering::Relaxed) {
+        let mut stderr = stderr();
+        write_styled_line_to(&mut stderr, styled_text, message, no_ansi, show_timestamps)
+    } else {
+        let mut stdout = stdout();
+        write_styled_line_to(&mut stdout, styled_text, message, no_ansi, show_timestamps)
+    }
 }
 
 #[cfg(test)]
