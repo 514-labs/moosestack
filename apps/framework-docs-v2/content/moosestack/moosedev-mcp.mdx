@@ -584,9 +584,19 @@ The MCP server:
 
 ## LLM-Optimized Documentation Feeds
 
-Before handing control to an AI assistant, prime it with a compact doc bundle so it understands Moose primitives and terminology. We publish TypeScript and Python versions at `/llm-ts.txt` and `/llm-py.txt`, with optional `?path=` filters for specific sections.
+### Context7 for MooseStack Documentation
 
-See [LLM-optimized docs](/moosestack/llm-docs) for instructions on embedding these feeds into Claude, Cursor, Windsurf, or MCP clients alongside the live tools described above.
+For general MooseStack documentation and code examples, use Context7 MCP.
+
+**Setup:** [Install Context7 for your IDE](https://context7.com/docs/overview)
+
+**Usage:** Add `use context7` to prompts about MooseStack (or create a rule in your workspace to automatically use context7 for anything MooseStack):
+
+```
+Show me how to create a streaming function in MooseStack using TypeScript. use context7
+```
+
+**Best together:** Context7 provides MooseStack framework documentation, while the Moose MCP server provides access to your local project's data, logs, and infrastructure.
 
 ## Troubleshooting
 
