@@ -269,7 +269,7 @@ Retrieve and filter Moose development server logs for debugging and monitoring.
 
 *"Show me the last 10 ERROR logs"*
 
-```
+```text
 Showing 10 most recent log entries from /Users/user/.moose/2025-10-10-cli.log
 Filters applied:
   - Level: ERROR
@@ -282,7 +282,7 @@ Filters applied:
 
 *"What WARN level logs do I have?"*
 
-```
+```text
 Showing 6 most recent log entries
 Filters applied:
   - Level: WARN
@@ -404,7 +404,7 @@ Sample recent messages from Kafka/Redpanda streaming topics.
 
 *"What data is flowing through the BasicTypes stream?"* (pretty format)
 
-```
+```text
 # Stream Sample: BasicTypes
 
 Retrieved 3 message(s) from 1 partition(s)
@@ -490,7 +490,7 @@ summary:
 
 ### Understanding a New Project
 
-```
+```text
 You: "Can you explain this Moose project structure?"
 
 AI: [Uses get_infra_map to see topology]
@@ -507,7 +507,7 @@ All components are defined in app/ingest/models.ts and app/functions/.
 
 ### Debugging a Data Pipeline
 
-```
+```text
 You: "My users table is empty, can you help me debug?"
 
 AI: Let me check the infrastructure and data flow.
@@ -523,7 +523,7 @@ function is failing. The stream has data, but it's not reaching the table.
 
 ### Validating Data Transformations
 
-```
+```text
 You: "Did my streaming function correctly transform the user data?"
 
 AI: [Uses get_stream_sample on source stream]
