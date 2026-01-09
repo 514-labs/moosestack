@@ -1,6 +1,6 @@
 // source https://github.com/blakeembrey/sql-template-tag/blob/main/src/index.ts
 import { Column } from "./dataModels/dataModelTypes";
-import { OlapTable } from "./dmv2";
+import { OlapTable, View } from "./dmv2";
 
 import { AggregationFunction } from "./dataModels/typeConvert";
 
@@ -13,12 +13,20 @@ export const quoteIdentifier = (name: string): string => {
 };
 
 const isTable = (
-  value: RawValue | Column | OlapTable<any>,
+  value: RawValue | Column | OlapTable<any> | View,
 ): value is OlapTable<any> =>
   typeof value === "object" &&
   value !== null &&
   "kind" in value &&
   value.kind === "OlapTable";
+
+const isView = (
+  value: RawValue | Column | OlapTable<any> | View,
+): value is View =>
+  typeof value === "object" &&
+  value !== null &&
+  "kind" in value &&
+  value.kind === "View";
 
 export type IdentifierBrandedString = string & {
   readonly __identifier_brand?: unique symbol;
@@ -42,18 +50,24 @@ export type Value =
  */
 export type RawValue = Value | Sql;
 
-const isColumn = (value: RawValue | Column | OlapTable<any>): value is Column =>
-  typeof value === "object" && "name" in value && "annotations" in value;
+const isColumn = (
+  value: RawValue | Column | OlapTable<any> | View,
+): value is Column =>
+  typeof value === "object" &&
+  value !== null &&
+  !("kind" in value) &&
+  "name" in value &&
+  "annotations" in value;
 
 export function sql(
   strings: readonly string[],
-  ...values: readonly (RawValue | Column | OlapTable<any>)[]
+  ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
 ) {
   return new Sql(strings, values);
 }
 
 const instanceofSql = (
-  value: RawValue | Column | OlapTable<any>,
+  value: RawValue | Column | OlapTable<any> | View,
 ): value is Sql =>
   typeof value === "object" && "values" in value && "strings" in value;
 
@@ -66,7 +80,7 @@ export class Sql {
 
   constructor(
     rawStrings: readonly string[],
-    rawValues: readonly (RawValue | Column | OlapTable<any>)[],
+    rawValues: readonly (RawValue | Column | OlapTable<any> | View)[],
   ) {
     if (rawStrings.length - 1 !== rawValues.length) {
       if (rawStrings.length === 0) {
@@ -81,10 +95,10 @@ export class Sql {
     }
 
     const valuesLength = rawValues.reduce<number>(
-      (len: number, value: RawValue | Column | OlapTable<any>) =>
+      (len: number, value: RawValue | Column | OlapTable<any> | View) =>
         len +
         (instanceofSql(value) ? value.values.length
-        : isColumn(value) || isTable(value) ? 0
+        : isColumn(value) || isTable(value) || isView(value) ? 0
         : 1),
       0,
     );
@@ -132,6 +146,9 @@ export class Sql {
         } else {
           this.strings[pos] += `\`${child.name}\``;
         }
+        this.strings[pos] += rawString;
+      } else if (isView(child)) {
+        this.strings[pos] += `\`${child.name}\``;
         this.strings[pos] += rawString;
       } else {
         this.values[pos++] = child;
