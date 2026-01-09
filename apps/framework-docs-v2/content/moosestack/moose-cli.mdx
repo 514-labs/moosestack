@@ -41,6 +41,11 @@ moose build [--docker] [--amd64] [--arm64]
 
 ### Dev
 Starts a local development environment with hot reload and automatic infrastructure management.
+
+**Prerequisites:** Install project dependencies before running `moose dev`:
+- **TypeScript**: `npm install` or `pnpm install`
+- **Python**: `pip install -r requirements.txt`
+
 ```bash
 moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads]
 ```
@@ -51,6 +56,13 @@ moose dev [--mcp] [--no-infra] [--timestamps] [--timing] [--log-payloads]
 - `--log-payloads`: Log payloads for debugging data flow (see PAYLOAD prefixed lines in `moose logs --tail`)
 
 When debugging slow hot reloads, use `--timing` to identify which operation is the bottleneck; use `--timestamps` to correlate events across runs.
+
+**Running in Background:**
+For AI assistants or when you need to run other commands in the same terminal:
+
+```bash
+nohup moose dev &
+```
 
 **Example with timing flags:**
 ```bash
