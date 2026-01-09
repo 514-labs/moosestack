@@ -7,7 +7,7 @@ use sha2::Sha256;
 use crate::cli::display::{Message, MessageType};
 
 /// Result of generating an authentication hash token
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HashTokenResult {
     /// The API key hash to store in environment/config (MOOSE_API_KEY)
     pub api_key_hash: String,
