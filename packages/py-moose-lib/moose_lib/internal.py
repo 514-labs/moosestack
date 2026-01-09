@@ -1166,30 +1166,15 @@ def to_infra_map() -> dict:
     return infra_map.model_dump(by_alias=True, exclude_none=False)
 
 
-def load_models():
-    """Imports the user's main application module and prints the infrastructure map.
+def load_models() -> str:
+    """Imports the user's main application module to register all Moose resources.
 
-    This function is typically the entry point for the Moose infrastructure system
-    when processing Python-defined resources.
+    This function triggers the registration of all Moose resources defined in
+    the user's main module (OlapTable[...](...), Stream[...](...), etc.).
 
-    1. Imports `app.main`, which should trigger the registration of all Moose
-       resources defined therein (OlapTable[...](...), Stream[...](...), etc.).
-    2. Calls `to_infra_map()` to generate the infrastructure configuration dictionary.
-    3. Prints the dictionary as a JSON string, wrapped in specific delimiters
-       (`___MOOSE_STUFF___start` and `end___MOOSE_STUFF___`), which the
-       calling system uses to extract the configuration.
+    Returns:
+        The source directory name (e.g., "app") used for loading models.
     """
-    import os
-
     source_dir = os.environ.get("MOOSE_SOURCE_DIR", "app")
     import_module(f"{source_dir}.main")
-
-    # Generate the infrastructure map
-    infra_map_dict = to_infra_map()
-
-    # Check for unloaded files
-    unloaded_files = _find_unloaded_files(source_dir)
-    infra_map_dict["unloadedFiles"] = unloaded_files
-
-    # Print in the format expected by the infrastructure system
-    print("___MOOSE_STUFF___start", json.dumps(infra_map_dict), "end___MOOSE_STUFF___")
+    return source_dir

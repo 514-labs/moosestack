@@ -508,12 +508,26 @@ def main():
             # Force eager initialization: trigger group join and wait for partition assignment
             # kafka-python is lazy - first poll() triggers connection and group join
             # We do this explicitly to ensure consumer is fully ready before processing
+            #
+            # IMPORTANT: poll() during assignment wait might return messages. We must
+            # save these and process them first, otherwise they would be lost!
             log("Waiting for consumer group assignment...")
             start_time = time.time()
             got_assignment = False
+            initial_messages = {}  # Save any messages received during assignment wait
+
             while running.is_set():
                 # poll(0) triggers group join without blocking
-                consumer.poll(timeout_ms=0)
+                # We save any returned messages to process after assignment is complete
+                poll_result = consumer.poll(timeout_ms=0)
+                if poll_result:
+                    # Merge any messages into our initial buffer
+                    for tp, msgs in poll_result.items():
+                        if tp in initial_messages:
+                            initial_messages[tp].extend(msgs)
+                        else:
+                            initial_messages[tp] = list(msgs)
+
                 assignment = consumer.assignment()
                 if assignment:
                     log(
@@ -532,24 +546,53 @@ def main():
                 log("Shutdown requested during initialization, exiting")
                 return
 
+            # Log how many messages we received during assignment wait (if any)
+            initial_msg_count = sum(len(msgs) for msgs in initial_messages.values())
+            if initial_msg_count > 0:
+                log(
+                    f"Processing {initial_msg_count} message(s) received during assignment wait"
+                )
+
             log("Kafka consumer and producer initialized in processing thread")
+
+            # Track whether we need to process initial messages first
+            pending_initial_messages = initial_messages if initial_messages else None
 
             while running.is_set():
                 try:
-                    # Poll with timeout to allow checking running state
-                    messages = consumer.poll(timeout_ms=1000)
+                    # First process any messages received during assignment wait
+                    if pending_initial_messages:
+                        messages = pending_initial_messages
+                        pending_initial_messages = None
+                    else:
+                        # Poll with timeout to allow checking running state
+                        messages = consumer.poll(timeout_ms=1000)
 
                     if not messages:
                         continue
 
+                    # Accumulate all outputs from all messages in this poll batch
+                    # We process all messages before committing to ensure at-least-once semantics
+                    batch_outputs = []
+                    batch_processed = True
+
                     # Process each partition's messages
                     for partition_messages in messages.values():
+                        if not batch_processed:
+                            break
                         for message in partition_messages:
                             log(
                                 f"Message partition={message.partition} offset={message.offset}"
                             )
+
+                            # Count input messages consumed from Kafka
+                            with metrics_lock:
+                                metrics["count_in"] += 1
+
                             if not running.is_set():
-                                return
+                                # Shutdown requested - don't commit, messages will be reprocessed
+                                batch_processed = False
+                                break
 
                             # Parse the message into the input type
                             input_data = parse_input(
@@ -563,7 +606,7 @@ def main():
                                 )
 
                             # Run the flow
-                            all_outputs = []
+                            message_outputs = []
                             for (
                                 streaming_function_callable,
                                 dlq,
@@ -614,10 +657,7 @@ def main():
                                     if isinstance(output_data, list)
                                     else [output_data]
                                 )
-                                all_outputs.extend(output_data_list)
-
-                                with metrics_lock:
-                                    metrics["count_in"] += len(output_data_list)
+                                message_outputs.extend(output_data_list)
 
                                 cli_log(
                                     CliLogData(
@@ -626,46 +666,55 @@ def main():
                                     )
                                 )
 
-                            # Log payload after transformation if enabled (what we're actually sending to Kafka)
-                            if getattr(args, "log_payloads", False):
-                                # Filter out None values to match what actually gets sent
-                                outgoing_data = [
-                                    item for item in all_outputs if item is not None
-                                ]
-                                if len(outgoing_data) > 0:
-                                    log(
-                                        f"[PAYLOAD:STREAM_OUT] {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}"
-                                    )
-                                else:
-                                    log(
-                                        "[PAYLOAD:STREAM_OUT] (no output from streaming function)"
-                                    )
+                            batch_outputs.extend(message_outputs)
 
-                            if producer is not None:
-                                for item in all_outputs:
-                                    # Ignore flow function returning null
-                                    if item is not None:
-                                        record = json.dumps(
-                                            item, cls=EnhancedJSONEncoder
-                                        ).encode("utf-8")
+                    # Only send outputs and commit if we processed the entire batch
+                    if batch_processed and producer is not None:
+                        # Log payload after transformation if enabled (what we're actually sending to Kafka)
+                        if getattr(args, "log_payloads", False):
+                            # Filter out None values to match what actually gets sent
+                            outgoing_data = [
+                                item for item in batch_outputs if item is not None
+                            ]
+                            if len(outgoing_data) > 0:
+                                log(
+                                    f"[PAYLOAD:STREAM_OUT] {json.dumps(outgoing_data, cls=EnhancedJSONEncoder)}"
+                                )
+                            else:
+                                log(
+                                    "[PAYLOAD:STREAM_OUT] (no output from streaming function)"
+                                )
+                        for item in batch_outputs:
+                            # Ignore flow function returning null
+                            if item is not None:
+                                record = json.dumps(
+                                    item, cls=EnhancedJSONEncoder
+                                ).encode("utf-8")
 
-                                        producer.send(target_topic.name, record)
+                                producer.send(target_topic.name, record)
 
-                                        with metrics_lock:
-                                            metrics["bytes_count"] += len(record)
-                                            metrics["count_out"] += 1
+                                with metrics_lock:
+                                    metrics["bytes_count"] += len(record)
+                                    metrics["count_out"] += 1
 
-                                # Flush producer to ensure messages are sent before committing
-                                producer.flush()
+                        # Flush producer to ensure messages are sent before committing
+                        producer.flush()
 
-                            # Commit offset only after successful processing and flushing
-                            # This ensures at-least-once delivery semantics
-                            consumer.commit()
+                    # Commit offset only after ALL messages in the batch are successfully
+                    # processed and flushed. This ensures at-least-once delivery semantics.
+                    # In kafka-python, commit() without args commits the current consumer
+                    # position (the offset after all polled messages), so we must only call
+                    # it after processing the entire batch.
+                    if batch_processed:
+                        consumer.commit()
 
                 except Exception as e:
+                    traceback.print_exc()
                     cli_log(
                         CliLogData(
-                            action="Function", message=str(e), message_type="Error"
+                            action="Function Error",
+                            message=str(e),
+                            message_type="Error",
                         )
                     )
                     if not running.is_set():

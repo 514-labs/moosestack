@@ -60,6 +60,7 @@ import {
   cleanupTestSuite,
   performGlobalCleanup,
   logger,
+  waitForInfrastructureChanges,
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
@@ -157,7 +158,7 @@ const TEMPLATE_CONFIGS: TemplateTestConfig[] = [
 const createTemplateTestSuite = (config: TemplateTestConfig) => {
   const testName =
     config.isTestsVariant ?
-      `${config.language} template tests`
+      `${config.language} template tests main`
     : `${config.language} template default`;
 
   describe(testName, () => {
@@ -583,6 +584,135 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
       });
 
+      it("should insert data via OlapTable.insert() in consumer for both default and non-default databases", async function () {
+        this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+        testLogger.info(
+          "Sending trigger event for OlapTable.insert() consumer test...",
+        );
+
+        // Send a test event directly to the dedicated trigger stream
+        const testEventId = randomUUID();
+        const testPayload = {
+          id: testEventId,
+          value: 42,
+        };
+
+        const ingestUrl = `${SERVER_CONFIG.url}/ingest/olap-insert-test-trigger`;
+        testLogger.info(`Sending test event to ${ingestUrl}...`);
+
+        const response = await fetch(ingestUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(testPayload),
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Failed to ingest test event: ${response.status} ${response.statusText}`,
+          );
+        }
+
+        testLogger.info(
+          "Test event sent successfully, waiting for consumer to process and insert...",
+        );
+
+        // Wait for the consumer to process and insert data into both tables
+        // The consumer inserts with id prefix "default-{id}" and "analytics-{id}"
+        const expectedDefaultId = `default-${testEventId}`;
+        const expectedAnalyticsId = `analytics-${testEventId}`;
+
+        // Verify insert to default database table
+        await withRetries(
+          async () => {
+            const client = createClient(CLICKHOUSE_CONFIG);
+            try {
+              const result = await client.query({
+                query: `SELECT * FROM OlapInsertTestTable WHERE id = '${expectedDefaultId}'`,
+                format: "JSONEachRow",
+              });
+              const rows: any[] = await result.json();
+
+              if (rows.length === 0) {
+                throw new Error(
+                  `Expected record with id '${expectedDefaultId}' in OlapInsertTestTable (default DB)`,
+                );
+              }
+
+              const record = rows[0];
+              if (record.source !== "consumer_default_db") {
+                throw new Error(
+                  `Expected source 'consumer_default_db', got '${record.source}'`,
+                );
+              }
+
+              if (parseInt(record.value) !== 42) {
+                throw new Error(`Expected value 42, got ${record.value}`);
+              }
+
+              testLogger.info(
+                `✅ OlapTable.insert() verified in default database: ${JSON.stringify(record)}`,
+              );
+            } finally {
+              await client.close();
+            }
+          },
+          {
+            attempts: 30,
+            delayMs: 1000,
+            operationName: "OlapTable.insert() to default database",
+          },
+        );
+
+        // Verify insert to non-default database table
+        await withRetries(
+          async () => {
+            const client = createClient(CLICKHOUSE_CONFIG);
+            try {
+              const result = await client.query({
+                query: `SELECT * FROM analytics.OlapInsertTestNonDefaultTable WHERE id = '${expectedAnalyticsId}'`,
+                format: "JSONEachRow",
+              });
+              const rows: any[] = await result.json();
+
+              if (rows.length === 0) {
+                throw new Error(
+                  `Expected record with id '${expectedAnalyticsId}' in OlapInsertTestNonDefaultTable (analytics DB)`,
+                );
+              }
+
+              const record = rows[0];
+              if (record.source !== "consumer_non_default_db") {
+                throw new Error(
+                  `Expected source 'consumer_non_default_db', got '${record.source}'`,
+                );
+              }
+
+              if (parseInt(record.value) !== 84) {
+                throw new Error(
+                  `Expected value 84 (42*2), got ${record.value}`,
+                );
+              }
+
+              testLogger.info(
+                `✅ OlapTable.insert() verified in non-default database: ${JSON.stringify(record)}`,
+              );
+            } finally {
+              await client.close();
+            }
+          },
+          {
+            attempts: 30,
+            delayMs: 1000,
+            operationName: "OlapTable.insert() to non-default database",
+          },
+        );
+
+        testLogger.info(
+          "✅ OlapTable.insert() consumer test passed for both default and non-default databases",
+        );
+      });
+
       it("should create indexes defined in templates", async function () {
         this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
@@ -923,7 +1053,27 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
               'count: Annotated[int, "uint32"]',
             );
         }
+
+        // Start listening for infrastructure changes before modifying the file
+        const infrastructureChangesPromise = waitForInfrastructureChanges(
+          devProcess!,
+          60_000,
+        );
+
         await fs.promises.writeFile(engineTestsPath, contents, "utf8");
+
+        // Wait for infrastructure changes to complete before proceeding
+        testLogger.info(
+          "Waiting for infrastructure changes to complete after file modification...",
+        );
+        await infrastructureChangesPromise;
+        testLogger.info("Infrastructure changes completed");
+
+        // Wait for streaming functions to stabilize after restart
+        // The infrastructure changes message fires before process restarts complete
+        testLogger.info("Waiting for streaming functions to stabilize...");
+        await waitForStreamingFunctions(180_000);
+        testLogger.info("Streaming functions stabilized");
 
         // Verify DDL reflects removed DEFAULT settings
         await withRetries(
@@ -1000,11 +1150,11 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "local",
         );
         await verifyConsumptionApi(
-          "bar?orderBy=totalRows&startDay=19&endDay=19&limit=1",
+          "bar?orderBy=totalRows&startDay=18&endDay=18&limit=1",
           [
             {
               // output_format_json_quote_64bit_integers is true by default in ClickHouse
-              dayOfMonth: "19",
+              dayOfMonth: "18",
               totalRows: "1",
             },
           ],
@@ -1012,18 +1162,18 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Test versioned API (V1)
         await verifyVersionedConsumptionApi(
-          "bar/1?orderBy=totalRows&startDay=19&endDay=19&limit=1",
+          "bar/1?orderBy=totalRows&startDay=18&endDay=18&limit=1",
           [
             {
-              dayOfMonth: "19",
+              dayOfMonth: "18",
               totalRows: "1",
               metadata: {
                 version: "1.0",
                 queryParams: {
                   orderBy: "totalRows",
                   limit: 1,
-                  startDay: 19,
-                  endDay: 19,
+                  startDay: 18,
+                  endDay: 18,
                 },
               },
             },
@@ -1764,10 +1914,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           "local",
         );
         await verifyConsumptionApi(
-          "bar?order_by=total_rows&start_day=19&end_day=19&limit=1",
+          "bar?order_by=total_rows&start_day=18&end_day=18&limit=1",
           [
             {
-              day_of_month: 19,
+              day_of_month: 18,
               total_rows: 1,
               // Just verify structure - don't check exact values since generator adds random data
               // Similar to typescript test
@@ -1777,10 +1927,10 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
         // Test versioned API (V1)
         await verifyVersionedConsumptionApi(
-          "bar/1?order_by=total_rows&start_day=19&end_day=19&limit=1",
+          "bar/1?order_by=total_rows&start_day=18&end_day=18&limit=1",
           [
             {
-              day_of_month: 19,
+              day_of_month: 18,
               total_rows: 1,
               // Just verify structure - don't check exact values since generator adds random data
               // Similar to typescript test
@@ -1789,8 +1939,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
                 query_params: {
                   order_by: "total_rows",
                   limit: 1,
-                  start_day: 19,
-                  end_day: 19,
+                  start_day: 18,
+                  end_day: 18,
                 },
               },
             },

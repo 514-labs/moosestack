@@ -179,6 +179,36 @@ export const waitForServerStart = async (
 };
 
 /**
+ * Waits for infrastructure changes to be fully processed after a file modification.
+ * This monitors the dev process stdout for the "Infrastructure changes processed successfully"
+ * message that appears after the file watcher processes changes.
+ *
+ * @param devProcess - The child process running `moose dev`
+ * @param timeoutMs - Maximum time to wait for infrastructure changes
+ * @param options - Optional logger configuration
+ */
+export const waitForInfrastructureChanges = async (
+  devProcess: ChildProcess,
+  timeoutMs: number = 60_000,
+  options: ProcessOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? processLogger;
+  const found = await waitForOutputMessage(
+    devProcess,
+    "Infrastructure changes processed successfully",
+    timeoutMs,
+    options,
+  );
+  if (found) {
+    log.debug("✓ Infrastructure changes processed successfully");
+  } else {
+    throw new Error(
+      "Infrastructure changes did not complete in time - check logs for details",
+    );
+  }
+};
+
+/**
  * Kills any remaining moose-cli processes
  */
 export const killRemainingProcesses = async (
