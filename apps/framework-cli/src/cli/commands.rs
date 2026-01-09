@@ -244,7 +244,12 @@ pub struct GenerateArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum GenerateCommand {
-    HashToken {},
+    /// Generate an API key hash and bearer token pair for authentication
+    HashToken {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
     /// Generate migration files
     Migration {
         /// URL of the remote Moose instance (use with --token)
