@@ -53,7 +53,11 @@ export type RawValue = Value | Sql;
 const isColumn = (
   value: RawValue | Column | OlapTable<any> | View,
 ): value is Column =>
-  typeof value === "object" && "name" in value && "annotations" in value;
+  typeof value === "object" &&
+  value !== null &&
+  !("kind" in value) &&
+  "name" in value &&
+  "annotations" in value;
 
 export function sql(
   strings: readonly string[],
