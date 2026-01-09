@@ -247,7 +247,7 @@ impl Default for ProjectFeatures {
         ProjectFeatures {
             streaming_engine: true,
             workflows: false,
-            data_model_v2: false,
+            data_model_v2: true,
             olap: true,
             ddl_plan: false,
             apis: true,
