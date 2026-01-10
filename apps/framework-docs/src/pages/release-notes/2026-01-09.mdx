@@ -29,15 +29,15 @@ moose dev --log-payloads
 # In another terminal, send some test data
 curl -X POST http://localhost:4000/ingest/UserActivity \
   -H "Content-Type: application/json" \
-  -d '[{"userId": "user123", "action": "click", "timestamp": "2024-01-15T10:30:00Z"}]'
+  -d '[{"userId": "user123", "action": "click", "timestamp": "2026-01-15T10:30:00Z"}]'
 
 # View the logs to see data flow through your pipeline
 moose logs --tail
 
 # Example log output you'll see:
-# [PAYLOAD:INGEST] UserActivity: [{"userId":"user123","action":"click","timestamp":"2024-01-15T10:30:00Z"}]
-# [PAYLOAD:STREAM_IN] processUserActivity: {"userId":"user123","action":"click","timestamp":"2024-01-15T10:30:00Z"}
-# [PAYLOAD:STREAM_OUT] processUserActivity: {"userId":"user123","action":"click","timestamp":"2024-01-15T10:30:00Z","processed":true}
+# [PAYLOAD:INGEST] UserActivity: [{"userId":"user123","action":"click","timestamp":"2026-01-15T10:30:00Z"}]
+# [PAYLOAD:STREAM_IN] processUserActivity: {"userId":"user123","action":"click","timestamp":"2026-01-15T10:30:00Z"}
+# [PAYLOAD:STREAM_OUT] processUserActivity: {"userId":"user123","action":"click","timestamp":"2026-01-15T10:30:00Z","processed":true}
 ```
 
 [#2966](https://github.com/514-labs/moosestack/pull/2966)
