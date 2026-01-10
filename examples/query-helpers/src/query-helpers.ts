@@ -20,7 +20,7 @@ import {
 } from "@514labs/moose-lib";
 
 // ============================================
-// Alias Configuration Types
+// Column Configuration Types
 // ============================================
 
 /**
@@ -32,16 +32,16 @@ export type SelectColumnConfig = {
 };
 
 /**
- * Alias configuration for a table. Use `as const` when defining for literal type inference.
+ * Column configuration for a table. Use `as const` when defining for literal type inference.
  * Keys must be valid column names from T. Aliases must not conflict with column names.
  *
  * @example
- * const aliasConfig = {
+ * const columnConfig = {
  *   id: { alias: "ID" },
  *   createdAt: { alias: "Created At" },
- * } as const satisfies AliasConfig<Row>;
+ * } as const satisfies ColumnConfig<Row>;
  */
-export type AliasConfig<T> = {
+export type ColumnConfig<T> = {
   [K in keyof T]?: { readonly alias?: string };
 };
 
@@ -78,7 +78,7 @@ type ConflictingAliases<T, A> = ExtractAliases<A> & keyof T;
  * const badConfig = { createdAt: { alias: "id" } } as const; // ERROR when used
  * type Fields = ValidFields<Row, typeof badConfig>;
  */
-export type ValidFields<T, A extends AliasConfig<T> = {}> =
+export type ValidFields<T, A extends ColumnConfig<T> = {}> =
   ConflictingAliases<T, A> extends never ?
     (keyof T & string) | ExtractAliases<A>
   : never;
@@ -142,9 +142,9 @@ export function buildSelect<T>(
  * Maps field names (which may include aliases) to actual column names.
  * Assumes your API layer has already validated `requested` against `ValidFields<T, A>`.
  */
-export function mapAliasedFields<T, A extends AliasConfig<T>>(
+export function mapAliasedFields<T, A extends ColumnConfig<T>>(
   requested: ValidFields<T, A>[] | undefined,
-  aliasConfig: A,
+  columnConfig: A,
   defaultFields: (keyof T & string)[],
 ): (keyof T & string)[] {
   if (!requested || requested.length === 0) {
@@ -153,7 +153,7 @@ export function mapAliasedFields<T, A extends AliasConfig<T>>(
 
   // Build reverse mapping: alias -> actual column name
   const aliasToColumn: Record<string, keyof T & string> = {};
-  for (const [column, config] of Object.entries(aliasConfig) as [
+  for (const [column, config] of Object.entries(columnConfig) as [
     keyof T & string,
     { alias?: string },
   ][]) {
@@ -178,9 +178,9 @@ export function getTableFields<T>(table: OlapTable<T>): (keyof T & string)[] {
 /**
  * Options for buildSelectFromFields.
  */
-export type BuildSelectOptions<T, A extends AliasConfig<T>> = {
-  /** Alias config for column display names */
-  aliasConfig?: A;
+export type BuildSelectOptions<T, A extends ColumnConfig<T>> = {
+  /** Column config for column display names and other column metadata */
+  columnConfig?: A;
   /** Computed columns to add */
   computed?: ComputedColumn[];
 };
@@ -189,18 +189,18 @@ export type BuildSelectOptions<T, A extends AliasConfig<T>> = {
  * Combined helper that maps aliased fields and builds a SELECT clause in one call.
  * Handles alias-to-column mapping internally.
  */
-export function buildSelectFromFields<T, A extends AliasConfig<T> = {}>(
+export function buildSelectFromFields<T, A extends ColumnConfig<T> = {}>(
   table: OlapTable<T>,
   fields: ValidFields<T, A>[],
   options: BuildSelectOptions<T, A> = {},
 ): Sql {
-  const { aliasConfig = {} as A, computed } = options;
+  const { columnConfig = {} as A, computed } = options;
 
   // Map aliases to column names
-  const columnFields = mapAliasedFields<T, A>(fields, aliasConfig, []);
+  const columnFields = mapAliasedFields<T, A>(fields, columnConfig, []);
 
   // Build and return SELECT clause
-  return buildSelect(table, columnFields, aliasConfig, computed);
+  return buildSelect(table, columnFields, columnConfig, computed);
 }
 
 // ============================================
@@ -225,12 +225,12 @@ export type OrderableFields = {
 
 /**
  * Type-safe query params derived from a table model type.
- * Includes base params (cacheId, limit, offset), orderby, and strict field selection.
+ * Includes base params (limit, offset), orderby, and strict field selection.
  *
  * @param T - The table model type
- * @param A - Optional alias config. Keys must be column names; aliases must not conflict with columns.
+ * @param A - Optional column config. Keys must be column names; aliases must not conflict with columns.
  */
-export type QueryParams<T, A extends AliasConfig<T> = {}> = BaseQueryParams &
+export type QueryParams<T, A extends ColumnConfig<T> = {}> = BaseQueryParams &
   OrderableFields & {
     fields?: ValidFields<T, A>[];
   };
@@ -256,19 +256,19 @@ export type OrderByColumn<T> = {
  *
  * @param table - The table to validate columns against
  * @param columns - Array of column specifications with optional direction
- * @param aliasConfig - Optional alias config (same mapping as buildSelect) to use aliased names
+ * @param columnConfig - Optional column config (same mapping as buildSelect) to use aliased names
  */
 export function buildOrderBy<T>(
   table: OlapTable<T>,
   columns: OrderByColumn<T>[],
-  aliasConfig?: Partial<Record<keyof T & string, SelectColumnConfig>>,
+  columnConfig?: Partial<Record<keyof T & string, SelectColumnConfig>>,
 ): Sql {
   if (columns.length === 0) {
     throw new Error("At least one column is required for ORDER BY");
   }
 
   const orderByParts = columns.map(({ column, direction = "ASC" }) => {
-    const colName = aliasConfig?.[column]?.alias ?? column;
+    const colName = columnConfig?.[column]?.alias ?? column;
     return `${quoteIdentifier(colName)} ${direction}`;
   });
 
