@@ -13,7 +13,7 @@ import {
   buildOrderBy,
   buildSelectFromFields,
   type QueryParams,
-  type AliasConfig,
+  type ColumnConfig,
 } from "../src/query-helpers";
 import { OlapTable, sql } from "@514labs/moose-lib";
 
@@ -27,17 +27,17 @@ type ExampleRow = {
 
 const ExampleTable = new OlapTable<ExampleRow>("ExampleTable");
 
-// 2) (Optional) Define user-friendly aliases for API consumers
+// 2) (Optional) Define column configuration (aliases, display names, etc.)
 
-const aliasConfig = {
+const columnConfig = {
   id: { alias: "ID" },
   owner: { alias: "Owner" },
   status: { alias: "Status" },
   createdAt: { alias: "Created At" },
-} as const satisfies AliasConfig<ExampleRow>;
+} as const satisfies ColumnConfig<ExampleRow>;
 
 // 3) Define your API params type (typed `fields`, plus common paging/sorting params)
-type ExampleParams = QueryParams<ExampleRow, typeof aliasConfig> & {
+type ExampleParams = QueryParams<ExampleRow, typeof columnConfig> & {
   "parameter.timeframe"?: string;
 };
 
@@ -63,12 +63,12 @@ export function buildExampleQuery(params: ExampleParams) {
   ];
 
   return sql`
-    SELECT ${buildSelectFromFields<ExampleRow, typeof aliasConfig>(ExampleTable, fields, { aliasConfig, computed })}
+    SELECT ${buildSelectFromFields<ExampleRow, typeof columnConfig>(ExampleTable, fields, { columnConfig, computed })}
     FROM ${ExampleTable as any}
     ${buildOrderBy<ExampleRow>(
       ExampleTable,
       [{ column: "createdAt", direction: "DESC" }],
-      aliasConfig,
+      columnConfig,
     )}
     LIMIT ${parseInt(limit, 10)}
     OFFSET ${parseInt(offset, 10)}
