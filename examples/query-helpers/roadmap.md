@@ -1,23 +1,23 @@
 ## Query Helpers Roadmap
 
-### P0 — Runtime parsing + validation glue for query params (HIGH) (2–4 days)
-The chat’s top recommendation: types exist (`QueryParams`) but runtime helpers are missing.
+### P0 — Runtime parsing + validation glue for query params (HIGH)
+Improve the current `QueryParams` type to add runtime parsing and validation helpers.
 
 - Implement small utilities:
   - `parseLimit(params, { default, min, max })`
   - `parseOffset(params, { default, min })`
   - `parseFields(params): string[]` (supports `?fields=a,b,c` and repeated params)
   - `parseOrderBy(params): OrderByColumn<T>[]` supporting `"col desc"` and `"col:desc"`
-- Provide **user-friendly errors**:
+- Provide user-friendly errors:
   - Unknown field → show allowed
   - Invalid order direction → show expected
-- **Deliverables**:
+- Deliverables:
   - `parseQueryParams()` helper that returns a structured object ready for builders
-- **Acceptance criteria**:
+- Acceptance criteria:
   - No throwing “generic Error” for user-input; errors are actionable.
 
-### P0 — Typed `buildWhere()` filter builder (HIGH) (3–6 days)
-Second top recommendation: minimal, safe WHERE/filter builder.
+### P0 — Typed `buildWhere()` filter builder (HIGH)
+Add a type-safe WHERE/filter builder to the library.
 
 - MVP filter grammar:
   - operators: `eq`, `neq`, `lt`, `lte`, `gt`, `gte`, `in`, `contains`, `startsWith`, `endsWith`, `isNull`
@@ -33,10 +33,10 @@ Second top recommendation: minimal, safe WHERE/filter builder.
 - **Acceptance criteria**:
   - Filtering can be added to list endpoints without handwritten SQL strings.
 
-### P1 — Safer computed columns (2–4 days)
-Current computed columns accept raw `expression: string`. The chat suggests making this safer.
+### P1 — Safer computed columns (HIGH)
+Extend computed columns to accept raw `expression: string` or a function that returns a `sql` fragment for better type safety and interoperability with the MooseStack `OlapTable` objects.
 
-- Change computed shape to prefer:
+- Change computed shape to allow:
   - `expression: Sql` **or** `expressionFactory: (t: OlapTable<T>) => Sql`
 - Validate computed alias collisions:
   - conflict with real columns
@@ -46,7 +46,7 @@ Current computed columns accept raw `expression: string`. The chat suggests maki
 - **Acceptance criteria**:
   - No raw SQL string concatenation required for computed expressions.
 
-### P1 — API polish: object argument form (1–2 days)
+### P1 — API polish: object argument form (MEDIUM-LOW)
 Make the API scale as options grow.
 
 - Consider switching from:
@@ -57,7 +57,7 @@ Make the API scale as options grow.
 - **Acceptance criteria**:
   - Adding new options doesn’t create “positional arg soup.”
 
-### P1 — Tests + type stress tests (2–4 days)
+### P1 — Tests + type stress tests (MEDIUM)
 - Type-level tests:
   - alias conflict detection
   - allowed fields inference
@@ -69,7 +69,7 @@ Make the API scale as options grow.
 - **Acceptance criteria**:
   - Contributors can refactor with confidence.
 
-### P2 — Cursor pagination helpers (optional but high UX win) (3–6 days)
+### P2 — Cursor pagination helpers (optional but high UX win) (MEDIUM-LOW)
 Offset pagination doesn’t scale; cursor pagination is a signature “production-ready default.”
 
 - Implement:
@@ -88,7 +88,7 @@ Offset pagination doesn’t scale; cursor pagination is a signature “productio
 - **Acceptance criteria**:
   - Common OLAP patterns become 1–2 lines.
 
-### P3 — “Semantic layer v0” model (exploratory) (5–10 days)
+### P3 — “Semantic layer v0” model (exploratory) (HIGH)
 If you want to make the semantic layer direction real without boiling the ocean:
 
 - Evolve `ColumnConfig` into `SemanticModel`:
