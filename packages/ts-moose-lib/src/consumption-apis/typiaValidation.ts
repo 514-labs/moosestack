@@ -350,6 +350,8 @@ const transformNewApi = (
   const handlerFunc = node.arguments[1];
 
   // Create a new handler function that includes validation
+  // params is typed as 'any' because it receives URLSearchParams from runner.ts
+  // but the Api constructor expects (params: T, ...) - the type conversion happens via typia
   const wrappedHandler = factory.createArrowFunction(
     undefined,
     undefined,
@@ -359,7 +361,7 @@ const transformNewApi = (
         undefined,
         factory.createIdentifier("params"),
         undefined,
-        undefined,
+        factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
         undefined,
       ),
       factory.createParameterDeclaration(
@@ -367,7 +369,7 @@ const transformNewApi = (
         undefined,
         factory.createIdentifier("utils"),
         undefined,
-        undefined,
+        factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
         undefined,
       ),
     ],
