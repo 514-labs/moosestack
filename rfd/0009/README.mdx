@@ -330,18 +330,6 @@ User-provided specs with callback support gives users full control while providi
 | Invalid spec | `WebApp "X" openapi spec must be a valid JSON object, got <type>.` |
 | Schema collision | `WebApp "X" defines schema "Y" but it already exists (from Z).` |
 
-### Files to Change
-
-| File | Changes |
-|------|---------|
-| `packages/ts-moose-lib/package.json` | Add `openapi-types` devDependency |
-| `packages/ts-moose-lib/src/dmv2/sdk/webApp.ts` | Add types and config options |
-| `packages/ts-moose-lib/src/dmv2/internal.ts` | Make `toInfraMap` async, add callback handling |
-| `packages/ts-moose-lib/src/moose-runner.ts` | Await async `dumpMooseInternal()` |
-| `apps/framework-cli/src/framework/core/partial_infrastructure_map.rs` | Add `openapi_spec` field |
-| `apps/framework-cli/src/framework/core/infrastructure/web_app.rs` | Add `openapi_spec` field |
-| `apps/framework-cli/src/cli/routines/openapi.rs` | Merge WebApp specs |
-
 ### Test Changes
 
 **Existing tests to update** (making `toInfraMap` async):
@@ -389,25 +377,6 @@ This change is backward compatible:
 - Should we provide framework-specific examples in documentation?
 - How should this interact with SDK generation from the OpenAPI spec?
 
-## Implementation Checklist
-
-Once this RFD is approved, implementation will follow this checklist:
-
-- [ ] Add `openapi-types` devDependency to ts-moose-lib
-- [ ] Add `OpenAPISpec` type and `WebAppReadyResult` interface
-- [ ] Add `openapiSpec` and `onReady` to `WebAppConfig`
-- [ ] Make `toInfraMap` async with callback handling
-- [ ] Update `moose-runner.ts` to await `dumpMooseInternal()`
-- [ ] Update existing tests for async `toInfraMap`
-- [ ] Add TypeScript unit tests for new functionality
-- [ ] Add `openapi_spec` field to Rust `PartialWebApp` and `WebApp`
-- [ ] Implement spec merging in `openapi.rs`
-- [ ] Add Rust unit tests for merging and collision detection
-- [ ] Add integration test (TypeScript-Rust contract)
-- [ ] Update documentation with examples
-- [ ] Add E2E test with Fastify + @fastify/swagger
-
 ## References
 
-- [Design document](/docs/plans/2026-01-10-webapp-openapi-design.md)
 - [RFD 0008: Bring Your Own Framework](/rfd/0008/README.mdx) - Related work on WebApp flexibility
