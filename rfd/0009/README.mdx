@@ -88,28 +88,25 @@ export interface WebAppConfig {
   mountPath: string;
   metadata?: { description?: string };
   injectMooseUtils?: boolean;
-  // Two options for providing OpenAPI spec:
-  openapiSpec?: OpenAPISpec;  // Direct property (simple case - static imports)
-  onReady?: () => Promise<WebAppReadyResult> | WebAppReadyResult;  // Callback (async case)
+  // Callback for providing OpenAPI spec (supports both sync and async)
+  onReady?: () => Promise<WebAppReadyResult> | WebAppReadyResult;
 }
 ```
 
-If both `openapiSpec` and `onReady` are provided, `onReady` takes precedence and a warning is logged.
-
 ### Usage Examples
 
-**Express with pre-generated spec (simple - direct property):**
+**Express with pre-generated spec:**
 
 ```typescript
 import paymentSpec from "./payment-openapi.json"
 
 new WebApp("payments", expressApp, {
   mountPath: "/payments",
-  openapiSpec: paymentSpec
+  onReady: () => ({ openapi: paymentSpec })
 })
 ```
 
-**Fastify with @fastify/swagger (async - callback):**
+**Fastify with @fastify/swagger (async):**
 
 ```typescript
 new WebApp("payments", fastifyApp, {
@@ -134,8 +131,7 @@ new WebApp("legacy", legacyApp, {
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  User Code                                                       │
-│  new WebApp("api", app, { openapiSpec: spec })        // or     │
-│  new WebApp("api", app, { onReady: async () => {...} })         │
+│  new WebApp("api", app, { onReady: () => ({ openapi: spec }) }) │
 └──────────────────────────┬──────────────────────────────────────┘
                            │
                            ▼
@@ -144,7 +140,6 @@ new WebApp("legacy", legacyApp, {
 │  - Collects all WebApps with onReady callbacks                   │
 │  - Executes callbacks in PARALLEL with Promise.all()             │
 │  - Each callback has 10s timeout                                 │
-│  - Uses direct openapiSpec if no callback                        │
 │  - Validates spec is valid JSON object                           │
 │  - Serialize to JSON                                             │
 └──────────────────────────┬──────────────────────────────────────┘
@@ -278,7 +273,7 @@ User-provided specs with callback support gives users full control while providi
 
 - Add `OpenAPISpec` type alias
 - Add `WebAppReadyResult` interface
-- Add `openapiSpec` and `onReady` to `WebAppConfig`
+- Add `onReady` to `WebAppConfig`
 
 **`packages/ts-moose-lib/src/dmv2/internal.ts`:**
 
@@ -286,7 +281,6 @@ User-provided specs with callback support gives users full control while providi
 - Add parallel callback execution with `Promise.all()`
 - Add 10s timeout per callback
 - Add spec validation (must be valid JSON object)
-- Add precedence warning when both `openapiSpec` and `onReady` provided
 
 **`packages/ts-moose-lib/src/moose-runner.ts`:**
 
@@ -315,7 +309,7 @@ User-provided specs with callback support gives users full control while providi
 |-------|---------|
 | Callback timeout | `WebApp "X" onReady callback timed out after 10000ms. Ensure your framework's ready() method completes promptly.` |
 | Callback exception | `WebApp onReady callback(s) failed:\n  - X: <error message>` |
-| Invalid spec | `WebApp "X" openapi spec must be a valid JSON object, got <type>.` |
+| Invalid spec | `WebApp "X" openapi spec must be a valid JSON object, got <type>. Ensure your onReady callback returns { openapi: <spec object> }.` |
 | Schema collision | `WebApp "X" defines schema "Y" but it already exists (from Z).` |
 
 ### Test Changes
@@ -327,9 +321,9 @@ User-provided specs with callback support gives users full control while providi
 
 **New tests to add:**
 
-- WebApp with `openapiSpec` serializes correctly
-- WebApp with `onReady` returning spec serializes correctly
-- `onReady` takes precedence over `openapiSpec`
+- WebApp with `onReady` returning OpenAPI spec serializes correctly
+- WebApp with sync `onReady` callback serializes correctly
+- WebApp without `onReady` serializes as before (backwards compat)
 - Callback timeout triggers error
 - Callback exception is caught and reported
 - Invalid spec triggers validation error
@@ -340,8 +334,8 @@ User-provided specs with callback support gives users full control while providi
 
 This change is backward compatible:
 
-1. `openapiSpec` and `onReady` are both optional - existing WebApps work unchanged
-2. `openapiSpec` field only included in serialization when defined
+1. `onReady` callback is optional - existing WebApps work unchanged
+2. `openapiSpec` field only included in serialization when `onReady` returns it
 3. Rust handles missing specs gracefully (skips during merge)
 4. No changes to WebApp runtime behavior
 
