@@ -1,16 +1,40 @@
 # API Query Helpers - Usage Guide
 
-This is a very early exploration of a query helper library that can be used to build dynamic queries based on the columns of a table. This is primarily meant to illustrate the pattern, and will be improved over time.
+This is an early exploration of a schema-aware query + metrics layer built on top of your `OlapTable` definitions.
+
+## Overview
+This library provides a set of low-level helper functions that sit between:
+- **API request parsing/validation** (query params like `fields`, `orderby`, `limit`, `offset`)
+- **SQL / OLAP query generation** (building `sql\`...\`` fragments safely and consistently)
+
+This library is designed to:
+- Define an allowlisted set of query capabilities for a given `OlapTable` (e.g. which fields can be selected, ordered, filtered, time-bucketed, grouped, etc.).
+- Validate and normalize API-facing query params against those rules (so invalid `fields` / `orderby` are blocked before query execution).
+- Dynamically compose `sql` fragments (built via MooseStack’s `sql` template literal) driven by parsed request params and your defined query allowlist.
+- Reduce repetitive, handwritten query construction across REST/RPC/GraphQL endpoints.
+
+## Early / in-progress status
+
+This is intentionally low-level right now. The current library is a set of primitives (projection + ordering + field aliasing) that will be expanded into higher-level helpers as development continues. Feedback is welcome, especially on the primitives, naming, and the overall approach.
 
 ## Current Capabilities
 
-- Configure aliases for columns of a table used in a `SELECT` statement
-- Configure computed columns for the `SELECT` statement
-- Generate a `SELECT` statement based on a dynamic list of column names that are provided as query params
-- Dynamically generate a `ORDER BY` statement based on a configured list of columns in your table model that you denote as "sortable" in your model config.
+- **Projection (SELECT)**: build a `SELECT` list from a dynamic `fields` array (typed to your table model)
+- **Column display names**: configure user-friendly aliases for table columns via `columnConfig`
+- **Computed columns**: append derived columns to the `SELECT` via `computed` (always included today)
+- **Ordering (ORDER BY)**: build an `ORDER BY` clause from a typed list of sortable columns (with optional alias mapping)
+
+## How to use the current building blocks
+
+Current capabilities:
+- **`columnConfig`**: define display aliases for existing table columns
+- **`QueryParams<T>`**: type your API params (`fields`, `limit`, `offset`, `orderby`)
+- **`buildSelectFromFields()` + `buildOrderBy()`**: generate SQL fragments you can interpolate into a `sql\`...\`` query
 
 What's next:
-- Dynamic filter & predicate generation
+- **Dynamic filter & predicate generation** (typed `WHERE` building and validation)
+- **Runtime parsing/validation glue** for query params (turn raw HTTP query params into typed inputs with good errors)
+- **Safer computed columns** (use `sql` fragments instead of raw expression strings)
 
 
 ## Basic Setup
