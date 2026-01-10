@@ -400,31 +400,8 @@ const transformNewApi = (
             ts.NodeFlags.Const,
           ),
         ),
-        // const searchParams = new URLSearchParams(params as any)
-        factory.createVariableStatement(
-          undefined,
-          factory.createVariableDeclarationList(
-            [
-              factory.createVariableDeclaration(
-                factory.createIdentifier("searchParams"),
-                undefined,
-                undefined,
-                factory.createNewExpression(
-                  factory.createIdentifier("URLSearchParams"),
-                  undefined,
-                  [
-                    factory.createAsExpression(
-                      factory.createIdentifier("params"),
-                      factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            ts.NodeFlags.Const,
-          ),
-        ),
-        // const processedParams = assertGuard(searchParams)
+        // const processedParams = assertGuard(params)
+        // params is already URLSearchParams passed from runner.ts
         factory.createVariableStatement(
           undefined,
           factory.createVariableDeclarationList(
@@ -436,7 +413,7 @@ const transformNewApi = (
                 factory.createCallExpression(
                   factory.createIdentifier("assertGuard"),
                   undefined,
-                  [factory.createIdentifier("searchParams")],
+                  [factory.createIdentifier("params")],
                 ),
               ),
             ],
