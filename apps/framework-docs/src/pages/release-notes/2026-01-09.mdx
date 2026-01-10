@@ -18,7 +18,7 @@ This release focuses on developer experience and debugging tools. New payload lo
 
 ### Add --log-payloads flag for debugging data flow in development
 
-Added a new --log-payloads flag to the moose dev command that logs data payloads at key points in the pipeline (ingest API, streaming function input/output) with searchable prefixes. This helps developers debug data transformations and troubleshoot issues by seeing exactly what data flows through their pipeline. Logs can be viewed using 'moose logs --tail'.
+Added a new --log-payloads flag to the moose dev command that logs data payloads at key points in the pipeline (ingest API, streaming function input/output) with searchable prefixes. This helps developers debug data transformations and troubleshoot issues by seeing exactly what data flows through their pipeline. Logs can be viewed using 'moose logs --tail'. [#2966](https://github.com/514-labs/moosestack/pull/2966)
 
 **Debug data flow with --log-payloads flag**
 
@@ -39,8 +39,6 @@ moose logs --tail
 # [PAYLOAD:STREAM_IN] processUserActivity: {"userId":"user123","action":"click","timestamp":"2026-01-15T10:30:00Z"}
 # [PAYLOAD:STREAM_OUT] processUserActivity: {"userId":"user123","action":"click","timestamp":"2026-01-15T10:30:00Z","processed":true}
 ```
-
-[#2966](https://github.com/514-labs/moosestack/pull/2966)
 
 ### Add ON CLUSTER support for database creation in ClickHouse clusters
 
