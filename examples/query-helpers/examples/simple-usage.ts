@@ -10,7 +10,8 @@ import {
   buildSelectFromFields,
   type QueryParams,
   type ColumnConfig,
-} from "@514labs/moose-lib";
+  type OrderByColumn,
+} from "../src/query-helpers";
 
 // 1. Define a row type (the shape of a single table record)
 type ExampleRow = {
@@ -37,14 +38,15 @@ const ExampleTable = new OlapTable<ExampleRow>("example_table");
 // 5. Create the API
 export const ExampleApi = new Api<ExampleParams, Record<string, any>[]>(
   "example",
-  async (params, { client, sql: sqlTag }) => {
+  async (params: ExampleParams, { client, sql }) => {
     const {
       fields = ["id", "owner", "status"],
-      limit = "20",
-      offset = "0",
+      limit = 20,
+      offset = 0,
+      orderby = [{ column: "createdAt", direction: "DESC" }],
     } = params;
 
-    const query = sqlTag`
+    const query = sql`
       SELECT ${buildSelectFromFields<ExampleRow, typeof columnConfig>(
         ExampleTable,
         fields,
@@ -53,11 +55,11 @@ export const ExampleApi = new Api<ExampleParams, Record<string, any>[]>(
       FROM ${ExampleTable}
       ${buildOrderBy<ExampleRow>(
         ExampleTable,
-        [{ column: "createdAt", direction: "DESC" }],
+        orderby as OrderByColumn<ExampleRow>[],
         columnConfig,
       )}
-      LIMIT ${parseInt(limit, 10)}
-      OFFSET ${parseInt(offset, 10)}
+      LIMIT ${limit}
+      OFFSET ${offset}
     `;
 
     const result = await client.query.execute(query);
