@@ -350,6 +350,8 @@ const transformNewApi = (
   const handlerFunc = node.arguments[1];
 
   // Create a new handler function that includes validation
+  // params is typed as 'any' because it receives URLSearchParams from runner.ts
+  // but the Api constructor expects (params: T, ...) - the type conversion happens via typia
   const wrappedHandler = factory.createArrowFunction(
     undefined,
     undefined,
@@ -359,7 +361,7 @@ const transformNewApi = (
         undefined,
         factory.createIdentifier("params"),
         undefined,
-        undefined,
+        factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
         undefined,
       ),
       factory.createParameterDeclaration(
@@ -367,7 +369,7 @@ const transformNewApi = (
         undefined,
         factory.createIdentifier("utils"),
         undefined,
-        undefined,
+        factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
         undefined,
       ),
     ],
@@ -400,31 +402,8 @@ const transformNewApi = (
             ts.NodeFlags.Const,
           ),
         ),
-        // const searchParams = new URLSearchParams(params as any)
-        factory.createVariableStatement(
-          undefined,
-          factory.createVariableDeclarationList(
-            [
-              factory.createVariableDeclaration(
-                factory.createIdentifier("searchParams"),
-                undefined,
-                undefined,
-                factory.createNewExpression(
-                  factory.createIdentifier("URLSearchParams"),
-                  undefined,
-                  [
-                    factory.createAsExpression(
-                      factory.createIdentifier("params"),
-                      factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            ts.NodeFlags.Const,
-          ),
-        ),
-        // const processedParams = assertGuard(searchParams)
+        // const processedParams = assertGuard(params)
+        // params is already URLSearchParams passed from runner.ts
         factory.createVariableStatement(
           undefined,
           factory.createVariableDeclarationList(
@@ -436,7 +415,7 @@ const transformNewApi = (
                 factory.createCallExpression(
                   factory.createIdentifier("assertGuard"),
                   undefined,
-                  [factory.createIdentifier("searchParams")],
+                  [factory.createIdentifier("params")],
                 ),
               ),
             ],
