@@ -1,258 +1,323 @@
 # API Query Helpers - Usage Guide
 
-This is an early exploration of a schema-aware query + metrics layer built on top of your `OlapTable` definitions.
+A schema-aware query helper layer for building type-safe SQL queries on top of MooseStack's `OlapTable` definitions.
 
 ## Overview
-This library provides a set of low-level helper functions that sit between:
-- **API request parsing/validation** (query params like `fields`, `orderby`, `limit`, `offset`)
-- **SQL / OLAP query generation** (building `sql\`...\`` fragments safely and consistently)
 
-This library is designed to:
-- Define an allowlisted set of query capabilities for a given `OlapTable` (e.g. which fields can be selected, ordered, filtered, time-bucketed, grouped, etc.).
-- Validate and normalize API-facing query params against those rules (so invalid `fields` / `orderby` are blocked before query execution).
-- Dynamically compose `sql` fragments (built via MooseStack’s `sql` template literal) driven by parsed request params and your defined query allowlist.
-- Reduce repetitive, handwritten query construction across REST/RPC/GraphQL endpoints.
+This library provides helper functions that sit between:
+- **API request handling** (query params like `fields`, `orderby`, `limit`, `offset`)
+- **SQL query generation** (building `sql` fragments safely and consistently)
 
-## Early / in-progress status
+**What it does:**
+- Type-safe field selection with optional user-friendly display aliases
+- Dynamic SELECT clause generation from validated field lists
+- ORDER BY clause generation with alias support
 
-This is intentionally low-level right now. The current library is a set of primitives (projection + ordering + field aliasing) that will be expanded into higher-level helpers as development continues. Feedback is welcome, especially on the primitives, naming, and the overall approach.
+## Installation
 
-## Current Capabilities
+These helpers are designed to work with MooseStack. Import from `@514labs/moose-lib`:
 
-- **Projection (SELECT)**: build a `SELECT` list from a dynamic `fields` array (typed to your table model)
-- **Column display names**: configure user-friendly aliases for table columns via `columnConfig`
-- **Computed columns**: append derived columns to the `SELECT` via `computed` (always included today)
-- **Ordering (ORDER BY)**: build an `ORDER BY` clause from a typed list of sortable columns (with optional alias mapping)
+```typescript
+import {
+  buildSelectFromFields,
+  buildOrderBy,
+  type QueryParams,
+  type ColumnConfig,
+} from "@514labs/moose-lib";
+```
 
-## How to use the current building blocks
+## Quick Start
 
-Current capabilities:
-- **`columnConfig`**: define display aliases for existing table columns
-- **`QueryParams<T>`**: type your API params (`fields`, `limit`, `offset`, `orderby`)
-- **`buildSelectFromFields()` + `buildOrderBy()`**: generate SQL fragments you can interpolate into a `sql\`...\`` query
+```typescript
+import { Api, OlapTable, sql } from "@514labs/moose-lib";
+import { buildSelectFromFields, buildOrderBy, QueryParams, ColumnConfig } from "@514labs/moose-lib";
 
-What's next:
-- **Dynamic filter & predicate generation** (typed `WHERE` building and validation)
-- **Runtime parsing/validation glue** for query params (turn raw HTTP query params into typed inputs with good errors)
-- **Safer computed columns** (use `sql` fragments instead of raw expression strings)
+// 1. Define your row type
+type UserRow = {
+  id: string;
+  email: string;
+  createdAt: string;
+  status: "active" | "inactive";
+};
 
+// 2. Define column aliases (optional)
+const columnConfig = {
+  id: { alias: "User ID" },
+  email: { alias: "Email Address" },
+  createdAt: { alias: "Created At" },
+  status: { alias: "Status" },
+} as const satisfies ColumnConfig<UserRow>;
 
-## Basic Setup
+// 3. Define your API params type
+type UserApiParams = QueryParams<UserRow, typeof columnConfig>;
 
-### 1. Define Column Configuration (Optional)
+// 4. Create your API
+const UsersTable = new OlapTable<UserRow>("users");
 
-**`columnConfig`** configures metadata for **existing table columns** (columns that exist in your table schema). Currently supports aliases for the display name of the column:
+export const UsersApi = new Api<UserApiParams, Record<string, any>[]>(
+  "users",
+  async ({ fields = ["id", "email"], limit = "20", offset = "0" }, { client, sql }) => {
+    const query = sql`
+      SELECT ${buildSelectFromFields(UsersTable, fields, { columnConfig })}
+      FROM ${UsersTable}
+      ${buildOrderBy(UsersTable, [{ column: "createdAt", direction: "DESC" }], columnConfig)}
+      LIMIT ${parseInt(limit, 10)}
+      OFFSET ${parseInt(offset, 10)}
+    `;
+
+    const result = await client.query.execute(query);
+    return result.json();
+  }
+);
+```
+
+## Query Parameter Format
+
+### Field Selection
+
+The `fields` parameter accepts an array of field names. When calling your API via HTTP, use **repeated query parameters**:
+
+```bash
+# Select specific fields (use repeated params)
+GET /api/users?fields=id&fields=email
+
+# Select using display aliases
+GET /api/users?fields=User%20ID&fields=Email%20Address
+
+# Mix column names and aliases
+GET /api/users?fields=id&fields=Email%20Address
+```
+
+> **Note:** Typia validates that each field is either a valid column name or a configured alias. Invalid fields return a 400 error with a helpful message listing allowed values.
+
+### Pagination
+
+```bash
+GET /api/users?limit=10&offset=20
+```
+
+### Ordering
+
+The `orderby` parameter is a string that your handler can parse. A common format:
+
+```bash
+GET /api/users?orderby=createdAt%20DESC
+```
+
+## API Reference
+
+### `ColumnConfig<T>`
+
+Defines display aliases for table columns. Use `as const` for literal type inference.
 
 ```typescript
 const columnConfig = {
   id: { alias: "ID" },
-  owner: { alias: "Owner" },
-  status: { alias: "Status" },
   createdAt: { alias: "Created At" },
-} as const; // <- Required for literal type inference
-```
-- Keys must be actual column names from your `OlapTable` type `T`
-- Type-safe: TypeScript will error if you reference non-existent columns
-- Columns configured here can be referenced in the `fields` query parameter in your query functions
-
-### 2. Create Your Params Type with QueryParams
-
-`QueryParams<T>` defines common query params (e.g. `limit`, `offset`, `orderby`, `fields`) where `fields` is typed to your model and (optionally) aliases.
-
-```typescript
-// Example "row" type for a table
-type ExampleRow = {
-  id: string;
-  owner: string;
-  status: "OK" | "WARN" | "FAIL";
-  createdAt: string;
-};
-
-type MyApiParams = QueryParams<ExampleRow, typeof columnConfig> & {
-  "parameter.timeframe"?: string; // add any custom params here
-};
+} as const satisfies ColumnConfig<MyRow>;
 ```
 
-### 3. Define Computed Columns (Optional)
-
-**`computed`** defines **virtual/derived columns** that don't exist in your table schema. These are SQL expressions calculated on-the-fly:
-
-```typescript
-const computed = [
-  {
-    expression: "formatDateTime(createdAt, '%Y-%m-%d')",
-    alias: "Created Date",
-  },
-  {
-    expression: "coalesce(nullif(owner, ''), 'Unknown')",
-    alias: "Owner (Normalized)",
-  },
-];
-```
-- Not part of your table schema - these are SQL expressions
-- Each computed column has an `expression` (raw SQL) and an `alias` (display name)
-- Computed columns are **always included** in the SELECT clause (they're not controlled by the `fields` query parameter)
-- Currently, computed columns cannot be referenced in `fields` or used in `ORDER BY` (they're always added to the result) -- let us know if you need this!
-
-**Relationship between `columnConfig` and `computed`:**
-- `columnConfig`: Configures **existing table columns** - can be selected via `fields` param, can be used in `ORDER BY`
-- `computed`: Defines **virtual columns** - always included in SELECT, cannot be selected via `fields` param
-
-### 4. Use in Your API
-
-Your API layer should validate incoming query params (including `fields`) before calling these helpers.
-
-```typescript
-import { buildSelectFromFields } from "./src/selectHelper";
-import { buildOrderBy } from "./src/orderByHelper";
-
-// Example table metadata (depends on your SQL library/framework)
-declare const ExampleTable: import("@your-org/sql-lib").OlapTable<ExampleRow>;
-
-export async function handler(
-  params: MyApiParams,
-  deps: { sql: typeof import("@your-org/sql-lib").sql }
-) {
-  const { sql } = deps;
-  const { fields = ["id", "owner", "status"], limit = "20" } = params;
-  const t = ExampleTable;
-
-  // Computed columns (optional)
-  const computed = [
-    {
-      expression: "formatDateTime(createdAt, '%Y-%m-%d')",
-      alias: "Created Date",
-    },
-  ];
-
-  const q = sql`
-    SELECT ${buildSelectFromFields(t, fields, { columnConfig, computed })}
-    FROM ${t}
-    ${buildOrderBy(t, [{ column: "createdAt", direction: "DESC" }], columnConfig)}
-    LIMIT ${parseInt(limit, 10)}
-  `;
-
-  return q;
-}
-```
-
-## What Users Can Do
-
-With the above setup, your API can accept:
-
-```
-GET /my-api?fields=id,owner                 # column names
-GET /my-api?fields=ID,Owner                 # aliases
-GET /my-api?fields=id,Owner,Status          # mix of both
-GET /my-api?fields=InvalidField             # 400 error (if your API validates fields)
-```
-
-## Without Column Configuration
-
-If you don't need column configuration (aliases, etc.), skip the column config:
-
-```typescript
-import { QueryParams, buildSelectFromFields } from "./src/selectHelper";
-import { buildOrderBy } from "./src/orderByHelper";
-
-type MyApiParams = QueryParams<ExampleRow>;
-
-export async function handler(
-  params: MyApiParams,
-  deps: { sql: typeof import("@your-org/sql-lib").sql }
-) {
-  const { sql } = deps;
-  const { fields = ["id", "owner"] } = params;
-
-  const q = sql`
-    SELECT ${buildSelectFromFields(ExampleTable, fields)}
-    FROM ${ExampleTable}
-    ${buildOrderBy(ExampleTable, [{ column: "id", direction: "DESC" }])}
-  `;
-
-  return q;
-}
-```
-
-## Quick Reference
+**Rules:**
+- Keys must be actual column names from your table type `T`
+- Aliases must not conflict with column names (TypeScript will error if they do)
+- The `as const` assertion is required for proper type inference
 
 ### `QueryParams<T, A?>`
 
-Creates the params type for your API. Includes `limit`, `offset`, `orderby`, and `fields`.
+Creates a typed params interface for your API:
 
 ```typescript
-type ParamsWithConfig = QueryParams<ExampleRow, typeof columnConfig>;
-type ParamsWithoutConfig = QueryParams<ExampleRow>;
+type MyApiParams = QueryParams<MyRow, typeof columnConfig>;
+// Includes: fields?, limit?, offset?, orderby?
 ```
 
-### `buildSelectFromFields()`
+The `fields` property is typed to accept:
+- Any column name from `T` (e.g., `"id"`, `"createdAt"`)
+- Any alias from your config (e.g., `"ID"`, `"Created At"`)
 
-One function that handles field mapping and SELECT generation together.
+### `buildSelectFromFields(table, fields, options?)`
+
+Builds a SELECT clause from a table and field list.
 
 ```typescript
-// With column config
 buildSelectFromFields(table, fields, { columnConfig });
-
-// With computed columns
-buildSelectFromFields(table, fields, {
-  columnConfig,
-  computed: [{ expression: "...", alias: "Some Field" }],
-});
-
-// Without column config
-buildSelectFromFields(table, fields);
 ```
 
-Impact: Only the fields specified in the `fields` parameter will be included in the `SELECT` clause.
+**Parameters:**
+- `table` - Your `OlapTable<T>` instance
+- `fields` - Array of field names (column names or aliases)
+- `options.columnConfig` - Optional column configuration for aliases
 
-### `buildOrderBy()`
+**Returns:** A `Sql` fragment for interpolation into a query.
 
-Generates an ORDER BY clause.
+**Example output:**
+```sql
+SELECT "id" AS "ID", "email" AS "Email Address", "createdAt" AS "Created At"
+```
+
+### `buildOrderBy(table, columns, columnConfig?)`
+
+Builds an ORDER BY clause.
 
 ```typescript
 buildOrderBy(table, [{ column: "createdAt", direction: "DESC" }], columnConfig);
-// Produces: ORDER BY "Created At" DESC
 ```
-> You can pass this in as a query parameter and pass it through to this buildOrderBy function. Only columns in the `columnConfig` will be allowed to be used in the `ORDER BY` clause. If a column name is not found in the `columnConfig`, it will be ignored.
 
-## Common Patterns
+**Parameters:**
+- `table` - Your `OlapTable<T>` instance
+- `columns` - Array of `{ column, direction? }` objects
+- `columnConfig` - Optional config to use aliases in the ORDER BY
 
-### Multiple Sort Columns
+**Returns:** A `Sql` fragment like `ORDER BY "Created At" DESC`
+
+**Example - multiple columns:**
+```typescript
+buildOrderBy(table, [
+  { column: "status", direction: "ASC" },
+  { column: "createdAt", direction: "DESC" },
+], columnConfig);
+// ORDER BY "Status" ASC, "Created At" DESC
+```
+
+## Complete Example
 
 ```typescript
-buildOrderBy(
-  table,
-  [
-    { column: "createdAt", direction: "DESC" },
-    { column: "id", direction: "ASC" },
-  ],
-  columnConfig
+import { Api, OlapTable, sql } from "@514labs/moose-lib";
+import {
+  buildSelectFromFields,
+  buildOrderBy,
+  type QueryParams,
+  type ColumnConfig,
+} from "@514labs/moose-lib";
+
+// Row type matching your table schema
+type OrderRow = {
+  orderId: string;
+  customerId: string;
+  amount: number;
+  status: "pending" | "completed" | "cancelled";
+  createdAt: string;
+};
+
+// Column configuration with display aliases
+const columnConfig = {
+  orderId: { alias: "Order ID" },
+  customerId: { alias: "Customer ID" },
+  amount: { alias: "Amount" },
+  status: { alias: "Status" },
+  createdAt: { alias: "Created At" },
+} as const satisfies ColumnConfig<OrderRow>;
+
+// API params type
+type OrderApiParams = QueryParams<OrderRow, typeof columnConfig> & {
+  minAmount?: string;
+  maxAmount?: string;
+};
+
+// Table reference
+const OrdersTable = new OlapTable<OrderRow>("orders");
+
+export const OrdersApi = new Api<OrderApiParams, Record<string, any>[]>(
+  "orders",
+  async (params, { client, sql: sqlTag }) => {
+    const {
+      fields = ["orderId", "customerId", "amount", "status"],
+      limit = "50",
+      offset = "0",
+      minAmount,
+      maxAmount,
+    } = params;
+
+    // Build WHERE conditions
+    const conditions: string[] = [];
+    if (minAmount) conditions.push(`amount >= ${parseFloat(minAmount)}`);
+    if (maxAmount) conditions.push(`amount <= ${parseFloat(maxAmount)}`);
+    const whereClause = conditions.length > 0
+      ? `WHERE ${conditions.join(" AND ")}`
+      : "";
+
+    const query = sqlTag`
+      SELECT ${buildSelectFromFields(OrdersTable, fields, { columnConfig })}
+      FROM ${OrdersTable}
+      ${whereClause}
+      ${buildOrderBy(OrdersTable, [{ column: "createdAt", direction: "DESC" }], columnConfig)}
+      LIMIT ${parseInt(limit, 10)}
+      OFFSET ${parseInt(offset, 10)}
+    `;
+
+    const result = await client.query.execute(query);
+    return result.json();
+  }
 );
 ```
 
-### Computed Columns
+**Example requests:**
 
-Computed columns are virtual columns defined by SQL expressions. They are **always included** in the SELECT clause, regardless of the `fields` parameter:
+```bash
+# Default fields
+GET /api/orders
 
-```typescript
-buildSelectFromFields(table, fields, {
-  columnConfig,
-  computed: [
-    { expression: "formatDateTime(createdAt, '%Y-%m-%d')", alias: "Date" },
-    { expression: "amount * 1.1", alias: "Amount With Tax" },
-  ],
-});
+# Select specific fields
+GET /api/orders?fields=orderId&fields=amount&fields=status
+
+# Using aliases
+GET /api/orders?fields=Order%20ID&fields=Amount
+
+# With filters and pagination
+GET /api/orders?fields=orderId&fields=amount&minAmount=100&limit=10&offset=0
 ```
 
-**Note:** Computed columns cannot be referenced in the `fields` query parameter. They're always added to the result set alongside any selected table columns.
+**Example response:**
+
+```json
+[
+  {
+    "Order ID": "ord-123",
+    "Customer ID": "cust-456",
+    "Amount": 150.00,
+    "Status": "completed",
+    "Created At": "2024-01-15T10:30:00Z"
+  }
+]
+```
+
+## Tips
 
 ### Setting Defaults
 
-Use destructuring defaults in your handler signature:
+Use destructuring defaults in your handler:
 
 ```typescript
-async function handler({ fields = ["id", "owner"], limit = "20", offset = "0" }: MyApiParams) {
-  // fields, limit, offset all have defaults now
+async ({ fields = ["id", "name"], limit = "20", offset = "0" }, utils) => {
+  // fields, limit, offset all have defaults
 }
 ```
 
+### Without Column Configuration
+
+If you don't need aliases, skip the config entirely:
+
+```typescript
+type SimpleParams = QueryParams<MyRow>;  // No second type param
+
+buildSelectFromFields(table, fields);     // No options
+buildOrderBy(table, columns);             // No config
+```
+
+### Type Safety
+
+The `ValidFields` type ensures compile-time safety:
+
+```typescript
+// This will error at compile time if "invalidField" doesn't exist
+const fields: ValidFields<MyRow, typeof columnConfig>[] = ["id", "invalidField"];
+```
+
+If an alias conflicts with a column name, the type becomes `never`, causing a compile error:
+
+```typescript
+// ERROR: "id" alias conflicts with "id" column
+const badConfig = {
+  name: { alias: "id" }  // "id" is already a column name!
+} as const;
+```
