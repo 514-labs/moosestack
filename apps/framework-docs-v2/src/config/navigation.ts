@@ -908,13 +908,6 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "moosestack/changelog",
-    title: "Changelog",
-    icon: IconHistory,
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
     slug: "moosestack/release-notes",
     title: "Release Notes",
     icon: IconFileReport,
