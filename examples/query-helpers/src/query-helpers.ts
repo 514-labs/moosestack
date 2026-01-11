@@ -17,6 +17,7 @@ import {
   OlapTable,
   quoteIdentifier,
 } from "@514labs/moose-lib";
+import { tags } from "typia";
 
 // ============================================
 // Column Configuration Types
@@ -211,15 +212,15 @@ export function buildSelectFromFields<T, A extends ColumnConfig<T> = {}>(
  * These are pagination and caching params that don't depend on the table schema.
  */
 export type BaseQueryParams = {
-  limit?: string;
-  offset?: string;
+  limit?: number & tags.Type<"int64"> & tags.Minimum<1>;
+  offset?: number & tags.Type<"int64"> & tags.Minimum<0>;
 };
 
 /**
  * Ordering params. Uses string format `"[ColumnName] ASC|DESC"` (or equivalent) for compatibility.
  */
-export type OrderableFields = {
-  orderby?: string;
+export type OrderableFields<T> = {
+  orderby?: string | OrderByColumn<T>[];
 };
 
 /**
@@ -230,7 +231,7 @@ export type OrderableFields = {
  * @param A - Optional column config. Keys must be column names; aliases must not conflict with columns.
  */
 export type QueryParams<T, A extends ColumnConfig<T> = {}> = BaseQueryParams &
-  OrderableFields & {
+  OrderableFields<T> & {
     fields?: ValidFields<T, A>[];
   };
 
