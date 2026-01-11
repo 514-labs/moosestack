@@ -185,7 +185,9 @@ export function TopNav({
                 </kbd>
               </Button>
               <Button variant="ghost" asChild>
-                <Link href={buildUrl("/moosestack/changelog")}>Changelog</Link>
+                <Link href={buildUrl("/moosestack/release-notes")}>
+                  Release Notes
+                </Link>
               </Button>
               <GitHubButtonGroup stars={stars} />
               <ThemeToggle />
