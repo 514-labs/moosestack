@@ -1,14 +1,13 @@
 /**
- * Query helpers (anonymized, consolidated)
+ * Query Helpers for MooseStack
  *
- * This file combines:
- * - SELECT helpers with optional user-friendly aliases
- * - ORDER BY helper built from typed column names
+ * Type-safe SQL query building utilities for MooseStack consumption APIs.
  *
- * Notes:
- * - Replace `@your-org/sql-lib` with your actual SQL builder / table metadata library,
- *   or create an adapter module that re-exports these symbols.
- * - These helpers are domain-agnostic and intentionally contain no product-specific names.
+ * Features:
+ * - SELECT clause generation with field aliasing
+ * - ORDER BY clause generation
+ * - Computed columns support
+ * - Type-safe field validation via Typia
  */
 
 import {

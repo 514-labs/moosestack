@@ -3,18 +3,19 @@
 ### P0 — Runtime parsing + validation glue for query params (HIGH)
 Improve the current `QueryParams` type to add runtime parsing and validation helpers.
 
+**Current state:** Typia handles array params via repeated query params (`?fields=a&fields=b`). This works out of the box. Comma-separated values (`?fields=a,b`) are NOT supported by default.
+
 - Implement small utilities:
-  - `parseLimit(params, { default, min, max })`
-  - `parseOffset(params, { default, min })`
-  - `parseFields(params): string[]` (supports `?fields=a,b,c` and repeated params)
-  - `parseOrderBy(params): OrderByColumn<T>[]` supporting `"col desc"` and `"col:desc"`
+  - `parseLimit(params, { default, min, max })` - validate and coerce limit
+  - `parseOffset(params, { default, min })` - validate and coerce offset
+  - `parseOrderBy(params, allowedColumns): OrderByColumn<T>[]` - parse `"col DESC"` or `"col:desc"` format with allowlist filtering
 - Provide user-friendly errors:
-  - Unknown field → show allowed
-  - Invalid order direction → show expected
+  - Unknown field → show allowed fields
+  - Invalid order direction → show expected values
 - Deliverables:
   - `parseQueryParams()` helper that returns a structured object ready for builders
 - Acceptance criteria:
-  - No throwing “generic Error” for user-input; errors are actionable.
+  - No throwing "generic Error" for user-input; errors are actionable.
 
 ### P0 — Typed `buildWhere()` filter builder (HIGH)
 Add a type-safe WHERE/filter builder to the library.
