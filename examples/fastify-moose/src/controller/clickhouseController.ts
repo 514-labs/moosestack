@@ -1,11 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
-import {
-  getEvents,
-  getEventsRequest,
-  getEventsValidated,
-  ValidationError,
-} from "moose";
+import { getEventsQuery, ValidationError } from "moose";
 
 export default async function clickhouseController(fastify: FastifyInstance) {
   // GET /api/v1/clickhouse/events
@@ -14,8 +9,7 @@ export default async function clickhouseController(fastify: FastifyInstance) {
     "/events",
     async function (request: FastifyRequest, reply: FastifyReply) {
       try {
-        const params = getEventsRequest(request.query as string);
-        const rows = await getEventsValidated(params);
+        const rows = await getEventsQuery.fromUrl(request.url);
         reply.send({ rows, count: rows.length });
       } catch (err) {
         if (err instanceof ValidationError) {
@@ -25,7 +19,6 @@ export default async function clickhouseController(fastify: FastifyInstance) {
           });
           return;
         }
-
         if (err instanceof Error) {
           request.log.error({ err }, "Query failed");
           reply.code(500).send({ error: err.message });
