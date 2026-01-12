@@ -45,12 +45,37 @@ export type RawValue = Value | Sql;
 const isColumn = (value: RawValue | Column | OlapTable<any>): value is Column =>
   typeof value === "object" && "name" in value && "annotations" in value;
 
-export function sql(
+/**
+ * Sql template tag interface with attached helper methods.
+ */
+export interface SqlTemplateTag {
+  (
+    strings: readonly string[],
+    ...values: readonly (RawValue | Column | OlapTable<any>)[]
+  ): Sql;
+
+  /**
+   * Join an array of Sql fragments with a separator.
+   * @param fragments - Array of Sql fragments to join
+   * @param separator - Optional separator string (defaults to ", ")
+   */
+  join(fragments: Sql[], separator?: string): Sql;
+
+  /**
+   * Create raw SQL from a string without parameterization.
+   * WARNING: SQL injection risk if used with untrusted input.
+   */
+  raw(text: string): Sql;
+}
+
+function sqlImpl(
   strings: readonly string[],
   ...values: readonly (RawValue | Column | OlapTable<any>)[]
 ) {
   return new Sql(strings, values);
 }
+
+export const sql: SqlTemplateTag = sqlImpl as SqlTemplateTag;
 
 const instanceofSql = (
   value: RawValue | Column | OlapTable<any>,
@@ -139,7 +164,27 @@ export class Sql {
       }
     }
   }
+
+  /**
+   * Append another Sql fragment, returning a new Sql instance.
+   */
+  append(other: Sql): Sql {
+    return new Sql([...this.strings, ""], [...this.values, other]);
+  }
 }
+
+sql.join = function (fragments: Sql[], separator?: string): Sql {
+  if (fragments.length === 0) return new Sql([""], []);
+  if (fragments.length === 1) return fragments[0];
+  const sep = separator ?? ", ";
+  const normalized = sep.includes(" ") ? sep : ` ${sep} `;
+  const strings = ["", ...Array(fragments.length - 1).fill(normalized), ""];
+  return new Sql(strings, fragments);
+};
+
+sql.raw = function (text: string): Sql {
+  return new Sql([text], []);
+};
 
 export const toStaticQuery = (sql: Sql): string => {
   const [query, params] = toQuery(sql);
