@@ -5,6 +5,3 @@ node_modules
 # MooseStack generated files
 .moose/
 .ts-node/
-
-# development shortcuts
-.local/

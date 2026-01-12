@@ -2,7 +2,7 @@ import { Api, Sql } from "@514labs/moose-lib";
 import { BarAggregatedMV } from "../views/barAggregated";
 
 /**
- * Test API for the new sql.join(), sql.raw(), sql.empty, and Sql.append() helpers.
+ * Test API for the new sql.join(), sql.raw(), and Sql.append() helpers.
  */
 
 interface QueryParams {
@@ -32,9 +32,9 @@ export const SqlHelpersTestApi = new Api<QueryParams, ResponseData[]>(
 
     // Test sql.raw() - add a raw SQL function
     const timestampCol =
-      includeTimestamp ? sql`, ${sql.raw("NOW()")} as query_time` : sql.empty;
+      includeTimestamp ? sql`, ${sql.raw("NOW()")} as query_time` : sql``;
 
-    // Test sql.empty and conditional WHERE clauses
+    // Test conditional WHERE clauses
     const conditions: Sql[] = [];
     if (minDay !== undefined) {
       conditions.push(sql`${BA.columns.dayOfMonth} >= ${minDay}`);
@@ -44,9 +44,7 @@ export const SqlHelpersTestApi = new Api<QueryParams, ResponseData[]>(
     }
 
     const whereClause =
-      conditions.length > 0 ?
-        sql`WHERE ${sql.join(conditions, "AND")}`
-      : sql.empty;
+      conditions.length > 0 ? sql`WHERE ${sql.join(conditions, "AND")}` : sql``;
 
     // Test Sql.append() - build query incrementally
     const baseQuery = sql`SELECT ${selectClause}${timestampCol} FROM ${BA}`;
