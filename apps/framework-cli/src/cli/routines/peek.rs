@@ -85,18 +85,18 @@ pub async fn peek(
 
         let topic = infra
             .topics
-            .iter()
-            .find_map(|(key, topic)| {
-                if key.to_lowercase() == name.to_lowercase() {
-                    Some(topic)
-                } else {
-                    None
-                }
-            })
+            .values()
+            .find(|topic| topic.name.to_lowercase() == name.to_lowercase())
             .ok_or_else(|| {
+                let available_topics: Vec<String> =
+                    infra.topics.values().map(|t| t.name.clone()).collect();
                 RoutineFailure::error(Message::new(
                     "Failed".to_string(),
-                    "No matching topic found".to_string(),
+                    format!(
+                        "No matching topic found: '{}'. Available topics: {}",
+                        name,
+                        available_topics.join(", ")
+                    ),
                 ))
             })?;
         let topic_partition_map = (0..topic.partition_count)
@@ -136,18 +136,18 @@ pub async fn peek(
     } else {
         let table = infra
             .tables
-            .iter()
-            .find_map(|(key, table)| {
-                if key.to_lowercase() == name.to_lowercase() {
-                    Some(table)
-                } else {
-                    None
-                }
-            })
+            .values()
+            .find(|table| table.name.to_lowercase() == name.to_lowercase())
             .ok_or_else(|| {
+                let available_tables: Vec<String> =
+                    infra.tables.values().map(|t| t.name.clone()).collect();
                 RoutineFailure::error(Message::new(
                     "Failed".to_string(),
-                    "No matching table found".to_string(),
+                    format!(
+                        "No matching table found: '{}'. Available tables: {}",
+                        name,
+                        available_tables.join(", ")
+                    ),
                 ))
             })?;
 
@@ -195,9 +195,14 @@ pub async fn peek(
             }
         };
 
+        // Respect explicit table database, fallback to project default
+        let database = table
+            .database
+            .as_deref()
+            .unwrap_or(&project.clickhouse_config.db_name);
         let query = format!(
             "SELECT * FROM \"{}\".\"{}\" {} LIMIT {}",
-            project.clickhouse_config.db_name, table_ref.name, order_by, limit
+            database, table_ref.name, order_by, limit
         );
 
         info!("Peek query: {}", query);
@@ -276,4 +281,228 @@ pub async fn peek(
         "Peeked".to_string(),
         success_message(success_count),
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::framework::core::infrastructure::table::Table;
+    use crate::framework::core::infrastructure::topic::Topic;
+    use crate::framework::core::infrastructure_map::InfrastructureMap;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    fn create_test_table(name: &str, database: Option<String>) -> Table {
+        Table {
+            name: name.to_string(),
+            database,
+            columns: vec![],
+            order_by: crate::framework::core::infrastructure::table::OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            version: None,
+            engine: ClickhouseEngine::MergeTree,
+            source_primitive: crate::framework::core::infrastructure_map::PrimitiveSignature {
+                name: name.to_string(),
+                primitive_type:
+                    crate::framework::core::infrastructure_map::PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: crate::framework::core::partial_infrastructure_map::LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        }
+    }
+
+    fn create_test_topic(name: &str) -> Topic {
+        Topic {
+            name: name.to_string(),
+            version: None,
+            retention_period: Duration::from_secs(3600),
+            partition_count: 1,
+            max_message_bytes: 1024,
+            columns: vec![],
+            source_primitive: crate::framework::core::infrastructure_map::PrimitiveSignature {
+                name: name.to_string(),
+                primitive_type:
+                    crate::framework::core::infrastructure_map::PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: crate::framework::core::partial_infrastructure_map::LifeCycle::FullyManaged,
+            schema_config: None,
+        }
+    }
+
+    fn create_test_infra() -> InfrastructureMap {
+        let mut tables = HashMap::new();
+        let mut topics = HashMap::new();
+
+        // Add tables with table IDs as keys (simulating real inframap)
+        let table1 = create_test_table("users", None);
+        let table2 = create_test_table("orders", None);
+        let table3 = create_test_table("analytics", Some("warehouse".to_string()));
+
+        tables.insert("local_users".to_string(), table1);
+        tables.insert("local_orders".to_string(), table2);
+        tables.insert("warehouse_analytics".to_string(), table3);
+
+        // Add topics with topic IDs as keys
+        let topic1 = create_test_topic("events");
+        let topic2 = create_test_topic("logs");
+
+        topics.insert("events".to_string(), topic1);
+        topics.insert("logs".to_string(), topic2);
+
+        InfrastructureMap {
+            default_database: "local".to_string(),
+            tables,
+            topics,
+            api_endpoints: HashMap::new(),
+            views: HashMap::new(),
+            topic_to_table_sync_processes: HashMap::new(),
+            topic_to_topic_sync_processes: HashMap::new(),
+            function_processes: HashMap::new(),
+            block_db_processes: crate::framework::core::infrastructure::olap_process::OlapProcess {},
+            consumption_api_web_server: crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer {},
+            orchestration_workers: HashMap::new(),
+            sql_resources: HashMap::new(),
+            workflows: HashMap::new(),
+            web_apps: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_table_lookup_by_name() {
+        let infra = create_test_infra();
+
+        // Should find table by name, not by HashMap key
+        let table = infra
+            .tables
+            .values()
+            .find(|table| table.name.to_lowercase() == "users".to_lowercase());
+
+        assert!(table.is_some(), "Should find table 'users'");
+        assert_eq!(table.unwrap().name, "users");
+    }
+
+    #[test]
+    fn test_table_lookup_case_insensitive() {
+        let infra = create_test_infra();
+
+        // Should find table regardless of case
+        let table = infra
+            .tables
+            .values()
+            .find(|table| table.name.to_lowercase() == "USERS".to_lowercase());
+
+        assert!(
+            table.is_some(),
+            "Should find table with case-insensitive match"
+        );
+        assert_eq!(table.unwrap().name, "users");
+    }
+
+    #[test]
+    fn test_table_lookup_with_explicit_database() {
+        let infra = create_test_infra();
+
+        // Should find table with explicit database
+        let table = infra
+            .tables
+            .values()
+            .find(|table| table.name.to_lowercase() == "analytics".to_lowercase());
+
+        assert!(table.is_some(), "Should find table 'analytics'");
+        let found_table = table.unwrap();
+        assert_eq!(found_table.name, "analytics");
+        assert_eq!(found_table.database, Some("warehouse".to_string()));
+    }
+
+    #[test]
+    fn test_table_not_found() {
+        let infra = create_test_infra();
+
+        // Should not find non-existent table
+        let table = infra
+            .tables
+            .values()
+            .find(|table| table.name.to_lowercase() == "nonexistent".to_lowercase());
+
+        assert!(table.is_none(), "Should not find non-existent table");
+    }
+
+    #[test]
+    fn test_available_tables_list() {
+        let infra = create_test_infra();
+
+        // Should be able to list all available tables
+        let available_tables: Vec<String> = infra.tables.values().map(|t| t.name.clone()).collect();
+
+        assert_eq!(available_tables.len(), 3);
+        assert!(available_tables.contains(&"users".to_string()));
+        assert!(available_tables.contains(&"orders".to_string()));
+        assert!(available_tables.contains(&"analytics".to_string()));
+    }
+
+    #[test]
+    fn test_topic_lookup_by_name() {
+        let infra = create_test_infra();
+
+        // Should find topic by name, not by HashMap key
+        let topic = infra
+            .topics
+            .values()
+            .find(|topic| topic.name.to_lowercase() == "events".to_lowercase());
+
+        assert!(topic.is_some(), "Should find topic 'events'");
+        assert_eq!(topic.unwrap().name, "events");
+    }
+
+    #[test]
+    fn test_topic_lookup_case_insensitive() {
+        let infra = create_test_infra();
+
+        // Should find topic regardless of case
+        let topic = infra
+            .topics
+            .values()
+            .find(|topic| topic.name.to_lowercase() == "LOGS".to_lowercase());
+
+        assert!(
+            topic.is_some(),
+            "Should find topic with case-insensitive match"
+        );
+        assert_eq!(topic.unwrap().name, "logs");
+    }
+
+    #[test]
+    fn test_database_resolution_with_explicit_database() {
+        let table = create_test_table("analytics", Some("warehouse".to_string()));
+        let default_db = "local";
+
+        let database = table.database.as_deref().unwrap_or(default_db);
+
+        assert_eq!(
+            database, "warehouse",
+            "Should use table's explicit database"
+        );
+    }
+
+    #[test]
+    fn test_database_resolution_with_default() {
+        let table = create_test_table("users", None);
+        let default_db = "local";
+
+        let database = table.database.as_deref().unwrap_or(default_db);
+
+        assert_eq!(
+            database, "local",
+            "Should use default database when table.database is None"
+        );
+    }
 }
