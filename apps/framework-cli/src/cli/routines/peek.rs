@@ -4,6 +4,8 @@
 //! either database tables or streaming topics for debugging and exploration purposes.
 
 use crate::cli::display::Message;
+use crate::framework::core::infrastructure::table::Table;
+use crate::framework::core::infrastructure::topic::Topic;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::olap::clickhouse::mapper::std_table_to_clickhouse_table;
 use crate::infrastructure::olap::clickhouse_http_client::create_query_client;
@@ -83,22 +85,18 @@ pub async fn peek(
         consumer_ref = create_consumer(&project.redpanda_config, &[("group.id", &group_id)]);
         let consumer = &consumer_ref;
 
-        let topic = infra
-            .topics
-            .values()
-            .find(|topic| topic.name.to_lowercase() == name.to_lowercase())
-            .ok_or_else(|| {
-                let available_topics: Vec<String> =
-                    infra.topics.values().map(|t| t.name.clone()).collect();
-                RoutineFailure::error(Message::new(
-                    "Failed".to_string(),
-                    format!(
-                        "No matching topic found: '{}'. Available topics: {}",
-                        name,
-                        available_topics.join(", ")
-                    ),
-                ))
-            })?;
+        let topic = find_topic_by_name(&infra, name).ok_or_else(|| {
+            let available_topics: Vec<String> =
+                infra.topics.values().map(|t| t.name.clone()).collect();
+            RoutineFailure::error(Message::new(
+                "Failed".to_string(),
+                format!(
+                    "No matching topic found: '{}'. Available topics: {}",
+                    name,
+                    available_topics.join(", ")
+                ),
+            ))
+        })?;
         let topic_partition_map = (0..topic.partition_count)
             .map(|partition| {
                 (
@@ -134,22 +132,18 @@ pub async fn peek(
                 .map(Result::unwrap),
         )
     } else {
-        let table = infra
-            .tables
-            .values()
-            .find(|table| table.name.to_lowercase() == name.to_lowercase())
-            .ok_or_else(|| {
-                let available_tables: Vec<String> =
-                    infra.tables.values().map(|t| t.name.clone()).collect();
-                RoutineFailure::error(Message::new(
-                    "Failed".to_string(),
-                    format!(
-                        "No matching table found: '{}'. Available tables: {}",
-                        name,
-                        available_tables.join(", ")
-                    ),
-                ))
-            })?;
+        let table = find_table_by_name(&infra, name).ok_or_else(|| {
+            let available_tables: Vec<String> =
+                infra.tables.values().map(|t| t.name.clone()).collect();
+            RoutineFailure::error(Message::new(
+                "Failed".to_string(),
+                format!(
+                    "No matching table found: '{}'. Available tables: {}",
+                    name,
+                    available_tables.join(", ")
+                ),
+            ))
+        })?;
 
         table_ref = std_table_to_clickhouse_table(table).map_err(|_| {
             RoutineFailure::error(Message::new(
@@ -283,8 +277,43 @@ pub async fn peek(
     )))
 }
 
+/// Finds a table in the infrastructure map by name (case-insensitive).
+///
+/// # Arguments
+///
+/// * `infra` - The infrastructure map to search
+/// * `name` - The table name to find
+///
+/// # Returns
+///
+/// * `Option<&Table>` - The found table, or None if not found
+fn find_table_by_name<'a>(infra: &'a InfrastructureMap, name: &str) -> Option<&'a Table> {
+    infra
+        .tables
+        .values()
+        .find(|table| table.name.to_lowercase() == name.to_lowercase())
+}
+
+/// Finds a topic in the infrastructure map by name (case-insensitive).
+///
+/// # Arguments
+///
+/// * `infra` - The infrastructure map to search
+/// * `name` - The topic name to find
+///
+/// # Returns
+///
+/// * `Option<&Topic>` - The found topic, or None if not found
+fn find_topic_by_name<'a>(infra: &'a InfrastructureMap, name: &str) -> Option<&'a Topic> {
+    infra
+        .topics
+        .values()
+        .find(|topic| topic.name.to_lowercase() == name.to_lowercase())
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{find_table_by_name, find_topic_by_name};
     use crate::framework::core::infrastructure::table::Table;
     use crate::framework::core::infrastructure::topic::Topic;
     use crate::framework::core::infrastructure_map::InfrastructureMap;
@@ -383,10 +412,7 @@ mod tests {
         let infra = create_test_infra();
 
         // Should find table by name, not by HashMap key
-        let table = infra
-            .tables
-            .values()
-            .find(|table| table.name.to_lowercase() == "users".to_lowercase());
+        let table = find_table_by_name(&infra, "users");
 
         assert!(table.is_some(), "Should find table 'users'");
         assert_eq!(table.unwrap().name, "users");
@@ -397,10 +423,7 @@ mod tests {
         let infra = create_test_infra();
 
         // Should find table regardless of case
-        let table = infra
-            .tables
-            .values()
-            .find(|table| table.name.to_lowercase() == "USERS".to_lowercase());
+        let table = find_table_by_name(&infra, "USERS");
 
         assert!(
             table.is_some(),
@@ -414,10 +437,7 @@ mod tests {
         let infra = create_test_infra();
 
         // Should find table with explicit database
-        let table = infra
-            .tables
-            .values()
-            .find(|table| table.name.to_lowercase() == "analytics".to_lowercase());
+        let table = find_table_by_name(&infra, "analytics");
 
         assert!(table.is_some(), "Should find table 'analytics'");
         let found_table = table.unwrap();
@@ -430,10 +450,7 @@ mod tests {
         let infra = create_test_infra();
 
         // Should not find non-existent table
-        let table = infra
-            .tables
-            .values()
-            .find(|table| table.name.to_lowercase() == "nonexistent".to_lowercase());
+        let table = find_table_by_name(&infra, "nonexistent");
 
         assert!(table.is_none(), "Should not find non-existent table");
     }
@@ -456,10 +473,7 @@ mod tests {
         let infra = create_test_infra();
 
         // Should find topic by name, not by HashMap key
-        let topic = infra
-            .topics
-            .values()
-            .find(|topic| topic.name.to_lowercase() == "events".to_lowercase());
+        let topic = find_topic_by_name(&infra, "events");
 
         assert!(topic.is_some(), "Should find topic 'events'");
         assert_eq!(topic.unwrap().name, "events");
@@ -470,10 +484,7 @@ mod tests {
         let infra = create_test_infra();
 
         // Should find topic regardless of case
-        let topic = infra
-            .topics
-            .values()
-            .find(|topic| topic.name.to_lowercase() == "LOGS".to_lowercase());
+        let topic = find_topic_by_name(&infra, "LOGS");
 
         assert!(
             topic.is_some(),
