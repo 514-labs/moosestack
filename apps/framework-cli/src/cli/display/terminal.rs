@@ -10,7 +10,7 @@ use crossterm::{
         Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
     },
 };
-use std::io::{stdout, Result as IoResult};
+use std::io::{stderr, stdout, Result as IoResult};
 
 /// Width of the action column in terminal output
 pub const ACTION_WIDTH: usize = 15;
@@ -274,14 +274,11 @@ pub fn write_styled_line(
     message: &str,
     no_ansi: bool,
     show_timestamps: bool,
+    quiet_stdout: bool,
 ) -> IoResult<()> {
-    use crate::utilities::constants::QUIET_STDOUT;
-    use std::io::stderr;
-    use std::sync::atomic::Ordering;
-
-    // When QUIET_STDOUT is set, redirect messages to stderr to keep stdout clean
+    // When quiet_stdout is set, redirect messages to stderr to keep stdout clean
     // for structured/JSON output
-    if QUIET_STDOUT.load(Ordering::Relaxed) {
+    if quiet_stdout {
         let mut stderr = stderr();
         write_styled_line_to(&mut stderr, styled_text, message, no_ansi, show_timestamps)
     } else {

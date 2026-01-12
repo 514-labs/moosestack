@@ -35,7 +35,7 @@ use crate::framework::core::{
     },
     plan::InfraPlan,
 };
-use crate::utilities::constants::{NO_ANSI, SHOW_TIMESTAMPS};
+use crate::utilities::constants::{NO_ANSI, QUIET_STDOUT, SHOW_TIMESTAMPS};
 use crossterm::{execute, style::Print};
 use std::sync::atomic::Ordering;
 use tracing::info;
@@ -273,8 +273,15 @@ pub fn infra_added(message: &str) {
     let styled_text = StyledText::from_str("+ ").green();
     let no_ansi = NO_ANSI.load(Ordering::Relaxed);
     let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
-    write_styled_line(&styled_text, message, no_ansi, show_timestamps)
-        .expect("failed to write message to terminal");
+    let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
+    write_styled_line(
+        &styled_text,
+        message,
+        no_ansi,
+        show_timestamps,
+        quiet_stdout,
+    )
+    .expect("failed to write message to terminal");
     info!("+ {}", message.trim());
 }
 
@@ -314,8 +321,15 @@ pub fn infra_removed(message: &str) {
     let styled_text = StyledText::from_str("- ").red();
     let no_ansi = NO_ANSI.load(Ordering::Relaxed);
     let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
-    write_styled_line(&styled_text, message, no_ansi, show_timestamps)
-        .expect("failed to write message to terminal");
+    let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
+    write_styled_line(
+        &styled_text,
+        message,
+        no_ansi,
+        show_timestamps,
+        quiet_stdout,
+    )
+    .expect("failed to write message to terminal");
     info!("- {}", message.trim());
 }
 
@@ -355,8 +369,15 @@ pub fn infra_updated(message: &str) {
     let styled_text = StyledText::from_str("~ ").yellow();
     let no_ansi = NO_ANSI.load(Ordering::Relaxed);
     let show_timestamps = SHOW_TIMESTAMPS.load(Ordering::Relaxed);
-    write_styled_line(&styled_text, message, no_ansi, show_timestamps)
-        .expect("failed to write message to terminal");
+    let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
+    write_styled_line(
+        &styled_text,
+        message,
+        no_ansi,
+        show_timestamps,
+        quiet_stdout,
+    )
+    .expect("failed to write message to terminal");
     info!("~ {}", message.trim());
 }
 
