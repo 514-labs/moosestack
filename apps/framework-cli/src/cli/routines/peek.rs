@@ -348,7 +348,10 @@ mod tests {
         }
     }
 
-    fn create_test_topic(name: &str, version: Option<crate::framework::versions::Version>) -> Topic {
+    fn create_test_topic(
+        name: &str,
+        version: Option<crate::framework::versions::Version>,
+    ) -> Topic {
         Topic {
             name: name.to_string(),
             version,
