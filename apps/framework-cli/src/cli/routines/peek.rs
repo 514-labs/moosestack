@@ -291,7 +291,7 @@ fn find_table_by_name<'a>(infra: &'a InfrastructureMap, name: &str) -> Option<&'
     infra
         .tables
         .values()
-        .find(|table| table.name.to_lowercase() == name.to_lowercase())
+        .find(|table| table.name.eq_ignore_ascii_case(name))
 }
 
 /// Finds a topic in the infrastructure map by name (case-insensitive).
@@ -308,7 +308,7 @@ fn find_topic_by_name<'a>(infra: &'a InfrastructureMap, name: &str) -> Option<&'
     infra
         .topics
         .values()
-        .find(|topic| topic.name.to_lowercase() == name.to_lowercase())
+        .find(|topic| topic.name.eq_ignore_ascii_case(name))
 }
 
 #[cfg(test)]
@@ -348,10 +348,10 @@ mod tests {
         }
     }
 
-    fn create_test_topic(name: &str) -> Topic {
+    fn create_test_topic(name: &str, version: Option<crate::framework::versions::Version>) -> Topic {
         Topic {
             name: name.to_string(),
-            version: None,
+            version,
             retention_period: Duration::from_secs(3600),
             partition_count: 1,
             max_message_bytes: 1024,
@@ -380,12 +380,24 @@ mod tests {
         tables.insert("local_orders".to_string(), table2);
         tables.insert("warehouse_analytics".to_string(), table3);
 
-        // Add topics with topic IDs as keys
-        let topic1 = create_test_topic("events");
-        let topic2 = create_test_topic("logs");
+        // Add topics with topic IDs as keys (simulating real inframap)
+        // Topics get versioned IDs like "events_0_0_1" but names are just "events"
+        let topic1 = create_test_topic(
+            "events",
+            Some(crate::framework::versions::Version::from_string(
+                "0.0.1".to_string(),
+            )),
+        );
+        let topic2 = create_test_topic(
+            "logs",
+            Some(crate::framework::versions::Version::from_string(
+                "0.0.1".to_string(),
+            )),
+        );
 
-        topics.insert("events".to_string(), topic1);
-        topics.insert("logs".to_string(), topic2);
+        // Use topic.id() as key to simulate real inframap (key != name)
+        topics.insert(topic1.id(), topic1);
+        topics.insert(topic2.id(), topic2);
 
         InfrastructureMap {
             default_database: "local".to_string(),
