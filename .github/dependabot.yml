@@ -10,3 +10,35 @@ updates:
     labels:
       - "rust"
       - "toolchain"
+
+  # =============================================================================
+  # Templates - Monitor moose packages using glob patterns
+  # =============================================================================
+
+  # TypeScript templates (any package.json in templates/ with moose dependencies)
+  - package-ecosystem: "npm"
+    directories:
+      - "/templates/**"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "templates"
+      - "dependencies"
+    allow:
+      - dependency-name: "@514labs/moose-lib"
+      - dependency-name: "@514labs/moose-cli"
+
+  # Python templates (any requirements.txt in templates/ with moose dependencies)
+  - package-ecosystem: "pip"
+    directories:
+      - "/templates/**"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "templates"
+      - "dependencies"
+    allow:
+      - dependency-name: "moose-lib"
+      - dependency-name: "moose-cli"
