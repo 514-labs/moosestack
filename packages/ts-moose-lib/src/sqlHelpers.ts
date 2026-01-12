@@ -80,11 +80,6 @@ export interface SqlTemplateTag {
    * WARNING: SQL injection risk if used with untrusted input.
    */
   raw(text: string): Sql;
-
-  /**
-   * Empty Sql instance for conditional inclusion.
-   */
-  readonly empty: Sql;
 }
 
 function sqlImpl(
@@ -195,11 +190,8 @@ export class Sql {
   }
 }
 
-// Lazy singleton for sql.empty
-let _emptySql: Sql | null = null;
-
 sql.join = function (fragments: Sql[], separator?: string): Sql {
-  if (fragments.length === 0) return sql.empty;
+  if (fragments.length === 0) return new Sql([""], []);
   if (fragments.length === 1) return fragments[0];
   const sep = separator ?? ", ";
   const normalized = sep.includes(" ") ? sep : ` ${sep} `;
@@ -210,13 +202,6 @@ sql.join = function (fragments: Sql[], separator?: string): Sql {
 sql.raw = function (text: string): Sql {
   return new Sql([text], []);
 };
-
-Object.defineProperty(sql, "empty", {
-  get(): Sql {
-    if (!_emptySql) _emptySql = new Sql([""], []);
-    return _emptySql;
-  },
-});
 
 export const toStaticQuery = (sql: Sql): string => {
   const [query, params] = toQuery(sql);
