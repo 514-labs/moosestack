@@ -327,6 +327,11 @@ jobs:
       - name: Run sccache-cache
         if: ${{ matrix.build.OS != 'ubuntu-22-8-core' }}
         uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          # sccache-action points at the latest sccache version
+          # sccache v0.13.0+ drops support for x86_64 darwin which will cause
+          # the workflow to fail
+          version: "v0.12.0"
 
       - name: Install node
         uses: actions/setup-node@v4
