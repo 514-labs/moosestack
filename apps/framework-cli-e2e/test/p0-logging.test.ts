@@ -235,7 +235,9 @@ describe("P0 Logging E2E Tests", function () {
     );
 
     // Add a simple data model for ingest testing
-    const modelPath = path.join(projectDir, "app", "ingest", "models.ts");
+    const ingestDir = path.join(projectDir, "app", "ingest");
+    fs.mkdirSync(ingestDir, { recursive: true });
+    const modelPath = path.join(ingestDir, "models.ts");
     const modelContent = `
 import { Key } from "@514labs/moose-lib";
 
