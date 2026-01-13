@@ -3,7 +3,7 @@ import { Events, type EventModel } from "./models";
 import { executeQuery } from "./client";
 import typia from "typia";
 import {
-  assertValidOrThrow,
+  BadRequestError,
   createParamMap,
   createValidator,
   toQuerySql,
@@ -33,8 +33,13 @@ const paramMap = createParamMap<EventFilters, EventModel>(Events, {
 export async function getEvents(
   params: GetEventsParams,
 ): Promise<EventModel[]> {
-  const typedParams = assertValidOrThrow(validateParams(params));
-  const intent = paramMap.toIntent(typedParams);
+  const result = validateParams(params);
+
+  if (!result.success) {
+    throw new BadRequestError(result.errors);
+  }
+
+  const intent = paramMap.toIntent(result.data);
 
   const query = toQuerySql(Events, intent);
   return await executeQuery<EventModel>(query);

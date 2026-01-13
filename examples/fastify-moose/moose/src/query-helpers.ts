@@ -75,22 +75,12 @@ export class BadRequestError extends Error {
   }
 }
 
-export function toValidationErrors(
-  errors: Array<{ path: string; expected: string; value: unknown }>,
-): ValidationError[] {
-  return errors.map((e) => ({
-    path: e.path,
-    expected: e.expected,
-    value: e.value,
-  }));
-}
-
 /**
  * Throw a standardized 400 error from a typia validation result.
  */
 export function assertValidOrThrow<T>(result: typia.IValidation<T>): T {
   if (result.success) return result.data;
-  throw new BadRequestError(toValidationErrors(result.errors));
+  throw new BadRequestError(result.errors);
 }
 
 export const createValidator = typia.createValidate;

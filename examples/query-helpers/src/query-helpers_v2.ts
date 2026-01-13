@@ -15,7 +15,6 @@ import {
   quoteIdentifier,
 } from "@514labs/moose-lib";
 import typia, { tags } from "typia";
-import { type Response } from "express";
 
 // ============================================
 // Layer 1: Validation Types
@@ -63,6 +62,28 @@ export interface ValidationError {
   expected: string;
   value: unknown;
 }
+
+export class BadRequestError extends Error {
+  readonly statusCode = 400;
+
+  constructor(
+    public readonly errors: ValidationError[],
+    message: string = "Validation failed",
+  ) {
+    super(message);
+    this.name = "BadRequestError";
+  }
+}
+
+/**
+ * Throw a standardized 400 error from a typia validation result.
+ */
+export function assertValidOrThrow<T>(result: typia.IValidation<T>): T {
+  if (result.success) return result.data;
+  throw new BadRequestError(result.errors);
+}
+
+export const createValidator = typia.createValidate;
 
 // ============================================
 // Layer 2: Param-to-Column Mapping Types
@@ -538,17 +559,3 @@ export function mergeRequestParams(
 ): Record<string, unknown> {
   return { ...query, ...body };
 }
-
-export const badRequest = (
-  res: Response,
-  validationFailure: typia.IValidation.IFailure,
-) => {
-  return res.status(400).json({
-    error: "Invalid parameters",
-    details: validationFailure.errors.map((e) => ({
-      path: e.path,
-      expected: e.expected,
-      value: e.value,
-    })),
-  });
-};

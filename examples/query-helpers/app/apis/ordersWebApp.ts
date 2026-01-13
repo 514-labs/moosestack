@@ -27,7 +27,7 @@ import {
   toQuerySql,
   toWhereSql,
   toSelectSql,
-  badRequest,
+  BadRequestError,
 } from "../../src/query-helpers_v2";
 
 // ============================================
@@ -239,7 +239,7 @@ app.post("/", async (req, res) => {
     const validated = validateParams(params);
 
     if (!validated.success) {
-      return badRequest(res, validated);
+      throw new BadRequestError(validated.errors);
     }
 
     // Get Moose utilities
@@ -254,6 +254,14 @@ app.post("/", async (req, res) => {
     const result = await handler(client, sql, validated.data);
     return res.json(result);
   } catch (error) {
+    if (error instanceof BadRequestError) {
+      return res.status(error.statusCode).json({
+        error: error.name,
+        message: error.message,
+        details: error.errors,
+      });
+    }
+
     console.error("Error processing request:", error);
     return res.status(500).json({
       error: "Internal server error",
