@@ -22,6 +22,7 @@ export interface PostHogMetricsProperties {
   success: boolean;
   error?: string;
   total_duration_ms: number;
+  time_to_cli_install_ms: number | null;
   time_to_moose_init_ms: number | null;
   time_to_moose_dev_ms: number | null;
   time_to_ingest_ms: number | null;

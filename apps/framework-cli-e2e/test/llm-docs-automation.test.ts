@@ -15,7 +15,6 @@
 
 import { expect } from "chai";
 import * as fs from "fs";
-import * as path from "path";
 import { cleanupDocker } from "./utils/docker-utils";
 import { runAgent, AgentResult } from "./utils/llm-agent-utils";
 import { logger } from "./utils/logger";
@@ -29,7 +28,6 @@ describe("LLM Documentation Automation", function () {
 
   const testProjectPath = "/tmp/llm-test-moose-project";
   const appName = "llm-test-moose-project";
-  const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
   const TEST_LANGUAGE = process.env.LLM_TEST_LANGUAGE;
 
   async function cleanupTestProject() {
@@ -73,15 +71,13 @@ describe("LLM Documentation Automation", function () {
   it("should create a working Moose project from scratch using only documentation", async function () {
     const task = `Create a working ${TEST_LANGUAGE} Moose project at ${testProjectPath} and verify it works by sending test data to it.
 
-IMPORTANT: Use ${CLI_PATH} for all moose CLI commands (e.g., "${CLI_PATH} init").`;
+Search the documentation to learn how to install and use Moose.`;
 
     testLogger.info(`🚀 Starting LLM agent (${TEST_LANGUAGE}) with task:`);
     testLogger.info(`   ${task}`);
 
     const result: AgentResult = await runAgent(task, {
       workingDir: "/tmp",
-      maxIterations: 30,
-      commandTimeout: 60000,
     });
 
     // Log results
