@@ -259,6 +259,57 @@ export class AgentMetrics {
       timeToIngest: this.getTimeToIngest(),
     };
   }
+
+  /**
+   * Log a summary of metrics to a logger.
+   */
+  logSummary(log: { info: (msg: string) => void }): void {
+    log.info("📊 Performance Metrics:");
+    log.info(`   Total duration: ${formatDuration(this.getTotalDuration())}`);
+    log.info(
+      `   Time to moose init: ${formatDuration(this.getTimeToMooseInit())}`,
+    );
+    log.info(
+      `   Time to moose dev: ${formatDuration(this.getTimeToMooseDev())}`,
+    );
+    log.info(
+      `   Time to test ingest: ${formatDuration(this.getTimeToIngest())}`,
+    );
+    log.info(`   LLM calls: ${this.totalIterations}`);
+    log.info(`   Commands executed: ${this.totalCommands}`);
+    log.info(`   Doc searches: ${this.totalDocSearches}`);
+
+    if (this.phases.length > 0) {
+      log.info("📈 Phase Breakdown:");
+      for (const phase of this.phases) {
+        const duration =
+          phase.duration ? formatDuration(phase.duration) : "in progress";
+        log.info(`   ${phase.phase}: ${duration}`);
+      }
+    }
+  }
+
+  /**
+   * Get properties formatted for PostHog event.
+   */
+  toPostHogProperties(language: string, success: boolean, error?: string) {
+    return {
+      language,
+      success,
+      error,
+      total_duration_ms: this.getTotalDuration(),
+      time_to_moose_init_ms: this.getTimeToMooseInit(),
+      time_to_moose_dev_ms: this.getTimeToMooseDev(),
+      time_to_ingest_ms: this.getTimeToIngest(),
+      llm_calls: this.totalIterations,
+      commands_executed: this.totalCommands,
+      doc_searches: this.totalDocSearches,
+      phases: this.phases.map((p) => ({
+        phase: p.phase,
+        duration_ms: p.duration ?? null,
+      })),
+    };
+  }
 }
 
 export interface AgentResult {
@@ -497,8 +548,8 @@ When you've completed the task, explain what you did.`;
     },
   ];
 
-  agentLogger.info(`\n📋 System Prompt:\n${systemPrompt}`);
-  agentLogger.info(`\n📝 User Message:\n${userMessage}`);
+  agentLogger.info(`📋 System Prompt:\n${systemPrompt}`);
+  agentLogger.info(`📝 User Message:\n${userMessage}`);
 
   let iteration = 0;
 

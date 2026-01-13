@@ -2,6 +2,9 @@ name: Test LLM Docs Automation
 
 on:
   workflow_dispatch:
+  schedule:
+    # Monday and Thursday at 6am PST
+    - cron: '0 14 * * 1,4'
   push:
     branches:
       - llm-driven-e2e-test

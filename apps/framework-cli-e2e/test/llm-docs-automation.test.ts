@@ -17,7 +17,7 @@ import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
 import { cleanupDocker } from "./utils/docker-utils";
-import { runAgent, AgentResult, formatDuration } from "./utils/llm-agent-utils";
+import { runAgent, AgentResult } from "./utils/llm-agent-utils";
 import { logger } from "./utils/logger";
 import { sendPostHogEvent } from "./utils/posthog-utils";
 import { killRemainingProcesses } from "./utils/process-utils";
@@ -91,54 +91,15 @@ IMPORTANT: Use ${CLI_PATH} for all moose CLI commands (e.g., "${CLI_PATH} init")
       testLogger.error(`Error: ${result.error}`);
     }
 
-    // Log metrics
-    const metrics = result.metrics;
-    testLogger.info("📊 Performance Metrics:");
-    testLogger.info(
-      `   Total duration: ${formatDuration(metrics.getTotalDuration())}`,
-    );
-    testLogger.info(
-      `   Time to moose init: ${formatDuration(metrics.getTimeToMooseInit())}`,
-    );
-    testLogger.info(
-      `   Time to moose dev: ${formatDuration(metrics.getTimeToMooseDev())}`,
-    );
-    testLogger.info(
-      `   Time to test ingest: ${formatDuration(metrics.getTimeToIngest())}`,
-    );
-    testLogger.info(`   LLM calls: ${metrics.totalIterations}`);
-    testLogger.info(`   Commands executed: ${metrics.totalCommands}`);
-    testLogger.info(`   Doc searches: ${metrics.totalDocSearches}`);
-
-    // Log phase breakdown
-    if (metrics.phases.length > 0) {
-      testLogger.info("📈 Phase Breakdown:");
-      for (const phase of metrics.phases) {
-        const duration =
-          phase.duration ? formatDuration(phase.duration) : "in progress";
-        testLogger.info(`   ${phase.phase}: ${duration}`);
-      }
-    }
-
-    // Send metrics to PostHog
+    // Log and send metrics
+    result.metrics.logSummary(testLogger);
     await sendPostHogEvent({
       event: "test_llm_basic_moose_app",
-      properties: {
-        language: TEST_LANGUAGE,
-        success: result.success,
-        error: result.error,
-        total_duration_ms: metrics.getTotalDuration(),
-        time_to_moose_init_ms: metrics.getTimeToMooseInit(),
-        time_to_moose_dev_ms: metrics.getTimeToMooseDev(),
-        time_to_ingest_ms: metrics.getTimeToIngest(),
-        llm_calls: metrics.totalIterations,
-        commands_executed: metrics.totalCommands,
-        doc_searches: metrics.totalDocSearches,
-        phases: metrics.phases.map((p) => ({
-          phase: p.phase,
-          duration_ms: p.duration ?? null,
-        })),
-      },
+      properties: result.metrics.toPostHogProperties(
+        TEST_LANGUAGE!,
+        result.success,
+        result.error,
+      ),
     });
 
     expect(result.success).to.be.true;
