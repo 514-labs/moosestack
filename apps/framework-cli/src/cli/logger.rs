@@ -101,7 +101,7 @@ use super::settings::user_directory;
 #[allow(dead_code)]
 pub mod context {
     pub const RUNTIME: &str = "runtime";
-    pub const DEPLOY: &str = "deploy";
+    pub const BOOT: &str = "boot";
     pub const SYSTEM: &str = "system";
 }
 
@@ -804,7 +804,7 @@ mod tests {
     fn test_p0_constants_exported() {
         // Verify context constants are accessible
         assert_eq!(context::RUNTIME, "runtime");
-        assert_eq!(context::DEPLOY, "deploy");
+        assert_eq!(context::BOOT, "boot");
         assert_eq!(context::SYSTEM, "system");
 
         // Verify resource_type constants are accessible
