@@ -171,11 +171,15 @@ export class AgentMetrics {
   private detectPhase(cmd: string, timestamp: number): void {
     if (cmd.includes("moose-cli") && cmd.includes("init")) {
       this.startPhaseOnce("moose_init", timestamp);
-    } else if (cmd.includes("npm install") || cmd.includes("pnpm install")) {
+    } else if (
+      cmd.includes("npm install") ||
+      cmd.includes("pnpm install") ||
+      cmd.includes("pip install")
+    ) {
       this.endPhase("moose_init", timestamp);
-      this.startPhaseOnce("npm_install", timestamp);
+      this.startPhaseOnce("deps_install", timestamp);
     } else if (cmd.includes("moose-cli") && cmd.includes("dev")) {
-      this.endPhase("npm_install", timestamp);
+      this.endPhase("deps_install", timestamp);
       this.startPhaseOnce("moose_dev", timestamp);
     } else if (cmd.includes("curl") && cmd.includes("ingest")) {
       this.endPhase("moose_dev", timestamp);
