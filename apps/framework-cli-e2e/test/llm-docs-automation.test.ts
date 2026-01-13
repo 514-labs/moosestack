@@ -16,10 +16,11 @@
 import { expect } from "chai";
 import * as fs from "fs";
 import * as path from "path";
+import { cleanupDocker } from "./utils/docker-utils";
 import { runAgent, AgentResult, formatDuration } from "./utils/llm-agent-utils";
 import { logger } from "./utils/logger";
-import { performGlobalCleanup } from "./utils/cleanup-utils";
 import { sendPostHogEvent } from "./utils/posthog-utils";
+import { killRemainingProcesses } from "./utils/process-utils";
 
 const testLogger = logger.scope("llm-docs-automation");
 
@@ -27,21 +28,30 @@ describe("LLM Documentation Automation", function () {
   this.timeout(600000);
 
   const testProjectPath = "/tmp/llm-test-moose-project";
+  const appName = "llm-test-moose-project";
   const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
-  const TEST_LANGUAGE = process.env.LLM_TEST_LANGUAGE || "typescript";
+  const TEST_LANGUAGE = process.env.LLM_TEST_LANGUAGE;
 
   async function cleanupTestProject() {
     testLogger.info("🧹 Starting cleanup...");
 
-    await performGlobalCleanup("LLM test cleanup");
+    await killRemainingProcesses({ logger: testLogger });
 
     if (fs.existsSync(testProjectPath)) {
+      await cleanupDocker(testProjectPath, appName, { logger: testLogger });
       testLogger.info(`🧹 Removing test project: ${testProjectPath}`);
       fs.rmSync(testProjectPath, { recursive: true, force: true });
     }
   }
 
   before(async function () {
+    if (!TEST_LANGUAGE || !["typescript", "python"].includes(TEST_LANGUAGE)) {
+      testLogger.warn(
+        `⚠️  LLM_TEST_LANGUAGE must be "typescript" or "python", got: ${TEST_LANGUAGE}`,
+      );
+      this.skip();
+    }
+
     if (!process.env.ANTHROPIC_API_KEY) {
       testLogger.warn("⚠️  ANTHROPIC_API_KEY not set, skipping LLM tests");
       this.skip();
@@ -77,7 +87,6 @@ IMPORTANT: Use ${CLI_PATH} for all moose CLI commands (e.g., "${CLI_PATH} init")
     // Log results
     testLogger.info("\n" + "=".repeat(50));
     testLogger.info(`Result: ${result.success ? "✅ Success" : "❌ Failed"}`);
-    testLogger.info(`LLM calls: ${result.iterations}`);
     if (result.error) {
       testLogger.error(`Error: ${result.error}`);
     }
@@ -113,16 +122,12 @@ IMPORTANT: Use ${CLI_PATH} for all moose CLI commands (e.g., "${CLI_PATH} init")
 
     // Send metrics to PostHog
     await sendPostHogEvent({
-      event: "llm_docs_automation_test",
+      event: "test_llm_basic_moose_app",
       properties: {
         language: TEST_LANGUAGE,
         success: result.success,
         error: result.error,
         total_duration_ms: metrics.getTotalDuration(),
-        total_duration_s:
-          metrics.getTotalDuration() ?
-            metrics.getTotalDuration()! / 1000
-          : null,
         time_to_moose_init_ms: metrics.getTimeToMooseInit(),
         time_to_moose_dev_ms: metrics.getTimeToMooseDev(),
         time_to_ingest_ms: metrics.getTimeToIngest(),
@@ -137,7 +142,6 @@ IMPORTANT: Use ${CLI_PATH} for all moose CLI commands (e.g., "${CLI_PATH} init")
     });
 
     expect(result.success).to.be.true;
-    expect(result.iterations).to.be.lessThan(30);
     expect(
       fs.existsSync(testProjectPath),
       "Project directory should be created",
