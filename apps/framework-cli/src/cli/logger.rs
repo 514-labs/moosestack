@@ -210,7 +210,10 @@ fn default_no_ansi() -> bool {
 }
 
 fn default_structured_logs() -> bool {
-    false
+    env::var("MOOSE_LOGGER__STRUCTURED_LOGS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(false)
 }
 
 impl Default for LoggerSettings {
