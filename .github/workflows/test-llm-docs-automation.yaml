@@ -1,0 +1,88 @@
+name: Test LLM Docs Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      language:
+        description: 'Language to test'
+        required: true
+        default: 'typescript'
+        type: choice
+        options:
+          - typescript
+          - python
+
+jobs:
+  test-llm-docs:
+    name: LLM Docs Automation Test (${{ github.event.inputs.language }})
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: ./.github/actions/docker-login
+        with:
+          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      # Python setup (only for Python tests)
+      - name: Setup Python 3.12
+        if: github.event.inputs.language == 'python'
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade Python build tools
+        if: github.event.inputs.language == 'python'
+        run: pip install --upgrade pip setuptools wheel
+
+      - name: Run LLM Docs Automation Test
+        id: test
+        run: |
+          set +e
+          pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "LLM Documentation Automation" > /tmp/test-output.txt 2>&1
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        env:
+          MOOSE_TELEMETRY_ENABLED: false
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
+          LLM_TEST_LANGUAGE: ${{ github.event.inputs.language }}
+
+      - name: Display Test Output
+        if: always()
+        run: |
+          echo "════════════════════════════════════════════════════════════════════════════════"
+          echo "                           LLM DOCS AUTOMATION TEST OUTPUT"
+          echo "════════════════════════════════════════════════════════════════════════════════"
+          echo ""
+          cat /tmp/test-output.txt
+          echo ""
+          echo "════════════════════════════════════════════════════════════════════════════════"
+          exit ${{ steps.test.outputs.exit_code }}
