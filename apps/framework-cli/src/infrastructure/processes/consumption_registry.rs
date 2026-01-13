@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use tracing::info;
+use tracing::{info, instrument};
+
+use crate::cli::logger::{context, resource_type};
 
 use crate::utilities::system::{RestartPolicy, RestartingProcess, StartChildFn};
 use crate::{
@@ -57,6 +59,15 @@ impl ConsumptionProcessRegistry {
         }
     }
 
+    #[instrument(
+        name = "consumption_process_start",
+        skip_all,
+        fields(
+            context = context::RUNTIME,
+            resource_type = resource_type::CONSUMPTION_API,
+            // No resource_name - generic process
+        )
+    )]
     pub fn start(&mut self) -> Result<(), ConsumptionError> {
         info!("Starting analytics api...");
 

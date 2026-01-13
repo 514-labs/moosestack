@@ -18,7 +18,9 @@ use std::sync::{Arc, LazyLock};
 use tokio::task::JoinHandle;
 use tracing::error;
 use tracing::info;
-use tracing::{debug, warn};
+use tracing::{debug, instrument, warn};
+
+use crate::cli::logger::{context, resource_type};
 
 use crate::framework::core::infrastructure::table::Column;
 use crate::framework::core::infrastructure::table::ColumnType;
@@ -145,6 +147,15 @@ impl SyncingProcessesRegistry {
     /// * `target_database` - Optional target database name. If None, uses the default database
     /// * `target_table_columns` - Schema definition of the target table
     /// * `metrics` - Metrics collection service
+    #[instrument(
+        name = "stream_sync",
+        skip_all,
+        fields(
+            context = context::RUNTIME,
+            resource_type = resource_type::STREAM,
+            resource_name = %source_topic_name,
+        )
+    )]
     #[allow(clippy::too_many_arguments)]
     pub fn start_topic_to_table(
         &mut self,
