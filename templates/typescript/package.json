@@ -10,14 +10,14 @@
     "generate-runtime": "tspc app/index.ts"
   },
   "dependencies": {
-    "@514labs/moose-lib": "latest",
+    "@514labs/moose-lib": "0.6.309",
     "axios": "^1.7.7",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
     "typia": "^9.6.1"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "latest",
+    "@514labs/moose-cli": "0.6.309",
     "@faker-js/faker": "^9.7.0",
     "@types/node": "^20.12.12"
   },
