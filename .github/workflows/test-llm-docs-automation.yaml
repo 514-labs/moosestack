@@ -11,10 +11,13 @@ on:
         options:
           - typescript
           - python
+  push:
+    branches:
+      - llm-driven-e2e-test
 
 jobs:
   test-llm-docs:
-    name: LLM Docs Automation Test (${{ github.event.inputs.language }})
+    name: LLM Docs Automation Test
     runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read
@@ -73,7 +76,7 @@ jobs:
           MOOSE_TELEMETRY_ENABLED: false
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
-          LLM_TEST_LANGUAGE: ${{ github.event.inputs.language }}
+          LLM_TEST_LANGUAGE: ${{ github.event.inputs.language || 'typescript' }}
 
       - name: Display Test Output
         if: always()
