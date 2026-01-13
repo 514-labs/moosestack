@@ -814,6 +814,7 @@ mod tests {
         assert_eq!(resource_type::CONSUMPTION_API, "consumption_api");
         assert_eq!(resource_type::STREAM, "stream");
         assert_eq!(resource_type::OLAP_TABLE, "olap_table");
+        assert_eq!(resource_type::VIEW, "view");
         assert_eq!(resource_type::MATERIALIZED_VIEW, "materialized_view");
         assert_eq!(resource_type::TRANSFORM, "transform");
         assert_eq!(resource_type::CONSUMER, "consumer");

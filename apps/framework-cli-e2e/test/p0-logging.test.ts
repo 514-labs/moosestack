@@ -56,6 +56,7 @@ const VALID_RESOURCE_TYPES = [
   "consumption_api",
   "stream",
   "olap_table",
+  "view",
   "materialized_view",
   "transform",
   "consumer",
@@ -187,6 +188,10 @@ async function waitForLogs(
       }
     } catch (e) {
       // Log file might not exist yet, continue polling
+      // Log unexpected errors for debugging
+      if (e instanceof Error && !e.message.includes("not found") && !e.message.includes("ENOENT")) {
+        testLogger.debug(`Unexpected error reading logs: ${e.message}`);
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
@@ -338,16 +343,13 @@ export interface TestEvent {
     const response = await axios.get(healthUrl);
     expect(response.status).to.equal(200);
 
-    // Wait for logs to be written
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Read and parse log file
-    const logEntries = readLogFile();
-
-    // Filter for health check logs
-    const healthLogs = filterLogs(logEntries, {
-      context: "system",
-    });
+    // Wait for system context logs with polling
+    const healthLogs = await waitForLogs(
+      {
+        context: "system",
+      },
+      { timeoutMs: 10000, minCount: 1 },
+    );
 
     testLogger.info(`Found ${healthLogs.length} system context logs`);
 
@@ -384,17 +386,14 @@ export interface TestEvent {
 `;
     fs.writeFileSync(modelPath, updatedModelContent);
 
-    // Wait for file watcher to detect changes and apply them
+    // Wait for deploy context logs with polling
     testLogger.info("Waiting for schema change to be applied");
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-
-    // Read and parse log file
-    const logEntries = readLogFile();
-
-    // Filter for deploy context logs
-    const deployLogs = filterLogs(logEntries, {
-      context: "deploy",
-    });
+    const deployLogs = await waitForLogs(
+      {
+        context: "deploy",
+      },
+      { timeoutMs: 30000, minCount: 1 },
+    );
 
     testLogger.info(`Found ${deployLogs.length} deploy context logs`);
 
