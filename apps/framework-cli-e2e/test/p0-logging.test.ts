@@ -47,6 +47,22 @@ const MOOSE_LIB_PATH = path.resolve(
 
 const TEST_SUITE = "p0-logging";
 
+/**
+ * Valid P0 resource types according to ENG-1893, ENG-1894, ENG-1895
+ * Source: apps/framework-cli/src/cli/logger.rs (resource_type module)
+ */
+const VALID_RESOURCE_TYPES = [
+  "ingest_api",
+  "consumption_api",
+  "stream",
+  "olap_table",
+  "materialized_view",
+  "transform",
+  "consumer",
+  "workflow",
+  "task",
+] as const;
+
 interface LogEntry {
   timestamp: string;
   level: string;
@@ -65,10 +81,16 @@ interface LogEntry {
 /**
  * Reads and parses the moose CLI log file
  */
-function readLogFile(projectDir: string): LogEntry[] {
+function readLogFile(): LogEntry[] {
   const homeDir = process.env.HOME || process.env.USERPROFILE || "";
   const logDir = path.join(homeDir, ".moose");
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
+  // Use local date to match CLI's log file naming (not UTC)
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const today = `${year}-${month}-${day}`;
   const logFile = path.join(logDir, `${today}-cli.log`);
 
   if (!fs.existsSync(logFile)) {
@@ -78,16 +100,28 @@ function readLogFile(projectDir: string): LogEntry[] {
   const logContent = fs.readFileSync(logFile, "utf-8");
   const lines = logContent.trim().split("\n");
 
-  // Parse JSON log entries
+  // Parse JSON log entries with error tracking
   const entries: LogEntry[] = [];
+  let skippedLines = 0;
+  let lastError: string | null = null;
+
   for (const line of lines) {
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line);
       entries.push(entry);
     } catch (e) {
-      // Skip non-JSON lines (legacy format or errors)
+      skippedLines++;
+      lastError = line.substring(0, 100); // Keep first 100 chars for debugging
     }
+  }
+
+  if (skippedLines > 0) {
+    logger
+      .scope(TEST_SUITE)
+      .debug(
+        `Skipped ${skippedLines} non-JSON lines out of ${lines.length} total lines. Sample: ${lastError}`,
+      );
   }
 
   return entries;
@@ -121,6 +155,46 @@ function filterLogs(
 
     return true;
   });
+}
+
+/**
+ * Polls for log entries matching the given filters until they appear or timeout
+ */
+async function waitForLogs(
+  filters: {
+    context?: string;
+    resource_type?: string;
+    resource_name?: string;
+  },
+  options: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    minCount?: number;
+  } = {},
+): Promise<LogEntry[]> {
+  const timeoutMs = options.timeoutMs || 30000; // 30s default
+  const intervalMs = options.intervalMs || 500; // 500ms default
+  const minCount = options.minCount || 1;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const logEntries = readLogFile();
+      const matchingLogs = filterLogs(logEntries, filters);
+
+      if (matchingLogs.length >= minCount) {
+        return matchingLogs;
+      }
+    } catch (e) {
+      // Log file might not exist yet, continue polling
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error(
+    `Timeout waiting for logs matching filters: ${JSON.stringify(filters)}. Expected at least ${minCount} entries.`,
+  );
 }
 
 describe("P0 Logging E2E Tests", function () {
@@ -186,6 +260,10 @@ export interface TestEvent {
       testLogger.debug(`moose stderr: ${data.toString()}`);
     });
 
+    mooseProcess.on("error", (err) => {
+      testLogger.error(`Failed to spawn moose process: ${err.message}`, err);
+    });
+
     // Wait for server to be ready
     await waitForServerStart(
       mooseProcess,
@@ -210,7 +288,7 @@ export interface TestEvent {
   });
 
   it("should emit logs with P0 fields for ingest API (runtime context)", async function () {
-    this.timeout(120000); // 2 minutes
+    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
 
     // Send ingest request
     const ingestUrl = `${SERVER_CONFIG.url}/ingest/TestEvent`;
@@ -224,19 +302,15 @@ export interface TestEvent {
     const response = await axios.post(ingestUrl, [testEvent]);
     expect(response.status).to.equal(200);
 
-    // Wait for logs to be written
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Read and parse log file
-    const logEntries = readLogFile(projectDir);
-    testLogger.info(`Found ${logEntries.length} log entries`);
-
-    // Filter for ingest API logs
-    const ingestLogs = filterLogs(logEntries, {
-      context: "runtime",
-      resource_type: "ingest_api",
-      resource_name: "TestEvent",
-    });
+    // Wait for logs to be written with polling
+    const ingestLogs = await waitForLogs(
+      {
+        context: "runtime",
+        resource_type: "ingest_api",
+        resource_name: "TestEvent",
+      },
+      { timeoutMs: 10000, minCount: 1 },
+    );
 
     testLogger.info(`Found ${ingestLogs.length} ingest API logs`);
 
@@ -255,7 +329,7 @@ export interface TestEvent {
   });
 
   it("should emit logs with P0 fields for health check (system context)", async function () {
-    this.timeout(120000); // 2 minutes
+    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
 
     // Call health endpoint
     const healthUrl = `${SERVER_CONFIG.url}/health`;
@@ -268,7 +342,7 @@ export interface TestEvent {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Read and parse log file
-    const logEntries = readLogFile(projectDir);
+    const logEntries = readLogFile();
 
     // Filter for health check logs
     const healthLogs = filterLogs(logEntries, {
@@ -294,7 +368,7 @@ export interface TestEvent {
   });
 
   it("should emit logs with P0 fields for OLAP operations (deploy context)", async function () {
-    this.timeout(120000); // 2 minutes
+    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
 
     // Trigger OLAP operations by modifying the data model
     const modelPath = path.join(projectDir, "app", "ingest", "models.ts");
@@ -315,7 +389,7 @@ export interface TestEvent {
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
     // Read and parse log file
-    const logEntries = readLogFile(projectDir);
+    const logEntries = readLogFile();
 
     // Filter for deploy context logs
     const deployLogs = filterLogs(logEntries, {
@@ -336,19 +410,23 @@ export interface TestEvent {
     );
     testLogger.info(`Found ${olapLogs.length} OLAP operation logs`);
 
-    if (olapLogs.length > 0) {
-      const sampleLog = olapLogs[0];
-      expect(sampleLog.span?.context).to.equal("deploy");
-      expect(sampleLog.span?.resource_type).to.equal("olap_table");
-      expect(sampleLog.span?.resource_name).to.exist;
-    }
+    // OLAP logs are required - fail if missing
+    expect(olapLogs.length).to.be.greaterThan(
+      0,
+      "Should have at least one OLAP table operation log",
+    );
+
+    const sampleLog = olapLogs[0];
+    expect(sampleLog.span?.context).to.equal("deploy");
+    expect(sampleLog.span?.resource_type).to.equal("olap_table");
+    expect(sampleLog.span?.resource_name).to.exist;
   });
 
   it("should verify all P0 contexts are present in logs", async function () {
-    this.timeout(120000); // 2 minutes
+    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
 
     // Read all log entries
-    const logEntries = readLogFile(projectDir);
+    const logEntries = readLogFile();
     const logsWithSpan = logEntries.filter((entry) => entry.span);
 
     testLogger.info(`Found ${logsWithSpan.length} logs with span information`);
@@ -366,10 +444,10 @@ export interface TestEvent {
   });
 
   it("should verify resource_type values match P0 spec", async function () {
-    this.timeout(120000); // 2 minutes
+    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
 
     // Read all log entries
-    const logEntries = readLogFile(projectDir);
+    const logEntries = readLogFile();
     const logsWithSpan = logEntries.filter(
       (entry) => entry.span?.resource_type,
     );
@@ -384,22 +462,9 @@ export interface TestEvent {
     );
     testLogger.info("Found resource types:", Array.from(resourceTypes));
 
-    // Valid P0 resource types according to the spec
-    const validResourceTypes = [
-      "ingest_api",
-      "consumption_api",
-      "stream",
-      "olap_table",
-      "materialized_view",
-      "transform",
-      "consumer",
-      "workflow",
-      "task",
-    ];
-
-    // Verify all resource types are valid
+    // Verify all resource types are valid (using shared constant)
     for (const resourceType of resourceTypes) {
-      expect(validResourceTypes).to.include(
+      expect(VALID_RESOURCE_TYPES).to.include(
         resourceType,
         `Invalid resource_type: ${resourceType}`,
       );

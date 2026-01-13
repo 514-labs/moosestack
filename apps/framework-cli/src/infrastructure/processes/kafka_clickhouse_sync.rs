@@ -148,7 +148,7 @@ impl SyncingProcessesRegistry {
     /// * `target_table_columns` - Schema definition of the target table
     /// * `metrics` - Metrics collection service
     #[instrument(
-        name = "stream_sync",
+        name = "topic_to_table_sync",
         skip_all,
         fields(
             context = context::RUNTIME,
