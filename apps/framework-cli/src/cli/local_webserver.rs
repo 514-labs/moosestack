@@ -165,7 +165,11 @@ where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,
 {
-    tokio::task::spawn_blocking(f).instrument(tracing::Span::current())
+    let span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || {
+        let _guard = span.enter();
+        f()
+    })
 }
 
 /// Metadata for an API route.

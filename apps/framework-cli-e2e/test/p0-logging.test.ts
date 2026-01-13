@@ -21,12 +21,7 @@ import * as path from "path";
 import axios from "axios";
 
 // Import constants and utilities
-import {
-  TIMEOUTS,
-  SERVER_CONFIG,
-  TEMPLATE_NAMES,
-  APP_NAMES,
-} from "./constants";
+import { TIMEOUTS, SERVER_CONFIG } from "./constants";
 
 import {
   waitForServerStart,
@@ -46,6 +41,7 @@ const MOOSE_LIB_PATH = path.resolve(
 );
 
 const TEST_SUITE = "p0-logging";
+const APP_NAME = "moose-ts-empty-app";
 
 /**
  * Valid P0 resource types according to ENG-1893, ENG-1894, ENG-1895
@@ -225,7 +221,7 @@ describe("P0 Logging E2E Tests", function () {
 
     // Create test directory
     testDir = createTempTestDirectory(TEST_SUITE);
-    projectDir = path.join(testDir, APP_NAMES.TYPESCRIPT_DEFAULT);
+    projectDir = path.join(testDir, APP_NAME);
 
     testLogger.info("Setting up TypeScript project", { projectDir });
     await setupTypeScriptProject(
@@ -233,7 +229,7 @@ describe("P0 Logging E2E Tests", function () {
       "typescript-empty",
       CLI_PATH,
       MOOSE_LIB_PATH,
-      "moose-ts-empty-app",
+      APP_NAME,
       "npm",
       { logger: testLogger },
     );
@@ -257,7 +253,7 @@ export interface TestEvent {
       cwd: projectDir,
       env: {
         ...process.env,
-        MOOSE_STRUCTURED_LOGS: "true", // Enable structured logging
+        MOOSE_LOGGER__STRUCTURED_LOGS: "true", // Enable structured logging
         RUST_LOG: "debug",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -293,7 +289,7 @@ export interface TestEvent {
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
     testLogger.info("Cleaning up P0 logging test suite");
-    await cleanupTestSuite(mooseProcess, testDir, "moose-ts-empty-app", {
+    await cleanupTestSuite(mooseProcess, testDir, APP_NAME, {
       logger: testLogger,
     });
   });
@@ -375,7 +371,7 @@ export interface TestEvent {
     expect(healthLog?.span?.resource_name).to.be.undefined;
   });
 
-  it("should emit logs with P0 fields for OLAP operations (deploy context)", async function () {
+  it("should emit logs with P0 fields for OLAP operations (boot context)", async function () {
     this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
 
     // Trigger OLAP operations by modifying the data model
@@ -392,21 +388,21 @@ export interface TestEvent {
 `;
     fs.writeFileSync(modelPath, updatedModelContent);
 
-    // Wait for deploy context logs with polling
+    // Wait for boot context logs with polling
     testLogger.info("Waiting for schema change to be applied");
     const deployLogs = await waitForLogs(
       {
-        context: "deploy",
+        context: "boot",
       },
       { timeoutMs: 30000, minCount: 1 },
     );
 
-    testLogger.info(`Found ${deployLogs.length} deploy context logs`);
+    testLogger.info(`Found ${deployLogs.length} boot context logs`);
 
-    // Verify we have deploy logs (table operations)
+    // Verify we have boot logs (table operations)
     expect(deployLogs.length).to.be.greaterThan(
       0,
-      "Should have at least one deploy context log entry",
+      "Should have at least one boot context log entry",
     );
 
     // Check for OLAP table operations (add_column, create_table, etc.)
@@ -422,7 +418,7 @@ export interface TestEvent {
     );
 
     const sampleLog = olapLogs[0];
-    expect(sampleLog.span?.context).to.equal("deploy");
+    expect(sampleLog.span?.context).to.equal("boot");
     expect(sampleLog.span?.resource_type).to.equal("olap_table");
     expect(sampleLog.span?.resource_name).to.exist;
   });

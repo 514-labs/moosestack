@@ -109,16 +109,16 @@ pub mod context {
 /// Used in #[instrument(fields(resource_type = ...))]
 #[allow(dead_code)]
 pub mod resource_type {
-    pub const INGEST_API: &str = "ingest_api";
-    pub const CONSUMPTION_API: &str = "consumption_api";
-    pub const STREAM: &str = "stream";
-    pub const OLAP_TABLE: &str = "olap_table";
-    pub const VIEW: &str = "view";
-    pub const MATERIALIZED_VIEW: &str = "materialized_view";
-    pub const TRANSFORM: &str = "transform";
-    pub const CONSUMER: &str = "consumer";
-    pub const WORKFLOW: &str = "workflow";
-    pub const TASK: &str = "task";
+    pub(crate) const INGEST_API: &str = "ingest_api";
+    pub(crate) const CONSUMPTION_API: &str = "consumption_api";
+    pub(crate) const STREAM: &str = "stream";
+    pub(crate) const OLAP_TABLE: &str = "olap_table";
+    pub(crate) const VIEW: &str = "view";
+    pub(crate) const MATERIALIZED_VIEW: &str = "materialized_view";
+    pub(crate) const TRANSFORM: &str = "transform";
+    pub(crate) const CONSUMER: &str = "consumer";
+    pub(crate) const WORKFLOW: &str = "workflow";
+    pub(crate) const TASK: &str = "task";
 }
 
 /// Default date format for log file names: YYYY-MM-DD-cli.log
