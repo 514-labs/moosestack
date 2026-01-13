@@ -14,6 +14,9 @@ const execAsync = promisify(exec);
 
 const agentLogger = logger.scope("llm-agent");
 
+/** Claude model version for the agent */
+const CLAUDE_MODEL = "claude-opus-4-5-20251101";
+
 /**
  * Format milliseconds into human-readable duration
  */
@@ -247,7 +250,7 @@ export class AgentMetrics {
   /**
    * Serialize to JSON for storage/reporting
    */
-  toJSON() {
+  toJSON(): AgentMetricsJSON {
     return {
       startTime: this.startTime,
       endTime: this.endTime,
@@ -314,6 +317,24 @@ export class AgentMetrics {
       })),
     };
   }
+}
+
+/**
+ * Serialized metrics for storage/reporting
+ */
+export interface AgentMetricsJSON {
+  startTime: number;
+  endTime?: number;
+  totalDuration: number;
+  totalIterations: number;
+  totalCommands: number;
+  totalDocSearches: number;
+  commands: CommandMetric[];
+  docSearches: DocSearchMetric[];
+  phases: PhaseMetric[];
+  timeToMooseInit: number | null;
+  timeToMooseDev: number | null;
+  timeToIngest: number | null;
 }
 
 export interface AgentResult {
@@ -565,7 +586,7 @@ When you've completed the task, explain what you did.`;
 
       // Get LLM response
       const response = await client.messages.create({
-        model: "claude-opus-4-5-20251101",
+        model: CLAUDE_MODEL,
         max_tokens: 4096,
         system: systemPrompt,
         tools,
