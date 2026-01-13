@@ -69,11 +69,11 @@ export async function sendPostHogEvent(
     event: event.event,
     distinct_id: distinctId,
     properties: {
-      // User-provided properties
-      ...event.properties,
-
       // Run context (can be overridden by user properties)
       ...runContext,
+
+      // User-provided properties (override run context)
+      ...event.properties,
 
       // Timestamp
       timestamp: new Date().toISOString(),
@@ -91,6 +91,7 @@ export async function sendPostHogEvent(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
     });
 
     if (response.ok) {
