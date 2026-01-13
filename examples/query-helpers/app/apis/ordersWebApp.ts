@@ -9,13 +9,14 @@
  * Fan-out pattern uses separate handler functions, each respecting the layers.
  */
 
+import typia from "typia";
+
 import express from "express";
 import { tags } from "typia";
 import { WebApp, getMooseUtils, MooseClient, Sql } from "@514labs/moose-lib";
 import { Order, OrdersTable } from "../ingest/models";
 import {
   // Layer 1: Validation
-  createParamValidatorSafe,
   PaginationParams,
   DateRangeParams,
   // Layer 2: Mapping
@@ -26,6 +27,7 @@ import {
   toQuerySql,
   toWhereSql,
   toSelectSql,
+  badRequest,
 } from "../../src/query-helpers_v2";
 
 // ============================================
@@ -56,7 +58,7 @@ interface OrderQueryParams {
 }
 
 // Create Typia validator at compile time
-const validateParams = createParamValidatorSafe<OrderQueryParams>();
+const validateParams = typia.createValidate<OrderQueryParams>();
 
 // ============================================
 // Layer 2: Param-to-Column Mapping
@@ -236,11 +238,8 @@ app.post("/", async (req, res) => {
     // ============================================
     const validated = validateParams(params);
 
-    if (!validated.ok) {
-      return res.status(400).json({
-        error: "Invalid parameters",
-        details: validated.errors,
-      });
+    if (!validated.success) {
+      return badRequest(res, validated);
     }
 
     // Get Moose utilities

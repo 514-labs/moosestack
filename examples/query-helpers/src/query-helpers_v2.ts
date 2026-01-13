@@ -15,6 +15,7 @@ import {
   quoteIdentifier,
 } from "@514labs/moose-lib";
 import typia, { tags } from "typia";
+import { type Response } from "express";
 
 // ============================================
 // Layer 1: Validation Types
@@ -61,50 +62,6 @@ export interface ValidationError {
   path: string;
   expected: string;
   value: unknown;
-}
-
-/**
- * Create a validator that throws on invalid input.
- * Typia generates the actual validation code at compile time.
- *
- * @example
- * const validate = createParamValidator<MyParams>();
- * const params = validate(req.body); // throws if invalid
- */
-export function createParamValidator<T>(): (input: unknown) => T {
-  return typia.createAssert<T>();
-}
-
-/**
- * Create a validator that returns a result object instead of throwing.
- * Returns { ok: true, data } on success or { ok: false, errors } on failure.
- *
- * @example
- * const validate = createParamValidatorSafe<MyParams>();
- * const result = validate(req.body);
- * if (!result.ok) {
- *   return res.status(400).json({ errors: result.errors });
- * }
- * // result.data is typed as MyParams
- */
-export function createParamValidatorSafe<T>(): (
-  input: unknown,
-) => ValidationResult<T> {
-  const validate = typia.createValidate<T>();
-  return (input: unknown): ValidationResult<T> => {
-    const result = validate(input);
-    if (result.success) {
-      return { ok: true, data: result.data };
-    }
-    return {
-      ok: false,
-      errors: result.errors.map((e) => ({
-        path: e.path,
-        expected: e.expected,
-        value: e.value,
-      })),
-    };
-  };
 }
 
 // ============================================
@@ -581,3 +538,17 @@ export function mergeRequestParams(
 ): Record<string, unknown> {
   return { ...query, ...body };
 }
+
+export const badRequest = (
+  res: Response,
+  validationFailure: typia.IValidation.IFailure,
+) => {
+  return res.status(400).json({
+    error: "Invalid parameters",
+    details: validationFailure.errors.map((e) => ({
+      path: e.path,
+      expected: e.expected,
+      value: e.value,
+    })),
+  });
+};
