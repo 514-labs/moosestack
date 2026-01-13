@@ -76,52 +76,85 @@ interface LogEntry {
 }
 
 /**
- * Reads and parses the moose CLI log file
+ * Reads and parses the moose CLI log file(s).
+ * Reads both today's and yesterday's logs to handle tests that span midnight.
  */
 function readLogFile(): LogEntry[] {
   const homeDir = process.env.HOME || process.env.USERPROFILE || "";
   const logDir = path.join(homeDir, ".moose");
 
-  // Use local date to match CLI's log file naming (not UTC)
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const today = `${year}-${month}-${day}`;
-  const logFile = path.join(logDir, `${today}-cli.log`);
+  // Helper to format date as YYYY-MM-DD
+  const formatDate = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
 
-  if (!fs.existsSync(logFile)) {
-    throw new Error(`Log file not found: ${logFile}`);
+  // Get today's and yesterday's dates (to handle tests that span midnight)
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const todayStr = formatDate(now);
+  const yesterdayStr = formatDate(yesterday);
+
+  const todayLogFile = path.join(logDir, `${todayStr}-cli.log`);
+  const yesterdayLogFile = path.join(logDir, `${yesterdayStr}-cli.log`);
+
+  // Collect log files to read (today's is required, yesterday's is optional)
+  const logFilesToRead: string[] = [];
+
+  if (fs.existsSync(todayLogFile)) {
+    logFilesToRead.push(todayLogFile);
   }
 
-  const logContent = fs.readFileSync(logFile, "utf-8");
-  const lines = logContent.trim().split("\n");
+  if (fs.existsSync(yesterdayLogFile)) {
+    logFilesToRead.push(yesterdayLogFile);
+  }
 
-  // Parse JSON log entries with error tracking
-  const entries: LogEntry[] = [];
-  let skippedLines = 0;
+  if (logFilesToRead.length === 0) {
+    throw new Error(
+      `No log files found. Checked: ${todayLogFile}, ${yesterdayLogFile}`,
+    );
+  }
+
+  // Parse all log files and merge entries
+  const allEntries: LogEntry[] = [];
+  let totalSkippedLines = 0;
   let lastError: string | null = null;
 
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      const entry = JSON.parse(line);
-      entries.push(entry);
-    } catch (e) {
-      skippedLines++;
-      lastError = line.substring(0, 100); // Keep first 100 chars for debugging
+  for (const logFile of logFilesToRead) {
+    const logContent = fs.readFileSync(logFile, "utf-8");
+    const lines = logContent.trim().split("\n");
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        allEntries.push(entry);
+      } catch (e) {
+        totalSkippedLines++;
+        lastError = line.substring(0, 100); // Keep first 100 chars for debugging
+      }
     }
   }
 
-  if (skippedLines > 0) {
+  if (totalSkippedLines > 0) {
     logger
       .scope(TEST_SUITE)
       .debug(
-        `Skipped ${skippedLines} non-JSON lines out of ${lines.length} total lines. Sample: ${lastError}`,
+        `Skipped ${totalSkippedLines} non-JSON lines across ${logFilesToRead.length} log file(s). Sample: ${lastError}`,
       );
   }
 
-  return entries;
+  logger
+    .scope(TEST_SUITE)
+    .debug(
+      `Read ${allEntries.length} log entries from ${logFilesToRead.length} file(s): ${logFilesToRead.map((f) => path.basename(f)).join(", ")}`,
+    );
+
+  return allEntries;
 }
 
 /**
