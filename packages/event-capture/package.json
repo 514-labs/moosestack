@@ -1,6 +1,10 @@
 {
   "name": "@514labs/event-capture",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/514-labs/moosestack"
+  },
   "dependencies": {
     "mixpanel": "^0.18.0",
     "next": "^16.0.7"
