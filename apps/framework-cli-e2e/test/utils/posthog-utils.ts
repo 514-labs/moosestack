@@ -17,6 +17,20 @@ export interface PostHogEvent {
   distinctId?: string;
 }
 
+export interface PostHogMetricsProperties {
+  language: string;
+  success: boolean;
+  error?: string;
+  total_duration_ms: number;
+  time_to_moose_init_ms: number | null;
+  time_to_moose_dev_ms: number | null;
+  time_to_ingest_ms: number | null;
+  llm_calls: number;
+  commands_executed: number;
+  doc_searches: number;
+  phases: { phase: string; duration_ms: number | null }[];
+}
+
 /**
  * Default distinct ID for E2E tests.
  * Using a consistent ID groups all test runs under one "person" in PostHog.
