@@ -712,20 +712,20 @@ When you've completed the task, explain what you did.`;
           content: toolResults,
         });
       } else if (response.stop_reason === "max_tokens") {
-        // Response was truncated - log warning but continue the conversation
-        agentLogger.warn(
-          `⚠️  Response truncated (max_tokens reached), continuing...`,
-        );
+        // Response was truncated - treat as failure
+        agentLogger.warn(`⚠️  Response truncated (max_tokens reached)`);
         if (response.content && response.content[0]?.type === "text") {
           agentLogger.info(
             `🤖 Partial response: ${response.content[0].text.substring(0, 200)}...`,
           );
         }
-        // Add partial response to messages and continue
-        messages.push({
-          role: "assistant",
-          content: response.content,
-        });
+        metrics.markComplete();
+        return {
+          success: false,
+          iterations: iteration,
+          error: "max_tokens",
+          metrics,
+        };
       } else {
         agentLogger.warn(`⚠️  Unexpected stop reason: ${response.stop_reason}`);
         if (response.content && response.content[0]?.type === "text") {
