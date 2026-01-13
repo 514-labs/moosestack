@@ -113,6 +113,7 @@ pub mod resource_type {
     pub const CONSUMPTION_API: &str = "consumption_api";
     pub const STREAM: &str = "stream";
     pub const OLAP_TABLE: &str = "olap_table";
+    pub const VIEW: &str = "view";
     pub const MATERIALIZED_VIEW: &str = "materialized_view";
     pub const TRANSFORM: &str = "transform";
     pub const CONSUMER: &str = "consumer";

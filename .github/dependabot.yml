@@ -10,3 +10,29 @@ updates:
     labels:
       - "rust"
       - "toolchain"
+
+  # =============================================================================
+  # Templates - Monitor all dependencies using glob patterns
+  # =============================================================================
+
+  # TypeScript templates (any package.json in templates/)
+  - package-ecosystem: "npm"
+    directories:
+      - "/templates/**"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "templates"
+      - "dependencies"
+
+  # Python templates (any requirements.txt in templates/)
+  - package-ecosystem: "pip"
+    directories:
+      - "/templates/**"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "templates"
+      - "dependencies"

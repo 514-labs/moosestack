@@ -18,7 +18,7 @@ use std::sync::{Arc, LazyLock};
 use tokio::task::JoinHandle;
 use tracing::error;
 use tracing::info;
-use tracing::{debug, instrument, warn};
+use tracing::{debug, instrument, warn, Instrument};
 
 use crate::cli::logger::{context, resource_type};
 
@@ -416,7 +416,8 @@ fn spawn_sync_process_core(
                 "Sync process to table {} failed with error {:?}",
                 target_table_name_clone, e
             )
-        }),
+        })
+        .instrument(tracing::Span::current()),
     );
 
     TableSyncProcess { handle, cancel_tx }
@@ -446,13 +447,16 @@ fn spawn_kafka_to_kafka_process(
     // Create a cancellation channel for graceful shutdown
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
 
-    let handle = tokio::spawn(sync_kafka_to_kafka(
-        kafka_config,
-        source_topic_name,
-        target_topic_name,
-        metrics,
-        cancel_rx,
-    ));
+    let handle = tokio::spawn(
+        sync_kafka_to_kafka(
+            kafka_config,
+            source_topic_name,
+            target_topic_name,
+            metrics,
+            cancel_rx,
+        )
+        .instrument(tracing::Span::current()),
+    );
 
     (target_topic_clone, TopicSyncProcess { handle, cancel_tx })
 }
