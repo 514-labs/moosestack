@@ -12,7 +12,7 @@
     "axios": "^1.7.7",
     "dotenv": "^16.4.7",
     "ts-patch": "^3.3.0",
-    "typia": "^9.6.1",
+    "typia": "^11.0.0",
     "moose-objects": "workspace:*"
   },
   "devDependencies": {
