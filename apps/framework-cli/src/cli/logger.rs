@@ -79,7 +79,6 @@
 //! via environment variable once downstream consumers are ready.
 
 use serde::Deserialize;
-use std::env;
 use std::fmt;
 use std::io::Write;
 use std::time::{Duration, SystemTime};
@@ -199,10 +198,7 @@ fn default_include_session_id() -> bool {
 }
 
 fn default_use_tracing_format() -> bool {
-    env::var("MOOSE_LOGGER__USE_TRACING_FORMAT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(false)
+    false
 }
 
 fn default_no_ansi() -> bool {
@@ -210,10 +206,7 @@ fn default_no_ansi() -> bool {
 }
 
 fn default_structured_logs() -> bool {
-    env::var("MOOSE_LOGGER__STRUCTURED_LOGS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(false)
+    false
 }
 
 impl Default for LoggerSettings {
