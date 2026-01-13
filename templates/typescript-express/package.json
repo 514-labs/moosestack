@@ -15,7 +15,7 @@
     "typia": "^9.6.1"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "0.6.309",
+    "@514labs/moose-cli": "0.6.310",
     "@types/express": "^5.0.3",
     "@faker-js/faker": "^9.7.0",
     "@types/node": "^20.12.12"
