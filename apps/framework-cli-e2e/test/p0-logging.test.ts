@@ -194,7 +194,9 @@ async function waitForLogs(
         !e.message.includes("not found") &&
         !e.message.includes("ENOENT")
       ) {
-        testLogger.debug(`Unexpected error reading logs: ${e.message}`);
+        logger
+          .scope(TEST_SUITE)
+          .debug(`Unexpected error reading logs: ${e.message}`);
       }
     }
 

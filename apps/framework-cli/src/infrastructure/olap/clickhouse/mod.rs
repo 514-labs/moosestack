@@ -907,7 +907,7 @@ async fn execute_remove_sample_by(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}.{}", table_database.unwrap_or(db_name), table_name),
+        resource_name = %format!("{}_{}", table_database.unwrap_or(db_name), table_name),
     )
 )]
 async fn execute_drop_table(
@@ -941,7 +941,7 @@ async fn execute_drop_table(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}.{}", db_name, table_name),
+        resource_name = %format!("{}_{}", db_name, table_name),
     )
 )]
 async fn execute_add_table_column(
@@ -1026,7 +1026,7 @@ async fn execute_add_table_column(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}.{}", db_name, table_name),
+        resource_name = %format!("{}_{}", db_name, table_name),
     )
 )]
 async fn execute_drop_table_column(
@@ -1071,7 +1071,7 @@ async fn execute_drop_table_column(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}.{}", db_name, table_name),
+        resource_name = %format!("{}_{}", db_name, table_name),
     )
 )]
 async fn execute_modify_table_column(
@@ -1581,7 +1581,7 @@ async fn execute_drop_view_inner(
     fields(
         context = context::BOOT,
         resource_type = resource_type::MATERIALIZED_VIEW,
-        resource_name = %format!("{}.{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
     )
 )]
 async fn execute_drop_materialized_view(
@@ -1600,7 +1600,7 @@ async fn execute_drop_materialized_view(
     fields(
         context = context::BOOT,
         resource_type = resource_type::VIEW,
-        resource_name = %format!("{}.{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
     )
 )]
 async fn execute_drop_view(
