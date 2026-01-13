@@ -4,6 +4,7 @@ packages:
   - "scripts"
 
 catalog:
+  "@anthropic-ai/sdk": "0.71.2"
   "@clickhouse/client": "1.12.1"
   "@iarna/toml": "3.0.0"
   "@types/chai": "4.3.20"
