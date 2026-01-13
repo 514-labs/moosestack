@@ -5,38 +5,31 @@
 // It registers ts-node to be able to interpret user code.
 
 import { register } from "ts-node";
+import {
+  MOOSE_COMPILER_PLUGINS,
+  COMMANDS_REQUIRING_PLUGINS,
+  shouldUseCompiled,
+} from "./compiler-config";
 
-// Check if we're using pre-compiled JavaScript (set during Docker build)
-// When MOOSE_USE_COMPILED=true, skip ts-node registration entirely
-// as the code has already been compiled with all transforms applied
-const useCompiled = process.env.MOOSE_USE_COMPILED === "true";
+// Determine if we should use compiled code (with fallback check).
+// If MOOSE_USE_COMPILED=true but compiled artifacts don't exist,
+// this will return false and we'll fall back to ts-node.
+const useCompiled = shouldUseCompiled();
 
 // We register ts-node to be able to interpret TS user code.
 // Skip registration if using pre-compiled mode.
 if (!useCompiled) {
-  if (
-    process.argv[2] == "consumption-apis" ||
-    process.argv[2] == "consumption-type-serializer" ||
-    process.argv[2] == "dmv2-serializer" ||
-    // Streaming functions for dmv2 need to load moose internals
-    process.argv[2] == "streaming-functions" ||
-    process.argv[2] == "scripts"
-  ) {
+  const command = process.argv[2];
+  const needsPlugins = COMMANDS_REQUIRING_PLUGINS.includes(command as any);
+
+  if (needsPlugins) {
     register({
       require: ["tsconfig-paths/register"],
       esm: true,
       experimentalTsImportSpecifiers: true,
       compiler: "ts-patch/compiler",
       compilerOptions: {
-        plugins: [
-          {
-            transform: `./node_modules/@514labs/moose-lib/dist/compilerPlugin.js`,
-            transformProgram: true,
-          },
-          {
-            transform: "typia/lib/transform",
-          },
-        ],
+        plugins: [...MOOSE_COMPILER_PLUGINS],
         experimentalDecorators: true,
       },
     });

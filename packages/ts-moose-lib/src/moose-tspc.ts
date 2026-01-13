@@ -10,8 +10,12 @@
  * the required moose compiler plugins, then runs tspc to compile with transforms.
  */
 import { execSync } from "child_process";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, writeFileSync, unlinkSync } from "fs";
 import path from "path";
+import {
+  MOOSE_COMPILER_PLUGINS,
+  MOOSE_COMPILER_OPTIONS,
+} from "./compiler-config";
 
 const outDir = process.argv[2] || ".moose/compiled";
 const projectRoot = process.cwd();
@@ -26,27 +30,14 @@ if (!existsSync(tsconfigPath)) {
 console.log(`Compiling TypeScript to ${outDir}...`);
 
 try {
-  // Read the user's tsconfig.json
-  const userTsconfig = JSON.parse(readFileSync(tsconfigPath, "utf-8"));
-
-  // Create a temporary tsconfig that extends the user's config and adds plugins
-  // The plugins are normally added at runtime by moose-runner, but we need them
-  // at compile time for pre-compilation to work
-  // Note: Use relative path from project root since package exports don't include compilerPlugin
+  // Create a temporary tsconfig that extends the user's config and adds plugins.
+  // We use extends (not spread) to properly inherit all user settings.
+  // Only override what's needed for moose compilation.
   const buildTsconfig = {
     extends: "./tsconfig.json",
     compilerOptions: {
-      ...userTsconfig.compilerOptions,
-      experimentalDecorators: true,
-      plugins: [
-        {
-          transform: "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js",
-          transformProgram: true,
-        },
-        {
-          transform: "typia/lib/transform",
-        },
-      ],
+      ...MOOSE_COMPILER_OPTIONS,
+      plugins: [...MOOSE_COMPILER_PLUGINS],
     },
   };
 

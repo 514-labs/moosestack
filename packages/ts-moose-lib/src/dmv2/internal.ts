@@ -39,13 +39,7 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
-
-/**
- * Gets the source directory from environment variable or defaults to "app"
- */
-function getSourceDir(): string {
-  return process.env.MOOSE_SOURCE_DIR || "app";
-}
+import { getSourceDir, shouldUseCompiled } from "../compiler-config";
 
 /**
  * Client-only mode check. When true, resource registration is permissive
@@ -1195,8 +1189,10 @@ export const dumpMooseInternal = async () => {
 };
 
 const loadIndex = () => {
-  // Check if we're using pre-compiled JavaScript (set during Docker build)
-  const useCompiled = process.env.MOOSE_USE_COMPILED === "true";
+  // Check if we should use pre-compiled JavaScript.
+  // This checks MOOSE_USE_COMPILED=true AND verifies artifacts exist,
+  // providing automatic fallback to ts-node if compilation wasn't run.
+  const useCompiled = shouldUseCompiled();
 
   // Clear the registry before loading to support hot reloading
   const registry = getMooseInternal();
