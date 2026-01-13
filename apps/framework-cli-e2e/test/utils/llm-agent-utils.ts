@@ -9,6 +9,7 @@ import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { searchMooseDocs } from "./context7-utils";
 import { logger } from "./logger";
+import { PostHogMetricsProperties } from "./posthog-utils";
 
 const execAsync = promisify(exec);
 
@@ -84,6 +85,16 @@ export interface PhaseMetric {
   endTime?: number;
   duration?: number;
   commandsExecuted: number;
+}
+
+/** Input type for the search_docs tool */
+interface SearchDocsInput {
+  query: string;
+}
+
+/** Input type for the execute_command tool */
+interface ExecuteCommandInput {
+  command: string;
 }
 
 /**
@@ -299,7 +310,11 @@ export class AgentMetrics {
   /**
    * Get properties formatted for PostHog event.
    */
-  toPostHogProperties(language: string, success: boolean, error?: string) {
+  toPostHogProperties(
+    language: string,
+    success: boolean,
+    error?: string,
+  ): PostHogMetricsProperties {
     return {
       language,
       success,
@@ -620,7 +635,7 @@ When you've completed the task, explain what you did.`;
             let result: any;
 
             if (toolName === "search_docs") {
-              const query = (contentBlock.input as any).query;
+              const { query } = contentBlock.input as SearchDocsInput;
               agentLogger.info(`🔍 Searching: ${query}`);
 
               const searchResult = await searchMooseDocs(query, context7ApiKey);
@@ -645,7 +660,8 @@ When you've completed the task, explain what you did.`;
                 result = searchResult;
               }
             } else if (toolName === "execute_command") {
-              const cmd = (contentBlock.input as any).command;
+              const { command: cmd } =
+                contentBlock.input as ExecuteCommandInput;
               agentLogger.info(`💻 Command: ${cmd}`);
 
               const startTime = Date.now();
@@ -694,6 +710,21 @@ When you've completed the task, explain what you did.`;
         messages.push({
           role: "user",
           content: toolResults,
+        });
+      } else if (response.stop_reason === "max_tokens") {
+        // Response was truncated - log warning but continue the conversation
+        agentLogger.warn(
+          `⚠️  Response truncated (max_tokens reached), continuing...`,
+        );
+        if (response.content && response.content[0]?.type === "text") {
+          agentLogger.info(
+            `🤖 Partial response: ${response.content[0].text.substring(0, 200)}...`,
+          );
+        }
+        // Add partial response to messages and continue
+        messages.push({
+          role: "assistant",
+          content: response.content,
         });
       } else {
         agentLogger.warn(`⚠️  Unexpected stop reason: ${response.stop_reason}`);
