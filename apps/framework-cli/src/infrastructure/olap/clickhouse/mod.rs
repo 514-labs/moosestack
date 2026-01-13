@@ -777,7 +777,7 @@ pub async fn execute_atomic_operation(
     name = "create_table",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
         resource_name = %table.id(db_name),
     )
@@ -905,7 +905,7 @@ async fn execute_remove_sample_by(
     name = "drop_table",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
         resource_name = %table_name,
     )
@@ -939,7 +939,7 @@ async fn execute_drop_table(
     name = "add_column",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
         resource_name = %table_name,
     )
@@ -1023,7 +1023,7 @@ async fn execute_add_table_column(
     name = "drop_column",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
         resource_name = %table_name,
     )
@@ -1067,7 +1067,7 @@ async fn execute_drop_table_column(
     name = "modify_column",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
         resource_name = %table_name,
     )
@@ -1493,7 +1493,7 @@ fn strip_backticks(s: &str) -> String {
     name = "create_materialized_view",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         resource_type = resource_type::MATERIALIZED_VIEW,
         resource_name = %view_name,
     )
@@ -1558,7 +1558,7 @@ async fn execute_create_view(
     name = "drop_view",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         resource_type = resource_type::MATERIALIZED_VIEW,
         resource_name = %view_name,
     )

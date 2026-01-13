@@ -3229,7 +3229,7 @@ async fn store_updated_inframap(
     name = "admin_integrate_changes",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         // No resource_type/resource_name - varies by operation
     )
 )]
@@ -3468,7 +3468,7 @@ async fn get_admin_reconciled_inframap(
     name = "admin_plan",
     skip_all,
     fields(
-        context = context::DEPLOY,
+        context = context::BOOT,
         // No resource_type/resource_name - planning only
     )
 )]
