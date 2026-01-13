@@ -8,7 +8,7 @@ setup(
         "clickhouse_connect==0.7.16",
         "requests==2.32.4",
         "moose-cli==0.6.309",
-        "moose-lib==0.6.309",
+        "moose-lib==0.6.310",
         "streamlit>=1.32.0",
     ],
 )
