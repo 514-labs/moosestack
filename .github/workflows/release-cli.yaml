@@ -441,8 +441,6 @@ jobs:
         shell: bash
         working-directory: ./apps/moose-cli-npm
         run: ./scripts/release-bin.sh ${{ needs.version.outputs.version }} ${{ matrix.build.TARGET }} ${{ matrix.build.OS }} ${{ matrix.build.NAME }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Upload binary
         uses: ncipollo/release-action@v1
@@ -593,11 +591,6 @@ jobs:
           SENTRY_ORG: "op://drqe7p6legi6ug2ijq2fnrkmjq/Sentry/org"
 
       - uses: pnpm/action-setup@v4
-
-      - name: Login NPM
-        shell: bash
-        run: |
-          pnpm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
 
       - name: Install node
         uses: actions/setup-node@v4
