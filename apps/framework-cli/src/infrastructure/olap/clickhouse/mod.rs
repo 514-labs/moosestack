@@ -1497,7 +1497,7 @@ fn strip_backticks(s: &str) -> String {
     fields(
         context = context::BOOT,
         resource_type = resource_type::MATERIALIZED_VIEW,
-        resource_name = %view_name,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
     )
 )]
 async fn execute_create_materialized_view(
@@ -1532,6 +1532,15 @@ async fn execute_create_materialized_view(
 }
 
 /// Executes a CREATE VIEW statement for views
+#[instrument(
+    name = "create_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
 async fn execute_create_view(
     db_name: &str,
     view_name: &str,
