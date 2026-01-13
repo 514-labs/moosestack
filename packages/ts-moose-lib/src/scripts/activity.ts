@@ -3,6 +3,13 @@ import { isCancellation } from "@temporalio/workflow";
 import { Task, Workflow } from "../dmv2";
 import { getWorkflows, getTaskForWorkflow } from "../dmv2/internal";
 import { jsonDateReviver } from "../utilities/json";
+import { setupStructuredConsole } from "../utils/structured-logging";
+
+// Set up structured console logging for task context
+const taskContextStorage = setupStructuredConsole<{ taskName: string }>(
+  (ctx) => ctx.taskName,
+  "task_name",
+);
 
 export const activities = {
   async hasWorkflow(name: string): Promise<boolean> {
@@ -118,14 +125,24 @@ export const activities = {
       try {
         startPeriodicHeartbeat();
 
-        // Race user code against cancellation detection
-        // - context.cancelled Promise rejects when server signals cancellation via heartbeat response
-        // - This allows immediate cancellation detection rather than waiting for user code to finish
-        // - If cancellation happens first, we catch it below and call onCancel cleanup
-        const result = await Promise.race([
-          fullTask.config.run({ state: taskState, input: revivedInputData }),
-          context.cancelled,
-        ]);
+        // Get task identifier for context
+        const taskIdentifier = `${workflow.name}/${task.name}`;
+
+        // Use AsyncLocalStorage to set context for this task execution
+        // This avoids race conditions from concurrent task executions
+        const result = await taskContextStorage.run(
+          { taskName: taskIdentifier },
+          async () => {
+            // Race user code against cancellation detection
+            // - context.cancelled Promise rejects when server signals cancellation via heartbeat response
+            // - This allows immediate cancellation detection rather than waiting for user code to finish
+            // - If cancellation happens first, we catch it below and call onCancel cleanup
+            return await Promise.race([
+              fullTask.config.run({ state: taskState, input: revivedInputData }),
+              context.cancelled,
+            ]);
+          },
+        );
         return result;
       } catch (error) {
         if (isCancellation(error)) {

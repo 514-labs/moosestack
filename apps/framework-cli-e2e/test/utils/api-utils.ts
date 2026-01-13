@@ -6,6 +6,8 @@ const apiLogger = logger.scope("utils:api");
 
 export interface ApiVerifyOptions {
   logger?: ScopedLogger;
+  /** Override the port to check (default: derived from SERVER_CONFIG.url + 1) */
+  port?: number;
 }
 
 /**
@@ -254,8 +256,14 @@ export const verifyConsumptionApiInternalHealth = async (
     async () => {
       // Note: The internal health endpoint runs on the consumption API port (4001 by default)
       // which is the same as SERVER_CONFIG.consumptionApiUrl but without the /api prefix
-      const consumptionApiPort = new URL(SERVER_CONFIG.url).port || "4000";
-      const consumptionPort = parseInt(consumptionApiPort) + 1; // Default: 4001
+      let consumptionPort: number;
+      if (options.port) {
+        // Use provided port, consumption API is on port + 1
+        consumptionPort = options.port + 1;
+      } else {
+        const consumptionApiPort = new URL(SERVER_CONFIG.url).port || "4000";
+        consumptionPort = parseInt(consumptionApiPort) + 1; // Default: 4001
+      }
       const healthUrl = `http://localhost:${consumptionPort}/_moose_internal/health`;
 
       log.debug("Checking internal health endpoint", { url: healthUrl });

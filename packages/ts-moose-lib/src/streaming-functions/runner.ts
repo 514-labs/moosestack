@@ -38,6 +38,7 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
+import { setupStructuredConsole } from "../utils/structured-logging";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -48,6 +49,12 @@ const HEARTBEAT_INTERVAL_CONSUMER = 3000;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
 // Max messages per eachBatch call - Confluent client defaults to 32, increase for throughput
 const CONSUMER_MAX_BATCH_SIZE = 1000;
+
+// Set up structured console logging for streaming function context
+const functionContextStorage = setupStructuredConsole<{ functionName: string }>(
+  (ctx) => ctx.functionName,
+  "function_name",
+);
 
 /**
  * Data structure for metrics logging containing counts and metadata
@@ -282,11 +289,19 @@ const handleMessage = async (
       logger.log(`[PAYLOAD:STREAM_IN] ${JSON.stringify(parsedData)}`);
     }
 
-    const transformedData = await Promise.all(
-      streamingFunctionWithConfigList.map(async ([fn, config]) => {
-        try {
-          return await fn(parsedData);
-        } catch (e) {
+    // Get function name for context
+    const functionName = logger.logPrefix;
+
+    // Use AsyncLocalStorage to set context for this streaming function execution
+    // This avoids race conditions from concurrent message processing
+    const transformedData = await functionContextStorage.run(
+      { functionName },
+      async () => {
+        return await Promise.all(
+          streamingFunctionWithConfigList.map(async ([fn, config]) => {
+            try {
+              return await fn(parsedData);
+            } catch (e) {
           // Check if there's a deadLetterQueue configured
           const deadLetterQueue = config.deadLetterQueue;
 
@@ -333,6 +348,8 @@ const handleMessage = async (
           throw e;
         }
       }),
+        );
+      },
     );
 
     const processedMessages = transformedData
@@ -754,18 +771,39 @@ const startConsumer = async (
  *
  * @param args - The streaming function arguments containing source and target topics
  * @returns A Logger instance with standard log, error and warn methods
+ *
+ * The logPrefix is set to match source_primitive.name in the infrastructure map:
+ * - For transforms: `{source}__{target}` (double underscore)
+ * - For consumers: just `{source}` (no suffix)
+ *
+ * This ensures structured logs can be correlated with the infrastructure map.
+ *
  * @example
  * ```ts
- * const logger = buildLogger({sourceTopic: 'source', targetTopic: 'target'});
- * logger.log('message'); // Outputs: "source -> target: message"
+ * const logger = buildLogger({sourceTopic: {..., name: 'events'}, targetTopic: {..., name: 'processed'}}, 0);
+ * logger.log('message'); // Outputs: "events__processed (worker 0): message"
  * ```
  */
 const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
-  const targetLabel =
-    args.targetTopic?.name ? ` -> ${args.targetTopic.name}` : " (consumer)";
-  const logPrefix = `${args.sourceTopic.name}${targetLabel} (worker ${workerId})`;
+  // Get base stream names without namespace prefix or version suffix
+  const sourceBaseName = topicNameToStreamName(args.sourceTopic);
+  const targetBaseName = args.targetTopic
+    ? topicNameToStreamName(args.targetTopic)
+    : undefined;
+
+  // Function name matches source_primitive.name in infrastructure map
+  // Uses double underscore separator for transforms, plain name for consumers
+  const functionName = targetBaseName
+    ? `${sourceBaseName}__${targetBaseName}`
+    : sourceBaseName;
+
+  // Human-readable log prefix includes worker ID for debugging
+  const logPrefix = `${functionName} (worker ${workerId})`;
+
   return {
-    logPrefix: logPrefix,
+    // logPrefix is used for structured logging (function_name field)
+    // Must match source_primitive.name format for log correlation
+    logPrefix: functionName,
     log: (message: string): void => {
       console.log(`${logPrefix}: ${message}`);
     },
