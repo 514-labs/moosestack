@@ -14,7 +14,7 @@ import type { IconProps } from "@tabler/icons-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-type ChangelogCategoryType =
+type ReleaseCategoryType =
   | "highlights"
   | "added"
   | "changed"
@@ -23,8 +23,8 @@ type ChangelogCategoryType =
   | "security"
   | "breaking-changes";
 
-interface ChangelogCategoryProps {
-  type: ChangelogCategoryType;
+interface ReleaseCategoryProps {
+  type: ReleaseCategoryType;
   title?: string;
   children: React.ReactNode;
 }
@@ -89,11 +89,11 @@ function TitleWithIcon({ title, Icon, children }: TitleWithIconProps) {
   );
 }
 
-export function ChangelogCategory({
+export function ReleaseCategory({
   type,
   title,
   children,
-}: ChangelogCategoryProps) {
+}: ReleaseCategoryProps) {
   const config = categoryConfig[type];
 
   if (type === "highlights") {
@@ -139,31 +139,29 @@ export function ChangelogCategory({
 
 // Convenience components for each category
 export function ReleaseHighlights({ children }: { children: React.ReactNode }) {
-  return <ChangelogCategory type="highlights">{children}</ChangelogCategory>;
+  return <ReleaseCategory type="highlights">{children}</ReleaseCategory>;
 }
 
 export function Added({ children }: { children: React.ReactNode }) {
-  return <ChangelogCategory type="added">{children}</ChangelogCategory>;
+  return <ReleaseCategory type="added">{children}</ReleaseCategory>;
 }
 
 export function Changed({ children }: { children: React.ReactNode }) {
-  return <ChangelogCategory type="changed">{children}</ChangelogCategory>;
+  return <ReleaseCategory type="changed">{children}</ReleaseCategory>;
 }
 
 export function Deprecated({ children }: { children: React.ReactNode }) {
-  return <ChangelogCategory type="deprecated">{children}</ChangelogCategory>;
+  return <ReleaseCategory type="deprecated">{children}</ReleaseCategory>;
 }
 
 export function Fixed({ children }: { children: React.ReactNode }) {
-  return <ChangelogCategory type="fixed">{children}</ChangelogCategory>;
+  return <ReleaseCategory type="fixed">{children}</ReleaseCategory>;
 }
 
 export function Security({ children }: { children: React.ReactNode }) {
-  return <ChangelogCategory type="security">{children}</ChangelogCategory>;
+  return <ReleaseCategory type="security">{children}</ReleaseCategory>;
 }
 
 export function BreakingChanges({ children }: { children: React.ReactNode }) {
-  return (
-    <ChangelogCategory type="breaking-changes">{children}</ChangelogCategory>
-  );
+  return <ReleaseCategory type="breaking-changes">{children}</ReleaseCategory>;
 }

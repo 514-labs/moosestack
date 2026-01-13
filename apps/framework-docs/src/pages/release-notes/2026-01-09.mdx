@@ -1,0 +1,77 @@
+---
+title: January 9, 2026
+description: Release notes for January 9, 2026
+---
+
+import { Callout } from "@/components";
+
+# January 9, 2026
+
+This release focuses on developer experience and debugging tools. New payload logging helps trace data through pipelines, and Boreal adds colorblind-friendly themes and improved GitHub OAuth for preview environments.
+
+<Callout type="info" title="Highlights">
+* **New:** [Add --log-payloads flag for debugging data flow in development](#add---log-payloads-flag-for-debugging-data-flow-in-development)
+* **New:** [Add ON CLUSTER support for database creation in ClickHouse clusters](#add-on-cluster-support-for-database-creation-in-clickhouse-clusters)
+</Callout>
+
+## Moose
+
+### Add --log-payloads flag for debugging data flow in development
+
+Added a new --log-payloads flag to the moose dev command that logs data payloads at key points in the pipeline (ingest API, streaming function input/output) with searchable prefixes. This helps developers debug data transformations and troubleshoot issues by seeing exactly what data flows through their pipeline. Logs can be viewed using 'moose logs --tail'. [#2966](https://github.com/514-labs/moosestack/pull/2966)
+
+**Debug data flow with --log-payloads flag**
+
+```bash
+# Start development with payload logging enabled
+moose dev --log-payloads
+
+# In another terminal, send some test data
+curl -X POST http://localhost:4000/ingest/UserActivity \
+  -H "Content-Type: application/json" \
+  -d '[{"userId": "user123", "action": "click", "timestamp": "2026-01-15T10:30:00Z"}]'
+
+# View the logs to see data flow through your pipeline
+moose logs --tail
+
+# Example log output you'll see:
+# [PAYLOAD:INGEST] UserActivity: [{"userId":"user123","action":"click","timestamp":"2026-01-15T10:30:00Z"}]
+# [PAYLOAD:STREAM_IN] processUserActivity: {"userId":"user123","action":"click","timestamp":"2026-01-15T10:30:00Z"}
+# [PAYLOAD:STREAM_OUT] processUserActivity: {"userId":"user123","action":"click","timestamp":"2026-01-15T10:30:00Z","processed":true}
+```
+
+### Add ON CLUSTER support for database creation in ClickHouse clusters
+
+When using ClickHouse clusters, databases are now automatically created on all cluster nodes using ON CLUSTER clauses. This ensures that custom databases are properly replicated across all nodes in the cluster. [#3120](https://github.com/514-labs/moosestack/pull/3120)
+
+### Improvements
+
+- Improved documentation for getting started with Moose development: Added clearer instructions for installing dependencies before running `moose dev`, including language-specific commands for TypeScript (npm install) and Python (pip install -r requirements.txt). Also added guidance for running Moose in the background using `nohup moose dev &` for AI assistants or when needing to use the same terminal for other commands. [#3175](https://github.com/514-labs/moosestack/pull/3175)
+- Improved MCP documentation formatting and organization: Enhanced the MCP server documentation with better formatting, clearer structure, and improved readability. Reorganized tool descriptions to prioritize the recommended workflow starting with get_infra_map, and fixed code block formatting throughout the documentation. [#3174](https://github.com/514-labs/moosestack/pull/3174)
+- Enable data model v2 by default and add Context7 documentation integration: Data model v2 is now enabled by default for new projects, providing improved data modeling capabilities. Added Context7 MCP integration for enhanced AI-assisted development with MooseStack documentation. Updated migration documentation with clearer terminology (renamed "auto-inferred" to "automatic" migrations). [#3173](https://github.com/514-labs/moosestack/pull/3173)
+- Improved documentation for APIs and web framework integration: Restructured and expanded documentation for Moose APIs and web framework integration. Added clearer guidance on choosing between native Moose APIs, embedding frameworks with WebApp, and using Moose as a library in existing apps. Includes new examples for Next.js and Fastify integration patterns. [#3153](https://github.com/514-labs/moosestack/pull/3153)
+- Updated VS Code MCP integration setup instructions: Updated documentation for configuring the MCP server in VS Code with the correct file location (.vscode/mcp.json instead of settings.json) and proper JSON structure. Added verification steps and links to official VS Code documentation for easier setup. [#3160](https://github.com/514-labs/moosestack/pull/3160)
+
+### Bug Fixes
+
+- Fix SQL formatting preserving ClickHouse type casing to prevent UNKNOWN_TYPE errors: Fixed an issue where the SQL parser was converting ClickHouse data types to uppercase (e.g., INT64, STRING) instead of preserving the correct PascalCase format (Int64, String). This was causing UNKNOWN_TYPE errors when ClickHouse couldn't recognize the incorrectly formatted types. SQL formatting now properly preserves ClickHouse type casing, preventing these database errors. [#3172](https://github.com/514-labs/moosestack/pull/3172)
+- Fix StripDateIntersection with optional fields: Fixed a bug where the StripDateIntersection utility type failed to properly handle optional fields in TypeScript data models. This resolves issues with optional DateTime fields in data model definitions that could cause schema generation or type validation errors. [#3166](https://github.com/514-labs/moosestack/pull/3166)
+
+## Boreal
+
+### Add colorblind-friendly theme support with toggle
+
+Added colorblind accessibility support with new colorblind-friendly themes for both light and dark modes. Users can now toggle colorblind mode via a new eye icon button in the theme switcher. The colorblind themes replace problematic red/green color combinations with orange/blue alternatives to improve accessibility. Charts and UI elements automatically adapt to use colorblind-friendly colors when enabled.
+  
+### Improvements
+
+- Made log content selectable and copyable in logs viewer: Log entries and details in the logs viewer can now be selected and copied using standard text selection. Previously, clicking anywhere on a log row would open the details drawer, making it impossible to copy log content. Now users can select text within logs while still being able to click empty areas to view details.
+- Enhanced logs sidebar with resizable panel and copy functionality: Improved the logs details sidebar with a resizable panel and one-click copy buttons for all log fields. Users can now adjust the sidebar width and easily copy log data like timestamps, messages, and IDs to their clipboard with visual feedback.
+
+### Bug Fixes
+
+- Fixed GitHub authentication flow and sign-in issues: Fixed authentication issues when signing in with GitHub without an existing account, updated GitHub app integration flow, and improved token refresh handling.
+- Fixed GitHub app integration callback routing: Fixed a bug in GitHub app integration where callback URLs were incorrectly routed, preventing proper authentication flow completion in preview environments.
+- Fixed GitHub OAuth authentication for preview environments: Improved GitHub OAuth authentication flow to properly handle redirects in preview environments. Users should now experience more reliable authentication when connecting GitHub repositories in preview deployments.
+- Fixed database connection strings and added native client support: Fixed issues with database connection strings by properly encoding special characters in usernames and passwords. Added support for native client connections and improved Python/Node.js connection snippets to use proper client library syntax instead of URL strings. Connection strings now work correctly with credentials containing special characters.
+- Fix logs filter dropdowns overflow and text truncation: Fixed logs filter dropdowns that were overflowing when containing many items. Added scrolling to long filter lists and improved text display by truncating long machine and source names while showing full names on hover.

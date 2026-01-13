@@ -1,0 +1,364 @@
+---
+authors: Dave Seleno <dave@fiveonefour.com>
+title: WebApp OpenAPI Schema Generation
+state: discussion
+---
+
+## Objective
+
+Enable WebApp instances to contribute their OpenAPI specifications to Moose's generated `/openapi.yaml` output. Currently, Moose generates OpenAPI schemas for `Api` and `IngestApi` primitives, but WebApp endpoints are excluded. This RFD proposes allowing users to optionally provide OpenAPI specs for their WebApp instances, which Moose will merge into the main OpenAPI document.
+
+### Goals
+
+- Allow WebApp instances to contribute to the generated OpenAPI spec
+- Maintain backward compatibility - existing WebApps work unchanged
+- Keep schema ownership with the user (they generate specs using their preferred tooling)
+- Provide a generic callback pattern extensible for future needs
+
+### Non-Goals
+
+- Automatic schema extraction from Express/Koa/Fastify (user provides the spec)
+- Runtime schema generation (specs are extracted at infrastructure serialization time)
+
+## User Benefit
+
+**Headline**: "Include your WebApp endpoints in Moose's OpenAPI documentation"
+
+Users gain:
+
+1. **Unified documentation**: All API endpoints (Api, IngestApi, and WebApp) in a single OpenAPI spec
+2. **Framework flexibility**: Use any OpenAPI generation tool for their framework of choice
+3. **SDK generation**: WebApp endpoints can be included in generated client SDKs
+4. **No lock-in**: Users control their OpenAPI spec format and generation process
+
+## Background
+
+This RFD proposes a solution that allows WebApp instances to contribute to Moose's generated OpenAPI spec while keeping schema ownership with the user.
+
+## Current State Analysis
+
+### How OpenAPI Generation Works Today
+
+Moose generates OpenAPI specs through the Rust CLI (`apps/framework-cli/src/cli/routines/openapi.rs`):
+
+1. The CLI serializes the infrastructure map from TypeScript
+2. `Api` and `IngestApi` definitions include type information
+3. The CLI generates OpenAPI path and schema definitions
+4. Output is written to `/openapi.yaml`
+
+### WebApp Limitations
+
+WebApp instances are excluded from OpenAPI generation because:
+
+1. WebApps use arbitrary HTTP frameworks (Express, Fastify, Koa, etc.)
+2. Route definitions are framework-specific and not introspectable
+3. No mechanism exists to pass OpenAPI specs from user code to the CLI
+
+### Framework-Specific OpenAPI Plugins
+
+Users can use framework-specific plugins to generate OpenAPI specs:
+
+- **Express**: `swagger-jsdoc`, `express-openapi`
+- **Fastify**: `@fastify/swagger`
+- **Koa**: `koa-swagger-decorator`
+
+However, these specs are currently not integrated with Moose's main OpenAPI output.
+
+## Design Proposal
+
+### Core Concept: User-Provided Specs
+
+Instead of attempting to extract schemas automatically, allow users to provide their own OpenAPI specs. This preserves framework flexibility while enabling integration.
+
+### Proposed API
+
+Add two new optional properties to `WebAppConfig`:
+
+```typescript
+import type { OpenAPIV3_1 } from 'openapi-types';
+
+export type OpenAPISpec = OpenAPIV3_1.Document | Record<string, unknown>;
+
+export interface WebAppReadyResult {
+  openapi?: OpenAPISpec;
+  // Future: healthCheck?, metrics?, shutdownHandler?, etc.
+}
+
+export interface WebAppConfig {
+  mountPath: string;
+  metadata?: { description?: string };
+  injectMooseUtils?: boolean;
+  // Callback for providing OpenAPI spec (supports both sync and async)
+  onReady?: () => Promise<WebAppReadyResult> | WebAppReadyResult;
+}
+```
+
+### Usage Examples
+
+**Express with pre-generated spec:**
+
+```typescript
+import paymentSpec from "./payment-openapi.json"
+
+new WebApp("payments", expressApp, {
+  mountPath: "/payments",
+  onReady: () => ({ openapi: paymentSpec })
+})
+```
+
+**Fastify with @fastify/swagger (async):**
+
+```typescript
+new WebApp("payments", fastifyApp, {
+  mountPath: "/payments",
+  onReady: async () => {
+    await fastifyApp.ready()
+    return { openapi: fastifyApp.swagger() }
+  }
+})
+```
+
+**No spec (backwards compatible):**
+
+```typescript
+new WebApp("legacy", legacyApp, {
+  mountPath: "/legacy"
+})
+```
+
+### Data Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  User Code                                                       │
+│  new WebApp("api", app, { onReady: () => ({ openapi: spec }) }) │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  toInfraMap() - now async                                        │
+│  - Collects all WebApps with onReady callbacks                   │
+│  - Executes callbacks in PARALLEL with Promise.all()             │
+│  - Each callback has 10s timeout                                 │
+│  - Validates spec is valid JSON object                           │
+│  - Serialize to JSON                                             │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Rust: PartialWebApp                                             │
+│  - Deserializes openapi_spec field (Option<serde_json::Value>)  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Rust: openapi.rs                                                │
+│  - Iterates web_apps in InfrastructureMap                        │
+│  - Merges each WebApp's spec into main OpenAPI doc              │
+│  - Prefixes paths with mountPath                                 │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Path Merging
+
+WebApp paths are prefixed with the mount path:
+
+**Input (WebApp with `mountPath: "/payments"`):**
+
+```yaml
+paths:
+  /transactions:
+    get: ...
+  /refunds:
+    post: ...
+```
+
+**Output (merged into main spec):**
+
+```yaml
+paths:
+  /payments/transactions:
+    get: ...
+  /payments/refunds:
+    post: ...
+```
+
+### Collision Handling
+
+**Schema Collisions**: If a WebApp defines a schema that already exists, an error is raised with clear guidance:
+
+```
+Error: OpenAPI schema name collision
+
+WebApp "payments" defines schema "User" in components.schemas,
+but a schema with that name already exists (from WebApp "orders").
+
+Rename one of the schemas to resolve the collision.
+```
+
+**Path Collisions**: Already prevented by existing WebApp validation (reserved paths, duplicate mount paths).
+
+### Limitation: Internal `$ref` to Paths
+
+Path-to-path `$ref` references are NOT rewritten when paths are prefixed. Users should use `$ref` to `#/components/schemas/*` instead.
+
+## Alternatives Considered
+
+### Alternative 1: Automatic Schema Extraction
+
+Moose could attempt to automatically extract OpenAPI schemas from the underlying framework.
+
+**Pros:**
+
+- Zero configuration for users
+- Consistent experience across frameworks
+
+**Cons:**
+
+- Each framework has different conventions and plugin ecosystems
+- Significant maintenance burden to support multiple frameworks
+- Not all WebApps need to be documented
+- Would duplicate functionality that framework plugins already provide
+
+**Verdict**: Rejected. Maintenance cost outweighs benefits.
+
+### Alternative 2: Moose-specific Route Decorators
+
+Provide Moose-specific decorators that generate OpenAPI automatically:
+
+```typescript
+@mooseRoute({ method: 'GET', path: '/users', response: User[] })
+app.get('/users', handler);
+```
+
+**Pros:**
+
+- Consistent API across frameworks
+- Full control over generated spec
+
+**Cons:**
+
+- Forces users to learn a new API
+- Conflicts with "bring your own framework" philosophy
+- Duplicates functionality that framework-specific plugins provide
+
+**Verdict**: Rejected. Adds friction without clear benefit.
+
+### Alternative 3: Only Support Static Spec Files
+
+Only allow importing pre-generated JSON/YAML spec files, no callback support.
+
+**Pros:**
+
+- Simpler implementation
+- No async complexity
+
+**Cons:**
+
+- Fastify and other frameworks generate specs at runtime
+- Forces users to add a pre-build step
+- Less ergonomic
+
+**Verdict**: Rejected. Runtime generation is common enough to support.
+
+### Chosen Approach
+
+User-provided specs with callback support gives users full control while providing flexibility for both static and runtime-generated specs.
+
+## Implementation Details
+
+### TypeScript Changes
+
+**`packages/ts-moose-lib/src/dmv2/sdk/webApp.ts`:**
+
+- Add `OpenAPISpec` type alias
+- Add `WebAppReadyResult` interface
+- Add `onReady` to `WebAppConfig`
+
+**`packages/ts-moose-lib/src/dmv2/internal.ts`:**
+
+- Make `toInfraMap` async
+- Add parallel callback execution with `Promise.all()`
+- Add 10s timeout per callback
+- Add spec validation (must be valid JSON object)
+
+**`packages/ts-moose-lib/src/moose-runner.ts`:**
+
+- Update action to properly await async `dumpMooseInternal()`
+
+### Rust Changes
+
+**`apps/framework-cli/src/framework/core/partial_infrastructure_map.rs`:**
+
+- Add `openapi_spec: Option<serde_json::Value>` to `PartialWebApp`
+
+**`apps/framework-cli/src/framework/core/infrastructure/web_app.rs`:**
+
+- Add `openapi_spec: Option<serde_json::Value>` to `WebApp`
+
+**`apps/framework-cli/src/cli/routines/openapi.rs`:**
+
+- Iterate `web_apps` in infrastructure map
+- Merge each WebApp's spec into main OpenAPI document
+- Prefix paths with mount path
+- Detect and report schema collisions
+
+### Error Handling
+
+| Error | Message |
+|-------|---------|
+| Callback timeout | `WebApp "X" onReady callback timed out after 10000ms. Ensure your framework's ready() method completes promptly.` |
+| Callback exception | `WebApp onReady callback(s) failed:\n  - X: <error message>` |
+| Invalid spec | `WebApp "X" openapi spec must be a valid JSON object, got <type>. Ensure your onReady callback returns { openapi: <spec object> }.` |
+| Schema collision | `WebApp "X" defines schema "Y" but it already exists (from Z).` |
+
+### Test Changes
+
+**Existing tests to update** (making `toInfraMap` async):
+
+- `workflow.test.ts`: 1 test
+- `olap-table-versioning.test.ts`: 5 tests
+
+**New tests to add:**
+
+- WebApp with `onReady` returning OpenAPI spec serializes correctly
+- WebApp with sync `onReady` callback serializes correctly
+- WebApp without `onReady` serializes as before (backwards compat)
+- Callback timeout triggers error
+- Callback exception is caught and reported
+- Invalid spec triggers validation error
+- Schema collision detection (Rust)
+- Path prefixing (Rust)
+
+## Backward Compatibility
+
+This change is backward compatible:
+
+1. `onReady` callback is optional - existing WebApps work unchanged
+2. `openapiSpec` field only included in serialization when `onReady` returns it
+3. Rust handles missing specs gracefully (skips during merge)
+4. No changes to WebApp runtime behavior
+
+**Internal API change:** `toInfraMap()` becomes async. This requires updating internal tests but is NOT a breaking change for users.
+
+## Questions and Discussion Topics
+
+### Open Questions
+
+1. **Should we validate OpenAPI spec structure?** Currently we only check it's a valid JSON object. Should we validate required fields (`openapi`, `info`, `paths`)?
+
+2. **Should the timeout be configurable?** 10 seconds is chosen as reasonable, but complex frameworks might need more time.
+
+3. **Should we support YAML specs?** Currently only JSON objects are supported. Users with YAML specs would need to convert.
+
+4. **Should we rewrite `$ref` paths?** Currently path-to-path refs break after prefixing. Should we attempt to rewrite them?
+
+### Discussion Topics
+
+- Is the callback pattern the right abstraction for future extensibility (`healthCheck`, `metrics`, etc.)?
+- Should we provide framework-specific examples in documentation?
+- How should this interact with SDK generation from the OpenAPI spec?
+
+## References
+
+- [RFD 0008: Bring Your Own Framework](/rfd/0008/README.mdx) - Related work on WebApp flexibility

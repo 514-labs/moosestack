@@ -19,7 +19,6 @@ import {
   IconLibrary,
   IconCalendar,
   IconBrandLinkedin,
-  IconList,
   IconSettings,
   IconHelpCircle,
   IconFileCode,
@@ -84,7 +83,6 @@ export const Icons: Record<string, IconComponent> = {
   mooseLibrary: IconLibrary,
   configuration: IconSettings,
   help: IconHelpCircle,
-  changelog: IconList,
   // Social
   calendly: IconCalendar,
   slack: IconBrandSlack,
@@ -124,7 +122,6 @@ const basePaths = {
   mooseCli: "/moose-cli",
   configuration: "/configuration",
   help: "/help",
-  changelog: "/changelog",
 };
 
 type PathCategory =
@@ -249,12 +246,6 @@ export const PathConfig: Record<string, PathInfo | SocialPathInfo> = {
     ...createLanguagePaths(basePaths.help),
     icon: Icons.help,
     title: "Help",
-    category: "reference" as const,
-  },
-  changelog: {
-    ...createLanguagePaths(basePaths.changelog),
-    icon: Icons.changelog,
-    title: "Changelog",
     category: "reference" as const,
   },
   // Social

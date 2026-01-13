@@ -91,7 +91,7 @@ const data = {
           url: "#",
         },
         {
-          title: "Changelog",
+          title: "Release Notes",
           url: "#",
         },
       ],

@@ -97,12 +97,12 @@ describe("stripMdxComponents", () => {
   BreakingChanges,
 } from "@/components/mdx";
 
-# Changelog`;
+# Release Notes`;
       const result = stripMdxComponents(input);
       expect(result).not.toContain("import");
       expect(result).not.toContain("ReleaseHighlights");
       expect(result).not.toContain("Added");
-      expect(result).toContain("# Changelog");
+      expect(result).toContain("# Release Notes");
     });
 
     it("strips default imports", () => {
