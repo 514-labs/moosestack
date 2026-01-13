@@ -56,11 +56,21 @@ const DETAIL_INDENT: &str = {
 };
 
 /// Helper function to write detail lines with proper indentation
+/// Respects QUIET_STDOUT flag to redirect to stderr when set
 fn write_detail_lines(details: &[String]) {
-    let mut stdout = std::io::stdout();
-    for detail in details {
-        execute!(stdout, Print(DETAIL_INDENT), Print(detail), Print("\n"))
-            .expect("failed to write detail to terminal");
+    let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
+    if quiet_stdout {
+        let mut stderr = std::io::stderr();
+        for detail in details {
+            execute!(stderr, Print(DETAIL_INDENT), Print(detail), Print("\n"))
+                .expect("failed to write detail to terminal");
+        }
+    } else {
+        let mut stdout = std::io::stdout();
+        for detail in details {
+            execute!(stdout, Print(DETAIL_INDENT), Print(detail), Print("\n"))
+                .expect("failed to write detail to terminal");
+        }
     }
 }
 
