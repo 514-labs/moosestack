@@ -42,6 +42,7 @@
 //! ## Environment Variables
 //!
 //! - `RUST_LOG`: Standard Rust log filtering (e.g., `RUST_LOG=moose_cli::infrastructure=debug`)
+//! - `MOOSE_LOGGER__STRUCTURED_LOGS`: Enable P0 structured logs with span support (default: `false`)
 //! - `MOOSE_LOGGER__USE_TRACING_FORMAT`: Opt-in to modern format (default: `false`)
 //! - `MOOSE_LOGGER__LEVEL`: Log level (DEBUG, INFO, WARN, ERROR)
 //! - `MOOSE_LOGGER__STDOUT`: Output to stdout vs file (default: `false`)
@@ -172,6 +173,9 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_no_ansi")]
     pub no_ansi: bool,
+
+    #[serde(default = "default_structured_logs")]
+    pub structured_logs: bool,
 }
 
 fn default_log_file() -> String {
@@ -205,6 +209,13 @@ fn default_no_ansi() -> bool {
     false // ANSI colors enabled by default
 }
 
+fn default_structured_logs() -> bool {
+    env::var("MOOSE_LOGGER__STRUCTURED_LOGS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(false)
+}
+
 impl Default for LoggerSettings {
     fn default() -> Self {
         LoggerSettings {
@@ -215,6 +226,7 @@ impl Default for LoggerSettings {
             include_session_id: default_include_session_id(),
             use_tracing_format: default_use_tracing_format(),
             no_ansi: default_no_ansi(),
+            structured_logs: default_structured_logs(),
         }
     }
 }
@@ -492,11 +504,7 @@ pub fn setup_logging(settings: &LoggerSettings) {
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 
     // Check for P0 structured logs with span support
-    let use_structured_logs = std::env::var("MOOSE_STRUCTURED_LOGS")
-        .map(|v| v == "true" || v == "1")
-        .unwrap_or(false);
-
-    if use_structured_logs {
+    if settings.structured_logs {
         // P0: JSON format with span fields for Boreal UI
         setup_structured_logs(settings);
     } else if settings.use_tracing_format {
