@@ -11,7 +11,7 @@
     "@514labs/moose-lib": "0.6.309",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
-    "typia": "^9.6.1"
+    "typia": "^11.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
