@@ -1596,9 +1596,26 @@ async fn handle_json_array_body(
     )
     .await;
 
-    if res_arr.iter().any(|res| res.is_err()) {
+    // Check for Kafka errors and log details for debugging
+    let errors: Vec<_> = res_arr
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, res)| res.as_ref().err().map(|e| (idx, e)))
+        .collect();
+
+    if !errors.is_empty() {
+        // Log each individual error with record index
+        for (idx, kafka_err) in &errors {
+            error!(
+                "Failed to send record {} to topic {}: {}",
+                idx, topic_name, kafka_err
+            );
+        }
+        // Log summary with safe request body info
         error!(
-            "Internal server error sending to topic {}. {}",
+            "Internal server error: {}/{} records failed to topic {}. Request: {}",
+            errors.len(),
+            res_arr.len(),
             topic_name,
             safe_body_summary(&body)
         );

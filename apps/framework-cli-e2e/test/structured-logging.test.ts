@@ -2,14 +2,14 @@
 /// <reference types="mocha" />
 /// <reference types="chai" />
 /**
- * P0 Logging E2E Tests
+ * Structured Logging E2E Tests
  *
- * Tests the P0 logging infrastructure (ENG-1892, ENG-1893, ENG-1894, ENG-1895).
+ * Tests the structured logging infrastructure with span fields.
  *
  * The tests verify:
- * 1. Structured logging with P0 fields (context, resource_type, resource_name) works
+ * 1. Structured logging with span fields (context, resource_type, resource_name) works
  * 2. Runtime context logs (ingest API, consumption API, workflows)
- * 3. Deploy context logs (table operations)
+ * 3. Boot context logs (table operations)
  * 4. System context logs (health checks)
  * 5. All instrumented functions emit logs with correct span fields
  */
@@ -40,11 +40,11 @@ const MOOSE_LIB_PATH = path.resolve(
   "../../../packages/ts-moose-lib",
 );
 
-const TEST_SUITE = "p0-logging";
+const TEST_SUITE = "structured-logging";
 const APP_NAME = "moose-ts-empty-app";
 
 /**
- * Valid P0 resource types according to ENG-1893, ENG-1894, ENG-1895
+ * Valid resource types for structured logging
  * Source: apps/framework-cli/src/cli/logger.rs (resource_type module)
  */
 const VALID_RESOURCE_TYPES = [
@@ -237,7 +237,7 @@ async function waitForLogs(
   );
 }
 
-describe("P0 Logging E2E Tests", function () {
+describe("Structured Logging E2E Tests", function () {
   this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
   let testDir: string;
@@ -247,7 +247,7 @@ describe("P0 Logging E2E Tests", function () {
 
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
-    testLogger.info("Starting P0 logging test suite");
+    testLogger.info("Starting structured logging test suite");
 
     // Cleanup before running tests (ClickHouse will be started by moose dev)
     await performGlobalCleanup();
@@ -323,14 +323,14 @@ export interface TestEvent {
 
   after(async function () {
     this.timeout(TIMEOUTS.CLEANUP_MS);
-    testLogger.info("Cleaning up P0 logging test suite");
+    testLogger.info("Cleaning up structured logging test suite");
     await cleanupTestSuite(mooseProcess, testDir, APP_NAME, {
       logger: testLogger,
     });
   });
 
-  it("should emit logs with P0 fields for ingest API (runtime context)", async function () {
-    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
+  it("should emit logs with span fields for ingest API (runtime context)", async function () {
+    this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Send ingest request
     const ingestUrl = `${SERVER_CONFIG.url}/ingest/TestEvent`;
@@ -356,7 +356,7 @@ export interface TestEvent {
 
     testLogger.info(`Found ${ingestLogs.length} ingest API logs`);
 
-    // Verify we have ingest logs with correct P0 fields
+    // Verify we have ingest logs with correct span fields
     expect(ingestLogs.length).to.be.greaterThan(
       0,
       "Should have at least one ingest API log entry",
@@ -370,8 +370,8 @@ export interface TestEvent {
     expect(sampleLog.span?.resource_name).to.equal("TestEvent");
   });
 
-  it("should emit logs with P0 fields for health check (system context)", async function () {
-    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
+  it("should emit logs with span fields for health check (system context)", async function () {
+    this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Call health endpoint
     const healthUrl = `${SERVER_CONFIG.url}/health`;
@@ -390,7 +390,7 @@ export interface TestEvent {
 
     testLogger.info(`Found ${healthLogs.length} system context logs`);
 
-    // Verify we have health check logs with correct P0 fields
+    // Verify we have health check logs with correct span fields
     expect(healthLogs.length).to.be.greaterThan(
       0,
       "Should have at least one system context log entry",
@@ -406,8 +406,8 @@ export interface TestEvent {
     expect(healthLog?.span?.resource_name).to.be.undefined;
   });
 
-  it("should emit logs with P0 fields for OLAP operations (boot context)", async function () {
-    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
+  it("should emit logs with span fields for OLAP operations (boot context)", async function () {
+    this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Trigger OLAP operations by modifying the data model
     const modelPath = path.join(projectDir, "app", "ingest", "models.ts");
@@ -458,8 +458,8 @@ export interface TestEvent {
     expect(sampleLog.span?.resource_name).to.exist;
   });
 
-  it("should verify all P0 contexts are present in logs", async function () {
-    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
+  it("should verify all contexts are present in logs", async function () {
+    this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Read all log entries
     const logEntries = readLogFile();
@@ -479,8 +479,8 @@ export interface TestEvent {
     expect(contexts.has("system")).to.be.true;
   });
 
-  it("should verify resource_type values match P0 spec", async function () {
-    this.timeout(TIMEOUTS.P0_LOGGING_TEST_MS);
+  it("should verify resource_type values are valid", async function () {
+    this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Read all log entries
     const logEntries = readLogFile();

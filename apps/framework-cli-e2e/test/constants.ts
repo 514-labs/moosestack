@@ -37,8 +37,8 @@ export const TIMEOUTS = {
   // Schema validation timeout (30 seconds)
   SCHEMA_VALIDATION_MS: 30_000,
 
-  // P0 logging test timeout (45 seconds)
-  P0_LOGGING_TEST_MS: 45_000,
+  // Structured logging test timeout (45 seconds)
+  STRUCTURED_LOGGING_TEST_MS: 45_000,
 
   // Migration operations timeout (2 minutes)
   MIGRATION_MS: 120_000,
