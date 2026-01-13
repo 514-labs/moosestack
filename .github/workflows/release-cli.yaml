@@ -186,13 +186,8 @@ jobs:
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
-
-      - name: Login NPM
-        shell: bash
-        run: |
-          pnpm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
 
       - name: Publish the NPM Moose CLI package
         shell: bash
@@ -332,12 +327,16 @@ jobs:
       - name: Run sccache-cache
         if: ${{ matrix.build.OS != 'ubuntu-22-8-core' }}
         uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          # sccache-action points at the latest sccache version
+          # sccache v0.13.0+ drops support for x86_64 darwin which will cause
+          # the workflow to fail
+          version: "v0.12.0"
 
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
+          node-version: "24"
 
       - uses: pnpm/action-setup@v4
       - name: pnpm install for scripts # for package-templates.js
@@ -441,8 +440,6 @@ jobs:
         shell: bash
         working-directory: ./apps/moose-cli-npm
         run: ./scripts/release-bin.sh ${{ needs.version.outputs.version }} ${{ matrix.build.TARGET }} ${{ matrix.build.OS }} ${{ matrix.build.NAME }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Upload binary
         uses: ncipollo/release-action@v1
@@ -575,6 +572,7 @@ jobs:
     # Add explicit permissions
     permissions:
       contents: read
+      id-token: write
     env:
       TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
     steps:
@@ -594,15 +592,10 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
-      - name: Login NPM
-        shell: bash
-        run: |
-          pnpm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
-
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
 
       - name: Install dependencies
