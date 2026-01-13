@@ -186,9 +186,8 @@ jobs:
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
-          registry-url: "https://registry.npmjs.org"
 
       - name: Publish the NPM Moose CLI package
         shell: bash
@@ -332,8 +331,7 @@ jobs:
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
+          node-version: "24"
 
       - uses: pnpm/action-setup@v4
       - name: pnpm install for scripts # for package-templates.js
@@ -592,9 +590,8 @@ jobs:
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
-          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         shell: bash
