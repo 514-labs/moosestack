@@ -12,7 +12,7 @@ export interface PostHogEvent {
   /** Event name (e.g., "llm_docs_automation_test", "e2e_test_run") */
   event: string;
   /** Custom properties for this event */
-  properties?: Record<string, unknown>;
+  properties?: PostHogMetricsProperties;
   /** Optional distinct ID override (defaults to CI run ID or local timestamp) */
   distinctId?: string;
 }
