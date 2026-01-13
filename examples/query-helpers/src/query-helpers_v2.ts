@@ -255,7 +255,7 @@ export class ParamMap<TFilters, TTable> {
       if (mapping && "column" in mapping && !tableColumns.has(mapping.column)) {
         throw new Error(
           `Column "${mapping.column}" (mapped from param "${param}") not found in table "${this.table.name}". ` +
-            `Available columns: ${[...tableColumns].join(", ")}`,
+            `Available columns: ${Array.from(tableColumns).join(", ")}`,
         );
       }
     }
@@ -312,15 +312,20 @@ export class ParamMap<TFilters, TTable> {
         }
 
         if (isSqlMapping(mapping)) {
-          // Custom SQL expression
-          const sqlFragment = mapping.toSql(value, this.table);
+          // Custom SQL expression - cast value since we've validated it exists
+          const sqlFragment = (mapping as SqlMapping<unknown, TTable>).toSql(
+            value,
+            this.table,
+          );
           where.push(sqlFragment);
         } else if (isTransformMapping(mapping)) {
-          // Transform the value
+          // Transform the value - cast since we've validated it exists
           where.push({
             column: mapping.column,
             operator: mapping.operator ?? "eq",
-            value: mapping.transform(value),
+            value: (mapping as TransformMapping<unknown, TTable>).transform(
+              value,
+            ),
           });
         } else {
           // Simple column mapping
@@ -407,45 +412,49 @@ export function toSelectSql<T>(
 
 /**
  * Build a single WHERE condition.
+ * Note: We use type assertions here because condition.value is validated
+ * at runtime and we know it contains safe SQL parameter values.
  */
 function buildCondition<T>(
   _table: OlapTable<T>,
   condition: WhereCondition<T>,
 ): Sql {
   const colId = ApiHelpers.column(condition.column as string);
+  // Cast value to any since it's been validated and the sql tag handles parameterization
+  const val = condition.value as any;
 
   switch (condition.operator) {
     case "eq":
-      return sql`${colId} = ${condition.value}`;
+      return sql`${colId} = ${val}`;
     case "neq":
-      return sql`${colId} != ${condition.value}`;
+      return sql`${colId} != ${val}`;
     case "gt":
-      return sql`${colId} > ${condition.value}`;
+      return sql`${colId} > ${val}`;
     case "gte":
-      return sql`${colId} >= ${condition.value}`;
+      return sql`${colId} >= ${val}`;
     case "lt":
-      return sql`${colId} < ${condition.value}`;
+      return sql`${colId} < ${val}`;
     case "lte":
-      return sql`${colId} <= ${condition.value}`;
+      return sql`${colId} <= ${val}`;
     case "in":
-      if (!Array.isArray(condition.value)) {
+      if (!Array.isArray(val)) {
         throw new Error("IN operator requires an array value");
       }
       // Build IN clause with parameterized values
-      const inValues = condition.value.map((v) => sql`${v}`);
+      const inValues = val.map((v: any) => sql`${v}`);
       return sql`${colId} IN (${joinSqlFragments(inValues, ", ")})`;
     case "notIn":
-      if (!Array.isArray(condition.value)) {
+      if (!Array.isArray(val)) {
         throw new Error("NOT IN operator requires an array value");
       }
-      const notInValues = condition.value.map((v) => sql`${v}`);
+      const notInValues = val.map((v: any) => sql`${v}`);
       return sql`${colId} NOT IN (${joinSqlFragments(notInValues, ", ")})`;
     case "contains":
-      return sql`${colId} ILIKE ${"%" + condition.value + "%"}`;
+      return sql`${colId} ILIKE ${"%" + val + "%"}`;
     case "startsWith":
-      return sql`${colId} ILIKE ${condition.value + "%"}`;
+      return sql`${colId} ILIKE ${val + "%"}`;
     case "endsWith":
-      return sql`${colId} ILIKE ${"%" + condition.value}`;
+      return sql`${colId} ILIKE ${"%" + val}`;
     case "isNull":
       return sql`${colId} IS NULL`;
     case "isNotNull":
