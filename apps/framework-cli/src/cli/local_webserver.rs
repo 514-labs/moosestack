@@ -32,6 +32,8 @@ use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaStreamConfig;
 use crate::metrics::MetricEvent;
 
+use crate::cli::logger::{context, resource_type};
+
 use crate::framework::core::infrastructure::api_endpoint::APIType;
 use crate::framework::core::infrastructure_map::Change;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
@@ -73,7 +75,7 @@ use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Deserializer as JsonDeserializer, Value};
 use tokio::spawn;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::framework::data_model::model::DataModel;
 use crate::utilities::validate_passthrough::{DataModelArrayVisitor, DataModelVisitor};
@@ -412,7 +414,15 @@ fn add_cors_headers(builder: hyper::http::response::Builder) -> hyper::http::res
         )
 }
 
-#[tracing::instrument(skip(consumption_apis, req, is_prod), fields(uri = %req.uri(), method = %req.method(), headers = ?req.headers()))]
+#[instrument(
+    name = "consumption_api_request",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::CONSUMPTION_API,
+        resource_name = %req.uri().path(),
+    )
+)]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
@@ -699,6 +709,15 @@ async fn workflows_history_route(
     }
 }
 
+#[instrument(
+    name = "workflow_trigger",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::WORKFLOW,
+        resource_name = %workflow_name,
+    )
+)]
 async fn workflows_trigger_route(
     req: Request<hyper::body::Incoming>,
     is_prod: bool,
@@ -772,6 +791,15 @@ async fn workflows_trigger_route(
     }
 }
 
+#[instrument(
+    name = "workflow_terminate",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::WORKFLOW,
+        resource_name = %workflow_name,
+    )
+)]
 async fn workflows_terminate_route(
     req: Request<hyper::body::Incoming>,
     is_prod: bool,
@@ -813,6 +841,14 @@ async fn workflows_terminate_route(
     }
 }
 
+#[instrument(
+    name = "health_check",
+    skip_all,
+    fields(
+        context = context::SYSTEM,
+        // No resource_type/resource_name - infrastructure check
+    )
+)]
 async fn health_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
@@ -931,6 +967,14 @@ async fn health_route(
         .body(Full::new(Bytes::from(json_response)))
 }
 
+#[instrument(
+    name = "ready_check",
+    skip_all,
+    fields(
+        context = context::SYSTEM,
+        // No resource_type/resource_name - infrastructure check
+    )
+)]
 async fn ready_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
@@ -1009,6 +1053,14 @@ async fn ready_route(
         .body(Full::new(Bytes::from(json_response)))
 }
 
+#[instrument(
+    name = "reality_check",
+    skip_all,
+    fields(
+        context = context::SYSTEM,
+        // No resource_type/resource_name - infrastructure validation
+    )
+)]
 async fn admin_reality_check_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,
@@ -1316,6 +1368,15 @@ async fn send_to_kafka<T: Iterator<Item = Vec<u8>>>(
     res_arr
 }
 
+#[instrument(
+    name = "ingest_request",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::INGEST_API,
+        resource_name = %topic_name,
+    )
+)]
 #[allow(clippy::too_many_arguments)]
 async fn handle_json_array_body(
     configured_producer: &ConfiguredProducer,
@@ -3164,6 +3225,14 @@ async fn store_updated_inframap(
 ///
 /// # Returns
 /// * Result containing the HTTP response with either success or error information
+#[instrument(
+    name = "admin_integrate_changes",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        // No resource_type/resource_name - varies by operation
+    )
+)]
 async fn admin_integrate_changes_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,
@@ -3395,6 +3464,14 @@ async fn get_admin_reconciled_inframap(
 ///
 /// The server's managed infrastructure state is reconciled with database reality to ensure accurate planning.
 /// The diff reflects changes against the true current state of managed tables only (excludes unmapped tables by design).
+#[instrument(
+    name = "admin_plan",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        // No resource_type/resource_name - planning only
+    )
+)]
 async fn admin_plan_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,

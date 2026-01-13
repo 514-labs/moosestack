@@ -10,7 +10,9 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, instrument};
+
+use crate::cli::logger::{context, resource_type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FunctionRegistryError {
@@ -40,6 +42,15 @@ impl FunctionProcessRegistry {
         }
     }
 
+    #[instrument(
+        name = "transform_start",
+        skip_all,
+        fields(
+            context = context::RUNTIME,
+            resource_type = resource_type::TRANSFORM,
+            resource_name = %function_process.id(),
+        )
+    )]
     pub fn start(
         &mut self,
         infra_map: &InfrastructureMap,
