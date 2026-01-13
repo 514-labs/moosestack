@@ -225,7 +225,7 @@ export const killRemainingProcesses = async (
     log.debug("Killed any remaining moose-cli processes");
 
     await execAsync(
-      "pkill -9 -f 'streaming_function_runner|python_worker_wrapper|consumption.*localhost' || true",
+      "pkill -9 -f 'moose-runner|streaming_function_runner|python_worker_wrapper|consumption.*localhost' || true",
       {
         timeout: TIMEOUTS.PROCESS_TERMINATION_MS,
         killSignal: "SIGKILL",
