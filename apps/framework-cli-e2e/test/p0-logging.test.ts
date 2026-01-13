@@ -189,7 +189,11 @@ async function waitForLogs(
     } catch (e) {
       // Log file might not exist yet, continue polling
       // Log unexpected errors for debugging
-      if (e instanceof Error && !e.message.includes("not found") && !e.message.includes("ENOENT")) {
+      if (
+        e instanceof Error &&
+        !e.message.includes("not found") &&
+        !e.message.includes("ENOENT")
+      ) {
         testLogger.debug(`Unexpected error reading logs: ${e.message}`);
       }
     }
