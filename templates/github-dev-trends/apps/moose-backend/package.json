@@ -16,7 +16,7 @@
     "moose-objects": "workspace:*"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "0.6.309",
+    "@514labs/moose-cli": "0.6.310",
     "@types/node": "^20.12.12",
     "@octokit/types": "^14.1.0"
   },
