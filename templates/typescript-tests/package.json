@@ -22,7 +22,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "0.6.309",
+    "@514labs/moose-cli": "0.6.310",
     "@faker-js/faker": "^9.7.0",
     "@types/express": "^5.0.3",
     "@types/koa": "^2.15.0",
