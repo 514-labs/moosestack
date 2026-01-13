@@ -278,6 +278,44 @@ function isBackgroundCommand(cmd: string): boolean {
 }
 
 /**
+ * These are filtered out of the environment to prevent accidental or intentional leakage.
+ */
+const SECRET_ENV_VARS = [
+  "ANTHROPIC_API_KEY",
+  "CONTEXT7_API_KEY",
+  "POSTHOG_API_KEY",
+  "GITHUB_TOKEN",
+  "OP_SERVICE_ACCOUNT_TOKEN",
+];
+
+/**
+ * Build a safe environment for LLM command execution.
+ * Filters out sensitive environment variables to prevent secret leakage.
+ */
+function getSafeEnv(): NodeJS.ProcessEnv {
+  const safeEnv: NodeJS.ProcessEnv = {};
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (SECRET_ENV_VARS.includes(key)) {
+      continue;
+    }
+
+    if (
+      key.includes("API_KEY") ||
+      key.includes("SECRET") ||
+      key.includes("TOKEN") ||
+      key.includes("PASSWORD") ||
+      key.includes("CREDENTIAL")
+    ) {
+      continue;
+    }
+    safeEnv[key] = value;
+  }
+
+  return safeEnv;
+}
+
+/**
  * Execute a bash command and return structured results.
  * Handles backgrounded commands specially using spawn with detached mode.
  */
@@ -302,6 +340,7 @@ async function runCommand(
         cwd,
         detached: true, // Create new process group
         stdio: ["ignore", "pipe", "pipe"],
+        env: getSafeEnv(),
       });
 
       let stdout = "";
@@ -355,6 +394,7 @@ async function runCommand(
       cwd,
       timeout: timeoutMs,
       maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+      env: getSafeEnv(),
     });
 
     return {
@@ -477,7 +517,7 @@ When you've completed the task, explain what you did.`;
         messages,
       });
 
-      agentLogger.info(`🤖 Stop reason: ${response.stop_reason}`);
+      agentLogger.info(`🤖 Action: ${response.stop_reason}`);
 
       // Check if we're done
       if (response.stop_reason === "end_turn") {
@@ -488,10 +528,7 @@ When you've completed the task, explain what you did.`;
         }
         metrics.markComplete();
         return { success: true, iterations: iteration, metrics };
-      }
-
-      // Process tool calls
-      if (response.stop_reason === "tool_use") {
+      } else if (response.stop_reason === "tool_use") {
         messages.push({
           role: "assistant",
           content: response.content,
@@ -502,7 +539,7 @@ When you've completed the task, explain what you did.`;
         for (const contentBlock of response.content) {
           if (contentBlock.type === "tool_use") {
             const toolName = contentBlock.name;
-            agentLogger.info(`\n🔧 Tool: ${toolName}`);
+            agentLogger.info(`🔧 Tool: ${toolName}`);
 
             let result: any;
 
