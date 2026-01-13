@@ -15,6 +15,6 @@
       }
     ]
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../../query-helpers/src/query-helpers_v2.ts"],
   "exclude": ["node_modules", "dist"]
 }

@@ -1,19 +1,41 @@
+import { sql } from "@514labs/moose-lib";
 import { Events, type EventModel } from "./models";
 import { executeQuery } from "./client";
-import { sql } from "@514labs/moose-lib";
+import typia from "typia";
+import {
+  assertValidOrThrow,
+  createParamMap,
+  createValidator,
+  toQuerySql,
+  type OrderByColumn,
+  type PaginationParams,
+} from "./query-helpers";
 
-/**
- * Minimal example query used by the Fastify app.
- * Keep this free of query-helper / Typia dependencies so `moose dev` can load it
- * directly via ts-node without requiring additional TS transforms/config.
- */
-export async function getEvents(limit: number = 10): Promise<EventModel[]> {
-  const query = sql`
-    SELECT *
-    FROM ${Events}
-    ORDER BY ${Events.columns.event_time} DESC
-    LIMIT ${limit}
-  `;
+interface EventFilters {
+  status?: "completed" | "active" | "inactive";
+}
 
+interface GetEventsParams {
+  filters?: EventFilters;
+  pagination?: PaginationParams;
+  orderBy?: OrderByColumn<EventModel>[];
+}
+
+const validateParams = createValidator<GetEventsParams>();
+
+const paramMap = createParamMap<EventFilters, EventModel>(Events, {
+  filters: {
+    status: { column: "status", operator: "eq" },
+  },
+  defaultOrderBy: [{ column: "event_time", direction: "DESC" }],
+});
+
+export async function getEvents(
+  params: GetEventsParams,
+): Promise<EventModel[]> {
+  const typedParams = assertValidOrThrow(validateParams(params));
+  const intent = paramMap.toIntent(typedParams);
+
+  const query = toQuerySql(Events, intent);
   return await executeQuery<EventModel>(query);
 }
