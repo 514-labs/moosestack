@@ -76,6 +76,7 @@ jobs:
           MOOSE_TELEMETRY_ENABLED: false
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CONTEXT7_API_KEY: ${{ secrets.CONTEXT7_API_KEY }}
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           LLM_TEST_LANGUAGE: ${{ github.event.inputs.language || 'typescript' }}
 
       - name: Display Test Output
