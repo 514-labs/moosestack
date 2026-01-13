@@ -32,6 +32,8 @@ use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaStreamConfig;
 use crate::metrics::MetricEvent;
 
+use crate::cli::logger::{context, resource_type};
+
 use crate::framework::core::infrastructure::api_endpoint::APIType;
 use crate::framework::core::infrastructure_map::Change;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
@@ -73,7 +75,7 @@ use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Deserializer as JsonDeserializer, Value};
 use tokio::spawn;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn, Instrument};
 
 use crate::framework::data_model::model::DataModel;
 use crate::utilities::validate_passthrough::{DataModelArrayVisitor, DataModelVisitor};
@@ -412,7 +414,15 @@ fn add_cors_headers(builder: hyper::http::response::Builder) -> hyper::http::res
         )
 }
 
-#[tracing::instrument(skip(consumption_apis, req, is_prod), fields(uri = %req.uri(), method = %req.method(), headers = ?req.headers()))]
+#[instrument(
+    name = "consumption_api_request",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::CONSUMPTION_API,
+        resource_name = %req.uri().path(),
+    )
+)]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
@@ -699,6 +709,15 @@ async fn workflows_history_route(
     }
 }
 
+#[instrument(
+    name = "workflow_trigger",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::WORKFLOW,
+        resource_name = %workflow_name,
+    )
+)]
 async fn workflows_trigger_route(
     req: Request<hyper::body::Incoming>,
     is_prod: bool,
@@ -772,6 +791,15 @@ async fn workflows_trigger_route(
     }
 }
 
+#[instrument(
+    name = "workflow_terminate",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::WORKFLOW,
+        resource_name = %workflow_name,
+    )
+)]
 async fn workflows_terminate_route(
     req: Request<hyper::body::Incoming>,
     is_prod: bool,
@@ -813,6 +841,14 @@ async fn workflows_terminate_route(
     }
 }
 
+#[instrument(
+    name = "health_check",
+    skip_all,
+    fields(
+        context = context::SYSTEM,
+        // No resource_type/resource_name - infrastructure check
+    )
+)]
 async fn health_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
@@ -931,6 +967,14 @@ async fn health_route(
         .body(Full::new(Bytes::from(json_response)))
 }
 
+#[instrument(
+    name = "ready_check",
+    skip_all,
+    fields(
+        context = context::SYSTEM,
+        // No resource_type/resource_name - infrastructure check
+    )
+)]
 async fn ready_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
@@ -1009,6 +1053,14 @@ async fn ready_route(
         .body(Full::new(Bytes::from(json_response)))
 }
 
+#[instrument(
+    name = "reality_check",
+    skip_all,
+    fields(
+        context = context::SYSTEM,
+        // No resource_type/resource_name - infrastructure validation
+    )
+)]
 async fn admin_reality_check_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,
@@ -1316,6 +1368,15 @@ async fn send_to_kafka<T: Iterator<Item = Vec<u8>>>(
     res_arr
 }
 
+#[instrument(
+    name = "ingest_request",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::INGEST_API,
+        resource_name = %topic_name,
+    )
+)]
 #[allow(clippy::too_many_arguments)]
 async fn handle_json_array_body(
     configured_producer: &ConfiguredProducer,
@@ -1914,35 +1975,39 @@ async fn router(
     let metrics_path = route_clone.clone().to_str().unwrap().to_string();
     let metrics_path_clone = metrics_path.clone();
 
-    spawn(async move {
-        if metrics_path_clone.starts_with("ingest/") {
-            let _ = metrics_clone
-                .send_metric_event(MetricEvent::IngestedEvent {
-                    topic,
-                    timestamp: Utc::now(),
-                    count: 1,
-                    bytes: req_bytes,
-                    latency: now.elapsed(),
-                    route: metrics_path.clone(),
-                    method: metrics_method.clone(),
-                })
-                .await;
-        }
+    spawn(
+        async move {
+            if metrics_path_clone.starts_with("ingest/") {
+                let _ = metrics_clone
+                    .send_metric_event(MetricEvent::IngestedEvent {
+                        topic,
+                        timestamp: Utc::now(),
+                        count: 1,
+                        bytes: req_bytes,
+                        latency: now.elapsed(),
+                        route: metrics_path.clone(),
+                        method: metrics_method.clone(),
+                    })
+                    .await;
+            }
 
-        if metrics_path_clone.starts_with("consumption/") || metrics_path_clone.starts_with("api/")
-        {
-            let _ = metrics_clone
-                .send_metric_event(MetricEvent::ConsumedEvent {
-                    timestamp: Utc::now(),
-                    count: 1,
-                    latency: now.elapsed(),
-                    bytes: res_bytes,
-                    route: metrics_path.clone(),
-                    method: metrics_method.clone(),
-                })
-                .await;
+            if metrics_path_clone.starts_with("consumption/")
+                || metrics_path_clone.starts_with("api/")
+            {
+                let _ = metrics_clone
+                    .send_metric_event(MetricEvent::ConsumedEvent {
+                        timestamp: Utc::now(),
+                        count: 1,
+                        latency: now.elapsed(),
+                        bytes: res_bytes,
+                        route: metrics_path.clone(),
+                        method: metrics_method.clone(),
+                    })
+                    .await;
+            }
         }
-    });
+        .instrument(tracing::Span::current()),
+    );
 
     res
 }
@@ -2253,8 +2318,9 @@ impl Webserver {
 
         let (tx, mut rx) = mpsc::channel::<(InfrastructureMap, ApiChange)>(32);
 
-        tokio::spawn(async move {
-            while let Some((infra_map, api_change)) = rx.recv().await {
+        tokio::spawn(
+            async move {
+                while let Some((infra_map, api_change)) = rx.recv().await {
                 let mut route_table = route_table.write().await;
                 match api_change {
                     ApiChange::ApiEndpoint(Change::Added(api_endpoint)) => {
@@ -2377,7 +2443,9 @@ impl Webserver {
                     }
                 }
             }
-        });
+            }
+            .instrument(tracing::Span::current())
+        );
 
         tx
     }
@@ -2391,44 +2459,47 @@ impl Webserver {
         let (tx, mut rx) =
             mpsc::channel::<crate::framework::core::infrastructure_map::WebAppChange>(32);
 
-        tokio::spawn(async move {
-            while let Some(webapp_change) = rx.recv().await {
-                tracing::info!("🔔 Received WebApp change: {:?}", webapp_change);
-                match webapp_change {
-                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
-                        crate::framework::core::infrastructure_map::Change::Added(webapp),
-                    ) => {
-                        tracing::info!("Adding WebApp mount path: {:?}", webapp.mount_path);
-                        web_apps.write().await.insert(webapp.mount_path.clone());
-                        tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
-                    }
-                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
-                        crate::framework::core::infrastructure_map::Change::Removed(webapp),
-                    ) => {
-                        tracing::info!("Removing WebApp mount path: {:?}", webapp.mount_path);
-                        web_apps.write().await.remove(&webapp.mount_path);
-                        tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
-                    }
-                    crate::framework::core::infrastructure_map::WebAppChange::WebApp(
-                        crate::framework::core::infrastructure_map::Change::Updated {
-                            before,
-                            after,
-                        },
-                    ) => {
-                        tracing::info!(
-                            "Updating WebApp mount path: {:?} to {:?}",
-                            before.mount_path,
-                            after.mount_path
-                        );
-                        let mut web_apps_guard = web_apps.write().await;
-                        web_apps_guard.remove(&before.mount_path);
-                        web_apps_guard.insert(after.mount_path.clone());
-                        drop(web_apps_guard);
-                        tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+        tokio::spawn(
+            async move {
+                while let Some(webapp_change) = rx.recv().await {
+                    tracing::info!("🔔 Received WebApp change: {:?}", webapp_change);
+                    match webapp_change {
+                        crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                            crate::framework::core::infrastructure_map::Change::Added(webapp),
+                        ) => {
+                            tracing::info!("Adding WebApp mount path: {:?}", webapp.mount_path);
+                            web_apps.write().await.insert(webapp.mount_path.clone());
+                            tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                        }
+                        crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                            crate::framework::core::infrastructure_map::Change::Removed(webapp),
+                        ) => {
+                            tracing::info!("Removing WebApp mount path: {:?}", webapp.mount_path);
+                            web_apps.write().await.remove(&webapp.mount_path);
+                            tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                        }
+                        crate::framework::core::infrastructure_map::WebAppChange::WebApp(
+                            crate::framework::core::infrastructure_map::Change::Updated {
+                                before,
+                                after,
+                            },
+                        ) => {
+                            tracing::info!(
+                                "Updating WebApp mount path: {:?} to {:?}",
+                                before.mount_path,
+                                after.mount_path
+                            );
+                            let mut web_apps_guard = web_apps.write().await;
+                            web_apps_guard.remove(&before.mount_path);
+                            web_apps_guard.insert(after.mount_path.clone());
+                            drop(web_apps_guard);
+                            tracing::info!("✅ Current web_apps: {:?}", *web_apps.read().await);
+                        }
                     }
                 }
             }
-        });
+            .instrument(tracing::Span::current()),
+        );
 
         tx
     }
@@ -2495,12 +2566,15 @@ impl Webserver {
             // Fire once-only startup script as soon as server starts
             {
                 let project_clone = project.clone();
-                tokio::spawn(async move {
-                    project_clone
-                        .http_server_config
-                        .run_dev_start_script_once()
-                        .await;
-                });
+                tokio::spawn(
+                    async move {
+                        project_clone
+                            .http_server_config
+                            .run_dev_start_script_once()
+                            .await;
+                    }
+                    .instrument(tracing::Span::current()),
+                );
             }
 
             show_message!(
@@ -2646,11 +2720,14 @@ impl Webserver {
                     let port = socket.port();
                     let project_name = api_service.route_service.project.name().to_string();
                     let version = api_service.route_service.current_version.clone();
-                    tokio::task::spawn(async move {
-                        if let Err(e) = watched.await {
-                            error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
+                    tokio::task::spawn(
+                        async move {
+                            if let Err(e) = watched.await {
+                                error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
+                            }
                         }
-                    });
+                        .instrument(tracing::Span::current())
+                    );
                 }
                 listener_result = management_listener.accept() => {
                     let (stream, _) = listener_result.unwrap();
@@ -2668,11 +2745,14 @@ impl Webserver {
                     let port = management_socket.port();
                     let project_name = project.name().to_string();
                     let version = project.cur_version().to_string();
-                    tokio::task::spawn(async move {
-                        if let Err(e) = watched.await {
-                            error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
+                    tokio::task::spawn(
+                        async move {
+                            if let Err(e) = watched.await {
+                                error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
+                            }
                         }
-                    });
+                        .instrument(tracing::Span::current())
+                    );
                 }
             }
         }
@@ -2858,6 +2938,7 @@ async fn shutdown(
         let result = tokio::task::spawn_blocking(move || unsafe {
             rdkafka_sys::rd_kafka_wait_destroyed(KAFKA_CLIENT_DESTROY_TIMEOUT_MS)
         })
+        .instrument(tracing::Span::current())
         .await;
 
         match result {
@@ -3164,6 +3245,14 @@ async fn store_updated_inframap(
 ///
 /// # Returns
 /// * Result containing the HTTP response with either success or error information
+#[instrument(
+    name = "admin_integrate_changes",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        // No resource_type/resource_name - varies by operation
+    )
+)]
 async fn admin_integrate_changes_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,
@@ -3395,6 +3484,14 @@ async fn get_admin_reconciled_inframap(
 ///
 /// The server's managed infrastructure state is reconciled with database reality to ensure accurate planning.
 /// The diff reflects changes against the true current state of managed tables only (excludes unmapped tables by design).
+#[instrument(
+    name = "admin_plan",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        // No resource_type/resource_name - planning only
+    )
+)]
 async fn admin_plan_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,

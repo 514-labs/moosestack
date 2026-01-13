@@ -12,6 +12,7 @@
     "@types/chai": "catalog:",
     "@types/mocha": "catalog:",
     "@types/node": "catalog:",
+    "axios": "^1.6.0",
     "chai": "catalog:",
     "mocha": "catalog:",
     "ts-node": "catalog:",

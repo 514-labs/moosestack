@@ -50,7 +50,9 @@ use sql_parser::{
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::LazyLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
+
+use crate::cli::logger::{context, resource_type};
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
@@ -771,6 +773,15 @@ pub async fn execute_atomic_operation(
     Ok(())
 }
 
+#[instrument(
+    name = "create_table",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %table.id(db_name),
+    )
+)]
 async fn execute_create_table(
     db_name: &str,
     table: &Table,
@@ -890,6 +901,15 @@ async fn execute_remove_sample_by(
         })
 }
 
+#[instrument(
+    name = "drop_table",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %table_name,
+    )
+)]
 async fn execute_drop_table(
     db_name: &str,
     table_name: &str,
@@ -915,6 +935,15 @@ async fn execute_drop_table(
 // TODO: Future refactoring opportunity - Consider eliminating the `required` boolean field
 // from ClickHouseColumn and rely solely on the Nullable type wrapper.
 
+#[instrument(
+    name = "add_column",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %table_name,
+    )
+)]
 async fn execute_add_table_column(
     db_name: &str,
     table_name: &str,
@@ -990,6 +1019,15 @@ async fn execute_add_table_column(
     Ok(())
 }
 
+#[instrument(
+    name = "drop_column",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %table_name,
+    )
+)]
 async fn execute_drop_table_column(
     db_name: &str,
     table_name: &str,
@@ -1025,6 +1063,15 @@ async fn execute_drop_table_column(
 /// When only the comment has changed (e.g., when enum metadata is added or user documentation
 /// is updated), it uses a more efficient comment-only modification instead of recreating
 /// the entire column definition.
+#[instrument(
+    name = "modify_column",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %table_name,
+    )
+)]
 async fn execute_modify_table_column(
     db_name: &str,
     table_name: &str,
@@ -1442,6 +1489,15 @@ fn strip_backticks(s: &str) -> String {
 }
 
 /// Executes a CREATE MATERIALIZED VIEW statement
+#[instrument(
+    name = "create_materialized_view",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        resource_type = resource_type::MATERIALIZED_VIEW,
+        resource_name = %view_name,
+    )
+)]
 async fn execute_create_materialized_view(
     db_name: &str,
     view_name: &str,
@@ -1498,6 +1554,15 @@ async fn execute_create_view(
 }
 
 /// Executes a DROP VIEW statement (works for both MVs and regular views)
+#[instrument(
+    name = "drop_view",
+    skip_all,
+    fields(
+        context = context::DEPLOY,
+        resource_type = resource_type::MATERIALIZED_VIEW,
+        resource_name = %view_name,
+    )
+)]
 async fn execute_drop_view(
     db_name: &str,
     view_name: &str,
