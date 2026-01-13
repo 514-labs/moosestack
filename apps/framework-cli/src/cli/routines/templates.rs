@@ -448,14 +448,14 @@ pub async fn create_project_from_template(
                 })?;
 
                 // Replace the name in setup.py
-                let name_pattern = Regex::new(r"name='[^']*'").map_err(|e| {
+                let name_pattern = Regex::new(r#"name="[^"]*""#).map_err(|e| {
                     RoutineFailure::error(Message {
                         action: "Init".to_string(),
                         details: format!("Failed to create regex pattern: {e}"),
                     })
                 })?;
                 let new_setup_py =
-                    name_pattern.replace(&setup_py_content, &format!("name='{name}'"));
+                    name_pattern.replace(&setup_py_content, &format!(r#"name="{name}""#));
 
                 std::fs::write(&setup_py_path, new_setup_py.as_bytes()).map_err(|e| {
                     RoutineFailure::error(Message {
