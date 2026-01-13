@@ -183,16 +183,25 @@ export class AgentMetrics {
    * Auto-detect phases from commands (each phase only starts once)
    */
   private detectPhase(cmd: string, timestamp: number): void {
-    if (cmd.includes("moose-cli") && cmd.includes("init")) {
+    if (
+      cmd.includes("fiveonefour.com/install.sh") ||
+      cmd.includes("pip install moose-cli") ||
+      cmd.includes("npm install -g @514labs/moose-cli")
+    ) {
+      this.startPhaseOnce("cli_install", timestamp);
+    } else if (cmd.includes("moose") && cmd.includes("init")) {
+      this.endPhase("cli_install", timestamp);
       this.startPhaseOnce("moose_init", timestamp);
     } else if (
-      cmd.includes("npm install") ||
-      cmd.includes("pnpm install") ||
-      cmd.includes("pip install")
+      (cmd.includes("npm install") ||
+        cmd.includes("pnpm install") ||
+        cmd.includes("pip install")) &&
+      !cmd.includes("moose-cli") &&
+      !cmd.includes("@514labs/moose-cli")
     ) {
       this.endPhase("moose_init", timestamp);
       this.startPhaseOnce("deps_install", timestamp);
-    } else if (cmd.includes("moose-cli") && cmd.includes("dev")) {
+    } else if (cmd.includes("moose") && cmd.includes("dev")) {
       this.endPhase("deps_install", timestamp);
       this.startPhaseOnce("moose_dev", timestamp);
     } else if (cmd.includes("curl") && cmd.includes("ingest")) {
@@ -225,6 +234,14 @@ export class AgentMetrics {
       this.currentPhase.endTime = timestamp;
       this.currentPhase.duration = timestamp - this.currentPhase.startTime;
     }
+  }
+
+  /**
+   * Get time from start to CLI install completion
+   */
+  getTimeToCliInstall(): number | null {
+    const phase = this.phases.find((p) => p.phase === "cli_install");
+    return phase?.endTime ? phase.endTime - this.startTime : null;
   }
 
   /**
@@ -272,6 +289,7 @@ export class AgentMetrics {
       commands: this.commands,
       docSearches: this.docSearches,
       phases: this.phases,
+      timeToCliInstall: this.getTimeToCliInstall(),
       timeToMooseInit: this.getTimeToMooseInit(),
       timeToMooseDev: this.getTimeToMooseDev(),
       timeToIngest: this.getTimeToIngest(),
@@ -284,6 +302,9 @@ export class AgentMetrics {
   logSummary(log: { info: (msg: string) => void }): void {
     log.info("📊 Performance Metrics:");
     log.info(`   Total duration: ${formatDuration(this.getTotalDuration())}`);
+    log.info(
+      `   Time to CLI install: ${formatDuration(this.getTimeToCliInstall())}`,
+    );
     log.info(
       `   Time to moose init: ${formatDuration(this.getTimeToMooseInit())}`,
     );
@@ -320,6 +341,7 @@ export class AgentMetrics {
       success,
       error,
       total_duration_ms: this.getTotalDuration(),
+      time_to_cli_install_ms: this.getTimeToCliInstall(),
       time_to_moose_init_ms: this.getTimeToMooseInit(),
       time_to_moose_dev_ms: this.getTimeToMooseDev(),
       time_to_ingest_ms: this.getTimeToIngest(),
@@ -347,6 +369,7 @@ export interface AgentMetricsJSON {
   commands: CommandMetric[];
   docSearches: DocSearchMetric[];
   phases: PhaseMetric[];
+  timeToCliInstall: number | null;
   timeToMooseInit: number | null;
   timeToMooseDev: number | null;
   timeToIngest: number | null;
@@ -374,9 +397,9 @@ function isBackgroundCommand(cmd: string): boolean {
 const SECRET_ENV_VARS = [
   "ANTHROPIC_API_KEY",
   "CONTEXT7_API_KEY",
-  "POSTHOG_API_KEY",
   "GITHUB_TOKEN",
   "OP_SERVICE_ACCOUNT_TOKEN",
+  "POSTHOG_API_KEY",
 ];
 
 /**
@@ -393,10 +416,11 @@ function getSafeEnv(): NodeJS.ProcessEnv {
 
     if (
       key.includes("API_KEY") ||
-      key.includes("SECRET") ||
-      key.includes("TOKEN") ||
+      key.includes("CREDENTIAL") ||
       key.includes("PASSWORD") ||
-      key.includes("CREDENTIAL")
+      key.includes("PRIVATE_KEY") ||
+      key.includes("SECRET") ||
+      key.includes("TOKEN")
     ) {
       continue;
     }
@@ -553,7 +577,7 @@ export async function runAgent(
     anthropicApiKey = process.env.ANTHROPIC_API_KEY,
     context7ApiKey = process.env.CONTEXT7_API_KEY,
     workingDir,
-    maxIterations = 30,
+    maxIterations = 50,
     commandTimeout = 60000,
   } = config;
 
