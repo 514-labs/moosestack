@@ -19,6 +19,7 @@ import * as path from "path";
 import { runAgent, AgentResult, formatDuration } from "./utils/llm-agent-utils";
 import { logger } from "./utils/logger";
 import { performGlobalCleanup } from "./utils/cleanup-utils";
+import { sendPostHogEvent } from "./utils/posthog-utils";
 
 const testLogger = logger.scope("llm-docs-automation");
 
@@ -82,9 +83,8 @@ IMPORTANT: Use ${CLI_PATH} for all moose CLI commands (e.g., "${CLI_PATH} init")
     }
 
     // Log metrics
-    // TODO: Send metrics to posthog
     const metrics = result.metrics;
-    testLogger.info("\n📊 Performance Metrics:");
+    testLogger.info("📊 Performance Metrics:");
     testLogger.info(
       `   Total duration: ${formatDuration(metrics.getTotalDuration())}`,
     );
@@ -103,13 +103,38 @@ IMPORTANT: Use ${CLI_PATH} for all moose CLI commands (e.g., "${CLI_PATH} init")
 
     // Log phase breakdown
     if (metrics.phases.length > 0) {
-      testLogger.info("\n📈 Phase Breakdown:");
+      testLogger.info("📈 Phase Breakdown:");
       for (const phase of metrics.phases) {
         const duration =
           phase.duration ? formatDuration(phase.duration) : "in progress";
         testLogger.info(`   ${phase.phase}: ${duration}`);
       }
     }
+
+    // Send metrics to PostHog
+    await sendPostHogEvent({
+      event: "llm_docs_automation_test",
+      properties: {
+        language: TEST_LANGUAGE,
+        success: result.success,
+        error: result.error,
+        total_duration_ms: metrics.getTotalDuration(),
+        total_duration_s:
+          metrics.getTotalDuration() ?
+            metrics.getTotalDuration()! / 1000
+          : null,
+        time_to_moose_init_ms: metrics.getTimeToMooseInit(),
+        time_to_moose_dev_ms: metrics.getTimeToMooseDev(),
+        time_to_ingest_ms: metrics.getTimeToIngest(),
+        llm_calls: metrics.totalIterations,
+        commands_executed: metrics.totalCommands,
+        doc_searches: metrics.totalDocSearches,
+        phases: metrics.phases.map((p) => ({
+          phase: p.phase,
+          duration_ms: p.duration ?? null,
+        })),
+      },
+    });
 
     expect(result.success).to.be.true;
     expect(result.iterations).to.be.lessThan(30);
