@@ -188,11 +188,7 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
-
-      - name: Login NPM
-        shell: bash
-        run: |
-          pnpm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
+          registry-url: "https://registry.npmjs.org"
 
       - name: Publish the NPM Moose CLI package
         shell: bash
@@ -441,8 +437,6 @@ jobs:
         shell: bash
         working-directory: ./apps/moose-cli-npm
         run: ./scripts/release-bin.sh ${{ needs.version.outputs.version }} ${{ matrix.build.TARGET }} ${{ matrix.build.OS }} ${{ matrix.build.NAME }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Upload binary
         uses: ncipollo/release-action@v1
@@ -575,6 +569,7 @@ jobs:
     # Add explicit permissions
     permissions:
       contents: read
+      id-token: write
     env:
       TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
     steps:
@@ -594,16 +589,12 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
-      - name: Login NPM
-        shell: bash
-        run: |
-          pnpm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
-
       - name: Install node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         shell: bash
