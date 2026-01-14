@@ -16,7 +16,6 @@ use crate::framework::core::infra_reality_checker::{InfraRealityChecker, Reality
 use crate::framework::core::infrastructure_map::{
     Change, InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::olap::clickhouse;
 #[cfg(test)]
@@ -510,13 +509,8 @@ pub async fn load_target_infrastructure(
             error!("Docker Build images should have the infrastructure map already created and embedded");
         }
 
-        if project.features.data_model_v2 {
-            // Resolve credentials at runtime for dev/prod mode
-            InfrastructureMap::load_from_user_code(project, true).await?
-        } else {
-            let primitive_map = PrimitiveMap::load(project).await?;
-            InfrastructureMap::new(project, primitive_map)
-        }
+        // Resolve credentials at runtime for dev/prod mode
+        InfrastructureMap::load_from_user_code(project, true).await?
     };
 
     // ALWAYS resolve runtime credentials at runtime in prod mode
@@ -720,6 +714,7 @@ mod tests {
     };
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::framework::core::primitive_map::PrimitiveMap;
     use crate::framework::versions::Version;
     use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
     use crate::infrastructure::olap::clickhouse::TableWithUnsupportedType;

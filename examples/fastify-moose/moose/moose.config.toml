@@ -20,5 +20,4 @@ on_reload_complete_script = "pnpm build"
  
 [features]
 streaming_engine = false
-data_model_v2 = true
 ddl_plan = true

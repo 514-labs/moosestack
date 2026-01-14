@@ -51,7 +51,6 @@ pub mod typescript_project;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 
 use crate::cli::local_webserver::LocalWebserverConfig;
@@ -225,10 +224,6 @@ pub struct ProjectFeatures {
     #[serde(default)]
     pub workflows: bool,
 
-    /// Whether data model v2 is enabled
-    #[serde(default = "_true")]
-    pub data_model_v2: bool,
-
     /// Whether OLAP (ClickHouse) is enabled
     #[serde(default = "_true")]
     pub olap: bool,
@@ -247,7 +242,6 @@ impl Default for ProjectFeatures {
         ProjectFeatures {
             streaming_engine: true,
             workflows: false,
-            data_model_v2: true,
             olap: true,
             ddl_plan: false,
             apis: true,
@@ -334,12 +328,6 @@ pub fn default_source_dir() -> String {
 }
 
 static STREAMING_FUNCTION_RENAME_WARNING: Once = Once::new();
-
-static DATA_MODEL_V2_ENABLED: AtomicBool = AtomicBool::new(false);
-
-pub fn is_data_model_v2_enabled() -> bool {
-    DATA_MODEL_V2_ENABLED.load(Ordering::SeqCst)
-}
 
 impl Project {
     /// Returns the default production state (false)
@@ -468,8 +456,6 @@ impl Project {
                 project_config.language_project_config = LanguageProjectConfig::Python(py_config);
             }
         }
-
-        DATA_MODEL_V2_ENABLED.store(project_config.features.data_model_v2, Ordering::SeqCst);
 
         // Show Redis configuration warnings for mixed configurations
         project_config.redis_config.show_config_warnings();

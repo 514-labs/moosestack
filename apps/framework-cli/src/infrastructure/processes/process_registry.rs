@@ -68,17 +68,8 @@ impl ProcessRegistries {
     pub fn new(project: &Project, settings: &Settings, syncing: SyncingProcessesRegistry) -> Self {
         let functions = FunctionProcessRegistry::new(project.clone());
 
-        let blocks = if project.features.data_model_v2 || !project.features.olap {
-            None
-        } else {
-            Some(BlocksProcessRegistry::new(
-                project.language,
-                project.blocks_dir(),
-                project.project_location.clone(),
-                project.clickhouse_config.clone(),
-                project,
-            ))
-        };
+        // Blocks are only used for non-DMv2 projects, so we disable them
+        let blocks = None;
 
         let consumption = ConsumptionProcessRegistry::new(
             project.language,

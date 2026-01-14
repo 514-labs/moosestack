@@ -54,5 +54,4 @@ api_key = ""
 streaming_engine = true
 workflows = true
 scripts = true
-data_model_v2 = true
 apis = true

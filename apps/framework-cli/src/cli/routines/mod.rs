@@ -873,14 +873,8 @@ async fn legacy_remote_plan_logic(
     json: bool,
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
-    let local_infra_map = if project.features.data_model_v2 {
-        debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project, true).await?
-    } else {
-        debug!("Loading InfrastructureMap from primitives");
-        let primitive_map = PrimitiveMap::load(project).await?;
-        InfrastructureMap::new(project, primitive_map)
-    };
+    debug!("Loading InfrastructureMap from user code");
+    let local_infra_map = InfrastructureMap::load_from_user_code(project, true).await?;
 
     // Use existing implementation
     let target_url = prepend_base_url(base_url.as_deref(), "admin/plan");

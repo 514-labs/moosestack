@@ -53,7 +53,6 @@ streaming_engine = false
 workflows = false
 apis = false
 ddl_plan = false
-data_model_v2 = true
 olap = true
 
 # IMPORTANT: This template is for testing serverless migration flow

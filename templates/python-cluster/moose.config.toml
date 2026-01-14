@@ -58,6 +58,5 @@ admin_api_key = "445fd4696cfc5c49e28995c4aba05de44303a112"
 olap = true
 streaming_engine = false
 workflows = false
-data_model_v2 = true
 apis = false
 
