@@ -297,6 +297,18 @@ export function getAllApps(): AppMetadata[] {
       language: "typescript",
       type: "app",
     },
+    {
+      name: "Fastify Example App",
+      slug: "fastify-moose",
+      description:
+        "A simple Fastify app demonstrating building APIs that leverage MooseStack objects and give the benefits of the local Moose dev server. Features a monorepo structure with Fastify app and Moose project.",
+      githubUrl:
+        "https://github.com/514-labs/moosestack/tree/main/examples/fastify-moose",
+      features: ["Fastify", "TypeScript", "Moose OLAP", "ClickHouse"],
+      frameworks: ["Fastify"],
+      language: "typescript",
+      type: "app",
+    },
   ];
 }
 
