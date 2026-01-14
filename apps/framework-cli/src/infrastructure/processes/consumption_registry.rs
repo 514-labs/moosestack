@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use tracing::{info, instrument};
 
 use crate::cli::logger::{context, resource_type};
-
 use crate::utilities::system::{RestartPolicy, RestartingProcess, StartChildFn};
 use crate::{
     framework::{languages::SupportedLanguages, python, typescript},
@@ -28,7 +27,6 @@ pub enum ConsumptionError {
 pub struct ConsumptionProcessRegistry {
     api_process: Option<RestartingProcess>,
     clickhouse_config: ClickHouseConfig,
-    dir: PathBuf,
     language: SupportedLanguages,
     project_path: PathBuf,
     jwt_config: Option<JwtConfig>,
@@ -41,7 +39,6 @@ impl ConsumptionProcessRegistry {
         language: SupportedLanguages,
         clickhouse_config: ClickHouseConfig,
         jwt_config: Option<JwtConfig>,
-        dir: PathBuf,
         project_path: PathBuf,
         project: Project,
         proxy_port: Option<u16>,
@@ -50,7 +47,6 @@ impl ConsumptionProcessRegistry {
         Self {
             api_process: Option::None,
             language,
-            dir,
             clickhouse_config,
             project_path,
             jwt_config,
@@ -75,17 +71,10 @@ impl ConsumptionProcessRegistry {
         let clickhouse_config = self.clickhouse_config.clone();
         let jwt_config = self.jwt_config.clone();
         let proxy_port = self.proxy_port;
-        let dir = self.dir.clone();
 
         let start_child: StartChildFn<ConsumptionError> = match self.language {
             SupportedLanguages::Python => Box::new(move || {
-                python::consumption::run(
-                    &project,
-                    &clickhouse_config,
-                    &jwt_config,
-                    &dir,
-                    proxy_port,
-                )
+                python::consumption::run(&project, &clickhouse_config, &jwt_config, proxy_port)
             }),
             SupportedLanguages::Typescript => {
                 let project_path = self.project_path.clone();
@@ -94,7 +83,6 @@ impl ConsumptionProcessRegistry {
                         &project,
                         &clickhouse_config,
                         &jwt_config,
-                        &dir,
                         &project_path,
                         proxy_port,
                     )
