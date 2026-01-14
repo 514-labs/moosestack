@@ -235,7 +235,7 @@ export function getTemplatesByLanguage(
 export function getAllApps(): AppMetadata[] {
   return [
     {
-      name: "Nextjs + Express + MCP demo app: Aircraft data",
+      name: "Demo app: Chat with aircraft data (Nextjs + Express + MCP)",
       slug: "plane-transponder-demo",
       description:
         "Complete demo application featuring real-time aircraft transponder data with MCP chat integration.",
@@ -298,10 +298,10 @@ export function getAllApps(): AppMetadata[] {
       type: "app",
     },
     {
-      name: "Fastify Example App",
+      name: "Fastify App with Moose",
       slug: "fastify-moose",
       description:
-        "A simple Fastify app demonstrating building APIs that leverage MooseStack objects and give the benefits of the local Moose dev server. Features a monorepo structure with Fastify app and Moose project.",
+        "A simple Fastify app demonstrating how to embed MooseStack into an existing Fastify app. Features a monorepo structure with Fastify app and child Moose project.",
       githubUrl:
         "https://github.com/514-labs/moosestack/tree/main/examples/fastify-moose",
       features: ["Fastify", "TypeScript", "Moose OLAP", "ClickHouse"],
