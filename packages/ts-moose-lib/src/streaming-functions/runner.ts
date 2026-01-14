@@ -283,11 +283,46 @@ const handleMessage = async (
       logger.log(`[PAYLOAD:STREAM_IN] ${JSON.stringify(parsedData)}`);
     }
 
-    const transformedData = await Promise.all(
-      streamingFunctionWithConfigList.map(async ([fn, config]) => {
-        try {
-          return await fn(parsedData);
-        } catch (e) {
+    // Wrap console methods to emit structured logs with function context
+    const functionName = logger.logPrefix;
+    const originalConsole = {
+      log: console.log,
+      info: console.info,
+      warn: console.warn,
+      error: console.error,
+      debug: console.debug,
+    };
+
+    const createStructuredLogger = (level: string) => (...args: any[]) => {
+      const message = args
+        .map((arg) => (typeof arg === "object" ? JSON.stringify(arg) : String(arg)))
+        .join(" ");
+
+      // Emit structured log to stderr so Rust can parse it and add span fields
+      process.stderr.write(
+        JSON.stringify({
+          __moose_structured_log__: true,
+          level,
+          message,
+          function_name: functionName,
+          timestamp: new Date().toISOString(),
+        }) + "\n",
+      );
+    };
+
+    console.log = createStructuredLogger("info");
+    console.info = createStructuredLogger("info");
+    console.warn = createStructuredLogger("warn");
+    console.error = createStructuredLogger("error");
+    console.debug = createStructuredLogger("debug");
+
+    let transformedData;
+    try {
+      transformedData = await Promise.all(
+        streamingFunctionWithConfigList.map(async ([fn, config]) => {
+          try {
+            return await fn(parsedData);
+          } catch (e) {
           // Check if there's a deadLetterQueue configured
           const deadLetterQueue = config.deadLetterQueue;
 
@@ -335,6 +370,14 @@ const handleMessage = async (
         }
       }),
     );
+    } finally {
+      // Restore original console methods
+      console.log = originalConsole.log;
+      console.info = originalConsole.info;
+      console.warn = originalConsole.warn;
+      console.error = originalConsole.error;
+      console.debug = originalConsole.debug;
+    }
 
     const processedMessages = transformedData
       .map((userFunctionOutput, i) => {

@@ -91,7 +91,7 @@ def _validate_input_data(input_data: dict | None, task) -> any:
         )
 
 
-async def _execute_task_function(task, input_data, executor, task_state: dict) -> any:
+async def _execute_task_function(task, input_data, executor, task_state: dict, task_identifier: str) -> any:
     """Execute the task function with a single context parameter.
 
     Supports both async and sync handlers via a thread executor for sync ones.
@@ -99,12 +99,39 @@ async def _execute_task_function(task, input_data, executor, task_state: dict) -
     task_func = task.config.run
     context = TaskContext(state=task_state, input=input_data)
 
-    if asyncio.iscoroutinefunction(task_func):
-        return await task_func(context)
-    else:
-        loop = asyncio.get_running_loop()
-        future = loop.run_in_executor(executor, lambda: task_func(context))
-        return await asyncio.wait_for(future, timeout=None)
+    # Wrap print to emit structured logs
+    import builtins
+    import sys
+    from datetime import datetime, timezone
+
+    original_print = builtins.print
+
+    def structured_print(*args, **kwargs):
+        # Convert args to string like normal print
+        message = " ".join(str(arg) for arg in args)
+        # Emit structured log to stderr for Rust to parse
+        structured_log = json.dumps({
+            "__moose_structured_log__": True,
+            "level": "info",
+            "message": message,
+            "task_name": task_identifier,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        sys.stderr.write(structured_log + "\n")
+        sys.stderr.flush()
+
+    builtins.print = structured_print
+
+    try:
+        if asyncio.iscoroutinefunction(task_func):
+            return await task_func(context)
+        else:
+            loop = asyncio.get_running_loop()
+            future = loop.run_in_executor(executor, lambda: task_func(context))
+            return await asyncio.wait_for(future, timeout=None)
+    finally:
+        # Restore original print
+        builtins.print = original_print
 
 
 async def _handle_task_cancellation(task, task_name: str, task_state: dict, input_data):
@@ -177,9 +204,12 @@ async def _execute_dmv2_task(
         activity.heartbeat(f"Starting task: {execution_input.task_name}")
 
         try:
+            # Create task identifier for logging
+            task_identifier = f"{execution_input.dmv2_workflow_name}/{execution_input.task_name}"
+
             # Execute the task function
             result = await _execute_task_function(
-                task, validated_input, executor, shared_task_state
+                task, validated_input, executor, shared_task_state, task_identifier
             )
 
             # Return structured result

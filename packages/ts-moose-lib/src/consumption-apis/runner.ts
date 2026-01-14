@@ -202,18 +202,60 @@ const apiHandler = async (
       }
 
       const queryClient = new QueryClient(clickhouseClient, fileName);
-      let result =
-        isDmv2 ?
-          await userFuncModule(paramsObject, {
-            client: new MooseClient(queryClient, temporalClient),
-            sql: sql,
-            jwt: jwtPayload,
-          })
-        : await userFuncModule.default(paramsObject, {
-            client: new MooseClient(queryClient, temporalClient),
-            sql: sql,
-            jwt: jwtPayload,
-          });
+
+      // Wrap console methods to emit structured logs with API context
+      const apiName = isDmv2 ? fileName.replace(/^\/+|\/+$/g, "") : fileName;
+      const originalConsole = {
+        log: console.log,
+        info: console.info,
+        warn: console.warn,
+        error: console.error,
+        debug: console.debug,
+      };
+
+      const createStructuredLogger = (level: string) => (...args: any[]) => {
+        const message = args.map(arg =>
+          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+        ).join(' ');
+
+        // Emit structured log to stderr so Rust can parse it and add span fields
+        process.stderr.write(JSON.stringify({
+          __moose_structured_log__: true,
+          level,
+          message,
+          api_name: apiName,
+          timestamp: new Date().toISOString(),
+        }) + '\n');
+      };
+
+      console.log = createStructuredLogger('info');
+      console.info = createStructuredLogger('info');
+      console.warn = createStructuredLogger('warn');
+      console.error = createStructuredLogger('error');
+      console.debug = createStructuredLogger('debug');
+
+      let result;
+      try {
+        result =
+          isDmv2 ?
+            await userFuncModule(paramsObject, {
+              client: new MooseClient(queryClient, temporalClient),
+              sql: sql,
+              jwt: jwtPayload,
+            })
+          : await userFuncModule.default(paramsObject, {
+              client: new MooseClient(queryClient, temporalClient),
+              sql: sql,
+              jwt: jwtPayload,
+            });
+      } finally {
+        // Restore original console methods
+        console.log = originalConsole.log;
+        console.info = originalConsole.info;
+        console.warn = originalConsole.warn;
+        console.error = originalConsole.error;
+        console.debug = originalConsole.debug;
+      }
 
       let body: string;
       let status: number | undefined;

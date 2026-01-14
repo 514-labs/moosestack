@@ -31,6 +31,7 @@ import {
   performGlobalCleanup,
   cleanupClickhouseData,
   waitForInfrastructureReady,
+  verifyConsumptionApiInternalHealth,
   logger,
 } from "./utils";
 
@@ -272,15 +273,63 @@ describe("Structured Logging E2E Tests", function () {
     fs.mkdirSync(ingestDir, { recursive: true });
     const modelPath = path.join(ingestDir, "models.ts");
     const modelContent = `
-import { Key } from "@514labs/moose-lib";
+import { Key, IngestPipeline } from "@514labs/moose-lib";
 
 export interface TestEvent {
   eventId: Key<string>;
   userId: string;
   timestamp: string;
 }
+
+export const TestEventPipeline = new IngestPipeline<TestEvent>("TestEvent", {
+  table: true,
+  stream: true,
+  ingestApi: true,
+});
 `;
     fs.writeFileSync(modelPath, modelContent);
+
+    // Add a consumption API with console.log for testing log capture
+    const apisDir = path.join(projectDir, "app", "apis");
+    fs.mkdirSync(apisDir, { recursive: true });
+    const apiPath = path.join(apisDir, "test.ts");
+    const apiContent = `
+import { Api } from "@514labs/moose-lib";
+
+interface QueryParams {
+  message?: string;
+}
+
+interface ResponseData {
+  echo: string;
+  timestamp: string;
+}
+
+export const TestApi = new Api<QueryParams, ResponseData>(
+  "test",
+  async ({ message = "hello" }, _context) => {
+    console.log("Processing API request with message:", message);
+    console.log("This is a test log from consumption API");
+
+    return {
+      echo: message,
+      timestamp: new Date().toISOString(),
+    };
+  },
+);
+`;
+    fs.writeFileSync(apiPath, apiContent);
+
+    // Update app/index.ts to export the models and APIs
+    const indexPath = path.join(projectDir, "app", "index.ts");
+    const indexContent = `
+// Export data models
+export * from "./ingest/models";
+
+// Export APIs
+export * from "./apis/test";
+`;
+    fs.writeFileSync(indexPath, indexContent);
 
     // Start moose dev with structured logging enabled
     testLogger.info("Starting moose dev with structured logging");
@@ -372,6 +421,9 @@ export interface TestEvent {
 
   it("should emit logs with span fields for health check (system context)", async function () {
     this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
+
+    // Wait a bit for all services to settle after ingest
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Call health endpoint
     const healthUrl = `${SERVER_CONFIG.url}/health`;
@@ -505,5 +557,67 @@ export interface TestEvent {
         `Invalid resource_type: ${resourceType}`,
       );
     }
+  });
+
+  it("should capture console.log from consumption API with span fields", async function () {
+    this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
+
+    // Wait for consumption API server to be ready
+    testLogger.info("Waiting for consumption API server to start");
+    await verifyConsumptionApiInternalHealth({ logger: testLogger });
+    testLogger.info("Consumption API server is ready");
+
+    // Call the consumption API that contains console.log statements
+    const apiUrl = `${SERVER_CONFIG.url}/consumption/test?message=test-logging`;
+    testLogger.info("Calling consumption API", { apiUrl });
+
+    const response = await axios.get(apiUrl);
+    expect(response.status).to.equal(200);
+    expect(response.data.echo).to.equal("test-logging");
+
+    // Wait for logs to be written with polling
+    const consoleLogEntries = await waitForLogs(
+      {
+        context: "runtime",
+        resource_type: "consumption_api",
+        resource_name: "test",
+      },
+      { timeoutMs: 10000, minCount: 1 },
+    );
+
+    testLogger.info(
+      `Found ${consoleLogEntries.length} consumption API log entries`,
+    );
+
+    // Verify we captured logs from the API handler
+    expect(consoleLogEntries.length).to.be.greaterThan(
+      0,
+      "Should have at least one consumption API log entry",
+    );
+
+    // Verify span structure
+    const sampleLog = consoleLogEntries[0];
+    expect(sampleLog.span).to.exist;
+    expect(sampleLog.span?.context).to.equal("runtime");
+    expect(sampleLog.span?.resource_type).to.equal("consumption_api");
+    expect(sampleLog.span?.resource_name).to.equal("test");
+
+    // Look for our specific console.log messages
+    const logMessages = consoleLogEntries.map((log) => log.fields.message);
+    const hasProcessingLog = logMessages.some((msg) =>
+      msg.includes("Processing API request with message:"),
+    );
+    const hasTestLog = logMessages.some((msg) =>
+      msg.includes("This is a test log from consumption API"),
+    );
+
+    testLogger.info("Log messages found:", {
+      hasProcessingLog,
+      hasTestLog,
+      sampleMessages: logMessages.slice(0, 3),
+    });
+
+    // Verify at least one of our console.log messages was captured
+    expect(hasProcessingLog || hasTestLog).to.be.true;
   });
 });
