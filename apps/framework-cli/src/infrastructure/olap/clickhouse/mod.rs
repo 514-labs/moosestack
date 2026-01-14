@@ -50,7 +50,9 @@ use sql_parser::{
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::LazyLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
+
+use crate::cli::logger::{context, resource_type};
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
@@ -752,7 +754,7 @@ pub async fn execute_atomic_operation(
             .await?;
         }
         SerializableOlapOperation::DropMaterializedView { name, database } => {
-            execute_drop_view(db_name, name, database.as_deref(), client).await?;
+            execute_drop_materialized_view(db_name, name, database.as_deref(), client).await?;
         }
         SerializableOlapOperation::CreateView {
             name,
@@ -771,16 +773,25 @@ pub async fn execute_atomic_operation(
     Ok(())
 }
 
+#[instrument(
+    name = "create_table",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %table.id(table.database.as_deref().unwrap_or(db_name)),
+    )
+)]
 async fn execute_create_table(
     db_name: &str,
     table: &Table,
     client: &ConfiguredDBClient,
     is_dev: bool,
 ) -> Result<(), ClickhouseChangesError> {
-    tracing::info!("Executing CreateTable: {:?}", table.id(db_name));
-    let clickhouse_table = std_table_to_clickhouse_table(table)?;
     // Use table's database if specified, otherwise use global database
     let target_database = table.database.as_deref().unwrap_or(db_name);
+    tracing::info!("Executing CreateTable: {:?}", table.id(target_database));
+    let clickhouse_table = std_table_to_clickhouse_table(table)?;
     let create_data_table_query = create_table_query(target_database, clickhouse_table, is_dev)?;
     run_query(&create_data_table_query, client)
         .await
@@ -890,6 +901,15 @@ async fn execute_remove_sample_by(
         })
 }
 
+#[instrument(
+    name = "drop_table",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %format!("{}_{}", table_database.unwrap_or(db_name), table_name),
+    )
+)]
 async fn execute_drop_table(
     db_name: &str,
     table_name: &str,
@@ -897,9 +917,9 @@ async fn execute_drop_table(
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    tracing::info!("Executing DropTable: {:?}", table_name);
     // Use table's database if specified, otherwise use global database
     let target_database = table_database.unwrap_or(db_name);
+    tracing::info!("Executing DropTable: {}.{}", target_database, table_name);
     let drop_query = drop_table_query(target_database, table_name, cluster_name)?;
     run_query(&drop_query, client)
         .await
@@ -915,6 +935,15 @@ async fn execute_drop_table(
 // TODO: Future refactoring opportunity - Consider eliminating the `required` boolean field
 // from ClickHouseColumn and rely solely on the Nullable type wrapper.
 
+#[instrument(
+    name = "add_column",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %format!("{}_{}", db_name, table_name),
+    )
+)]
 async fn execute_add_table_column(
     db_name: &str,
     table_name: &str,
@@ -924,7 +953,8 @@ async fn execute_add_table_column(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!(
-        "Executing AddTableColumn for table: {}, column: {}, after: {:?}",
+        "Executing AddTableColumn for table: {}.{}, column: {}, after: {:?}",
+        db_name,
         table_name,
         column.name,
         after_column
@@ -990,6 +1020,15 @@ async fn execute_add_table_column(
     Ok(())
 }
 
+#[instrument(
+    name = "drop_column",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %format!("{}_{}", db_name, table_name),
+    )
+)]
 async fn execute_drop_table_column(
     db_name: &str,
     table_name: &str,
@@ -998,7 +1037,8 @@ async fn execute_drop_table_column(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!(
-        "Executing DropTableColumn for table: {}, column: {}",
+        "Executing DropTableColumn for table: {}.{}, column: {}",
+        db_name,
         table_name,
         column_name
     );
@@ -1025,6 +1065,15 @@ async fn execute_drop_table_column(
 /// When only the comment has changed (e.g., when enum metadata is added or user documentation
 /// is updated), it uses a more efficient comment-only modification instead of recreating
 /// the entire column definition.
+#[instrument(
+    name = "modify_column",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %format!("{}_{}", db_name, table_name),
+    )
+)]
 async fn execute_modify_table_column(
     db_name: &str,
     table_name: &str,
@@ -1442,6 +1491,15 @@ fn strip_backticks(s: &str) -> String {
 }
 
 /// Executes a CREATE MATERIALIZED VIEW statement
+#[instrument(
+    name = "create_materialized_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::MATERIALIZED_VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
 async fn execute_create_materialized_view(
     db_name: &str,
     view_name: &str,
@@ -1474,6 +1532,15 @@ async fn execute_create_materialized_view(
 }
 
 /// Executes a CREATE VIEW statement for views
+#[instrument(
+    name = "create_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
 async fn execute_create_view(
     db_name: &str,
     view_name: &str,
@@ -1497,8 +1564,8 @@ async fn execute_create_view(
     Ok(())
 }
 
-/// Executes a DROP VIEW statement (works for both MVs and regular views)
-async fn execute_drop_view(
+/// Shared implementation for dropping views (both regular and materialized)
+async fn execute_drop_view_inner(
     db_name: &str,
     view_name: &str,
     view_database: Option<&str>,
@@ -1514,6 +1581,44 @@ async fn execute_drop_view(
             resource: Some(format!("view:{}", view_name)),
         })?;
     Ok(())
+}
+
+/// Executes a DROP MATERIALIZED VIEW statement
+#[instrument(
+    name = "drop_materialized_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::MATERIALIZED_VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
+async fn execute_drop_materialized_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    execute_drop_view_inner(db_name, view_name, view_database, client).await
+}
+
+/// Executes a DROP VIEW statement
+#[instrument(
+    name = "drop_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
+async fn execute_drop_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    execute_drop_view_inner(db_name, view_name, view_database, client).await
 }
 
 /// Extracts version information from a table name

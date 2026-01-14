@@ -96,7 +96,169 @@ use std::sync::atomic::Ordering;
 
 use super::settings::user_directory;
 
-/// P0 logging context constants.
+// # STRUCTURED LOGGING INSTRUMENTATION GUIDE
+//
+// This section explains how to instrument code with structured logging using span fields.
+// When enabled via `MOOSE_LOGGER__STRUCTURED_LOGS=true`, the logging system captures
+// three key dimensions for filtering and analysis in the UI:
+//
+// - **context**: The phase of execution (runtime, boot, system)
+// - **resource_type**: The type of resource being operated on (ingest_api, olap_table, etc.)
+// - **resource_name**: The specific resource identifier (e.g., "UserEvents", "pageviews_v001")
+//
+// ## CONTEXTS
+//
+// ### `runtime` - User Data Processing
+// Use for operations that process user data during normal application execution:
+// - Processing ingest API requests
+// - Running streaming functions/transforms
+// - Executing consumption API queries
+// - Running workflow tasks
+//
+// ### `boot` - Infrastructure Changes
+// Use for operations that modify infrastructure state during deployment:
+// - Creating/altering OLAP tables
+// - Creating/updating views and materialized views
+// - Applying schema migrations
+// - Deploying new resources
+//
+// ### `system` - Health & Monitoring
+// Use for operations that monitor system health and don't involve specific resources:
+// - Health checks
+// - Metrics collection
+// - System diagnostics
+// - Note: System context logs typically don't have resource_type or resource_name
+//
+// ## INSTRUMENTATION PATTERNS
+//
+// ### Pattern 1: Runtime Operations (with resource_type and resource_name)
+//
+// ```rust
+// use tracing::instrument;
+// use crate::cli::logger::{context, resource_type};
+//
+// #[instrument(
+//     name = "ingest_request",
+//     skip_all,
+//     fields(
+//         context = context::RUNTIME,
+//         resource_type = resource_type::INGEST_API,
+//         resource_name = %table_name,
+//     )
+// )]
+// async fn handle_ingest_request(table_name: &str, body: Bytes) -> Result<Response, Error> {
+//     // Function implementation
+//     info!("Processing ingest request");
+//     // All logs within this span inherit the fields
+// }
+// ```
+//
+// ### Pattern 2: Boot Operations (infrastructure changes)
+//
+// ```rust
+// #[instrument(
+//     name = "create_table",
+//     skip_all,
+//     fields(
+//         context = context::BOOT,
+//         resource_type = resource_type::OLAP_TABLE,
+//         resource_name = %format!("{}_{}", database, table_name),
+//     )
+// )]
+// async fn create_table(database: &str, table_name: &str) -> Result<(), Error> {
+//     info!("Creating OLAP table");
+//     // Implementation
+// }
+// ```
+//
+// ### Pattern 3: System Operations (no resource fields)
+//
+// ```rust
+// #[instrument(
+//     name = "health_check",
+//     skip_all,
+//     fields(
+//         context = context::SYSTEM,
+//     )
+// )]
+// async fn handle_health_check() -> Response {
+//     debug!("Performing health check");
+//     // System context doesn't use resource_type or resource_name
+// }
+// ```
+//
+// ## RESOURCE NAMING CONVENTIONS
+//
+// Resource names should be consistent and filterable:
+//
+// - **Tables**: `{database}_{table_name}` (e.g., "local_UserEvents_000")
+// - **Views**: `{database}_{view_name}` (e.g., "local_active_users")
+// - **Streams**: `{topic_name}` (e.g., "UserEvents")
+// - **APIs**: `{model_name}` (e.g., "UserEvents", "/api/users")
+// - **Workflows**: `{workflow_name}` (e.g., "daily_aggregation")
+//
+// Use the `%` format specifier for Display-formatted fields, or `?` for Debug formatting.
+//
+// ## ASYNC AND BLOCKING CODE
+//
+// ### Async Functions
+// The `#[instrument]` macro works automatically with async functions:
+//
+// ```rust
+// #[instrument(skip_all, fields(context = context::RUNTIME))]
+// async fn process_data() -> Result<(), Error> {
+//     // Span is automatically propagated through .await points
+//     let result = async_operation().await?;
+//     Ok(())
+// }
+// ```
+//
+// ### Blocking Code in Async Context
+// For blocking operations spawned via `tokio::task::spawn_blocking`, manually propagate the span:
+//
+// ```rust
+// async fn handler() {
+//     let span = tracing::Span::current();
+//     tokio::task::spawn_blocking(move || {
+//         let _guard = span.enter();
+//         // Blocking work here - logs will have correct span fields
+//         info!("Processing in blocking thread");
+//     }).await
+// }
+// ```
+//
+// ## FIELD REFERENCE
+//
+// ### Required for Runtime/Boot Contexts:
+// - `context`: Always required (use constants from `context` module)
+// - `resource_type`: Required for runtime/boot (use constants from `resource_type` module)
+// - `resource_name`: Required for runtime/boot (use `%` formatter for the resource identifier)
+//
+// ### Optional for System Context:
+// - `context`: Required (use `context::SYSTEM`)
+// - `resource_type`: Not used
+// - `resource_name`: Not used
+//
+// ## SKIP PARAMETERS
+//
+// Use `skip_all` to avoid logging function parameters (prevents PII leaks and reduces noise):
+//
+// ```rust
+// #[instrument(skip_all, fields(...))]  // Skip all parameters
+// #[instrument(skip(body, headers), fields(...))]  // Skip specific parameters
+// ```
+//
+// ## TESTING
+//
+// See `apps/framework-cli-e2e/test/structured-logging.test.ts` for E2E tests that verify
+// instrumentation coverage and correctness of span fields.
+//
+// ## CONSTANTS
+//
+// The constants below are organized into modules for easy import and type safety.
+// Use these in your `#[instrument]` attributes to ensure consistency.
+
+/// Structured logging context constants.
 /// Used in #[instrument(fields(context = ...))]
 #[allow(dead_code)]
 pub mod context {
@@ -105,19 +267,20 @@ pub mod context {
     pub const SYSTEM: &str = "system";
 }
 
-/// P0 resource type constants.
+/// Structured logging resource type constants.
 /// Used in #[instrument(fields(resource_type = ...))]
 #[allow(dead_code)]
 pub mod resource_type {
-    pub const INGEST_API: &str = "ingest_api";
-    pub const CONSUMPTION_API: &str = "consumption_api";
-    pub const STREAM: &str = "stream";
-    pub const OLAP_TABLE: &str = "olap_table";
-    pub const MATERIALIZED_VIEW: &str = "materialized_view";
-    pub const TRANSFORM: &str = "transform";
-    pub const CONSUMER: &str = "consumer";
-    pub const WORKFLOW: &str = "workflow";
-    pub const TASK: &str = "task";
+    pub(crate) const INGEST_API: &str = "ingest_api";
+    pub(crate) const CONSUMPTION_API: &str = "consumption_api";
+    pub(crate) const STREAM: &str = "stream";
+    pub(crate) const OLAP_TABLE: &str = "olap_table";
+    pub(crate) const VIEW: &str = "view";
+    pub(crate) const MATERIALIZED_VIEW: &str = "materialized_view";
+    pub(crate) const TRANSFORM: &str = "transform";
+    pub(crate) const CONSUMER: &str = "consumer";
+    pub(crate) const WORKFLOW: &str = "workflow";
+    pub(crate) const TASK: &str = "task";
 }
 
 /// Default date format for log file names: YYYY-MM-DD-cli.log
@@ -813,6 +976,7 @@ mod tests {
         assert_eq!(resource_type::CONSUMPTION_API, "consumption_api");
         assert_eq!(resource_type::STREAM, "stream");
         assert_eq!(resource_type::OLAP_TABLE, "olap_table");
+        assert_eq!(resource_type::VIEW, "view");
         assert_eq!(resource_type::MATERIALIZED_VIEW, "materialized_view");
         assert_eq!(resource_type::TRANSFORM, "transform");
         assert_eq!(resource_type::CONSUMER, "consumer");
