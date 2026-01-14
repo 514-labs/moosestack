@@ -93,6 +93,12 @@ pub static NO_ANSI: AtomicBool = AtomicBool::new(false);
 /// This is set once at startup based on CLI flags
 pub static SHOW_TIMESTAMPS: AtomicBool = AtomicBool::new(false);
 
+/// Global flag to redirect display messages to stderr instead of stdout
+/// When true, all show_message! output goes to stderr, keeping stdout clean for
+/// structured/JSON output that can be parsed programmatically
+/// This is set when commands use --json or similar flags
+pub static QUIET_STDOUT: AtomicBool = AtomicBool::new(false);
+
 /// Global flag to enable timing information for operations
 /// When true, shows elapsed time like "completed in 234ms" or "completed in 2.3s" for tracked operations
 /// This is set once at startup based on CLI flags
