@@ -51,12 +51,10 @@ pub mod typescript_project;
 use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Once;
 
 use crate::cli::local_webserver::LocalWebserverConfig;
 use crate::cli::watcher::WatcherConfig;
 use crate::framework::languages::SupportedLanguages;
-use crate::framework::streaming::loader::parse_streaming_function;
 use crate::framework::versions::Version;
 use crate::infrastructure::olap::clickhouse::config::ClickHouseConfig;
 use crate::infrastructure::olap::clickhouse::IgnorableOperation;
@@ -68,16 +66,13 @@ use crate::infrastructure::stream::kafka::models::KafkaConfig;
 use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
 use crate::project::typescript_project::TypescriptProject;
+use crate::utilities::_true;
 use crate::utilities::constants::CLI_INTERNAL_VERSIONS_DIR;
 use crate::utilities::constants::ENVIRONMENT_VARIABLE_PREFIX;
+use crate::utilities::constants::OLD_PROJECT_CONFIG_FILE;
 use crate::utilities::constants::PROJECT_CONFIG_FILE;
 use crate::utilities::constants::{APP_DIR, CLI_PROJECT_INTERNAL_DIR, SCHEMAS_DIR};
-use crate::utilities::constants::{
-    CONSUMPTION_DIR, FUNCTIONS_DIR, OLD_PROJECT_CONFIG_FILE, TS_FLOW_FILE,
-};
 use crate::utilities::git::GitConfig;
-use crate::utilities::PathExt;
-use crate::utilities::_true;
 use config::{Config, ConfigError, Environment, File};
 use python_project::PythonProject;
 use serde::Deserialize;
@@ -330,8 +325,6 @@ pub fn default_source_dir() -> String {
     APP_DIR.to_string()
 }
 
-static STREAMING_FUNCTION_RENAME_WARNING: Once = Once::new();
-
 impl Project {
     /// Returns the default production state (false)
     pub fn default_production() -> bool {
@@ -530,38 +523,6 @@ impl Project {
         }
     }
 
-    /// Returns the path to the streaming functions directory
-    pub fn streaming_func_dir(&self) -> PathBuf {
-        let functions_dir = self.app_dir().join(FUNCTIONS_DIR);
-
-        if !functions_dir.exists() {
-            let flows_dir = self.app_dir().join("flows");
-            if flows_dir.exists() {
-                STREAMING_FUNCTION_RENAME_WARNING.call_once(|| {
-                    println!("❗️Action Required: 'Flows' are now called 'Functions.' Please rename the directory.");
-                });
-                return flows_dir;
-            }
-
-            std::fs::create_dir_all(&functions_dir).expect("Failed to create functions directory");
-        }
-
-        debug!("Functions dir: {:?}", functions_dir);
-        functions_dir
-    }
-
-    /// Returns the path to the consumption directory
-    pub fn consumption_dir(&self) -> PathBuf {
-        let apis_dir = self.app_dir().join(CONSUMPTION_DIR);
-
-        if !apis_dir.exists() {
-            std::fs::create_dir_all(&apis_dir).expect("Failed to create consumption directory");
-        }
-
-        debug!("Consumptions dir: {:?}", apis_dir);
-        apis_dir
-    }
-
     /// Returns the path to the internal directory
     pub fn internal_dir(&self) -> Result<PathBuf, ProjectFileError> {
         let mut internal_dir = self.project_location.clone();
@@ -631,78 +592,6 @@ impl Project {
     /// Returns all versions including current
     pub fn versions(&self) -> Vec<String> {
         vec![self.cur_version().to_string()]
-    }
-
-    /// Returns a map of functions and their associated models
-    pub fn get_functions(&self) -> HashMap<String, Vec<String>> {
-        let mut functions_map = HashMap::new();
-
-        if let Ok(entries) = std::fs::read_dir(self.streaming_func_dir()) {
-            // flatten here means ignoring the Err case
-            for entry in entries.flatten() {
-                if entry.file_type().is_ok_and(|t| t.is_file())
-                    && entry.path().ext_is_supported_lang()
-                {
-                    parse_streaming_function(
-                        entry
-                            .path()
-                            .with_extension("")
-                            .file_name()
-                            .unwrap()
-                            .to_string_lossy()
-                            .as_ref(),
-                    )
-                    .iter()
-                    .for_each(|(input, output)| {
-                        if let Some(output_str) = output {
-                            functions_map
-                                .entry(input.to_string())
-                                .or_insert_with(Vec::new)
-                                .push(output_str.to_string());
-                        }
-                    });
-                } else if let Some((input_model, output_models)) =
-                    self.process_function_input(&entry)
-                {
-                    functions_map.insert(input_model, output_models);
-                }
-            }
-        }
-
-        functions_map
-    }
-
-    /// Processes function input for a directory entry
-    fn process_function_input(&self, entry: &std::fs::DirEntry) -> Option<(String, Vec<String>)> {
-        let input_model = entry.file_name().to_string_lossy().into_owned();
-        let mut output_models = Vec::new();
-
-        if let Ok(output_entries) = std::fs::read_dir(entry.path()) {
-            for output_entry in output_entries.flatten() {
-                if let Some(output_model) = self.process_function_output(&output_entry) {
-                    output_models.push(output_model);
-                }
-            }
-        }
-
-        if !output_models.is_empty() {
-            Some((input_model, output_models))
-        } else {
-            None
-        }
-    }
-
-    /// Processes function output for a directory entry
-    fn process_function_output(&self, entry: &std::fs::DirEntry) -> Option<String> {
-        if let Ok(file_type) = entry.file_type() {
-            if file_type.is_dir() {
-                let function_path = entry.path().join(TS_FLOW_FILE);
-                if function_path.exists() {
-                    return Some(entry.file_name().to_string_lossy().into_owned());
-                }
-            }
-        }
-        None
     }
 
     /// Checks if the project is running in a docker container

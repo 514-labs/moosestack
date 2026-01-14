@@ -8,7 +8,6 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
-import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
 
 interface ClickhouseConfig {
   database: string;
@@ -34,7 +33,6 @@ interface TemporalConfig {
 }
 
 interface ApisConfig {
-  apisDir: string;
   clickhouseConfig: ClickhouseConfig;
   jwtConfig?: JwtConfig;
   temporalConfig?: TemporalConfig;
@@ -48,11 +46,6 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   ...config,
   useSSL: config.useSSL ? "true" : "false",
 });
-
-const createPath = (apisDir: string, path: string, useCompiled: boolean) => {
-  const extension = useCompiled ? ".js" : ".ts";
-  return `${apisDir}${path}${extension}`;
-};
 
 const httpLogger = (
   req: http.IncomingMessage,
@@ -84,19 +77,9 @@ const apiHandler = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
-  apisDir: string,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
 ) => {
-  // Check if we should use compiled code
-  const useCompiled = shouldUseCompiled();
-  const sourceDir = getSourceDir();
-
-  // Adjust apisDir for compiled mode
-  const actualApisDir = useCompiled
-    ? `${process.cwd()}/.moose/compiled/${sourceDir}/apis/`
-    : apisDir;
-
   const apis = await getApis();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const start = Date.now();
@@ -137,7 +120,6 @@ const apiHandler = async (
         return;
       }
 
-      const pathName = createPath(actualApisDir, fileName, useCompiled);
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
         (obj: { [key: string]: string[] | string }, [key, value]) => {
           const existingValue = obj[key];
@@ -155,7 +137,7 @@ const apiHandler = async (
         {},
       );
 
-      let userFuncModule = modulesCache.get(pathName);
+      let userFuncModule = modulesCache.get(fileName);
       if (userFuncModule === undefined) {
         let apiName = fileName.replace(/^\/+|\/+$/g, "");
         let version: string | null = null;
@@ -203,7 +185,7 @@ const apiHandler = async (
           throw new Error(errorMessage);
         }
 
-        modulesCache.set(pathName, userFuncModule);
+        modulesCache.set(fileName, userFuncModule);
         console.log(`[API] | Executing API: ${apiName}`);
       }
 
@@ -263,7 +245,6 @@ const createMainRouter = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
-  apisDir: string,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
 ) => {
@@ -271,7 +252,6 @@ const createMainRouter = async (
     publicKey,
     clickhouseClient,
     temporalClient,
-    apisDir,
     enforceAuth,
     jwtConfig,
   );
@@ -434,7 +414,6 @@ export const runApis = async (config: ApisConfig) => {
           publicKey,
           clickhouseClient,
           temporalClient,
-          config.apisDir,
           config.enforceAuth,
           config.jwtConfig,
         ),

@@ -81,7 +81,6 @@ program
 program
   .command("consumption-apis")
   .description("Run consumption APIs")
-  .argument("<consumption-dir>", "Directory containing consumption APIs")
   .argument("<clickhouse-db>", "Clickhouse database name")
   .argument("<clickhouse-host>", "Clickhouse host")
   .argument("<clickhouse-port>", "Clickhouse port")
@@ -109,7 +108,6 @@ program
   )
   .action(
     (
-      apisDir,
       clickhouseDb,
       clickhouseHost,
       clickhousePort,
@@ -118,7 +116,6 @@ program
       options,
     ) => {
       runApis({
-        apisDir,
         clickhouseConfig: {
           database: clickhouseDb,
           host: clickhouseHost,
