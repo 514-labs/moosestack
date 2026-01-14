@@ -15,7 +15,7 @@ from .serialization import moose_json_decode
 
 @dataclass
 class ScriptExecutionInput:
-    dmv2_workflow_name: str
+    workflow_name: str
     task_name: str
     input_data: Optional[dict] = None
 
@@ -44,18 +44,18 @@ def _process_input_data(execution_input: ScriptExecutionInput) -> dict | None:
 
 def _get_workflow_and_task(execution_input: ScriptExecutionInput):
     """Get workflow and task objects from execution input."""
-    log.info(f"Getting workflow {execution_input.dmv2_workflow_name}")
-    workflow = get_workflow(execution_input.dmv2_workflow_name)
+    log.info(f"Getting workflow {execution_input.workflow_name}")
+    workflow = get_workflow(execution_input.workflow_name)
     if not workflow:
-        raise ValueError(f"Workflow {execution_input.dmv2_workflow_name} not found")
+        raise ValueError(f"Workflow {execution_input.workflow_name} not found")
 
     log.info(
-        f"Getting task {execution_input.task_name} from workflow {execution_input.dmv2_workflow_name}"
+        f"Getting task {execution_input.task_name} from workflow {execution_input.workflow_name}"
     )
     task = workflow.get_task(execution_input.task_name)
     if not task:
         raise ValueError(
-            f"Task {execution_input.task_name} not found in workflow {execution_input.dmv2_workflow_name}"
+            f"Task {execution_input.task_name} not found in workflow {execution_input.workflow_name}"
         )
 
     return workflow, task
@@ -141,13 +141,13 @@ def create_activity_for_script(script_name: str) -> Callable:
     async def dynamic_activity(
         execution_input: ScriptExecutionInput,
     ) -> WorkflowStepResult:
-        """Execute a DMv2 task with cancellation support."""
-        return await _execute_dmv2_task(execution_input, script_name)
+        """Execute a task with cancellation support."""
+        return await _execute_task(execution_input, script_name)
 
     return dynamic_activity
 
 
-async def _execute_dmv2_task(
+async def _execute_task(
     execution_input: ScriptExecutionInput, script_name: str
 ) -> WorkflowStepResult:
     """Main task execution logic separated for better testability and readability."""
@@ -158,7 +158,7 @@ async def _execute_dmv2_task(
     shared_task_state = {}
 
     try:
-        log.info(f"Executing DMv2 task {script_name} with input {execution_input}")
+        log.info(f"Executing task {script_name} with input {execution_input}")
 
         # Process and validate input
         input_data = _process_input_data(execution_input)
@@ -167,7 +167,7 @@ async def _execute_dmv2_task(
         # Get workflow and task objects
         workflow, task = _get_workflow_and_task(execution_input)
         log.info(
-            f"Found task {execution_input.task_name} in workflow {execution_input.dmv2_workflow_name}"
+            f"Found task {execution_input.task_name} in workflow {execution_input.workflow_name}"
         )
 
         # Validate input data against task's input type

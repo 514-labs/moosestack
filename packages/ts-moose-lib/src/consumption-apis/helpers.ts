@@ -192,11 +192,11 @@ export class WorkflowClient {
     name: string,
   ): Promise<{ retries: number; timeout: string }> {
     const workflows = await getWorkflows();
-    const dmv2Workflow = workflows.get(name);
-    if (dmv2Workflow) {
+    const workflow = workflows.get(name);
+    if (workflow) {
       return {
-        retries: dmv2Workflow.config.retries || 3,
-        timeout: dmv2Workflow.config.timeout || "1h",
+        retries: workflow.config.retries || 3,
+        timeout: workflow.config.timeout || "1h",
       };
     }
 

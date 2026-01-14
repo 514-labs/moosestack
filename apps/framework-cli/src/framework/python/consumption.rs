@@ -80,7 +80,6 @@ pub fn run(
         project.temporal_config.client_cert.clone(),
         project.temporal_config.client_key.clone(),
         project.temporal_config.api_key.clone(),
-        project.features.data_model_v2.to_string(),
         proxy_port.unwrap_or(4001).to_string(),
     ];
 

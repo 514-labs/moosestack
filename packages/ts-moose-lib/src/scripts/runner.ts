@@ -28,15 +28,15 @@ interface ScriptsConfig {
 // Maintain a global set of activity names we've already registered
 const ALREADY_REGISTERED = new Set<string>();
 
-function collectActivitiesDmv2(
+function collectActivities(
   logger: DefaultLogger,
   workflows: Map<string, Workflow>,
 ) {
-  logger.info(`<DMV2WF> Collecting tasks from dmv2 workflows`);
+  logger.info(`<WF> Collecting tasks from workflows`);
   const scriptNames: string[] = [];
   for (const [name, workflow] of workflows.entries()) {
     logger.info(
-      `<DMV2WF> Registering dmv2 workflow: ${name} with starting task: ${workflow.config.startingTask.name}`,
+      `<WF> Registering workflow: ${name} with starting task: ${workflow.config.startingTask.name}`,
     );
     scriptNames.push(`${name}/${workflow.config.startingTask.name}`);
   }
@@ -125,34 +125,32 @@ async function registerWorkflows(
   try {
     const workflows = await getWorkflows();
     if (workflows.size > 0) {
-      logger.info(`<DMV2WF> Found ${workflows.size} dmv2 workflows`);
-      allScriptPaths.push(...collectActivitiesDmv2(logger, workflows));
+      logger.info(`<WF> Found ${workflows.size} workflows`);
+      allScriptPaths.push(...collectActivities(logger, workflows));
 
       if (allScriptPaths.length === 0) {
-        logger.info(`<DMV2WF> No tasks found in dmv2 workflows`);
+        logger.info(`<WF> No tasks found in workflows`);
         return null;
       }
 
-      logger.info(
-        `<DMV2WF> Found ${allScriptPaths.length} tasks in dmv2 workflows`,
-      );
+      logger.info(`<WF> Found ${allScriptPaths.length} tasks in workflows`);
 
       for (const activityName of allScriptPaths) {
         if (!ALREADY_REGISTERED.has(activityName)) {
           const activity = await createActivityForScript(activityName);
           dynamicActivities.push(activity);
           ALREADY_REGISTERED.add(activityName);
-          logger.info(`<DMV2WF> Registered task ${activityName}`);
+          logger.info(`<WF> Registered task ${activityName}`);
         }
       }
 
       if (dynamicActivities.length === 0) {
-        logger.info(`<DMV2WF> No dynamic activities found in dmv2 workflows`);
+        logger.info(`<WF> No dynamic activities found in workflows`);
         return null;
       }
 
       logger.info(
-        `<DMV2WF> Found ${dynamicActivities.length} dynamic activities in dmv2 workflows`,
+        `<WF> Found ${dynamicActivities.length} dynamic activities in workflows`,
       );
     }
 

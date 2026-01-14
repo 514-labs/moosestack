@@ -2,8 +2,8 @@
 Streaming Function Runner for Moose
 
 This module provides functionality to run streaming functions that process data from Kafka topics.
-It supports both DMV1 (legacy) and DMV2 streaming function formats, handling the lifecycle of
-consuming messages from a source topic, transforming them, and producing to a target topic.
+It handles the lifecycle of consuming messages from a source topic, transforming them, and
+producing to a target topic.
 
 The runner handles:
 - Loading and executing streaming functions
@@ -97,69 +97,11 @@ class KafkaTopicConfig:
         return name
 
 
-def load_streaming_function_dmv1(
-    function_file_dir: str, function_file_name: str
-) -> Tuple[type, Callable]:
-    """
-    Load a DMV1 (legacy) streaming function from a Python module.
-
-    Args:
-        function_file_dir: Directory containing the streaming function module
-        function_file_name: Name of the module file without .py extension
-
-    Returns:
-        Tuple of (input_type, run_function) where:
-            - input_type is the type annotation of the run function's input parameter
-            - run_function is the actual transformation function
-
-    Raises:
-        SystemExit: If module import fails or if multiple/no streaming functions found
-    """
-    sys.path.append(function_file_dir)
-
-    try:
-        # todo: check the flat naming
-        module = import_module(function_file_name)
-        streaming_function_def = module.StreamingFunction
-    except Exception as e:
-        cli_log(CliLogData(action="Function", message=str(e), message_type="Error"))
-        sys.exit(1)
-
-    # Get all the named flows in the flow file and make sure the flow is of type StreamingFunction
-    streaming_functions = [
-        f for f in dir(module) if isinstance(getattr(module, f), streaming_function_def)
-    ]
-
-    # Make sure that there is only one flow in the file
-    if len(streaming_functions) != 1:
-        cli_log(
-            CliLogData(
-                action="Function",
-                message=f"Expected one streaming function in the file, but got {len(streaming_functions)}",
-                message_type="Error",
-            )
-        )
-        sys.exit(1)
-
-    # get the flow definition
-    streaming_function_def = getattr(module, streaming_functions[0])
-
-    # get the run function
-    streaming_function_run = streaming_function_def.run
-
-    # get run input type that doesn't rely on the name of the input parameter
-    run_input_type = streaming_function_run.__annotations__[
-        list(streaming_function_run.__annotations__.keys())[0]
-    ]
-
-    return run_input_type, streaming_function_run
-
-
-def load_streaming_function_dmv2(
+def load_streaming_function(
     function_file_dir: str, function_file_name: str
 ) -> tuple[type, list[tuple[Callable, Optional[DeadLetterQueue]]]]:
     """
-    Load a DMV2 streaming function by finding the stream transformation that matches
+    Load a streaming function by finding the stream transformation that matches
     the source and target topics.
 
     Args:
@@ -230,10 +172,8 @@ parser = argparse.ArgumentParser(description="Run a streaming function")
 parser.add_argument(
     "source_topic_json", type=str, help="The source topic for the streaming function"
 )
-# In DMV2 is the dir is the dir of the main.py or index.ts file
+# The dir is the dir of the main.py or index.ts file
 # and the function_file_name is the file name of main.py or index.ts
-# In DMV1 the dir is the dir of the streaming function file
-# and the function_file_name is the file name of the streaming function without the .py extension
 parser.add_argument(
     "function_file_dir", type=str, help="The dir of the streaming function file"
 )
@@ -267,12 +207,6 @@ parser.add_argument(
     "--security_protocol",
     type=str,
     help="The security protocol to use for the streaming function",
-)
-parser.add_argument(
-    "--dmv2",
-    action=argparse.BooleanOptionalAction,
-    type=bool,
-    help="Whether to use the DMV2 format for the streaming function",
 )
 parser.add_argument(
     "--log-payloads",
@@ -441,7 +375,7 @@ def main():
     Main entry point for the streaming function runner.
 
     This function:
-    1. Loads the appropriate streaming function (DMV1 or DMV2)
+    1. Loads the streaming function
     2. Sets up metrics reporting thread and message processing thread
     3. Handles graceful shutdown on signals
     """
@@ -478,18 +412,9 @@ def main():
 
     def process_messages():
         try:
-            streaming_function_input_type = None
-            streaming_function_callables = None
-            if args.dmv2:
-                streaming_function_input_type, streaming_function_callables = (
-                    load_streaming_function_dmv2(function_file_dir, function_file_name)
-                )
-            else:
-                streaming_function_input_type, streaming_function_callable = (
-                    load_streaming_function_dmv1(function_file_dir, function_file_name)
-                )
-
-                streaming_function_callables = [(streaming_function_callable, None)]
+            streaming_function_input_type, streaming_function_callables = (
+                load_streaming_function(function_file_dir, function_file_name)
+            )
 
             needs_producer = target_topic is not None or any(
                 pair[1] is not None for pair in streaming_function_callables

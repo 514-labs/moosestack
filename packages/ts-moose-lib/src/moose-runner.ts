@@ -136,7 +136,6 @@ program
   .option("--client-cert <path>", "Path to client certificate")
   .option("--client-key <path>", "Path to client key")
   .option("--api-key <key>", "API key for authentication")
-  .option("--is-dmv2", "Whether this is a DMv2 consumption", false)
   .option("--proxy-port <port>", "Port to run the proxy server on", parseInt)
   .option(
     "--worker-count <count>",
@@ -176,7 +175,6 @@ program
           apiKey: options.apiKey,
         },
         enforceAuth: options.enforceAuth,
-        isDmv2: options.isDmv2,
         proxyPort: options.proxyPort,
         workerCount: options.workerCount,
       });
@@ -198,7 +196,6 @@ program
   .option("--sasl-password <password>", "SASL password")
   .option("--sasl-mechanism <mechanism>", "SASL mechanism")
   .option("--security-protocol <protocol>", "Security protocol")
-  .option("--is-dmv2", "Whether this is a DMv2 function", false)
   .option("--log-payloads", "Log payloads for debugging", false)
   .action(
     (sourceTopic, functionFilePath, broker, maxSubscriberCount, options) => {
@@ -209,7 +206,6 @@ program
         functionFilePath,
         broker,
         maxSubscriberCount: parseInt(maxSubscriberCount),
-        isDmv2: options.isDmv2,
         logPayloads: options.logPayloads,
         saslUsername: options.saslUsername,
         saslPassword: options.saslPassword,

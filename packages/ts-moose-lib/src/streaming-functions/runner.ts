@@ -38,11 +38,6 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
-import {
-  getSourceDir,
-  shouldUseCompiled,
-  loadModule,
-} from "../compiler-config";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -110,7 +105,6 @@ export interface StreamingFunctionArgs {
   functionFilePath: string;
   broker: string; // Comma-separated list of Kafka broker addresses (e.g., "broker1:9092, broker2:9092"). Whitespace around commas is automatically trimmed.
   maxSubscriberCount: number;
-  isDmv2: boolean;
   logPayloads?: boolean;
   saslUsername?: string;
   saslPassword?: string;
@@ -574,50 +568,7 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
   setTimeout(() => sendMessageMetrics(logger, metrics), 1000);
 };
 
-/**
- * Dynamically loads a streaming function from a file path
- *
- * @param args - The streaming function arguments containing the function file path
- * @returns The default export of the streaming function module
- * @throws Will throw and log an error if the function file cannot be loaded
- * @example
- * ```ts
- * const fn = loadStreamingFunction({functionFilePath: './transform.js'});
- * const result = await fn(data);
- * ```
- */
-async function loadStreamingFunction(functionFilePath: string) {
-  let streamingFunctionImport: { default: StreamingFunction };
-  try {
-    // Check if we should use compiled code
-    const useCompiled = shouldUseCompiled();
-    const sourceDir = getSourceDir();
-
-    // Adjust path for compiled mode
-    let actualPath = functionFilePath;
-    if (useCompiled) {
-      // Replace source directory path with compiled directory path
-      // Example: /app/path/app/functions/x.ts -> /app/path/.moose/compiled/app/functions/x.js
-      // Use string replacement instead of RegExp to avoid ReDoS risk
-      const sourceDirPattern = `/${sourceDir}/`;
-      actualPath = functionFilePath
-        .replace(sourceDirPattern, `/.moose/compiled/${sourceDir}/`)
-        .replace(/\.ts$/, ".js");
-      // Use dynamic loader that handles both CJS and ESM
-      streamingFunctionImport = await loadModule(actualPath);
-    } else {
-      // In development mode, remove extension for require()
-      const pathWithoutExt = actualPath.replace(/\.(ts|js)$/, "");
-      streamingFunctionImport = require(pathWithoutExt);
-    }
-  } catch (e) {
-    cliLog({ action: "Function", message: `${e}`, message_type: "Error" });
-    throw e;
-  }
-  return streamingFunctionImport.default;
-}
-
-async function loadStreamingFunctionV2(
+async function loadStreamingFunction(
   sourceTopic: TopicConfig,
   targetTopic?: TopicConfig,
 ): Promise<{
@@ -716,19 +667,12 @@ const startConsumer = async (
   ][];
   let fieldMutations: FieldMutations | undefined;
 
-  if (args.isDmv2) {
-    const result = await loadStreamingFunctionV2(
-      args.sourceTopic,
-      args.targetTopic,
-    );
-    streamingFunctions = result.functions;
-    fieldMutations = result.fieldMutations;
-  } else {
-    streamingFunctions = [
-      [await loadStreamingFunction(args.functionFilePath), {}],
-    ];
-    fieldMutations = undefined;
-  }
+  const result = await loadStreamingFunction(
+    args.sourceTopic,
+    args.targetTopic,
+  );
+  streamingFunctions = result.functions;
+  fieldMutations = result.fieldMutations;
 
   await consumer.subscribe({
     topics: [args.sourceTopic.name], // Use full topic name for Kafka operations
@@ -924,8 +868,7 @@ export function validateTopicConfig(config: TopicConfig): void {
  *   targetTopic: { name: 'target', partitions: 3, retentionPeriod: 86400, maxMessageBytes: 1048576 },
  *   functionFilePath: './transform.js',
  *   broker: 'localhost:9092',
- *   maxSubscriberCount: 3,
- *   isDmv2: false
+ *   maxSubscriberCount: 3
  * }); // Starts the streaming function cluster
  * ```
  */
