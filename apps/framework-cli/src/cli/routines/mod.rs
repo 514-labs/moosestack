@@ -552,7 +552,6 @@ pub async fn start_development_mode(
         api_changes_channel,
         webapp_changes_channel,
         metrics: metrics.clone(),
-        redis_client: &redis_client,
     })
     .await?;
 
@@ -717,7 +716,6 @@ pub async fn start_production_mode(
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
-        redis_client: &redis_client,
     })
     .await?;
 
