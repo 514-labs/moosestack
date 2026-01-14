@@ -1,5 +1,5 @@
 language = "python" # Must be typescript or python
-description = "Experimental Python project demonstrating MooseModel with LSP autocomplete for column names."
+description = "Experimental Python MooseStack project demonstrating MooseModel with LSP autocomplete for column names."
 post_install_print = """
 ⚠️  EXPERIMENTAL TEMPLATE - REQUIRES DEV VERSION ⚠️
 
