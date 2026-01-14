@@ -613,20 +613,26 @@ def main():
                             ) in streaming_function_callables:
                                 # Wrap print and logging to emit structured logs
                                 import builtins
+
                                 original_print = builtins.print
 
                                 def structured_print(*args, **kwargs):
                                     import sys
+
                                     # Convert args to string like normal print
                                     message = " ".join(str(arg) for arg in args)
                                     # Emit structured log to stderr for Rust to parse
-                                    structured_log = json.dumps({
-                                        "__moose_structured_log__": True,
-                                        "level": "info",
-                                        "message": message,
-                                        "function_name": log_prefix,
-                                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    })
+                                    structured_log = json.dumps(
+                                        {
+                                            "__moose_structured_log__": True,
+                                            "level": "info",
+                                            "message": message,
+                                            "function_name": log_prefix,
+                                            "timestamp": datetime.now(
+                                                timezone.utc
+                                            ).isoformat(),
+                                        }
+                                    )
                                     sys.stderr.write(structured_log + "\n")
                                     sys.stderr.flush()
 
@@ -636,9 +642,6 @@ def main():
                                     output_data = streaming_function_callable(
                                         input_data
                                     )
-                                finally:
-                                    # Restore original print
-                                    builtins.print = original_print
                                 except Exception as e:
                                     traceback.print_exc()
                                     if dlq is not None:
@@ -670,6 +673,9 @@ def main():
                                         )
                                     # Skip to the next transformation or message
                                     continue
+                                finally:
+                                    # Restore original print
+                                    builtins.print = original_print
 
                                 # For consumers, output_data will be None
                                 if output_data is None:

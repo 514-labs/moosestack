@@ -91,7 +91,9 @@ def _validate_input_data(input_data: dict | None, task) -> any:
         )
 
 
-async def _execute_task_function(task, input_data, executor, task_state: dict, task_identifier: str) -> any:
+async def _execute_task_function(
+    task, input_data, executor, task_state: dict, task_identifier: str
+) -> any:
     """Execute the task function with a single context parameter.
 
     Supports both async and sync handlers via a thread executor for sync ones.
@@ -110,13 +112,15 @@ async def _execute_task_function(task, input_data, executor, task_state: dict, t
         # Convert args to string like normal print
         message = " ".join(str(arg) for arg in args)
         # Emit structured log to stderr for Rust to parse
-        structured_log = json.dumps({
-            "__moose_structured_log__": True,
-            "level": "info",
-            "message": message,
-            "task_name": task_identifier,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        structured_log = json.dumps(
+            {
+                "__moose_structured_log__": True,
+                "level": "info",
+                "message": message,
+                "task_name": task_identifier,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
         sys.stderr.write(structured_log + "\n")
         sys.stderr.flush()
 
@@ -205,7 +209,9 @@ async def _execute_dmv2_task(
 
         try:
             # Create task identifier for logging
-            task_identifier = f"{execution_input.dmv2_workflow_name}/{execution_input.task_name}"
+            task_identifier = (
+                f"{execution_input.dmv2_workflow_name}/{execution_input.task_name}"
+            )
 
             # Execute the task function
             result = await _execute_task_function(
