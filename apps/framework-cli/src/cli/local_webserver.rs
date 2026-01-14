@@ -655,7 +655,6 @@ impl Service<Request<Incoming>> for RouteService {
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
         Box::pin(router(
-            self.current_version.clone(),
             self.path_prefix.clone(),
             self.consumption_apis,
             self.web_apps,
@@ -1756,7 +1755,6 @@ fn get_path_without_prefix(path: PathBuf, path_prefix: Option<String>) -> PathBu
 
 #[allow(clippy::too_many_arguments)]
 async fn router(
-    current_version: String,
     path_prefix: Option<String>,
     consumption_apis: &RwLock<HashSet<String>>,
     web_apps: &RwLock<HashSet<String>>,
@@ -1801,8 +1799,8 @@ async fn router(
             if segments.len() >= 2 && segments[0] == "ingest" =>
         {
             // For nested paths, we need to handle version resolution differently
-            if project.features.data_model_v2 && segments.len() == 2 {
-                // For v2 with simple path (e.g., /ingest/model_name), find the latest version
+            if segments.len() == 2 {
+                // For simple path (e.g., /ingest/model_name), find the latest version
                 let route_table_read = route_table.read().await;
                 let base_path = route.to_str().unwrap();
                 let mut latest_version: Option<&Version> = None;
@@ -1849,19 +1847,6 @@ async fn router(
                         .await
                     }
                 }
-            } else if !project.features.data_model_v2 && segments.len() == 2 {
-                // For v1 with simple path, append current version
-                ingest_route(
-                    req,
-                    route.join(&current_version),
-                    configured_producer,
-                    route_table,
-                    is_prod,
-                    jwt_config,
-                    project.http_server_config.max_request_body_size,
-                    project.log_payloads,
-                )
-                .await
             } else {
                 // For nested paths or paths with explicit version, use as-is
                 ingest_route(

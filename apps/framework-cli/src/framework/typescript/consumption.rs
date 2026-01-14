@@ -75,10 +75,6 @@ pub fn run(
         string_args.push(api_key);
     }
 
-    if project.features.data_model_v2 {
-        string_args.push("--is-dmv2".to_string());
-    }
-
     if let Some(port) = proxy_port {
         string_args.push("--proxy-port".to_string());
         string_args.push(port.to_string());
