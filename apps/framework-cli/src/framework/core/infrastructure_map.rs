@@ -36,7 +36,6 @@
 use super::infrastructure::api_endpoint::{APIType, ApiEndpoint};
 use super::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use super::infrastructure::function_process::FunctionProcess;
-use super::infrastructure::olap_process::OlapProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
 use super::infrastructure::sql_resource::SqlResource;
 use super::infrastructure::table::{Column, OrderBy, Table};
@@ -448,8 +447,6 @@ pub enum ProcessChange {
     TopicToTopicSyncProcess(Change<TopicToTopicSyncProcess>),
     /// Change to a function process
     FunctionProcess(Change<FunctionProcess>),
-    /// Change to an OLAP process
-    OlapProcess(Change<OlapProcess>),
     /// Change to a consumption API web server
     ConsumptionApiWebServer(Change<ConsumptionApiWebServer>),
     /// Change to an orchestration worker
@@ -547,10 +544,6 @@ pub struct InfrastructureMap {
     /// Collection of function processes that transform data
     pub function_processes: HashMap<String, FunctionProcess>,
 
-    /// Process handling OLAP database operations
-    // TODO change to a hashmap of processes when we have several
-    pub block_db_processes: OlapProcess,
-
     /// Web server handling consumption API endpoints
     // Not sure if we will want to change that or not in the future to be able to tell
     // the new consumption endpoints that were added or removed.
@@ -609,7 +602,6 @@ impl InfrastructureMap {
             topic_to_table_sync_processes: Default::default(),
             topic_to_topic_sync_processes: Default::default(),
             function_processes: Default::default(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: Default::default(),
             sql_resources: Default::default(),
@@ -762,14 +754,6 @@ impl InfrastructureMap {
             .collect();
 
         process_changes.append(&mut function_process_changes);
-
-        // TODO Change this when we have multiple processes for blocks
-        // Only add OLAP process if OLAP is enabled
-        if project.features.olap {
-            process_changes.push(ProcessChange::OlapProcess(Change::<OlapProcess>::Added(
-                Box::new(OlapProcess {}),
-            )));
-        }
 
         // Only add Analytics API server if apis feature is enabled
         if project.features.apis {
@@ -1216,12 +1200,6 @@ impl InfrastructureMap {
             process_changes,
         );
 
-        Self::diff_olap_processes(
-            &self.block_db_processes,
-            &target_map.block_db_processes,
-            process_changes,
-        );
-
         Self::diff_consumption_api_processes(
             &self.consumption_api_web_server,
             &target_map.consumption_api_web_server,
@@ -1397,23 +1375,6 @@ impl InfrastructureMap {
         );
 
         (process_additions, process_removals, process_updates)
-    }
-
-    /// Compare OLAP process changes between two infrastructure maps
-    fn diff_olap_processes(
-        self_process: &OlapProcess,
-        target_process: &OlapProcess,
-        process_changes: &mut Vec<ProcessChange>,
-    ) {
-        tracing::info!("Analyzing changes in OLAP processes...");
-
-        // Currently we assume there is always a change and restart the processes
-        // TODO: Once we refactor to have multiple processes, we should compare actual changes
-        tracing::debug!("OLAP Process updated (assumed for now)");
-        process_changes.push(ProcessChange::OlapProcess(Change::<OlapProcess>::Updated {
-            before: Box::new(self_process.clone()),
-            after: Box::new(target_process.clone()),
-        }));
     }
 
     /// Compare Consumption API process changes between two infrastructure maps
@@ -2740,7 +2701,6 @@ impl InfrastructureMap {
                 .map(|(k, v)| (k, OrchestrationWorker::from_proto(v)))
                 .collect(),
             consumption_api_web_server: ConsumptionApiWebServer {},
-            block_db_processes: OlapProcess {},
             sql_resources,
             // TODO: add proto
             workflows: HashMap::new(),
@@ -3501,7 +3461,6 @@ impl Default for InfrastructureMap {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -3535,7 +3494,6 @@ impl serde::Serialize for InfrastructureMap {
             topic_to_table_sync_processes: &'a HashMap<String, TopicToTableSyncProcess>,
             topic_to_topic_sync_processes: &'a HashMap<String, TopicToTopicSyncProcess>,
             function_processes: &'a HashMap<String, FunctionProcess>,
-            block_db_processes: &'a OlapProcess,
             consumption_api_web_server: &'a ConsumptionApiWebServer,
             orchestration_workers: &'a HashMap<String, OrchestrationWorker>,
             sql_resources: &'a HashMap<String, SqlResource>,
@@ -3559,7 +3517,6 @@ impl serde::Serialize for InfrastructureMap {
             topic_to_table_sync_processes: &masked_inframap.topic_to_table_sync_processes,
             topic_to_topic_sync_processes: &masked_inframap.topic_to_topic_sync_processes,
             function_processes: &masked_inframap.function_processes,
-            block_db_processes: &masked_inframap.block_db_processes,
             consumption_api_web_server: &masked_inframap.consumption_api_web_server,
             orchestration_workers: &masked_inframap.orchestration_workers,
             sql_resources: &masked_inframap.sql_resources,

@@ -192,7 +192,6 @@ mod tests {
                 topic_to_table_sync_processes: HashMap::new(),
                 topic_to_topic_sync_processes: HashMap::new(),
                 function_processes: HashMap::new(),
-                block_db_processes: crate::framework::core::infrastructure::olap_process::OlapProcess {},
                 consumption_api_web_server: crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer {},
                 orchestration_workers: HashMap::new(),
                 sql_resources: HashMap::new(),
