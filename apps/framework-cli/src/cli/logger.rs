@@ -810,6 +810,93 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
     }
 }
 
+/// Parsed structured log data from a child process.
+pub struct StructuredLogData {
+    pub resource_name: String,
+    pub message: String,
+    pub level: String,
+}
+
+/// Parses a structured log from a child process (Node.js/Python).
+///
+/// This function handles the common pattern of parsing JSON logs emitted by user code
+/// (streaming functions, consumption APIs, workflow tasks). The caller is responsible
+/// for creating the span and emitting the log, since tracing macros require literal
+/// span names.
+///
+/// ## Parameters
+///
+/// - `line`: The log line to parse (expected to be JSON with `__moose_structured_log__` marker)
+/// - `resource_name_field`: The JSON field name for the resource (e.g., "function_name", "api_name", "task_name")
+///
+/// ## Returns
+///
+/// Returns `Some(StructuredLogData)` if the line was successfully parsed as a structured log,
+/// `None` otherwise (allowing the caller to handle the line as a regular log).
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// use crate::cli::logger::{context, resource_type, parse_structured_log};
+///
+/// // In a stderr processing loop:
+/// while let Ok(Some(line)) = stderr_reader.next_line().await {
+///     if let Some(log_data) = parse_structured_log(&line, "function_name") {
+///         let span = tracing::info_span!(
+///             "streaming_function_log",
+///             context = context::RUNTIME,
+///             resource_type = resource_type::TRANSFORM,
+///             resource_name = %log_data.resource_name,
+///         );
+///         let _guard = span.enter();
+///         match log_data.level.as_str() {
+///             "error" => tracing::error!("{}", log_data.message),
+///             "warn" => tracing::warn!("{}", log_data.message),
+///             "debug" => tracing::debug!("{}", log_data.message),
+///             _ => tracing::info!("{}", log_data.message),
+///         }
+///         continue;
+///     }
+///     // Handle as regular log...
+/// }
+/// ```
+pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<StructuredLogData> {
+    // Try to parse as structured log from child process
+    let log_entry = serde_json::from_str::<serde_json::Value>(line).ok()?;
+
+    if log_entry
+        .get("__moose_structured_log__")
+        .and_then(|v| v.as_bool())
+        != Some(true)
+    {
+        return None;
+    }
+
+    let resource_name = log_entry
+        .get(resource_name_field)
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let message = log_entry
+        .get("message")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let level = log_entry
+        .get("level")
+        .and_then(|v| v.as_str())
+        .unwrap_or("info")
+        .to_string();
+
+    Some(StructuredLogData {
+        resource_name,
+        message,
+        level,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,13 +4,54 @@ from moose_lib.dmv2 import get_workflow
 from moose_lib.dmv2.workflow import TaskContext
 from typing import Optional, Callable
 import asyncio
+import builtins
+import contextvars
+from datetime import datetime, timezone
 import json
+import sys
 import traceback
 import concurrent.futures
 
 from .logging import log
 from .types import WorkflowStepResult
 from .serialization import moose_json_decode
+
+# Context variable to track task name without mutating globals
+_task_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "task_context", default=None
+)
+
+# Store original print for restoration
+_original_print = builtins.print
+
+
+# Structured print wrapper that respects kwargs and uses contextvars
+def _structured_print(*args, sep=" ", end="\n", file=None, flush=False, **kwargs):
+    """Print wrapper that emits structured logs when in a task context."""
+    task_name = _task_context.get()
+
+    if task_name and file in (None, sys.stderr, sys.stdout):
+        # We're in a task context - emit structured log to stderr
+        message = sep.join(str(arg) for arg in args)
+        structured_log = json.dumps(
+            {
+                "__moose_structured_log__": True,
+                "level": "info",
+                "message": message,
+                "task_name": task_name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        sys.stderr.write(structured_log + "\n")
+        if flush:
+            sys.stderr.flush()
+    else:
+        # Not in task context or custom file specified - use original print
+        _original_print(*args, sep=sep, end=end, file=file, flush=flush, **kwargs)
+
+
+# Replace global print with structured wrapper at module load
+builtins.print = _structured_print
 
 
 @dataclass
@@ -101,30 +142,8 @@ async def _execute_task_function(
     task_func = task.config.run
     context = TaskContext(state=task_state, input=input_data)
 
-    # Wrap print to emit structured logs
-    import builtins
-    import sys
-    from datetime import datetime, timezone
-
-    original_print = builtins.print
-
-    def structured_print(*args, **kwargs):
-        # Convert args to string like normal print
-        message = " ".join(str(arg) for arg in args)
-        # Emit structured log to stderr for Rust to parse
-        structured_log = json.dumps(
-            {
-                "__moose_structured_log__": True,
-                "level": "info",
-                "message": message,
-                "task_name": task_identifier,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-        sys.stderr.write(structured_log + "\n")
-        sys.stderr.flush()
-
-    builtins.print = structured_print
+    # Set context for structured logging via contextvars
+    _task_context.set(task_identifier)
 
     try:
         if asyncio.iscoroutinefunction(task_func):
@@ -134,8 +153,8 @@ async def _execute_task_function(
             future = loop.run_in_executor(executor, lambda: task_func(context))
             return await asyncio.wait_for(future, timeout=None)
     finally:
-        # Restore original print
-        builtins.print = original_print
+        # Clear context
+        _task_context.set(None)
 
 
 async def _handle_task_cancellation(task, task_name: str, task_state: dict, input_data):

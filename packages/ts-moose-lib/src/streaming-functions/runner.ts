@@ -1,4 +1,6 @@
 import { Readable } from "node:stream";
+import { AsyncLocalStorage } from "async_hooks";
+import * as util from "util";
 import { KafkaJS } from "@514labs/kafka-javascript";
 const { Kafka } = KafkaJS;
 
@@ -48,6 +50,63 @@ const HEARTBEAT_INTERVAL_CONSUMER = 3000;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
 // Max messages per eachBatch call - Confluent client defaults to 32, increase for throughput
 const CONSUMER_MAX_BATCH_SIZE = 1000;
+
+// AsyncLocalStorage to track function context without mutating globals
+const functionContextStorage = new AsyncLocalStorage<{ functionName: string }>();
+
+// Safe serialization that handles circular references and BigInt
+function safeStringify(arg: any): string {
+  if (typeof arg === "object" && arg !== null) {
+    try {
+      return JSON.stringify(arg);
+    } catch (e) {
+      // Fall back to util.inspect for circular references or BigInt
+      return util.inspect(arg, { depth: 2, breakLength: Infinity });
+    }
+  }
+  return String(arg);
+}
+
+// Structured console wrapper that uses AsyncLocalStorage
+function createStructuredConsoleWrapper(
+  originalMethod: (...args: any[]) => void,
+  level: string,
+) {
+  return (...args: any[]) => {
+    const context = functionContextStorage.getStore();
+    if (context) {
+      // We're in a streaming function context - emit structured log
+      const message = args.map((arg) => safeStringify(arg)).join(" ");
+      process.stderr.write(
+        JSON.stringify({
+          __moose_structured_log__: true,
+          level,
+          message,
+          function_name: context.functionName,
+          timestamp: new Date().toISOString(),
+        }) + "\n",
+      );
+    } else {
+      // Not in function context - use original console
+      originalMethod(...args);
+    }
+  };
+}
+
+// Wrap console methods once at module load
+const originalConsole = {
+  log: console.log,
+  info: console.info,
+  warn: console.warn,
+  error: console.error,
+  debug: console.debug,
+};
+
+console.log = createStructuredConsoleWrapper(originalConsole.log, "info");
+console.info = createStructuredConsoleWrapper(originalConsole.info, "info");
+console.warn = createStructuredConsoleWrapper(originalConsole.warn, "warn");
+console.error = createStructuredConsoleWrapper(originalConsole.error, "error");
+console.debug = createStructuredConsoleWrapper(originalConsole.debug, "debug");
 
 /**
  * Data structure for metrics logging containing counts and metadata
@@ -283,46 +342,19 @@ const handleMessage = async (
       logger.log(`[PAYLOAD:STREAM_IN] ${JSON.stringify(parsedData)}`);
     }
 
-    // Wrap console methods to emit structured logs with function context
+    // Get function name for context
     const functionName = logger.logPrefix;
-    const originalConsole = {
-      log: console.log,
-      info: console.info,
-      warn: console.warn,
-      error: console.error,
-      debug: console.debug,
-    };
 
-    const createStructuredLogger = (level: string) => (...args: any[]) => {
-      const message = args
-        .map((arg) => (typeof arg === "object" ? JSON.stringify(arg) : String(arg)))
-        .join(" ");
-
-      // Emit structured log to stderr so Rust can parse it and add span fields
-      process.stderr.write(
-        JSON.stringify({
-          __moose_structured_log__: true,
-          level,
-          message,
-          function_name: functionName,
-          timestamp: new Date().toISOString(),
-        }) + "\n",
-      );
-    };
-
-    console.log = createStructuredLogger("info");
-    console.info = createStructuredLogger("info");
-    console.warn = createStructuredLogger("warn");
-    console.error = createStructuredLogger("error");
-    console.debug = createStructuredLogger("debug");
-
-    let transformedData;
-    try {
-      transformedData = await Promise.all(
-        streamingFunctionWithConfigList.map(async ([fn, config]) => {
-          try {
-            return await fn(parsedData);
-          } catch (e) {
+    // Use AsyncLocalStorage to set context for this streaming function execution
+    // This avoids race conditions from concurrent message processing
+    const transformedData = await functionContextStorage.run(
+      { functionName },
+      async () => {
+        return await Promise.all(
+          streamingFunctionWithConfigList.map(async ([fn, config]) => {
+            try {
+              return await fn(parsedData);
+            } catch (e) {
           // Check if there's a deadLetterQueue configured
           const deadLetterQueue = config.deadLetterQueue;
 
@@ -369,15 +401,9 @@ const handleMessage = async (
           throw e;
         }
       }),
+        );
+      },
     );
-    } finally {
-      // Restore original console methods
-      console.log = originalConsole.log;
-      console.info = originalConsole.info;
-      console.warn = originalConsole.warn;
-      console.error = originalConsole.error;
-      console.debug = originalConsole.debug;
-    }
 
     const processedMessages = transformedData
       .map((userFunctionOutput, i) => {

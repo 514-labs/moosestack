@@ -85,43 +85,22 @@ pub fn run(
     tokio::spawn(async move {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
             // Try to parse as structured log from Python streaming function
-            if let Ok(log_entry) = serde_json::from_str::<serde_json::Value>(&line) {
-                if log_entry
-                    .get("__moose_structured_log__")
-                    .and_then(|v| v.as_bool())
-                    == Some(true)
-                {
-                    let function_name = log_entry
-                        .get("function_name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    let message = log_entry
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let level = log_entry
-                        .get("level")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("info");
-
-                    // Create a span with the streaming function context
-                    let span = tracing::info_span!(
-                        "streaming_function_log",
-                        context = crate::cli::logger::context::RUNTIME,
-                        resource_type = crate::cli::logger::resource_type::TRANSFORM,
-                        resource_name = function_name,
-                    );
-                    let _guard = span.enter();
-
-                    // Log within the span - span fields are automatically attached
-                    match level {
-                        "error" => tracing::error!("{}", message),
-                        "warn" => tracing::warn!("{}", message),
-                        "debug" => tracing::debug!("{}", message),
-                        _ => tracing::info!("{}", message),
-                    }
-                    continue;
+            if let Some(log_data) = crate::cli::logger::parse_structured_log(&line, "function_name")
+            {
+                let span = tracing::info_span!(
+                    "streaming_function_log",
+                    context = crate::cli::logger::context::RUNTIME,
+                    resource_type = crate::cli::logger::resource_type::TRANSFORM,
+                    resource_name = %log_data.resource_name,
+                );
+                let _guard = span.enter();
+                match log_data.level.as_str() {
+                    "error" => tracing::error!("{}", log_data.message),
+                    "warn" => tracing::warn!("{}", log_data.message),
+                    "debug" => tracing::debug!("{}", log_data.message),
+                    _ => tracing::info!("{}", log_data.message),
                 }
+                continue;
             }
             // Fall back to regular error logging if not a structured log
             tracing::error!("{}", line);

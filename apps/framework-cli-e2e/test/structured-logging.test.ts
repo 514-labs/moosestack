@@ -423,7 +423,9 @@ export * from "./apis/test";
     this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Wait a bit for all services to settle after ingest
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) =>
+      setTimeout(resolve, TIMEOUTS.SERVICE_SETTLE_MS),
+    );
 
     // Call health endpoint
     const healthUrl = `${SERVER_CONFIG.url}/health`;

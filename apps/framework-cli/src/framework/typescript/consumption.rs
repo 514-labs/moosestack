@@ -127,43 +127,21 @@ pub fn run(
     tokio::spawn(async move {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
             // Try to parse as structured log from Node.js consumption API
-            if let Ok(log_entry) = serde_json::from_str::<Value>(&line) {
-                if log_entry
-                    .get("__moose_structured_log__")
-                    .and_then(|v| v.as_bool())
-                    == Some(true)
-                {
-                    let api_name = log_entry
-                        .get("api_name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown");
-                    let message = log_entry
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let level = log_entry
-                        .get("level")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("info");
-
-                    // Create a span with the API context
-                    let span = tracing::info_span!(
-                        "consumption_api_log",
-                        context = crate::cli::logger::context::RUNTIME,
-                        resource_type = crate::cli::logger::resource_type::CONSUMPTION_API,
-                        resource_name = api_name,
-                    );
-                    let _guard = span.enter();
-
-                    // Log within the span - span fields are automatically attached
-                    match level {
-                        "error" => tracing::error!("{}", message),
-                        "warn" => tracing::warn!("{}", message),
-                        "debug" => tracing::debug!("{}", message),
-                        _ => tracing::info!("{}", message),
-                    }
-                    continue;
+            if let Some(log_data) = crate::cli::logger::parse_structured_log(&line, "api_name") {
+                let span = tracing::info_span!(
+                    "consumption_api_log",
+                    context = crate::cli::logger::context::RUNTIME,
+                    resource_type = crate::cli::logger::resource_type::CONSUMPTION_API,
+                    resource_name = %log_data.resource_name,
+                );
+                let _guard = span.enter();
+                match log_data.level.as_str() {
+                    "error" => tracing::error!("{}", log_data.message),
+                    "warn" => tracing::warn!("{}", log_data.message),
+                    "debug" => tracing::debug!("{}", log_data.message),
+                    _ => tracing::info!("{}", log_data.message),
                 }
+                continue;
             }
             // Fall back to regular error logging if not a structured log
             error!("{}", line);
