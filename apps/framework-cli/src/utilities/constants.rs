@@ -35,7 +35,6 @@ pub const CLI_DEV_TEMPORAL_DYNAMIC_CONFIG_DIR: &str = "temporal/dynamicconfig";
 
 pub const SCHEMAS_DIR: &str = "datamodels";
 pub const FUNCTIONS_DIR: &str = "functions";
-pub const BLOCKS_DIR: &str = "blocks";
 pub const CONSUMPTION_DIR: &str = "apis";
 pub const VSCODE_DIR: &str = ".vscode";
 pub const SAMPLE_STREAMING_FUNCTION_SOURCE: &str = "Foo";
@@ -48,7 +47,7 @@ pub const TEMPORAL_CONTAINER_NAME: &str = "temporal";
 pub const REDPANDA_HOSTS: [&str; 2] = ["redpanda", "localhost"];
 
 pub const APP_DIR: &str = "app";
-pub const APP_DIR_LAYOUT: [&str; 4] = [SCHEMAS_DIR, FUNCTIONS_DIR, BLOCKS_DIR, CONSUMPTION_DIR];
+pub const APP_DIR_LAYOUT: [&str; 3] = [SCHEMAS_DIR, FUNCTIONS_DIR, CONSUMPTION_DIR];
 
 pub const GITIGNORE: &str = ".gitignore";
 
