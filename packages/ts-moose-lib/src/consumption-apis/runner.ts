@@ -153,7 +153,7 @@ const apiHandler = async (
       const url = new URL(req.url || "", "http://localhost");
       const fileName = url.pathname;
 
-      let jwtPayload;
+      let jwtPayload: jose.JWTPayload | undefined;
       if (publicKey && jwtConfig) {
         const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
         if (jwt) {
@@ -371,7 +371,7 @@ const createMainRouter = async (
       return;
     }
 
-    let jwtPayload;
+    let jwtPayload: jose.JWTPayload | undefined;
     if (publicKey && jwtConfig) {
       const jwt = req.headers.authorization?.split(" ")[1];
       if (jwt) {
