@@ -117,7 +117,6 @@ use super::{Message, MessageType};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
@@ -934,7 +933,7 @@ async fn legacy_remote_plan_logic(
             // Output empty plan as JSON
             let temp_plan = InfraPlan {
                 changes: plan_response.changes,
-                target_infra_map: InfrastructureMap::new(project, PrimitiveMap::default()),
+                target_infra_map: InfrastructureMap::empty_from_project(project),
             };
             println!("{}", serde_json::to_string_pretty(&temp_plan)?);
         } else {
@@ -952,7 +951,7 @@ async fn legacy_remote_plan_logic(
     // Create a temporary InfraPlan to use with the show_changes function
     let temp_plan = InfraPlan {
         changes: plan_response.changes,
-        target_infra_map: InfrastructureMap::new(project, PrimitiveMap::default()),
+        target_infra_map: InfrastructureMap::empty_from_project(project),
     };
 
     if json {
