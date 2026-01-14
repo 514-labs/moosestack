@@ -35,9 +35,6 @@ from moose_lib.commons import EnhancedJSONEncoder
 from consumption_wrapper.utils import create_temporal_connection
 
 parser = argparse.ArgumentParser(description="Run Consumption Server")
-parser.add_argument(
-    "consumption_dir_path", type=str, help="Path to the consumption directory"
-)
 parser.add_argument("clickhouse_db", type=str, help="Clickhouse database name")
 parser.add_argument("clickhouse_host", type=str, help="Clickhouse host")
 parser.add_argument("clickhouse_port", type=int, help="Clickhouse port")
@@ -65,7 +62,6 @@ port = args.clickhouse_port
 db = args.clickhouse_db
 user = args.clickhouse_username
 password = args.clickhouse_password
-consumption_dir_path = args.consumption_dir_path
 
 jwt_secret = args.jwt_secret
 jwt_issuer = args.jwt_issuer
@@ -77,8 +73,6 @@ temporal_namespace = args.temporal_namespace
 client_cert = args.client_cert
 client_key = args.client_key
 api_key = args.api_key
-
-sys.path.append(consumption_dir_path)
 
 # Persistent event loop for handling async ASGI requests
 # Reusing a single event loop avoids the overhead of creating/destroying
