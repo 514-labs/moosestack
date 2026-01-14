@@ -33,7 +33,6 @@ interface TemporalConfig {
 }
 
 interface ApisConfig {
-  apisDir: string;
   clickhouseConfig: ClickhouseConfig;
   jwtConfig?: JwtConfig;
   temporalConfig?: TemporalConfig;
@@ -47,8 +46,6 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   ...config,
   useSSL: config.useSSL ? "true" : "false",
 });
-
-const createPath = (apisDir: string, path: string) => `${apisDir}${path}.ts`;
 
 const httpLogger = (
   req: http.IncomingMessage,
@@ -80,7 +77,6 @@ const apiHandler = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
-  apisDir: string,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
 ) => {
@@ -124,7 +120,6 @@ const apiHandler = async (
         return;
       }
 
-      const pathName = createPath(apisDir, fileName);
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
         (obj: { [key: string]: string[] | string }, [key, value]) => {
           const existingValue = obj[key];
@@ -142,7 +137,7 @@ const apiHandler = async (
         {},
       );
 
-      let userFuncModule = modulesCache.get(pathName);
+      let userFuncModule = modulesCache.get(fileName);
       if (userFuncModule === undefined) {
         let apiName = fileName.replace(/^\/+|\/+$/g, "");
         let version: string | null = null;
@@ -190,7 +185,7 @@ const apiHandler = async (
           throw new Error(errorMessage);
         }
 
-        modulesCache.set(pathName, userFuncModule);
+        modulesCache.set(fileName, userFuncModule);
         console.log(`[API] | Executing API: ${apiName}`);
       }
 
@@ -250,7 +245,6 @@ const createMainRouter = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
-  apisDir: string,
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
 ) => {
@@ -258,7 +252,6 @@ const createMainRouter = async (
     publicKey,
     clickhouseClient,
     temporalClient,
-    apisDir,
     enforceAuth,
     jwtConfig,
   );
@@ -421,7 +414,6 @@ export const runApis = async (config: ApisConfig) => {
           publicKey,
           clickhouseClient,
           temporalClient,
-          config.apisDir,
           config.enforceAuth,
           config.jwtConfig,
         ),

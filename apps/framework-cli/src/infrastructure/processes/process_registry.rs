@@ -68,7 +68,6 @@ impl ProcessRegistries {
             project.language,
             project.clickhouse_config.clone(),
             project.jwt.clone(),
-            project.consumption_dir(),
             project.project_location.clone(),
             project.clone(),
             None, // proxy_port: will use project.http_server_config.proxy_port
