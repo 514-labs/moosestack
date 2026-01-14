@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
-import { getEventsQuery, ValidationError } from "moose";
+import { getEventsQuery, BadRequestError } from "moose";
 
 export default async function clickhouseController(fastify: FastifyInstance) {
   // GET /api/v1/clickhouse/events
@@ -11,20 +11,13 @@ export default async function clickhouseController(fastify: FastifyInstance) {
       try {
         const rows = await getEventsQuery.fromUrl(request.url);
         reply.send({ rows, count: rows.length });
-      } catch (err) {
-        if (err instanceof ValidationError) {
-          reply.code(400).send({
-            error: "Validation failed",
-            details: err.errors,
-          });
-          return;
+      } catch (err: unknown) {
+        if (err instanceof BadRequestError) {
+          return reply.code(400).send(err.toJSON());
         }
-        if (err instanceof Error) {
-          request.log.error({ err }, "Query failed");
-          reply.code(500).send({ error: err.message });
-        } else {
-          reply.code(500).send({ error: "Unknown error" });
-        }
+        const message = err instanceof Error ? err.message : "Unknown error";
+        request.log.error({ err }, "Query failed");
+        reply.code(500).send({ error: message });
       }
     },
   );
