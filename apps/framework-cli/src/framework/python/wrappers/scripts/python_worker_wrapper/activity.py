@@ -2,7 +2,7 @@ from temporalio import activity
 from dataclasses import dataclass
 from moose_lib.dmv2 import get_workflow
 from moose_lib.dmv2.workflow import TaskContext
-from typing import Optional, Callable
+from typing import Optional, Callable, Any, TextIO
 import asyncio
 import builtins
 import contextvars
@@ -26,7 +26,14 @@ _original_print = builtins.print
 
 
 # Structured print wrapper that respects kwargs and uses contextvars
-def _structured_print(*args, sep=" ", end="\n", file=None, flush=False, **kwargs):
+def _structured_print(
+    *args: Any,
+    sep: str = " ",
+    end: str = "\n",
+    file: Optional[TextIO] = None,
+    flush: bool = False,
+    **kwargs: Any,
+) -> None:
     """Print wrapper that emits structured logs when in a task context."""
     task_name = _task_context.get()
 
@@ -150,7 +157,9 @@ async def _execute_task_function(
             return await task_func(context)
         else:
             loop = asyncio.get_running_loop()
-            future = loop.run_in_executor(executor, lambda: task_func(context))
+            # Copy context to propagate to thread executor
+            ctx = contextvars.copy_context()
+            future = loop.run_in_executor(executor, lambda: ctx.run(task_func, context))
             return await asyncio.wait_for(future, timeout=None)
     finally:
         # Clear context

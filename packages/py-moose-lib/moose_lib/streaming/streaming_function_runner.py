@@ -28,7 +28,7 @@ from kafka import KafkaConsumer, KafkaProducer
 import requests
 import threading
 import time
-from typing import Optional, Callable, Tuple, Any
+from typing import Optional, Callable, Tuple, Any, TextIO
 
 from moose_lib.dmv2 import get_streams, DeadLetterModel
 from moose_lib import cli_log, CliLogData, DeadLetterQueue
@@ -60,7 +60,14 @@ _original_print = builtins.print
 
 
 # Structured print wrapper that respects kwargs and uses contextvars
-def _structured_print(*args, sep=" ", end="\n", file=None, flush=False, **kwargs):
+def _structured_print(
+    *args: Any,
+    sep: str = " ",
+    end: str = "\n",
+    file: Optional[TextIO] = None,
+    flush: bool = False,
+    **kwargs: Any,
+) -> None:
     """Print wrapper that emits structured logs when in a function context."""
     function_name = _function_context.get()
 

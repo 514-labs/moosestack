@@ -811,6 +811,7 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
 }
 
 /// Parsed structured log data from a child process.
+#[derive(Debug, Clone)]
 pub struct StructuredLogData {
     pub resource_name: String,
     pub message: String,
