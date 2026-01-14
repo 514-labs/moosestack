@@ -36,3 +36,24 @@ Or start services individually:
     $ pnpm dev:web      # Start web app only
 """
 default_sloan_telemetry = "standard"
+
+# Boreal one-click deploy configuration
+[boreal]
+enabled = true
+display_name = "Chat with your App"
+short_description = "Deploy an AI chat app that can query your data"
+
+# Commands Boreal runs during setup, with JSON output parsing
+[[boreal.setup_commands]]
+command = "moose generate hash-token --json"
+outputs = [
+  { env_var = "MOOSE_API_KEY", json_path = "api_key" },
+  { env_var = "MOOSE_API_TOKEN", json_path = "bearer_token" }
+]
+
+# Env vars user must provide
+[[boreal.env_vars]]
+name = "ANTHROPIC_API_KEY"
+label = "Anthropic API Key"
+secret = true
+required = true
