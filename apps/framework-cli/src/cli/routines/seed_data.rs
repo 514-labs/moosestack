@@ -4,7 +4,6 @@ use crate::cli::display::{with_spinner_completion_async, Message, MessageType};
 use crate::cli::routines::RoutineFailure;
 use crate::cli::routines::RoutineSuccess;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::{
     parse_clickhouse_connection_string, ClickHouseConfig,
@@ -134,25 +133,15 @@ fn build_count_query(
 
 /// Loads the infrastructure map based on project configuration
 async fn load_infrastructure_map(project: &Project) -> Result<InfrastructureMap, RoutineFailure> {
-    if project.features.data_model_v2 {
-        // Resolve credentials for seeding data into S3-backed tables
-        InfrastructureMap::load_from_user_code(project, true)
-            .await
-            .map_err(|e| {
-                RoutineFailure::error(Message {
-                    action: "SeedClickhouse".to_string(),
-                    details: format!("Failed to load InfrastructureMap: {e:?}"),
-                })
-            })
-    } else {
-        let primitive_map = PrimitiveMap::load(project).await.map_err(|e| {
+    // Resolve credentials for seeding data into S3-backed tables
+    InfrastructureMap::load_from_user_code(project, true)
+        .await
+        .map_err(|e| {
             RoutineFailure::error(Message {
                 action: "SeedClickhouse".to_string(),
-                details: format!("Failed to load Primitives: {e:?}"),
+                details: format!("Failed to load InfrastructureMap: {e:?}"),
             })
-        })?;
-        Ok(InfrastructureMap::new(project, primitive_map))
-    }
+        })
 }
 
 /// Builds the ORDER BY clause for a table based on infrastructure map or provided order
