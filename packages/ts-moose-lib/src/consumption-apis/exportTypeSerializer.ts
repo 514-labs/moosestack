@@ -1,11 +1,5 @@
 import process from "process";
-
-/**
- * Gets the source directory from environment variable or defaults to "app"
- */
-function getSourceDir(): string {
-  return process.env.MOOSE_SOURCE_DIR || "app";
-}
+import { getSourceDir } from "../compiler-config";
 
 export async function runApiTypeSerializer(targetModel: string) {
   const func = require(
