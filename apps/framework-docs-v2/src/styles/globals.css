@@ -102,4 +102,69 @@
   .dark [cmdk-item] mark {
     @apply bg-gray-600 text-white p-0;
   }
+
+  /* Mermaid diagram styling overrides */
+  .mermaid-container svg {
+    @apply h-auto;
+    min-width: 100%;
+    width: max-content;
+  }
+
+  /* When maxHeight is set, center the scaled content */
+  .mermaid-container-constrained {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .mermaid-svg-wrapper {
+    display: inline-block;
+  }
+
+  .mermaid-container-constrained svg {
+    display: block;
+  }
+
+  .mermaid-container-zoomed svg {
+    @apply h-auto;
+    max-width: none !important;
+    width: max-content !important;
+    min-width: unset !important;
+  }
+
+  .mermaid-container .node rect,
+  .mermaid-container .node circle,
+  .mermaid-container .node ellipse,
+  .mermaid-container .node polygon,
+  .mermaid-container-zoomed .node rect,
+  .mermaid-container-zoomed .node circle,
+  .mermaid-container-zoomed .node ellipse,
+  .mermaid-container-zoomed .node polygon {
+    @apply fill-muted stroke-border;
+  }
+
+  .mermaid-container .node .label,
+  .mermaid-container-zoomed .node .label {
+    @apply text-foreground;
+  }
+
+  .mermaid-container .edgePath .path,
+  .mermaid-container-zoomed .edgePath .path {
+    @apply stroke-muted-foreground;
+  }
+
+  .mermaid-container .marker,
+  .mermaid-container-zoomed .marker {
+    @apply fill-muted-foreground stroke-muted-foreground;
+  }
+
+  /* Ensure diagrams are responsive */
+  .mermaid-container {
+    @apply overflow-x-auto;
+  }
+
+  .mermaid-container-zoomed {
+    display: inline-block;
+    min-width: 600px;
+  }
 }

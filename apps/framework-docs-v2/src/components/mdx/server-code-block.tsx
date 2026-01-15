@@ -4,6 +4,7 @@ import { CodeSnippet } from "./code-snippet";
 import { CodeEditorWrapper } from "./code-editor-wrapper";
 import { ShellSnippet } from "./shell-snippet";
 import { InlineCode } from "./inline-code";
+import { MermaidDiagram } from "./mermaid-diagram";
 import { extractTextContent } from "@/lib/extract-text-content";
 
 // Shell languages that should use terminal styling
@@ -258,7 +259,22 @@ export function ServerCodeBlock({
   // Determine component type based on language and attributes
   const isShell = SHELL_LANGUAGES.has(language);
   const isConfigFile = CONFIG_LANGUAGES.has(language);
+  const isMermaid = language === "mermaid";
   const isAnsi = language === "ansi";
+
+  // Mermaid diagrams: Always use MermaidDiagram (client-side renderer)
+  if (isMermaid) {
+    const maxHeight = props["data-maxheight"] || props["data-maxHeight"];
+    return (
+      <div className="not-prose">
+        <MermaidDiagram
+          code={codeText}
+          filename={filename}
+          maxHeight={maxHeight}
+        />
+      </div>
+    );
+  }
 
   // ANSI blocks render as plain text with ANSI escape code handling
   if (isAnsi) {

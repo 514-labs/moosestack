@@ -11,6 +11,7 @@ catalog:
   "@types/node": "20.19.24"
   axios: "1.7.9"
   chai: "4.5.0"
+  mermaid: "11.4.1"
   mocha: "10.8.2"
   ts-node: "10.9.2"
   typescript: "5.9.3"
