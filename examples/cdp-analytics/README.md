@@ -111,6 +111,15 @@ NEXT_PUBLIC_API_URL=http://localhost:4000
 pnpm dev
 ```
 
+### 4. Generate Demo Data
+
+In a new terminal, generate sample data to populate the dashboard:
+
+```bash
+cd packages/moosestack-service
+pnpm generate-mock-data
+```
+
 Open [http://localhost:3000](http://localhost:3000) to see the dashboard.
 
 ## What You Can Do
@@ -134,6 +143,15 @@ Ask questions in natural language:
 - "What's the conversion rate by acquisition channel?"
 
 The AI uses MCP tools to query ClickHouse and return results.
+
+### CLI Queries
+
+Query your data directly from the terminal:
+
+```bash
+moose query "SELECT count() FROM Customer"
+moose query "SELECT eventType, count() FROM Event GROUP BY eventType"
+```
 
 ## Data Models
 
