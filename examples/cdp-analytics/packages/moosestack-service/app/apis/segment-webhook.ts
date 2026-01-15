@@ -15,6 +15,9 @@
 import express from "express";
 import { WebApp } from "@514labs/moose-lib";
 
+// Base URL for internal API calls - defaults to localhost for development
+const INGEST_BASE_URL = process.env.INGEST_BASE_URL || "http://localhost:4000";
+
 const app = express();
 app.use(express.json());
 
@@ -180,7 +183,7 @@ app.post("/webhook", async (req, res) => {
       );
 
       // Send to Event ingest API
-      const response = await fetch("http://localhost:4000/ingest/Event", {
+      const response = await fetch(`${INGEST_BASE_URL}/ingest/Event`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(transformed),
@@ -199,7 +202,7 @@ app.post("/webhook", async (req, res) => {
       );
 
       // Send to Customer ingest API
-      const response = await fetch("http://localhost:4000/ingest/Customer", {
+      const response = await fetch(`${INGEST_BASE_URL}/ingest/Customer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(transformed),
