@@ -117,16 +117,6 @@ struct EventBuckets {
     app_dir: PathBuf,
 }
 
-impl Default for EventBuckets {
-    fn default() -> Self {
-        Self {
-            changes: HashSet::new(),
-            ignore_matcher: None,
-            app_dir: PathBuf::new(),
-        }
-    }
-}
-
 impl EventBuckets {
     pub fn new(ignore_matcher: Option<Arc<GlobSet>>, app_dir: PathBuf) -> Self {
         Self {
@@ -257,7 +247,7 @@ async fn watch(
                 return Ok(());
             }
             Ok(()) = rx.changed() => {
-                tracing::debug!("Received change notification, current changes: {:?}", rx.borrow());
+                tracing::debug!("Received change notification, current changes: {:?}", rx.borrow().changes);
             }
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
                 let should_process = {
@@ -467,6 +457,14 @@ impl FileWatcher {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn test_watcher_config_empty_patterns_returns_none() {
+        let config = WatcherConfig {
+            ignore_patterns: vec![],
+        };
+        assert!(config.build_ignore_matcher().unwrap().is_none());
+    }
 
     #[test]
     fn test_watcher_config_invalid_patterns() {
