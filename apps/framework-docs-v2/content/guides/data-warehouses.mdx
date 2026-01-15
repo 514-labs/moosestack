@@ -851,17 +851,20 @@ psql -d ecommerce_production -c "\COPY (
     oi.id as order_item_key,
     oi.order_id,
     oi.line_number,
-    (SELECT row_number() OVER (ORDER BY id)
-     FROM customers c2
-     WHERE c2.id = c.id) as customer_key,
-    (SELECT row_number() OVER (ORDER BY id)
-     FROM products p2
-     WHERE p2.id = p.id) as product_key,
+    (SELECT rn FROM (
+      SELECT id, row_number() OVER (ORDER BY id) as rn
+      FROM customers
+    ) c2 WHERE c2.id = c.id) as customer_key,
+    (SELECT rn FROM (
+      SELECT id, row_number() OVER (ORDER BY id) as rn
+      FROM products
+    ) p2 WHERE p2.id = p.id) as product_key,
     to_char(o.order_date, 'YYYYMMDD')::int as order_date_key,
     to_char(o.ship_date, 'YYYYMMDD')::int as ship_date_key,
-    (SELECT row_number() OVER (ORDER BY id)
-     FROM stores s2
-     WHERE s2.id = s.id) as store_key,
+    (SELECT rn FROM (
+      SELECT id, row_number() OVER (ORDER BY id) as rn
+      FROM stores
+    ) s2 WHERE s2.id = s.id) as store_key,
     oi.quantity,
     oi.unit_price,
     oi.discount_amount,
@@ -1575,7 +1578,7 @@ docker run -d -p 3000:3000 --name metabase metabase/metabase
 5. Enter connection details:
    - Host: `localhost`
    - Port: `9000`
-   - Database: `default`
+   - Database: `local`
    - Username: `panda`
    - Password: `pandapass`
 6. Click "Save"
@@ -1719,9 +1722,20 @@ set -e  # Exit on any error
 
 CLICKHOUSE_URL="http://panda:pandapass@localhost:18123"
 DATA_DIR="data"
-LOG_FILE="logs/refresh_$(date +%Y%m%d_%H%M%S).log"
+LOG_DIR="logs"
+LOG_FILE="$LOG_DIR/refresh_$(date +%Y%m%d_%H%M%S).log"
+
+# Create logs directory if it doesn't exist
+mkdir -p "$LOG_DIR"
 
 echo "Starting warehouse refresh at $(date)" | tee -a "$LOG_FILE"
+
+# Truncate existing data to avoid duplicates
+echo "Truncating existing tables..." | tee -a "$LOG_FILE"
+curl -s "$CLICKHOUSE_URL/" --data "TRUNCATE TABLE local.dim_customer" 2>&1 | tee -a "$LOG_FILE"
+curl -s "$CLICKHOUSE_URL/" --data "TRUNCATE TABLE local.dim_product" 2>&1 | tee -a "$LOG_FILE"
+curl -s "$CLICKHOUSE_URL/" --data "TRUNCATE TABLE local.dim_store" 2>&1 | tee -a "$LOG_FILE"
+curl -s "$CLICKHOUSE_URL/" --data "TRUNCATE TABLE local.fact_order_items" 2>&1 | tee -a "$LOG_FILE"
 
 # Load dimensions first (parallel is safe since they're independent)
 echo "Loading dimensions..." | tee -a "$LOG_FILE"
