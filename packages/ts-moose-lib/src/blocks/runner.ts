@@ -4,6 +4,7 @@ import { cliLog, getClickhouseClient } from "../commons";
 import { Blocks } from "./helpers";
 import fs from "node:fs";
 import path from "node:path";
+import { getSourceDir, shouldUseCompiled } from "../compiler-config";
 
 const walkDir = (dir: string, fileExtension: string, fileList: string[]) => {
   const files = fs.readdirSync(dir);
@@ -104,7 +105,18 @@ export const runBlocks = async (config: BlocksConfig) => {
   const chClient = getClickhouseClient(toClientConfig(config.clickhouseConfig));
   console.log(`Connected`);
 
-  const blocksFiles = walkDir(config.blocksDir, ".ts", []);
+  // Check if we should use compiled code
+  const useCompiled = shouldUseCompiled();
+  const sourceDir = getSourceDir();
+
+  // Adjust blocksDir for compiled mode
+  const blocksDir = useCompiled
+    ? `${process.cwd()}/.moose/compiled/${sourceDir}/blocks/`
+    : config.blocksDir;
+
+  // Use appropriate file extension for compiled mode
+  const fileExtension = useCompiled ? ".js" : ".ts";
+  const blocksFiles = walkDir(blocksDir, fileExtension, []);
   const numOfBlockFiles = blocksFiles.length;
   console.log(`Found ${numOfBlockFiles} blocks files`);
 
