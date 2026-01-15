@@ -57,6 +57,9 @@ postgresql_version = "13"
 [authentication]
 admin_api_key = "445fd4696cfc5c49e28995c4aba05de44303a112"
 
+[watcher_config]
+ignore_patterns = []
+
 [features]
 olap = true
 streaming_engine = false

@@ -55,6 +55,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 
 use crate::cli::local_webserver::LocalWebserverConfig;
+use crate::cli::watcher::WatcherConfig;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::streaming::loader::parse_streaming_function;
 use crate::framework::versions::Version;
@@ -327,6 +328,9 @@ pub struct Project {
     /// Docker configuration for custom Dockerfile support
     #[serde(default)]
     pub docker_config: DockerConfig,
+    /// File watcher configuration
+    #[serde(default)]
+    pub watcher_config: WatcherConfig,
 }
 
 pub fn default_source_dir() -> String {
@@ -408,6 +412,7 @@ impl Project {
             typescript_config: TypescriptConfig::default(),
             source_dir: default_source_dir(),
             docker_config: DockerConfig::default(),
+            watcher_config: WatcherConfig::default(),
         }
     }
 
