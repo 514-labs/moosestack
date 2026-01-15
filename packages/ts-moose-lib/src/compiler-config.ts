@@ -20,12 +20,22 @@ export const MOOSE_COMPILER_PLUGINS = [
   },
 ] as const;
 
+// Options required for moose compilation
+// Note: We only set what's absolutely necessary to avoid conflicts with user projects
 export const MOOSE_COMPILER_OPTIONS = {
   experimentalDecorators: true,
-  // Match ts-node's ESM mode for consistent module output
+  esModuleInterop: true,
+  // Disable strict module syntax checking to avoid dual-package type conflicts
+  // This prevents errors where the same type imported with different resolution
+  // modes (CJS vs ESM) is treated as incompatible
+  verbatimModuleSyntax: false,
+} as const;
+
+// Module resolution options - only applied if not already set in user's tsconfig
+// These help with ESM/CJS interop but can be overridden by user config
+export const MOOSE_MODULE_OPTIONS = {
   module: "NodeNext",
   moduleResolution: "NodeNext",
-  esModuleInterop: true,
 } as const;
 
 // Commands that require full plugin compilation (moose transforms + typia)
