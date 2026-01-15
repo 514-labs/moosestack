@@ -8,7 +8,8 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/content/*": ["./content/*"]
     },
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,

@@ -19,6 +19,87 @@ import type {
 const CONTENT_ROOT = path.join(process.cwd(), "content");
 
 /**
+ * Process include directives in content
+ * Syntax: :::include /shared/path/to/file.mdx
+ */
+function processIncludes(
+  content: string,
+  maxDepth: number = 3,
+  depth: number = 0,
+  includeStack: Set<string> = new Set(),
+): string {
+  if (depth >= maxDepth) {
+    console.warn(`[processIncludes] Max include depth (${maxDepth}) reached`);
+    return content;
+  }
+
+  // Match include directives: :::include /path/to/file.mdx
+  const includeRegex = /^:::include\s+(.+)$/gm;
+  let result = content;
+
+  // Find all matches first (before modifying the string)
+  const matches = [...content.matchAll(includeRegex)];
+
+  for (const match of matches) {
+    if (!match[1]) continue;
+    const includePath = match[1].trim();
+    const fullPath = path.join(CONTENT_ROOT, includePath);
+
+    try {
+      // Check for circular dependencies
+      if (includeStack.has(fullPath)) {
+        console.warn(
+          `[processIncludes] Circular dependency detected: ${includePath}`,
+        );
+        result = result.replace(
+          match[0],
+          `\n> ⚠️ Error: Circular dependency detected for ${includePath}\n`,
+        );
+        continue;
+      }
+
+      // Check if file exists
+      if (!fs.existsSync(fullPath)) {
+        console.warn(`[processIncludes] File not found: ${fullPath}`);
+        result = result.replace(
+          match[0],
+          `\n> ⚠️ Error: File not found: ${includePath}\n`,
+        );
+        continue;
+      }
+
+      // Read and process the file
+      let includeContent = fs.readFileSync(fullPath, "utf8");
+
+      // Strip frontmatter if present
+      const frontmatterRegex = /^---\n[\s\S]*?\n---\n/;
+      includeContent = includeContent.replace(frontmatterRegex, "");
+
+      // Add to stack and recursively process includes
+      includeStack.add(fullPath);
+      includeContent = processIncludes(
+        includeContent,
+        maxDepth,
+        depth + 1,
+        includeStack,
+      );
+      includeStack.delete(fullPath);
+
+      // Replace the include directive with the content
+      result = result.replace(match[0], includeContent);
+    } catch (error) {
+      console.error(`[processIncludes] Error including ${includePath}:`, error);
+      result = result.replace(
+        match[0],
+        `\n> ⚠️ Error: Failed to include ${includePath}\n`,
+      );
+    }
+  }
+
+  return result;
+}
+
+/**
  * Get all content files from the content directory
  * Scans recursively and returns all .md and .mdx files
  */
@@ -98,32 +179,35 @@ export async function parseMarkdownContent(
   const fileContents = fs.readFileSync(fullPath, "utf8");
   const { data, content: rawContent } = matter(fileContents);
 
+  // Process include directives for both MD and MDX
+  const processedContent = processIncludes(rawContent);
+
   let content: string;
   let mdxContent: any = null;
 
   if (isMDX) {
-    // For MDX files, we'll return the raw content and let the component handle compilation
-    // Extract headings from raw content before MDX processing
-    const headings = extractHeadings(rawContent);
+    // For MDX files, we'll return the processed content and let the component handle compilation
+    // Extract headings from processed content before MDX processing
+    const headings = extractHeadings(processedContent);
 
     return {
       frontMatter: data as FrontMatter,
-      content: rawContent, // Return raw MDX content
+      content: processedContent, // Return processed MDX content with includes
       headings,
       slug,
       isMDX: true,
     };
   } else {
     // Parse regular markdown to HTML
-    const processedContent = await remark()
+    const remarkContent = await remark()
       .use(remarkGfm)
       .use(remarkHtml, { sanitize: false })
-      .process(rawContent);
+      .process(processedContent);
 
-    content = processedContent.toString();
+    content = remarkContent.toString();
 
     // Extract headings for TOC
-    const headings = extractHeadings(rawContent);
+    const headings = extractHeadings(processedContent);
 
     return {
       frontMatter: data as FrontMatter,
