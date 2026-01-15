@@ -81,6 +81,7 @@ function detectCycles(graph: DependencyGraph): CycleInfo[] {
   const visited = new Set<string>();
   const recursionStack = new Set<string>();
   const cycles: CycleInfo[] = [];
+  const seenCycles = new Set<string>();
 
   function dfs(node: string, currentPath: string[]): boolean {
     visited.add(node);
@@ -98,6 +99,7 @@ function detectCycles(graph: DependencyGraph): CycleInfo[] {
 
       if (!visited.has(dep)) {
         if (dfs(dep, [...currentPath])) {
+          recursionStack.delete(node);
           return true;
         }
       } else if (recursionStack.has(dep)) {
@@ -108,10 +110,15 @@ function detectCycles(graph: DependencyGraph): CycleInfo[] {
           .map((p) => path.relative(CONTENT_ROOT, p))
           .join(" -> ");
 
-        cycles.push({
-          cycle,
-          formattedPath: formattedCycle,
-        });
+        // Use formatted path as canonical representation for deduplication
+        if (!seenCycles.has(formattedCycle)) {
+          seenCycles.add(formattedCycle);
+          cycles.push({
+            cycle,
+            formattedPath: formattedCycle,
+          });
+        }
+        recursionStack.delete(node);
         return true;
       }
     }
@@ -122,7 +129,10 @@ function detectCycles(graph: DependencyGraph): CycleInfo[] {
 
   for (const node of Object.keys(graph)) {
     if (!visited.has(node)) {
-      dfs(node, []);
+      // Early return if cycle found - stop traversing remaining nodes
+      if (dfs(node, [])) {
+        break;
+      }
     }
   }
 

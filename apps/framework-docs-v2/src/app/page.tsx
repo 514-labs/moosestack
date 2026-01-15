@@ -25,10 +25,6 @@ export default async function HomePage() {
     showAiSection().catch(() => false),
   ]);
 
-  // Calculate number of visible cards based on flags
-  // MooseStack and Templates are always visible (2), plus conditional cards
-  const cardCount = 2 + (showHosting ? 1 : 0) + (showAi ? 1 : 0);
-
   const sections = [
     {
       title: "MooseStack",
@@ -68,6 +64,21 @@ export default async function HomePage() {
     : []),
   ];
 
+  // Centralized predicate: only render sections that have an icon
+  const shouldRenderSection = (section: { icon?: unknown; title: string }) => {
+    if (!section.icon) {
+      console.error("[HomePage] Section missing icon:", section.title);
+      return false;
+    }
+    return true;
+  };
+
+  // Filter sections to only include those that will actually render
+  const renderableSections = sections.filter(shouldRenderSection);
+
+  // Calculate card count from actual rendered sections
+  const cardCount = renderableSections.length;
+
   return (
     <div className="container mx-auto px-4 py-16">
       <div className="max-w-4xl mx-auto">
@@ -86,12 +97,8 @@ export default async function HomePage() {
             "md:grid-cols-2 lg:grid-cols-4": cardCount === 4,
           })}
         >
-          {sections.map((section) => {
+          {renderableSections.map((section) => {
             const Icon = section.icon;
-            if (!Icon) {
-              console.error("[HomePage] Section missing icon:", section.title);
-              return null;
-            }
             return (
               <Card
                 key={section.title}

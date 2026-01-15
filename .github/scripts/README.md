@@ -10,9 +10,13 @@ This directory contains scripts used by GitHub Actions workflows to optimize CI/
 
 1. **Checks if pnpm-lock.yaml changed**: If not, exits immediately
 2. **Analyzes the diff**: Parses the pnpm-lock.yaml diff to see which packages were affected
-3. **Determines impact**:
+3. **Counts package changes**:
+   - Counts how many docs-only packages changed (`docs_match_count`)
+   - Counts total number of packages that changed (`total_changed_count`)
+4. **Determines impact**:
    - If CLI-related packages changed → Tests should run (exit 0)
-   - If only docs packages changed → Tests can be skipped (exit 1)
+   - If ONLY docs packages changed (`docs_match_count > 0` AND `docs_match_count == total_changed_count`) → Tests can be skipped (exit 1)
+   - If docs AND other packages changed → Tests should run (exit 0)
    - If unsure → Tests should run for safety (exit 0)
 
 ### CLI-Related Packages
@@ -30,6 +34,34 @@ These packages trigger CLI tests when their dependencies change:
 These packages can change without triggering CLI tests:
 - `apps/framework-docs-v2`
 - `packages/design-system`
+
+### Logic Examples
+
+**Scenario 1**: Only docs package changed
+```
+docs_match_count = 1 (apps/framework-docs-v2)
+total_changed_count = 1
+Result: DOCS_ONLY = true → Skip tests ✅
+```
+
+**Scenario 2**: Docs AND CLI packages changed
+```
+docs_match_count = 1 (apps/framework-docs-v2)
+total_changed_count = 2 (apps/framework-docs-v2 + apps/framework-cli)
+Result: DOCS_ONLY = false → Run tests ✅
+```
+
+**Scenario 3**: Only CLI package changed
+```
+CLI_AFFECTED = true (detected early)
+Result: Run tests immediately ✅
+```
+
+**Scenario 4**: Root/shared dependency changed
+```
+grep finds '/@types/node' in diff (not in docs context)
+Result: Run tests for safety ✅
+```
 
 ### Exit Codes
 
@@ -56,6 +88,10 @@ Run the test suite to verify the logic:
 ```bash
 .github/scripts/test-check-cli-dependencies.sh
 ```
+
+The test harness sets up mock diff files and calls the actual `check-cli-dependencies.sh` script, verifying exit codes match expected behavior. This ensures we're testing the real implementation, not a duplicate.
+
+**Testing Mode**: The script supports a `PNPM_DIFF_FILE` environment variable for testing. When set, the script skips git operations and uses the provided diff file directly. The test harness leverages this to inject test scenarios.
 
 ### Debugging
 
