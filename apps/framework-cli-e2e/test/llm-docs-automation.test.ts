@@ -69,7 +69,7 @@ describe("LLM Documentation Automation", function () {
   });
 
   it("should create a working Moose project from scratch using only documentation", async function () {
-    const task = `Create a working ${TEST_LANGUAGE} Moose project at ${testProjectPath} and verify it works by sending test data to it.
+    const task = `Create a working ${TEST_LANGUAGE} Moose project from a template at ${testProjectPath} and verify it works by sending test data to it.
 
 Search the documentation to learn how to install and use Moose.`;
 

@@ -126,6 +126,9 @@ importers:
       mocha:
         specifier: 'catalog:'
         version: 10.8.2
+      posthog-node:
+        specifier: ^5.21.0
+        version: 5.21.0
       ts-node:
         specifier: 'catalog:'
         version: 10.9.2(@swc/core@1.15.0(@swc/helpers@0.5.17))(@types/node@20.19.24)(typescript@5.9.3)
@@ -2531,6 +2534,9 @@ packages:
 
   '@posthog/core@1.5.0':
     resolution: {integrity: sha512-oxfV20QMNwH30jKybUyqi3yGuMghULQz1zkJgQG3rjpHDxhD2vDN6E7UpmaqgphMIvGG3Q+DgfU10zfSPA7w7w==}
+
+  '@posthog/core@1.9.1':
+    resolution: {integrity: sha512-kRb1ch2dhQjsAapZmu6V66551IF2LnCbc1rnrQqnR7ArooVyJN9KOPXre16AJ3ObJz2eTfuP7x25BMyS2Y5Exw==}
 
   '@protobuf-ts/plugin@2.11.1':
     resolution: {integrity: sha512-HyuprDcw0bEEJqkOWe1rnXUP0gwYLij8YhPuZyZk6cJbIgc/Q0IFgoHQxOXNIXAcXM4Sbehh6kjVnCzasElw1A==}
@@ -8066,6 +8072,10 @@ packages:
     resolution: {integrity: sha512-Hdby0Rq2K1rzjHxQdUmFBEP2UqAR/tY4d0WbNp7GxkYUK0YZvAD15MkeorSo4b8X7zgosHfQJVRxGx0HWSYPBA==}
     engines: {node: '>=15.0.0'}
 
+  posthog-node@5.21.0:
+    resolution: {integrity: sha512-M7v/+Zyz/z3ZDC4u896K2Lb/pLbPA1Czo6Tp/WeQ1vuBsJtJajqWO3vRev3BHFTP92nao5YCrU0aIM+Flwbv1A==}
+    engines: {node: '>=20'}
+
   preact@10.27.2:
     resolution: {integrity: sha512-5SYSgFKSyhCbk6SrXyMpqjb5+MQBgfvEKE/OC+PujcY34sOpqtr+0AZQtPYx5IA6VxynQ7rUPCtKzyovpj9Bpg==}
 
@@ -11492,6 +11502,10 @@ snapshots:
     optional: true
 
   '@posthog/core@1.5.0': {}
+
+  '@posthog/core@1.9.1':
+    dependencies:
+      cross-spawn: 7.0.6
 
   '@protobuf-ts/plugin@2.11.1':
     dependencies:
@@ -19057,6 +19071,10 @@ snapshots:
       axios: 1.13.2
     transitivePeerDependencies:
       - debug
+
+  posthog-node@5.21.0:
+    dependencies:
+      '@posthog/core': 1.9.1
 
   preact@10.27.2: {}
 
