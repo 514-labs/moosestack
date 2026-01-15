@@ -39,3 +39,6 @@ next-env.d.ts
 
 # search index (generated at build time)
 /.search-index
+
+# guide todos
+*-todo.md
