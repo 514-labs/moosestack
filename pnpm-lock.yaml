@@ -33,6 +33,9 @@ catalogs:
     mocha:
       specifier: 10.8.2
       version: 10.8.2
+    posthog-node:
+      specifier: 5.21.0
+      version: 5.21.0
     ts-node:
       specifier: 10.9.2
       version: 10.9.2
@@ -127,7 +130,7 @@ importers:
         specifier: 'catalog:'
         version: 10.8.2
       posthog-node:
-        specifier: ^5.21.0
+        specifier: 'catalog:'
         version: 5.21.0
       ts-node:
         specifier: 'catalog:'

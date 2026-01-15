@@ -142,6 +142,11 @@ export class AgentMetrics {
     });
     this.totalCommands++;
 
+    // Increment per-phase command counter
+    if (this.currentPhase) {
+      this.currentPhase.commandsExecuted++;
+    }
+
     // Auto-detect phases based on commands
     this.detectPhase(cmd, endTime);
   }

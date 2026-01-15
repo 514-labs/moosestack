@@ -13,6 +13,7 @@ catalog:
   axios: "1.7.9"
   chai: "4.5.0"
   mocha: "10.8.2"
+  posthog-node: "5.21.0"
   ts-node: "10.9.2"
   typescript: "5.9.3"
   yaml: "2.8.2"
