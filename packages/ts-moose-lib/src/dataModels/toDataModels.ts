@@ -13,6 +13,7 @@ import {
   UnsupportedFeature,
 } from "./dataModelTypes";
 import { enumConvert } from "./enumConvert";
+import { getSourceDir } from "../compiler-config";
 
 const convertSourceFile = (
   sourceFile: ts.SourceFile,
@@ -47,13 +48,6 @@ const convertSourceFile = (
   });
   return output;
 };
-
-/**
- * Gets the source directory from environment variable or defaults to "app"
- */
-function getSourceDir(): string {
-  return process.env.MOOSE_SOURCE_DIR || "app";
-}
 
 export default function (
   program: ts.Program,
