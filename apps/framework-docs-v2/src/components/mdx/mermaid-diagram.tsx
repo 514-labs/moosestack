@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import { IconCopy, IconCheck, IconZoomIn } from "@tabler/icons-react";
+import { IconCopy, IconCheck, IconZoomIn, IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 
 interface MermaidDiagramProps {
@@ -29,7 +29,7 @@ export function MermaidDiagram({
   const svgRef = useRef<HTMLDivElement>(null);
 
   const handleCopy = async () => {
-    if (typeof window === "undefined" || !navigator.clipboard.writeText) {
+    if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
       return;
     }
 
@@ -46,6 +46,22 @@ export function MermaidDiagram({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Handle Escape key to close zoom modal
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && isZoomed) {
+        setIsZoomed(false);
+      }
+    };
+
+    if (isZoomed) {
+      document.addEventListener("keydown", handleEscape);
+      return () => {
+        document.removeEventListener("keydown", handleEscape);
+      };
+    }
+  }, [isZoomed]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -118,7 +134,7 @@ export function MermaidDiagram({
         });
 
         // Generate unique ID for this diagram
-        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+        const id = `mermaid-${Math.random().toString(36).slice(2, 11)}`;
 
         if (cancelled) return;
 
@@ -316,20 +332,7 @@ export function MermaidDiagram({
               className="absolute top-4 right-4 z-10 bg-background/90 hover:bg-background rounded-full p-3 border border-border transition-colors shadow-lg"
               aria-label="Close zoom"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
+              <IconX className="h-6 w-6" />
             </button>
             <div className="overflow-auto max-w-full max-h-full bg-muted/30 rounded-lg border border-border p-8">
               <div

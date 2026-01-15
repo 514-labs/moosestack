@@ -1,4 +1,5 @@
 import { visit } from "unist-util-visit";
+import type { Root, Element } from "hast";
 
 /**
  * Simple parser for code block meta strings
@@ -12,10 +13,10 @@ function parseMetaString(meta: string): Record<string, string> {
   }
 
   // Extract quoted values: key="value" or key='value'
-  const quotedPattern = /(\w+)=["']([^"']*)["']/g;
+  const quotedPattern = /(\w+)=(["'])(.*?)\2/g;
   for (const match of meta.matchAll(quotedPattern)) {
     const key = match[1];
-    const value = match[2];
+    const value = match[3];
     if (key) {
       attributes[key] = value ?? "";
     }
@@ -39,25 +40,9 @@ function parseMetaString(meta: string): Record<string, string> {
  * processing. This runs after rehype-pretty-code to transfer attributes from the code
  * element back to the pre element.
  */
-
-interface HastElement {
-  type: "element";
-  tagName: string;
-  properties?: Record<string, unknown>;
-  children?: HastNode[];
-  data?: Record<string, unknown>;
-}
-
-type HastNode = HastElement | { type: string };
-
-interface HastRoot {
-  type: "root";
-  children: HastNode[];
-}
-
 export function rehypeRestoreCodeMeta() {
-  return (tree: HastRoot) => {
-    visit(tree, "element", (node: HastElement) => {
+  return (tree: Root) => {
+    visit(tree, "element", (node: Element) => {
       // Only process pre elements with code children
       if (node.tagName !== "pre" || !node.children) {
         return;
@@ -79,11 +64,8 @@ export function rehypeRestoreCodeMeta() {
 
       // Then try to get any remaining attributes from code element
       for (const child of node.children) {
-        if (
-          child.type === "element" &&
-          (child as HastElement).tagName === "code"
-        ) {
-          const codeElement = child as HastElement;
+        if (child.type === "element" && child.tagName === "code") {
+          const codeElement = child;
 
           // Check if meta string is still available in code element data
           if (codeElement.data?.meta) {
