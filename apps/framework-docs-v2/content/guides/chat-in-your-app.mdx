@@ -5,7 +5,7 @@ description: Build AI-powered chat experiences with real-time analytics using Mo
 
 # Building a data-aware chat on top of your ClickHouse database with Next.js and MooseStack
 
-# TL;DR
+## TL;DR
 
 * It can be simple to set up high performance chat in your applications.   
 * That baseline delivers real value.  
@@ -19,7 +19,7 @@ This guide will:
 
 > **Navigation tip:** If you're evaluating whether this is worth doing, read the Overview section below. If you're building, skip to the Builder Guide section. If you want to jump straight to the implementation, see the Tutorial section.
 
-# Overview
+## Overview
 
 ### What we mean by “chat in your app”
 
@@ -63,7 +63,7 @@ Chat is worth investing in once your product has meaningful data gravity: users 
 
 It is especially compelling when your team is fielding repeat questions, building one-off dashboards for narrow use cases, or struggling to productize a long tail of analytical queries. In those cases, chat becomes a flexible interface that scales with your schema, rather than another surface area you have to constantly redesign.
 
-# 0 - Builder Guide
+## 0 - Builder Guide
 
 ## Meta
 
@@ -163,7 +163,7 @@ For sources already in ClickHouse / MooseStack, is their metadata sufficiently r
 * **Views / scoped schemas** (clean separation, good for tenants).  
 * **RLS hardening path** (enterprise): plan it early, implement when needed.
 
-# 1 - Tutorial: from parquet in S3 to chat application
+## 1 - Tutorial: from parquet in S3 to chat application
 
 In this tutorial, you’ll bootstrap the MooseStack MCP template, load real Parquet data from S3 into ClickHouse, validate queries via the MCP-enabled chat UI, then deploy the backend to Boreal and the Next.js app to Vercel. 
 
@@ -188,7 +188,7 @@ This tutorial covers the end-to-end workflow for bootstrapping the MooseStack MC
 
 ```shell
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
-```text
+```
 
 ### Initialize your project locally, and install dependencies
 
@@ -197,7 +197,7 @@ moose init <project-name> typescript-mcp 	# initialize your project
 cd <project-name>
 
 pnpm install # install dependencies
-```text
+```
 
 ### Create and configure .env files
 
@@ -206,14 +206,14 @@ Create .env files
 ```shell
 cp packages/moosestack-service/.env.{example,local}
 cp packages/web-app/.env.{example,local}
-```text
+```
 
 Create API Key authentication tokens:
 
 ```shell
 cd packages/moosestack-service
 moose generate hash-token # use output for the API Key & Token below 
-```text
+```
 
 Set environment variables for API:
 
@@ -224,7 +224,7 @@ If you want to use the chat in the application, (which will have MCP based acces
 
 ```shell
 echo "ANTHROPIC_API_KEY=your_api_key_here" >> packages/web-app/.env.local
-```text
+```
 
 If you don’t have an Anthropic API key, you can get one here: [Claude Console](https://console.anthropic.com/)
 
@@ -236,7 +236,7 @@ Your demo app is now set up\! Although it is not yet populated with data. Get it
 
 ```shell
 docker version
-```text
+```
 
 ### Run the whole stack
 
@@ -244,7 +244,7 @@ From the root of your project, run:
 
 ```shell
 pnpm dev						# run the MooseStack and web app services
-```text
+```
 
 ### Alternatively, run MooseStack and your frontend separately
 
@@ -253,7 +253,7 @@ From the root of your project, run:
 ```shell
 pnpm dev:moose    					# Start MooseStack service only
 pnpm dev:web      					# Start web app only 
-```text
+```
 
 You can also run moose dev from your moose project directory `/packages/moosestack-service`.
 
@@ -271,7 +271,7 @@ Once your MooseDev Server is up and running, your development MCP server is read
 
 ```shell
 claude mcp add --transport http moose-dev http://localhost:4000/mcp
-```text
+```
 
 Note, you may have to do this before you start Claude Code (or restart Claude Code once you have done this). You can validate that it is working with the `/mcp` slash command.
 
@@ -297,7 +297,7 @@ If the files are relatively small, we recommend building up a `packages/moosesta
 │  │  ├─ .../
 │  ├─ web-app/
 ├─ README.md
-```text
+```
 
 ### Copy data from S3
 
@@ -311,7 +311,7 @@ Using the [S3 CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/cp.html) 
 aws s3 ls s3://source-data/ 			# list files in S3 
 
 aws s3 cp s3://source-data/ . --recursive 	# copy data from S3 to context directory
-```text
+```
 
 Using `moose query` (this only copies one file at a time):
 
@@ -319,7 +319,7 @@ Using `moose query` (this only copies one file at a time):
 cd packages/moosestack-service			# navigate to your MooseStack project
 
 moose query "Select * FROM s3('s3://source-data/file-name.parquet', '<Access-Key-ID>', '<Secret-Access-Key>', 'parquet') limit 10;" > context/data/file-name.txt # copy data retrieved from that SQL query to the .txt file 
-```text
+```
 
 ### Add other context relevant for data modeling
 
@@ -328,7 +328,7 @@ OLAP, and especially ClickHouse, benefits from rigorous data modeling. LLMs aren
 ```shell
 cd packages/moosestack-service/context/rules
 gh repo clone 514-labs/olap-agent-ref . # the gh CLI has less trouble with nested repos
-```text
+```
 
 ### Model your data
 
@@ -348,7 +348,7 @@ Create
 │  │  ├─ .../
 │  ├─ web-app/
 ├─ README.md
-```text
+```
 
 We suggest you do this sequentially, e.g. with the following prompt pattern:
 
@@ -359,6 +359,7 @@ We suggest you do this sequentially, e.g. with the following prompt pattern:
 First, lets create the DataModel interface. Refer to the data sample here: '<project-name>/packages/moosestack-service/context/data/sample1.parquet', and the data dictionary here: '<project-name>/packages/moosestack-service/context/data/data_dictionary.csv' and guidelines for good OLAP data modeling here (e.g. tight typing, use of LowCardinality, use of Default Values, etc) '<project-name>/packages/moosestack-service/context/rules'. Don't use a key unless you think it adds value over a standard `order by` field.
 
 Then, create the OlapTable object.
+```
 
 Make sure to then prompt the copilot to export the object to the it to `moosestack-service/index.ts` too:
 
@@ -372,20 +373,20 @@ The dev server should then pick up the new table, and the copilot should be able
 
 ```text
 Ensure the table was created by using `moose query` from the moosestack service directory
-```text
+```
 
 Or you can do this manually:
 
 ```shell
 moose query "SELECT name, engine, total_rows FROM
       system.tables WHERE database = currentDatabase();" 
-```text
+```
 
 It is also good practice to double check the model generated against the sample data (LLMs can make assumptions about types of data, even when presented with sample data):
 
 ```text
 check the type limitations against the sample data in /context/data
-```text
+```
 
 Repeat this for each table you want to model.
 
@@ -402,7 +403,7 @@ INSERT INTO `local`.PlayerActivity
 '<Secret-Access-Key>'
       'Parquet'
   );
-```text
+```
 
 Make sure to properly apply any transformations to conform your S3 data to the data model you’ve created. ClickHouse will do many of these transformations naturally. Notably though:
 
@@ -413,21 +414,21 @@ Make sure to properly apply any transformations to conform your S3 data to the d
 
 ```shell
 moose query -f load-data.sql
-```text
+```
 
 It will return:
 
 ```text
 Node Id: moosestack-service::2dadb086-d9fb-4e42-9462-680185fac0ef
           Query 0 rows
-```text
+```
 
 This is expected. The query doesn’t return any rows of data to the query client. To validate that it worked, use this query:
 
 ```shell
 moose query "SELECT COUNT(*) FROM
       \`local\`.tablename"
-```text
+```
 
 You will now have a ready to test and iterate on local development environment: with your local MooseStack up and running, with local ClickHouse populated with real data, and the front-end ready to test.
 
@@ -456,7 +457,7 @@ You have access to a ClickHouse database with the following data:
 
 Be helpful, accurate, and transparent about what queries you're running.`;
 }
-```text
+```
 
 ## Create custom API endpoints, and a custom front-end:
 
@@ -468,7 +469,7 @@ I like to point the LLM at a ShadCN component I am interested in, the Express / 
 I want to add a Data Table component from ShadCN (here: https://ui.shadcn.com/docs/components/data-table.md) to the web app here: <project-name>packages/web-app.  
 
 I want it to serve data from DataModel here: <project-name>/packages/moosestack-service/app/ingest/models.ts. Please create an express api in this directory to serve this component, here: <project-name>packages/moosestack-service/app/apis, as documented here: https://docs.fiveonefour.com/moose/app-api-frameworks/express/llm-ts.txt
-```text
+```
 
 You should see your frontend application update here [http://localhost:3000](http://localhost:3000/).
 
@@ -492,7 +493,7 @@ Set the path to the root of the MooseStack service:
 
 ```text
 packages/moosestack-service
-```text
+```
 
 And set the Environment Variables used in the project ([following the same steps defined above](#create-and-configure-.env-files:)):
 
@@ -501,7 +502,7 @@ MOOSE_INGEST_API_KEY
 MOOSE_CONSUMPTION_API_KEY
 MOOSE_ADMIN_TOKEN
 MOOSE_WEB_APP_API_KEYS
-```text
+```
 
 ![][image2]
 
@@ -532,7 +533,7 @@ See Vercel docs
 ​​ANTHROPIC_API_KEY: Your Anthropic API key for chat functionality
 NEXT_PUBLIC_API_URL: Your Boreal endpoint URL (e.g., `https://your-project.boreal.cloud`)
 API_KEY: Use the bearer token generated earlier
-```text
+```
 
 You can find your Boreal endpoint URL at the top of the project overview page:
 
@@ -568,16 +569,16 @@ FROM s3(
   '<aws-secret-access-key>',                          -- AWS Secret Access Key
   'Parquet'                                           -- File format
 );
-```text
+```
 
 This will again return 0 rows. This is expected. You can validate that the transfer worked correctly as follows:
 
 ```sql
 "SELECT COUNT(*) FROM
       `<clickhouse-database>`.tablename"
-```text
+```
 
-# 2 \- Adding chat to your existing Next.js application
+## 2 - Adding chat to your existing Next.js application
 
 | Assumptions: You have a monorepo Your application already has a Next.js service Your application already has a MooseStack service, or you are willing to create one You are using Express for your APIs (you can use other frameworks, they just won’t be outlined in this tutorial |
 | :---- |
@@ -607,8 +608,7 @@ This part of the guide will walk your through adding a chat panel embedded in yo
 │  │  (Express app)   │    │  (tool handlers)│    │  (your data)      │  │
 │  └──────────────────┘    └─────────────────┘    └───────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────┘
-
-```text
+```
 
 What this will walk through building:
 
@@ -644,7 +644,7 @@ git sparse-checkout set templates/typescript-mcp/packages/moosestack-service
 cp -r templates/typescript-mcp/packages/moosestack-service ../moosestack-service
 cd ..
 rm -rf temp-moose
-```text
+```
 
 #### Add the package to your workspace
 
@@ -653,26 +653,26 @@ If you don't have a `pnpm-workspace.yaml` at your monorepo root, create one:
 ```text
 packages:
   - 'packages/*'
-```text
+```
 
 #### Install dependencies
 
 ```shell
 cd packages/moosestack-service
 pnpm install
-```text
+```
 
 #### Configure environment variables
 
 ```shell
 cp .env.example .env.local
-```text
+```
 
 #### Generate an API key for authentication:
 
 ```shell
 moose generate hash-token
-```text
+```
 
 This outputs two values:
 
@@ -683,7 +683,7 @@ Your `.env.local` should look like:
 
 ```text
 MCP_API_KEY=<paste-the-ENV-API-KEY-here>
-```text
+```
 
 #### Add dev scripts to your root package.json
 
@@ -701,7 +701,7 @@ MCP_API_KEY=<paste-the-ENV-API-KEY-here>
     ]
   }
 }
-```text
+```
 
 **Continue to [Frontend Setup](#frontend-setup)**
 
@@ -715,7 +715,7 @@ If you already have a MooseStack project, you just need to add the MCP server Ex
 cd packages/your-moosestack-service
 pnpm add @modelcontextprotocol/sdk@1.24.2 @514labs/express-pbkdf2-api-key-auth@^1.0.4 express@^5.1.0
 pnpm add -D @types/express@^5.0.3
-```text
+```
 
 #### Copy the MCP server file
 
@@ -727,7 +727,7 @@ mkdir -p app/apis
 curl -o app/apis/mcp.ts \ 
 
 https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/moosestack-service/app/apis/mcp.ts
-```text
+```
 
 #### Export the MCP server in your index.ts
 
@@ -735,7 +735,7 @@ Add this line to your `app/index.ts`:
 
 ```ts
 export * from "./apis/mcp";
-```text
+```
 
 #### Set up authentication
 
@@ -743,13 +743,13 @@ Add `MCP_API_KEY` to your `.env.local`:
 
 ```shell
 moose generate hash-token
-```text
+```
 
 Copy the **ENV API KEY** output to your `.env.local`:
 
 ```text
 MCP_API_KEY=<paste-the-ENV-API-KEY-here>
-```text
+```
 
 Save the **Bearer Token** for frontend configuration.
 
@@ -766,7 +766,7 @@ cd packages/web-app  # or your Next.js app directory
 pnpm add ai@5.0.106 @ai-sdk/anthropic@2.0.53 @ai-sdk/mcp@0.0.7 @ai-sdk/react@2.0.106
 pnpm add react-resizable-panels@^3.0.6 react-markdown@^10.1.0 remark-gfm@^4.0.1
 pnpm add lucide-react@^0.552.0
-```text
+```
 
 #### Configure environment variables
 
@@ -774,7 +774,7 @@ Create or update your `.env.local`:
 
 ```shell
 cp .env.example .env.local  # if you have an example file
-```text
+```
 
 Add these variables:
 
@@ -782,7 +782,7 @@ Add these variables:
 ANTHROPIC_API_KEY=<your-anthropic-api-key>
 MCP_API_TOKEN=<the-bearer-token-from-moose-generate-hash-token>
 MCP_SERVER_URL=http://localhost:4000
-```text
+```
 
 | Variable | Description | Where to get it |
 | :---- | :---- | :---- |
@@ -810,13 +810,13 @@ export function getAnthropicApiKey(): string {
   }
   return value;
 }
-```text
+```
 
 #### Create `.env.development` for defaults
 
 ```text
 MCP_SERVER_URL=http://localhost:4000
-```text
+```
 
 ### Frontend Setup: API Route
 
@@ -837,7 +837,7 @@ curl -o src/features/chat/get-agent-response.ts \
 
 curl -o src/features/chat/system-prompt.ts \
   https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/features/chat/system-prompt.ts
-```text
+```
 
 #### Create the API route
 
@@ -873,7 +873,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-```text
+```
 
 #### (Optional) Add status endpoint
 
@@ -893,7 +893,7 @@ export async function GET(request: NextRequest) {
     { status: 200, headers: { "Content-Type": "application/json" } },
   );
 }
-```text
+```
 
 #### (optionally) Customize the system prompt
 
@@ -914,7 +914,7 @@ You have access to a ClickHouse database with the following data:
 
 Be helpful, accurate, and transparent about what queries you're running.`;
 }
-```text
+```
 
 ### Frontend Setup: UI Components
 
@@ -933,7 +933,7 @@ for file in chat-ui.tsx chat-input.tsx chat-output-area.tsx chat-button.tsx \
             code-block.tsx suggested-prompt.tsx use-anthropic-status.ts; do
   curl -O "https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/features/chat/$file"
 done
-```text
+```
 
 #### Copy the layout components
 
@@ -948,7 +948,7 @@ curl -o src/components/layout/chat-layout-wrapper.tsx \
 
 curl -o src/components/layout/content-header.tsx \
   https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/components/layout/content-header.tsx
-```text
+```
 
 #### Ensure you have required shadcn/ui components
 
@@ -956,7 +956,7 @@ The chat UI uses these shadcn/ui components. If you don't have them, install via
 
 ```shell
 npx shadcn@latest add button textarea scroll-area resizable collapsible badge
-```text
+```
 
 #### Ensure you have the `cn` utility
 
@@ -969,7 +969,7 @@ import { twMerge } from "tailwind-merge";
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
-```text
+```
 
 ## Integration & Testing
 
@@ -990,7 +990,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
-```text
+```
 
 **Note:** If you're using `next-themes` or another theme provider, wrap `ChatLayoutWrapper` inside it, not the other way around.
 
@@ -999,7 +999,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ```shell
 # From monorepo root
 pnpm dev
-```text
+```
 
 Or run them separately:
 
@@ -1009,7 +1009,7 @@ pnpm dev:moose
 
 # Terminal 2: Next.js
 pnpm dev:web
-```text
+```
 
 ### Verify the MCP server is running
 
@@ -1018,7 +1018,7 @@ curl http://localhost:4000/tools \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <your-mcp-api-token>" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-```text
+```
 
 You should see a response listing `query_clickhouse` and `get_data_catalog` tools.
 
@@ -1074,7 +1074,7 @@ If you're still seeing CORS errors, ensure your chat UI is calling `/api/chat`, 
 
 See [Deploy to Boreal and Vercel](#deploy-to-boreal-and-vercel).
 
-# Appendix: Data context as code
+## Appendix: Data context as code
 
 Clickhouse allows you to embed [table](https://clickhouse.com/docs/en/sql-reference/statements/alter/comment) and [column level](https://clickhouse.com/docs/en/sql-reference/statements/alter/column#modify-column) metadata.
 
@@ -1100,7 +1100,7 @@ export interface AircraftTrackingData {
 	/** bitfield for certain database flags */
 	dbFlags: number;
 }
-```text
+```
 
 The `/** JSDoc */` comments on the column level will now be embedded in your ClickHouse database. This additional context will be available to your chat, and retrievable with the same tool-calls that retrieve data.
 
