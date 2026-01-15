@@ -22,11 +22,36 @@
 ## Available Flags
 
 - `show-hosting-section` - Controls Hosting tab visibility (default: off)
-- `show-guides-section` - Controls Guides tab visibility (default: off)
 - `show-ai-section` - Controls AI tab visibility (default: off)
 - `show-data-sources-page` - Controls Data sources page visibility in navigation (default: off)
-- `show-template-deploy-button` - Show Deploy button on template cards; only turn on once Boreal template deploy is functional (default: off)
+- `show-draft-guides` - Show draft guides (internal WIP, not ready for external users) (default: off)
+- `show-beta-guides` - Show beta guides (ready for select external users to preview) (default: off)
 - `show-copy-as-markdown` - Show Copy Page button in doc & guide pages (default: off)
+- `show-linear-integration` - Show Linear integration (scope selector + add to Linear button) on guide pages (default: off)
+
+## Guides Visibility Logic
+
+The Guides tab is always visible in navigation. Individual guide visibility is controlled by the `status` property in `src/config/navigation.ts`:
+
+| Guide Status | Default (both flags OFF) | `show-beta-guides` ON | `show-draft-guides` ON |
+|--------------|--------------------------|----------------------|------------------------|
+| `status: "draft"` | Hidden | Hidden | Visible |
+| `status: "beta"` | Hidden | Visible | Visible |
+| No status (public) | Visible | Visible | Visible |
+
+**Two-level guide workflow:**
+1. **Draft** - Internal WIP, not ready for any external users
+2. **Beta** - Ready for select external users (e.g., ClickHouse sales team) to preview
+3. **Public** - No status, visible to everyone
+
+**If no guides are visible**, the Guides page shows a "Coming Soon" design.
+
+**Current state:** 
+All 5 priority guides are marked as `status: "draft"`. See `GUIDES_README.md` for the full list.
+
+**To promote a guide:**
+1. Draft → Beta: Change `status: "draft"` to `status: "beta"` 
+2. Beta → Public: Remove the `status` property entirely
 
 ## How It Works
 
@@ -40,3 +65,6 @@
 - `src/flags.ts` - Flag definitions
 - `src/app/.well-known/vercel/flags/route.ts` - Discovery endpoint
 
+## Related Documentation
+
+- `GUIDES_README.md` - How to write and promote guides
