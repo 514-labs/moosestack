@@ -2,6 +2,7 @@
  * PostHog utilities for sending events from E2E tests.
  */
 
+import { PostHog } from "posthog-node";
 import { logger } from "./logger";
 
 const posthogLogger = logger.scope("posthog");
@@ -43,15 +44,12 @@ const DEFAULT_DISTINCT_ID = "moose-e2e-tests";
  */
 function getRunContext(): Record<string, string | undefined> {
   return {
-    // Git/CI context
     git_branch: process.env.GITHUB_REF_NAME || process.env.GITHUB_HEAD_REF,
     git_sha: process.env.GITHUB_SHA,
     ci_run_id: process.env.GITHUB_RUN_ID,
     ci_run_attempt: process.env.GITHUB_RUN_ATTEMPT,
     ci_workflow: process.env.GITHUB_WORKFLOW,
     ci_actor: process.env.GITHUB_ACTOR,
-
-    // Environment
     node_version: process.version,
     platform: process.platform,
     arch: process.arch,
@@ -77,48 +75,28 @@ export async function sendPostHogEvent(
   }
 
   const distinctId = event.distinctId || DEFAULT_DISTINCT_ID;
-  const runContext = getRunContext();
-
-  const payload = {
-    api_key: key,
-    event: event.event,
-    distinct_id: distinctId,
-    properties: {
-      // Run context (can be overridden by user properties)
-      ...runContext,
-
-      // User-provided properties (override run context)
-      ...event.properties,
-
-      // Timestamp
-      timestamp: new Date().toISOString(),
-    },
-  };
 
   try {
     posthogLogger.info(
       `📤 Sending "${event.event}" to PostHog (distinct_id: ${distinctId})`,
     );
 
-    const response = await fetch(`${POSTHOG_HOST}/capture/`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const client = new PostHog(key, { host: POSTHOG_HOST });
+
+    client.capture({
+      distinctId,
+      event: event.event,
+      properties: {
+        ...getRunContext(),
+        ...event.properties,
+        timestamp: new Date().toISOString(),
       },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30000),
     });
 
-    if (response.ok) {
-      posthogLogger.info("✅ Event sent to PostHog successfully");
-      return true;
-    } else {
-      const errorText = await response.text();
-      posthogLogger.error(
-        `❌ Failed to send event to PostHog: ${response.status} - ${errorText}`,
-      );
-      return false;
-    }
+    await client.shutdown();
+
+    posthogLogger.info("✅ Event sent to PostHog successfully");
+    return true;
   } catch (error) {
     posthogLogger.error(`❌ Error sending event to PostHog: ${error}`);
     return false;

@@ -17,6 +17,7 @@
     "axios": "catalog:",
     "chai": "catalog:",
     "mocha": "catalog:",
+    "posthog-node": "^5.21.0",
     "ts-node": "catalog:",
     "typescript": "catalog:"
   }
