@@ -32,6 +32,21 @@ function parseMetaString(meta: string): Record<string, string> {
     }
   }
 
+  // Extract flags (standalone keys without values)
+  // Remove already-parsed key=value patterns to avoid false matches
+  let remainingMeta = meta
+    .replace(/(\w+)=(["'])(.*?)\2/g, " ")
+    .replace(/(\w+)=([^\s"'{}\/]+)/g, " ");
+
+  const flagPattern = /\b(\w+)\b/g;
+  for (const match of remainingMeta.matchAll(flagPattern)) {
+    const key = match[1];
+    // Only add if not already present and is a valid identifier
+    if (key && !attributes[key]) {
+      attributes[key] = "true";
+    }
+  }
+
   return attributes;
 }
 
