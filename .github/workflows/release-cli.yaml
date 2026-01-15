@@ -538,7 +538,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [version, build-and-publish-binaries, cleanup-pypi]
     if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
-    # Add explicit permissions
     permissions:
       contents: read
     steps:
