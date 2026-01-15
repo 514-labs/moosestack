@@ -38,7 +38,7 @@ This project demonstrates a journey-centric CDP built on modern data infrastruct
                               (Analytics)           (Streaming)
 ```
 
-**Two packages in a pnpm monorepo:**
+**Two apps in a pnpm monorepo:**
 
 | Package | Purpose | Port |
 |---------|---------|------|
@@ -68,9 +68,12 @@ Dashboard components use shared types with IDE autocomplete
 
 ## Quick Start
 
-### 1. Install and Configure
+### 1. Clone, Install and Configure
 
 ```bash
+git clone https://github.com/514-labs/moose.git
+cd moose/examples/cdp-analytics
+
 pnpm install
 
 # Copy environment files
