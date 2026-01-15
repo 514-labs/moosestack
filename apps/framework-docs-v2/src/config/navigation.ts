@@ -1387,7 +1387,7 @@ const guidesNavigationConfig: NavigationConfig = [
     items: [
       {
         type: "page",
-        slug: "guides/mermaid-test",
+        slug: "guides/test-guides/mermaid-test",
         title: "Mermaid Diagram Test",
         icon: IconFileCode,
         languages: ["typescript", "python"],
@@ -1395,7 +1395,7 @@ const guidesNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "guides/methodology/content-components-demo",
+        slug: "guides/test-guides/content-components-demo",
         title: "Content Components Demo",
         icon: IconFileCode,
         languages: ["typescript", "python"],
