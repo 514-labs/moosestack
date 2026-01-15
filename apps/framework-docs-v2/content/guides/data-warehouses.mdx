@@ -844,17 +844,24 @@ psql -d ecommerce_production -c "\COPY (
   FROM stores
 ) TO 'data/stores.csv' WITH CSV HEADER"
 
-# Export order_items with date keys
+# Export order_items with date keys and surrogate keys
+# Note: Surrogate keys must match the row_number() logic used in dimension exports
 psql -d ecommerce_production -c "\COPY (
   SELECT
     oi.id as order_item_key,
     oi.order_id,
     oi.line_number,
-    c.customer_key,
-    p.product_key,
+    (SELECT row_number() OVER (ORDER BY id)
+     FROM customers c2
+     WHERE c2.id = c.id) as customer_key,
+    (SELECT row_number() OVER (ORDER BY id)
+     FROM products p2
+     WHERE p2.id = p.id) as product_key,
     to_char(o.order_date, 'YYYYMMDD')::int as order_date_key,
     to_char(o.ship_date, 'YYYYMMDD')::int as ship_date_key,
-    s.store_key,
+    (SELECT row_number() OVER (ORDER BY id)
+     FROM stores s2
+     WHERE s2.id = s.id) as store_key,
     oi.quantity,
     oi.unit_price,
     oi.discount_amount,
@@ -1171,6 +1178,7 @@ Create `sql/create_daily_sales_view.sql`:
 CREATE MATERIALIZED VIEW IF NOT EXISTS local.daily_sales_summary
 ENGINE = SummingMergeTree()
 ORDER BY (order_date_key, store_key)
+POPULATE
 AS
 SELECT
     f.order_date_key,
@@ -1187,6 +1195,8 @@ JOIN local.dim_store s ON f.store_key = s.store_key
 GROUP BY f.order_date_key, f.store_key, s.store_name, s.region;
 ```
 
+**Note:** The `POPULATE` keyword backfills the materialized view with existing data from `fact_order_items`. Without it, the view would only contain data from INSERTs that occur after the view is created.
+
 Execute it:
 
 ```bash
@@ -1201,6 +1211,7 @@ Create `sql/create_product_performance_view.sql`:
 CREATE MATERIALIZED VIEW IF NOT EXISTS local.product_performance
 ENGINE = SummingMergeTree()
 ORDER BY (product_key, order_date_key)
+POPULATE
 AS
 SELECT
     f.product_key,
@@ -1218,7 +1229,9 @@ JOIN local.dim_product p ON f.product_key = p.product_key
 GROUP BY f.product_key, p.name, p.category, p.brand, f.order_date_key;
 ```
 
-**Note:** SummingMergeTree can't directly store averages. Instead, we store the sum and count, then calculate the average at query time as `sum_unit_price / price_count`.
+**Notes:**
+- The `POPULATE` keyword backfills the view with existing data from `fact_order_items`
+- SummingMergeTree can't directly store averages. We store the sum and count, then calculate average at query time as `sum_unit_price / price_count`
 
 Execute it:
 
