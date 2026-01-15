@@ -41,13 +41,13 @@ jobs:
           # Define patterns to check - one per line for readability
           PATTERNS=(
             "^\.github/workflows/test-framework-cli\.yaml"
+            "^\.github/scripts/check-cli-dependencies\.sh"
             "^apps/framework-cli-e2e/"
             "^apps/framework-cli/"
             "^templates/python"
             "^templates/typescript"
             "^packages/"
             "Cargo.lock"
-            "pnpm-lock.yaml"
           )
 
           # Join patterns with | for grep
@@ -60,7 +60,7 @@ jobs:
           cat changes.txt
           echo "::endgroup::"
 
-          echo "::group::📋 Files Matching Patterns"
+          echo "::group::📋 Files Matching Patterns (excluding pnpm-lock.yaml)"
           echo "Looking for files matching these patterns:"
           printf '%s\n' "${PATTERNS[@]}"
           echo "---"
@@ -68,10 +68,20 @@ jobs:
           grep -E "${GREP_PATTERN}" changes.txt || echo "No files match patterns"
           echo "::endgroup::"
 
-          # Check if any relevant files were changed
+          # Check if any relevant files were changed (excluding pnpm-lock)
           if grep -q -E "${GREP_PATTERN}" changes.txt; then
             echo "::notice title=✅ Running Tests::Detected relevant changes in the codebase. Tests will run."
             echo "should_run=true" >> $GITHUB_OUTPUT
+          # If only pnpm-lock.yaml changed, use smart analysis
+          elif grep -q "pnpm-lock.yaml" changes.txt; then
+            echo "::notice title=🔍 Analyzing Dependencies::Only pnpm-lock.yaml changed, checking if CLI is affected..."
+            if .github/scripts/check-cli-dependencies.sh; then
+              echo "::notice title=✅ Running Tests::pnpm-lock.yaml changes affect CLI packages. Tests will run."
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            else
+              echo "::notice title=⏭️ Skipping Tests::pnpm-lock.yaml changes don't affect CLI packages. Tests will be skipped."
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "::notice title=⏭️ Skipping Tests::No relevant changes detected. Tests will be skipped."
             echo "should_run=false" >> $GITHUB_OUTPUT
