@@ -21,16 +21,10 @@ import { CommandSearch } from "@/components/search/command-search";
 interface TopNavProps {
   stars: number | null;
   showHosting: boolean;
-  showGuides: boolean;
   showAi: boolean;
 }
 
-export function TopNav({
-  stars,
-  showHosting,
-  showGuides,
-  showAi,
-}: TopNavProps) {
+export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
@@ -96,15 +90,11 @@ export function TopNav({
       section: "templates",
       isActive: (pathname: string) => pathname.startsWith("/templates"),
     },
-    ...(showGuides ?
-      [
-        {
-          label: "Guides",
-          href: "/guides",
-          section: "guides" as DocumentationSection,
-        },
-      ]
-    : []),
+    {
+      label: "Guides",
+      href: "/guides",
+      section: "guides",
+    },
   ];
 
   return (

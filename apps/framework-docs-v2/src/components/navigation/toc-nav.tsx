@@ -31,9 +31,15 @@ interface TOCNavProps {
     title: string;
     url: string;
   }>;
+  /** Show Linear integration (scope selector + add to Linear button) on guide pages */
+  showLinearIntegration?: boolean;
 }
 
-export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
+export function TOCNav({
+  headings,
+  helpfulLinks,
+  showLinearIntegration = false,
+}: TOCNavProps) {
   const [activeId, setActiveId] = useState<string>("");
   const [scope, setScope] = useState<"initiative" | "project">("initiative");
   const pathname = usePathname();
@@ -192,7 +198,7 @@ export function TOCNav({ headings, helpfulLinks }: TOCNavProps) {
           </div>
         )}
 
-        {isGuidePage && (
+        {isGuidePage && showLinearIntegration && (
           <div className="mt-6 space-y-3">
             <div>
               <div className="mb-2 flex items-center justify-between">
