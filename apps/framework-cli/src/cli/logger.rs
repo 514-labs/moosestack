@@ -718,18 +718,45 @@ fn setup_otlp_layer(
 
 /// Setup OTLP export for structured logging.
 ///
-/// Exports spans and logs to an OTLP collector via gRPC. Returns an error if
-/// the OTLP endpoint is configured but initialization fails.
+/// Exports spans and logs to an OTLP collector via gRPC while also writing
+/// to local files/stdout for fallback observability. If OTLP initialization fails,
+/// this function panics to alert the user of the misconfiguration.
 fn setup_with_otlp(settings: &LoggerSettings) {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
-    // Add OTLP layer (order matters: Registry -> OTLP -> EnvFilter)
+    // Add OTLP layer first, then local file/stdout layer for fallback
     if let Some(otlp_layer) = setup_otlp_layer(settings) {
-        tracing_subscriber::registry()
-            .with(otlp_layer)
-            .with(env_filter)
-            .init();
+        if settings.stdout {
+            let ansi_enabled = !settings.no_ansi;
+            let local_layer = tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_target(true)
+                .with_level(true)
+                .with_ansi(ansi_enabled)
+                .compact();
+
+            tracing_subscriber::registry()
+                .with(otlp_layer)
+                .with(local_layer)
+                .with(env_filter)
+                .init();
+        } else {
+            // Write to file with ANSI disabled
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
+            let local_layer = tracing_subscriber::fmt::layer()
+                .with_writer(file_appender)
+                .with_target(true)
+                .with_level(true)
+                .with_ansi(false)
+                .compact();
+
+            tracing_subscriber::registry()
+                .with(otlp_layer)
+                .with(local_layer)
+                .with(env_filter)
+                .init();
+        }
         info!(
             "OTLP export enabled to {}",
             settings.otlp_endpoint.as_ref().unwrap()
