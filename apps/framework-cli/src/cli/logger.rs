@@ -698,14 +698,14 @@ fn setup_otlp_layer(
         .with_trace_config(
             opentelemetry_sdk::trace::Config::default()
                 .with_resource(opentelemetry_sdk::Resource::new(vec![
-                    opentelemetry::KeyValue::new("service.name", "moose-cli"),
+                    opentelemetry::KeyValue::new("service.name", "moose"),
                     opentelemetry::KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
                 ]))
         )
         .install_batch(opentelemetry_sdk::runtime::Tokio)
         .ok()?;
 
-    let tracer = provider.tracer("moose-cli");
+    let tracer = provider.tracer("moose");
 
     Some(tracing_opentelemetry::layer().with_tracer(tracer))
 }
