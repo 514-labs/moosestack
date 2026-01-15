@@ -71,8 +71,9 @@ Dashboard components use shared types with IDE autocomplete
 ### 1. Clone, Install and Configure
 
 ```bash
-npx degit 514-labs/moosestack/examples/cdp-analytics cdp-analytics
-cd cdp-analytics
+# Clone the repo (we'll only be using the cdp-analytics example)
+git clone --depth 1 https://github.com/514-labs/moosestack.git
+cd moosestack/examples/cdp-analytics
 
 pnpm install
 
