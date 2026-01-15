@@ -12,7 +12,8 @@ This directory contains scripts used by GitHub Actions workflows to optimize CI/
 2. **Analyzes the diff**: Parses the pnpm-lock.yaml diff to see which packages were affected
 3. **Counts package changes**:
    - Counts how many docs-only packages changed (`docs_match_count`)
-   - Counts total number of packages that changed (`total_changed_count`)
+   - Counts total number of **unique** packages that changed (`total_changed_count`)
+   - **Important**: Both counts track unique packages (not diff lines), ensuring accurate comparison even when a package has multiple dependency changes
 4. **Determines impact**:
    - If CLI-related packages changed → Tests should run (exit 0)
    - If ONLY docs packages changed (`docs_match_count > 0` AND `docs_match_count == total_changed_count`) → Tests can be skipped (exit 1)

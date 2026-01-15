@@ -46,5 +46,5 @@ const draftAndBetaSlugs = getDraftAndBetaSlugs();
 module.exports = {
   siteUrl: process.env.SITE_URL || "https://docs.fiveonefour.com",
   generateRobotsTxt: true,
-  exclude: ["/api/*", "/components", ...draftAndBetaSlugs],
+  exclude: ["/api/*", "/components", "**/index", ...draftAndBetaSlugs],
 };

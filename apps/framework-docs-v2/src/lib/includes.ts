@@ -60,7 +60,11 @@ export function processIncludes(
   for (const match of matches) {
     if (!match[1]) continue;
     const includePath = match[1].trim();
-    const fullPath = path.join(CONTENT_ROOT, includePath);
+    // Remove leading slash to ensure relative path resolution
+    // path.join('/base', '/other') returns '/other', ignoring the base
+    const relativePath =
+      includePath.startsWith("/") ? includePath.slice(1) : includePath;
+    const fullPath = path.join(CONTENT_ROOT, relativePath);
 
     try {
       // Check for circular dependencies
@@ -71,10 +75,11 @@ export function processIncludes(
           );
           result = result.replace(
             match[0],
-            `\n> ⚠️ Error: Circular dependency detected for ${includePath}\n`,
+            () =>
+              `\n> ⚠️ Error: Circular dependency detected for ${includePath}\n`,
           );
         } else {
-          result = result.replace(match[0], "");
+          result = result.replace(match[0], () => "");
         }
         continue;
       }
@@ -85,10 +90,10 @@ export function processIncludes(
           console.warn(`[processIncludes] File not found: ${fullPath}`);
           result = result.replace(
             match[0],
-            `\n> ⚠️ Error: File not found: ${includePath}\n`,
+            () => `\n> ⚠️ Error: File not found: ${includePath}\n`,
           );
         } else {
-          result = result.replace(match[0], "");
+          result = result.replace(match[0], () => "");
         }
         continue;
       }
@@ -111,7 +116,8 @@ export function processIncludes(
       includeStack.delete(fullPath);
 
       // Replace the include directive with the content
-      result = result.replace(match[0], includeContent);
+      // Use replacer function to prevent $& $` $' $$ interpretation
+      result = result.replace(match[0], () => includeContent);
     } catch (error) {
       if (showErrors) {
         console.error(
@@ -120,10 +126,10 @@ export function processIncludes(
         );
         result = result.replace(
           match[0],
-          `\n> ⚠️ Error: Failed to include ${includePath}\n`,
+          () => `\n> ⚠️ Error: Failed to include ${includePath}\n`,
         );
       } else {
-        result = result.replace(match[0], "");
+        result = result.replace(match[0], () => "");
       }
     }
   }

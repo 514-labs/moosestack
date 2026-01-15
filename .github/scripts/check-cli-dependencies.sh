@@ -69,11 +69,15 @@ for package in "${DOCS_ONLY_PACKAGES[@]}"; do
   fi
 done
 
-# Count total number of packages that changed
-# Look for lines with package paths in quotes followed by colon
-total_changed_count=$(grep -c "^[+-].*'[^']*':" "$DIFF_FILE" || echo "0")
+# Count total number of UNIQUE packages that changed
+# Match only importer packages (2-space indent), not dependencies
+total_changed_count=$(grep "^[+-]  '[^']*':" "$DIFF_FILE" | \
+  grep -o "'[^']*':" | \
+  sort -u | \
+  wc -l | \
+  tr -d ' ' || echo "0")
 
-echo "📊 Package change summary: $docs_match_count docs packages, $total_changed_count total package entries"
+echo "📊 Package change summary: $docs_match_count docs packages, $total_changed_count total unique packages"
 
 # Set DOCS_ONLY=true only if at least one docs package changed AND
 # the number of docs packages equals the total (meaning ONLY docs changed)

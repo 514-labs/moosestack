@@ -27,12 +27,30 @@ interface CycleInfo {
  * Get all MDX files recursively
  */
 function getAllMdxFiles(dir: string, files: string[] = []): string[] {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let entries;
+
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch (error) {
+    console.warn(
+      `[getAllMdxFiles] Unable to read directory ${dir}:`,
+      error instanceof Error ? error.message : error,
+    );
+    return files; // Skip this directory and continue
+  }
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      getAllMdxFiles(fullPath, files);
+      try {
+        getAllMdxFiles(fullPath, files);
+      } catch (error) {
+        console.warn(
+          `[getAllMdxFiles] Error processing directory ${fullPath}:`,
+          error instanceof Error ? error.message : error,
+        );
+        // Continue processing other entries
+      }
     } else if (entry.name.endsWith(".mdx")) {
       files.push(fullPath);
     }
@@ -52,7 +70,11 @@ function extractIncludes(filePath: string): string[] {
   for (const match of matches) {
     if (match[1]) {
       const includePath = match[1].trim();
-      const fullPath = path.join(CONTENT_ROOT, includePath);
+      // Remove leading slash to ensure relative path resolution
+      // path.join('/base', '/other') returns '/other', ignoring the base
+      const relativePath =
+        includePath.startsWith("/") ? includePath.slice(1) : includePath;
+      const fullPath = path.join(CONTENT_ROOT, relativePath);
       includes.push(fullPath);
     }
   }
@@ -98,7 +120,9 @@ function detectCycles(graph: DependencyGraph): CycleInfo[] {
       }
 
       if (!visited.has(dep)) {
-        if (dfs(dep, [...currentPath])) {
+        const foundCycle = dfs(dep, [...currentPath]);
+        if (foundCycle) {
+          // Cycle found in subtree, continue to find more cycles
           recursionStack.delete(node);
           return true;
         }
@@ -129,10 +153,8 @@ function detectCycles(graph: DependencyGraph): CycleInfo[] {
 
   for (const node of Object.keys(graph)) {
     if (!visited.has(node)) {
-      // Early return if cycle found - stop traversing remaining nodes
-      if (dfs(node, [])) {
-        break;
-      }
+      // Continue traversing all nodes to find all cycles
+      dfs(node, []);
     }
   }
 
