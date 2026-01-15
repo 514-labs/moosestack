@@ -1,5 +1,3 @@
-import { Button } from "@/components/ui/button";
-import { RefreshCwIcon } from "lucide-react";
 import { DateFilterProvider } from "@/components/dashboard-date-context";
 import { FilterBar } from "@/components/filter-bar";
 import { DashboardCharts } from "@/components/dashboard-charts";
@@ -19,13 +17,7 @@ export default function Page() {
                 Overview of your data and metrics
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <ThemeToggle />
-              <Button variant="outline">
-                <RefreshCwIcon />
-                Refresh
-              </Button>
-            </div>
+            <ThemeToggle />
           </div>
 
           {/* Filter Bar */}

@@ -1,36 +1,84 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Next.js + MooseStack Dashboard
 
-## Getting Started
+A demo dashboard showing how to integrate [MooseStack](https://docs.fiveonefour.com/moosestack/) with a Next.js application. MooseStack provides a TypeScript-first OLAP modeling and query layer that facilitates management of ClickHouse schema as code and type-safe queries.
 
-First, run the development server:
+## Prerequisites
+
+- Node.js 20+
+- pnpm
+- Docker Desktop (for local ClickHouse)
+
+## Setup
+
+1. **Install dependencies** (from the monorepo root or this directory):
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. **Configure environment variables** — create `.env.local` in the project root:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+MOOSE_CLIENT_ONLY=true
+MOOSE_CLICKHOUSE_CONFIG__DB_NAME=local
+MOOSE_CLICKHOUSE_CONFIG__HOST=localhost
+MOOSE_CLICKHOUSE_CONFIG__PORT=18123
+MOOSE_CLICKHOUSE_CONFIG__USER=panda
+MOOSE_CLICKHOUSE_CONFIG__PASSWORD=pandapass
+MOOSE_CLICKHOUSE_CONFIG__USE_SSL=false
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+3. **Start the MooseStack dev server** (runs ClickHouse via Docker):
+
+```bash
+cd moose
+pnpm dev
+```
+
+4. **Seed sample data** (in a separate terminal):
+
+```bash
+cd moose
+pnpm seed
+```
+
+5. **Start the Next.js app** (in another terminal):
+
+```bash
+pnpm dev
+```
+
+6. Open [http://localhost:3000](http://localhost:3000) to view the dashboard.
+
+## Project Structure
+
+```
+├── app/                    # Next.js app router
+│   ├── page.tsx            # Dashboard page
+│   └── actions/            # Server actions calling MooseStack queries
+├── components/             # React components (charts, stats, filters)
+├── lib/                    # Hooks and utilities
+└── moose/                  # MooseStack workspace package
+    ├── src/
+    │   ├── models.ts       # OlapTable definitions → ClickHouse tables
+    │   ├── queries.ts      # Query helpers using sql tagged templates
+    │   ├── client.ts       # Shared ClickHouse client initializer
+    │   └── index.ts        # Package exports
+    ├── seed.sql            # Sample data for demo
+    └── moose.config.toml   # MooseStack configuration
+```
+
+## How It Works
+
+1. Define `OlapTable` models in `moose/src/models.ts` → MooseStack creates ClickHouse tables
+2. Write query helpers in `moose/src/queries.ts` using the `sql` tagged template
+3. Export queries from `moose/src/index.ts` → import from `"moose"` in Next.js
+4. Call queries from Server Components or Server Actions (keeps credentials server-side)
+5. Dashboard components fetch data via React Query
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [MooseStack + Next.js Guide](https://docs.fiveonefour.com/moosestack/getting-started/existing-app/next-js) — Full walkthrough
+- [OlapTable Reference](https://docs.fiveonefour.com/moosestack/olap/model-table) — Primary keys, engines, configuration
+- [Read Data](https://docs.fiveonefour.com/moosestack/olap/read-data) — Query patterns and the Moose client
+- [Migrations](https://docs.fiveonefour.com/moosestack/migrate) — Deploy schema to production ClickHouse

@@ -5,7 +5,7 @@
     "noEmit": false,
     "declaration": true,
     "declarationMap": true,
-    "isolatedModules": false,
+    "isolatedModules": true,
     "strictNullChecks": true,
     "esModuleInterop": true,
     "plugins": [

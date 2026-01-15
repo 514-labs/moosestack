@@ -3,7 +3,6 @@
 import * as React from "react";
 import { type DatePreset, getDateRangeForPreset } from "@/lib/date-utils";
 import { useDateFilter } from "@/lib/hooks";
-import { ExportButton } from "@/components/export-button";
 import { DatePickerInput } from "@/components/date-picker-input";
 import { DatePresetSelector } from "@/components/date-preset-selector";
 export function FilterBar() {
@@ -34,34 +33,30 @@ export function FilterBar() {
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <DatePresetSelector
-          value={selectedPreset}
-          onValueChange={handlePresetChange}
-          label="Filter Date:"
+    <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4">
+      <DatePresetSelector
+        value={selectedPreset}
+        onValueChange={handlePresetChange}
+        label="Filter Date:"
+      />
+      <div className="flex items-end gap-2">
+        <DatePickerInput
+          id="start-date"
+          label="From:"
+          value={startDate}
+          onChange={handleStartDateChange}
+          placeholder="Select start date"
+          className="w-[180px]"
         />
-        <div className="flex items-end gap-2">
-          <DatePickerInput
-            id="start-date"
-            label="From:"
-            value={startDate}
-            onChange={handleStartDateChange}
-            placeholder="Select start date"
-            className="w-[180px]"
-          />
-          <DatePickerInput
-            id="end-date"
-            label="To:"
-            value={endDate}
-            onChange={handleEndDateChange}
-            placeholder="Select end date"
-            className="w-[180px]"
-          />
-        </div>
+        <DatePickerInput
+          id="end-date"
+          label="To:"
+          value={endDate}
+          onChange={handleEndDateChange}
+          placeholder="Select end date"
+          className="w-[180px]"
+        />
       </div>
-
-      <ExportButton startDate={startDate} endDate={endDate} />
     </div>
   );
 }

@@ -14,7 +14,5 @@ export async function getEventsOverTimeAction(
   const start = startDate ? new Date(startDate) : undefined;
   const end = endDate ? new Date(endDate) : undefined;
 
-  const rows = await getEventsOverTime(start, end, bucketSize);
-
-  return rows;
+  return getEventsOverTime(start, end, bucketSize);
 }

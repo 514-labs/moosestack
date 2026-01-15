@@ -15,7 +15,7 @@ function formatNumber(num: number): string {
   return new Intl.NumberFormat("en-US").format(num);
 }
 
-export function DashboardStats() {
+export function DashboardStats(): React.ReactElement {
   const { startDate, endDate } = useDateFilter();
 
   const { data: metrics, isLoading } = useMetrics(startDate, endDate);
@@ -95,7 +95,7 @@ export function DashboardStats() {
                   stat.isPositive ? "text-emerald-600" : "text-red-600"
                 }
               >
-                <span className="hidden sm:inline">{stat.change}%</span>
+                <span className="hidden sm:inline">{stat.change}</span>
               </span>
               <span className="text-muted-foreground hidden sm:inline">
                 vs Last Months
