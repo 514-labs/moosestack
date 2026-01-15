@@ -1692,6 +1692,40 @@ export interface SerializableGuideSection {
 }
 
 /**
+ * Map of icon components to their string names for serialization
+ * This is necessary because React components created with forwardRef
+ * don't have a reliable .name property
+ */
+const iconToNameMap = new Map<TablerIcon, string>([
+  [IconChartLine, "IconChartLine"],
+  [IconMessageChatbot, "IconMessageChatbot"],
+  [IconFileReport, "IconFileReport"],
+  [IconCloudUpload, "IconCloudUpload"],
+  [IconDatabaseImport, "IconDatabaseImport"],
+  [IconChartDots, "IconChartDots"],
+  [IconBolt, "IconBolt"],
+  [IconUsers, "IconUsers"],
+  [IconChartBarOff, "IconChartBarOff"],
+  [IconChartBar, "IconChartBar"],
+  [IconStack, "IconStack"],
+  [IconRoute, "IconRoute"],
+  [IconCode, "IconCode"],
+  [IconTrendingUp, "IconTrendingUp"],
+  [IconBrain, "IconBrain"],
+  [IconDatabase, "IconDatabase"],
+  [IconServer, "IconServer"],
+  [IconRocket, "IconRocket"],
+]);
+
+/**
+ * Get icon name from icon component for serialization
+ */
+function getIconName(icon?: TablerIcon): string | undefined {
+  if (!icon) return undefined;
+  return iconToNameMap.get(icon);
+}
+
+/**
  * Get visible guides sections for the grid layout
  * Returns serializable sections (without icon components) for client components
  * Supports both:
@@ -1723,7 +1757,7 @@ export function getVisibleGuideSections(flags: {
       topLevelGuides.push({
         slug: item.slug,
         title: item.title,
-        iconName: item.icon?.name,
+        iconName: getIconName(item.icon),
       });
     }
   }
@@ -1748,7 +1782,7 @@ export function getVisibleGuideSections(flags: {
         visibleItems.push({
           slug: subItem.slug,
           title: subItem.title,
-          iconName: subItem.icon?.name,
+          iconName: getIconName(subItem.icon),
         });
       }
 

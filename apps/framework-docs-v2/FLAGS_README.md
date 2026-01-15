@@ -36,12 +36,14 @@ The Guides tab is always visible in navigation. Individual guide visibility is c
 | Guide Status | Default (both flags OFF) | `show-beta-guides` ON | `show-draft-guides` ON |
 |--------------|--------------------------|----------------------|------------------------|
 | `status: "draft"` | Hidden | Hidden | Visible |
-| `status: "beta"` | Hidden | Visible | Visible |
+| `status: "beta"` | Hidden | Visible | Hidden |
 | No status (public) | Visible | Visible | Visible |
 
+**Draft and Beta are mutually exclusive sets.** Each flag only reveals its corresponding status level.
+
 **Two-level guide workflow:**
-1. **Draft** - Internal WIP, not ready for any external users
-2. **Beta** - Ready for select external users (e.g., ClickHouse sales team) to preview
+1. **Draft** - Internal WIP, not ready for any external users (enable `show-draft-guides` to see)
+2. **Beta** - Ready for select external users (e.g., ClickHouse sales team) to preview (enable `show-beta-guides` to see)
 3. **Public** - No status, visible to everyone
 
 **If no guides are visible**, the Guides page shows a "Coming Soon" design.

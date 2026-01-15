@@ -15,8 +15,10 @@ Guides go through three visibility stages:
 ### Viewing Hidden Guides
 
 Use the Vercel Toolbar (available in preview deployments) to toggle:
-- `show-draft-guides` - See all draft guides
-- `show-beta-guides` - See all beta guides
+- `show-draft-guides` - See all draft guides (internal team)
+- `show-beta-guides` - See all beta guides (select external users)
+
+**Note:** Draft and beta are mutually exclusive sets. Each flag only reveals its corresponding status level.
 
 ## Creating a New Guide
 
@@ -26,7 +28,8 @@ Create an MDX file in the appropriate location:
 
 ```
 content/guides/
-├── getting-started.mdx              # Top-level guide (no category)
+├── performant-dashboards.mdx        # Top-level guide (no category)
+├── chat-in-your-app.mdx             # Top-level guide
 ├── applications/                    # Category folder
 │   ├── performant-dashboards.mdx   # Guide in "Applications" section
 │   └── in-app-chat-analytics.mdx
