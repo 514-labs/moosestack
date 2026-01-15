@@ -45,6 +45,7 @@ interface HastElement {
   tagName: string;
   properties?: Record<string, unknown>;
   children?: HastNode[];
+  data?: Record<string, unknown>;
 }
 
 type HastNode = HastElement | { type: string };

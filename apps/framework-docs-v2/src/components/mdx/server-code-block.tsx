@@ -69,6 +69,10 @@ export interface ServerCodeBlockProps
   // Animation flag (Nextra extension)
   "data-animate"?: string;
 
+  // Mermaid diagram settings
+  "data-maxheight"?: string;
+  "data-maxHeight"?: string;
+
   children?: React.ReactNode;
 }
 
