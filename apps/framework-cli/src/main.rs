@@ -56,9 +56,6 @@ fn main() -> ExitCode {
     cli::settings::init_config_file().expect("Failed to init config file");
     let config = cli::settings::read_settings().expect("Failed to read settings");
 
-    // Setup logging
-    cli::logger::setup_logging(&config.logger);
-
     let machine_id = utilities::machine_id::get_or_create_machine_id();
 
     // Parse CLI arguments
@@ -91,6 +88,9 @@ fn main() -> ExitCode {
         .enable_all()
         .build()
         .expect("Failed to create Tokio runtime");
+
+    // Setup logging (after Tokio runtime creation for OTLP batch exporter)
+    cli::logger::setup_logging(&config.logger);
 
     // Run the async function to handle the command
     let result = runtime.block_on(cli::top_command_handler(

@@ -683,8 +683,12 @@ pub fn setup_logging(settings: &LoggerSettings) {
 /// Returns None if the OTLP endpoint is not configured or if initialization fails.
 fn setup_otlp_layer(
     settings: &LoggerSettings,
-) -> Option<tracing_opentelemetry::OpenTelemetryLayer<tracing_subscriber::Registry, opentelemetry_sdk::trace::Tracer>>
-{
+) -> Option<
+    tracing_opentelemetry::OpenTelemetryLayer<
+        tracing_subscriber::Registry,
+        opentelemetry_sdk::trace::Tracer,
+    >,
+> {
     let endpoint = settings.otlp_endpoint.as_ref()?;
 
     // Create OTLP tracer provider using the pipeline builder
@@ -693,17 +697,19 @@ fn setup_otlp_layer(
         .with_exporter(
             opentelemetry_otlp::new_exporter()
                 .tonic()
-                .with_endpoint(endpoint)
+                .with_endpoint(endpoint),
         )
-        .with_trace_config(
-            opentelemetry_sdk::trace::Config::default()
-                .with_resource(opentelemetry_sdk::Resource::new(vec![
-                    opentelemetry::KeyValue::new("service.name", "moose"),
-                    opentelemetry::KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
-                ]))
-        )
+        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
+            opentelemetry_sdk::Resource::new(vec![
+                opentelemetry::KeyValue::new("service.name", "moose"),
+                opentelemetry::KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+            ]),
+        ))
         .install_batch(opentelemetry_sdk::runtime::Tokio)
         .ok()?;
+
+    // Register provider globally so shutdown can flush batches
+    opentelemetry::global::set_tracer_provider(provider.clone());
 
     let tracer = provider.tracer("moose");
 
@@ -724,7 +730,10 @@ fn setup_with_otlp(settings: &LoggerSettings) {
             .with(otlp_layer)
             .with(env_filter)
             .init();
-        info!("OTLP export enabled to {}", settings.otlp_endpoint.as_ref().unwrap());
+        info!(
+            "OTLP export enabled to {}",
+            settings.otlp_endpoint.as_ref().unwrap()
+        );
     } else {
         error!("Failed to initialize OTLP export");
         panic!("OTLP endpoint configured but initialization failed");
