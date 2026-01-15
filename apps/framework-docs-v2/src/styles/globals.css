@@ -132,29 +132,19 @@
     min-width: unset !important;
   }
 
-  .mermaid-container .node rect,
-  .mermaid-container .node circle,
-  .mermaid-container .node ellipse,
-  .mermaid-container .node polygon,
-  .mermaid-container-zoomed .node rect,
-  .mermaid-container-zoomed .node circle,
-  .mermaid-container-zoomed .node ellipse,
-  .mermaid-container-zoomed .node polygon {
+  :is(.mermaid-container, .mermaid-container-zoomed) .node :is(rect, circle, ellipse, polygon) {
     @apply fill-muted stroke-border;
   }
 
-  .mermaid-container .node .label,
-  .mermaid-container-zoomed .node .label {
+  :is(.mermaid-container, .mermaid-container-zoomed) .node .label {
     @apply text-foreground;
   }
 
-  .mermaid-container .edgePath .path,
-  .mermaid-container-zoomed .edgePath .path {
+  :is(.mermaid-container, .mermaid-container-zoomed) .edgePath .path {
     @apply stroke-muted-foreground;
   }
 
-  .mermaid-container .marker,
-  .mermaid-container-zoomed .marker {
+  :is(.mermaid-container, .mermaid-container-zoomed) .marker {
     @apply fill-muted-foreground stroke-muted-foreground;
   }
 
