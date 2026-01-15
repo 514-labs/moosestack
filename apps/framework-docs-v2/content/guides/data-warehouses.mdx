@@ -714,6 +714,22 @@ This mirrors real-world data warehouse patterns:
 - Load CSV files into ClickHouse tables
 - Verify the data loaded correctly
 
+#### Set Up Connection Credentials
+
+First, set up environment variables for ClickHouse credentials:
+
+```bash
+# Set up ClickHouse connection (adjust if your credentials differ)
+export CLICKHOUSE_URL="http://panda:pandapass@localhost:18123"
+```
+
+**Security Note:** For production, use:
+- Environment variables loaded from `.env` files (gitignored)
+- Secrets managers (AWS Secrets Manager, HashiCorp Vault, etc.)
+- Never commit credentials to version control
+
+For this tutorial, we'll use the environment variable approach.
+
 #### Create Sample Data Files
 
 Let's create CSV files with sample e-commerce data. In production, you'd export these from your operational PostgreSQL database.
@@ -888,6 +904,12 @@ These exports create surrogate keys (customer_key, product_key) and convert date
 
 Now create tables in ClickHouse to hold your data. We'll use ClickHouse's native table syntax.
 
+First, create a directory for SQL files:
+
+```bash
+mkdir -p sql
+```
+
 Create `sql/create_tables.sql`:
 
 ```sql
@@ -904,7 +926,7 @@ CREATE TABLE IF NOT EXISTS local.dim_customer (
     state String,
     postal_code Nullable(String),
     country String,
-    customer_since DateTime,
+    customer_since Date,
     created_at DateTime,
     updated_at DateTime
 ) ENGINE = MergeTree()
@@ -975,7 +997,7 @@ ORDER BY (order_date_key, customer_key, product_key);
 **Execute the SQL:**
 
 ```bash
-cat sql/create_tables.sql | curl 'http://panda:pandapass@localhost:18123/' --data-binary @-
+cat sql/create_tables.sql | curl "${CLICKHOUSE_URL}/" --data-binary @-
 ```
 
 **What just happened:**
@@ -986,20 +1008,20 @@ cat sql/create_tables.sql | curl 'http://panda:pandapass@localhost:18123/' --dat
 
 #### Load CSV Data into ClickHouse
 
-Now load the CSV files into ClickHouse:
+Now load the CSV files into ClickHouse with error handling:
 
 ```bash
 # Load customers
-cat data/customers.csv | curl 'http://panda:pandapass@localhost:18123/?query=INSERT%20INTO%20local.dim_customer%20FORMAT%20CSVWithNames' --data-binary @-
+cat data/customers.csv | curl "${CLICKHOUSE_URL}/?query=INSERT%20INTO%20local.dim_customer%20FORMAT%20CSVWithNames" --data-binary @- || { echo "Failed to load customers"; exit 1; }
 
 # Load products
-cat data/products.csv | curl 'http://panda:pandapass@localhost:18123/?query=INSERT%20INTO%20local.dim_product%20FORMAT%20CSVWithNames' --data-binary @-
+cat data/products.csv | curl "${CLICKHOUSE_URL}/?query=INSERT%20INTO%20local.dim_product%20FORMAT%20CSVWithNames" --data-binary @- || { echo "Failed to load products"; exit 1; }
 
 # Load stores
-cat data/stores.csv | curl 'http://panda:pandapass@localhost:18123/?query=INSERT%20INTO%20local.dim_store%20FORMAT%20CSVWithNames' --data-binary @-
+cat data/stores.csv | curl "${CLICKHOUSE_URL}/?query=INSERT%20INTO%20local.dim_store%20FORMAT%20CSVWithNames" --data-binary @- || { echo "Failed to load stores"; exit 1; }
 
 # Load order items
-cat data/order_items.csv | curl 'http://panda:pandapass@localhost:18123/?query=INSERT%20INTO%20local.fact_order_items%20FORMAT%20CSVWithNames' --data-binary @-
+cat data/order_items.csv | curl "${CLICKHOUSE_URL}/?query=INSERT%20INTO%20local.fact_order_items%20FORMAT%20CSVWithNames" --data-binary @- || { echo "Failed to load order items"; exit 1; }
 ```
 
 **CSVWithNames format:** This tells ClickHouse the first row contains column headers, which it uses to map CSV columns to table columns automatically.
@@ -1010,7 +1032,7 @@ Check that data loaded successfully:
 
 ```bash
 # Count rows in each table
-curl 'http://panda:pandapass@localhost:18123/' --data "SELECT 'dim_customer' as table, count(*) as rows FROM local.dim_customer
+curl "${CLICKHOUSE_URL}/" --data "SELECT 'dim_customer' as table, count(*) as rows FROM local.dim_customer
 UNION ALL SELECT 'dim_product', count(*) FROM local.dim_product
 UNION ALL SELECT 'dim_store', count(*) FROM local.dim_store
 UNION ALL SELECT 'fact_order_items', count(*) FROM local.fact_order_items"
@@ -1028,16 +1050,16 @@ fact_order_items	6
 
 ```bash
 # View first 3 customers
-curl 'http://panda:pandapass@localhost:18123/' --data "SELECT * FROM local.dim_customer LIMIT 3 FORMAT Pretty"
+curl "${CLICKHOUSE_URL}/" --data "SELECT * FROM local.dim_customer LIMIT 3 FORMAT Pretty"
 
 # View first 3 order items
-curl 'http://panda:pandapass@localhost:18123/' --data "SELECT * FROM local.fact_order_items LIMIT 3 FORMAT Pretty"
+curl "${CLICKHOUSE_URL}/" --data "SELECT * FROM local.fact_order_items LIMIT 3 FORMAT Pretty"
 ```
 
 **Test a join query:**
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
     c.first_name,
     c.last_name,
@@ -1100,7 +1122,8 @@ CREATE TABLE IF NOT EXISTS local.dim_date (
     is_holiday UInt8,
     holiday_name Nullable(String),
     fiscal_year Nullable(UInt16),
-    fiscal_quarter Nullable(UInt8)
+    fiscal_quarter Nullable(UInt8),
+    fiscal_period Nullable(UInt8)
 ) ENGINE = MergeTree()
 ORDER BY date_key;
 ```
@@ -1108,7 +1131,7 @@ ORDER BY date_key;
 Execute it:
 
 ```bash
-cat sql/create_date_dimension.sql | curl 'http://panda:pandapass@localhost:18123/' --data-binary @-
+cat sql/create_date_dimension.sql | curl "${CLICKHOUSE_URL}/" --data-binary @-
 ```
 
 #### Generate Date Dimension Data
@@ -1126,16 +1149,17 @@ SELECT
     toYear(date) as year,
     toQuarter(date) as quarter,
     toMonth(date) as month,
-    dateName('month', date) as month_name,
+    monthName(date) as month_name,
     toWeek(date) as week,
     toDayOfMonth(date) as day_of_month,
     toDayOfWeek(date) as day_of_week,
-    dateName('weekday', date) as day_name,
+    formatDateTime(date, '%A') as day_name,
     if(toDayOfWeek(date) IN (6, 7), 1, 0) as is_weekend,
     0 as is_holiday,
     NULL as holiday_name,
     NULL as fiscal_year,
-    NULL as fiscal_quarter
+    NULL as fiscal_quarter,
+    NULL as fiscal_period
 FROM (
     SELECT
         toDate('2020-01-01') + INTERVAL number DAY as date
@@ -1147,13 +1171,13 @@ WHERE date <= '2030-12-31';
 Execute it:
 
 ```bash
-cat sql/populate_date_dimension.sql | curl 'http://panda:pandapass@localhost:18123/' --data-binary @-
+cat sql/populate_date_dimension.sql | curl "${CLICKHOUSE_URL}/" --data-binary @-
 ```
 
 **Verify date dimension:**
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
     date_key,
     date,
@@ -1203,7 +1227,7 @@ GROUP BY f.order_date_key, f.store_key, s.store_name, s.region;
 Execute it:
 
 ```bash
-cat sql/create_daily_sales_view.sql | curl 'http://panda:pandapass@localhost:18123/' --data-binary @-
+cat sql/create_daily_sales_view.sql | curl "${CLICKHOUSE_URL}/" --data-binary @-
 ```
 
 **Create product performance view:**
@@ -1239,7 +1263,7 @@ GROUP BY f.product_key, p.name, p.category, p.brand, f.order_date_key;
 Execute it:
 
 ```bash
-cat sql/create_product_performance_view.sql | curl 'http://panda:pandapass@localhost:18123/' --data-binary @-
+cat sql/create_product_performance_view.sql | curl "${CLICKHOUSE_URL}/" --data-binary @-
 ```
 
 **What are Materialized Views?**
@@ -1255,7 +1279,7 @@ When you insert new data into `fact_order_items`, ClickHouse automatically updat
 Query the daily sales summary:
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
     d.date,
     d.day_name,
@@ -1273,7 +1297,7 @@ FORMAT Pretty"
 Query product performance:
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
     product_name,
     category,
@@ -1324,6 +1348,13 @@ WHERE d.date_key IS NULL
 
 UNION ALL
 
+SELECT 'Orphaned ship_date_keys', count(*)
+FROM local.fact_order_items f
+WHERE f.ship_date_key IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM local.dim_date d WHERE d.date_key = f.ship_date_key)
+
+UNION ALL
+
 -- Check for negative amounts
 SELECT 'Negative total_amount', count(*)
 FROM local.fact_order_items
@@ -1340,7 +1371,7 @@ WHERE quantity = 0;
 Run the checks:
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data-binary @sql/data_quality_checks.sql
+curl "${CLICKHOUSE_URL}/" --data-binary @sql/data_quality_checks.sql
 ```
 
 Expected output (all zeros):
@@ -1378,7 +1409,7 @@ You have several options for querying:
 **Option 1: curl with HTTP interface (what we've been using)**
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "SELECT * FROM local.fact_order_items LIMIT 10 FORMAT Pretty"
+curl "${CLICKHOUSE_URL}/" --data "SELECT * FROM local.fact_order_items LIMIT 10 FORMAT Pretty"
 ```
 
 **Option 2: ClickHouse client (interactive SQL)**
@@ -1400,7 +1431,7 @@ For this step, we'll use **curl** to run queries since it requires no additional
 Find the top 10 products by revenue:
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
   p.name,
   p.category,
@@ -1427,7 +1458,7 @@ FORMAT Pretty"
 Analyze regional sales performance by quarter:
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
   s.region,
   d.year,
@@ -1455,7 +1486,7 @@ FORMAT Pretty"
 Compare sales patterns:
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
   CASE WHEN d.is_weekend = 1 THEN 'Weekend' ELSE 'Weekday' END as day_type,
   COUNT(*) as num_transactions,
@@ -1486,7 +1517,7 @@ You can immediately see that weekdays drive more volume (as expected for e-comme
 Calculate total revenue per customer:
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
   c.customer_id,
   concat(c.first_name, ' ', c.last_name) as customer_name,
@@ -1514,7 +1545,7 @@ This identifies your most valuable customers.
 Track revenue over time:
 
 ```bash
-curl 'http://panda:pandapass@localhost:18123/' --data "
+curl "${CLICKHOUSE_URL}/" --data "
 SELECT
   d.year,
   d.month,
@@ -1720,10 +1751,18 @@ Create `scripts/refresh_warehouse.sh`:
 
 set -e  # Exit on any error
 
-CLICKHOUSE_URL="http://panda:pandapass@localhost:18123"
-DATA_DIR="data"
-LOG_DIR="logs"
+# Get absolute paths for cron compatibility
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+DATA_DIR="$PROJECT_DIR/data"
+LOG_DIR="$PROJECT_DIR/logs"
 LOG_FILE="$LOG_DIR/refresh_$(date +%Y%m%d_%H%M%S).log"
+
+# Use environment variable if set, otherwise use default
+CLICKHOUSE_URL="${CLICKHOUSE_URL:-http://panda:pandapass@localhost:18123}"
+
+# Validate required directories exist
+[ -d "$DATA_DIR" ] || { echo "Error: $DATA_DIR not found"; exit 1; }
 
 # Create logs directory if it doesn't exist
 mkdir -p "$LOG_DIR"
@@ -1740,19 +1779,23 @@ curl -s "$CLICKHOUSE_URL/" --data "TRUNCATE TABLE local.fact_order_items" 2>&1 |
 # Load dimensions first (parallel is safe since they're independent)
 echo "Loading dimensions..." | tee -a "$LOG_FILE"
 
+# Start background jobs and capture PIDs
 cat "$DATA_DIR/customers.csv" | \
   curl "$CLICKHOUSE_URL/?query=INSERT%20INTO%20local.dim_customer%20FORMAT%20CSVWithNames" \
-  --data-binary @- 2>&1 | tee -a "$LOG_FILE" &
+  --data-binary @- 2>&1 | tee -a "$LOG_FILE" & PID1=$!
 
 cat "$DATA_DIR/products.csv" | \
   curl "$CLICKHOUSE_URL/?query=INSERT%20INTO%20local.dim_product%20FORMAT%20CSVWithNames" \
-  --data-binary @- 2>&1 | tee -a "$LOG_FILE" &
+  --data-binary @- 2>&1 | tee -a "$LOG_FILE" & PID2=$!
 
 cat "$DATA_DIR/stores.csv" | \
   curl "$CLICKHOUSE_URL/?query=INSERT%20INTO%20local.dim_store%20FORMAT%20CSVWithNames" \
-  --data-binary @- 2>&1 | tee -a "$LOG_FILE" &
+  --data-binary @- 2>&1 | tee -a "$LOG_FILE" & PID3=$!
 
-wait  # Wait for all dimension loads to complete
+# Wait for all background jobs and check exit codes
+wait $PID1 || { echo "Customer load failed" | tee -a "$LOG_FILE"; exit 1; }
+wait $PID2 || { echo "Product load failed" | tee -a "$LOG_FILE"; exit 1; }
+wait $PID3 || { echo "Store load failed" | tee -a "$LOG_FILE"; exit 1; }
 
 echo "Dimensions loaded successfully" | tee -a "$LOG_FILE"
 
@@ -1761,7 +1804,7 @@ echo "Loading facts..." | tee -a "$LOG_FILE"
 
 cat "$DATA_DIR/order_items.csv" | \
   curl "$CLICKHOUSE_URL/?query=INSERT%20INTO%20local.fact_order_items%20FORMAT%20CSVWithNames" \
-  --data-binary @- 2>&1 | tee -a "$LOG_FILE"
+  --data-binary @- 2>&1 | tee -a "$LOG_FILE" || { echo "Fact load failed" | tee -a "$LOG_FILE"; exit 1; }
 
 echo "Facts loaded successfully" | tee -a "$LOG_FILE"
 
@@ -1780,7 +1823,12 @@ SELECT 'stores', COUNT(*) FROM local.dim_store
 UNION ALL
 SELECT 'order_items', COUNT(*) FROM local.fact_order_items
 FORMAT Pretty
-")
+" || echo "ERROR")
+
+if [[ "$METRICS" == "ERROR" ]]; then
+  echo "✗ Failed to collect metrics" | tee -a "$LOG_FILE"
+  exit 1
+fi
 
 echo "$METRICS" | tee -a "$LOG_FILE"
 echo "Refresh complete at $(date)" | tee -a "$LOG_FILE"
