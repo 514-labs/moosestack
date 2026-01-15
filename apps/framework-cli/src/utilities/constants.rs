@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use uuid::Uuid;
 
-pub const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CLI_VERSION: &str = env!("MOOSE_CLI_VERSION");
 
 pub const ENVIRONMENT_VARIABLE_PREFIX: &str = "MOOSE";
 
