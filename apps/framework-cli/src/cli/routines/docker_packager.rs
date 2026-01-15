@@ -128,6 +128,19 @@ RUN npm install -g pnpm@latest
     )
 }
 
+/// Generates the TypeScript compile step for Docker with dynamic source directory
+fn generate_typescript_compile_step(source_dir: &str) -> String {
+    format!(
+        r#"# Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
+# This eliminates ts-node overhead at runtime for faster worker startup
+RUN MOOSE_SOURCE_DIR={} npx moose-tspc .moose/compiled
+
+# Set environment variable to use pre-compiled JavaScript at runtime
+ENV MOOSE_USE_COMPILED=true"#,
+        source_dir
+    )
+}
+
 // Python and node 'slim' term is flipped
 static PY_BASE_DOCKER_FILE: &str = r#"
 FROM python:3.12-slim-bookworm
@@ -584,12 +597,7 @@ WORKDIR /application"#,
                 // Pre-compile TypeScript with moose plugins for faster worker startup
                 dockerfile = dockerfile.replace(
                     "TYPESCRIPT_COMPILE_STEP",
-                    r#"# Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
-# This eliminates ts-node overhead at runtime for faster worker startup
-RUN npx moose-tspc .moose/compiled
-
-# Set environment variable to use pre-compiled JavaScript at runtime
-ENV MOOSE_USE_COMPILED=true"#,
+                    &generate_typescript_compile_step(&project.source_dir),
                 );
 
                 // Replace the placeholder with a simple comment (tsconfig.json is pre-transformed)
@@ -1394,12 +1402,7 @@ fn create_standard_typescript_dockerfile_content(
         // Pre-compile TypeScript with moose plugins for faster worker startup
         .replace(
             "TYPESCRIPT_COMPILE_STEP",
-            r#"# Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
-# This eliminates ts-node overhead at runtime for faster worker startup
-RUN npx moose-tspc .moose/compiled
-
-# Set environment variable to use pre-compiled JavaScript at runtime
-ENV MOOSE_USE_COMPILED=true"#,
+            &generate_typescript_compile_step(&project.source_dir),
         );
 
     let ts_base_dockerfile = generate_ts_base_dockerfile(node_version);

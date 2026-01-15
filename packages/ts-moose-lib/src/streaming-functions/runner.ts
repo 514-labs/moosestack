@@ -563,9 +563,9 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
 function loadStreamingFunction(functionFilePath: string) {
   let streamingFunctionImport: { default: StreamingFunction };
   try {
-    streamingFunctionImport = require(
-      functionFilePath.substring(0, functionFilePath.length - 3),
-    );
+    // Remove the extension for require() (works for both .ts and .js)
+    const pathWithoutExt = functionFilePath.replace(/\.(ts|js)$/, "");
+    streamingFunctionImport = require(pathWithoutExt);
   } catch (e) {
     cliLog({ action: "Function", message: `${e}`, message_type: "Error" });
     throw e;
