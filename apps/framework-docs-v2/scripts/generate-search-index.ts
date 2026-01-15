@@ -15,6 +15,62 @@ import matter from "gray-matter";
 const CONTENT_ROOT = path.join(process.cwd(), "content");
 const OUTPUT_DIR = path.join(process.cwd(), ".search-index");
 
+/**
+ * Process include directives in content
+ * Syntax: :::include /shared/path/to/file.mdx
+ */
+function processIncludes(
+  content: string,
+  maxDepth: number = 3,
+  depth: number = 0,
+  includeStack: Set<string> = new Set(),
+): string {
+  if (depth >= maxDepth) {
+    return content;
+  }
+
+  const includeRegex = /^:::include\s+(.+)$/gm;
+  let result = content;
+  const matches = [...content.matchAll(includeRegex)];
+
+  for (const match of matches) {
+    if (!match[1]) continue;
+    const includePath = match[1].trim();
+    const fullPath = path.join(CONTENT_ROOT, includePath);
+
+    try {
+      if (includeStack.has(fullPath)) {
+        result = result.replace(match[0], "");
+        continue;
+      }
+
+      if (!fs.existsSync(fullPath)) {
+        result = result.replace(match[0], "");
+        continue;
+      }
+
+      let includeContent = fs.readFileSync(fullPath, "utf8");
+      const frontmatterRegex = /^---\n[\s\S]*?\n---\n/;
+      includeContent = includeContent.replace(frontmatterRegex, "");
+
+      includeStack.add(fullPath);
+      includeContent = processIncludes(
+        includeContent,
+        maxDepth,
+        depth + 1,
+        includeStack,
+      );
+      includeStack.delete(fullPath);
+
+      result = result.replace(match[0], includeContent);
+    } catch (error) {
+      result = result.replace(match[0], "");
+    }
+  }
+
+  return result;
+}
+
 interface ContentFile {
   slug: string;
   title: string;
@@ -245,6 +301,9 @@ function processFile(filePath: string): ContentFile | null {
     const parsed = matter(fileContents);
     data = parsed.data;
     content = parsed.content;
+
+    // Process include directives
+    content = processIncludes(content);
   } catch (error) {
     // Handle YAML parsing errors (e.g., unquoted colons in values)
     console.warn(`  ⚠ YAML error in ${filePath}, attempting fallback parse`);
@@ -255,6 +314,10 @@ function processFile(filePath: string): ContentFile | null {
     );
     if (frontmatterMatch) {
       content = frontmatterMatch[2] || "";
+
+      // Process include directives
+      content = processIncludes(content);
+
       // Try to extract title from frontmatter manually
       const titleMatch = frontmatterMatch[1]?.match(/^title:\s*(.+)$/m);
       const descMatch = frontmatterMatch[1]?.match(/^description:\s*(.+)$/m);

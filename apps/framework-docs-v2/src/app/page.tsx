@@ -88,6 +88,10 @@ export default async function HomePage() {
         >
           {sections.map((section) => {
             const Icon = section.icon;
+            if (!Icon) {
+              console.error("[HomePage] Section missing icon:", section.title);
+              return null;
+            }
             return (
               <Card
                 key={section.title}

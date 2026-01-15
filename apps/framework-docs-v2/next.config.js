@@ -7,6 +7,7 @@ const withMDX = require("@next/mdx")({
 });
 
 const createWithVercelToolbar = require("@vercel/toolbar/plugins/next");
+const path = require("path");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -41,6 +42,11 @@ const nextConfig = {
         destination: "https://us.i.posthog.com/decide",
       },
     ];
+  },
+  webpack: (config) => {
+    // Add alias for content directory to enable MDX content component imports
+    config.resolve.alias["@/content"] = path.join(__dirname, "content");
+    return config;
   },
 };
 

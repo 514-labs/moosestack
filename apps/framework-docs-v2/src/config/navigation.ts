@@ -1379,6 +1379,14 @@ const guidesNavigationConfig: NavigationConfig = [
         languages: ["typescript", "python"],
         status: "draft",
       },
+      {
+        type: "page",
+        slug: "guides/methodology/content-components-demo",
+        title: "Content Components Demo",
+        icon: IconFileCode,
+        languages: ["typescript", "python"],
+        status: "draft",
+      },
     ],
   },
   {
