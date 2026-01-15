@@ -100,7 +100,7 @@ fn main() -> ExitCode {
     ));
 
     // Process the result using the original display formatting
-    match result {
+    let exit_code = match result {
         Ok(s) => {
             // Skip displaying empty messages (used for --json output where JSON is already printed)
             if !s.message.action.is_empty() || !s.message.details.is_empty() {
@@ -117,5 +117,10 @@ fn main() -> ExitCode {
             ensure_terminal_cleanup();
             ExitCode::from(1)
         }
-    }
+    };
+
+    // Flush OTLP batches before exit
+    opentelemetry::global::shutdown_tracer_provider();
+
+    exit_code
 }
