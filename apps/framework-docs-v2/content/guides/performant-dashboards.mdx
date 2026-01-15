@@ -1,0 +1,2102 @@
+---
+title: Improving the Performance of Your Dashboards
+description: Learn how to build blazing-fast dashboards using MooseStack and ClickHouse
+---
+
+# Improving the Performance of Your Dashboards
+
+This guide assumes that you have a dashboard or report up and running, and that you wish to improve the performance of your dashboard by leveraging OLAP best practices. It will guide you through:
+
+1. getting your local dev environment up and running to work on this problem,   
+2. the local development experience of taking the business logic you have powering your frontend dashboards / reports and porting them over to MooseStack / ClickHouse  
+3. shipping your changes to production on Boreal Cloud
+
+This guide proposes a AI copilot-centric approach for doing this, but each of these steps can be done manually as well. This guide also assumes that you have Visual Studio Code as your IDE, [configured with Github Copilot](https://code.visualstudio.com/docs/copilot/setup) as your coding assistant. 
+
+This guide is written for a TypeScript developer. If you are interested in a Python guide, let us know!
+
+# Setting up your development environment
+
+This section will guide you through: 
+
+* Installing MooseStack and its dependencies  
+* Initiating or cloning your MooseStack project  
+* Setting up developer / agent supporting services (MCP \+ Language Server)  
+* Seeding your development environment with sample data 
+
+## Installing MooseStack
+
+### Prerequisites:
+
+* Node.js 20+: [https://nodejs.org/en/download](https://nodejs.org/en/download)   
+* Docker Desktop: [https://docs.docker.com/desktop/](https://docs.docker.com/desktop/)   
+* MacOS, Linux, or WSL 2+ with Windows
+
+### Installing on Windows:
+
+[See appendix for instructions on setting up WSL2](#wsl:-setting-up-a-wsl2-linux-instance-to-run-moosestack-on-windows) if you do not already have a Linux box running on your windows machine.
+
+### Install MooseStack:
+
+```shell
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+**Make sure to restart your terminal after installing MooseStack.**
+
+## Initialize or clone your MooseStack project locally
+
+You have two options for setting up your MooseStack project:
+
+### Option A: Clone an existing repository
+
+If you already have a repository with MooseStack configured:
+
+```shell
+git clone <YOUR_REPOSITORY_URL>
+cd <your-project>
+pnpm install
+```
+
+### Option B: Add MooseStack to an existing PNPM monorepo
+
+If you have an existing PNPM monorepo (e.g., a Next.js app) and want to add MooseStack:
+
+#### Step 1: Initialize MooseStack in a subdirectory
+
+From your monorepo root:
+
+```shell
+mkdir moosestack
+cd moosestack
+moose-cli init . typescript
+```
+
+#### Step 2: Update your PNPM workspace configuration
+
+Edit your root `pnpm-workspace.yaml` to include the moose directory:
+
+```yaml
+packages:
+  - .                    # Your main app (e.g., Next.js)
+  - moosestack                # MooseStack project
+```
+
+#### Step 3: Configure the MooseStack package
+
+Edit `moosestack/package.json` to set it up as a workspace package:
+
+```json
+{
+  "name": "moosestack",
+  "private": true,
+  "version": "0.0.1",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "moose-cli build",
+    "dev": "moose-cli dev",
+    "moose": "moose-cli"
+  },
+  "dependencies": {
+    "@514labs/moose-lib": "latest",
+    "typia": "^10.1.0"
+  },
+  "devDependencies": {
+    "@514labs/moose-cli": "latest",
+    "@types/node": "^24",
+    "typescript": "^5"
+  }
+}
+```
+
+#### Step 4: Add convenience scripts to your root package.json
+
+Edit your root `package.json` to add MooseStack scripts and `pnpmOnlyBuiltDependencies`:
+
+```json
+{
+  "scripts": {
+    "dev": "next dev",                              // Your app dev server
+    "dev:moose": "pnpm -C moosestack run dev",      // MooseStack dev server
+    "moose": "pnpm -C moosestack run moose",        // MooseStack CLI
+    "build": "next build",                          // Your app build
+    "build:moose": "pnpm -C moosestack run build"   // MooseStack build
+  },
+  "dependencies": {
+    "moosestack": "workspace:*",  // Reference the moosestack workspace package
+    // ... your other dependencies
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript"
+    ]
+  }
+}
+```
+
+#### Step 5: Install dependencies
+
+From your monorepo root:
+
+```shell
+pnpm install
+```
+
+### Resulting Project Structure
+
+Your monorepo will have the following structure:
+
+```
+your-monorepo/
+├── app/                           # Your Next.js app directory (or similar)
+├── components/                    # Your app components
+├── moosestack/                    # MooseStack Project ← NEW
+│   ├── src/                       # MooseStack source code
+│   │   ├── cdc/                   # CDC pipeline code
+│   │   ├── models/                # Data Models
+│   │   └── queries/               # Query Handlers
+│   ├── moose.config.toml          # MooseStack configuration
+│   ├── package.json               # MooseStack package config
+│   └── tsconfig.json              # TypeScript config for MooseStack
+├── public/                        # Static assets
+├── pnpm-workspace.yaml            # PNPM workspace config
+├── package.json                   # Root package.json
+└── pnpm-lock.yaml                 # Lockfile
+
+```
+
+## Run your Moose Development Server
+
+Ensure Docker Desktop is running first.  
+![][image2]
+
+### If you followed Option A (cloned existing repo):
+
+Navigate to the MooseStack project directory (it contains the `moose.config.toml` file):
+
+```shell
+cd moosestack-service  # or wherever your moose project is
+pnpm install
+moose dev
+```
+
+### If you followed Option B (monorepo setup):
+
+From your monorepo root, you can run MooseStack using the convenience script:
+
+```shell
+pnpm dev:moose
+```
+
+Or navigate to the `moosestack` directory:
+
+```shell
+cd moosestack
+pnpm run dev
+```
+
+If the development server runs correctly, you'll see a list of the available API endpoints print:
+
+```
+📍 Available Routes:
+  Base URL: http://localhost:4000
+
+  Static Routes:
+  METHOD  ENDPOINT                                           DESCRIPTION
+  ------  --------                                           -----------
+  GET     /admin/inframap                                    Admin: Get infrastructure map
+  GET     /admin/reality-check                               Admin: Reality check - provides a diff when drift is detected between the running instance of moose and the db it is connected to
+  GET     /health                                            Health check endpoint
+  GET     /ready                                             Readiness check endpoint
+...
+
+  Ingestion Routes:
+  METHOD  ENDPOINT                                           DESCRIPTION
+  ------  --------                                           -----------
+  POST    /ingest/DebeziumChangeEvent                        Ingest data to DebeziumChangeEvent (vlatest)
+
+  Consumption Routes:
+  METHOD  ENDPOINT                                           DESCRIPTION
+  ------  --------                                           -----------
+  GET     /api/example-api/v1                                Consumption API endpoint
+...
+
+  WebApp Routes:
+  METHOD  ENDPOINT                                           DESCRIPTION
+  ------  --------                                           -----------
+  *       /dataset                                           Express WebApp endpoint
+  *       /tools                                             Express WebApp endpoint
+
+```
+
+And your local services will be running in Docker containers:  
+![][image3]
+
+## Setting up developer / agent supporting services
+
+This subsection will run a couple of services that can help you and your copilots / agents work with the MooseStack project:
+
+1. The [Moose Dev MCP server](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript): The Moose development server includes a built-in Model Context Protocol (MCP) server that enables AI agents and IDEs to interact directly with your local development infrastructure. This allows you to use natural language to query data, inspect logs, explore infrastructure, and debug your Moose project. In particular, tools like `get_infra_map`, `query_olap`, and `get_logs` will be useful in accelerating your path through this guide.   
+2. [The Language Server (LSP) for MooseStack Typescript](https://github.com/514-labs/moosestack-lsp), which allows the IDE to validate the SQL written within MooseStack objects for correctness. (Coming soon, see appendix).
+
+### Moose Dev MCP setup
+
+To install the Moose Dev MCP with VS Code 1.102+, add this to your project's `.vscode/mcp.json` or User Settings:
+
+```json
+{
+  "servers": {
+    "moose-dev": {
+      "type": "http",
+      "url": "http://localhost:4000/mcp"
+    }
+  }
+}
+```
+
+Confirm the server is running and integrated with VSCode by running `MCP: List Servers` command from the Command Palette.
+
+* For other options to install with VSCode, see [the VSCode docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers#_add-an-mcp-server).  
+* For installation instructions for other IDEs / AI coding assistants, like Claude Code, Windsurf, and Cursor, see the [MooseStack docs](https://docs-v2-git-vscode-mcp-docs.preview.boreal.cloud/moosestack/moosedev-mcp?lang=typescript).
+
+# CDC guide 
+
+This section walks you through how to set up your MSSQL database to integrate with Debezium for change data capture. Before you start, make sure you have the following credentials for your database:
+
+- Host  
+- Port  
+- Username  
+- Password  
+- DB Name
+
+This setup comprises 3 main steps:
+
+1. Configure MSSQL Server for CDC  
+2. Configure ingestion pipelines to land CDC events into ClickHouse tables (via MooseStack)  
+3. Deploy Debezium Server to your environment
+
+### CDC Architecture:
+
+The following example shows how CDC tracks changes to a `customers` table:
+
+1\. **App executes:**        `UPDATE dbo.customers SET status='active' WHERE customer_id=123`  
+2\. **Transaction Log:**     Log record written (LSN: 00000042:00000123:0001, BEFORE: 'inactive', AFTER: 'active')  
+3\. **Capture Job:**         Reads log, finds change to CDC-enabled table `dbo.customers`  
+4\. **Tracking Table:**      `INSERT INTO cdc.dbo_customers_CT (__$operation=4, customer_id=123, status='active', ...)`  
+5\. **Debezium:**            Polls tracking table, creates JSON: `{"op":"u", "before":{...}, "after":{"status":"active"}}`  
+6\. **HTTP Sink:**           Receives POST with change event payload
+
+## MSSQL Server CDC Configuration:
+
+You'll need to first make sure your MSSQL Server is properly configured to work with Debezium.
+
+### Step 0: Powershell SQL Query Command
+
+Useful for executing commands throughout this guide.
+
+**Command:**
+```powershell
+Invoke-Sqlcmd -ServerInstance "$host,$port" -Database "dbName" -Username "username" -Password "<YOUR_PASSWORD>" -TrustServerCertificate -Query $sql
+```
+
+**Single line $sql statement:**
+```powershell
+$sql = "SELECT 1"
+```
+
+**Multiline $sql statement:**
+```powershell
+$sql = @"
+SELECT 1;
+"@
+```
+
+### Step 1: Test Database Connection
+
+Verify connectivity to the SQL Server instance.
+
+**Command:**
+```sql
+SELECT 1;
+```
+
+**Expected Response:**
+```
+Column1
+-------
+      1
+```
+
+### Step 2: Enable CDC at the Database Level
+
+This enables CDC infrastructure on the database (creates the `cdc` schema, system tables, and jobs).
+
+**Command:**
+```sql
+EXEC sys.sp_cdc_enable_db;
+```
+
+**Expected Response:**
+```
+Command(s) completed successfully.
+```
+
+### Step 3: Validate CDC System Tables Exist
+
+Check that CDC system tables exist after enabling CDC.
+
+**Command:**
+```sql
+-- Check if cdc schema and tables exist
+SELECT 
+    s.name AS SchemaName,
+    t.name AS TableName,
+    t.create_date AS CreatedDate
+FROM sys.tables t
+JOIN sys.schemas s ON t.schema_id = s.schema_id
+WHERE s.name = 'cdc'
+  AND t.name IN ('change_tables', 'captured_columns', 'ddl_history', 
+                 'index_columns', 'lsn_time_mapping')
+ORDER BY t.name;
+```
+
+**Expected Response:**
+```
+SchemaName   TableName           CreatedDate
+-----------  ------------------  ----------------------
+cdc          captured_columns    2025-12-16 16:48:50
+cdc          change_tables       2025-12-16 16:48:50
+cdc          ddl_history         2025-12-16 16:48:50
+cdc          index_columns       2025-12-16 16:48:50
+cdc          lsn_time_mapping    2025-12-16 16:48:50
+```
+
+CDC System Tables:
+
+| Table | Purpose |
+| :---- | :---- |
+| `cdc.change_tables` | Registry of all CDC-enabled tables and their capture instances |
+| `cdc.captured_columns` | Lists which columns are being tracked for each capture instance |
+| `cdc.ddl_history` | Records DDL changes (ALTER TABLE, etc.) on CDC-enabled tables |
+| `cdc.index_columns` | Stores index column information for tables with net changes support |
+| `cdc.lsn_time_mapping` | Maps LSN values to commit timestamps (for time-based queries) |
+
+### Step 4: Enable CDC at the Table Level
+
+Enable CDC for each table you want to track. The command differs based on whether the table has a primary key.
+
+#### Option A: Table with Primary Key
+
+**Command:**
+```sql
+EXEC sys.sp_cdc_enable_table 
+    @source_schema = N'dbo', 
+    @source_name = N'customers',  -- Replace with your table name
+    @role_name = NULL, 
+    @supports_net_changes = 1;    -- Requires primary key
+```
+
+**Expected Response:**
+```
+Job 'cdc.dbo_customers_capture' started successfully.
+Job 'cdc.dbo_customers_cleanup' started successfully.
+```
+
+#### Option B: Table without Primary Key
+
+**Command:**
+```sql
+EXEC sys.sp_cdc_enable_table 
+    @source_schema = N'dbo', 
+    @source_name = N'TableName',  -- Replace with your table name
+    @role_name = NULL, 
+    @supports_net_changes = 0;    -- No primary key exists
+```
+
+**Expected Response:**
+```
+Job 'cdc.dbo_TableName_capture' started successfully.
+Job 'cdc.dbo_TableName_cleanup' started successfully.
+```
+
+**Note:** Above commands generate the CDC tracking table with the format: `cdc.<schema>_<table>_CT`
+
+### Step 5: Verifying Tables with CDC Enabled
+
+Verify which tables now have CDC enabled.
+
+**Command:**
+```sql
+SELECT 
+    s.name AS SchemaName, 
+    t.name AS TableName 
+FROM sys.tables t 
+JOIN sys.schemas s ON t.schema_id = s.schema_id 
+WHERE t.is_tracked_by_cdc = 1 
+ORDER BY s.name, t.name;
+```
+
+**Expected Response:**
+```
+SchemaName   TableName
+-----------  ------------
+dbo          customers
+dbo          orders
+dbo          order_items
+dbo          products
+```
+
+### Step 6: Verify SQL Server Agent is Running
+
+Confirm that SQL Server Agent is running (required for CDC to function).
+
+**Command:**
+```sql
+EXEC xp_servicecontrol 'QueryState', 'SQLServerAGENT';
+```
+
+**Expected Response:**
+```
+Current Service State
+---------------------
+Running.
+```
+
+**⚠️ Critical:** SQL Server Agent MUST be running for CDC to capture changes!
+
+If the service is not running, start it with:
+```sql
+EXEC xp_servicecontrol 'START', 'SQLServerAGENT';
+```
+
+### Step 7: Verify CDC Jobs
+
+Verify that CDC capture and cleanup jobs were created.
+
+**Command:**
+```sql
+EXEC sys.sp_cdc_help_jobs;
+```
+
+**Expected Response:**
+```
+job_id           : 9f9c5160-1bea-4b22-9818-50f16653be9e
+job_type         : capture
+job_name         : cdc.appdb_capture
+maxtrans         : 500
+maxscans         : 10
+continuous       : True
+pollinginterval  : 5
+retention        : 0
+threshold        : 0
+
+job_id           : ee746d5b-9c6d-471c-97e7-757ad9418341
+job_type         : cleanup
+job_name         : cdc.appdb_cleanup
+maxtrans         : 0
+maxscans         : 0
+continuous       : False
+pollinginterval  : 0
+retention        : 4320
+threshold        : 5000
+```
+
+**What this shows:**
+- **Capture job**: Continuously monitors transaction log for changes
+- **Cleanup job**: Periodically removes old CDC data (retention = 4320 minutes = 3 days)
+
+#### Example: CDC Tracking Table Schema
+
+Source Table (E-commerce customers table):
+
+```sql
+CREATE TABLE dbo.customers (
+    customer_id     INT PRIMARY KEY,
+    customer_name   NVARCHAR(100),
+    status          NVARCHAR(20),
+    created_at      DATETIME,
+    updated_at      DATETIME
+);
+```
+
+CDC Tracking Table: `cdc.dbo_customers_CT`
+
+```sql
+-- Auto-generated by SQL Server
+CREATE TABLE cdc.dbo_customers_CT (
+    -- CDC System Columns (always present)
+    __$start_lsn        BINARY(10)      NOT NULL,  -- LSN when change committed
+    __$end_lsn          BINARY(10)      NULL,      -- Always NULL (reserved)
+    __$seqval           BINARY(10)      NOT NULL,  -- Sequence within transaction
+    __$operation        INT             NOT NULL,  -- 1=DEL, 2=INS, 3=UPD(before), 4=UPD(after)
+    __$update_mask      VARBINARY(128)  NULL,      -- Bitmask of changed columns
+    
+    -- Your Table Columns (copied from source)
+    customer_id         INT,
+    customer_name       NVARCHAR(100),
+    status              NVARCHAR(20),
+    created_at          DATETIME,
+    updated_at          DATETIME
+);
+```
+
+## CDC via Pushing to Moose Ingest API
+
+This section describes the CDC architecture used in our demo environment, where network constraints prevent Debezium from connecting directly to Kafka. In environments without these constraints, CDC can be configured to stream changes directly from Debezium into Kafka topics instead.
+
+In this architecture, all changes from your MSSQL database tables are captured using Debezium and sent to a single, Moose-managed Kafka (or Redpanda) Stream via a Moose-managed HTTP Ingest API endpoint *(there is no per-table endpoint or per-table ingest stream at this stage)*.
+
+From there, CDC events are explicitly fanned out based on their metadata. Each MSSQL source table ultimately maps to:
+
+* one table-specific Moose Stream, and  
+* one downstream ClickHouse landing table.
+
+This architecture implements a [Streaming Function](https://docs.fiveonefour.com/moosestack/streaming/consumer-functions?lang=typescript) that inspects each raw CDC event from the shared stream to identify the source table and routes it to the appropriate table-specific stream. Each of these streams feeds a corresponding ClickHouse table.
+
+To summarize, the high level data flow is:
+
+* Debezium → single ingest API endpoint  
+* Ingest API → shared CDC stream  
+* Streaming function → table-specific streams  
+* Table-specific streams → ClickHouse tables
+
+### Step 0: Prerequisites
+
+Before continuing, confirm:
+
+* MSSQL Server CDC is enabled and working  
+* MooseStack is running locally  
+* You can reach the Moose Ingest API from your Debezium environment  
+* Port 443 is available for egress
+
+If CDC is not enabled yet, complete the **MSSQL Server CDC Configuration** section first.
+
+### Step 1: Add a Moose Ingest API Endpoint for CDC Events
+
+This endpoint will receive CDC events from Debezium. 
+
+In your MooseStack project, create a new Ingest API sink that accepts Debezium `ChangeEvent` payloads:
+
+**File location:** `moosestack/src/cdc/DebeziumChangeEvent.model.ts`
+
+```ts
+import { IngestApi, Stream, DeadLetterQueue, Int64 } from "@514labs/moose-lib";
+
+/**
+ * Debezium SQL Server Change Event Structure
+ * Documentation: https://debezium.io/documentation/reference/stable/connectors/sqlserver.html
+ *
+ * This model represents the standardized event structure sent by Debezium
+ * for all change data capture events from SQL Server.
+ */
+
+export interface DebeziumSource {
+  version: string;
+  connector: string;
+  name: string;
+  ts_ms: Int64; // Timestamp in milliseconds (epoch)
+  snapshot?: string;
+  db: string;
+  sequence?: string;
+  schema: string;
+  table: string;
+  change_lsn?: string;
+  commit_lsn?: string;
+  event_serial_no?: number;
+}
+
+export interface DebeziumTransaction {
+  id?: string;
+  total_order?: number;
+  data_collection_order?: number;
+}
+
+/**
+ * Main Debezium Change Event Payload
+ * The 'before' and 'after' fields contain the actual row data
+ * and their shape varies by table, so we use Record<string, any>
+ */
+export interface DebeziumChangeEvent {
+  // Row data before the change (null for INSERT operations)
+  before?: Record<string, any> | null;
+
+  // Row data after the change (null for DELETE operations)
+  after?: Record<string, any> | null;
+
+  // Source metadata identifying where this change came from
+  source: DebeziumSource;
+
+  // Operation type: 'c' = create, 'u' = update, 'd' = delete, 'r' = read (snapshot)
+  op: string;
+
+  // Timestamp in milliseconds
+  ts_ms: Int64;
+
+  // Transaction metadata (optional)
+  transaction?: DebeziumTransaction | null;
+}
+
+/**
+ * Full Debezium Event Envelope (what actually gets POSTed by Debezium)
+ * Debezium sends events with both schema and payload wrapped together
+ */
+export interface DebeziumEventEnvelope {
+  schema?: Record<string, any>;
+  payload: DebeziumChangeEvent;
+}
+
+/**
+ * Stream for CDC events - fans out to table-specific streams via streaming function
+ */
+export const DebeziumChangeEventStream = new Stream<DebeziumEventEnvelope>("DebeziumChangeEvent");
+
+/**
+ * Dead Letter Queue for failed Debezium events
+ */
+export const DebeziumChangeEventDLQ = new DeadLetterQueue<DebeziumEventEnvelope>(
+  "DebeziumChangeEvent_DLQ"
+);
+
+/**
+ * Ingestion API endpoint for Debezium CDC events
+ * Creates: POST /ingest/DebeziumChangeEvent
+ *
+ * Debezium sends events here, which flow through the streaming function
+ * to fan out to table-specific Redpanda topics.
+ */
+export const DebeziumChangeEventIngestApi = new IngestApi<DebeziumEventEnvelope>(
+  "DebeziumChangeEvent",
+  {
+    destination: DebeziumChangeEventStream,
+    deadLetterQueue: DebeziumChangeEventDLQ,
+  }
+);
+```
+
+### Step 2: Map Source Tables to Moose Streams
+
+Before implementing the streaming function, define an explicit mapping between MSSQL source table names and their corresponding Moose Streams.
+
+**File location:** `moosestack/src/cdc/tableStreamMap.ts`
+
+```typescript
+import { ProductStream } from "../models/Product.model";
+import { CustomerStream } from "../models/Customer.model";
+import { OrderStream } from "../models/Order.model";
+import { OrderItemStream } from "../models/OrderItem.model";
+
+export const TABLE_STREAM_MAP: Record<string, any> = {
+  products: ProductStream,
+  customers: CustomerStream,
+  orders: OrderStream,
+  order_items: OrderItemStream,
+};
+```
+
+This mapping is what makes the fan-out deterministic and ensures each source table's changes flow through the correct stream and into the correct ClickHouse table.
+
+### Step 3: Add Streaming Function to the API Endpoint
+
+This function acts as our fanout point.
+
+When cdc events are posted from Debezium, we need to read the table name from the payload and route the cdc event to the correct stream.
+
+**File location:** `moosestack/src/cdc/processDebeziumEvent.ts`
+
+```ts
+import {
+  DebeziumEventEnvelope,
+  DebeziumChangeEventStream,
+} from "./DebeziumChangeEvent.model";
+import { TABLE_STREAM_MAP } from "./tableStreamMap";
+
+/**
+ * Process and route CDC events to table-specific Redpanda topics
+ *
+ * ReplacingMergeTree CDC fields:
+ * - ts_ms: Version column from payload.ts_ms (used to determine newest row)
+ * - isDeleted: 1 for delete operations, 0 otherwise (ReplacingMergeTree collapses deleted rows)
+ */
+export default async function processDebeziumEvent(envelope: DebeziumEventEnvelope): Promise<void> {
+  console.log(`[CDC] Processing event: ${JSON.stringify(envelope)}`);
+
+  const event = envelope.payload;
+  const { source, op, before, after, ts_ms } = event;
+
+  const sourceTable = source.table;
+  const targetStream = TABLE_STREAM_MAP[sourceTable];
+
+  // Unknown table - log and skip
+  if (!targetStream) {
+    console.warn(`[CDC] Unknown table: ${sourceTable}`);
+    return;
+  }
+
+  // Determine data and deleted flag based on operation type
+  let rowData: Record<string, any> | null = null;
+  let isDeleted: number = 0;
+
+  switch (op) {
+    case "c": // CREATE
+    case "r": // READ (snapshot)
+    case "u": // UPDATE
+      rowData = after ?? null;
+      isDeleted = 0;
+      break;
+    case "d": // DELETE - use 'before' data since 'after' is null for deletes
+      rowData = before ?? null;
+      isDeleted = 1;
+      break;
+    default:
+      console.warn(`[CDC] Unknown op: ${op} for ${sourceTable}`);
+      return;
+  }
+
+  if (!rowData) {
+    console.warn(`[CDC] No data in ${op} event for ${sourceTable}`);
+    return;
+  }
+
+  // Add CDC metadata columns for ReplacingMergeTree
+  // Ensure isDeleted is explicitly UInt8 (0 or 1) for ClickHouse
+  // Use bitwise OR with 0 to ensure it's an integer, not Float64
+  const data = {
+    ...rowData,
+    ts_ms: ts_ms, // Version column - determines which row is newest
+    isDeleted: (isDeleted | 0) as 0 | 1, // isDeleted flag - 1 for deletes, 0 otherwise (UInt8)
+  };
+
+  // Publish directly to table's Redpanda topic
+  try {
+    await targetStream.send(data);
+    console.log(
+      `[CDC] ${op.toUpperCase()} ${sourceTable} → Redpanda topic (ts_ms=${ts_ms}, isDeleted=${isDeleted})`
+    );
+  } catch (error: any) {
+    console.error(`[CDC] Failed to publish ${sourceTable}:`, error.message);
+    throw error; // Trigger DLQ
+  }
+}
+
+// Wire up the streaming function
+DebeziumChangeEventStream.addConsumer(processDebeziumEvent);
+```
+
+## Deploy Debezium Server via K8s Manifests
+
+Placeholders to replace:
+
+* `<YOUR_DATABASE_NAME>` - your MS SQL database name (required)  
+* `<YOUR_HTTP_SINK_URL>` - your HTTP sink endpoint URL (required)  
+* `<YOUR_MSSQL_PASSWORD>` - your MS SQL SA password (required)
+
+### Step 0: Namespace
+
+`kubectl apply -f namespace.yaml`
+
+```yaml
+# namespace.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: poc-debezium
+  labels:
+    name: poc-debezium
+    app: debezium-kafka-connect
+```
+
+### Step 1: Config Map
+
+`kubectl apply -f configmap.yaml`
+
+```yaml
+# configmap.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: debezium-server-config
+  namespace: poc-debezium
+data:
+  application.properties: |
+    # Debezium Server Source - MS SQL Server
+    debezium.source.connector.class=io.debezium.connector.sqlserver.SqlServerConnector
+    debezium.source.offset.storage.file.filename=/debezium/data/offsets.dat
+    debezium.source.offset.flush.interval.ms=10000
+
+    # MS SQL Server Connection
+    debezium.source.database.hostname=mssql.poc-mssql.svc.cluster.local
+    debezium.source.database.port=1433
+    debezium.source.database.user=sa
+    debezium.source.database.password=<YOUR_MSSQL_PASSWORD>
+    debezium.source.database.names=<YOUR_DATABASE_NAME>
+    debezium.source.database.encrypt=false
+    debezium.source.database.trustServerCertificate=true
+
+    # Server name - used as namespace for topic names and schema names
+    debezium.source.topic.prefix=mssql
+    debezium.source.database.server.name=mssql-server
+
+    # Table whitelist
+    debezium.source.table.include.list=*
+
+    # Schema history - MS SQL Server CDC requires this
+    # Use file-based schema history
+    debezium.source.schema.history.internal=io.debezium.storage.file.history.FileSchemaHistory
+    debezium.source.schema.history.internal.file.filename=/debezium/data/schema-history.dat
+
+    # Snapshot mode
+    debezium.source.snapshot.mode=schema_only
+
+    # Snapshot optimization - conservative for low-impact CDC
+    debezium.source.snapshot.max.threads=1
+    debezium.source.snapshot.fetch.size=1000
+
+    # Skip schema change events - only emit data changes
+    debezium.source.include.schema.changes=false
+
+    # HTTP Sink Configuration
+    debezium.sink.type=http
+    debezium.sink.http.url=<YOUR_HTTP_SINK_URL>
+    debezium.sink.http.timeout.ms=60000
+
+    # HTTP Sink Retry Settings
+    debezium.sink.http.retries=5
+    debezium.sink.http.retry.interval.ms=3000
+
+    # Connector Error Handling and Retries
+    debezium.source.errors.max.retries=5
+    debezium.source.errors.retry.delay.initial.ms=300
+    debezium.source.errors.retry.delay.max.ms=10000
+
+    # Consumer configuration - conservative for low-impact
+    debezium.source.max.batch.size=2048
+    debezium.source.poll.interval.ms=120000
+
+    # Queue capacity - reduced for lower memory footprint
+    debezium.source.max.queue.size=8192
+    debezium.source.max.queue.size.in.bytes=104857600
+
+    # JSON format configuration
+    debezium.format.key=json
+    debezium.format.value=json
+    debezium.format.value.json.schemas.enable=false
+
+    # Logging
+    quarkus.log.level=INFO
+    quarkus.log.category."io.debezium.server.http".level=DEBUG
+    quarkus.log.console.json=false
+```
+
+### Step 2: Secret
+
+`kubectl apply -f secret.yaml`
+
+```yaml
+# secret.yaml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: debezium-secrets
+  namespace: poc-debezium
+type: Opaque
+stringData:
+  # The password for the MS SQL Server 'sa' user
+  MSSQL_SA_PASSWORD: "<YOUR_MSSQL_PASSWORD>"
+```
+
+### Step 3: Stateful Set
+
+`kubectl apply -f statefulset.yaml`
+
+```yaml
+# statefulset.yaml
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: debezium-server
+  namespace: poc-debezium
+  labels:
+    app: debezium-server
+spec:
+  serviceName: debezium-server
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debezium-server
+  template:
+    metadata:
+      labels:
+        app: debezium-server
+    spec:
+      securityContext:
+        fsGroup: 1001
+        runAsUser: 1001
+        runAsNonRoot: true
+      initContainers:
+        - name: fix-permissions
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - chmod -R 777 /debezium/data && chown -R 1001:1001 /debezium/data
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+          volumeMounts:
+            - name: data
+              mountPath: /debezium/data
+      containers:
+        - name: debezium-server
+          image: quay.io/debezium/server:2.7
+          env:
+            - name: MSSQL_SA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: debezium-secret
+                  key: MSSQL_SA_PASSWORD
+            - name: JAVA_OPTS
+              value: "-Xms4g -Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+          volumeMounts:
+            - name: config
+              mountPath: /debezium/conf
+            - name: data
+              mountPath: /debezium/data
+          resources:
+            requests:
+              memory: "4Gi"
+              cpu: "2000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - test -e /proc/1/exe
+            initialDelaySeconds: 120
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: config
+          configMap:
+            name: debezium-server-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 50Gi
+```
+
+### Step 4: Service
+
+`kubectl apply -f service.yaml`
+
+```yaml
+# service.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: debezium-server
+  namespace: poc-debezium
+  labels:
+    app: debezium-server
+spec:
+  selector:
+    app: debezium-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+```
+
+# Local development and testing
+
+This section will guide you through the process of selecting a dashboard/report component to be improved, through:
+
+* Creating a development branch locally (which will also be used by Boreal for branch preview environments)  
+* Setting up CDC for the supporting tables (guide coming soon)  
+* Setting up local context for use in developments  
+  * Seeding your local development environment from the production database  
+  * Bringing other context into the local environment  
+* Creating, iterating on and testing the replication of dashboard elements in MooseStack
+
+## Create a branch
+
+A branch is used not just for managing your code versioning, but also for spinning up "preview branches" in Boreal.
+
+```bash
+git checkout -b <new-branch-name>
+```
+
+## Seeding your local database from prod with `moose seed`
+
+[You can seed your local development environment with the `moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse).
+
+**Command:**
+```shell
+moose seed clickhouse --connection-string <BOREAL_CONNECTION_STRING> --limit 100
+```
+
+You can set the limit to whatever amount of data you want to bring locally, or, alternatively, you can copy all the data from remote to local (be careful with this approach):
+
+**Command:**
+```shell
+moose seed clickhouse --connection-string <BOREAL_CONNECTION_STRING> --all
+```
+
+### Finding your connection string in Boreal
+
+`BOREAL_CONNECTION_STRING` is your connection string to a remote/cloud database. In Boreal, you can find that here:  
+![][image4]
+
+![][image5]  
+Note, there are a few forms of connection string, this query requires `HTTPS URL`.
+
+You can set your Boreal connection string as a local environment variable for ease of use:
+
+**Command:**
+```shell
+echo 'BOREAL_CONNECTION_STRING="PASTE_THE_HTTPS_URL_FROM_BOREAL_HERE"' >> .env.local && set -a && source .env.local && set +a
+```
+
+**Or export directly:**
+```bash
+export BOREAL_CONNECTION_STRING=PASTE_THE_HTTPS_URL_FROM_BOREAL_HERE
+```
+
+## Improving dashboard performance by replicating components in MooseStack
+
+Your analytical components in your frontend can be made drastically more performant with Fiveonefour. In order to accomplish this, you need to migrate dashboard reports from the existing transactional-backed implementation to an analytical-backed implementation (using the Fiveonefour stack) without changing how the frontend talks to the backend. The recommended approach of this guide allows you to keep:
+
+* the existing request/response contracts  
+* the existing report modeling layer (Dataset Definitions)  
+* the backend's dynamic dataset querying behavior (select/filter/sort/paginate)
+
+The primary change is where the data comes from (analytical database tables/materialized views) and how the SQL is executed (ClickHouse).
+
+Your analytical components in your frontend can be made drastically more performant with Fiveonefour. In order to accomplish this, you need to migrate dashboard reports from the existing transactional-backed implementation to an analytical-backed implementation (using the Fiveonefour stack) without changing how the frontend talks to the backend.
+
+The recommended approach allows you to keep:
+
+- The existing request/response contracts  
+- The existing report modeling layer (Dataset Definitions)  
+- The backend's dynamic dataset querying behavior (select/filter/sort/paginate)
+
+The primary change is where the data comes from (ClickHouse tables/materialized views) and how the SQL is executed (ClickHouse instead of MSSQL).
+
+## Pattern: Translating Dataset Queries to OLAP
+
+A dataset definition is the shared model used by both the frontend and backend to define the expected operations for a dataset, including:
+
+- The source table(s)  
+- Allowable/selectable columns and metrics  
+- How the selected columns should be grouped  
+- Allowed filters (and how they map to SQL)  
+- Sorting rules  
+- Pagination rules  
+- Any special computed fields or joins required
+
+Since each dataset definition has its own distinct API handler, we want to ensure that we do not hand-write the same dynamic SQL in every handler. Instead, this approach implements a shared set of "query helpers" (`utils/query-helpers.ts`) that you can use to convert the dataset definition model and the runtime API request payload into ClickHouse SQL.
+
+### What Gets Reused vs. What Is Report-Specific
+
+The query helpers (`query-helpers.ts`) allow you to reuse common SQL building logic for each dataset:
+
+- Which fields to SELECT  
+- Filter parsing (WHERE clause generation)  
+- Sorting logic (ORDER BY generation)  
+- Pagination logic (LIMIT/OFFSET generation)  
+- Response shaping (columns, records, counts, warnings/failures)  
+- Runtime validation (validation of requested columns/filters/sorts against the definition)
+
+For each distinct dataset, you define a thin adapter (called a `ParamMap`) that declares the mapping between the frontend dataset definition model and the corresponding column names (or SQL expressions for derived metrics) in the ClickHouse tables/materialized views that contain the data.
+
+### Query Helpers Architecture
+
+The shared query helpers used in this guide are not yet part of `main`.
+
+They currently live on the `query-helpers` branch, but you do not need to switch branches to use them.
+
+Instead, simply **copy the relevant folders from the `query-helpers` branch into your current working branch**. Specifically:
+
+* `moosestack/src/utils/query-helpers.ts`  
+* `moosestack/src/utils/USAGE.md`
+
+Once copied, the helpers can be used directly in your existing branch, and all examples below assume those files are present locally.
+
+These helpers are still evolving, which is why they haven't been merged into `main` yet. Until then, copying them into your branch is the intended workflow.
+
+The `query-helpers.ts` module provides a three-layer architecture:
+
+#### Layer 1: Validation
+
+This layer allows you to easily create a runtime validator based on the incoming request payload for the dataset handler:
+
+```ts
+import { PaginationParams, assertValidOrThrow } from "./query-helpers";
+import typia from "typia";
+
+interface MyDatasetParams extends PaginationParams {
+  merchantId?: number;
+  orderStatus?: string;
+}
+
+const validator = typia.createValidate<MyDatasetParams>();
+const validated = assertValidOrThrow(validator(params));
+```
+
+#### Layer 2: Param-to-Column Mapping
+
+This layer allows you to map the parameter names in the incoming request payload to the corresponding column names in the ClickHouse tables/materialized views. This mapping is then used to build the ClickHouse SQL for the dataset handler, using the validated request payload.
+
+```ts
+import { createParamMap } from "./query-helpers";
+
+const orderMetricsParamMap = createParamMap<OrderFilters, OrderMetricsRow, OrderField>(OrderMetricsTable, {
+  filters: {
+    days: { column: "days" },
+    merchantIds: { column: "merchant_id", operator: "in" },
+  },
+  fields: {
+    MerchantName: { column: "merchant_name", alias: "MerchantName" },
+    FulfillmentRate: {
+      toSql: () => sql`round(100 * sum(fulfilled_orders) / nullIf(sum(total_orders), 0), 2)`,
+      alias: "Fulfillment Rate (%)",
+      isAggregate: true, // Triggers automatic GROUP BY
+    },
+  },
+  defaultSelect: ["merchant_name", "order_status"],
+  defaultOrderBy: [{ column: "merchant_name", direction: "ASC" }],
+});
+```
+
+#### Layer 3: SQL Generation
+
+This layer allows you to generate the complete ClickHouse SQL for the dataset handler, using the validated request payload and the `ParamMap` configuration.
+
+**Option A: Simple queries** \- Generate complete SQL with `toQuerySql`:
+
+```ts
+import { toQuerySql } from "./query-helpers";
+
+const intent = orderMetricsParamMap.toIntent({
+  fields: ["MerchantName", "FulfillmentRate"],
+  filters: { days: 30 },
+  pagination: { limit: 100, offset: 0 },
+});
+
+const query = toQuerySql(OrderMetricsTable, intent);
+const result = await client.query.execute(query);
+```
+
+**Option B: Complex queries** \- For cases where you need to build a more complex query with multiple CTEs, JOINs, or other custom logic, you can use the individual converters for each part of the query:
+
+```ts
+import { toSelectSql, toWhereSql, toOrderBySql, toGroupBySql } from "./query-helpers";
+
+const selectClause = toSelectSql(OrderMetricsTable, intent.select);
+const whereClause = toWhereSql(OrderMetricsTable, intent.where);
+const groupByClause = toGroupBySql(intent.groupBy);
+const orderByClause = toOrderBySql(intent.orderBy);
+
+// Compose custom query with CTEs
+const customQuery = sql`
+  WITH MerchantOrders AS (${getMerchantOrdersQuery(merchantNames)})
+  SELECT ${selectClause}
+  FROM ${OrderMetricsTable}
+  WHERE ${whereClause}
+  ${groupByClause}
+  ${orderByClause}
+  LIMIT ${intent.pagination.limit}
+`;
+```
+
+Because query generation is centralized in the shared helpers, every dataset handler starts from the same contract: a standard dataset definition plus the incoming API request (filters, ordering, pagination, etc.). That helper emits consistent SQL fragments, which means new handlers don't need to re-implement boilerplate logic like `ORDER BY`, filter parsing, or paging rules. They only supply the dataset-specific mapping and let the mapper and helpers do the rest.
+
+In practice, you can translate datasets manually one at a time using this pattern. But once the structure and conventions are clear, this is also a strong candidate for automation—AI copilots can reliably generate the required mappings, queries, and glue code when given the right context and constraints.
+
+### Approach: Using AI to automate the translation 
+
+For each dataset translation, the AI should produce the same set of artifacts:
+
+* OLAP query (or required materialized views) that matches the existing OLTP-backed API results  
+* dataset adapter/mapping for the "query compiler" helper function  
+* thin handler wiring it into the existing endpoint surface  
+* a parity test plan (inputs \+ expected outputs) to validate correctness
+
+The general concept of the approach is this:
+
+1. Provide the AI with all the upfront context it needs  
+2. Provide the AI with strict guidelines to meet the acceptance criteria above  
+3. Enable the AI to plan and implement potential solutions  
+4. Provide the AI with context to understand the success/failure of implementations and iterate from there
+
+In this case, we recommend providing the AI access to the following main sources of context: 
+
+* Context about the business logic and expected structure of each report input \+ output  
+  * The frontend code for the component  
+  * The backend API code and/or documentation of the API   
+  * The SQL powering that component (including stored procedures, database views and other intermediating steps)  
+  * Sample API payloads and returns, and sample data payloads presented to the front end  
+* Context to enable checking the *accuracy* of the business logic  
+  * Source data: the data in the local database seeded in the step above, and optionally access to the production database  
+  * Expected output for the given source data, generated by the current/transactional system  (to be compared against the output generated by the new analytical system for the same source data)
+
+For this particular example, you would provide context similar to a specification document that details the business requirements, expected input/output schemas, and sample test data. Test data can be manually extracted from the frontend or generated from the existing system.
+
+In previous implementations, expected output (to validate accuracy) arrived later, so it was used only to validate the AI-generated endpoints. If you have this data upfront, include it in the main context document so it can inform the reasoning process, not just the final validation.
+
+### Select the component you want to work against:
+
+Choose a specific dashboard component or report to migrate. For this example, let's use an e-commerce order fulfillment dashboard:
+
+- Dataset: `OrderFulfillment`   
+- Purpose: Track order processing metrics by merchant and time period
+
+### Set up your copilot 
+
+Select **Plan mode** (selected near the model selector in the chat pane), and **choose an advanced reasoning model** of your choice (like Claude Opus 4.5, GPT Codex 5.1 Max or GPT 5.2).
+
+![][image6]
+
+### Initiate plan creation
+
+This plan refers the agent to the chosen component, the context files, and ensures that the patterns that are used in the project are followed. This is a prompt that we have had success with, but please feel free to modify to your chosen style of prompting.
+
+This prompt refers the agent to the existing project structure, to the test data in the local database, to be able to test against remote data, and to the specification document containing business logic and test data.
+
+Note, to find the base URL of the production deployment, used in the prompt, [see above](#finding-your-connection-string-in-boreal).
+
+```
+Task: implement dataset "OrderFulfillment" for the dataset API endpoint.
+The MSSQL used in the original system, the input payload and the expected output are in the specification document for this component. I want you to test the system and the endpoint (curl the endpoint). Iterate on the query until it is correct. If you need to use cascading queries to emulate materialized views that will later be implemented as part of testing, do so.
+
+Use the query-helpers patterns from:
+@moosestack/src/utils/query-helpers.ts
+@moosestack/src/utils/USAGE.md
+
+Reference existing handlers in your project for the implementation pattern.
+
+Use the MCP to test that the objects you are creating are being validly created (note, there is about a one minute reload from changing files to the local dev server updating, so wait). The local database has been seeded with data for testing. You can also use `moose query` from moosestack/ to query the development database.
+
+Test the endpoint against this route:
+Method: POST
+Endpoint: /dataset
+Description: Express WebApp endpoint
+
+The base URL is:
+https://default:<PASSWORD>@<HOST>:8443/<DATABASE_NAME>
+
+This will allow you to test the ClickHouse queries against production data.
+
+Make sure that all of your queries return data before even starting to implement MooseStack code. Once the query is working, then work on implementing in code. Show me each test at each step.
+```
+
+This will generate a plan, using the relevant context.
+
+![][image7]
+
+See example generated plan in the [appendix](#sample-plan). 
+
+### Refining the Plan
+
+The following steps can help refine the generated plan.
+
+Check if stored procedures referenced in the plan have already been implemented.
+
+For example, the generated plan might refer to `getUserPermissions`:
+
+```
+1. **User Permissions**: The MSSQL query uses `getUserPermissions` stored procedure. For initial implementation, we may need to:
+```
+
+You can list these in the follow up prompt for best results:
+
+```
+Analyse the MooseStack project to see if the referenced stored procedures are already implemented: getUserPermissions
+```
+
+If they haven't been implemented, it is likely that they need to be implemented as a materialized view:
+
+```
+Add implementation of that to the plan (you will likely have to create a materialized view)
+```
+
+For an abundance of caution, ensure again that you've highlighted the test criteria:
+
+```
+Ensure that the output is EXACTLY as defined in the document. Ensure this is adhered to. 
+```
+
+### Generating documentation
+
+Add documentation tasks you want the agent to produce alongside the implementation, e.g.
+
+```
+Generate OpenAPI spec for the created endpoints
+```
+
+```
+Add a README summarizing endpoints and data lineage
+Include example curl requests + sample responses, schema diagrams / entity summary (if relevant), and a "how to test locally" section
+```
+
+```
+Add inline JSDoc for handlers, params, and response shapes
+```
+
+### Running the plan
+
+Once you are satisfied with the plan, hit `Build`. This will experiment with SQL queries, build up materialized views and implement the new endpoint.  
+   
+![][image8]
+
+You will likely be asked for various permissions along the way, including for MCP tool use to check work against local data, and curl commands to check work against the remote database.
+
+Example of tool-use in the process of implementing the plan:
+
+### Manual testing
+
+You can ask the LLM to generate curl commands that you can use to test the generated API endpoints:
+
+```
+Generate curl commands to test this new endpoint
+```
+
+Which returns:
+
+**Command:**
+```shell
+curl -X POST http://localhost:4000/dataset \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <YOUR_API_TOKEN>" \
+  -d '{
+    "datasetId": "<YOUR_DATASET_GUID>",
+    "parameters": {
+      "limit": "10",
+      "offset": "0",
+      "orderby": "MerchantName Asc"
+    }
+  }' | jq '.'
+```
+
+You can iterate on this curl command to test against known data values.
+
+### Copilot assisted testing
+
+You can also instruct the agent to take the success criteria defined in the specification document and create a test suite, showing you the results. It is best practice to audit and get comfortable with the test suite and the output to ensure that it covers actual usage.
+
+```
+Generate a test script that iterates through the generated API, with the test cases defined in the specification document
+```
+
+Which generates a test script with multiple test cases, testing general API functionality like security, pagination, etc., as well as tests for input and output schemas, and exact input and output data for known values, e.g.: 
+
+```
+Test cases: 
+
+✅ Basic request with default parameters (limit 10, offset 0, ascending)
+✅ Request with limit 5
+✅ Request with offset (pagination - offset 10)
+✅ Request with descending order
+✅ Request with cacheId
+✅ Request with security filter (merchant)
+✅ Request with parameter.datasource parameter
+✅ Request with orderby leading space (edge case)
+✅ Exact structure validation (validates response structure matches document)
+✅ Exact value validation (validates first 10 records match document exactly)
+```
+
+## From translated report query to performance optimization
+
+At this point in the migration, you typically have a report that is functionally correct but still not where you want it performance-wise.
+
+Continuing the order fulfillment dataset example from the previous section, the original transactional implementation often relies on layered logic: permission filtering, joins across multiple tables, and derived metrics computed on the fly.
+
+A simplified version of that original logic might look like this:
+
+```sql
+WITH UserMerchants AS (
+  SELECT merchant_id
+  FROM getUserPermissions(:user_id)
+),
+OrdersWithMerchant AS (
+  SELECT
+    o.created_at,
+    m.merchant_name,
+    o.total_orders,
+    o.fulfilled_orders
+  FROM order_metrics o
+  JOIN merchants m ON m.id = o.merchant_id
+  WHERE o.merchant_id IN (SELECT merchant_id FROM UserMerchants)
+),
+AggregatedMetrics AS (
+  SELECT
+    merchant_name,
+    count(*) AS total_orders,
+    sum(fulfilled_orders) AS fulfilled_orders,
+    sum(total_orders) AS total_orders
+  FROM OrdersWithMerchant
+  GROUP BY merchant_name
+)
+SELECT *
+FROM AggregatedMetrics
+ORDER BY merchant_name;
+```
+
+When migrating this dataset to ClickHouse using MooseStack, the first step is to translate this logic directly and wire it into a dataset handler using the shared query helpers. At this stage, the priority is parity: matching the existing API behavior and results exactly.
+
+However, notice what's happening here:
+
+* Multiple CTEs progressively reshape the data  
+* Business logic (fulfillment rate calculation) is recomputed every request  
+* Joins and aggregations are repeated for every dashboard load  
+* The final handler query is doing *far more work* than filtering and paging
+
+At low traffic, this may be acceptable. At production scale, where the same underlying dataset is queried frequently with different filters or sort orders, it becomes the dominant performance bottleneck.
+
+This is the inflection point where you stop asking:
+
+> "How do I translate this query?"
+
+and start asking:
+
+> "Which parts of this query should only be computed once?"
+
+That's where Materialized Views come in.
+
+### Working with Materialized Views
+
+Materialized Views (MVs) are the primary mechanism for turning a *correct* report migration into a *fast* one.
+
+When migrating a dashboard or report from a transactional system to MooseStack, the first goal is functional parity: reproduce the same results using ClickHouse without changing frontend request/response contracts. In practice, this often starts with a direct translation of the original SQL. This sometimes involves long CTE chains, complex joins, window functions, or layered business logic that was previously executed at read time.
+
+If the translated query is correct but still complex or expensive to run per request, that is the signal to introduce a Materialized View.
+
+The core idea is to shift expensive computation from read time to insert time:
+
+If your final dataset query depends on multiple CTEs or significant data reshaping before the final `SELECT`, consider moving that logic into a Materialized View so it is computed once as data arrives, rather than on every API request.
+
+In MooseStack, Materialized Views allow you to precompute joins, aggregations, and derived fields and persist the results in a physical table. Your API handlers then query these precomputed tables instead of executing the full, complex query at request time. This keeps dataset handlers thin and predictable, and makes performance largely independent of query complexity.
+
+### When to introduce a Materialized View during a migration
+
+You should strongly consider adding an MV if the migrated query includes one or more of the following:
+
+* Multiple CTEs that progressively filter, join, or reshape data  
+* Repeated joins across large fact tables  
+* Window functions, ranking, sessionization, or de-duplication logic  
+* Derived metrics that are reused across datasets or dashboard components  
+* Logic that is identical across many requests but recomputed every time
+
+In these cases, Materialized Views act as a boundary between data preparation and data serving.
+
+### Adding a column to a Materialized View
+
+This is the most common change you'll make. Typical reasons include:
+
+- exposing a new field required by a dataset definition  
+- supporting a new filter, grouping, or sort option  
+- pushing more precomputation logic upstream for better performance
+
+To do this correctly, follow these steps:
+
+#### Step 1: Add the column to the MV schema
+
+Locate the Materialized View definition in your MooseStack project. Each MV explicitly defines its output schema.
+
+Add the new column to the schema with the correct ClickHouse type. Use the type of the final computed value, not the raw source column.
+
+Because the MV's backing table is already typed from this schema, saving the file will automatically apply the schema change locally.
+
+Once saved, watch the `moose dev` logs. You should see the backing table updated with an additive column change.
+
+#### Step 2: Update the SQL query to produce the new column
+
+After adding the column to the schema, you will likely see an error. This is expected. 
+
+At this point, the backing table expects the new column, but the MV's `SELECT` statement does not yet produce it.
+
+Edit the SQL query defining the Materialized View and ensure that:
+
+- the new column appears in the `SELECT` list  
+- any required joins, expressions, or aggregations are added  
+- the output column name (or alias) matches the schema exactly
+
+Once the SQL is updated and saved, the error should resolve and the MV will resume populating normally for new data.
+
+Note that only new data will begin populating the new column. Existing rows in the MV are unchanged until you explicitly backfill (covered later in this guide).
+
+## Push to remote github
+
+Add the files you created above (or just the functional files if you don't want to commit your test scripts) and push to your version control. Create a Pull Request.
+
+This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR. 
+
+## Running your frontend locally
+
+One suggested pattern for accelerating iterations and end-to-end testing is to run your entire stack locally. This includes your frontend, backend / gateway API, and your moose dev server. You can connect the rest of your application to your new analytical APIs in the local moose dev server using token authentication. Once connected, you can see data in your frontend and test the whole application without having to go through any cloud deployment.
+# Going to production
+
+This section will guide you through the process of applying your local changes to production:
+
+1. Join Boreal
+2. Committing a branch and deploying a preview branch
+3. Testing the preview branch
+4. Pushing to production
+5. Back-filling materialized views
+
+## Join Boreal
+
+(Skip this step if you already have completed Boreal onboarding.)
+
+To deploy changes to production, you need access to [Boreal](http://boreal.cloud) and to the organization that owns the project.
+
+1. [Click here to sign up with your GitHub account.](https://www.boreal.cloud/sign-up)
+2. After signing in, you'll be prompted to create or join an organization. Check for any pending invitations and join the organization that owns the project.
+3. If no invitation appears in Boreal, check your email. You should have received an invitation to join the organization. Make sure the email address matches your GitHub account and follow the instructions in that email to accept.
+
+Once you've joined the correct organization, you should be able to see the project in Boreal and proceed with your production rollout.
+
+## Generate a Migration Plan
+
+Return to your IDE and confirm the following before moving on:
+
+* New queries and materialized views run locally successfully
+* `moose dev` starts without errors
+* All relevant APIs return the expected results
+
+If all three checks pass, then you're ready for the final pre-production step: ensuring your changes can be deployed without breaking anything in production. To do this, you'll [generate and review a migration plan](https://docs.fiveonefour.com/moosestack/migrate/planned-migrations?lang=python).
+
+Open your terminal (ensure you `cd` to your MooseStack project root). Then run:
+
+**Command:**
+```bash
+moose generate migration --save --url <BOREAL_HOST> --token <BOREAL_ADMIN_API_BEARER_TOKEN>
+```
+
+**Parameters:**
+* `BOREAL_HOST` is the host for your production deployment in Boreal. Copy it from the URL in your project overview dashboard:
+  ![][image9]
+* `BOREAL_ADMIN_API_BEARER_TOKEN` is sent in the request header when calling the Boreal Admin API at `BOREAL_HOST`. This is the API key. It is a secret and must not be committed to source control. Store it securely in a password manager.
+
+After successfully running `moose generate migration` with the correct `--url` and `--token`, a new `/migrations` directory should appear at the root of your MooseStack project. Open the `plan.yaml` file in that directory and review it carefully.
+
+## Migration plan review
+
+[Review the migration plan to confirm which SQL resources will be created or modified](https://docs.fiveonefour.com/moosestack/migrate/plan-format?). Make sure it matches exactly what you intend to ship. As a rule of thumb:
+
+* Expect mostly new tables and materialized views
+* Carefully review schema changes to existing tables
+* Avoid deleting existing tables at all costs
+
+### Look for new tables and materialized views
+
+This is expected when optimizing queries. Any new materialized view should result in:
+
+* A [`CreateTable` operation](https://docs.fiveonefour.com/moosestack/migrate/plan-format?lang=python#createtable) that creates the backing table for the view
+* A [`SqlResource` operation](https://docs.fiveonefour.com/moosestack/migrate/plan-format?lang=python#rawsql) containing the `CREATE MATERIALIZED VIEW` statement, with the view explicitly writing `TO` that backing table
+
+Seeing both confirms the Materialized View is being added cleanly and additively. For every new Materialized View in your branch, there should be exactly one `CreateTable` and one `SqlResource` defining it.
+
+### Watch closely for column changes
+
+[Column-level changes](https://docs.fiveonefour.com/moosestack/migrate/plan-format#column-operations) are uncommon. If you encounter them:
+
+* Pause and confirm the change is intentional
+* Double-check your code for queries that reference affected columns
+
+There are a [small number of cases where column changes are expected:](https://docs.fiveonefour.com/moosestack/migrate/plan-format#addtablecolumn)
+
+* If you added a column to an existing materialized view, you should see a single [`AddTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#addtablecolumn) operation applied to the backing table for that view.
+* If you renamed a column, the plan may show a [`DropTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#droptablecolumn) followed by an [`AddTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#addtablecolumn). If this rename was intentional, replace those two operations with a single [`RenameTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#renametablecolumn) operation instead.
+
+Outside of these cases, column-level changes should be treated with caution, especially [`DropTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#droptablecolumn) or [`ModifyTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#modifytablecolumn) operations. These changes are strongly discouraged. Instead, stick to strictly additive migrations. Undo the delete or modification in your `OlapTable` object, and introduce a new column instead.
+
+### Sanity-check for `DropTable` operations
+
+If you see any [`DropTable` operations](https://docs.fiveonefour.com/moosestack/migrate/plan-format?lang=python#droptable), proceed with extreme caution and review your changes carefully. They may indicate that an `OlapTable` or `MaterializedView` object defined in the codebase (and currently used in production) is being deleted, which can result in irreversible data loss if applied unintentionally.
+
+If the plan shows changes you did not anticipate, stop and resolve that before proceeding.
+
+Once the plan looks correct, you're ready to continue with preview and production rollout.
+
+## Open a Pull Request and Inspect the Preview Environment
+
+Commit your changes, push them to a new branch, and open a pull request targeting `main`.
+
+Once the PR is open, Boreal automatically deploys an isolated preview (staging) environment for the branch. Your code and the generated `plan.yaml` are applied to a staging database forked from production, so changes are created exactly as they would be in prod.
+
+Confirm that **boreal-cloud bot** appears in the PR comments.
+
+![][image10]
+
+This confirms that:
+
+* Your GitHub account is correctly linked
+* Boreal has started deploying the preview environment
+
+If the bot does not appear, double check that you have correctly integrated your Github account with your Boreal account. If something doesn't look right, reach out to the 514 team for help.
+
+In the **boreal-cloud bot** comment, you'll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Boreal project dashboard with your preview environment selected.
+
+![][image11]
+
+From here, you'll inspect the database state and validate that the resources created by your migration plan match what you reviewed and expected before proceeding.
+
+## Connect to the Staging Database
+
+In this step, you'll query the staging ClickHouse database directly using ClickHouse's HTTPS interface.
+
+First, get the database HTTPS connection string from Boreal using the same steps you followed earlier. Make sure the Boreal dashboard is set to your feature branch, not `main`. You can confirm this by checking the branch selector in the left sidebar of the project dashboard.
+
+### Set the staging connection string locally
+
+Create a temporary environment variable for your staging database URL:
+
+**Command:**
+```bash
+export STAGING_DB=<your-staging-db-connection>
+```
+
+You can now safely use `$STAGING_DB` to run queries against the staging database via `curl`.
+
+### Inspect Staging Database Tables
+
+In a terminal, run:
+
+**Command:**
+```bash
+curl -sS \
+  $STAGING_DB \
+  --data-binary 'SHOW TABLES'
+```
+
+**Expected Response:**
+
+You should see a plain-text list of all tables in the staging database if the command executed successfully:
+
+```
+customers
+products
+orders
+order_items
+merchants
+order_metrics_daily
+...
+```
+
+Use this output to confirm that:
+
+* All new tables and materialized views defined in `plan.yaml` exist
+* No unexpected tables were created
+* Existing tables remain unchanged unless explicitly intended
+
+If the list of tables does not match what you reviewed in the migration plan, stop here and fix the issue before proceeding.
+
+Do not merge until the preview environment reflects exactly the database resources and behavior you expect to see in production.
+
+## Merge PR to Deploy to Prod
+
+If everything lines up as you expect, you're ready to merge!
+
+Merge your PR and now do the same thing: click the Boreal bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
+
+## Backfill new Materialized Views
+
+If your migration introduces any new Materialized Views, they will start populating only for new incoming data. To apply them to historical data, you must explicitly backfill them from existing ClickHouse tables.
+
+This step uses the same HTTPS + `curl` workflow as before, but targets the production (`main`) database and performs a write operation to apply the backfill.
+
+### Identify which materialized views need a backfill
+
+Open the migration `plan.yml` you just shipped and find the new materialized views you created (look for the `CREATE MATERIALIZED VIEW` statements in `SqlResource`).
+
+For each one, note two things:
+
+* the materialized view name
+* the backing table name it writes `TO`
+
+### Run the backfill (one MV at a time)
+
+Backfilling is done by inserting historical rows into the MV's backing table using the same `SELECT` logic used by the view.
+
+In a terminal, run:
+
+**Command:**
+```bash
+curl -sS \
+  '$BOREAL_CONNECTION_STRING' \
+  --data-binary "
+  INSERT INTO <mv_backing_table>
+  SELECT ...
+  "
+```
+
+Use the exact `SELECT` statement from the `CREATE MATERIALIZED VIEW` definition (or the underlying `SELECT` you used when building it) and paste it in place of `SELECT ...`.
+
+### Confirm the backfill worked
+
+After each backfill, sanity check that the backing table now has rows:
+
+**Command:**
+```bash
+curl -sS \
+  $BOREAL_CONNECTION_STRING \
+  --data-binary 'SELECT count() FROM <mv_backing_table>'
+```
+
+**Expected Response:**
+
+If the count is non-zero (and roughly matches what you expect), the backfill is complete.
+
+### Repeat for each new MV you added
+
+Only backfill the MVs introduced in this change. Avoid reprocessing older MVs unless you intentionally want to rebuild them.
+# Appendixes
+
+## WSL: Setting up a WSL2 Linux instance to run MooseStack on Windows
+
+### Prerequisites
+
+* **Windows 10 or 11:** Ensure you are running Windows 10 version 2004 (build 19041) or later, or Windows 11 [\[1\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=Prerequisites).
+* **Hardware virtualization:** WSL2 requires a 64-bit processor with virtualization support (e.g. VT-x/AMD-V) enabled in your BIOS, and at least 4 GB of RAM to run Docker [\[2\]](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers#:~:text=%2A%2064,SLAT). Make sure virtualization is turned on in your system BIOS settings.
+* **Internet access:** The setup will download Linux and various packages (Node.js, Docker, etc.), so an internet connection is required.
+* **Disk space:** Have a few gigabytes of free disk space for the Linux filesystem and Docker images.
+* **Docker Desktop:** We will use Docker Desktop for Windows (with WSL2 integration) to run MooseStack's containers. You can download and configure it during the steps below.
+* *(Optional)* **Windows Terminal:** It's recommended to install Windows Terminal for a better command-line experience (multiple tabs, copy/paste, etc.) [\[3\]](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl#:~:text=Windows%20Terminal), though you can use any terminal you prefer.
+
+### Step 1: Enable WSL 2 and Install Ubuntu Linux
+
+1. **Enable WSL 2:** Open PowerShell as Administrator (right-click Start menu, choose PowerShell (Admin)). Run the following command to enable the Windows Subsystem for Linux and install its components:
+
+**Command:**
+```shell
+wsl --install
+```
+
+   1. This one command enables the necessary Windows features and downloads the latest Ubuntu Linux distribution by default [\[4\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=You%20can%20now%20install%20everything,command%2C%20then%20restart%20your%20machine). If prompted, restart your computer to complete the WSL installation. (On Windows 11, a restart may happen automatically.)
+
+   2. *Note:* If WSL was already partially installed and the above command just shows help text, you can list available distros with `wsl --list --online` and then install a specific one with `wsl --install -d Ubuntu` [\[5\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=The%20above%20command%20only%20works,WSL%20%20or%20%207).
+
+2. **Initial Ubuntu setup:** After reboot, Windows should automatically launch the newly installed *Ubuntu* for its first-time setup. If it doesn't open on its own, you can launch "Ubuntu" from the Start menu. A console window will appear as Ubuntu initializes (this may take a minute as files decompress) [\[6\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=The%20first%20time%20you%20launch,take%20less%20than%20a%20second).
+
+3. **Create Linux user:** You will be prompted to create a new UNIX username and password for the Ubuntu instance (this is separate from your Windows credentials) [\[7\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=Set%20up%20your%20Linux%20user,info). Enter a username and a secure password — you won't see characters as you type the password (that's normal). This will create a new user account in the Ubuntu environment and then drop you into a Linux shell.
+
+4. **Verify WSL installation:** Once setup is complete, you should see a Linux terminal prompt (e.g. something like `username@DESKTOP-XYZ:~$`). At this point, you have a Ubuntu WSL instance running. You can check that it's using WSL version 2 by opening a PowerShell/Command Prompt (not the Ubuntu shell) and running `wsl -l -v`. It should list your Ubuntu distro with version "2". If it says version "1", upgrade it with `wsl --set-version Ubuntu 2`.
+
+### Step 2: Update Linux Packages
+
+Now that Ubuntu is running in WSL, update its package lists and upgrade installed packages:
+
+Update apt repositories: In the Ubuntu terminal, run:
+
+**Command:**
+```shell
+sudo apt update && sudo apt upgrade -y
+```
+
+* This fetches the latest package listings and installs any updates. It's good practice to do this right after installing a new Linux distro [\[8\]](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl#:~:text=menu,dc). (The `-y` flag auto-confirms prompts during upgrade.)
+
+* **(Optional) Install basic tools:** You may want to install some common utilities. For example, you can run `sudo apt install -y build-essential curl git` to ensure you have compilers and Git available. This is not strictly required for MooseStack, but can be useful for general development.
+
+### Step 3: Install and Configure Docker (WSL Integration)
+
+MooseStack uses Docker containers under the hood for components like ClickHouse (database), Redpanda (streaming), etc. On Windows, the recommended way to run Docker with WSL2 is via **Docker Desktop** [\[9\]](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers#:~:text=containers%20by%20setting%20up%20Docker,Subsystem%20for%20Linux%2C%20version%202)
+
+**Install Docker Desktop:**
+
+1. **Download and Install:** If you don't have it already, download **Docker Desktop for Windows** from the Docker website and run the installer. During installation, it should prompt to enable WSL2 features if not already enabled (which we did in Step 1). Follow the prompts to install Docker Desktop.
+
+2. **Start Docker Desktop:** After installation, launch Docker Desktop. In the taskbar, you'll see the Docker whale icon appear (it may take a few seconds to start up the first time).
+
+**Configure Docker Desktop with WSL2**
+
+1. **Enable WSL2 backend:** In Docker Desktop, open **Settings** (gear icon or via the taskbar menu). Under **General**, ensure **"Use the WSL 2 based engine"** is checked. This tells Docker to use WSL2 for running Linux containers.
+   ![][image12]
+
+2. **Integrate with Ubuntu:** Still in Settings, go to **Resources > WSL Integration**. You should see a list of your WSL distributions. Find **Ubuntu** (or the distro you installed) and **enable integration** for it (toggle it on). This allows Docker containers to be managed from within that WSL instance.
+   ![][image13]
+
+3. **Allocate sufficient resources:** Docker Desktop by default might allocate limited resources. MooseStack's stack requires at least **2.5 GB of memory** for Docker. Go to **Resources > Advanced** (or **Resources > Memory**) and increase the memory to 3-4 GB to be safe. You can also adjust CPUs if needed (2 CPUs is usually fine for dev).
+
+4. **Apply settings:** Click "Apply & Restart" if you changed any Docker settings. Docker Desktop will restart its engine to apply the new configuration.
+
+5. **Test Docker in WSL:** Open a new Ubuntu WSL terminal (or use the existing one). Run `docker --version` to ensure the Docker CLI is accessible, and then run a test container:
+
+**Command:**
+```shell
+docker run hello-world
+```
+
+**Expected Response:**
+
+The hello-world container should download and run, printing a "Hello from Docker!" message and exiting. This confirms that Docker is working inside WSL (via Docker Desktop). You can also try `docker ps` (which should list no running containers, until the Moose dev containers start later) to verify the Docker daemon is reachable from WSL.
+
+**Troubleshooting:** If `docker run hello-world` fails, ensure Docker Desktop is running and that WSL integration is enabled for your distro. In some cases, you might need to install the Docker CLI tools inside WSL, but Docker Desktop usually handles that by exposing the `docker` command in WSL [\[10\]](https://stackoverflow.com/questions/70449927/how-can-i-access-wsl2-which-is-used-by-docker-desktop#:~:text=Docker%20Desktop%20,tab%20in%20Settings). Also verify that your Ubuntu WSL is set to version 2 (as Docker won't work with WSL1).
+
+### Step 4: Proceed with MooseStack requirements and installation
+
+You now have a working Ubuntu instance on your windows machine with Docker installed. You can proceed to install MooseStack and its requirements (Node.js 20+ and/or Python 3.12+) as if you were installing on a regular linux machine. Just make sure to install from the Linux terminal prompt in the Ubuntu instance.
+
+## Expected CDC Impact
+
+### Storage Impact
+
+Primarily driven by change volume (rows changed / day) and retention period
+
+| Component | Expected Impact |
+| :---- | :---- |
+| Tracking tables (`cdc.*_CT`) | ~10-30% of source table sizes (not 2x) |
+| Retention | Default 3 days, then auto-purged |
+| Transaction log | May grow if capture job lags |
+
+### CPU Impact
+
+Primarily driven by change rate (changes / sec) and the number of CDC enabled tables
+
+| Component | Expected Overhead |
+| :---- | :---- |
+| CDC Capture Job | Low additional CPU |
+| Multiple tables | Low-moderate (well within normal) |
+| Polling interval (e.g. 2-min) | Negligible (just reads) |
+
+### I/O Impact
+
+Primarily driven by write volume to tracking tables and transaction log read rate
+
+| Operation | Expected Overhead |
+| :---- | :---- |
+| Transaction log reads | Low additional read I/O |
+| Tracking table writes | Low additional write I/O |
+| Debezium queries (periodic) | Minimal - batched reads |
+
+### Memory Impact
+
+Primarily driven by the number of CDC-enabled tables and their row size
+
+| Component | Expected Overhead |
+| :---- | :---- |
+| Capture job buffers | Low, measured in MB |
+| Tracking table indexes | Proportional to change volume |
+
+## Moose Language Server
+
+The [Moose LSP for Typescript](https://github.com/514-labs/moosestack-lsp) is an experimental feature available for early access. It enables SQL validation and syntax highlighting for `sql` strings in Typescript objects in your Moose project. It currently has known limitations around nested SQL and SQL fragments that will be incorrectly highlighted as errors. If you would like access to experiment with this feature, let us know!
+
+Beta distributions in IDE extension marketplaces (installation/access not guaranteed):
+
+* vscode: [https://marketplace.visualstudio.com/items?itemName=514-labs.moosestack-lsp](https://marketplace.visualstudio.com/items?itemName=514-labs.moosestack-lsp)
+* cursor: [https://open-vsx.org/extension/514-labs/moosestack-lsp](https://open-vsx.org/extension/514-labs/moosestack-lsp)
+
+## Manually seeding local dev
+
+Prompt your copilot to seed your local database from each remote table:
+
+```
+Goal: seed local ClickHouse from a remote Boreal ClickHouse via HTTP using `moose query`.
+
+Assumptions:
+- `BOREAL_CONNECTION_STRING` is set and looks like: `https://default:PASSWORD@HOST:8443/DB_NAME`
+- Local ClickHouse has the same tables already created.
+- Use `url()` + `JSONEachRow` to stream data from remote into local.
+
+Steps:
+
+1) Extract remote base URL + database name from `BOREAL_CONNECTION_STRING`.
+2) Get list of tables (exclude system + materialized views).
+3) For each table, generate a schema string ("col1 Type1, col2 Type2, ...") from `DESCRIBE TABLE ... FORMAT JSONEachRow`.
+4) For each table, generate a seed SQL file with this pattern:
+
+   INSERT INTO <table>
+   SELECT * FROM url(
+     '<base_url>/?database=<db>&query=SELECT+*+FROM+<table>+FORMAT+JSONEachRow',
+     JSONEachRow,
+     '<schema_string>'
+   );
+
+   (No LIMIT clauses: copy all rows.)
+
+5) Run all generated seed SQL files with `moose query`.
+6) Verify row counts for each table (use FINAL) using `moose query`.
+
+Implement as a single bash script.
+```
+
+## Sample Plan
+
+This is an example of a plan generated by an AI copilot for implementing a dataset API endpoint. Use this as a reference for the level of detail and structure your own AI-generated plans should have.
+
+````
+# Implement Order Fulfillment Dataset API Endpoint
+
+## Overview
+
+Implement the OrderFulfillment dataset endpoint. The endpoint should return order fulfillment metrics by merchant and time period, matching the MSSQL query behavior from the original system.
+
+## Analysis
+
+### MSSQL Query Structure (from specification)
+
+The original MSSQL query:
+
+1. Gets user permissions via `getUserPermissions` stored procedure
+2. Joins `merchants` → `merchant_properties` → `order_metrics`
+3. Returns: `MerchantId`, `MerchantName`, `FulfillmentRate`, `TotalOrders`
+4. Filters based on user permissions (if user doesn't have view-all access, filters by authorized merchants)
+
+### Expected Response Format
+
+Based on the API payload/response in the specification:
+
+- **Payload fields**: `distinct([MerchantName]) AS [value], [FulfillmentRate] AS [metric], [TotalOrders]`
+
+- **Response structure**:
+  ```json
+    {
+      "value": "Acme Corp",          // MerchantName
+      "metric": 95.5,                // FulfillmentRate
+      "TotalOrders": 1250            // TotalOrders
+    }
+  ```
+
+### ClickHouse Tables Available
+
+- `merchants` - Merchant/company information (`merchant_name`)
+- `merchant_properties` - Merchant properties and configurations
+- `order_metrics` - Order and fulfillment data
+- `orders` - Individual order records
+- `order_items` - Line items for orders
+
+## Implementation Plan
+
+### Phase 1: Query Development & Testing
+
+1. **Convert MSSQL to ClickHouse query**
+
+- Map MSSQL syntax to ClickHouse equivalents
+- Handle user permissions (simplify initially - may need to implement `getUserPermissions` logic later)
+- Join: `merchants` → `merchant_properties` → `order_metrics`
+- Calculate: FulfillmentRate = (fulfilled_orders / total_orders) * 100
+- Return: `MerchantName`, `FulfillmentRate`, `TotalOrders`
+
+2. **Test query against production ClickHouse**
+
+- Base URL: `https://default:<PASSWORD>@<HOST>:8443/<DATABASE_NAME>`
+- Verify query returns data
+- Check column names and data types match expected format
+- Iterate until query is correct
+
+3. **Handle cascading queries if needed**
+
+- If materialized views are needed, use CTEs or subqueries to emulate them
+- Test each step of the query chain
+
+### Phase 2: Handler Implementation
+
+1. **Create handler file**: `moosestack/src/analytics/apis/order-fulfillment.api.ts`
+
+- Follow pattern from existing API handlers
+- Use `ApiUtil` with `client` and `sql` helpers
+- Handle security/merchant filtering if needed
+
+2. **Implement query with ClickHouse syntax**
+
+- Use `sql` template tag for type-safe queries
+- Import required table models
+- Handle user permissions (may need to simplify for initial implementation)
+
+3. **Format response to match expected structure**
+
+- Return format matching the API response structure:
+     ```typescript
+          {
+            cacheId: string;
+            offset: number;
+            limit: number;
+            totalRecordCount: number;
+            columns: Array<{name, dataField, displayName, type, precision, scale}>;
+            recordsCount: number;
+            records: Array<{value, metric, TotalOrders}>;
+            failures: {};
+            warnings: {};
+          }
+     ```
+
+### Phase 3: Registration & Testing
+
+1. **Register handler in dataset registry**
+
+- Update `moosestack/src/dataset/registry.ts`
+- Add handler for the OrderFulfillment dataset
+
+2. **Test endpoint via curl**
+
+- Test against route: `http://localhost:4000/dataset` (POST)
+- Use proper authentication header
+- Test with sample payload matching the specification format
+- Verify response matches expected structure
+
+3. **Iterate and fix**
+
+- Fix any query issues
+- Adjust response formatting if needed
+- Handle edge cases (empty results, permissions, etc.)
+
+## Files to Modify
+
+1. **New file**: `moosestack/src/analytics/apis/order-fulfillment.api.ts`
+
+- Handler function: `fetchOrderFulfillmentData`
+- Query implementation
+- Response formatting
+
+2. **Update**: `moosestack/src/dataset/registry.ts`
+
+- Import `fetchOrderFulfillmentData`
+- Register handler for OrderFulfillment dataset
+
+## Key Considerations
+
+1. **User Permissions**: The MSSQL query uses `getUserPermissions` stored procedure. For initial implementation, we may need to:
+
+- Simplify to return all merchants (if user context isn't available)
+- Or implement a simplified version of the permission logic
+
+2. **Field Mapping**: Ensure correct mapping between frontend field names and database columns.
+3. **Security Filtering**: May need to handle merchant-level filtering for multi-tenant scenarios.
+4. **Ordering**: Implement sorting by merchant name or fulfillment rate as specified.
+5. **Pagination**: Implement `limit` and `offset` for large result sets.
+
+## Testing Strategy
+
+1. Test ClickHouse query directly first (before implementing handler)
+2. Show query results at each iteration
+3. Test handler function in isolation
+4. Test full endpoint with curl
+5. Validate response structure and data accuracy
+````
+
+## Security
+
+*Security appendix coming soon. Security protocols have already been implemented in this project.*

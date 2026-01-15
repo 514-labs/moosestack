@@ -1,63 +1,47 @@
-import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { parseMarkdownContent } from "@/lib/content";
-import { TOCNav } from "@/components/navigation/toc-nav";
-import { MDXRenderer } from "@/components/mdx-renderer";
-import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
+import { showDraftGuides, showBetaGuides } from "@/flags";
+import { getVisibleGuideSections } from "@/config/navigation";
+import { GuidesComingSoon } from "@/components/guides/coming-soon";
+import { GuideSectionGrid } from "@/components/guides/guide-section-grid";
 
-// export const dynamic = "force-dynamic";
-
-export async function generateMetadata(): Promise<Metadata> {
-  try {
-    const content = await parseMarkdownContent("guides/index");
-    return {
-      title:
-        content.frontMatter.title ?
-          `${content.frontMatter.title} | MooseStack Documentation`
-        : "Guides | MooseStack Documentation",
-      description:
-        content.frontMatter.description ||
-        "Comprehensive guides for building applications, managing data, and implementing data warehousing strategies",
-    };
-  } catch (error) {
-    return {
-      title: "Guides | MooseStack Documentation",
-      description:
-        "Comprehensive guides for building applications, managing data, and implementing data warehousing strategies",
-    };
-  }
-}
+export const metadata: Metadata = {
+  title: "Guides | MooseStack Documentation",
+  description:
+    "Comprehensive guides for building applications, managing data, and implementing data warehousing strategies",
+};
 
 export default async function GuidesPage() {
-  let content;
-  try {
-    content = await parseMarkdownContent("guides/index");
-  } catch (error) {
-    notFound();
-  }
+  // Check which guide levels should be shown
+  const [showDraft, showBeta] = await Promise.all([
+    showDraftGuides().catch(() => false),
+    showBetaGuides().catch(() => false),
+  ]);
 
-  const breadcrumbs = buildDocBreadcrumbs(
-    "guides/index",
-    typeof content.frontMatter.title === "string" ?
-      content.frontMatter.title
-    : undefined,
-  );
+  // Get visible guide sections based on flags
+  const sections = getVisibleGuideSections({
+    showDraftGuides: showDraft,
+    showBetaGuides: showBeta,
+  });
+  const hasVisibleGuides = sections.length > 0;
 
   return (
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
-        <DocBreadcrumbs items={breadcrumbs} />
-        <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
-          {content.isMDX ?
-            <MDXRenderer source={content.content} />
-          : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
-        </article>
+        {hasVisibleGuides ?
+          <>
+            <div className="mb-2">
+              <h1 className="text-3xl font-bold tracking-tight mb-2">Guides</h1>
+              <p className="text-muted-foreground text-lg">
+                Comprehensive guides for building applications, managing data,
+                and implementing data warehousing strategies.
+              </p>
+            </div>
+            <GuideSectionGrid sections={sections} />
+          </>
+        : <GuidesComingSoon />}
       </div>
-      <TOCNav
-        headings={content.headings}
-        helpfulLinks={content.frontMatter.helpfulLinks}
-      />
+      {/* No TOC needed for guides index */}
+      <div className="hidden xl:block" />
     </>
   );
 }
