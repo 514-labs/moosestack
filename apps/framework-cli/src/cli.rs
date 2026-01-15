@@ -8,7 +8,7 @@ pub mod processing_coordinator;
 pub mod routines;
 use crate::cli::routines::seed_data;
 pub mod settings;
-mod watcher;
+pub mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::docker::DockerClient;
 use clap::Parser;
