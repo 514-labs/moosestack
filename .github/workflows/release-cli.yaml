@@ -380,19 +380,17 @@ jobs:
           # Maturin will use this for the Python package metadata
           perl -i -pe 's/^(\[project\])$/$1\nversion = "${{ needs.version.outputs.python_version }}"/' pyproject.toml
 
+          # Set MOOSE_CLI_VERSION environment variable for build.rs
+          # This overrides the Cargo.toml version and gives the Rust binary the full version string
+          echo "MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}" >> $GITHUB_ENV
+
           # Debug: Show what we set
           echo "Cargo.toml version (base): ${BASE_VERSION}"
+          echo "MOOSE_CLI_VERSION (full): ${{ needs.version.outputs.version }}"
           grep '^version = ' Cargo.toml || echo "  (not found)"
           echo "pyproject.toml [project] section:"
           sed -n '/^\[project\]/,/^\[/p' pyproject.toml | head -10
         working-directory: ./apps/framework-cli
-
-      - name: Override version for binary
-        run: |
-          # Set CARGO_PKG_VERSION env var to override what env!("CARGO_PKG_VERSION") sees
-          # This gives the Rust binary the full version string including -ci- part
-          echo "CARGO_PKG_VERSION=${{ needs.version.outputs.version }}" >> $GITHUB_ENV
-          echo "Set CARGO_PKG_VERSION to: ${{ needs.version.outputs.version }}"
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -413,6 +411,7 @@ jobs:
               PROTOC_VERSION=24.4
               PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-x86_64.zip
               export POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
+              export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
 
               # Debian-based distribution
               apt install -y curl unzip
