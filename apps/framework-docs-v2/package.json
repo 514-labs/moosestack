@@ -4,13 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "tsx scripts/validate-includes.ts",
     "build": "next build && pnpm run index:search",
     "postbuild": "next-sitemap",
     "generate:search-content": "tsx scripts/generate-search-index.ts",
     "index:search": "pnpm run generate:search-content && pagefind --site .search-index --output-path public/pagefind",
     "start": "next start",
     "lint": "next lint",
-    "test:snippets": "tsx scripts/test-snippets.ts"
+    "test:snippets": "tsx scripts/test-snippets.ts",
+    "validate:includes": "tsx scripts/validate-includes.ts"
   },
   "dependencies": {
     "@flags-sdk/posthog": "^0.2.2",
