@@ -1211,11 +1211,14 @@ SELECT
     count(*) as times_ordered,
     sum(f.quantity) as total_quantity_sold,
     sum(f.total_amount) as total_revenue,
-    avg(f.unit_price) as avg_sale_price
+    sum(f.unit_price) as sum_unit_price,
+    count(f.unit_price) as price_count
 FROM local.fact_order_items f
 JOIN local.dim_product p ON f.product_key = p.product_key
 GROUP BY f.product_key, p.name, p.category, p.brand, f.order_date_key;
 ```
+
+**Note:** SummingMergeTree can't directly store averages. Instead, we store the sum and count, then calculate the average at query time as `sum_unit_price / price_count`.
 
 Execute it:
 
@@ -1690,185 +1693,197 @@ MooseStack uses Temporal for workflow orchestration, providing:
 - Monitoring and alerting
 - Dependency management (dimensions before facts)
 
-#### Create a Scheduled Refresh Workflow
+#### Create a Scheduled Refresh Script
 
-Create `app/workflows/scheduled_refresh.ts`:
+Create `scripts/refresh_warehouse.sh`:
 
-```typescript
-// app/workflows/scheduled_refresh.ts
+```bash
+#!/bin/bash
+# scripts/refresh_warehouse.sh
+# Scheduled script to refresh warehouse data
 
-import loadCustomerDimension from './load_customer_dimension';
-import loadProductDimension from './load_product_dimension';
-import loadStoreDimension from './load_store_dimension';
-import loadOrderItemsFact from './load_order_items_fact';
+set -e  # Exit on any error
 
-export default async function scheduledRefresh() {
-  console.log('Starting scheduled warehouse refresh...');
+CLICKHOUSE_URL="http://panda:pandapass@localhost:18123"
+DATA_DIR="data"
+LOG_FILE="logs/refresh_$(date +%Y%m%d_%H%M%S).log"
 
-  try {
-    // Load dimensions first (in parallel since they're independent)
-    await Promise.all([
-      loadCustomerDimension(),
-      loadProductDimension(),
-      loadStoreDimension()
-    ]);
+echo "Starting warehouse refresh at $(date)" | tee -a "$LOG_FILE"
 
-    console.log('Dimensions loaded successfully');
+# Load dimensions first (parallel is safe since they're independent)
+echo "Loading dimensions..." | tee -a "$LOG_FILE"
 
-    // Load facts (depends on dimensions)
-    await loadOrderItemsFact();
+cat "$DATA_DIR/customers.csv" | \
+  curl "$CLICKHOUSE_URL/?query=INSERT%20INTO%20local.dim_customer%20FORMAT%20CSVWithNames" \
+  --data-binary @- 2>&1 | tee -a "$LOG_FILE" &
 
-    console.log('Facts loaded successfully');
+cat "$DATA_DIR/products.csv" | \
+  curl "$CLICKHOUSE_URL/?query=INSERT%20INTO%20local.dim_product%20FORMAT%20CSVWithNames" \
+  --data-binary @- 2>&1 | tee -a "$LOG_FILE" &
 
-    // Log metrics
-    const metrics = await collectMetrics();
-    console.log('Refresh complete:', metrics);
+cat "$DATA_DIR/stores.csv" | \
+  curl "$CLICKHOUSE_URL/?query=INSERT%20INTO%20local.dim_store%20FORMAT%20CSVWithNames" \
+  --data-binary @- 2>&1 | tee -a "$LOG_FILE" &
 
-    return { success: true, metrics };
-  } catch (error) {
-    console.error('Refresh failed:', error);
+wait  # Wait for all dimension loads to complete
 
-    // Send alert (email, Slack, PagerDuty, etc.)
-    await sendAlert(error);
+echo "Dimensions loaded successfully" | tee -a "$LOG_FILE"
 
-    throw error;
-  }
-}
+# Load facts (depends on dimensions being loaded first)
+echo "Loading facts..." | tee -a "$LOG_FILE"
 
-async function collectMetrics() {
-  // Query for row counts, data quality checks, etc.
-  return {
-    customers: 5000,
-    products: 500,
-    stores: 50,
-    order_items: 75000,
-    duration_seconds: 45
-  };
-}
+cat "$DATA_DIR/order_items.csv" | \
+  curl "$CLICKHOUSE_URL/?query=INSERT%20INTO%20local.fact_order_items%20FORMAT%20CSVWithNames" \
+  --data-binary @- 2>&1 | tee -a "$LOG_FILE"
 
-async function sendAlert(error: Error) {
-  // Integration with alerting system
-  console.log('Alert sent:', error.message);
-}
+echo "Facts loaded successfully" | tee -a "$LOG_FILE"
+
+# Collect metrics
+echo "Collecting metrics..." | tee -a "$LOG_FILE"
+
+METRICS=$(curl -s "$CLICKHOUSE_URL/" --data "
+SELECT
+  'customers' as table_name,
+  COUNT(*) as row_count
+FROM local.dim_customer
+UNION ALL
+SELECT 'products', COUNT(*) FROM local.dim_product
+UNION ALL
+SELECT 'stores', COUNT(*) FROM local.dim_store
+UNION ALL
+SELECT 'order_items', COUNT(*) FROM local.fact_order_items
+FORMAT Pretty
+")
+
+echo "$METRICS" | tee -a "$LOG_FILE"
+echo "Refresh complete at $(date)" | tee -a "$LOG_FILE"
 ```
 
-Export from `app/index.ts`:
+Make it executable:
 
-```typescript
-export * from "./workflows/scheduled_refresh";
+```bash
+chmod +x scripts/refresh_warehouse.sh
 ```
 
-#### Configure Schedule
+#### Configure Schedule with Cron
 
-Create `moose.workflows.yaml`:
+Add to your crontab to run daily at 2 AM:
 
-```yaml
-# moose.workflows.yaml
+```bash
+# Edit crontab
+crontab -e
 
-workflows:
-  - name: scheduled_refresh
-    schedule:
-      # Cron format: minute hour day month day-of-week
-      # This runs at 2 AM every day
-      cron: "0 2 * * *"
-
-    # Retry configuration
-    retry:
-      max_attempts: 3
-      initial_interval_seconds: 60
-      max_interval_seconds: 3600
-      backoff_coefficient: 2.0
-
-    # Timeout configuration
-    timeout_seconds: 3600  # 1 hour
-
-    # Alerts
-    alerts:
-      on_failure:
-        - type: email
-          recipients: ["data-team@company.com"]
-        - type: slack
-          webhook_url: "${SLACK_WEBHOOK_URL}"
+# Add this line (adjust path as needed):
+0 2 * * * cd /path/to/ecommerce-warehouse && ./scripts/refresh_warehouse.sh
 ```
 
-**Schedule options:**
+**Common schedule patterns:**
 
 - `0 2 * * *` - Daily at 2 AM
 - `0 */4 * * *` - Every 4 hours
 - `0 0 * * 0` - Weekly on Sunday at midnight
 - `0 0 1 * *` - Monthly on the 1st at midnight
 
-#### Test the Scheduled Workflow
+**For production**, use a task scheduler like:
+- **cron** (Linux/macOS)
+- **systemd timers** (Linux)
+- **Airflow** (data pipeline orchestration)
+- **Temporal** (MooseStack's built-in scheduler)
+
+#### Test the Refresh Script
 
 Run manually to test:
 
 ```bash
-moose workflow run scheduled_refresh
+./scripts/refresh_warehouse.sh
 ```
 
-Output:
+Check the log output:
+
+```bash
+tail -f logs/refresh_*.log
+```
+
+You should see:
 
 ```
-Running workflow: scheduled_refresh
-Starting scheduled warehouse refresh...
-✓ Dimensions loaded successfully
-✓ Facts loaded successfully
-Refresh complete: { customers: 5000, products: 500, stores: 50, order_items: 75000, duration_seconds: 45 }
+Starting warehouse refresh at Wed Jan 15 14:30:00 PST 2026
+Loading dimensions...
+Dimensions loaded successfully
+Loading facts...
+Facts loaded successfully
+Collecting metrics...
+┏━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ table_name  ┃ row_count ┃
+┡━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ customers   │ 5000      │
+│ products    │ 500       │
+│ stores      │ 50        │
+│ order_items │ 75000     │
+└─────────────┴───────────┘
+Refresh complete at Wed Jan 15 14:31:15 PST 2026
 ```
 
 #### Configure Data Quality Checks
 
-Add data quality validations to your workflow:
+Add data quality validations to your refresh script. Create `scripts/data_quality_checks.sh`:
 
-```typescript
-// app/workflows/data_quality_checks.ts
+```bash
+#!/bin/bash
+# scripts/data_quality_checks.sh
+# Run data quality checks on the warehouse
 
-export async function checkDataQuality() {
-  const checks = [];
+CLICKHOUSE_URL="http://panda:pandapass@localhost:18123"
 
-  // Check 1: No null customer keys in facts
-  const nullCustomers = await query(`
-    SELECT COUNT(*) as cnt
-    FROM fact_order_items
-    WHERE customer_key IS NULL
-  `);
+echo "Running data quality checks..."
 
-  checks.push({
-    name: 'null_customer_keys',
-    passed: nullCustomers.cnt === 0,
-    message: `Found ${nullCustomers.cnt} null customer keys`
-  });
+# Check 1: No null customer keys in facts
+NULL_CUSTOMERS=$(curl -s "$CLICKHOUSE_URL/" --data "
+  SELECT COUNT(*) as cnt
+  FROM local.fact_order_items
+  WHERE customer_key = 0
+  FORMAT TabSeparated
+")
 
-  // Check 2: Total amounts should be positive
-  const negativeAmounts = await query(`
-    SELECT COUNT(*) as cnt
-    FROM fact_order_items
-    WHERE total_amount < 0
-  `);
+if [ "$NULL_CUSTOMERS" -eq 0 ]; then
+  echo "✓ Check 1 passed: No null customer keys"
+else
+  echo "✗ Check 1 failed: Found $NULL_CUSTOMERS null customer keys"
+fi
 
-  checks.push({
-    name: 'negative_amounts',
-    passed: negativeAmounts.cnt === 0,
-    message: `Found ${negativeAmounts.cnt} negative amounts`
-  });
+# Check 2: Total amounts should be positive
+NEGATIVE_AMOUNTS=$(curl -s "$CLICKHOUSE_URL/" --data "
+  SELECT COUNT(*) as cnt
+  FROM local.fact_order_items
+  WHERE total_amount < 0
+  FORMAT TabSeparated
+")
 
-  // Check 3: Today's data exists
-  const todayRecords = await query(`
-    SELECT COUNT(*) as cnt
-    FROM fact_order_items f
-    JOIN dim_date d ON f.order_date_key = d.date_key
-    WHERE d.date = CURRENT_DATE
-  `);
+if [ "$NEGATIVE_AMOUNTS" -eq 0 ]; then
+  echo "✓ Check 2 passed: No negative amounts"
+else
+  echo "✗ Check 2 failed: Found $NEGATIVE_AMOUNTS negative amounts"
+fi
 
-  checks.push({
-    name: 'today_data_exists',
-    passed: todayRecords.cnt > 0,
-    message: `Found ${todayRecords.cnt} records for today`
-  });
+# Check 3: All dates are valid
+INVALID_DATES=$(curl -s "$CLICKHOUSE_URL/" --data "
+  SELECT COUNT(*) as cnt
+  FROM local.fact_order_items f
+  LEFT JOIN local.dim_date d ON f.order_date_key = d.date_key
+  WHERE d.date_key IS NULL
+  FORMAT TabSeparated
+")
 
-  return checks;
-}
+if [ "$INVALID_DATES" -eq 0 ]; then
+  echo "✓ Check 3 passed: All dates are valid"
+else
+  echo "✗ Check 3 failed: Found $INVALID_DATES invalid date references"
+fi
+
+echo "Data quality checks complete"
 ```
+
+Run these checks as part of your refresh workflow or on a separate schedule.
 
 #### Monitor Pipeline Health
 
@@ -1951,7 +1966,7 @@ You've built a complete data warehouse from scratch. Here's what you accomplishe
 
 ## Part 3: How Warehouses Work
 
-*This section explains the technical concepts behind what you built in Part 1.*
+*This section explains the technical concepts behind what you built in Part 2.*
 
 ### OLTP vs OLAP: Two Different Workloads
 
@@ -2244,6 +2259,9 @@ Want to build more advanced features? Check the [MooseStack documentation](https
 - Multi-tenant warehouses
 
 **Happy building! 🚀**
+
+---
+
 ## Next Steps
 
 ### Deploy to Production
