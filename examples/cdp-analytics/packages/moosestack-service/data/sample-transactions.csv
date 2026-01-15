@@ -1,0 +1,6 @@
+transactionId,customerId,sessionId,timestamp,orderState,status,source,subtotal,discountAmount,taxAmount,shippingAmount,tipAmount,totalAmount,currency,paymentMethod,couponCode,itemCount,shippingCountry,shippingCity,isFirstPurchase,attributionChannel
+TXN-BATCH-001,cust-batch-001,sess-001,2024-06-15T10:30:00Z,COMPLETED,completed,pos,150.00,10.00,11.20,0.00,5.00,156.20,USD,credit_card,SUMMER10,3,US,New York,true,organic
+TXN-BATCH-002,cust-batch-002,sess-002,2024-06-15T11:45:00Z,COMPLETED,completed,online,89.99,0.00,7.20,5.99,0.00,103.18,USD,paypal,,2,US,Los Angeles,true,paid_search
+TXN-BATCH-003,cust-batch-003,sess-003,2024-06-15T14:20:00Z,COMPLETED,completed,mobile_app,245.50,25.00,17.64,0.00,0.00,238.14,USD,apple_pay,WELCOME25,5,CA,Toronto,true,social
+TXN-BATCH-004,cust-batch-001,sess-004,2024-06-16T09:00:00Z,COMPLETED,completed,online,75.00,0.00,6.00,5.99,0.00,86.99,USD,credit_card,,1,US,New York,false,email
+TXN-BATCH-005,cust-batch-004,sess-005,2024-06-16T16:30:00Z,OPEN,pending,api,320.00,0.00,25.60,12.99,0.00,358.59,USD,bank_transfer,,4,GB,London,true,referral
