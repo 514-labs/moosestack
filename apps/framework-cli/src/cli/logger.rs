@@ -78,12 +78,14 @@
 //! fern-based log format (e.g., Boreal/hosting_telemetry). The modern format can be enabled
 //! via environment variable once downstream consumers are ready.
 
+use opentelemetry::trace::TracerProvider;
+use opentelemetry_otlp::WithExportConfig;
 use serde::Deserialize;
 use std::fmt;
 use std::io::Write;
 use std::time::{Duration, SystemTime};
 use tracing::field::{Field, Visit};
-use tracing::{warn, Event, Level, Subscriber};
+use tracing::{error, info, warn, Event, Level, Subscriber};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::{Context, SubscriberExt};
@@ -285,7 +287,6 @@ pub mod resource_type {
 
 /// Default date format for log file names: YYYY-MM-DD-cli.log
 pub const DEFAULT_LOG_FILE_FORMAT: &str = "%Y-%m-%d-cli.log";
-
 #[derive(Deserialize, Debug, Clone)]
 pub enum LoggerLevel {
     #[serde(alias = "DEBUG", alias = "debug")]
@@ -338,6 +339,11 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_structured_logs")]
     pub structured_logs: bool,
+
+    /// OTLP gRPC endpoint for structured logs (e.g., "http://localhost:4317")
+    /// When set, exports spans/logs to OTLP collector via gRPC
+    #[serde(default)]
+    pub otlp_endpoint: Option<String>,
 }
 
 fn default_log_file() -> String {
@@ -383,6 +389,7 @@ impl Default for LoggerSettings {
             use_tracing_format: default_use_tracing_format(),
             no_ansi: default_no_ansi(),
             structured_logs: default_structured_logs(),
+            otlp_endpoint: None,
         }
     }
 }
@@ -659,10 +666,9 @@ pub fn setup_logging(settings: &LoggerSettings) {
 
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 
-    // Check for P0 structured logs with span support
-    if settings.structured_logs {
-        // P0: JSON format with span fields for Boreal UI
-        setup_structured_logs(settings);
+    // Priority 1: OTLP export (if endpoint configured)
+    if settings.otlp_endpoint.is_some() {
+        setup_with_otlp(settings);
     } else if settings.use_tracing_format {
         // Modern format using tracing built-ins
         setup_modern_format(settings);
@@ -672,45 +678,92 @@ pub fn setup_logging(settings: &LoggerSettings) {
     }
 }
 
-/// Setup P0 structured logging with JSON format and span field support.
+/// Creates an OTLP layer for exporting traces via gRPC.
 ///
-/// This format outputs JSON logs with automatic span field inclusion for filtering
-/// in the Boreal UI. Span fields (context, resource_type, resource_name) are
-/// automatically included in the output when functions are instrumented with
-/// #[instrument] attributes.
-fn setup_structured_logs(settings: &LoggerSettings) {
+/// Returns None if the OTLP endpoint is not configured or if initialization fails.
+fn setup_otlp_layer(
+    settings: &LoggerSettings,
+) -> Option<
+    tracing_opentelemetry::OpenTelemetryLayer<
+        tracing_subscriber::Registry,
+        opentelemetry_sdk::trace::Tracer,
+    >,
+> {
+    let endpoint = settings.otlp_endpoint.as_ref()?;
+
+    // Create OTLP tracer provider using the pipeline builder
+    let provider = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_exporter(
+            opentelemetry_otlp::new_exporter()
+                .tonic()
+                .with_endpoint(endpoint),
+        )
+        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
+            opentelemetry_sdk::Resource::new(vec![
+                opentelemetry::KeyValue::new("service.name", "moose"),
+                opentelemetry::KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
+            ]),
+        ))
+        .install_batch(opentelemetry_sdk::runtime::Tokio)
+        .ok()?;
+
+    // Register provider globally so shutdown can flush batches
+    opentelemetry::global::set_tracer_provider(provider.clone());
+
+    let tracer = provider.tracer("moose");
+
+    Some(tracing_opentelemetry::layer().with_tracer(tracer))
+}
+
+/// Setup OTLP export for structured logging.
+///
+/// Exports spans and logs to an OTLP collector via gRPC while also writing
+/// to local files/stdout for fallback observability. If OTLP initialization fails,
+/// this function panics to alert the user of the misconfiguration.
+fn setup_with_otlp(settings: &LoggerSettings) {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
 
-    if settings.stdout {
-        let json_layer = tracing_subscriber::fmt::layer()
-            .json()
-            .with_current_span(true) // Include current span in output
-            .with_span_list(false) // Disable span hierarchy (performance)
-            .with_target(true) // Include module path
-            .with_file(false) // Don't include file:line (verbose)
-            .with_line_number(false)
-            .with_writer(std::io::stdout);
+    // Add OTLP layer first, then local file/stdout layer for fallback
+    if let Some(otlp_layer) = setup_otlp_layer(settings) {
+        if settings.stdout {
+            let ansi_enabled = !settings.no_ansi;
+            let local_layer = tracing_subscriber::fmt::layer()
+                .with_writer(std::io::stdout)
+                .with_target(true)
+                .with_level(true)
+                .with_ansi(ansi_enabled)
+                .compact();
 
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(json_layer)
-            .init();
+            tracing_subscriber::registry()
+                .with(otlp_layer)
+                .with(local_layer)
+                .with(env_filter)
+                .init();
+        } else {
+            // Write to file with ANSI disabled
+            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
+            let local_layer = tracing_subscriber::fmt::layer()
+                .with_writer(file_appender)
+                .with_target(true)
+                .with_level(true)
+                .with_ansi(false)
+                .compact();
+
+            tracing_subscriber::registry()
+                .with(otlp_layer)
+                .with(local_layer)
+                .with(env_filter)
+                .init();
+        }
+        info!(
+            "OTLP export enabled to {}",
+            settings.otlp_endpoint.as_ref().unwrap()
+        );
     } else {
-        let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-        let json_layer = tracing_subscriber::fmt::layer()
-            .json()
-            .with_current_span(true) // Include current span in output
-            .with_span_list(false) // Disable span hierarchy (performance)
-            .with_target(true) // Include module path
-            .with_file(false) // Don't include file:line (verbose)
-            .with_line_number(false)
-            .with_writer(file_appender);
-
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(json_layer)
-            .init();
+        error!("Failed to initialize OTLP export");
+        panic!("OTLP endpoint configured but initialization failed");
     }
 }
 
