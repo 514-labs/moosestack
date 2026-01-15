@@ -21,8 +21,6 @@ This guide will:
 
 ## Overview
 
-### What we mean by “chat in your app”
-
 “Chat in your app” is a conversational interface embedded directly into your product that can answer questions by querying your actual data. Users ask in natural language, and the system responds with results grounded in live queries and the context of your schema, metrics, and permissions.
 
 This works because modern LLMs can call tools: they can inspect table metadata and run structured queries through a controlled interface (in this guide, an MCP server over ClickHouse), then explain the output in plain language.
@@ -94,7 +92,7 @@ This is most valuable for teams shipping data-heavy products where users increas
 
 This is an execution guide for shipping a data-connected chat feature with MooseStack and a Next.js reference client. It helps you make the key upfront decisions, get to a working baseline quickly (via the tutorial), then iterate toward production quality by improving context, adding sources, and embedding chat into your app experience (not leaving it as a demo UI).
 
-### What this guide is not
+#### What this guide is not
 
 * A generic chatbot or a support bot, or RAG recipe, or guide to fine-tuning your chat or creating agents for common user questions.  
 * A one-size-fits-all architecture. This is a set of patterns you adapt to your constraints.  
@@ -163,7 +161,7 @@ For sources already in ClickHouse / MooseStack, is their metadata sufficiently r
 * **Views / scoped schemas** (clean separation, good for tenants).  
 * **RLS hardening path** (enterprise): plan it early, implement when needed.
 
-## 1 - Tutorial: from parquet in S3 to chat application
+## 1 - Tutorial: from parquet in S3 to chat application 
 
 In this tutorial, you’ll bootstrap the MooseStack MCP template, load real Parquet data from S3 into ClickHouse, validate queries via the MCP-enabled chat UI, then deploy the backend to Boreal and the Next.js app to Vercel. 
 
@@ -228,11 +226,11 @@ echo "ANTHROPIC_API_KEY=your_api_key_here" >> packages/web-app/.env.local
 
 If you don’t have an Anthropic API key, you can get one here: [Claude Console](https://console.anthropic.com/)
 
-### Start your local dev environment
+### Local Development
 
 Your demo app is now set up\! Although it is not yet populated with data. Get it running locally.
 
-### Make sure docker desktop is running
+#### Make sure docker desktop is running
 
 ```shell
 docker version
@@ -246,7 +244,7 @@ From the root of your project, run:
 pnpm dev						# run the MooseStack and web app services
 ```
 
-#### Alternatively, run MooseStack and your frontend separately
+Alternatively, run MooseStack and your frontend separately
 
 From the root of your project, run:
 
@@ -263,7 +261,7 @@ This is a blank canvas for you to use to build whatever user facing analytics yo
 
 Note: whilst the chat will be functional, since you’ve not added any data to your MooseStack project, the tools available in the chat won’t be able to retrieve any data. In the next section, we’ll explore and model the data.
 
-### Start up MooseDev MCP and your copilot
+#### Start up MooseDev MCP and your copilot
 
 Once your MooseDev Server is up and running, your development MCP server is ready to be connected to your copilot. For documentation for each copilot, [see docs](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript#configure-your-ai-client). By way of example, here’s how you configure Claude Code:
 
@@ -324,7 +322,7 @@ cd packages/moosestack-service/context/rules
 gh repo clone 514-labs/olap-agent-ref . # the gh CLI has less trouble with nested repos
 ```
 
-#### Model your data
+#### Model your data manually or with your copilot
 
 Create 
 
@@ -404,7 +402,7 @@ Make sure to properly apply any transformations to conform your S3 data to the d
 * Column renamings will have to be done in SQL  
 * Default values in CH only set the value where the column is omitted in an insert. If the column was “null” in the source, you will have to cast that in the insert.
 
-#### Execute the SQL query
+#### Execute the SQL query to load data into your local ClickHouse
 
 ```shell
 moose query -f load-data.sql
