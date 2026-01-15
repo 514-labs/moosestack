@@ -1419,6 +1419,20 @@ const guidesNavigationConfig: NavigationConfig = [
       },
     ],
   },
+  {
+    type: "section",
+    title: "Test Guides",
+    items: [
+      {
+        type: "page",
+        slug: "guides/mermaid-test",
+        title: "Mermaid Diagram Test",
+        icon: IconFileCode,
+        languages: ["typescript", "python"],
+        status: "draft",
+      },
+    ],
+  },
 ];
 
 /**
