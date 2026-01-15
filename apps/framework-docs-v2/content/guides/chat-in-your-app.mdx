@@ -259,8 +259,6 @@ You can also run moose dev from your moose project directory `/packages/moosesta
 
 Your web-application is available at [http://localhost:3000](http://localhost:3000). Don’t be alarmed\!
 
-\[to do \- screenshot\]
-
 This is a blank canvas for you to use to build whatever user facing analytics you want to. And the chat’s already configured, click the chat icon on the bottom right to open your chat. Our engineer GRoy put some work into that chat panel, and you’ll find that it is resizable, has differentiated scrolling, and more\! Feel free to use and modify how you like.
 
 Note: whilst the chat will be functional, since you’ve not added any data to your MooseStack project, the tools available in the chat won’t be able to retrieve any data. In the next section, we’ll explore and model the data.
@@ -274,8 +272,6 @@ claude mcp add --transport http moose-dev http://localhost:4000/mcp
 ```
 
 Note, you may have to do this before you start Claude Code (or restart Claude Code once you have done this). You can validate that it is working with the `/mcp` slash command.
-
-\[to do – screenshot\]
 
 ### Model your data
 
@@ -300,8 +296,6 @@ If the files are relatively small, we recommend building up a `packages/moosesta
 ```
 
 #### Copy data from S3
-
-\[to do \- provide sample S3 bucket data from ClickHouse playground\] 
 
 There are many ways to copy data down from s3, e.g.:
 
@@ -436,8 +430,6 @@ You will now have a ready to test and iterate on local development environment: 
 
 Just go to [http://localhost:3000](http://localhost:3000/): everything should be good to go. Chat away
 
-\[to do \- screenshot\]
-
 #### (optionally) Customize the system prompt
 
 Edit `packages/web-app/src/features/chat/system-prompt.ts` to customize how the AI behaves. The default is generic; you may want to tailor it to your data and use case:
@@ -472,8 +464,6 @@ I want it to serve data from DataModel here: <project-name>/packages/moosestack-
 ```
 
 You should see your frontend application update here [http://localhost:3000](http://localhost:3000/).
-
-\[to do \- screenshot\]
 
 ### Deploy to Boreal and Vercel
 
