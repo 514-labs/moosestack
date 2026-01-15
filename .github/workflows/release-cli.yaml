@@ -362,18 +362,18 @@ jobs:
 
       - name: Set Version
         run: |
-          # Set Cargo.toml to base version only (strip -ci- part)
-          # Maturin tries to convert this to Python format, so keep it simple
-          BASE_VERSION=$(echo "${{ needs.version.outputs.version }}" | sed 's/-ci-.*//')
+          # Set Cargo.toml to the full version including -ci- part
+          # This is what env!("CARGO_PKG_VERSION") will read at compile time
+          VERSION="${{ needs.version.outputs.version }}"
 
           if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS version of sed requires an empty string after -i
-            sed -i '' "s/^version = \".*\"/version = \"${BASE_VERSION}\"/" Cargo.toml
-            sed -i '' '/name = "moose-cli"/,/version = ".*"/ s/version = ".*"/version = "'"${BASE_VERSION}"'"/' ../../Cargo.lock
+            sed -i '' "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+            sed -i '' '/name = "moose-cli"/,/version = ".*"/ s/version = ".*"/version = "'"${VERSION}"'"/' ../../Cargo.lock
           else
             # Linux version of sed
-            sed -i "s/^version = \".*\"/version = \"${BASE_VERSION}\"/" Cargo.toml
-            sed -i '/name = "moose-cli"/,/version = ".*"/ s/version = ".*"/version = "'"${BASE_VERSION}"'"/' ../../Cargo.lock
+            sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+            sed -i '/name = "moose-cli"/,/version = ".*"/ s/version = ".*"/version = "'"${VERSION}"'"/' ../../Cargo.lock
           fi
 
           # Set Python package version in pyproject.toml (PEP 440 compliant)
@@ -381,18 +381,11 @@ jobs:
           perl -i -pe 's/^(\[project\])$/$1\nversion = "${{ needs.version.outputs.python_version }}"/' pyproject.toml
 
           # Debug: Show what we set
-          echo "Cargo.toml version (base): ${BASE_VERSION}"
+          echo "Cargo.toml version: ${VERSION}"
           grep '^version = ' Cargo.toml || echo "  (not found)"
           echo "pyproject.toml [project] section:"
           sed -n '/^\[project\]/,/^\[/p' pyproject.toml | head -10
         working-directory: ./apps/framework-cli
-
-      - name: Override version for binary
-        run: |
-          # Set CARGO_PKG_VERSION env var to override what env!("CARGO_PKG_VERSION") sees
-          # This gives the Rust binary the full version string including -ci- part
-          echo "CARGO_PKG_VERSION=${{ needs.version.outputs.version }}" >> $GITHUB_ENV
-          echo "Set CARGO_PKG_VERSION to: ${{ needs.version.outputs.version }}"
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
