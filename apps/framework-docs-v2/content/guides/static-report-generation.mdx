@@ -489,6 +489,8 @@ export const salesReportApi = new Api<SalesReportParams, SalesReportResponse[]>(
     const targetTable = dailySalesMV.targetTable;
 
     // Build query with optional region filter
+    // Note: We use separate queries for clarity. Production code could
+    // consolidate these using conditional query building.
     let query;
     if (region) {
       query = sql`
