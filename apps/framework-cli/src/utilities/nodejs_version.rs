@@ -20,7 +20,7 @@ impl NodeVersion {
     }
 }
 
-/// Known LTS versions of Node.js as of 2024
+/// Known LTS versions of Node.js
 /// This should be updated periodically or ideally fetched from Node.js release API
 const NODE_LTS_VERSIONS: &[NodeVersion] = &[
     NodeVersion {
@@ -29,6 +29,10 @@ const NODE_LTS_VERSIONS: &[NodeVersion] = &[
     },
     NodeVersion {
         major: 22,
+        is_lts: true,
+    },
+    NodeVersion {
+        major: 24,
         is_lts: true,
     },
 ];
@@ -183,18 +187,18 @@ mod tests {
         assert!(version.major >= 20);
         assert!(version.is_lts);
 
-        // Test that it picks the highest compatible version (should be 22)
-        assert_eq!(version.major, 22);
+        // Test that it picks the highest compatible version (should be 24)
+        assert_eq!(version.major, 24);
 
         // Test with constraint that should pick specific version
         let req_20 = VersionReq::parse("^20.0.0").unwrap();
         let version_20 = find_compatible_lts_version(Some(&req_20));
         assert_eq!(version_20.major, 20);
 
-        // Test that >=18.0.0 still works since 20 and 22 satisfy it
+        // Test that >=18.0.0 still works since 20, 22, and 24 satisfy it
         let req_18_plus = VersionReq::parse(">=18.0.0").unwrap();
         let version_18_plus = find_compatible_lts_version(Some(&req_18_plus));
-        assert_eq!(version_18_plus.major, 22); // Should pick highest available (22)
+        assert_eq!(version_18_plus.major, 24); // Should pick highest available (24)
 
         // Test that ^18.0.0 (18.x.x only) falls back to default since 18 is not available
         let req_18_caret = VersionReq::parse("^18.0.0").unwrap();
