@@ -61,6 +61,11 @@ const config: Config = {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        text: {
+          body: "hsl(var(--text-body))",
+          link: "hsl(var(--text-link))",
+          "link-hover": "hsl(var(--text-link-hover))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -92,55 +97,51 @@ const config: Config = {
       typography: {
         DEFAULT: {
           css: {
-            maxWidth: "none",
-            color: "hsl(var(--foreground))",
+            fontSize: "1.0625rem",
+            color: "hsl(var(--text-body))",
+            lineHeight: "1.7",
             h1: {
-              fontSize: "2.25rem",
+              fontSize: "3rem",
+              lineHeight: "1.1",
               fontWeight: "700",
-              marginTop: "2rem",
-              marginBottom: "1rem",
+              marginTop: "0",
+              marginBottom: "1.5rem",
             },
             h2: {
-              fontSize: "1.875rem",
+              fontSize: "2rem",
+              lineHeight: "1.2",
               fontWeight: "700",
-              marginTop: "1.5rem",
-              marginBottom: "0.75rem",
+              marginTop: "2.5rem",
+              marginBottom: "1rem",
               scrollMarginTop: "5rem",
             },
             h3: {
               fontSize: "1.5rem",
+              lineHeight: "1.3",
               fontWeight: "600",
-              marginTop: "1rem",
-              marginBottom: "0.5rem",
+              marginTop: "2rem",
+              marginBottom: "0.75rem",
               scrollMarginTop: "5rem",
             },
             p: {
-              marginBottom: "1rem",
-              lineHeight: "1.75rem",
-            },
-            code: {
-              backgroundColor: "hsl(var(--muted))",
-              paddingLeft: "0.375rem",
-              paddingRight: "0.375rem",
-              paddingTop: "0.125rem",
-              paddingBottom: "0.125rem",
-              borderRadius: "0.25rem",
-              fontSize: "0.875rem",
-            },
-            pre: {
-              backgroundColor: "hsl(var(--muted))",
-              padding: "1rem",
-              borderRadius: "0.5rem",
-              overflowX: "auto",
-              marginBottom: "1rem",
-            },
-            "pre code": {
-              backgroundColor: "transparent",
-              padding: "0",
+              marginBottom: "1.25rem",
+              lineHeight: "1.7",
             },
             a: {
-              color: "hsl(var(--primary))",
+              color: "hsl(var(--text-link))",
+              textDecoration: "underline",
+              textDecorationColor: "hsl(var(--text-link) / 0.3)",
+              textUnderlineOffset: "2px",
+              "&:hover": {
+                color: "hsl(var(--text-link-hover))",
+                textDecorationColor: "hsl(var(--text-link-hover))",
+              },
+            },
+            "h1 a, h2 a, h3 a, h4 a, h5 a, h6 a": {
               textDecoration: "none",
+              "&:hover": {
+                textDecoration: "none",
+              },
             },
             "p a": {
               textDecoration: "underline",
@@ -154,6 +155,36 @@ const config: Config = {
                 textDecoration: "underline",
               },
             },
+            strong: {
+              color: "hsl(var(--foreground))",
+              fontWeight: "600",
+            },
+            code: {
+              backgroundColor: "hsl(var(--muted))",
+              color: "hsl(var(--foreground))",
+              paddingLeft: "0.375rem",
+              paddingRight: "0.375rem",
+              paddingTop: "0.25rem",
+              paddingBottom: "0.25rem",
+              borderRadius: "0.25rem",
+              fontSize: "0.875em",
+              fontWeight: "500",
+              border: "1px solid hsl(var(--border))",
+            },
+            pre: {
+              backgroundColor: "hsl(var(--muted) / 0.5)",
+              padding: "1.25rem",
+              borderRadius: "0.5rem",
+              overflowX: "auto",
+              marginTop: "1.5rem",
+              marginBottom: "1.5rem",
+              border: "1px solid hsl(var(--border))",
+            },
+            "pre code": {
+              backgroundColor: "transparent",
+              padding: "0",
+              border: "none",
+            },
             ul: {
               listStyleType: "disc",
               listStylePosition: "inside",
@@ -166,6 +197,24 @@ const config: Config = {
             },
             li: {
               marginBottom: "0.5rem",
+            },
+          },
+        },
+        lg: {
+          css: {
+            fontSize: "1.125rem",
+            lineHeight: "1.75",
+            h1: {
+              fontSize: "3rem",
+              lineHeight: "1.1",
+            },
+            h2: {
+              fontSize: "2.25rem",
+              lineHeight: "1.15",
+            },
+            h3: {
+              fontSize: "1.75rem",
+              lineHeight: "1.25",
             },
           },
         },

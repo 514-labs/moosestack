@@ -13,7 +13,7 @@ export async function StepContent({ content, isMDX }: StepContentProps) {
   }
 
   return (
-    <div className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+    <div className="prose prose-base md:prose-lg dark:prose-invert w-full">
       {isMDX ?
         <MDXRenderer source={content} />
       : <div dangerouslySetInnerHTML={{ __html: content }} />}

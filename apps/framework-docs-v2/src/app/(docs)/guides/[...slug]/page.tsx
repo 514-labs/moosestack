@@ -165,7 +165,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
               />
             )}
           </div>
-          <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+          <article className="prose prose-base md:prose-lg dark:prose-invert w-full">
             {content.isMDX ?
               <MDXRenderer source={content.content} />
             : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
@@ -256,7 +256,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
             />
           )}
         </div>
-        <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+        <article className="prose prose-base md:prose-lg dark:prose-invert w-full">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}

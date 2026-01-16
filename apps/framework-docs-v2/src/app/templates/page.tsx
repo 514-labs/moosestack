@@ -47,7 +47,7 @@ export default async function TemplatesPage() {
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
         <DocBreadcrumbs items={breadcrumbs} />
-        <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+        <article className="prose prose-base md:prose-lg dark:prose-invert w-full">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
