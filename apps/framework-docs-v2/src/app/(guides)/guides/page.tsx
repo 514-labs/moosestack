@@ -33,9 +33,8 @@ export default async function GuidesPage() {
           <div className="mb-2">
             <h1 className="text-3xl font-bold tracking-tight mb-2">Guides</h1>
             <p className="text-muted-foreground text-lg">
-              A complex blueprint to walk a developer or team of developers
-              through how to deliver a solution using fiveonefour products (and
-              external dependencies).
+              Comprehensive guides for common application use cases powered by
+              realtime analytical infrastructure.
             </p>
           </div>
           <GuideSectionGrid sections={sections} />
