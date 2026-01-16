@@ -6,6 +6,9 @@ set -eo pipefail
 
 version=$1
 
+# Wait 5 seconds before publishing
+sleep 5
+
 cd ./packages/ts-moose-proto
 npm version $version --no-git-tag-version
 cd ../..
