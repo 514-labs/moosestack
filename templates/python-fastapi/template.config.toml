@@ -1,5 +1,5 @@
 language = "python" # Must be typescript or python
-description = "Python project using FastAPI for serving analytical APIs."
+description = "Python MooseStack project with embedded FastAPI for serving analytical APIs."
 post_install_print = """
 Deploy on Boreal
 

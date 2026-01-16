@@ -1,8 +1,10 @@
-# Fastify & TypeScript Starter
+# Fastify & MooseStack example app
 
-A simple starter template for building APIs with Fastify and TypeScript using Node.js 24+.
+A simple Fastify app demonstrating how to embed MooseStack into an existing Fastify app. 
 
-This example is a small monorepo:
+**📖 [View the complete guide →](https://docs.fiveonefour.com/moosestack/getting-started/existing-app/fastify?lang=typescript)**
+
+Features a monorepo structure with Fastify app and child Moose project:
 - `./` is the Fastify app (ESM)
 - `./moose` is the Moose project (CommonJS output)
 

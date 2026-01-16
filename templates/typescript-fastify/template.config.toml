@@ -1,5 +1,5 @@
 language = "typescript" # Must be typescript or python
-description = "TypeScript project using Fastify for high-performance analytical APIs with WebApp integration."
+description = "TypeScript MooseStack project with embedded Fastify for high-performance analytical APIs with WebApp integration."
 post_install_print = """
 Deploy on Boreal
 
