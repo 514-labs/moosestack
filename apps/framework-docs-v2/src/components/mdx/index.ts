@@ -12,6 +12,7 @@ export { CommandSnippet } from "./command-snippet";
 export { CodeSnippet } from "./code-snippet";
 export { CodeEditorWrapper } from "./code-editor-wrapper";
 export { ShellSnippet } from "./shell-snippet";
+export { MermaidDiagram } from "./mermaid-diagram";
 export { ServerCodeBlock, ServerInlineCode } from "./server-code-block";
 export { ServerFigure } from "./server-figure";
 export { ToggleBlock } from "./toggle-block";
@@ -42,7 +43,7 @@ export {
   Fixed,
   Security,
   BreakingChanges,
-} from "./changelog-category";
+} from "./release-category";
 export { TemplateCard } from "./template-card";
 export { TemplateGrid } from "./template-grid";
 export { TemplatesGridServer } from "./templates-grid-server";

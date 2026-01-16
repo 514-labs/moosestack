@@ -20,7 +20,7 @@ This is a comprehensive reference for `moose_lib`, detailing all exported compon
 
 ## Core Types
 
-### `Key`
+### Key
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -46,7 +46,7 @@ class MyModel(BaseModel):
   </LanguageTabContent>
 </LanguageTabs>
 
-### `JWT`
+### JWT
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -62,7 +62,7 @@ Not applicable in Python - JWT handling is done through standard Python types.
   </LanguageTabContent>
 </LanguageTabs>
 
-### `ApiUtil`
+### ApiUtil
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -81,7 +81,7 @@ Utilities for analytics APIs are provided directly through function parameters i
   </LanguageTabContent>
 </LanguageTabs>
 
-### `BaseModel`
+### BaseModel
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -101,7 +101,7 @@ class MyDataModel(BaseModel):
   </LanguageTabContent>
 </LanguageTabs>
 
-### `MooseClient`
+### MooseClient
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -125,7 +125,7 @@ class MooseClient:
   </LanguageTabContent>
 </LanguageTabs>
 
-### `ApiResult`
+### ApiResult
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -145,7 +145,7 @@ class ApiResult:
 
 ## Configuration Types
 
-### `OlapConfig` / `BaseOlapConfig`
+### OlapConfig / BaseOlapConfig
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -193,7 +193,7 @@ class OlapConfig(BaseModel):
 
 ## Infrastructure Components
 
-### `OlapTable<T>`
+### OlapTable&lt;T&gt;
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -258,7 +258,7 @@ my_table_unsorted = OlapTable[UserProfile]("user_profiles_unsorted", OlapConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-### `Stream<T>`
+### Stream&lt;T&gt;
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -303,7 +303,7 @@ my_stream.add_transform(profile_stream, transform_user_event)
   </LanguageTabContent>
 </LanguageTabs>
 
-### `IngestApi<T>`
+### IngestApi&lt;T&gt;
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -328,7 +328,7 @@ my_ingest_api = IngestApi[UserEvent]("user_events", IngestConfigWithDestination(
   </LanguageTabContent>
 </LanguageTabs>
 
-### `Api<T, R>`
+### Api&lt;T, R&gt;
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -364,7 +364,7 @@ my_api = Api[UserQuery, list[UserProfile]](
   </LanguageTabContent>
 </LanguageTabs>
 
-### `IngestPipeline<T>`
+### IngestPipeline&lt;T&gt;
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -415,7 +415,7 @@ pipeline = IngestPipeline[UserEvent]("user_pipeline", IngestPipelineConfig(
   </LanguageTabContent>
 </LanguageTabs>
 
-### `MaterializedView<T>`
+### MaterializedView&lt;T&gt;
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -446,9 +446,62 @@ view = MaterializedView[UserStatistics](MaterializedViewOptions(
   </LanguageTabContent>
 </LanguageTabs>
 
+### View
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript" label="TypeScript">
+Creates a standard SQL view in ClickHouse. Views are read-time projections defined by a SELECT statement over one or more base tables or other views.
+
+```ts
+// Basic usage
+export const activeUserEvents = new View(
+  "active_user_events",
+  sql`
+    SELECT
+      ${events.columns.id}    AS event_id,
+      ${users.columns.id}     AS user_id,
+      ${users.columns.name}   AS user_name,
+      ${events.columns.ts}    AS ts
+    FROM ${events}
+    JOIN ${users} ON ${events.columns.user_id} = ${users.columns.id}
+    WHERE ${users.columns.active} = 1
+  `,
+  [events, users]
+);
+```
+
+**Note**: Use `View` for read-time projections. For write-time transformations with separate storage, use `MaterializedView` instead.
+  </LanguageTabContent>
+  <LanguageTabContent value="python" label="Python">
+Creates a standard SQL view in ClickHouse. Views are read-time projections defined by a SELECT statement over one or more base tables or other views.
+
+```python
+from moose_lib import View
+
+# Basic usage
+active_user_events = View(
+    "active_user_events",
+    """
+    SELECT
+      events.id        AS event_id,
+      users.id         AS user_id,
+      users.name       AS user_name,
+      events.ts        AS ts
+    FROM events
+    JOIN users ON events.user_id = users.id
+    WHERE users.active = 1
+    """,
+    [events, users]
+)
+```
+
+**Note**: Use `View` for read-time projections. For write-time transformations with separate storage, use `MaterializedView` instead.
+  </LanguageTabContent>
+</LanguageTabs>
+
 ## SQL Utilities
 
-### `sql` Template Tag
+### sql Template Tag
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -489,7 +542,7 @@ rows = client.query.execute(query, {"min_age": min_age, "country": country, "lim
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
-#### `ClickHouseEngines` Enum
+#### ClickHouseEngines Enum
 Available table engines:
 
 ```ts
@@ -506,7 +559,7 @@ enum ClickHouseEngines {
 }
 ```
 
-#### `ReplacingMergeTreeConfig<T>`
+#### ReplacingMergeTreeConfig&lt;T&gt;
 Configuration for ReplacingMergeTree tables:
 
 ```ts
@@ -612,7 +665,7 @@ cloud_replicated = ReplicatedMergeTreeEngine()  # No parameters needed
 
 ## Task Management
 
-### `Task<T, R>`
+### Task&lt;T, R&gt;
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -669,7 +722,7 @@ user_task = Task[InputData, OutputData](
   </LanguageTabContent>
 </LanguageTabs>
 
-### `TaskConfig<T, R>`
+### TaskConfig&lt;T, R&gt;
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -719,7 +772,7 @@ class TaskConfig(Generic[T, U]):
   </LanguageTabContent>
 </LanguageTabs>
 
-### `Workflow`
+### Workflow
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -754,7 +807,7 @@ data_workflow = Workflow(
   </LanguageTabContent>
 </LanguageTabs>
 
-### `WorkflowConfig`
+### WorkflowConfig
 
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
@@ -799,9 +852,9 @@ class WorkflowConfig:
 
 ---
 
-<ExportRequirement 
-  primitive="Infrastructure Components" 
-  example="export { myTable, myStream, myApi, myWorkflow, myTask, myPipeline, myView }" 
+<ExportRequirement
+  primitive="Infrastructure Components"
+  example="export { myTable, myStream, myApi, myWorkflow, myTask, myPipeline, myMaterializedView, myView }"
 />
 
 **Important:** The following components must be exported from your `app/index.ts` (TypeScript) or imported into `main.py` (Python) for Moose to detect them:
@@ -809,11 +862,12 @@ class WorkflowConfig:
 <LanguageTabs>
   <LanguageTabContent value="typescript" label="TypeScript">
 - `OlapTable` instances
-- `Stream` instances  
+- `Stream` instances
 - `IngestApi` instances
 - `Api` instances
 - `IngestPipeline` instances
 - `MaterializedView` instances
+- `View` instances
 - `Task` instances
 - `Workflow` instances
 
@@ -821,11 +875,12 @@ class WorkflowConfig:
   </LanguageTabContent>
   <LanguageTabContent value="python" label="Python">
 - `OlapTable` instances
-- `Stream` instances  
+- `Stream` instances
 - `IngestApi` instances
 - `Api` instances
 - `IngestPipeline` instances
 - `MaterializedView` instances
+- `View` instances
 - `Task` instances
 - `Workflow` instances
 

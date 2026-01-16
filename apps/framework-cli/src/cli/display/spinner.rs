@@ -453,6 +453,10 @@ where
     if let Some(mut spinner) = sp {
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
+    } else if activate {
+        // In non-TTY mode (e.g., CI), still print the completion message
+        // so tests can detect when operations complete
+        println!("✓ {completion_message}");
     }
 
     res
@@ -565,6 +569,10 @@ where
     if let Some(mut spinner) = sp {
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
+    } else if activate {
+        // In non-TTY mode (e.g., CI), still print the completion message
+        // so tests can detect when operations complete
+        println!("✓ {completion_message}");
     }
 
     res

@@ -42,6 +42,7 @@
 //! ## Environment Variables
 //!
 //! - `RUST_LOG`: Standard Rust log filtering (e.g., `RUST_LOG=moose_cli::infrastructure=debug`)
+//! - `MOOSE_LOGGER__STRUCTURED_LOGS`: Enable P0 structured logs with span support (default: `false`)
 //! - `MOOSE_LOGGER__USE_TRACING_FORMAT`: Opt-in to modern format (default: `false`)
 //! - `MOOSE_LOGGER__LEVEL`: Log level (DEBUG, INFO, WARN, ERROR)
 //! - `MOOSE_LOGGER__STDOUT`: Output to stdout vs file (default: `false`)
@@ -78,7 +79,6 @@
 //! via environment variable once downstream consumers are ready.
 
 use serde::Deserialize;
-use std::env;
 use std::fmt;
 use std::io::Write;
 use std::time::{Duration, SystemTime};
@@ -95,6 +95,193 @@ use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
 
 use super::settings::user_directory;
+
+// # STRUCTURED LOGGING INSTRUMENTATION GUIDE
+//
+// This section explains how to instrument code with structured logging using span fields.
+// When enabled via `MOOSE_LOGGER__STRUCTURED_LOGS=true`, the logging system captures
+// three key dimensions for filtering and analysis in the UI:
+//
+// - **context**: The phase of execution (runtime, boot, system)
+// - **resource_type**: The type of resource being operated on (ingest_api, olap_table, etc.)
+// - **resource_name**: The specific resource identifier (e.g., "UserEvents", "pageviews_v001")
+//
+// ## CONTEXTS
+//
+// ### `runtime` - User Data Processing
+// Use for operations that process user data during normal application execution:
+// - Processing ingest API requests
+// - Running streaming functions/transforms
+// - Executing consumption API queries
+// - Running workflow tasks
+//
+// ### `boot` - Infrastructure Changes
+// Use for operations that modify infrastructure state during deployment:
+// - Creating/altering OLAP tables
+// - Creating/updating views and materialized views
+// - Applying schema migrations
+// - Deploying new resources
+//
+// ### `system` - Health & Monitoring
+// Use for operations that monitor system health and don't involve specific resources:
+// - Health checks
+// - Metrics collection
+// - System diagnostics
+// - Note: System context logs typically don't have resource_type or resource_name
+//
+// ## INSTRUMENTATION PATTERNS
+//
+// ### Pattern 1: Runtime Operations (with resource_type and resource_name)
+//
+// ```rust
+// use tracing::instrument;
+// use crate::cli::logger::{context, resource_type};
+//
+// #[instrument(
+//     name = "ingest_request",
+//     skip_all,
+//     fields(
+//         context = context::RUNTIME,
+//         resource_type = resource_type::INGEST_API,
+//         resource_name = %table_name,
+//     )
+// )]
+// async fn handle_ingest_request(table_name: &str, body: Bytes) -> Result<Response, Error> {
+//     // Function implementation
+//     info!("Processing ingest request");
+//     // All logs within this span inherit the fields
+// }
+// ```
+//
+// ### Pattern 2: Boot Operations (infrastructure changes)
+//
+// ```rust
+// #[instrument(
+//     name = "create_table",
+//     skip_all,
+//     fields(
+//         context = context::BOOT,
+//         resource_type = resource_type::OLAP_TABLE,
+//         resource_name = %format!("{}_{}", database, table_name),
+//     )
+// )]
+// async fn create_table(database: &str, table_name: &str) -> Result<(), Error> {
+//     info!("Creating OLAP table");
+//     // Implementation
+// }
+// ```
+//
+// ### Pattern 3: System Operations (no resource fields)
+//
+// ```rust
+// #[instrument(
+//     name = "health_check",
+//     skip_all,
+//     fields(
+//         context = context::SYSTEM,
+//     )
+// )]
+// async fn handle_health_check() -> Response {
+//     debug!("Performing health check");
+//     // System context doesn't use resource_type or resource_name
+// }
+// ```
+//
+// ## RESOURCE NAMING CONVENTIONS
+//
+// Resource names should be consistent and filterable:
+//
+// - **Tables**: `{database}_{table_name}` (e.g., "local_UserEvents_000")
+// - **Views**: `{database}_{view_name}` (e.g., "local_active_users")
+// - **Streams**: `{topic_name}` (e.g., "UserEvents")
+// - **APIs**: `{model_name}` (e.g., "UserEvents", "/api/users")
+// - **Workflows**: `{workflow_name}` (e.g., "daily_aggregation")
+//
+// Use the `%` format specifier for Display-formatted fields, or `?` for Debug formatting.
+//
+// ## ASYNC AND BLOCKING CODE
+//
+// ### Async Functions
+// The `#[instrument]` macro works automatically with async functions:
+//
+// ```rust
+// #[instrument(skip_all, fields(context = context::RUNTIME))]
+// async fn process_data() -> Result<(), Error> {
+//     // Span is automatically propagated through .await points
+//     let result = async_operation().await?;
+//     Ok(())
+// }
+// ```
+//
+// ### Blocking Code in Async Context
+// For blocking operations spawned via `tokio::task::spawn_blocking`, manually propagate the span:
+//
+// ```rust
+// async fn handler() {
+//     let span = tracing::Span::current();
+//     tokio::task::spawn_blocking(move || {
+//         let _guard = span.enter();
+//         // Blocking work here - logs will have correct span fields
+//         info!("Processing in blocking thread");
+//     }).await
+// }
+// ```
+//
+// ## FIELD REFERENCE
+//
+// ### Required for Runtime/Boot Contexts:
+// - `context`: Always required (use constants from `context` module)
+// - `resource_type`: Required for runtime/boot (use constants from `resource_type` module)
+// - `resource_name`: Required for runtime/boot (use `%` formatter for the resource identifier)
+//
+// ### Optional for System Context:
+// - `context`: Required (use `context::SYSTEM`)
+// - `resource_type`: Not used
+// - `resource_name`: Not used
+//
+// ## SKIP PARAMETERS
+//
+// Use `skip_all` to avoid logging function parameters (prevents PII leaks and reduces noise):
+//
+// ```rust
+// #[instrument(skip_all, fields(...))]  // Skip all parameters
+// #[instrument(skip(body, headers), fields(...))]  // Skip specific parameters
+// ```
+//
+// ## TESTING
+//
+// See `apps/framework-cli-e2e/test/structured-logging.test.ts` for E2E tests that verify
+// instrumentation coverage and correctness of span fields.
+//
+// ## CONSTANTS
+//
+// The constants below are organized into modules for easy import and type safety.
+// Use these in your `#[instrument]` attributes to ensure consistency.
+
+/// Structured logging context constants.
+/// Used in #[instrument(fields(context = ...))]
+#[allow(dead_code)]
+pub mod context {
+    pub const RUNTIME: &str = "runtime";
+    pub const BOOT: &str = "boot";
+    pub const SYSTEM: &str = "system";
+}
+
+/// Structured logging resource type constants.
+/// Used in #[instrument(fields(resource_type = ...))]
+#[allow(dead_code)]
+pub mod resource_type {
+    pub(crate) const INGEST_API: &str = "ingest_api";
+    pub(crate) const CONSUMPTION_API: &str = "consumption_api";
+    pub(crate) const STREAM: &str = "stream";
+    pub(crate) const OLAP_TABLE: &str = "olap_table";
+    pub(crate) const VIEW: &str = "view";
+    pub(crate) const MATERIALIZED_VIEW: &str = "materialized_view";
+    pub(crate) const TRANSFORM: &str = "transform";
+    pub(crate) const CONSUMER: &str = "consumer";
+    pub(crate) const WORKFLOW: &str = "workflow";
+    pub(crate) const TASK: &str = "task";
+}
 
 /// Default date format for log file names: YYYY-MM-DD-cli.log
 pub const DEFAULT_LOG_FILE_FORMAT: &str = "%Y-%m-%d-cli.log";
@@ -148,6 +335,9 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_no_ansi")]
     pub no_ansi: bool,
+
+    #[serde(default = "default_structured_logs")]
+    pub structured_logs: bool,
 }
 
 fn default_log_file() -> String {
@@ -171,14 +361,15 @@ fn default_include_session_id() -> bool {
 }
 
 fn default_use_tracing_format() -> bool {
-    env::var("MOOSE_LOGGER__USE_TRACING_FORMAT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(false)
+    false
 }
 
 fn default_no_ansi() -> bool {
     false // ANSI colors enabled by default
+}
+
+fn default_structured_logs() -> bool {
+    false
 }
 
 impl Default for LoggerSettings {
@@ -191,6 +382,7 @@ impl Default for LoggerSettings {
             include_session_id: default_include_session_id(),
             use_tracing_format: default_use_tracing_format(),
             no_ansi: default_no_ansi(),
+            structured_logs: default_structured_logs(),
         }
     }
 }
@@ -467,13 +659,58 @@ pub fn setup_logging(settings: &LoggerSettings) {
 
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 
-    // Setup logging based on format type
-    if settings.use_tracing_format {
+    // Check for P0 structured logs with span support
+    if settings.structured_logs {
+        // P0: JSON format with span fields for Boreal UI
+        setup_structured_logs(settings);
+    } else if settings.use_tracing_format {
         // Modern format using tracing built-ins
         setup_modern_format(settings);
     } else {
         // Legacy format matching fern exactly
         setup_legacy_format(settings, session_id);
+    }
+}
+
+/// Setup P0 structured logging with JSON format and span field support.
+///
+/// This format outputs JSON logs with automatic span field inclusion for filtering
+/// in the Boreal UI. Span fields (context, resource_type, resource_name) are
+/// automatically included in the output when functions are instrumented with
+/// #[instrument] attributes.
+fn setup_structured_logs(settings: &LoggerSettings) {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
+
+    if settings.stdout {
+        let json_layer = tracing_subscriber::fmt::layer()
+            .json()
+            .with_current_span(true) // Include current span in output
+            .with_span_list(false) // Disable span hierarchy (performance)
+            .with_target(true) // Include module path
+            .with_file(false) // Don't include file:line (verbose)
+            .with_line_number(false)
+            .with_writer(std::io::stdout);
+
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(json_layer)
+            .init();
+    } else {
+        let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
+        let json_layer = tracing_subscriber::fmt::layer()
+            .json()
+            .with_current_span(true) // Include current span in output
+            .with_span_list(false) // Disable span hierarchy (performance)
+            .with_target(true) // Include module path
+            .with_file(false) // Don't include file:line (verbose)
+            .with_line_number(false)
+            .with_writer(file_appender);
+
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(json_layer)
+            .init();
     }
 }
 
@@ -570,5 +807,180 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .with(legacy_layer)
                 .init();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tracing::instrument;
+
+    /// Mock writer that captures output to a shared buffer
+    #[derive(Clone)]
+    struct MockWriter {
+        buffer: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl MockWriter {
+        fn new() -> Self {
+            Self {
+                buffer: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+
+        fn get_output(&self) -> String {
+            let buffer = self.buffer.lock().unwrap();
+            String::from_utf8(buffer.clone()).expect("Invalid UTF-8 in log output")
+        }
+    }
+
+    impl std::io::Write for MockWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            let mut buffer = self.buffer.lock().unwrap();
+            buffer.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for MockWriter {
+        type Writer = Self;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn test_span_fields_in_json_output() {
+        // Setup mock writer to capture output
+        let mock_writer = MockWriter::new();
+
+        // Create JSON layer with span support (matching setup_structured_logs)
+        let json_layer = tracing_subscriber::fmt::layer()
+            .json()
+            .with_current_span(true)
+            .with_span_list(false)
+            .with_target(true)
+            .with_file(false)
+            .with_line_number(false)
+            .with_writer(mock_writer.clone());
+
+        // Initialize subscriber
+        let subscriber = tracing_subscriber::registry().with(json_layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            test_function_with_span("UserEvent");
+        });
+
+        // Get captured output
+        let output = mock_writer.get_output();
+
+        // Parse JSON output
+        let log_entry: serde_json::Value =
+            serde_json::from_str(&output).expect("Failed to parse JSON log output");
+
+        // Assert span fields are present
+        assert_eq!(
+            log_entry["span"]["context"].as_str(),
+            Some("runtime"),
+            "Expected context field in span"
+        );
+        assert_eq!(
+            log_entry["span"]["resource_type"].as_str(),
+            Some("stream"),
+            "Expected resource_type field in span"
+        );
+        assert_eq!(
+            log_entry["span"]["resource_name"].as_str(),
+            Some("UserEvent"),
+            "Expected resource_name field in span"
+        );
+        assert_eq!(
+            log_entry["fields"]["message"].as_str(),
+            Some("Processing request"),
+            "Expected message in fields"
+        );
+    }
+
+    #[instrument(
+        name = "test_ingest",
+        skip_all,
+        fields(
+            context = "runtime",
+            resource_type = "stream",
+            resource_name = %topic_name,
+        )
+    )]
+    fn test_function_with_span(topic_name: &str) {
+        tracing::info!("Processing request");
+    }
+
+    #[test]
+    fn test_logs_without_spans_are_valid() {
+        // Setup mock writer to capture output
+        let mock_writer = MockWriter::new();
+
+        // Create JSON layer with span support
+        let json_layer = tracing_subscriber::fmt::layer()
+            .json()
+            .with_current_span(true)
+            .with_span_list(false)
+            .with_target(true)
+            .with_file(false)
+            .with_line_number(false)
+            .with_writer(mock_writer.clone());
+
+        // Initialize subscriber
+        let subscriber = tracing_subscriber::registry().with(json_layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            // Emit log without any span
+            tracing::info!("Log without span");
+        });
+
+        // Get captured output
+        let output = mock_writer.get_output();
+
+        // Parse JSON output - should still be valid even without span
+        let log_entry: serde_json::Value =
+            serde_json::from_str(&output).expect("Failed to parse JSON log output");
+
+        // Assert basic fields are present
+        assert_eq!(
+            log_entry["fields"]["message"].as_str(),
+            Some("Log without span"),
+            "Expected message in fields"
+        );
+
+        // Span field may be null or absent when no span is active
+        assert!(
+            log_entry["span"].is_null() || log_entry.get("span").is_none(),
+            "Expected no span field or null span when logging without span context"
+        );
+    }
+
+    #[test]
+    fn test_p0_constants_exported() {
+        // Verify context constants are accessible
+        assert_eq!(context::RUNTIME, "runtime");
+        assert_eq!(context::BOOT, "boot");
+        assert_eq!(context::SYSTEM, "system");
+
+        // Verify resource_type constants are accessible
+        assert_eq!(resource_type::INGEST_API, "ingest_api");
+        assert_eq!(resource_type::CONSUMPTION_API, "consumption_api");
+        assert_eq!(resource_type::STREAM, "stream");
+        assert_eq!(resource_type::OLAP_TABLE, "olap_table");
+        assert_eq!(resource_type::VIEW, "view");
+        assert_eq!(resource_type::MATERIALIZED_VIEW, "materialized_view");
+        assert_eq!(resource_type::TRANSFORM, "transform");
+        assert_eq!(resource_type::CONSUMER, "consumer");
+        assert_eq!(resource_type::WORKFLOW, "workflow");
+        assert_eq!(resource_type::TASK, "task");
     }
 }

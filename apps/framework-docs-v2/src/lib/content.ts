@@ -16,7 +16,7 @@ import type {
   ParsedContent,
 } from "@/lib/content-types";
 
-const CONTENT_ROOT = path.join(process.cwd(), "content");
+import { processIncludes, CONTENT_ROOT } from "./includes";
 
 /**
  * Get all content files from the content directory
@@ -98,32 +98,35 @@ export async function parseMarkdownContent(
   const fileContents = fs.readFileSync(fullPath, "utf8");
   const { data, content: rawContent } = matter(fileContents);
 
+  // Process include directives for both MD and MDX
+  const processedContent = processIncludes(rawContent);
+
   let content: string;
   let mdxContent: any = null;
 
   if (isMDX) {
-    // For MDX files, we'll return the raw content and let the component handle compilation
-    // Extract headings from raw content before MDX processing
-    const headings = extractHeadings(rawContent);
+    // For MDX files, we'll return the processed content and let the component handle compilation
+    // Extract headings from processed content before MDX processing
+    const headings = extractHeadings(processedContent);
 
     return {
       frontMatter: data as FrontMatter,
-      content: rawContent, // Return raw MDX content
+      content: processedContent, // Return processed MDX content with includes
       headings,
       slug,
       isMDX: true,
     };
   } else {
     // Parse regular markdown to HTML
-    const processedContent = await remark()
+    const remarkContent = await remark()
       .use(remarkGfm)
       .use(remarkHtml, { sanitize: false })
-      .process(rawContent);
+      .process(processedContent);
 
-    content = processedContent.toString();
+    content = remarkContent.toString();
 
     // Extract headings for TOC
-    const headings = extractHeadings(rawContent);
+    const headings = extractHeadings(processedContent);
 
     return {
       frontMatter: data as FrontMatter,

@@ -179,6 +179,36 @@ export const waitForServerStart = async (
 };
 
 /**
+ * Waits for infrastructure changes to be fully processed after a file modification.
+ * This monitors the dev process stdout for the "Infrastructure changes processed successfully"
+ * message that appears after the file watcher processes changes.
+ *
+ * @param devProcess - The child process running `moose dev`
+ * @param timeoutMs - Maximum time to wait for infrastructure changes
+ * @param options - Optional logger configuration
+ */
+export const waitForInfrastructureChanges = async (
+  devProcess: ChildProcess,
+  timeoutMs: number = 60_000,
+  options: ProcessOptions = {},
+): Promise<void> => {
+  const log = options.logger ?? processLogger;
+  const found = await waitForOutputMessage(
+    devProcess,
+    "Infrastructure changes processed successfully",
+    timeoutMs,
+    options,
+  );
+  if (found) {
+    log.debug("✓ Infrastructure changes processed successfully");
+  } else {
+    throw new Error(
+      "Infrastructure changes did not complete in time - check logs for details",
+    );
+  }
+};
+
+/**
  * Kills any remaining moose-cli processes
  */
 export const killRemainingProcesses = async (
@@ -209,15 +239,19 @@ export const killRemainingProcesses = async (
 };
 
 /**
- * Wait for streaming functions to start by checking Redpanda consumer groups.
+ * Wait for streaming functions and ClickHouse sync to start by checking Redpanda consumer groups.
  *
- * This approach directly verifies that streaming function consumers have:
+ * This approach directly verifies that consumers have:
  * 1. Connected to Kafka/Redpanda
  * 2. Joined their consumer groups
  * 3. Reached a "Stable" state (ready to process messages)
  *
- * Streaming functions create consumer groups with names starting with "flow-".
- * We poll `rpk group list` until we find at least one such group in Stable state.
+ * We wait for two types of consumer groups:
+ * - "flow-*" groups: Streaming function consumers (transform data between topics)
+ * - "clickhouse_sync" group: Syncs data from Kafka topics to ClickHouse tables
+ *
+ * Both must be stable before data can flow end-to-end from ingestion to ClickHouse.
+ * We poll `rpk group list` until all required groups are in Stable state.
  */
 export const waitForStreamingFunctions = async (
   timeoutMs: number = 120000,
@@ -253,36 +287,51 @@ export const waitForStreamingFunctions = async (
 
       log.debug("Redpanda consumer groups", { groupList: groupList.trim() });
 
-      // Parse for Stable flow-* groups
+      // Parse for Stable groups
       // Expected format: "BROKER  GROUP  STATE"
       // Example: "0  flow-Foo-  Stable"
       const lines = groupList.split("\n").slice(1); // Skip header
+
+      // Check flow-* groups (streaming functions)
       const flowGroups = lines.filter((line) => line.includes("flow-"));
       const stableFlowGroups = flowGroups.filter((line) =>
         line.includes("Stable"),
       );
 
-      // Wait for ALL flow- groups to be stable, not just ANY
-      if (
-        flowGroups.length > 0 &&
-        stableFlowGroups.length === flowGroups.length
-      ) {
+      // Check clickhouse_sync groups (Kafka to ClickHouse sync)
+      // These are critical for data to actually appear in ClickHouse tables
+      const clickhouseSyncGroups = lines.filter((line) =>
+        line.includes("clickhouse_sync"),
+      );
+      const stableClickhouseSyncGroups = clickhouseSyncGroups.filter((line) =>
+        line.includes("Stable"),
+      );
+
+      // Wait for ALL flow- groups AND clickhouse_sync groups to be stable
+      const allFlowGroupsStable =
+        flowGroups.length > 0 && stableFlowGroups.length === flowGroups.length;
+      const allClickhouseSyncGroupsStable =
+        clickhouseSyncGroups.length === 0 ||
+        stableClickhouseSyncGroups.length === clickhouseSyncGroups.length;
+
+      if (allFlowGroupsStable && allClickhouseSyncGroupsStable) {
         log.debug(
-          `Found ${stableFlowGroups.length} active streaming function(s)`,
+          `Found ${stableFlowGroups.length} active streaming function(s) and ${stableClickhouseSyncGroups.length} clickhouse sync group(s)`,
           {
             functions: stableFlowGroups.map((g) => g.trim()),
+            clickhouseSync: stableClickhouseSyncGroups.map((g) => g.trim()),
           },
         );
 
-        // Grace period for consumer group to fully stabilize
+        // Grace period for consumer groups to fully stabilize
         log.debug("Waiting for consumer groups to stabilize");
         await setTimeoutAsync(3000);
-        log.debug("✓ Streaming functions ready");
+        log.debug("✓ Streaming functions and ClickHouse sync ready");
         return;
       }
 
       log.debug(
-        `Waiting for all streaming functions to be stable (${stableFlowGroups.length}/${flowGroups.length} ready)`,
+        `Waiting for all groups to be stable (flow: ${stableFlowGroups.length}/${flowGroups.length}, clickhouse_sync: ${stableClickhouseSyncGroups.length}/${clickhouseSyncGroups.length})`,
       );
       await setTimeoutAsync(1000);
     } catch (error) {
@@ -296,7 +345,7 @@ export const waitForStreamingFunctions = async (
   }
 
   throw new Error(
-    `Streaming functions did not reach Stable state within ${timeoutMs / 1000}s`,
+    `Streaming functions and ClickHouse sync did not reach Stable state within ${timeoutMs / 1000}s`,
   );
 };
 
@@ -331,4 +380,136 @@ export const waitForInfrastructureReady = async (
       operationName: "Infrastructure readiness check",
     },
   );
+};
+
+/**
+ * Waits for one or more specific messages to appear in process output (stdout or stderr)
+ *
+ * @param devProcess - The child process to monitor
+ * @param expectedMessages - A single string or array of strings to wait for
+ * @param timeout - Maximum time to wait in milliseconds
+ * @param options - Additional options including logger
+ * @returns Promise<boolean> - true if all messages found, false if timeout occurs
+ *
+ * @example
+ * // Wait for a single message
+ * await waitForOutputMessage(process, "Server started", 5000);
+ *
+ * // Wait for multiple messages (avoids race conditions)
+ * await waitForOutputMessage(process, ["Unloaded Files", "myfile.ts"], 5000);
+ */
+export const waitForOutputMessage = async (
+  devProcess: ChildProcess,
+  expectedMessages: string | string[],
+  timeout: number,
+  options: ProcessOptions = {},
+): Promise<boolean> => {
+  const log = options.logger ?? processLogger;
+  const messagesToFind =
+    Array.isArray(expectedMessages) ? expectedMessages : [expectedMessages];
+  const messagesFound = new Set<string>();
+
+  return new Promise<boolean>((resolve, reject) => {
+    let timeoutId: any = null;
+    let outputBuffer = "";
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      devProcess.stdout?.off("data", onStdout);
+      devProcess.stderr?.off("data", onStderr);
+      devProcess.off("exit", onExit);
+    };
+
+    const checkMessages = (output: string) => {
+      // Check which messages are in the current output
+      for (const message of messagesToFind) {
+        if (output.includes(message) || outputBuffer.includes(message)) {
+          messagesFound.add(message);
+        }
+      }
+
+      // If all messages found, resolve
+      if (messagesFound.size === messagesToFind.length) {
+        log.debug("All expected messages found", {
+          messages: messagesToFind,
+        });
+        cleanup();
+        resolve(true);
+      }
+    };
+
+    const onStdout = (data: any) => {
+      const output = data.toString();
+      outputBuffer += output;
+      log.debug("Dev process stdout", { output: output.trim() });
+      checkMessages(output);
+    };
+
+    const onStderr = (data: any) => {
+      const output = data.toString();
+      outputBuffer += output;
+      log.debug("Dev process stderr", { stderr: output.trim() });
+      checkMessages(output);
+    };
+
+    const onExit = (code: number | null) => {
+      cleanup();
+      if (messagesFound.size < messagesToFind.length) {
+        const missingMessages = messagesToFind.filter(
+          (msg) => !messagesFound.has(msg),
+        );
+        log.error("Process exited without finding all messages", {
+          exitCode: code,
+          found: Array.from(messagesFound),
+          missing: missingMessages,
+          outputBuffer: outputBuffer.slice(0, 1000),
+        });
+        reject(
+          new Error(
+            `Process exited with code ${code} before all messages were found. Missing: ${missingMessages.join(", ")}`,
+          ),
+        );
+      }
+    };
+
+    devProcess.stdout?.on("data", onStdout);
+    devProcess.stderr?.on("data", onStderr);
+    devProcess.on("exit", onExit);
+
+    timeoutId = setTimeout(() => {
+      cleanup();
+      if (messagesFound.size < messagesToFind.length) {
+        const missingMessages = messagesToFind.filter(
+          (msg) => !messagesFound.has(msg),
+        );
+        log.error("Timeout waiting for messages", {
+          expectedMessages: messagesToFind,
+          found: Array.from(messagesFound),
+          missing: missingMessages,
+          receivedOutput: outputBuffer.slice(0, 1000),
+        });
+        resolve(false);
+      }
+    }, timeout);
+  });
+};
+
+/**
+ * Captures all stdout and stderr output from a process
+ */
+export const captureProcessOutput = (devProcess: ChildProcess) => {
+  const output = { stdout: "", stderr: "" };
+
+  devProcess.stdout?.on("data", (data: any) => {
+    output.stdout += data.toString();
+  });
+
+  devProcess.stderr?.on("data", (data: any) => {
+    output.stderr += data.toString();
+  });
+
+  return output;
 };

@@ -83,6 +83,7 @@ export interface BasicTypes {
   booleanField: boolean;
   optionalString?: string;
   nullableNumber: number | null;
+  optionalTaggedDate?: DateTime64<3>;
 }
 
 /** Test 2: Simple arrays of primitives */
@@ -794,6 +795,77 @@ export const nonDefaultDbTable = new OlapTable<NonDefaultDbRecord>(
     database: "analytics", // Use non-default database
     orderByFields: ["id", "timestamp"],
   },
+);
+
+/** =======OlapTable.insert() Consumer Tests========= */
+// Test that OlapTable.insert() works correctly in consumer functions
+// Tests both default database and non-default database inserts
+
+export interface OlapInsertTestTrigger {
+  id: Key<string>;
+  value: number;
+}
+
+export interface OlapInsertTestRecord {
+  id: Key<string>;
+  timestamp: DateTime;
+  source: string;
+  value: number;
+}
+
+// Table in default database for testing OlapTable.insert()
+export const olapInsertTestTable = new OlapTable<OlapInsertTestRecord>(
+  "OlapInsertTestTable",
+  {
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+// Table in non-default database for testing OlapTable.insert()
+export const olapInsertTestNonDefaultTable =
+  new OlapTable<OlapInsertTestRecord>("OlapInsertTestNonDefaultTable", {
+    database: "analytics",
+    orderByFields: ["id", "timestamp"],
+  });
+
+// Dedicated stream to trigger the consumer test (no hidden dependencies)
+export const olapInsertTestTriggerStream = new Stream<OlapInsertTestTrigger>(
+  "OlapInsertTestTrigger",
+);
+
+export const olapInsertTestTriggerApi = new IngestApi<OlapInsertTestTrigger>(
+  "olap-insert-test-trigger",
+  {
+    destination: olapInsertTestTriggerStream,
+  },
+);
+
+// Consumer that tests OlapTable.insert() for both default and non-default DBs
+olapInsertTestTriggerStream.addConsumer(
+  async (record) => {
+    const timestamp = new Date();
+
+    // Test insert to default database table
+    await olapInsertTestTable.insert([
+      {
+        id: `default-${record.id}`,
+        timestamp,
+        source: "consumer_default_db",
+        value: record.value,
+      },
+    ]);
+
+    // Test insert to non-default database table
+    await olapInsertTestNonDefaultTable.insert([
+      {
+        id: `analytics-${record.id}`,
+        timestamp,
+        source: "consumer_non_default_db",
+        value: record.value * 2,
+      },
+    ]);
+  },
+  { version: "olap-insert-test" },
 );
 
 /** =======LifeCycle Management Tests========= */

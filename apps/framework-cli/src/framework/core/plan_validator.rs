@@ -126,6 +126,7 @@ mod tests {
             language_project_config: crate::project::LanguageProjectConfig::default(),
             project_location: PathBuf::from("/test"),
             is_production: false,
+            log_payloads: false,
             supported_old_versions: HashMap::new(),
             jwt: None,
             authentication: crate::project::AuthenticationConfig::default(),
@@ -134,6 +135,7 @@ mod tests {
             typescript_config: crate::project::TypescriptConfig::default(),
             source_dir: crate::project::default_source_dir(),
             docker_config: crate::project::DockerConfig::default(),
+            watcher_config: crate::cli::watcher::WatcherConfig::default(),
         }
     }
 

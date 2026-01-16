@@ -1,6 +1,10 @@
 {
   "name": "@514labs/design-system-base",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/514-labs/moosestack"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",

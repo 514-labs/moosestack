@@ -10,6 +10,10 @@ pub mod utilities;
 
 pub mod proto;
 
+#[cfg(test)]
+#[path = "../tests/test_utils.rs"]
+pub mod test_utils;
+
 use std::process::ExitCode;
 
 use clap::Parser;

@@ -6,7 +6,7 @@
 use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
 use sqlparser::ast::{
     Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, SetExpr, Statement, TableFactor,
-    TableWithJoins, VisitMut, VisitorMut,
+    TableWithJoins, ToSql, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
@@ -542,23 +542,23 @@ impl<'a> VisitorMut for Normalizer<'a> {
     }
 
     fn pre_visit_statement(&mut self, statement: &mut Statement) -> ControlFlow<Self::Break> {
-        if let Statement::CreateView { name, to, .. } = statement {
+        if let Statement::CreateView(create_view) = statement {
             // Strip default database prefix from view name
-            if name.0.len() == 2 {
-                if let ObjectNamePart::Identifier(ident) = &name.0[0] {
+            if create_view.name.0.len() == 2 {
+                if let ObjectNamePart::Identifier(ident) = &create_view.name.0[0] {
                     if ident.value.eq_ignore_ascii_case(self.default_database) {
-                        name.0.remove(0);
+                        create_view.name.0.remove(0);
                     }
                 }
             }
 
-            for part in &mut name.0 {
+            for part in &mut create_view.name.0 {
                 if let ObjectNamePart::Identifier(ident) = part {
                     ident.quote_style = None;
                     ident.value = ident.value.replace('`', "");
                 }
             }
-            if let Some(to_name) = to {
+            if let Some(to_name) = &mut create_view.to {
                 // Strip default database prefix from TO table
                 if to_name.0.len() == 2 {
                     if let ObjectNamePart::Identifier(ident) = &to_name.0[0] {
@@ -610,8 +610,8 @@ pub fn normalize_sql_for_comparison(sql: &str, default_database: &str) -> String
                 let _ = statement.visit(&mut normalizer);
             }
 
-            // 3. Convert back to string
-            ast[0].to_string()
+            // 3. Convert back to string using dialect-aware serialization
+            ast[0].to_sql(&dialect)
         }
         Err(_e) => {
             // Fallback if parsing fails: rudimentary string replacement
@@ -638,37 +638,31 @@ pub fn parse_create_materialized_view(
     }
 
     match &ast[0] {
-        Statement::CreateView {
-            name,
-            materialized,
-            to,
-            query,
-            if_not_exists,
-            ..
-        } => {
+        Statement::CreateView(create_view) => {
             // Must be a materialized view
-            if !materialized {
+            if !create_view.materialized {
                 return Err(SqlParseError::NotMaterializedView);
             }
 
             // ClickHouse materialized views must have a TO clause
-            let to_table = to
+            let to_table = create_view
+                .to
                 .as_ref()
                 .ok_or_else(|| SqlParseError::MissingField("TO clause".to_string()))?;
 
             // Extract view name (just the view name, not database.view)
-            let view_name_str = object_name_to_string(name);
+            let view_name_str = object_name_to_string(&create_view.name);
             let (_view_database, view_name) = split_qualified_name(&view_name_str);
 
             // Extract target table and database from TO clause
             let to_table_str = object_name_to_string(to_table);
             let (target_database, target_table) = split_qualified_name(&to_table_str);
 
-            // Format the SELECT statement
-            let select_statement = format!("{}", query);
+            // Format the SELECT statement using dialect-aware serialization
+            let select_statement = create_view.query.to_sql(&dialect);
 
             // Extract source tables from the query
-            let source_tables = extract_source_tables_from_query_ast(query)?;
+            let source_tables = extract_source_tables_from_query_ast(&create_view.query)?;
 
             Ok(MaterializedViewStatement {
                 view_name,
@@ -676,7 +670,7 @@ pub fn parse_create_materialized_view(
                 target_table,
                 select_statement,
                 source_tables,
-                if_not_exists: *if_not_exists,
+                if_not_exists: create_view.if_not_exists,
                 populate: false, // sqlparser doesn't support POPULATE, always false
             })
         }
@@ -694,6 +688,7 @@ pub fn parse_insert_select(sql: &str) -> Result<InsertSelectStatement, SqlParseE
 
     match &ast[0] {
         Statement::Insert(insert) => {
+            // TableObject doesn't implement ToSql, use Display (it's just an identifier)
             let table_name_str = format!("{}", insert.table);
             let (target_database, target_table) = split_qualified_name(&table_name_str);
 
@@ -705,7 +700,8 @@ pub fn parse_insert_select(sql: &str) -> Result<InsertSelectStatement, SqlParseE
 
             if let Some(query) = &insert.source {
                 let source_tables = extract_source_tables_from_query_ast(query)?;
-                let select_statement = format!("{}", query);
+                // Query implements ToSql for dialect-aware serialization
+                let select_statement = query.to_sql(&dialect);
 
                 Ok(InsertSelectStatement {
                     target_database,
@@ -733,6 +729,7 @@ pub fn is_materialized_view(sql: &str) -> bool {
 
 fn object_name_to_string(name: &ObjectName) -> String {
     // Use Display trait and strip backticks
+    // Note: ObjectName is just an identifier, not a type, so Display is appropriate
     format!("{}", name).replace('`', "")
 }
 
@@ -2158,5 +2155,205 @@ pub mod tests {
             "Should parse as ReplicatedReplacingMergeTree, got {:?}",
             engine
         );
+    }
+
+    // ==================== SQL Idempotency Tests ====================
+    // These tests verify that SQL round-trip (parse -> serialize -> parse)
+    // produces consistent results with dialect-aware serialization.
+
+    #[test]
+    fn test_clickhouse_types_idempotency() {
+        use sqlparser::ast::ToSql;
+
+        // Verify String, Int64, DateTime, etc. are preserved as PascalCase
+        let sql = "CREATE TABLE test (id Int64, name String, created DateTime)";
+        let dialect = ClickHouseDialect {};
+
+        // First parse
+        let ast1 = Parser::parse_sql(&dialect, sql).unwrap();
+
+        // Serialize with dialect-aware ToSql
+        let serialized = ast1[0].to_sql(&dialect);
+
+        // Should preserve PascalCase types
+        assert!(
+            serialized.contains("Int64"),
+            "Int64 should be preserved. Got: {}",
+            serialized
+        );
+        assert!(
+            serialized.contains("String"),
+            "String should be preserved. Got: {}",
+            serialized
+        );
+        assert!(
+            serialized.contains("DateTime"),
+            "DateTime should be preserved. Got: {}",
+            serialized
+        );
+
+        // Parse the serialized SQL
+        let ast2 = Parser::parse_sql(&dialect, &serialized).unwrap();
+
+        // Both ASTs should be equivalent
+        assert_eq!(
+            ast1, ast2,
+            "Round-trip parsing should produce identical AST"
+        );
+    }
+
+    #[test]
+    fn test_clickhouse_nested_types_idempotency() {
+        use sqlparser::ast::ToSql;
+
+        // Test complex nested structures like Array, Nullable
+        let sql = "CREATE TABLE test (tags Array(String), optional Nullable(Int64))";
+        let dialect = ClickHouseDialect {};
+
+        let ast1 = Parser::parse_sql(&dialect, sql).unwrap();
+        let serialized = ast1[0].to_sql(&dialect);
+
+        // Verify nested type preservation
+        assert!(
+            serialized.contains("Array(String)"),
+            "Array(String) should be preserved. Got: {}",
+            serialized
+        );
+        assert!(
+            serialized.contains("Nullable(Int64)"),
+            "Nullable(Int64) should be preserved. Got: {}",
+            serialized
+        );
+
+        let ast2 = Parser::parse_sql(&dialect, &serialized).unwrap();
+        assert_eq!(
+            ast1, ast2,
+            "Round-trip parsing should produce identical AST"
+        );
+    }
+
+    #[test]
+    fn test_materialized_view_idempotency() {
+        use sqlparser::ast::ToSql;
+
+        let sql = "CREATE MATERIALIZED VIEW mv TO target AS SELECT id, name FROM source";
+        let dialect = ClickHouseDialect {};
+
+        let ast1 = Parser::parse_sql(&dialect, sql).unwrap();
+        let serialized = ast1[0].to_sql(&dialect);
+        let ast2 = Parser::parse_sql(&dialect, &serialized).unwrap();
+
+        assert_eq!(
+            ast1, ast2,
+            "Round-trip parsing should produce identical AST"
+        );
+    }
+
+    #[test]
+    fn test_clickhouse_create_table_full_idempotency() {
+        use sqlparser::ast::ToSql;
+
+        // Test with realistic ClickHouse types
+        let sql = "CREATE TABLE local.TestTable (
+            id String,
+            timestamp DateTime,
+            count Int64,
+            value Float64,
+            tags Array(String)
+        ) ENGINE = MergeTree PRIMARY KEY id ORDER BY id";
+
+        let dialect = ClickHouseDialect {};
+        let ast1 = Parser::parse_sql(&dialect, sql).unwrap();
+        let serialized = ast1[0].to_sql(&dialect);
+
+        // All ClickHouse types should be preserved
+        assert!(
+            serialized.contains("String"),
+            "String should be preserved. Got: {}",
+            serialized
+        );
+        assert!(
+            serialized.contains("DateTime"),
+            "DateTime should be preserved. Got: {}",
+            serialized
+        );
+        assert!(
+            serialized.contains("Float64"),
+            "Float64 should be preserved. Got: {}",
+            serialized
+        );
+        assert!(
+            serialized.contains("Int64"),
+            "Int64 should be preserved. Got: {}",
+            serialized
+        );
+        assert!(
+            serialized.contains("Array(String)"),
+            "Array(String) should be preserved. Got: {}",
+            serialized
+        );
+
+        // Round-trip should work
+        let ast2 = Parser::parse_sql(&dialect, &serialized).unwrap();
+        assert_eq!(
+            ast1, ast2,
+            "Round-trip parsing should produce identical AST"
+        );
+    }
+
+    #[test]
+    fn test_to_sql_vs_display_clickhouse_types() {
+        use sqlparser::ast::ToSql;
+
+        // This test verifies that ToSql actually fixes the issue
+        // Display uppercases types, ToSql preserves ClickHouse PascalCase
+        let sql = "CREATE TABLE test (id Int64, name String)";
+        let dialect = ClickHouseDialect {};
+
+        let ast = Parser::parse_sql(&dialect, sql).unwrap();
+        let statement = &ast[0];
+
+        // Old way (Display) - uppercases types
+        let display_output = format!("{}", statement);
+
+        // New way (ToSql) - preserves ClickHouse PascalCase
+        let to_sql_output = statement.to_sql(&dialect);
+
+        assert!(
+            to_sql_output.contains("Int64"),
+            "ToSql should preserve Int64 casing. Got: {}",
+            to_sql_output
+        );
+        assert!(
+            to_sql_output.contains("String"),
+            "ToSql should preserve String casing. Got: {}",
+            to_sql_output
+        );
+
+        // The outputs should be different (Display uppercases, ToSql preserves)
+        // Note: If this assertion fails, it means the patched sqlparser is working correctly
+        // and Display was also fixed to preserve casing (which would be even better!)
+        if display_output != to_sql_output {
+            // Expected: Display uppercases types
+            assert!(
+                display_output.contains("INT64")
+                    || display_output.contains("BIGINT")
+                    || !display_output.contains("Int64"),
+                "Display should uppercase types. Got: {}",
+                display_output
+            );
+        }
+    }
+
+    #[test]
+    fn test_normalize_sql_with_to_sql() {
+        // Ensure normalize_sql_for_comparison still works with ToSql
+        let user_sql = "CREATE VIEW `MyView` AS SELECT `col` FROM `MyTable`";
+        let ch_sql = "CREATE VIEW local.MyView AS SELECT col FROM local.MyTable";
+
+        let normalized_user = normalize_sql_for_comparison(user_sql, "local");
+        let normalized_ch = normalize_sql_for_comparison(ch_sql, "local");
+
+        assert_eq!(normalized_user, normalized_ch);
     }
 }

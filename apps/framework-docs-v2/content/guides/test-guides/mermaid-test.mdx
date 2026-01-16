@@ -1,0 +1,163 @@
+---
+title: Mermaid Diagram Test
+description: Test guide for mermaid diagram support in documentation
+---
+
+# Mermaid Diagram Test Guide
+
+This guide tests various mermaid diagram types to ensure proper rendering support.
+
+## Flowchart Example
+
+This example uses `maxHeight="800px"` to limit vertical size.
+
+```mermaid maxHeight="800px"
+graph TD
+    A[Start] --> B{Is it working?}
+    B -->|Yes| C[Great!]
+    B -->|No| D[Debug]
+    D --> B
+    C --> E[End]
+```
+
+## Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant MooseStack
+    participant ClickHouse
+    participant Redpanda
+
+    User->>MooseStack: Send Data
+    MooseStack->>Redpanda: Publish Event
+    Redpanda->>MooseStack: Consume Event
+    MooseStack->>ClickHouse: Store Data
+    ClickHouse-->>User: Query Results
+```
+
+## Class Diagram
+
+This example uses `maxHeight="400px"` to limit vertical size.
+
+```mermaid maxHeight="400px"
+classDiagram
+    class DataModel {
+        +String id
+        +DateTime timestamp
+        +validate()
+    }
+    class Stream {
+        +String name
+        +publish()
+        +consume()
+    }
+    class Workflow {
+        +String name
+        +execute()
+    }
+
+    DataModel --> Stream
+    Stream --> Workflow
+```
+
+## State Diagram
+
+This example uses `maxHeight="350px"` to limit vertical size.
+
+```mermaid maxHeight="350px"
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Processing: Start
+    Processing --> Success: Complete
+    Processing --> Failed: Error
+    Failed --> Processing: Retry
+    Success --> [*]
+    Failed --> [*]: Max Retries
+```
+
+## Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    USER ||--o{ ORDER : places
+    ORDER ||--|{ ORDER_ITEM : contains
+    PRODUCT ||--o{ ORDER_ITEM : "ordered in"
+
+    USER {
+        string id
+        string email
+        datetime created_at
+    }
+    ORDER {
+        string id
+        string user_id
+        datetime order_date
+    }
+    PRODUCT {
+        string id
+        string name
+        decimal price
+    }
+```
+
+## Gantt Chart
+
+```mermaid
+gantt
+    title MooseStack Project Timeline
+    dateFormat  YYYY-MM-DD
+    section Setup
+    Install MooseStack    :a1, 2024-01-01, 1d
+    Configure Services    :a2, after a1, 2d
+    section Development
+    Build Data Models     :a3, after a2, 3d
+    Create Workflows      :a4, after a3, 2d
+    section Testing
+    Integration Tests     :a5, after a4, 2d
+    Deploy                :a6, after a5, 1d
+```
+
+## Git Graph
+
+```mermaid
+gitGraph
+    commit
+    commit
+    branch feature
+    checkout feature
+    commit
+    commit
+    checkout main
+    merge feature
+    commit
+    commit
+```
+
+## Pie Chart
+
+```mermaid
+pie title Data Sources Distribution
+    "API Endpoints" : 45
+    "Webhooks" : 25
+    "Streaming" : 20
+    "Batch Import" : 10
+```
+
+## Architecture Diagram
+
+```mermaid
+graph LR
+    A[Client App] --> B[API Gateway]
+    B --> C[MooseStack]
+    C --> D[Redpanda]
+    C --> E[ClickHouse]
+    C --> F[Temporal]
+    D --> C
+    E --> G[Analytics Dashboard]
+    F --> H[Background Jobs]
+```
+
+## Next Steps
+
+This guide demonstrates various mermaid diagram types. If all diagrams render correctly, mermaid support is working properly.

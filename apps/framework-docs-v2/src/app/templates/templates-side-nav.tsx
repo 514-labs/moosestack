@@ -44,9 +44,13 @@ export function TemplatesSideNav() {
           c === "starter" || c === "framework" || c === "example",
       );
   }, [searchParams]);
+  const searchQuery = searchParams.get("q") || "";
 
   const hasActiveFilters =
-    typeFilter !== null || languageFilter !== null || categoryFilter.length > 0;
+    typeFilter !== null ||
+    languageFilter !== null ||
+    categoryFilter.length > 0 ||
+    searchQuery.trim() !== "";
 
   // Update URL params when filters change
   const updateFilters = React.useCallback(
@@ -54,6 +58,7 @@ export function TemplatesSideNav() {
       type?: TypeFilter;
       language?: LanguageFilter;
       category?: CategoryFilter;
+      q?: string;
     }) => {
       const params = new URLSearchParams(searchParams.toString());
 
@@ -81,13 +86,21 @@ export function TemplatesSideNav() {
         }
       }
 
+      if (updates.q !== undefined) {
+        if (updates.q === "") {
+          params.delete("q");
+        } else {
+          params.set("q", updates.q);
+        }
+      }
+
       router.push(`${pathname}?${params.toString()}`);
     },
     [router, pathname, searchParams],
   );
 
   const clearFilters = () => {
-    updateFilters({ type: null, language: null, category: [] });
+    updateFilters({ type: null, language: null, category: [], q: "" });
   };
 
   return (

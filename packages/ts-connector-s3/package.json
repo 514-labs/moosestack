@@ -1,6 +1,10 @@
 {
   "name": "@514labs/moose-connector-s3",
   "version": "0.0.2",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/514-labs/moosestack"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
