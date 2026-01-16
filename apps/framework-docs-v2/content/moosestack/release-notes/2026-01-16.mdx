@@ -63,18 +63,26 @@ This release brings major documentation improvements with new guides, Mermaid di
 
   This example shows how to configure file watcher ignore patterns in moose.config.toml to prevent unnecessary hot-reloads during development. The patterns exclude generated SDK files, build artifacts, and temporary files that would otherwise trigger infinite rebuild loops.
 
+  PR: [#3314](https://github.com/514-labs/moosestack/pull/3314)
+
 - **New guides section with comprehensive tutorials and improved layout**
   Introduced a new Guides section in the documentation with a redesigned layout, improved guide cards showing descriptions, and community integration with a direct link to join the Slack community. The section includes scaffolding for 5 priority guides with a visibility system (draft/beta/public states) and feature flags for controlled rollout. Multiple comprehensive guides are now available: a complete 3-4 hour data warehouse tutorial for building e-commerce analytics warehouses from scratch with multiple data sources and dimensional modeling; a full "Chat in Your App" guide with implementation strategies, use cases, and a complete tutorial from S3 data to working chat application with Next.js integration patterns; a performant dashboards guide covering dashboard performance optimization, local development setup, CDC configuration for MSSQL, and AI copilot integration; and a Next.js integration guide showing how to embed MooseStack into existing Next.js apps with type-safe analytics queries in Server Components and Server Actions. Enhanced documentation guides with interactive file tree components replacing plain text directory structures, improved code block formatting with proper shell syntax highlighting, and better visual presentation of project structures. Updated the guides page description to better explain that guides provide comprehensive walkthroughs for common application use cases using realtime analytical infrastructure. Fixed a rendering issue in the performant dashboards documentation guide caused by incorrect comment syntax.
 
   📸 _[Screenshot needed: The guides section has been redesigned with a new layout, improved guide cards showing descriptions, and added community integration with a direct link to join the Slack community. Multiple comprehensive guides are now available covering data warehouses, chat interfaces, dashboard performance, and Next.js integration.]_
+
+  PR: [#3326](https://github.com/514-labs/moosestack/pull/3326), [#3324](https://github.com/514-labs/moosestack/pull/3324), [#3323](https://github.com/514-labs/moosestack/pull/3323), [#3322](https://github.com/514-labs/moosestack/pull/3322), [#3316](https://github.com/514-labs/moosestack/pull/3316), [#3309](https://github.com/514-labs/moosestack/pull/3309), [#3305](https://github.com/514-labs/moosestack/pull/3305), [#3313](https://github.com/514-labs/moosestack/pull/3313), [#3304](https://github.com/514-labs/moosestack/pull/3304)
 
 - **Add CDP Analytics example application**
   Added a complete Customer Data Platform (CDP) example application that demonstrates building analytics dashboards with AI-powered data exploration. The example includes a full-stack application with email campaign funnel tracking, customer journey visualization, real-time data ingestion patterns, and an AI chat interface for natural language data queries. This provides users with a comprehensive reference implementation for building production-ready analytics applications with MooseStack.
 
   📸 _[Screenshot needed: Added a complete Customer Data Platform (CDP) example application that demonstrates building analytics dashboards with AI-powered data exploration. The example includes a full-stack application with email campaign funnel tracking, customer journey visualization, real-time data ingestion patterns, and an AI chat interface for natural language data queries. This provides users with a comprehensive reference implementation for building production-ready analytics applications with MooseStack.]_
 
+  PR: [#3312](https://github.com/514-labs/moosestack/pull/3312)
+
 - **Added one-click deployment for TypeScript MCP template**
   The TypeScript MCP template now supports one-click deployment through Boreal, allowing users to quickly deploy AI chat applications that can query their data. The deployment automatically configures API keys and authentication tokens for seamless setup.
+
+  PR: [#3300](https://github.com/514-labs/moosestack/pull/3300)
 
 - **Add structured JSON logging with span support for better observability**
   Added new structured logging infrastructure that outputs JSON logs with automatic span field inclusion. Users can enable this with the MOOSE_LOGGER\_\_STRUCTURED_LOGS environment variable to get better observability and filtering capabilities. This includes predefined constants for logging contexts (runtime, boot, system) and resource types (streams, tables, transforms, etc.) that developers can use when instrumenting their code.
@@ -136,6 +144,8 @@ This release brings major documentation improvements with new guides, Mermaid di
   ```
 
   Shows how to use the new structured JSON logging with span support in MooseStack data pipeline functions. The #[instrument] attribute automatically includes context and resource metadata in JSON logs when MOOSE_LOGGER\_\_STRUCTURED_LOGS=true is set.
+
+  PR: [#3187](https://github.com/514-labs/moosestack/pull/3187), [#3186](https://github.com/514-labs/moosestack/pull/3186)
 
 - **Add View support to SQL interpolator**
   Users can now use View objects in SQL template literals alongside existing OlapTable and Column support. This enables Views to be referenced directly in SQL queries using the sql`` template syntax.
@@ -199,6 +209,8 @@ This release brings major documentation improvements with new guides, Mermaid di
   ```
 
   This example shows how to use View objects directly in SQL template literals alongside existing OlapTable support. Views can now be interpolated into SQL queries using the sql`` syntax, enabling seamless composition of complex queries that reference both tables and views.
+
+  PR: [#3177](https://github.com/514-labs/moosestack/pull/3177)
 
 - **Add workflow task completion callbacks with onComplete event handling**
   Workflow tasks can now define onComplete callbacks that execute after a task finishes successfully. This enables users to chain follow-up actions like sending notifications, triggering other workflows, or updating dashboards when workflow tasks complete. The feature includes proper error handling with configurable retries and timeouts for completion callbacks.
@@ -287,14 +299,16 @@ This release brings major documentation improvements with new guides, Mermaid di
 
   This example shows how to use onComplete callbacks in MooseStack workflows to automatically send notifications and update dashboards when a data processing task finishes successfully. The callback includes error handling with retries and timeouts.
 
+  PR: [#3168](https://github.com/514-labs/moosestack/pull/3168)
+
 ### Improvements
 
-- Improved documentation for getting started with Moose development: Added clearer instructions for installing dependencies before running `moose dev`, including language-specific commands for TypeScript (npm install) and Python (pip install -r requirements.txt). Also added guidance for running Moose in the background using `nohup moose dev &` for AI assistants or when needing to use the same terminal for other commands.
-- Improved MCP documentation formatting and organization: Enhanced the MCP server documentation with better formatting, clearer structure, and improved readability. Reorganized tool descriptions to start with get_infra_map as the recommended first step, and standardized code block formatting throughout the documentation.
+- Improved documentation for getting started with Moose development: Added clearer instructions for installing dependencies before running `moose dev`, including language-specific commands for TypeScript (npm install) and Python (pip install -r requirements.txt). Also added guidance for running Moose in the background using `nohup moose dev &` for AI assistants or when needing to use the same terminal for other commands. PR [#3175](https://github.com/514-labs/moosestack/pull/3175), [#3165](https://github.com/514-labs/moosestack/pull/3165), [#3153](https://github.com/514-labs/moosestack/pull/3153)
+- Improved MCP documentation formatting and organization: Enhanced the MCP server documentation with better formatting, clearer structure, and improved readability. Reorganized tool descriptions to start with get_infra_map as the recommended first step, and standardized code block formatting throughout the documentation. PR [#3174](https://github.com/514-labs/moosestack/pull/3174)
 
 ### Bug Fixes
 
-- Fix `moose peek` command to correctly find tables and topics by name: Fixed a bug where `moose peek` would fail to find tables and topics when their internal IDs differed from their display names. The command now properly searches by the actual table/topic names and provides better error messages listing available options when a name isn't found. Also fixed database resolution to respect explicit table databases instead of always using the project default.
+- Fix `moose peek` command to correctly find tables and topics by name: Fixed a bug where `moose peek` would fail to find tables and topics when their internal IDs differed from their display names. The command now properly searches by the actual table/topic names and provides better error messages listing available options when a name isn't found. Also fixed database resolution to respect explicit table databases instead of always using the project default. PR [#3184](https://github.com/514-labs/moosestack/pull/3184)
 
 ## Boreal
 
