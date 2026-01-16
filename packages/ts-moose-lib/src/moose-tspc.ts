@@ -9,7 +9,7 @@
  * This script creates a temporary tsconfig that extends the user's config and adds
  * the required moose compiler plugins, then runs tspc to compile with transforms.
  */
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { existsSync, writeFileSync, unlinkSync } from "fs";
 import path from "path";
 import {
@@ -72,8 +72,19 @@ try {
   // --rootDir . preserves directory structure (e.g., app/index.ts -> outDir/app/index.js)
   // Note: skipLibCheck and noEmitOnError are in compilerOptions
   try {
-    execSync(
-      `npx tspc -p ${tempTsconfigPath} --outDir ${outDir} --rootDir . --sourceMap --inlineSources`,
+    execFileSync(
+      "npx",
+      [
+        "tspc",
+        "-p",
+        tempTsconfigPath,
+        "--outDir",
+        outDir,
+        "--rootDir",
+        ".",
+        "--sourceMap",
+        "--inlineSources",
+      ],
       {
         stdio: "inherit",
         cwd: projectRoot,
