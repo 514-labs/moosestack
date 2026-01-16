@@ -58,6 +58,7 @@ export interface NavPage {
   type: "page";
   slug: string;
   title: string;
+  description?: string; // Optional description for guides
   languages: Language[];
   icon?: TablerIcon;
   children?: NavItem[]; // Allow NavItem[] to support labels/separators within children
@@ -1205,6 +1206,8 @@ const guidesNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "guides/performant-dashboards",
     title: "Improving the Performance of Your Dashboards",
+    description:
+      "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
     icon: IconChartLine,
     languages: ["typescript", "python"],
     status: "beta",
@@ -1212,10 +1215,11 @@ const guidesNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "guides/chat-in-your-app",
-    title: "Chat in Your App",
+    title: "Chat in your app",
+    description:
+      "Build a data-aware chat on top of your ClickHouse database with Next.js and MooseStack.",
     icon: IconMessageChatbot,
     languages: ["typescript", "python"],
-    status: "beta",
   },
   {
     type: "page",
@@ -1663,6 +1667,7 @@ export function hasVisibleGuides(
 export interface SerializableGuideItem {
   slug: string;
   title: string;
+  description?: string;
   iconName?: string;
 }
 
@@ -1741,6 +1746,7 @@ export function getVisibleGuideSections(flags: {
       topLevelGuides.push({
         slug: item.slug,
         title: item.title,
+        description: item.description,
         iconName: getIconName(item.icon),
       });
     }
@@ -1766,6 +1772,7 @@ export function getVisibleGuideSections(flags: {
         visibleItems.push({
           slug: subItem.slug,
           title: subItem.title,
+          description: subItem.description,
           iconName: getIconName(subItem.icon),
         });
       }
