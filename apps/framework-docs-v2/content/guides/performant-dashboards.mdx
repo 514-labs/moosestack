@@ -3,6 +3,8 @@ title: Improving the Performance of Your Dashboards
 description: Learn how to build blazing-fast dashboards using MooseStack and ClickHouse
 ---
 
+import { FileTree } from "@/components/mdx";
+
 # Improving the Performance of Your Dashboards
 
 This guide assumes that you have a dashboard or report up and running, and that you wish to improve the performance of your dashboard by leveraging OLAP best practices. It will guide you through:
@@ -154,24 +156,26 @@ pnpm install
 
 Your monorepo will have the following structure:
 
-```
-your-monorepo/
-├── app/                           # Your Next.js app directory (or similar)
-├── components/                    # Your app components
-├── moosestack/                    # MooseStack Project ← NEW
-│   ├── src/                       # MooseStack source code
-│   │   ├── cdc/                   # CDC pipeline code
-│   │   ├── models/                # Data Models
-│   │   └── queries/               # Query Handlers
-│   ├── moose.config.toml          # MooseStack configuration
-│   ├── package.json               # MooseStack package config
-│   └── tsconfig.json              # TypeScript config for MooseStack
-├── public/                        # Static assets
-├── pnpm-workspace.yaml            # PNPM workspace config
-├── package.json                   # Root package.json
-└── pnpm-lock.yaml                 # Lockfile
-
-```
+<FileTree>
+  <FileTree.Folder name="your-monorepo">
+    <FileTree.Folder name="app" />
+    <FileTree.Folder name="components" />
+    <FileTree.Folder name="moosestack">
+      <FileTree.Folder name="src">
+        <FileTree.Folder name="cdc" />
+        <FileTree.Folder name="models" />
+        <FileTree.Folder name="queries" />
+      </FileTree.Folder>
+      <FileTree.File name="moose.config.toml" />
+      <FileTree.File name="package.json" />
+      <FileTree.File name="tsconfig.json" />
+    </FileTree.Folder>
+    <FileTree.Folder name="public" />
+    <FileTree.File name="pnpm-workspace.yaml" />
+    <FileTree.File name="package.json" />
+    <FileTree.File name="pnpm-lock.yaml" />
+  </FileTree.Folder>
+</FileTree>
 
 ## Run your Moose Development Server
 
