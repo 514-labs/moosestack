@@ -10,7 +10,7 @@ use crate::cli::routines::seed_data;
 pub mod settings;
 pub mod watcher;
 use super::metrics::Metrics;
-use crate::utilities::docker::DockerClient;
+use crate::utilities::{constants, docker::DockerClient};
 use clap::Parser;
 use commands::{
     Commands, DbCommands, GenerateCommand, KafkaArgs, KafkaCommands, TemplateSubCommands,
@@ -127,7 +127,7 @@ pub fn prompt_user(
 }
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
+#[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
