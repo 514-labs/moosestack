@@ -2,7 +2,7 @@
   "name": "@514labs/moose-lib",
   "version": "0.0.2",
   "engines": {
-    "node": ">=20 <=24"
+    "node": ">=20 <25"
   },
   "repository": {
     "type": "git",

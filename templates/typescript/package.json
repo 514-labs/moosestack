@@ -2,7 +2,7 @@
   "name": "ts",
   "version": "0.0",
   "engines": {
-    "node": ">=20 <=24"
+    "node": ">=20 <25"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

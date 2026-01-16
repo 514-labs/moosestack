@@ -2,7 +2,7 @@
   "name": "ts-migrate",
   "version": "0.0",
   "engines": {
-    "node": ">=20 <=24"
+    "node": ">=20 <25"
   },
   "scripts": {
     "moose": "moose-cli",

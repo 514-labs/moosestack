@@ -1,7 +1,7 @@
 {
   "private": true,
   "engines": {
-    "node": ">=20 <=24"
+    "node": ">=20 <25"
   },
   "scripts": {
     "build": "turbo build",
