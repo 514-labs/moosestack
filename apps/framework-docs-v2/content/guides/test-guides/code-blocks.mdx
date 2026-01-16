@@ -88,6 +88,29 @@ npm install -g @514labs/moose-cli
 moose --version
 ```
 
+## Long Shell Commands (Testing Horizontal Scrolling)
+
+```shell
+docker run -d --name my-container --env DATABASE_URL=postgresql://user:password@localhost:5432/mydb --env API_KEY=sk_test_1234567890abcdefghijklmnopqrstuvwxyz --env NODE_ENV=production -p 8080:8080 -v /host/path/to/data:/container/data my-image:latest
+```
+
+```bash
+curl -X POST https://api.example.com/v1/users/create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ" \
+  -d '{"name":"John Doe","email":"john@example.com","role":"admin"}'
+```
+
+```shell
+# Complex command with pipes and redirects
+cat /var/log/application.log | grep "ERROR" | awk '{print $1, $2, $NF}' | sort | uniq -c | sort -rn | head -20 > error-summary.txt
+```
+
+```bash
+# Long NPM install with specific versions
+npm install @typescript-eslint/parser@5.62.0 @typescript-eslint/eslint-plugin@5.62.0 eslint-config-next@14.0.4 eslint-plugin-react@7.33.2 eslint-plugin-react-hooks@4.6.0 --save-dev
+```
+
 ## YAML Configuration
 
 ```yaml
