@@ -192,6 +192,10 @@ A successful response returns `{"success": true}`.
 
 Verify data landed by querying ClickHouse directly:
 
+<Note>
+The credentials `panda`/`pandapass` are local development defaults configured by `moose dev`. Never use these in production—configure secure credentials in your deployment environment.
+</Note>
+
 ```bash
 clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
   --query "SELECT * FROM local.sales_SalesTransaction"
