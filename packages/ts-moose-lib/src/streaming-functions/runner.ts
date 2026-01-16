@@ -38,7 +38,11 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
-import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -595,12 +599,10 @@ async function loadStreamingFunction(functionFilePath: string) {
       // Replace source directory path with compiled directory path
       // Example: /app/path/app/functions/x.ts -> /app/path/.moose/compiled/app/functions/x.js
       const sourceDirPattern = new RegExp(`/${sourceDir}/`);
-      actualPath = functionFilePath.replace(
-        sourceDirPattern,
-        `/.moose/compiled/${sourceDir}/`,
-      );
+      actualPath = functionFilePath
+        .replace(sourceDirPattern, `/.moose/compiled/${sourceDir}/`)
+        .replace(/\.ts$/, ".js");
       // Use dynamic loader that handles both CJS and ESM
-      // Keep the extension for ESM imports
       streamingFunctionImport = await loadModule(actualPath);
     } else {
       // In development mode, remove extension for require()
@@ -721,7 +723,9 @@ const startConsumer = async (
     streamingFunctions = result.functions;
     fieldMutations = result.fieldMutations;
   } else {
-    streamingFunctions = [[await loadStreamingFunction(args.functionFilePath), {}]];
+    streamingFunctions = [
+      [await loadStreamingFunction(args.functionFilePath), {}],
+    ];
     fieldMutations = undefined;
   }
 

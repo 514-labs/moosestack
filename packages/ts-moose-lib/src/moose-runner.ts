@@ -65,16 +65,16 @@ program
 program
   .command("dmv2-serializer")
   .description("Load DMv2 index")
-  .action(() => {
-    dumpMooseInternal();
+  .action(async () => {
+    await dumpMooseInternal();
   });
 
 program
   .command("export-serializer")
   .description("Run export serializer")
   .argument("<target-model>", "Target model to serialize")
-  .action((targetModel) => {
-    runExportSerializer(targetModel);
+  .action(async (targetModel) => {
+    await runExportSerializer(targetModel);
   });
 
 program
@@ -222,8 +222,8 @@ program
   .command("consumption-type-serializer")
   .description("Run consumption type serializer")
   .argument("<target-model>", "Target model to serialize")
-  .action((targetModel) => {
-    runApiTypeSerializer(targetModel);
+  .action(async (targetModel) => {
+    await runApiTypeSerializer(targetModel);
   });
 
 program
