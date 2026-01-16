@@ -65,6 +65,30 @@ describe("Module Compilation", function () {
         "npm",
         { logger: testLogger },
       );
+
+      // Add actual TypeScript code with imports/exports to verify module format
+      // The template is empty, so we need to add code that will produce module patterns
+      const utilsTs = `
+export function greet(name: string): string {
+  return \`Hello, \${name}!\`;
+}
+
+export const VERSION = "1.0.0";
+`;
+      fs.writeFileSync(path.join(projectDir, "app", "utils.ts"), utilsTs);
+
+      const indexTs = `
+import { greet, VERSION } from "./utils";
+
+export { greet, VERSION };
+
+export function main(): void {
+  console.log(greet("World"));
+  console.log("Version:", VERSION);
+}
+`;
+      fs.writeFileSync(path.join(projectDir, "app", "index.ts"), indexTs);
+      testLogger.info("Added TypeScript files with imports/exports");
     });
 
     after(function () {
@@ -133,6 +157,30 @@ describe("Module Compilation", function () {
       pkg.type = "module";
       fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
       testLogger.info("Updated package.json with type: module");
+
+      // Add actual TypeScript code with imports/exports to verify module format
+      // The template is empty, so we need to add code that will produce module patterns
+      const utilsTs = `
+export function greet(name: string): string {
+  return \`Hello, \${name}!\`;
+}
+
+export const VERSION = "1.0.0";
+`;
+      fs.writeFileSync(path.join(projectDir, "app", "utils.ts"), utilsTs);
+
+      const indexTs = `
+import { greet, VERSION } from "./utils";
+
+export { greet, VERSION };
+
+export function main(): void {
+  console.log(greet("World"));
+  console.log("Version:", VERSION);
+}
+`;
+      fs.writeFileSync(path.join(projectDir, "app", "index.ts"), indexTs);
+      testLogger.info("Added TypeScript files with imports/exports");
     });
 
     after(function () {
