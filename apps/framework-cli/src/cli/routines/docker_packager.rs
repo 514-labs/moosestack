@@ -135,6 +135,7 @@ fn generate_typescript_compile_step(source_dir: &str) -> String {
 
     format!(
         r#"# Run TypeScript type checking
+# Run typecheck before we compile since we skip typecheck there
 RUN npx moose check
 
 # Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
