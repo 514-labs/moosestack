@@ -4,7 +4,7 @@ import { cliLog, getClickhouseClient } from "../commons";
 import { Blocks } from "./helpers";
 import fs from "node:fs";
 import path from "node:path";
-import { getSourceDir, shouldUseCompiled } from "../compiler-config";
+import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
 
 const walkDir = (dir: string, fileExtension: string, fileList: string[]) => {
   const files = fs.readdirSync(dir);
@@ -130,11 +130,13 @@ export const runBlocks = async (config: BlocksConfig) => {
     }
   });
 
-  for (const path of blocksFiles) {
-    console.log(`Adding to queue: ${path}`);
+  for (const blockPath of blocksFiles) {
+    console.log(`Adding to queue: ${blockPath}`);
 
     try {
-      const blocks = require(path).default as Blocks;
+      // Use dynamic loader that handles both CJS and ESM
+      const blockModule = await loadModule(blockPath);
+      const blocks = blockModule.default as Blocks;
       queue.push({
         chClient,
         blocks,
@@ -143,7 +145,7 @@ export const runBlocks = async (config: BlocksConfig) => {
     } catch (err) {
       cliLog({
         action: "Blocks",
-        message: `Failed to import blocks from ${path}: ${err}`,
+        message: `Failed to import blocks from ${blockPath}: ${err}`,
         message_type: "Error",
       });
     }

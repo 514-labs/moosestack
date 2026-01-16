@@ -15,7 +15,10 @@ import path from "path";
 import {
   MOOSE_COMPILER_PLUGINS,
   MOOSE_COMPILER_OPTIONS,
+  detectModuleSystem,
+  getModuleOptions,
 } from "./compiler-config";
+import { rewriteImportExtensions } from "./commons";
 
 const outDir = process.argv[2] || ".moose/compiled";
 const projectRoot = process.cwd();
@@ -30,15 +33,12 @@ if (!existsSync(tsconfigPath)) {
 console.log(`Compiling TypeScript to ${outDir}...`);
 
 try {
-  // For pre-compiled builds, always use CommonJS to avoid ESM import path issues
-  // Node.js ESM requires explicit .js extensions which TypeScript doesn't add
-  // CommonJS is simpler and more reliable for Docker builds
-  const moduleOptions: Record<string, any> = {
-    module: "CommonJS",
-    moduleResolution: "Node",
-  };
+  // Auto-detect module system from package.json
+  const moduleSystem = detectModuleSystem(projectRoot);
+  const moduleOptions = getModuleOptions(moduleSystem);
+
   console.log(
-    "Using CommonJS module output for Docker build (avoids ESM import path issues)...",
+    `Using ${moduleSystem.toUpperCase()} module output (detected from package.json)...`,
   );
 
   // Create a temporary tsconfig that extends the user's config and adds plugins.
@@ -90,7 +90,7 @@ try {
         cwd: projectRoot,
       },
     );
-    console.log("Compilation complete.");
+    console.log("TypeScript compilation complete.");
   } catch (compileError: any) {
     // TypeScript might exit with non-zero code even when noEmitOnError: false
     // Check if output files were actually created
@@ -104,12 +104,23 @@ try {
       console.warn(
         "Type errors detected, but continuing with generated JavaScript.",
       );
-      console.log("Compilation complete (with type errors).");
+      console.log("TypeScript compilation complete (with type errors).");
     } else {
       console.error("Compilation failed - no output files generated.");
       throw compileError;
     }
   }
+
+  // Post-process ESM output to add .js extensions to relative imports
+  // Node.js ESM requires explicit extensions which TypeScript doesn't add
+  if (moduleSystem === "esm") {
+    console.log("Post-processing ESM imports to add .js extensions...");
+    const fullOutDir = path.join(projectRoot, outDir);
+    rewriteImportExtensions(fullOutDir);
+    console.log("ESM import rewriting complete.");
+  }
+
+  console.log("Compilation complete.");
 } catch (error) {
   console.error("Build process failed:", error);
   process.exit(1);

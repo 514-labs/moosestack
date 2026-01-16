@@ -1,4 +1,4 @@
-import { getSourceDir, shouldUseCompiled } from "./compiler-config";
+import { getSourceDir, shouldUseCompiled, loadModule } from "./compiler-config";
 
 export async function runExportSerializer(targetModel: string) {
   const useCompiled = shouldUseCompiled();
@@ -19,6 +19,7 @@ export async function runExportSerializer(targetModel: string) {
     modulePath = modulePath.replace(/\.ts$/, ".js");
   }
 
-  const exports_list = require(modulePath);
+  // Use dynamic loader that handles both CJS and ESM
+  const exports_list = await loadModule(modulePath);
   console.log(JSON.stringify(exports_list));
 }

@@ -41,7 +41,7 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
-import { getSourceDir, shouldUseCompiled } from "../compiler-config";
+import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
 
 /**
  * Recursively finds all TypeScript/JavaScript files in a directory
@@ -1252,7 +1252,7 @@ if (getMooseInternal() === undefined) {
  * and `end___MOOSE_STUFF___`) for easy extraction by the calling process.
  */
 export const dumpMooseInternal = async () => {
-  loadIndex();
+  await loadIndex();
 
   const infraMap = toInfraMap(getMooseInternal());
 
@@ -1267,7 +1267,7 @@ export const dumpMooseInternal = async () => {
   );
 };
 
-const loadIndex = () => {
+const loadIndex = async () => {
   // Check if we should use pre-compiled JavaScript.
   // This checks MOOSE_USE_COMPILED=true AND verifies artifacts exist,
   // providing automatic fallback to ts-node if compilation wasn't run.
@@ -1301,7 +1301,8 @@ const loadIndex = () => {
     const sourceDir = getSourceDir();
     if (useCompiled) {
       // In compiled mode, load pre-compiled JavaScript from .moose/compiled/
-      require(`${process.cwd()}/.moose/compiled/${sourceDir}/index.js`);
+      // Use dynamic loader that handles both CJS and ESM
+      await loadModule(`${process.cwd()}/.moose/compiled/${sourceDir}/index.js`);
     } else {
       // In development mode, load TypeScript via ts-node
       require(`${process.cwd()}/${sourceDir}/index.ts`);
@@ -1351,7 +1352,7 @@ const loadIndex = () => {
  *          and values are tuples containing: [handler function, config, source stream columns]
  */
 export const getStreamingFunctions = async () => {
-  loadIndex();
+  await loadIndex();
 
   const registry = getMooseInternal();
   const transformFunctions = new Map<
@@ -1397,7 +1398,7 @@ export const getStreamingFunctions = async () => {
  *          are their corresponding handler functions.
  */
 export const getApis = async () => {
-  loadIndex();
+  await loadIndex();
   const apiFunctions = new Map<
     string,
     (params: unknown, utils: ApiUtil) => unknown
@@ -1571,7 +1572,7 @@ export const dlqColumns: Column[] = [
 ];
 
 export const getWorkflows = async () => {
-  loadIndex();
+  await loadIndex();
 
   const registry = getMooseInternal();
   return registry.workflows;
@@ -1619,6 +1620,6 @@ export const getTaskForWorkflow = async (
 };
 
 export const getWebApps = async () => {
-  loadIndex();
+  await loadIndex();
   return getMooseInternal().webApps;
 };

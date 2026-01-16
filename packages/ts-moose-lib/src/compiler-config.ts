@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import path from "path";
 
 /**
@@ -94,4 +94,84 @@ export function shouldUseCompiled(
     );
   }
   return hasArtifacts;
+}
+
+/**
+ * Module system type for compilation output.
+ */
+export type ModuleSystem = "esm" | "cjs";
+
+/**
+ * Detects the module system from the user's package.json.
+ * Returns 'esm' if package.json has "type": "module", otherwise 'cjs'.
+ *
+ * @param projectRoot - Root directory containing package.json (defaults to cwd)
+ * @returns The detected module system
+ */
+export function detectModuleSystem(
+  projectRoot: string = process.cwd(),
+): ModuleSystem {
+  const pkgPath = path.join(projectRoot, "package.json");
+
+  if (existsSync(pkgPath)) {
+    try {
+      const pkgContent = readFileSync(pkgPath, "utf-8");
+      const pkg = JSON.parse(pkgContent);
+      if (pkg.type === "module") {
+        return "esm";
+      }
+    } catch {
+      // If parsing fails, default to CJS
+    }
+  }
+
+  return "cjs";
+}
+
+/**
+ * Get compiler module options based on detected module system.
+ *
+ * @param moduleSystem - The module system to get options for
+ * @returns Compiler options for module and moduleResolution
+ */
+export function getModuleOptions(moduleSystem: ModuleSystem): {
+  module: string;
+  moduleResolution: string;
+} {
+  if (moduleSystem === "esm") {
+    return {
+      module: "ES2022",
+      moduleResolution: "bundler",
+    };
+  }
+  return {
+    module: "CommonJS",
+    moduleResolution: "Node",
+  };
+}
+
+/**
+ * Dynamic module loader that works with both CJS and ESM.
+ * Uses detected module system to determine loading strategy.
+ *
+ * @param modulePath - Path to the module to load
+ * @param projectRoot - Root directory for module system detection
+ * @returns The loaded module
+ */
+export async function loadModule<T = any>(
+  modulePath: string,
+  projectRoot: string = process.cwd(),
+): Promise<T> {
+  const moduleSystem = detectModuleSystem(projectRoot);
+
+  if (moduleSystem === "esm") {
+    // Use dynamic import for ESM
+    // pathToFileURL is needed for Windows compatibility with absolute paths
+    const { pathToFileURL } = await import("url");
+    const fileUrl = pathToFileURL(modulePath).href;
+    return await import(fileUrl);
+  }
+
+  // Use require for CJS
+  return require(modulePath);
 }

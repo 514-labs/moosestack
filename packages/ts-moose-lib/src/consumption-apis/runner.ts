@@ -8,7 +8,7 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
-import { getSourceDir, shouldUseCompiled } from "../compiler-config";
+import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
 
 interface ClickhouseConfig {
   database: string;
@@ -209,7 +209,8 @@ const apiHandler = async (
           modulesCache.set(pathName, userFuncModule);
           console.log(`[API] | Executing API: ${apiName}`);
         } else {
-          userFuncModule = require(pathName);
+          // Use dynamic loader that handles both CJS and ESM
+          userFuncModule = await loadModule(pathName);
           modulesCache.set(pathName, userFuncModule);
         }
       }

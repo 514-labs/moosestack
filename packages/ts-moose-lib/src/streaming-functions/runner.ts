@@ -38,7 +38,7 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
-import { getSourceDir, shouldUseCompiled } from "../compiler-config";
+import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -582,7 +582,7 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
  * const result = await fn(data);
  * ```
  */
-function loadStreamingFunction(functionFilePath: string) {
+async function loadStreamingFunction(functionFilePath: string) {
   let streamingFunctionImport: { default: StreamingFunction };
   try {
     // Check if we should use compiled code
@@ -599,11 +599,14 @@ function loadStreamingFunction(functionFilePath: string) {
         sourceDirPattern,
         `/.moose/compiled/${sourceDir}/`,
       );
+      // Use dynamic loader that handles both CJS and ESM
+      // Keep the extension for ESM imports
+      streamingFunctionImport = await loadModule(actualPath);
+    } else {
+      // In development mode, remove extension for require()
+      const pathWithoutExt = actualPath.replace(/\.(ts|js)$/, "");
+      streamingFunctionImport = require(pathWithoutExt);
     }
-
-    // Remove the extension for require() (works for both .ts and .js)
-    const pathWithoutExt = actualPath.replace(/\.(ts|js)$/, "");
-    streamingFunctionImport = require(pathWithoutExt);
   } catch (e) {
     cliLog({ action: "Function", message: `${e}`, message_type: "Error" });
     throw e;
@@ -718,7 +721,7 @@ const startConsumer = async (
     streamingFunctions = result.functions;
     fieldMutations = result.fieldMutations;
   } else {
-    streamingFunctions = [[loadStreamingFunction(args.functionFilePath), {}]];
+    streamingFunctions = [[await loadStreamingFunction(args.functionFilePath), {}]];
     fieldMutations = undefined;
   }
 

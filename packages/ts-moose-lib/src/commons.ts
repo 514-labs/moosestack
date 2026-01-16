@@ -1,4 +1,12 @@
 import http from "http";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "fs";
+import nodePath from "path";
 import { createClient } from "@clickhouse/client";
 import { KafkaJS } from "@514labs/kafka-javascript";
 import { SASLOptions } from "@514labs/kafka-javascript/types/kafkajs";
@@ -107,6 +115,138 @@ export function mapTstoJs(filePath: string): string {
     .replace(/\.ts$/, ".js")
     .replace(/\.cts$/, ".cjs")
     .replace(/\.mts$/, ".mjs");
+}
+
+/**
+ * Walks a directory recursively and returns all files matching the given extensions.
+ * Skips node_modules directories.
+ *
+ * @param dir - Directory to walk
+ * @param extensions - File extensions to include (e.g., [".js", ".mjs"])
+ * @returns Array of file paths
+ */
+function walkDirectory(dir: string, extensions: string[]): string[] {
+  const results: string[] = [];
+
+  if (!existsSync(dir)) {
+    return results;
+  }
+
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = nodePath.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        // Skip node_modules
+        if (entry.name !== "node_modules") {
+          results.push(...walkDirectory(fullPath, extensions));
+        }
+      } else if (entry.isFile()) {
+        const ext = nodePath.extname(entry.name);
+        if (extensions.includes(ext)) {
+          results.push(fullPath);
+        }
+      }
+    }
+  } catch {
+    // Silently skip directories we can't read
+  }
+
+  return results;
+}
+
+/**
+ * Adds .js extension to relative import paths that don't have an extension.
+ * Handles import/export from statements and dynamic imports.
+ *
+ * @param content - JavaScript file content
+ * @returns Content with .js extensions added to relative imports
+ */
+function addJsExtensionToImports(content: string): string {
+  // Pattern for 'from' statements with relative paths
+  // Matches: from './foo', from "../bar", from './utils/helper'
+  const fromPattern = /(from\s+['"])(\.\.?\/[^'"]*?)(['"])/g;
+
+  // Pattern for dynamic imports with relative paths
+  // Matches: import('./foo'), import("../bar")
+  const dynamicPattern = /(import\s*\(\s*['"])(\.\.?\/[^'"]*?)(['"])/g;
+
+  let result = content;
+
+  // Process 'from' statements
+  result = result.replace(fromPattern, (match, prefix, importPath, quote) => {
+    return rewriteImportPath(match, prefix, importPath, quote);
+  });
+
+  // Process dynamic imports
+  result = result.replace(
+    dynamicPattern,
+    (match, prefix, importPath, quote) => {
+      return rewriteImportPath(match, prefix, importPath, quote);
+    },
+  );
+
+  return result;
+}
+
+/**
+ * Rewrites a single import path to add .js extension if needed.
+ *
+ * @param match - The full matched string
+ * @param prefix - The prefix (from ' or import(')
+ * @param importPath - The import path
+ * @param quote - The closing quote
+ * @returns The rewritten import or original if no change needed
+ */
+function rewriteImportPath(
+  match: string,
+  prefix: string,
+  importPath: string,
+  quote: string,
+): string {
+  // Skip if already has a JavaScript extension
+  if (/\.[cm]?js$/.test(importPath)) {
+    return match;
+  }
+
+  // Skip if importing a JSON file
+  if (/\.json$/.test(importPath)) {
+    return match;
+  }
+
+  // Add .js extension
+  return `${prefix}${importPath}.js${quote}`;
+}
+
+/**
+ * Rewrites relative import paths in JavaScript files to include .js extensions.
+ * This is required for Node.js ESM which requires explicit extensions.
+ *
+ * Handles:
+ * - import statements: import { foo } from './bar' -> import { foo } from './bar.js'
+ * - dynamic imports: import('./bar') -> import('./bar.js')
+ * - re-exports: export { foo } from './bar' -> export { foo } from './bar.js'
+ *
+ * Does NOT modify:
+ * - Package imports (no leading . or ..)
+ * - Imports that already have extensions
+ * - Imports from node_modules
+ *
+ * @param outDir - Directory containing compiled JavaScript files
+ */
+export function rewriteImportExtensions(outDir: string): void {
+  const files = walkDirectory(outDir, [".js", ".mjs"]);
+
+  for (const filePath of files) {
+    const content = readFileSync(filePath, "utf-8");
+    const rewritten = addJsExtensionToImports(content);
+
+    if (content !== rewritten) {
+      writeFileSync(filePath, rewritten, "utf-8");
+    }
+  }
 }
 
 export const MAX_RETRIES = 150;
