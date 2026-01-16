@@ -1210,7 +1210,6 @@ const guidesNavigationConfig: NavigationConfig = [
       "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
     icon: IconChartLine,
     languages: ["typescript", "python"],
-    status: "beta",
   },
   {
     type: "page",
