@@ -3,6 +3,8 @@ title: Chat in Your App
 description: Build AI-powered chat experiences with real-time analytics using MooseStack
 ---
 
+import { FileTree } from "@/components/mdx";
+
 # Building a data-aware chat on top of your ClickHouse database with Next.js and MooseStack
 
 ## TL;DR
@@ -281,17 +283,21 @@ This guide assumes you have direct access to the files in S3.
 
 If the files are relatively small, we recommend building up a `packages/moosestack-service/context/` directory to gather context (you should gitignore your context directory), e.g.:
 
-```text
-<project-name>/
-├─ packages/
-│  ├─ moosestack-service/
-│  │  ├─ context/
-│  │  │  ├─ data/
-│  │  │  ├─ rules/
-│  │  ├─ .../
-│  ├─ web-app/
-├─ README.md
-```
+<FileTree>
+  <FileTree.Folder name="<project-name>">
+    <FileTree.Folder name="packages">
+      <FileTree.Folder name="moosestack-service">
+        <FileTree.Folder name="context">
+          <FileTree.Folder name="data" />
+          <FileTree.Folder name="rules" />
+        </FileTree.Folder>
+        <FileTree.Folder name="..." />
+      </FileTree.Folder>
+      <FileTree.Folder name="web-app" />
+    </FileTree.Folder>
+    <FileTree.File name="README.md" />
+  </FileTree.Folder>
+</FileTree>
 
 #### Copy data from S3
 
@@ -299,7 +305,7 @@ There are many ways to copy data down from s3, e.g.:
 
 Using the [S3 CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/cp.html) (once you’ve authenticated):
 
-```text
+```shell
 aws s3 ls s3://source-data/ 			# list files in S3 
 
 aws s3 cp s3://source-data/ . --recursive 	# copy data from S3 to context directory
@@ -330,17 +336,23 @@ Create
 2. An [OlapTable](https://docs.fiveonefour.com/moosestack/reference?lang=typescript#olaptablelttgt) object, declaring that table in MooseStack  
 3. A reference in index at the root of the MooseStack project (so that MooseOLAP will create the table.
 
-```text
-<project-name>/
-├─ packages/
-│  ├─ moosestack-service/
-│  │  ├─ app/
-│  │  │  ├─ app/ingest
-│  │  │  │  ├─data-model.ts         # data model and OlapTable created here│  │  ├─ index.ts                    # OlapTable exported here
-│  │  ├─ .../
-│  ├─ web-app/
-├─ README.md
-```
+<FileTree>
+  <FileTree.Folder name="<project-name>">
+    <FileTree.Folder name="packages">
+      <FileTree.Folder name="moosestack-service">
+        <FileTree.Folder name="app">
+          <FileTree.Folder name="ingest">
+            <FileTree.File name="data-model.ts" />
+          </FileTree.Folder>
+          <FileTree.File name="index.ts" />
+        </FileTree.Folder>
+        <FileTree.Folder name="..." />
+      </FileTree.Folder>
+      <FileTree.Folder name="web-app" />
+    </FileTree.Folder>
+    <FileTree.File name="README.md" />
+  </FileTree.Folder>
+</FileTree>
 
 We suggest you do this sequentially, e.g. with the following prompt pattern:
 

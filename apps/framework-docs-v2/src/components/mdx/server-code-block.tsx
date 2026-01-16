@@ -325,7 +325,7 @@ export function ServerCodeBlock({
       <div className="not-prose">
         <CodeEditorWrapper
           code={codeText}
-          language={language || "typescript"}
+          language={language || "plaintext"}
           filename={filename}
           variant={variant ?? (isShell ? "terminal" : "ide")}
           writing={writing}
@@ -351,7 +351,7 @@ export function ServerCodeBlock({
     <div className="not-prose">
       <CodeSnippet
         code={codeText}
-        language={language || "typescript"}
+        language={language || "plaintext"}
         filename={filename}
         copyButton={showCopy}
         lineNumbers={lineNumbers}
@@ -386,7 +386,7 @@ export function ServerInlineCode({
       <div className="not-prose">
         <CodeSnippet
           code={codeText}
-          language={language || "typescript"}
+          language={language || "plaintext"}
           copyButton={true}
         />
       </div>

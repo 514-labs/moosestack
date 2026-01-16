@@ -147,8 +147,12 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
             [
               rehypePrettyCode,
               {
-                theme: "github-dark",
+                theme: {
+                  light: "vitesse-light",
+                  dark: "vitesse-dark",
+                },
                 keepBackground: false,
+                defaultLang: "plaintext",
               },
             ],
             // Restore custom meta attributes AFTER rehype-pretty-code

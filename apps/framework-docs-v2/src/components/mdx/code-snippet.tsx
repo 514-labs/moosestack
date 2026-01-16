@@ -203,6 +203,7 @@ function HighlightedCodeBlockContent({
           gitignore: "text",
           env: "text",
           dotenv: "text",
+          plaintext: "text",
         };
         const mappedLanguage = languageMap[language.toLowerCase()] || language;
 
