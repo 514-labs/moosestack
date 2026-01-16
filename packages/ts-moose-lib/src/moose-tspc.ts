@@ -10,12 +10,11 @@
  * the required moose compiler plugins, then runs tspc to compile with transforms.
  */
 import { execSync } from "child_process";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+import { existsSync, writeFileSync, unlinkSync } from "fs";
 import path from "path";
 import {
   MOOSE_COMPILER_PLUGINS,
   MOOSE_COMPILER_OPTIONS,
-  MOOSE_MODULE_OPTIONS,
 } from "./compiler-config";
 
 const outDir = process.argv[2] || ".moose/compiled";
@@ -31,24 +30,16 @@ if (!existsSync(tsconfigPath)) {
 console.log(`Compiling TypeScript to ${outDir}...`);
 
 try {
-  // Read the user's tsconfig to check for existing module settings
-  const userTsconfig = JSON.parse(readFileSync(tsconfigPath, "utf-8"));
-  const userCompilerOptions = userTsconfig.compilerOptions || {};
-
-  // Only apply module resolution options if not already set by the user
-  // This prevents conflicts with user's existing module configuration
-  const moduleOptions: Record<string, any> = {};
-  if (!userCompilerOptions.module && !userCompilerOptions.moduleResolution) {
-    // User hasn't set module options, use our defaults
-    Object.assign(moduleOptions, MOOSE_MODULE_OPTIONS);
-    console.log(
-      "Applying default module resolution (NodeNext) for moose compilation...",
-    );
-  } else {
-    console.log(
-      "Using existing module resolution settings from tsconfig.json...",
-    );
-  }
+  // For pre-compiled builds, always use CommonJS to avoid ESM import path issues
+  // Node.js ESM requires explicit .js extensions which TypeScript doesn't add
+  // CommonJS is simpler and more reliable for Docker builds
+  const moduleOptions: Record<string, any> = {
+    module: "CommonJS",
+    moduleResolution: "Node",
+  };
+  console.log(
+    "Using CommonJS module output for Docker build (avoids ESM import path issues)...",
+  );
 
   // Create a temporary tsconfig that extends the user's config and adds plugins.
   // We use extends (not spread) to properly inherit all user settings.
