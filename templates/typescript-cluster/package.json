@@ -1,6 +1,9 @@
 {
   "name": "moose-cluster-test-app",
   "version": "0.0",
+  "engines": {
+    "node": ">=20 <=24"
+  },
   "description": "Test template for ClickHouse cluster support",
   "scripts": {
     "moose": "moose-cli",

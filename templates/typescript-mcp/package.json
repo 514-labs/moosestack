@@ -2,6 +2,9 @@
   "name": "typescript-mcp",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20 <=24"
+  },
   "scripts": {
     "dev": "pnpm --parallel --stream -r dev",
     "dev:moose": "pnpm --filter moosestack-service dev",

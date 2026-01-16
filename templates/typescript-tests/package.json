@@ -1,6 +1,9 @@
 {
   "name": "ts",
   "version": "0.0",
+  "engines": {
+    "node": ">=20 <=24"
+  },
   "scripts": {
     "moose": "moose-cli",
     "build": "moose-cli build --docker",
