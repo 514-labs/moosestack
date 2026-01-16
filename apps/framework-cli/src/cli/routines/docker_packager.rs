@@ -130,14 +130,20 @@ RUN npm install -g pnpm@latest
 
 /// Generates the TypeScript compile step for Docker with dynamic source directory
 fn generate_typescript_compile_step(source_dir: &str) -> String {
+    // Escape double quotes in source_dir to prevent shell injection
+    let escaped_source_dir = source_dir.replace('"', r#"\""#);
+
     format!(
-        r#"# Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
+        r#"# Run TypeScript type checking
+RUN npx moose check
+
+# Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
 # This eliminates ts-node overhead at runtime for faster worker startup
-RUN MOOSE_SOURCE_DIR={} npx moose-tspc .moose/compiled
+RUN MOOSE_SOURCE_DIR="{}" npx moose-tspc .moose/compiled
 
 # Set environment variable to use pre-compiled JavaScript at runtime
 ENV MOOSE_USE_COMPILED=true"#,
-        source_dir
+        escaped_source_dir
     )
 }
 
@@ -187,7 +193,7 @@ MONOREPO_PACKAGE_COPIES
 # Install all dependencies from monorepo root
 {}
 
-# Stage 2: Production image  
+# Stage 2: Production image
 FROM node:{}-bookworm-slim
 
 # This is to remove the notice to update NPM that will break the output from STDOUT
@@ -301,7 +307,7 @@ CMD ["moose", "prod"]
 /// ```
 ///
 /// But in Docker's node_modules structure, these become:
-/// ```json  
+/// ```json
 /// { "paths": { "@shared/*": ["./node_modules/@my-org/shared/*"] } }
 /// ```
 ///

@@ -668,6 +668,7 @@ pub async fn start_production_mode(
             .arg("moose-tspc")
             .arg(".moose/compiled")
             .current_dir(&project.project_location)
+            .env("MOOSE_SOURCE_DIR", &project.source_dir)
             .output();
 
         match compile_result {

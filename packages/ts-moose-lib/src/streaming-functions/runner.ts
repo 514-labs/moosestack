@@ -38,6 +38,7 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
+import { getSourceDir, shouldUseCompiled } from "../compiler-config";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -584,8 +585,24 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
 function loadStreamingFunction(functionFilePath: string) {
   let streamingFunctionImport: { default: StreamingFunction };
   try {
+    // Check if we should use compiled code
+    const useCompiled = shouldUseCompiled();
+    const sourceDir = getSourceDir();
+
+    // Adjust path for compiled mode
+    let actualPath = functionFilePath;
+    if (useCompiled) {
+      // Replace source directory path with compiled directory path
+      // Example: /app/path/app/functions/x.ts -> /app/path/.moose/compiled/app/functions/x.js
+      const sourceDirPattern = new RegExp(`/${sourceDir}/`);
+      actualPath = functionFilePath.replace(
+        sourceDirPattern,
+        `/.moose/compiled/${sourceDir}/`,
+      );
+    }
+
     // Remove the extension for require() (works for both .ts and .js)
-    const pathWithoutExt = functionFilePath.replace(/\.(ts|js)$/, "");
+    const pathWithoutExt = actualPath.replace(/\.(ts|js)$/, "");
     streamingFunctionImport = require(pathWithoutExt);
   } catch (e) {
     cliLog({ action: "Function", message: `${e}`, message_type: "Error" });
