@@ -738,7 +738,7 @@ function generatePdf(
               { text: formatCurrency(stats.revenue), alignment: "right" },
               { text: stats.transactions.toLocaleString(), alignment: "right" },
               {
-                text: `${((stats.revenue / totalRevenue) * 100).toFixed(1)}%`,
+                text: `${totalRevenue > 0 ? ((stats.revenue / totalRevenue) * 100).toFixed(1) : "0.0"}%`,
                 alignment: "right",
               },
             ]),
@@ -769,7 +769,7 @@ function generatePdf(
               { text: formatCurrency(stats.revenue), alignment: "right" },
               { text: stats.transactions.toLocaleString(), alignment: "right" },
               {
-                text: `${((stats.revenue / totalRevenue) * 100).toFixed(1)}%`,
+                text: `${totalRevenue > 0 ? ((stats.revenue / totalRevenue) * 100).toFixed(1) : "0.0"}%`,
                 alignment: "right",
               },
             ]),
