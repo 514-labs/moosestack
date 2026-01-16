@@ -305,7 +305,7 @@ There are many ways to copy data down from s3, e.g.:
 
 Using the [S3 CLI](https://docs.aws.amazon.com/cli/latest/reference/s3/cp.html) (once you’ve authenticated):
 
-```text
+```shell
 aws s3 ls s3://source-data/ 			# list files in S3 
 
 aws s3 cp s3://source-data/ . --recursive 	# copy data from S3 to context directory
