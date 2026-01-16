@@ -379,9 +379,18 @@ export function ServerInlineCode({
   if (isCodeBlock) {
     // This is a code block that should be handled by ServerCodeBlock
     // This is a fallback for when code is not wrapped in pre
-    // Return inline code instead of block to avoid nesting errors
+    // Just render as simple inline code to avoid nesting errors
     const textContent = extractTextContent(children).trim();
-    return <InlineCode code={textContent} className={className} />;
+    return (
+      <code
+        className={cn(
+          "relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm text-foreground not-prose",
+          className,
+        )}
+      >
+        {textContent}
+      </code>
+    );
   }
 
   // Check for inline code with language hint: `code{:lang}`
