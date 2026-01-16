@@ -1,0 +1,320 @@
+---
+title: January 16, 2026
+description: Release notes for January 16, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# January 16, 2026
+
+This release brings major documentation improvements with new guides, Mermaid diagram support, and enhanced developer tools. Boreal adds comprehensive log filtering and improved navigation.
+
+<Callout type="info" title="Highlights">
+  * **New:** [New guides section with comprehensive tutorials and improved
+  layout](#new-guides-section-with-comprehensive-tutorials-and-improved-layout)
+  * **New:** [New filtering system for logs page with URL state
+  management](#new-filtering-system-for-logs-page-with-url-state-management) *
+  **New:** [Add Mermaid diagram support to
+  documentation](#add-mermaid-diagram-support-to-documentation)
+</Callout>
+
+## Moose
+
+### New Features
+
+- **Add file watcher ignore patterns configuration**
+  Added support for configuring ignore patterns in the file watcher to prevent unnecessary hot-reloads. Users can now specify glob patterns in their moose.config.toml to exclude files like generated code, SDK files, or temporary files from triggering development server rebuilds. This improves development performance by avoiding infinite loops and reducing unnecessary processing.
+
+  **Configure file watcher ignore patterns in moose.config.toml**
+
+  ```toml
+  # moose.config.toml
+  [project]
+  name = "my-data-pipeline"
+  language = "typescript"
+
+  # Configure file watcher to ignore generated files and SDK outputs
+  [watcher]
+  ignore_patterns = [
+      # Ignore generated SDK files to prevent infinite rebuild loops
+      "sdk/**",
+
+      # Ignore generated Python files from code generation
+      "**/*.gen.py",
+      "generated/**",
+
+      # Ignore temporary files and build artifacts
+      "**/*.tmp",
+      "dist/**",
+      "build/**",
+
+      # Ignore IDE and system files
+      ".vscode/**",
+      "**/.DS_Store",
+
+      # Ignore log files that might be written during development
+      "**/*.log"
+  ]
+
+  [database]
+  host = "localhost"
+  port = 5432
+  ```
+
+  This example shows how to configure file watcher ignore patterns in moose.config.toml to prevent unnecessary hot-reloads during development. The patterns exclude generated SDK files, build artifacts, and temporary files that would otherwise trigger infinite rebuild loops.
+
+- **New guides section with comprehensive tutorials and improved layout**
+  Introduced a new Guides section in the documentation with a redesigned layout, improved guide cards showing descriptions, and community integration with a direct link to join the Slack community. The section includes scaffolding for 5 priority guides with a visibility system (draft/beta/public states) and feature flags for controlled rollout. Multiple comprehensive guides are now available: a complete 3-4 hour data warehouse tutorial for building e-commerce analytics warehouses from scratch with multiple data sources and dimensional modeling; a full "Chat in Your App" guide with implementation strategies, use cases, and a complete tutorial from S3 data to working chat application with Next.js integration patterns; a performant dashboards guide covering dashboard performance optimization, local development setup, CDC configuration for MSSQL, and AI copilot integration; and a Next.js integration guide showing how to embed MooseStack into existing Next.js apps with type-safe analytics queries in Server Components and Server Actions. Enhanced documentation guides with interactive file tree components replacing plain text directory structures, improved code block formatting with proper shell syntax highlighting, and better visual presentation of project structures. Updated the guides page description to better explain that guides provide comprehensive walkthroughs for common application use cases using realtime analytical infrastructure. Fixed a rendering issue in the performant dashboards documentation guide caused by incorrect comment syntax.
+
+  📸 _[Screenshot needed: The guides section has been redesigned with a new layout, improved guide cards showing descriptions, and added community integration with a direct link to join the Slack community. Multiple comprehensive guides are now available covering data warehouses, chat interfaces, dashboard performance, and Next.js integration.]_
+
+- **Add CDP Analytics example application**
+  Added a complete Customer Data Platform (CDP) example application that demonstrates building analytics dashboards with AI-powered data exploration. The example includes a full-stack application with email campaign funnel tracking, customer journey visualization, real-time data ingestion patterns, and an AI chat interface for natural language data queries. This provides users with a comprehensive reference implementation for building production-ready analytics applications with MooseStack.
+
+  📸 _[Screenshot needed: Added a complete Customer Data Platform (CDP) example application that demonstrates building analytics dashboards with AI-powered data exploration. The example includes a full-stack application with email campaign funnel tracking, customer journey visualization, real-time data ingestion patterns, and an AI chat interface for natural language data queries. This provides users with a comprehensive reference implementation for building production-ready analytics applications with MooseStack.]_
+
+- **Added one-click deployment for TypeScript MCP template**
+  The TypeScript MCP template now supports one-click deployment through Boreal, allowing users to quickly deploy AI chat applications that can query their data. The deployment automatically configures API keys and authentication tokens for seamless setup.
+
+- **Add structured JSON logging with span support for better observability**
+  Added new structured logging infrastructure that outputs JSON logs with automatic span field inclusion. Users can enable this with the MOOSE_LOGGER\_\_STRUCTURED_LOGS environment variable to get better observability and filtering capabilities. This includes predefined constants for logging contexts (runtime, boot, system) and resource types (streams, tables, transforms, etc.) that developers can use when instrumenting their code.
+
+  **Structured logging with spans for data pipeline observability**
+
+  ```rust
+  use tracing::{info, instrument};
+  use moose_cli::cli::logger::{context, resource_type};
+
+  // Example: Instrumenting a data ingestion function with structured logging
+  #[instrument(
+      name = "ingest_user_events",
+      skip_all,
+      fields(
+          context = context::RUNTIME,
+          resource_type = resource_type::STREAM,
+          resource_name = %stream_name,
+          batch_size = batch.len()
+      )
+  )]
+  async fn ingest_user_events(stream_name: &str, batch: Vec<UserEvent>) -> Result<(), IngestError> {
+      info!("Starting batch ingestion");
+
+      // Process the batch
+      for event in &batch {
+          validate_event(event)?;
+      }
+
+      info!(processed_count = batch.len(), "Batch validation complete");
+
+      // Send to Kafka stream
+      send_to_stream(stream_name, batch).await?;
+
+      info!("Batch successfully ingested");
+      Ok(())
+  }
+
+  // Example: Instrumenting a data transformation with context
+  #[instrument(
+      name = "transform_user_analytics",
+      skip_all,
+      fields(
+          context = context::RUNTIME,
+          resource_type = resource_type::TRANSFORM,
+          resource_name = "user_daily_analytics"
+      )
+  )]
+  async fn transform_user_analytics() -> Result<(), TransformError> {
+      info!("Starting daily analytics transformation");
+
+      let result = execute_clickhouse_query(
+          "INSERT INTO user_daily_analytics SELECT ... FROM user_events"
+      ).await?;
+
+      info!(rows_processed = result.rows_affected, "Transformation complete");
+      Ok(())
+  }
+  ```
+
+  Shows how to use the new structured JSON logging with span support in MooseStack data pipeline functions. The #[instrument] attribute automatically includes context and resource metadata in JSON logs when MOOSE_LOGGER\_\_STRUCTURED_LOGS=true is set.
+
+- **Add View support to SQL interpolator**
+  Users can now use View objects in SQL template literals alongside existing OlapTable and Column support. This enables Views to be referenced directly in SQL queries using the sql`` template syntax.
+
+  **Using Views in SQL template literals**
+
+  ```typescript
+  import { sql } from "@514labs/moose-lib";
+  import { OlapTable, View } from "@514labs/moose-lib/dmv2";
+
+  // Define a table for raw user events
+  const userEventsTable = new OlapTable({
+    name: "user_events",
+    columns: {
+      user_id: "String",
+      event_type: "String",
+      timestamp: "DateTime",
+      session_id: "String",
+    },
+  });
+
+  // Define a view for active user sessions
+  const activeSessionsView = new View({
+    name: "active_user_sessions",
+    query: sql`
+      SELECT 
+        user_id,
+        session_id,
+        COUNT(*) as event_count,
+        MAX(timestamp) as last_activity
+      FROM ${userEventsTable}
+      WHERE timestamp > now() - INTERVAL 1 HOUR
+      GROUP BY user_id, session_id
+      HAVING event_count > 5
+    `,
+  });
+
+  // Now you can reference the View directly in SQL queries
+  const getTopActiveUsers = sql`
+    SELECT 
+      user_id,
+      SUM(event_count) as total_events,
+      COUNT(DISTINCT session_id) as session_count
+    FROM ${activeSessionsView}
+    GROUP BY user_id
+    ORDER BY total_events DESC
+    LIMIT 10
+  `;
+
+  // Views work alongside tables and columns in the same query
+  const detailedUserActivity = sql`
+    SELECT 
+      s.user_id,
+      s.session_count,
+      e.event_type,
+      COUNT(*) as type_count
+    FROM ${activeSessionsView} s
+    JOIN ${userEventsTable} e ON s.user_id = e.user_id
+    GROUP BY s.user_id, s.session_count, e.event_type
+  `;
+  ```
+
+  This example shows how to use View objects directly in SQL template literals alongside existing OlapTable support. Views can now be interpolated into SQL queries using the sql`` syntax, enabling seamless composition of complex queries that reference both tables and views.
+
+- **Add workflow task completion callbacks with onComplete event handling**
+  Workflow tasks can now define onComplete callbacks that execute after a task finishes successfully. This enables users to chain follow-up actions like sending notifications, triggering other workflows, or updating dashboards when workflow tasks complete. The feature includes proper error handling with configurable retries and timeouts for completion callbacks.
+
+  **Workflow task with completion callback for notifications**
+
+  ```typescript
+  import { Task } from "@514labs/moose-lib";
+  import { OlapTable } from "@514labs/moose-lib";
+
+  interface UserActivity {
+    userId: string;
+    action: string;
+    timestamp: Date;
+  }
+
+  // Create table for tracking workflow results
+  const workflowResults = new OlapTable<{
+    workflowId: string;
+    status: string;
+    recordsProcessed: number;
+  }>("WorkflowResults");
+
+  // Completion callback that sends notifications and updates dashboards
+  const sendCompletionNotification = new Task<number, void>(
+    "sendNotification",
+    {
+      run: async ({ input: recordCount }) => {
+        console.log(
+          `📊 Processing complete! ${recordCount} user activities processed`,
+        );
+
+        // Send webhook notification to external monitoring system
+        await fetch("https://monitoring.company.com/workflow-complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflowType: "user-activity-processing",
+            recordsProcessed: recordCount,
+            completedAt: new Date().toISOString(),
+          }),
+        });
+
+        // Update internal dashboard
+        await workflowResults.insert([
+          {
+            workflowId: "user-activity-batch",
+            status: "completed",
+            recordsProcessed: recordCount,
+          },
+        ]);
+      },
+      retries: 3,
+      timeout: "15s",
+    },
+  );
+
+  // Main workflow task with onComplete callback
+  export const processUserActivities = new Task<UserActivity[], number>(
+    "processActivities",
+    {
+      run: async ({ input: activities }) => {
+        let processedCount = 0;
+
+        for (const activity of activities) {
+          // Process each user activity (transform, validate, enrich)
+          const enrichedActivity = {
+            ...activity,
+            processedAt: new Date(),
+            region: await getUserRegion(activity.userId),
+          };
+
+          // Send to downstream systems
+          await sendToAnalytics(enrichedActivity);
+          processedCount++;
+        }
+
+        return processedCount;
+      },
+      onComplete: [sendCompletionNotification], // Callback executes after successful completion
+      retries: 2,
+      timeout: "5m",
+    },
+  );
+  ```
+
+  This example shows how to use onComplete callbacks in MooseStack workflows to automatically send notifications and update dashboards when a data processing task finishes successfully. The callback includes error handling with retries and timeouts.
+
+### Improvements
+
+- Improved documentation for getting started with Moose development: Added clearer instructions for installing dependencies before running `moose dev`, including language-specific commands for TypeScript (npm install) and Python (pip install -r requirements.txt). Also added guidance for running Moose in the background using `nohup moose dev &` for AI assistants or when needing to use the same terminal for other commands.
+- Improved MCP documentation formatting and organization: Enhanced the MCP server documentation with better formatting, clearer structure, and improved readability. Reorganized tool descriptions to start with get_infra_map as the recommended first step, and standardized code block formatting throughout the documentation.
+
+### Bug Fixes
+
+- Fix `moose peek` command to correctly find tables and topics by name: Fixed a bug where `moose peek` would fail to find tables and topics when their internal IDs differed from their display names. The command now properly searches by the actual table/topic names and provides better error messages listing available options when a name isn't found. Also fixed database resolution to respect explicit table databases instead of always using the project default.
+
+## Boreal
+
+### New Features
+
+- **Added collapsible sidebar navigation**
+  The sidebar navigation can now be collapsed to save screen space while maintaining access to all navigation options. The collapsed state is remembered across sessions, and navigation items show tooltips when the sidebar is collapsed for easy identification.
+
+  📸 _[Screenshot needed: The sidebar navigation can now be collapsed to save screen space while maintaining access to all navigation options. The collapsed state is remembered across sessions, and navigation items show tooltips when the sidebar is collapsed for easy identification.]_
+
+### Improvements
+
+- Improved GitHub integration performance and scalability: Optimized GitHub authentication and repository access by reducing redundant API calls to Clerk. This improves page load times and overall responsiveness when creating new projects and managing GitHub repositories in the dashboard.
+
+### Bug Fixes
+
+- Fix installation script to support CI and development builds: Fixed the Moose CLI installation script to properly handle CI and development builds. The installer now automatically falls back to the dev channel when CI/dev versions aren't found in the stable channel, ensuring successful installation of pre-release versions.
+- Fixed GitHub connection authorization caching issues: Resolved caching problems that could cause stale GitHub authorization states in the dashboard, ensuring users always see accurate connection status and can reliably connect their GitHub repositories.
+- Fixed sidebar scrollbar display issue in Firefox: Resolved a visual issue where the sidebar scrollbar was incorrectly displayed in Firefox, improving the overall appearance and consistency of the navigation interface across different browsers.
+- Fixed GitHub authentication issues in project creation: Resolved authentication problems when connecting GitHub repositories to create new projects. Fixed caching issues that were preventing proper GitHub app authentication and improved the reliability of the GitHub integration flow.
+- Fixed GitHub authentication flow and sign-in issues: Fixed authentication issues when signing in with GitHub without an existing account, updated GitHub app integration flow, and improved GitHub token refresh handling. Users should now experience smoother GitHub authentication and project creation workflows.
+- Fixed GitHub app authentication callback routing: Fixed a bug in GitHub app integration where authentication callbacks were failing due to incorrect URL routing, preventing users from properly connecting their GitHub repositories to projects.
+- Fixed GitHub OAuth authentication for preview environments: Improved GitHub OAuth authentication flow to properly handle redirects in preview environments. Users should now experience more reliable authentication when connecting GitHub repositories in preview deployments.
