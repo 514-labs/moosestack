@@ -259,20 +259,24 @@ async function loadFile(filePath: string): Promise<void> {
 
   console.log(`Parsed ${records.length} records from ${filePath}`);
 
-  // Send records to ingest API
-  for (const record of records) {
+  // Send records to ingest API (collecting errors for partial failure handling)
+  const errors: Array<{ index: number; error: string }> = [];
+  for (let i = 0; i < records.length; i++) {
     const response = await fetch("http://localhost:4000/ingest/sales", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(record),
+      body: JSON.stringify(records[i]),
     });
 
     if (!response.ok) {
-      throw new Error(`Ingestion failed: ${response.statusText}`);
+      errors.push({ index: i, error: response.statusText });
     }
   }
 
-  console.log(`Successfully loaded ${records.length} records`);
+  if (errors.length > 0) {
+    console.error(`Failed to ingest ${errors.length} records:`, errors);
+  }
+  console.log(`Successfully loaded ${records.length - errors.length} of ${records.length} records`);
 }
 
 // CLI execution
@@ -284,6 +288,10 @@ if (!filePath) {
 
 loadFile(filePath).catch(console.error);
 ```
+
+<Note>
+This script sends records one at a time for simplicity. For production workloads with large files, consider batch ingestion by posting arrays of records to improve throughput.
+</Note>
 
 ### Step 3: Create Sample Data
 
