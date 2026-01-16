@@ -15,8 +15,8 @@ from moose_lib.internal import load_models
 _ALREADY_REGISTERED = set()
 
 
-def collect_activities_dmv2(workflows: dict[str, Workflow]) -> List[str]:
-    """Collect all task names from DMv2 workflows, formatted as 'workflowName/taskName'.
+def collect_activities(workflows: dict[str, Workflow]) -> List[str]:
+    """Collect all task names from workflows, formatted as 'workflowName/taskName'.
 
     Args:
         workflows: Dictionary of workflow name to Workflow instance
@@ -24,20 +24,20 @@ def collect_activities_dmv2(workflows: dict[str, Workflow]) -> List[str]:
     Returns:
         List[str]: List of activity names in format 'workflowName/taskName'
     """
-    log.info(f"<DMV2WF> Collecting tasks from dmv2 workflows")
+    log.info(f"<WF> Collecting tasks from workflows")
     script_names = []
     for name, workflow in workflows.items():
-        log.info(f"<DMV2WF> Registering dmv2 workflow: {name}")
+        log.info(f"<WF> Registering workflow: {name}")
         # Get all task names and format them with the workflow name
         task_names = workflow.get_task_names()
         script_names.extend(f"{name}/{task_name}" for task_name in task_names)
-        log.info(f"<DMV2WF> Found tasks for workflow {name}: {task_names}")
+        log.info(f"<WF> Found tasks for workflow {name}: {task_names}")
 
     return script_names
 
 
-def load_dmv2_workflows() -> dict[str, Workflow]:
-    """Load DMV2 workflows, returning an empty dict if there's an error.
+def load_workflows() -> dict[str, Workflow]:
+    """Load workflows, returning an empty dict if there's an error.
 
     Returns:
         dict[str, Workflow]: Map of workflow names to Workflow objects, empty if loading fails.
@@ -46,7 +46,7 @@ def load_dmv2_workflows() -> dict[str, Workflow]:
         load_models()
         return get_workflows()
     except Exception as e:
-        log.error(f"Failed to load DMV2 workflows: {e}")
+        log.error(f"Failed to load workflows: {e}")
         return {}
 
 
@@ -54,35 +54,35 @@ async def register_workflows(
     temporal_url: str, namespace: str, client_cert: str, client_key: str, api_key: str
 ) -> Optional[Worker]:
     """
-    Register DMv2 workflows and their activities.
+    Register workflows and their activities.
     """
-    log.info(f"Registering DMv2 workflows")
+    log.info(f"Registering workflows")
 
     try:
-        # Load DMv2 workflows
-        dmv2wfs = load_dmv2_workflows()
-        if len(dmv2wfs) == 0:
-            log.warning(f"No DMv2 workflows found")
+        # Load workflows
+        wfs = load_workflows()
+        if len(wfs) == 0:
+            log.warning(f"No workflows found")
             return None
 
-        log.info(f"Found {len(dmv2wfs)} DMv2 workflows")
+        log.info(f"Found {len(wfs)} workflows")
 
-        # Collect activities from DMv2 workflows
-        all_activity_names = collect_activities_dmv2(dmv2wfs)
+        # Collect activities from workflows
+        all_activity_names = collect_activities(wfs)
         log.info(f"Activity names: {all_activity_names}")
 
         if len(all_activity_names) == 0:
-            log.warning(f"No tasks found in DMv2 workflows")
+            log.warning(f"No tasks found in workflows")
             return None
 
-        # Build dynamic activities for DMv2 tasks
+        # Build dynamic activities for tasks
         dynamic_activities = []
         for activity_name in all_activity_names:
             if activity_name not in _ALREADY_REGISTERED:
                 act = create_activity_for_script(activity_name)
                 dynamic_activities.append(act)
                 _ALREADY_REGISTERED.add(activity_name)
-                log.info(f"Registered DMv2 task {activity_name}")
+                log.info(f"Registered task {activity_name}")
 
         if len(dynamic_activities) == 0:
             log.warning(f"No dynamic activities created")

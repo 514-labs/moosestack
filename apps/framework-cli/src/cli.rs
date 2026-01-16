@@ -51,7 +51,6 @@ use crate::cli::{
 };
 use crate::framework::core::check::check_system_reqs;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
@@ -65,7 +64,7 @@ use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::cli::commands::DbArgs;
 use crate::cli::routines::code_generation::{db_pull, db_to_dmv2, prompt_user_for_remote_ch_http};
-use crate::cli::routines::ls::ls_dmv2;
+use crate::cli::routines::ls::ls;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
 use crate::framework::languages::SupportedLanguages;
@@ -488,28 +487,16 @@ pub async fn top_command_handler(
                     })
                 })?;
 
-            let infra_map = if project_arc.features.data_model_v2 {
-                debug!("Loading InfrastructureMap from user code (DMV2)");
-                // Don't resolve credentials for moose check - avoids baking into Docker
-                InfrastructureMap::load_from_user_code(&project_arc, false)
-                    .await
-                    .map_err(|e| {
-                        RoutineFailure::error(Message {
-                            action: "Build".to_string(),
-                            details: format!("Failed to load InfrastructureMap: {e:?}"),
-                        })
-                    })?
-            } else {
-                debug!("Loading InfrastructureMap from primitives");
-                let primitive_map = PrimitiveMap::load(&project_arc).await.map_err(|e| {
+            debug!("Loading InfrastructureMap from user code");
+            // Don't resolve credentials for moose check - avoids baking into Docker
+            let infra_map = InfrastructureMap::load_from_user_code(&project_arc, false)
+                .await
+                .map_err(|e| {
                     RoutineFailure::error(Message {
                         action: "Build".to_string(),
-                        details: format!("Failed to load Primitives: {e:?}"),
+                        details: format!("Failed to load InfrastructureMap: {e:?}"),
                     })
                 })?;
-
-                InfrastructureMap::new(&project_arc, primitive_map)
-            };
 
             if *write_infra_map {
                 let json_path = project_arc
@@ -1167,14 +1154,7 @@ pub async fn top_command_handler(
                 HashMap::new(),
             );
 
-            let res = if project_arc.features.data_model_v2 {
-                ls_dmv2(&project_arc, _type.as_deref(), name.as_deref(), *json).await
-            } else {
-                Err(RoutineFailure::error(Message {
-                    action: "List".to_string(),
-                    details: "Please upgrade to Moose Data Model v2".to_string(),
-                }))
-            };
+            let res = ls(&project_arc, _type.as_deref(), name.as_deref(), *json).await;
 
             wait_for_usage_capture(capture_handle).await;
 
@@ -1265,7 +1245,7 @@ pub async fn top_command_handler(
                     run_workflow(&project, name, input.clone()).await
                 }
                 Some(WorkflowCommands::List { json }) => {
-                    ls_dmv2(&project, Some("workflows"), None, *json).await
+                    ls(&project, Some("workflows"), None, *json).await
                 }
                 Some(WorkflowCommands::History {
                     status,

@@ -61,6 +61,5 @@ ignore_patterns = []
 olap = true
 streaming_engine = false
 workflows = false
-data_model_v2 = true
 apis = false
 

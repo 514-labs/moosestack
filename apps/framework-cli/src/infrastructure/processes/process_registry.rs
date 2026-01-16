@@ -1,13 +1,12 @@
 //! Process Registry Module
 //!
 //! This module provides a centralized registry for managing various process types in the framework.
-//! It coordinates the lifecycle of function processes, block processes, consumption processes,
+//! It coordinates the lifecycle of function processes, consumption processes,
 //! and orchestration worker processes.
 
 use crate::cli::settings::Settings;
 use crate::project::Project;
 
-use super::blocks_registry::BlocksProcessRegistry;
 use super::consumption_registry::{ConsumptionError, ConsumptionProcessRegistry};
 use super::functions_registry::{FunctionProcessRegistry, FunctionRegistryError};
 use super::kafka_clickhouse_sync::SyncingProcessesRegistry;
@@ -22,9 +21,6 @@ use super::orchestration_workers_registry::{
 pub struct ProcessRegistries {
     /// Registry for function processes that handle stream processing
     pub functions: FunctionProcessRegistry,
-
-    /// Registry for block processes that handle data processing blocks
-    pub blocks: Option<BlocksProcessRegistry>,
 
     /// Registry for consumption processes that provide API access to data
     pub consumption: ConsumptionProcessRegistry,
@@ -68,23 +64,10 @@ impl ProcessRegistries {
     pub fn new(project: &Project, settings: &Settings, syncing: SyncingProcessesRegistry) -> Self {
         let functions = FunctionProcessRegistry::new(project.clone());
 
-        let blocks = if project.features.data_model_v2 || !project.features.olap {
-            None
-        } else {
-            Some(BlocksProcessRegistry::new(
-                project.language,
-                project.blocks_dir(),
-                project.project_location.clone(),
-                project.clickhouse_config.clone(),
-                project,
-            ))
-        };
-
         let consumption = ConsumptionProcessRegistry::new(
             project.language,
             project.clickhouse_config.clone(),
             project.jwt.clone(),
-            project.consumption_dir(),
             project.project_location.clone(),
             project.clone(),
             None, // proxy_port: will use project.http_server_config.proxy_port
@@ -94,7 +77,6 @@ impl ProcessRegistries {
 
         Self {
             functions,
-            blocks,
             consumption,
             orchestration_workers,
             syncing,

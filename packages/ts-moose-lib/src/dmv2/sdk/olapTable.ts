@@ -5,7 +5,7 @@ import {
   isArrayNestedType,
   isNestedType,
 } from "../../dataModels/dataModelTypes";
-import { ClickHouseEngines } from "../../blocks/helpers";
+import { ClickHouseEngines } from "../../dataModels/types";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { Readable } from "node:stream";
 import { createHash } from "node:crypto";

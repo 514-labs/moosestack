@@ -16,7 +16,6 @@ pub fn run(
     source_topic: &StreamConfig,
     target_topic: Option<&StreamConfig>,
     function_path: &Path,
-    is_dmv2: bool,
 ) -> Result<Child, std::io::Error> {
     let dir = function_path
         .parent()
@@ -50,9 +49,6 @@ pub fn run(
         "--security_protocol",
         &kafka_config.security_protocol,
     );
-    if is_dmv2 {
-        args.push("--dmv2".to_string());
-    }
     if project.log_payloads {
         args.push("--log-payloads".to_string());
     }

@@ -58,7 +58,6 @@ flate2 = "1.0"
 tar = "0.4"
 rustpython-parser = "0.3.1"
 rustpython-ast = { version = "0.3.1", features = ["unparse"] }
-walkdir = "2"
 comfy-table = "7.1.1"
 ratatui = "0.27.0"
 prometheus-parse = "0.2.5"

@@ -52,3 +52,9 @@ impl EndpointFile {
 pub struct Consumption {
     pub endpoint_files: Vec<EndpointFile>,
 }
+
+/// Used to parse JSON output from Python/TypeScript query param extraction
+#[derive(Debug, Deserialize)]
+pub struct QueryParamOutput {
+    pub params: Vec<ConsumptionQueryParam>,
+}

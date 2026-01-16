@@ -1,6 +1,5 @@
 use clap::Subcommand;
 
-pub mod blocks;
 pub mod bulk_import;
 pub mod consumption;
 pub mod core;

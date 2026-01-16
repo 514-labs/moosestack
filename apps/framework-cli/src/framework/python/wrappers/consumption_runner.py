@@ -35,9 +35,6 @@ from moose_lib.commons import EnhancedJSONEncoder
 from consumption_wrapper.utils import create_temporal_connection
 
 parser = argparse.ArgumentParser(description="Run Consumption Server")
-parser.add_argument(
-    "consumption_dir_path", type=str, help="Path to the consumption directory"
-)
 parser.add_argument("clickhouse_db", type=str, help="Clickhouse database name")
 parser.add_argument("clickhouse_host", type=str, help="Clickhouse host")
 parser.add_argument("clickhouse_port", type=int, help="Clickhouse port")
@@ -55,7 +52,6 @@ parser.add_argument("temporal_namespace", type=str, help="Temporal namespace")
 parser.add_argument("client_cert", type=str, help="Client certificate")
 parser.add_argument("client_key", type=str, help="Client key")
 parser.add_argument("api_key", type=str, help="API key")
-parser.add_argument("is_dmv2", type=str, help="Is DMv2")
 parser.add_argument("proxy_port", type=int, help="Proxy port")
 
 args = parser.parse_args()
@@ -66,7 +62,6 @@ port = args.clickhouse_port
 db = args.clickhouse_db
 user = args.clickhouse_username
 password = args.clickhouse_password
-consumption_dir_path = args.consumption_dir_path
 
 jwt_secret = args.jwt_secret
 jwt_issuer = args.jwt_issuer
@@ -78,9 +73,6 @@ temporal_namespace = args.temporal_namespace
 client_cert = args.client_cert
 client_key = args.client_key
 api_key = args.api_key
-is_dmv2 = args.is_dmv2.lower() == "true"
-
-sys.path.append(consumption_dir_path)
 
 # Persistent event loop for handling async ASGI requests
 # Reusing a single event loop avoids the overhead of creating/destroying
@@ -239,88 +231,81 @@ def handler_with_client(moose_client):
                         )
                         return
 
-                # Check for WebApp routes first (if dmv2 is enabled)
-                if is_dmv2:
-                    web_apps = get_web_apps()
-                    # Sort by mount path length (longest first) for proper routing
-                    sorted_web_apps = sorted(
-                        web_apps.values(),
-                        key=lambda wa: len(wa.config.mount_path),
-                        reverse=True,
+                # Check for WebApp routes first
+                web_apps = get_web_apps()
+                # Sort by mount path length (longest first) for proper routing
+                sorted_web_apps = sorted(
+                    web_apps.values(),
+                    key=lambda wa: len(wa.config.mount_path),
+                    reverse=True,
+                )
+
+                for web_app in sorted_web_apps:
+                    mount_path = web_app.config.mount_path
+                    normalized_mount = mount_path.rstrip("/")
+
+                    # Check if path matches this WebApp
+                    matches = raw_path == normalized_mount or raw_path.startswith(
+                        normalized_mount + "/"
                     )
 
-                    for web_app in sorted_web_apps:
-                        mount_path = web_app.config.mount_path
-                        normalized_mount = mount_path.rstrip("/")
-
-                        # Check if path matches this WebApp
-                        matches = raw_path == normalized_mount or raw_path.startswith(
-                            normalized_mount + "/"
+                    if matches:
+                        # This request is for a WebApp
+                        print(
+                            f"[WebApp] Routing {method} {raw_path} to WebApp '{web_app.name}'"
                         )
 
-                        if matches:
-                            # This request is for a WebApp
-                            print(
-                                f"[WebApp] Routing {method} {raw_path} to WebApp '{web_app.name}'"
+                        # Inject Moose utilities into request state if enabled
+                        moose_utils = None
+                        if web_app.config.inject_moose_utils:
+                            moose_utils = ApiUtil(
+                                client=moose_client, sql=Sql, jwt=jwt_payload
                             )
 
-                            # Inject Moose utilities into request state if enabled
-                            moose_utils = None
-                            if web_app.config.inject_moose_utils:
-                                moose_utils = ApiUtil(
-                                    client=moose_client, sql=Sql, jwt=jwt_payload
-                                )
+                        # Strip mount path from URL for the FastAPI app
+                        proxied_path = raw_path
+                        proxied_path = raw_path[len(normalized_mount) :]
 
-                            # Strip mount path from URL for the FastAPI app
-                            proxied_path = raw_path
-                            proxied_path = raw_path[len(normalized_mount) :]
+                        # Build ASGI scope
+                        server_name = getattr(self.server, "server_name", "localhost")
+                        server_port = getattr(self.server, "server_port", 4000)
+                        scope = {
+                            "type": "http",
+                            "asgi": {"version": "3.0"},
+                            "http_version": self.request_version.split("/")[-1],
+                            "method": method,
+                            "scheme": "http",
+                            "path": proxied_path,
+                            "query_string": (
+                                parsed_path.query.encode() if parsed_path.query else b""
+                            ),
+                            "root_path": normalized_mount,
+                            "headers": [
+                                (k.lower().encode(), v.encode())
+                                for k, v in self.headers.items()
+                            ],
+                            "server": (server_name, server_port),
+                            "client": self.client_address,
+                            "state": {"moose": moose_utils} if moose_utils else {},
+                        }
 
-                            # Build ASGI scope
-                            server_name = getattr(
-                                self.server, "server_name", "localhost"
+                        # Execute the FastAPI app via ASGI using persistent event loop
+                        # This avoids creating a new event loop on every request
+                        loop = get_persistent_event_loop()
+                        future = asyncio.run_coroutine_threadsafe(
+                            execute_asgi_app(web_app.app, scope, request_body), loop
+                        )
+                        status_code, response_headers, response_body = future.result()
+
+                        # Send response
+                        self.send_response(status_code)
+                        for header_name, header_value in response_headers:
+                            self.send_header(
+                                header_name.decode(), header_value.decode()
                             )
-                            server_port = getattr(self.server, "server_port", 4000)
-                            scope = {
-                                "type": "http",
-                                "asgi": {"version": "3.0"},
-                                "http_version": self.request_version.split("/")[-1],
-                                "method": method,
-                                "scheme": "http",
-                                "path": proxied_path,
-                                "query_string": (
-                                    parsed_path.query.encode()
-                                    if parsed_path.query
-                                    else b""
-                                ),
-                                "root_path": normalized_mount,
-                                "headers": [
-                                    (k.lower().encode(), v.encode())
-                                    for k, v in self.headers.items()
-                                ],
-                                "server": (server_name, server_port),
-                                "client": self.client_address,
-                                "state": {"moose": moose_utils} if moose_utils else {},
-                            }
-
-                            # Execute the FastAPI app via ASGI using persistent event loop
-                            # This avoids creating a new event loop on every request
-                            loop = get_persistent_event_loop()
-                            future = asyncio.run_coroutine_threadsafe(
-                                execute_asgi_app(web_app.app, scope, request_body), loop
-                            )
-                            status_code, response_headers, response_body = (
-                                future.result()
-                            )
-
-                            # Send response
-                            self.send_response(status_code)
-                            for header_name, header_value in response_headers:
-                                self.send_header(
-                                    header_name.decode(), header_value.decode()
-                                )
-                            self.end_headers()
-                            self.wfile.write(response_body)
-                            return
+                        self.end_headers()
+                        self.wfile.write(response_body)
+                        return
 
                 # If no WebApp matched, fall back to Api routing
                 query_params = parse_qs(parsed_path.query)
@@ -342,64 +327,51 @@ def handler_with_client(moose_client):
                     "/".join(path_parts[1:]) if len(path_parts) > 1 else None
                 )
 
-                if is_dmv2:
-                    # First try to look up by the full path (for custom paths)
-                    user_api = get_api(full_path)
+                # First try to look up by the full path (for custom paths)
+                user_api = get_api(full_path)
 
-                    # If not found by path, fall back to name:version lookup
-                    if user_api is None:
-                        # Use alias-aware lookup: unversioned name resolves to explicit unversioned
-                        # or the sole versioned API if exactly one exists
-                        user_api = (
-                            get_api(f"{module_name}:{version_from_path}")
-                            if version_from_path
-                            else get_api(module_name)
+                # If not found by path, fall back to name:version lookup
+                if user_api is None:
+                    # Use alias-aware lookup: unversioned name resolves to explicit unversioned
+                    # or the sole versioned API if exactly one exists
+                    user_api = (
+                        get_api(f"{module_name}:{version_from_path}")
+                        if version_from_path
+                        else get_api(module_name)
+                    )
+
+                if user_api is not None:
+                    query_fields = convert_pydantic_definition(user_api.model_type)
+                    try:
+                        params = map_params_to_class(
+                            query_params, query_fields, user_api.model_type
                         )
-
-                    if user_api is not None:
-                        query_fields = convert_pydantic_definition(user_api.model_type)
-                        try:
-                            params = map_params_to_class(
-                                query_params, query_fields, user_api.model_type
-                            )
-                        except (ValidationError, ValueError) as e:
-                            traceback.print_exc()
-                            self.send_response(400)
-                            self.end_headers()
-                            self.wfile.write(str(e).encode())
-                            return
-                        args = [moose_client, params]
-                        if jwt_payload is not None:
-                            args.append(jwt_payload)
-                        print(f"[API] | Executing API: {user_api.name}")
-                        response = user_api.query_function(*args)
-                        # Convert Pydantic model to dict before JSON serialization
-                        if isinstance(response, BaseModel):
-                            response = response.model_dump_json()
-                    else:
-                        self.send_response(404)
+                    except (ValidationError, ValueError) as e:
+                        traceback.print_exc()
+                        self.send_response(400)
                         self.end_headers()
-                        available_apis = list(get_apis().keys())
-                        error_message = f"API {module_name}"
-                        if version_from_path:
-                            error_message += f" with version {version_from_path}"
-                        error_message += f" not found. Available APIs: {', '.join(available_apis).replace(':', '/')}"
-                        self.wfile.write(
-                            bytes(json.dumps({"error": error_message}), "utf-8")
-                        )
+                        self.wfile.write(str(e).encode())
                         return
-                else:
-                    module = import_module(module_name)
-                    fields_and_class = convert_api_param(module)
-
-                    if fields_and_class is not None:
-                        (cls, fields) = fields_and_class
-                        query_params = map_params_to_class(query_params, fields, cls)
-
-                    args = [moose_client, query_params]
+                    args = [moose_client, params]
                     if jwt_payload is not None:
                         args.append(jwt_payload)
-                    response = module.run(*args)
+                    print(f"[API] | Executing API: {user_api.name}")
+                    response = user_api.query_function(*args)
+                    # Convert Pydantic model to dict before JSON serialization
+                    if isinstance(response, BaseModel):
+                        response = response.model_dump_json()
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    available_apis = list(get_apis().keys())
+                    error_message = f"API {module_name}"
+                    if version_from_path:
+                        error_message += f" with version {version_from_path}"
+                    error_message += f" not found. Available APIs: {', '.join(available_apis).replace(':', '/')}"
+                    self.wfile.write(
+                        bytes(json.dumps({"error": error_message}), "utf-8")
+                    )
+                    return
 
                 if hasattr(response, "status") and hasattr(response, "body"):
                     self.send_response(response.status)  # type: ignore[attr-defined]
@@ -490,9 +462,8 @@ def main():
     except Exception as e:
         print(f"Failed to connect to Temporal. Is the feature flag enabled? {e}")
 
-    if is_dmv2:
-        print("Loading DMv2 models")
-        load_models()
+    print("Loading models")
+    load_models()
 
     moose_client = MooseClient(ch_client, temporal_client)
     server_port = args.proxy_port

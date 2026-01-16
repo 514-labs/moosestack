@@ -11,7 +11,6 @@ export type DataModelConfig<T> = Partial<{
   parallelism?: number;
 }>;
 
-export * from "./blocks/helpers";
 export * from "./commons";
 export * from "./secrets";
 export * from "./consumption-apis/helpers";

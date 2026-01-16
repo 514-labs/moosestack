@@ -4,13 +4,8 @@ import { Task, Workflow } from "../dmv2";
 import { getWorkflows, getTaskForWorkflow } from "../dmv2/internal";
 import { jsonDateReviver } from "../utilities/json";
 
-export interface ScriptExecutionInput {
-  scriptPath: string;
-  inputData?: any;
-}
-
 export const activities = {
-  async hasDmv2Workflow(name: string): Promise<boolean> {
+  async hasWorkflow(name: string): Promise<boolean> {
     try {
       const workflows = await getWorkflows();
       const hasWorkflow = workflows.has(name);
@@ -22,7 +17,7 @@ export const activities = {
     }
   },
 
-  async getDmv2Workflow(name: string): Promise<Workflow> {
+  async getWorkflowByName(name: string): Promise<Workflow> {
     try {
       logger.info(`Getting workflow ${name}`);
 
@@ -74,7 +69,7 @@ export const activities = {
     }
   },
 
-  async executeDmv2Task(
+  async executeTask(
     workflow: Workflow,
     task: Task<any, any>,
     inputData: any,
@@ -166,6 +161,6 @@ export const activities = {
 // Helper function to create activity for a specific script
 export function createActivityForScript(scriptName: string) {
   return {
-    [scriptName]: activities.executeDmv2Task,
+    [scriptName]: activities.executeTask,
   };
 }

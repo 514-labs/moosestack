@@ -48,7 +48,6 @@ use super::{
         api_endpoint::{APIType, ApiEndpoint, Method},
         consumption_webserver::ConsumptionApiWebServer,
         function_process::FunctionProcess,
-        olap_process::OlapProcess,
         orchestration_worker::OrchestrationWorker,
         sql_resource::SqlResource,
         table::{Column, Metadata, Table, TableIndex},
@@ -544,7 +543,6 @@ pub struct PartialInfrastructureMap {
     topic_to_topic_sync_processes: HashMap<String, TopicToTopicSyncProcess>,
     #[serde(default)]
     function_processes: HashMap<String, FunctionProcess>,
-    block_db_processes: Option<OlapProcess>,
     consumption_api_web_server: Option<ConsumptionApiWebServer>,
     #[serde(default)]
     workflows: HashMap<String, PartialWorkflow>,
@@ -692,7 +690,6 @@ impl PartialInfrastructureMap {
             topic_to_table_sync_processes,
             topic_to_topic_sync_processes: self.topic_to_topic_sync_processes,
             function_processes,
-            block_db_processes: self.block_db_processes.unwrap_or(OlapProcess {}),
             consumption_api_web_server: self
                 .consumption_api_web_server
                 .unwrap_or(ConsumptionApiWebServer {}),

@@ -56,5 +56,4 @@ ignore_patterns = []
 [features]
 streaming_engine = false
 workflows = false
-data_model_v2 = true
 apis = true

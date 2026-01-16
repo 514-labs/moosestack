@@ -12,7 +12,6 @@ const FUNCTION_RUNNER_BIN: &str = "streaming-functions";
 
 // TODO: we currently refer kafka configuration here. If we want to be able to
 // abstract this to other type of streaming engine, we will need to be able to abstract this away.
-#[allow(clippy::too_many_arguments)]
 pub fn run(
     kafka_config: &KafkaConfig,
     source_topic: &StreamConfig,
@@ -21,7 +20,6 @@ pub fn run(
     project: &Project,
     project_path: &Path,
     max_subscriber_count: usize,
-    is_dmv2: bool,
     // TODO Remove the anyhow type here
 ) -> Result<Child, std::io::Error> {
     let subscriber_count_str = max_subscriber_count.to_string();
@@ -64,10 +62,6 @@ pub fn run(
     if kafka_config.security_protocol.is_some() {
         args.push("--security-protocol");
         args.push(kafka_config.security_protocol.as_ref().unwrap());
-    }
-
-    if is_dmv2 {
-        args.push("--is-dmv2");
     }
 
     if project.log_payloads {

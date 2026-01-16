@@ -1,4 +1,4 @@
-import { ClickHouseEngines } from "../../blocks/helpers";
+import { ClickHouseEngines } from "../../dataModels/types";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
 import { OlapConfig, OlapTable } from "./olapTable";
 import { View } from "./view";

@@ -735,9 +735,6 @@ pub fn show_process_changes(process_changes: &[ProcessChange]) {
         ProcessChange::FunctionProcess(function_change) => {
             handle_standard_change!(function_change);
         }
-        ProcessChange::OlapProcess(olap_change) => {
-            handle_standard_change!(olap_change);
-        }
         ProcessChange::ConsumptionApiWebServer(Change::Added(_)) => {
             infra_added("Starting Consumption WebServer...");
         }

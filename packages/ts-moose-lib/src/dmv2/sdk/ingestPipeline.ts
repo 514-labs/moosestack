@@ -10,7 +10,7 @@ import {
 import { OlapConfig, OlapTable } from "./olapTable";
 import { IngestApi, IngestConfig } from "./ingestApi";
 import { LifeCycle } from "./lifeCycle";
-import { ClickHouseEngines } from "../../blocks/helpers";
+import { ClickHouseEngines } from "../../dataModels/types";
 
 /**
  * Configuration options for a complete ingestion pipeline, potentially including an Ingest API, a Stream, and an OLAP Table.
