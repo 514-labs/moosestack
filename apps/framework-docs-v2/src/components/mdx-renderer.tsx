@@ -47,6 +47,7 @@ import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypePrettyCode from "rehype-pretty-code";
 import { rehypeCodeMeta } from "@/lib/rehype-code-meta";
 import { rehypeRestoreCodeMeta } from "@/lib/rehype-restore-code-meta";
+import { ensureCodeBlockSpacing } from "@/lib/remark-code-block-spacing";
 
 interface MDXRendererProps {
   source: string;
@@ -54,6 +55,11 @@ interface MDXRendererProps {
 
 export async function MDXRenderer({ source }: MDXRendererProps) {
   "use cache";
+
+  // Preprocess content to ensure proper spacing around code blocks
+  // This prevents hydration errors from invalid HTML nesting
+  const processedSource = ensureCodeBlockSpacing(source);
+
   // Create FileTree with nested components
   const FileTreeWithSubcomponents = Object.assign(FileTree, {
     Folder: FileTreeFolder,
@@ -134,7 +140,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
 
   return (
     <MDXRemote
-      source={source}
+      source={processedSource}
       components={components}
       options={{
         mdxOptions: {

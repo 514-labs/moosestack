@@ -379,18 +379,9 @@ export function ServerInlineCode({
   if (isCodeBlock) {
     // This is a code block that should be handled by ServerCodeBlock
     // This is a fallback for when code is not wrapped in pre
-    const language = getLanguage(props as ServerCodeBlockProps);
-    const codeText = extractTextContent(children).trim();
-
-    return (
-      <div className="not-prose">
-        <CodeSnippet
-          code={codeText}
-          language={language || "plaintext"}
-          copyButton={true}
-        />
-      </div>
-    );
+    // Return inline code instead of block to avoid nesting errors
+    const textContent = extractTextContent(children).trim();
+    return <InlineCode code={textContent} className={className} />;
   }
 
   // Check for inline code with language hint: `code{:lang}`
