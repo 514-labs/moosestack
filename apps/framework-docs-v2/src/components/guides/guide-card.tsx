@@ -43,7 +43,7 @@ export function GuideCard({
           </p>
         )}
       </div>
-      <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors group-hover:bg-accent group-hover:text-accent-foreground w-fit">
+      <div className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors group-hover:bg-primary/90 w-fit">
         <IconBook className="h-4 w-4" strokeWidth={2} />
         Start Guide
       </div>
