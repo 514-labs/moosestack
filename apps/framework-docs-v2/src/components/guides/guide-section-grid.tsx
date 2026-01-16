@@ -29,6 +29,7 @@ export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
                 <GuideCard
                   key={guide.slug}
                   title={guide.title}
+                  description={guide.description}
                   href={`/${guide.slug}`}
                   icon={IconComponent}
                 />

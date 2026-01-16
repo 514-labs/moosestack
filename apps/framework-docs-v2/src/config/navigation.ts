@@ -58,6 +58,7 @@ export interface NavPage {
   type: "page";
   slug: string;
   title: string;
+  description?: string; // Optional description for guides
   languages: Language[];
   icon?: TablerIcon;
   children?: NavItem[]; // Allow NavItem[] to support labels/separators within children
@@ -1205,17 +1206,19 @@ const guidesNavigationConfig: NavigationConfig = [
     type: "page",
     slug: "guides/performant-dashboards",
     title: "Improving the Performance of Your Dashboards",
+    description:
+      "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
     icon: IconChartLine,
     languages: ["typescript", "python"],
-    status: "draft",
   },
   {
     type: "page",
     slug: "guides/chat-in-your-app",
-    title: "Chat in Your App",
+    title: "Chat in your app",
+    description:
+      "Build a data-aware chat on top of your ClickHouse database with Next.js and MooseStack.",
     icon: IconMessageChatbot,
     languages: ["typescript", "python"],
-    status: "draft",
   },
   {
     type: "page",
@@ -1383,37 +1386,29 @@ const guidesNavigationConfig: NavigationConfig = [
   },
   {
     type: "section",
-    title: "Strategy",
+    title: "Test Guides",
     items: [
       {
         type: "page",
-        slug: "guides/strategy/ai-enablement",
-        title: "AI Enablement",
-        icon: IconBrain,
+        slug: "guides/test-guides/mermaid-test",
+        title: "Mermaid Diagram Test",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
         status: "draft",
       },
       {
         type: "page",
-        slug: "guides/strategy/data-foundation",
-        title: "Data Foundation",
-        icon: IconDatabase,
+        slug: "guides/test-guides/content-components-demo",
+        title: "Content Components Demo",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
         status: "draft",
       },
       {
         type: "page",
-        slug: "guides/strategy/platform-engineering",
-        title: "Platform Engineering",
-        icon: IconServer,
-        languages: ["typescript", "python"],
-        status: "draft",
-      },
-      {
-        type: "page",
-        slug: "guides/strategy/olap-evaluation",
-        title: "OLAP Evaluation",
-        icon: IconDatabase,
+        slug: "guides/test-guides/code-blocks",
+        title: "Code Blocks Rendering Test",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
         status: "draft",
       },
@@ -1679,6 +1674,7 @@ export function hasVisibleGuides(
 export interface SerializableGuideItem {
   slug: string;
   title: string;
+  description?: string;
   iconName?: string;
 }
 
@@ -1757,6 +1753,7 @@ export function getVisibleGuideSections(flags: {
       topLevelGuides.push({
         slug: item.slug,
         title: item.title,
+        description: item.description,
         iconName: getIconName(item.icon),
       });
     }
@@ -1782,6 +1779,7 @@ export function getVisibleGuideSections(flags: {
         visibleItems.push({
           slug: subItem.slug,
           title: subItem.title,
+          description: subItem.description,
           iconName: getIconName(subItem.icon),
         });
       }

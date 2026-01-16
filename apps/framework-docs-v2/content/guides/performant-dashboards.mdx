@@ -3,6 +3,8 @@ title: Improving the Performance of Your Dashboards
 description: Learn how to build blazing-fast dashboards using MooseStack and ClickHouse
 ---
 
+import { FileTree } from "@/components/mdx";
+
 # Improving the Performance of Your Dashboards
 
 This guide assumes that you have a dashboard or report up and running, and that you wish to improve the performance of your dashboard by leveraging OLAP best practices. It will guide you through:
@@ -154,29 +156,32 @@ pnpm install
 
 Your monorepo will have the following structure:
 
-```
-your-monorepo/
-├── app/                           # Your Next.js app directory (or similar)
-├── components/                    # Your app components
-├── moosestack/                    # MooseStack Project ← NEW
-│   ├── src/                       # MooseStack source code
-│   │   ├── cdc/                   # CDC pipeline code
-│   │   ├── models/                # Data Models
-│   │   └── queries/               # Query Handlers
-│   ├── moose.config.toml          # MooseStack configuration
-│   ├── package.json               # MooseStack package config
-│   └── tsconfig.json              # TypeScript config for MooseStack
-├── public/                        # Static assets
-├── pnpm-workspace.yaml            # PNPM workspace config
-├── package.json                   # Root package.json
-└── pnpm-lock.yaml                 # Lockfile
-
-```
+<FileTree>
+  <FileTree.Folder name="your-monorepo">
+    <FileTree.Folder name="app" />
+    <FileTree.Folder name="components" />
+    <FileTree.Folder name="moosestack">
+      <FileTree.Folder name="src">
+        <FileTree.Folder name="cdc" />
+        <FileTree.Folder name="models" />
+        <FileTree.Folder name="queries" />
+      </FileTree.Folder>
+      <FileTree.File name="moose.config.toml" />
+      <FileTree.File name="package.json" />
+      <FileTree.File name="tsconfig.json" />
+    </FileTree.Folder>
+    <FileTree.Folder name="public" />
+    <FileTree.File name="pnpm-workspace.yaml" />
+    <FileTree.File name="package.json" />
+    <FileTree.File name="pnpm-lock.yaml" />
+  </FileTree.Folder>
+</FileTree>
 
 ## Run your Moose Development Server
 
 Ensure Docker Desktop is running first.  
-![][image2]
+
+{/* image 1 */}
 
 ### If you followed Option A (cloned existing repo):
 
@@ -238,7 +243,8 @@ If the development server runs correctly, you'll see a list of the available API
 ```
 
 And your local services will be running in Docker containers:  
-![][image3]
+
+{/* image1 */}
 
 ## Setting up developer / agent supporting services
 
@@ -1067,9 +1073,9 @@ moose seed clickhouse --connection-string <BOREAL_CONNECTION_STRING> --all
 ### Finding your connection string in Boreal
 
 `BOREAL_CONNECTION_STRING` is your connection string to a remote/cloud database. In Boreal, you can find that here:  
-![][image4]
+{/* image  */}
 
-![][image5]  
+{/* image */}  
 Note, there are a few forms of connection string, this query requires `HTTPS URL`.
 
 You can set your Boreal connection string as a local environment variable for ease of use:
@@ -1277,7 +1283,7 @@ Choose a specific dashboard component or report to migrate. For this example, le
 
 Select **Plan mode** (selected near the model selector in the chat pane), and **choose an advanced reasoning model** of your choice (like Claude Opus 4.5, GPT Codex 5.1 Max or GPT 5.2).
 
-![][image6]
+{/* image */}
 
 ### Initiate plan creation
 
@@ -1314,7 +1320,7 @@ Make sure that all of your queries return data before even starting to implement
 
 This will generate a plan, using the relevant context.
 
-![][image7]
+{/* image */}
 
 See example generated plan in the [appendix](#sample-plan). 
 
@@ -1368,8 +1374,8 @@ Add inline JSDoc for handlers, params, and response shapes
 ### Running the plan
 
 Once you are satisfied with the plan, hit `Build`. This will experiment with SQL queries, build up materialized views and implement the new endpoint.  
-   
-![][image8]
+      
+{/* image */}
 
 You will likely be asked for various permissions along the way, including for MCP tool use to check work against local data, and curl commands to check work against the remote database.
 
@@ -1597,7 +1603,7 @@ moose generate migration --save --url <BOREAL_HOST> --token <BOREAL_ADMIN_API_BE
 
 **Parameters:**
 * `BOREAL_HOST` is the host for your production deployment in Boreal. Copy it from the URL in your project overview dashboard:
-  ![][image9]
+  {/* image */}
 * `BOREAL_ADMIN_API_BEARER_TOKEN` is sent in the request header when calling the Boreal Admin API at `BOREAL_HOST`. This is the API key. It is a secret and must not be committed to source control. Store it securely in a password manager.
 
 After successfully running `moose generate migration` with the correct `--url` and `--token`, a new `/migrations` directory should appear at the root of your MooseStack project. Open the `plan.yaml` file in that directory and review it carefully.
@@ -1649,7 +1655,7 @@ Once the PR is open, Boreal automatically deploys an isolated preview (staging) 
 
 Confirm that **boreal-cloud bot** appears in the PR comments.
 
-![][image10]
+{/* image */}
 
 This confirms that:
 
@@ -1660,7 +1666,7 @@ If the bot does not appear, double check that you have correctly integrated your
 
 In the **boreal-cloud bot** comment, you'll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Boreal project dashboard with your preview environment selected.
 
-![][image11]
+{/* image */}
 
 From here, you'll inspect the database state and validate that the resources created by your migration plan match what you reviewed and expected before proceeding.
 
@@ -1833,10 +1839,10 @@ MooseStack uses Docker containers under the hood for components like ClickHouse 
 **Configure Docker Desktop with WSL2**
 
 1. **Enable WSL2 backend:** In Docker Desktop, open **Settings** (gear icon or via the taskbar menu). Under **General**, ensure **"Use the WSL 2 based engine"** is checked. This tells Docker to use WSL2 for running Linux containers.
-   ![][image12]
+  {/* image */}
 
 2. **Integrate with Ubuntu:** Still in Settings, go to **Resources > WSL Integration**. You should see a list of your WSL distributions. Find **Ubuntu** (or the distro you installed) and **enable integration** for it (toggle it on). This allows Docker containers to be managed from within that WSL instance.
-   ![][image13]
+   {/* image */}
 
 3. **Allocate sufficient resources:** Docker Desktop by default might allocate limited resources. MooseStack's stack requires at least **2.5 GB of memory** for Docker. Go to **Resources > Advanced** (or **Resources > Memory**) and increase the memory to 3-4 GB to be safe. You can also adjust CPUs if needed (2 CPUs is usually fine for dev).
 
@@ -1947,7 +1953,7 @@ Implement as a single bash script.
 
 This is an example of a plan generated by an AI copilot for implementing a dataset API endpoint. Use this as a reference for the level of detail and structure your own AI-generated plans should have.
 
-````
+````markdown
 # Implement Order Fulfillment Dataset API Endpoint
 
 ## Overview

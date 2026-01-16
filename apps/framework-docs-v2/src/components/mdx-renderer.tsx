@@ -46,6 +46,7 @@ import rehypeSlug from "rehype-slug";
 import rehypeAutolinkHeadings from "rehype-autolink-headings";
 import rehypePrettyCode from "rehype-pretty-code";
 import { rehypeCodeMeta } from "@/lib/rehype-code-meta";
+import { rehypeRestoreCodeMeta } from "@/lib/rehype-restore-code-meta";
 
 interface MDXRendererProps {
   source: string;
@@ -146,10 +147,16 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
             [
               rehypePrettyCode,
               {
-                theme: "github-dark",
+                theme: {
+                  light: "vitesse-light",
+                  dark: "vitesse-dark",
+                },
                 keepBackground: false,
+                defaultLang: "plaintext",
               },
             ],
+            // Restore custom meta attributes AFTER rehype-pretty-code
+            rehypeRestoreCodeMeta,
           ],
         },
       }}

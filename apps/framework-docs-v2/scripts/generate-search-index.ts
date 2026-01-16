@@ -11,8 +11,8 @@
 import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
+import { processIncludes, CONTENT_ROOT } from "../src/lib/includes.js";
 
-const CONTENT_ROOT = path.join(process.cwd(), "content");
 const OUTPUT_DIR = path.join(process.cwd(), ".search-index");
 
 interface ContentFile {
@@ -245,6 +245,9 @@ function processFile(filePath: string): ContentFile | null {
     const parsed = matter(fileContents);
     data = parsed.data;
     content = parsed.content;
+
+    // Process include directives (silent mode for search index)
+    content = processIncludes(content, { showErrors: false });
   } catch (error) {
     // Handle YAML parsing errors (e.g., unquoted colons in values)
     console.warn(`  ⚠ YAML error in ${filePath}, attempting fallback parse`);
@@ -255,6 +258,10 @@ function processFile(filePath: string): ContentFile | null {
     );
     if (frontmatterMatch) {
       content = frontmatterMatch[2] || "";
+
+      // Process include directives (silent mode for search index)
+      content = processIncludes(content, { showErrors: false });
+
       // Try to extract title from frontmatter manually
       const titleMatch = frontmatterMatch[1]?.match(/^title:\s*(.+)$/m);
       const descMatch = frontmatterMatch[1]?.match(/^description:\s*(.+)$/m);
