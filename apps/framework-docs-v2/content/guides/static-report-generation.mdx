@@ -1,0 +1,1004 @@
+---
+title: Static Report Generation
+description: Automate report generation with MooseStack workflows
+---
+
+# Static Report Generation
+
+This guide shows you how to automate the generation of static reports using MooseStack workflows. You'll build a complete data pipeline from file ingestion through PDF export, learning how to leverage ClickHouse's time-series capabilities for fast analytics.
+
+## What You'll Learn
+
+- Defining type-safe data models with automatic infrastructure provisioning
+- Ingesting data from CSV and JSON files into ClickHouse
+- Creating materialized views for pre-aggregated time-series analytics
+- Building parameterized consumption APIs for report generation
+- Generating professional PDF reports from aggregated data
+
+## Prerequisites
+
+- Node.js 18+ installed
+- Basic familiarity with TypeScript and SQL
+- Terminal access
+- ~40 minutes for hands-on work
+
+---
+
+## Part 1: The Scenario
+
+### Apex Retail Daily Sales Consolidation
+
+Before diving into code, let's understand what we're building and why.
+
+**The Business Context:**
+You're a data engineer at **Apex Retail**, a growing retail chain with 12 stores across 4 regions (West, East, Central, South). Each night, store point-of-sale (POS) systems export the day's sales transactions as CSV or JSON files.
+
+**The Current Pain:**
+> An analyst manually downloads files from each store, copies data into Excel, and emails a summary to regional managers. This takes 2 hours every morning and is error-prone. When the analyst is sick, reports don't go out.
+
+**What You'll Build:**
+> An automated pipeline that ingests store file uploads, stores them in ClickHouse, pre-aggregates daily summaries with materialized views, and generates an executive PDF report—all with about 60 lines of TypeScript.
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Data Flow                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   CSV/JSON Files     POST /ingest/sales      Redpanda Stream        │
+│   ─────────────► ──────────────────────► ────────────────────►      │
+│                                                                     │
+│   ClickHouse Table   Materialized View      Consumption API         │
+│   ◄────────────────  ◄────────────────     ◄────────────────        │
+│   (Raw Transactions) (Daily Summaries)     (JSON Endpoint)          │
+│                                                                     │
+│                                              PDF Export             │
+│                                             ◄────────────────       │
+│                                             (Executive Summary)     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### The End Result
+
+By the end of this tutorial, you'll have:
+1. **Automated data ingestion** - Load CSV/JSON files with a simple script
+2. **Pre-computed aggregations** - Daily summaries ready in milliseconds
+3. **API endpoint** - Parameterized JSON endpoint for any date range
+4. **Executive PDF report** - One-page summary for regional managers
+
+---
+
+## Part 2: Setup and Data Model
+
+**Time: ~8 minutes**
+
+### Step 1: Install the Moose CLI
+
+First, install the Moose CLI:
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+After installation completes, verify with:
+
+```bash
+moose --version
+```
+
+### Step 2: Initialize Project
+
+Create a new Moose project using the TypeScript template:
+
+```bash
+moose init sales-reports --language typescript
+cd sales-reports
+npm install
+```
+
+### Step 3: Start Development Server
+
+Launch the full development stack including ClickHouse, Redpanda, and Temporal:
+
+```bash
+moose dev
+```
+
+You should see output indicating the API server started on http://localhost:4000. Keep this terminal open and use a new terminal for subsequent commands.
+
+**Important:** The development server auto-reloads when you change files. Changes to your code are automatically applied.
+
+### Step 4: Define the Data Model
+
+Create the file `app/ingest/SalesTransaction.ts` with your data model. This represents what a store POS system exports each night:
+
+```typescript
+import { Key, IngestPipeline } from "@514labs/moose-lib";
+
+// Define the data model - matches store POS export format
+export interface SalesTransaction {
+  // Primary key
+  transactionId: Key<string>;  // e.g., "TXN-W001-20250115-0001"
+
+  // Timestamp - the star of time-series analytics
+  saleTimestamp: Date;
+
+  // Store & location
+  storeId: string;             // e.g., "STORE-W001"
+  region: string;              // West, East, Central, South
+
+  // Product info
+  productId: string;
+  productCategory: string;     // Electronics, Clothing, Food, Home, Sports
+
+  // Customer (optional - from loyalty card)
+  customerId: string;
+
+  // Transaction amounts
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+}
+
+// Create a complete ingestion pipeline with one declaration
+export const salesPipeline = new IngestPipeline<SalesTransaction>("sales", {
+  ingestApi: true,
+  stream: true,
+  table: {
+    // Time-first ordering for efficient range queries
+    orderByFields: ["saleTimestamp", "transactionId"],
+  }
+});
+```
+
+This single declaration creates three things automatically:
+- A **ClickHouse table** matching your interface
+- A **Redpanda stream** for real-time data flow
+- A **REST API endpoint** at `/ingest/sales`
+
+### Step 5: Export Models
+
+Update `app/index.ts` to export your models:
+
+```typescript
+export * from "./ingest/SalesTransaction";
+```
+
+### Step 6: Test Basic Ingestion
+
+POST sample data to the auto-generated /ingest API. This simulates what a store POS would send:
+
+```bash
+curl -X POST http://localhost:4000/ingest/sales \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transactionId": "TXN-W001-20250115-0001",
+    "saleTimestamp": "2025-01-15T10:30:00Z",
+    "storeId": "STORE-W001",
+    "region": "West",
+    "productId": "PROD-ELE-001",
+    "productCategory": "Electronics",
+    "customerId": "CUST-1001",
+    "quantity": 2,
+    "unitPrice": 299.99,
+    "totalAmount": 599.98
+  }'
+```
+
+A successful response returns `{"success": true}`.
+
+**What Just Happened:** You sent a single transaction that simulates a customer buying 2 items at the West region's Store W001. The data flowed through Redpanda and landed in ClickHouse—all auto-provisioned from your TypeScript interface.
+
+Verify data landed by querying ClickHouse directly:
+
+<Note>
+The credentials `panda`/`pandapass` are local development defaults configured by `moose dev`. Never use these in production—configure secure credentials in your deployment environment.
+</Note>
+
+```bash
+clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
+  --query "SELECT * FROM local.sales_SalesTransaction"
+```
+
+---
+
+## Part 3: File Ingestion
+
+**Time: ~8 minutes**
+
+In production, stores upload CSV or JSON files rather than calling APIs directly. Let's build a file loader.
+
+### Step 1: Install Dependencies
+
+```bash
+npm install papaparse date-fns
+npm install -D @types/papaparse
+```
+
+### Step 2: Create File Loader Script
+
+Create `scripts/load-file.ts`:
+
+```typescript
+import Papa from "papaparse";
+import fs from "fs";
+import path from "path";
+
+interface SalesTransaction {
+  transactionId: string;
+  saleTimestamp: string;
+  storeId: string;
+  region: string;
+  productId: string;
+  productCategory: string;
+  customerId: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+}
+
+async function loadFile(filePath: string): Promise<void> {
+  const ext = path.extname(filePath).toLowerCase();
+  const content = fs.readFileSync(filePath, "utf-8");
+
+  let records: SalesTransaction[];
+
+  if (ext === ".csv") {
+    const { data } = Papa.parse<SalesTransaction>(content, {
+      header: true,
+      dynamicTyping: true,
+    });
+    records = data.filter((r) => r.transactionId); // Filter empty rows
+  } else if (ext === ".json") {
+    const parsed = JSON.parse(content);
+    records = Array.isArray(parsed) ? parsed : [parsed];
+  } else {
+    throw new Error(`Unsupported file format: ${ext}`);
+  }
+
+  console.log(`Parsed ${records.length} records from ${filePath}`);
+
+  // Send records to ingest API (collecting errors for partial failure handling)
+  const errors: Array<{ index: number; error: string }> = [];
+  for (let i = 0; i < records.length; i++) {
+    const response = await fetch("http://localhost:4000/ingest/sales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(records[i]),
+    });
+
+    if (!response.ok) {
+      errors.push({ index: i, error: response.statusText });
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error(`Failed to ingest ${errors.length} records:`, errors);
+  }
+  console.log(`Successfully loaded ${records.length - errors.length} of ${records.length} records`);
+}
+
+// CLI execution
+const filePath = process.argv[2];
+if (!filePath) {
+  console.error("Usage: npx ts-node scripts/load-file.ts <path-to-file>");
+  process.exit(1);
+}
+
+loadFile(filePath).catch(console.error);
+```
+
+<Note>
+This script sends records one at a time for simplicity. For production workloads with large files, consider batch ingestion by posting arrays of records to improve throughput.
+</Note>
+
+### Step 3: Create Sample Data
+
+Create `sample-data/west-store-001.csv`:
+
+```csv
+transactionId,saleTimestamp,storeId,region,customerId,productId,productCategory,quantity,unitPrice,totalAmount
+TXN-W001-20250115-0001,2025-01-15T09:15:00Z,STORE-W001,West,CUST-1001,PROD-ELE-001,Electronics,2,299.99,599.98
+TXN-W001-20250115-0002,2025-01-15T09:32:00Z,STORE-W001,West,CUST-1002,PROD-CLO-015,Clothing,1,49.99,49.99
+TXN-W001-20250115-0003,2025-01-15T10:05:00Z,STORE-W001,West,,PROD-FOO-042,Food,3,12.99,38.97
+TXN-W001-20250115-0004,2025-01-15T10:45:00Z,STORE-W001,West,CUST-1003,PROD-HOM-008,Home,1,89.99,89.99
+TXN-W001-20250115-0005,2025-01-15T11:20:00Z,STORE-W001,West,CUST-1004,PROD-SPO-022,Sports,2,34.99,69.98
+TXN-W001-20250115-0006,2025-01-15T12:00:00Z,STORE-W001,West,,PROD-ELE-055,Electronics,1,149.99,149.99
+TXN-W001-20250115-0007,2025-01-15T13:30:00Z,STORE-W001,West,CUST-1005,PROD-CLO-033,Clothing,3,29.99,89.97
+TXN-W001-20250115-0008,2025-01-15T14:15:00Z,STORE-W001,West,CUST-1001,PROD-FOO-018,Food,5,8.99,44.95
+TXN-W001-20250115-0009,2025-01-15T15:45:00Z,STORE-W001,West,CUST-1006,PROD-HOM-041,Home,1,199.99,199.99
+TXN-W001-20250115-0010,2025-01-15T16:30:00Z,STORE-W001,West,,PROD-ELE-012,Electronics,1,599.99,599.99
+```
+
+**Note:** Empty `customerId` fields represent customers without loyalty cards (about 30% of transactions).
+
+### Step 4: Load Sample Data
+
+```bash
+mkdir -p sample-data
+# Create the CSV file above, then:
+npx ts-node scripts/load-file.ts sample-data/west-store-001.csv
+```
+
+You should see:
+```
+Parsed 10 records from sample-data/west-store-001.csv
+Successfully loaded 10 records
+```
+
+Verify in ClickHouse:
+
+```bash
+clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
+  --query "SELECT count() FROM local.sales_SalesTransaction"
+```
+
+---
+
+## Part 4: Time-Series Aggregation
+
+**Time: ~8 minutes**
+
+Now let's create a materialized view that pre-aggregates daily summaries. This is where ClickHouse's time-series capabilities shine.
+
+### Understanding ClickHouse Materialized Views
+
+Before creating the view, understand how ClickHouse materialized views work:
+
+- Materialized views execute on **INSERT**, not on a schedule—they process data as it arrives
+- Data is aggregated per insert batch, not globally across all data
+- Background merges eventually consolidate data, but **always use GROUP BY** when querying for accurate results
+- SummingMergeTree works for `sum()` and `count()` only
+
+### Step 1: Create Materialized View
+
+Create `app/views/DailySalesSummary.ts`:
+
+```typescript
+import { MaterializedView, sql } from "@514labs/moose-lib";
+import { salesPipeline } from "../ingest/SalesTransaction";
+
+// Define the aggregated data model
+export interface DailySalesSummary {
+  saleDate: Date;
+  region: string;
+  productCategory: string;
+  transactionCount: number;
+  totalQuantity: number;
+  totalRevenue: number;
+}
+
+// Get table reference from pipeline
+const salesTable = salesPipeline.table;
+
+// Create materialized view with auto-created target table
+export const dailySalesMV = new MaterializedView<DailySalesSummary>({
+  tableName: "DailySalesSummary",
+  materializedViewName: "DailySalesSummary_MV",
+  orderByFields: ["saleDate", "region", "productCategory"],
+  selectTables: [salesTable],
+  selectStatement: sql`
+    SELECT
+      toStartOfDay(saleTimestamp) AS saleDate,
+      region,
+      productCategory,
+      count() AS transactionCount,
+      sum(quantity) AS totalQuantity,
+      sum(totalAmount) AS totalRevenue
+    FROM ${salesTable}
+    GROUP BY saleDate, region, productCategory
+  `,
+});
+```
+
+**Key Points:**
+- `toStartOfDay()` truncates timestamps to daily granularity
+- ORDER BY `saleDate` first enables efficient date-range queries
+- SummingMergeTree (default) automatically merges rows with same ORDER BY keys
+
+### Step 2: Update Exports
+
+Add the view export to `app/index.ts`:
+
+```typescript
+export * from "./ingest/SalesTransaction";
+export * from "./views/DailySalesSummary";
+```
+
+### Step 3: Verify Materialized View
+
+Check that the materialized view was created:
+
+```bash
+clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
+  --query "SHOW TABLES FROM local"
+```
+
+You should see both `sales_SalesTransaction` and `DailySalesSummary`.
+
+### Step 4: Query the Aggregated Data
+
+Query the pre-aggregated data (always use GROUP BY with SummingMergeTree):
+
+```bash
+clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
+  --query "
+    SELECT
+      saleDate,
+      region,
+      sum(transactionCount) AS transactions,
+      sum(totalRevenue) AS revenue
+    FROM local.DailySalesSummary
+    GROUP BY saleDate, region
+    ORDER BY saleDate, region
+  "
+```
+
+### ClickHouse Time-Series Functions Reference
+
+| Function | Output | Use Case |
+|----------|--------|----------|
+| `toStartOfHour(ts)` | `2025-01-15 10:00:00` | Intraday patterns |
+| `toStartOfDay(ts)` | `2025-01-15` | Daily summaries |
+| `toStartOfWeek(ts, 1)` | `2025-01-13` | Weekly trends (Monday start) |
+| `toStartOfMonth(ts)` | `2025-01-01` | Monthly reporting |
+| `toHour(ts)` | `10` (integer) | Hour-of-day analysis |
+| `toDayOfWeek(ts)` | `3` (Wednesday) | Day-of-week patterns |
+
+**Teaching Point:** Pre-aggregated materialized views typically improve query performance by 10-100x compared to scanning raw transaction data.
+
+---
+
+## Part 5: Report API
+
+**Time: ~6 minutes**
+
+Now let's build a consumption API that exposes the aggregated data with parameterized date ranges.
+
+### Step 1: Create Consumption API
+
+Create `app/apis/salesReport.ts`:
+
+```typescript
+import { Api } from "@514labs/moose-lib";
+import { dailySalesMV } from "../views/DailySalesSummary";
+
+// Define query parameters
+export interface SalesReportParams {
+  startDate: string;   // Format: YYYY-MM-DD
+  endDate: string;     // Format: YYYY-MM-DD
+  region?: string;     // Optional filter
+}
+
+// Define response interface
+export interface SalesReportResponse {
+  saleDate: string;
+  region: string;
+  productCategory: string;
+  transactionCount: number;
+  totalQuantity: number;
+  totalRevenue: number;
+}
+
+// Create the API endpoint
+export const salesReportApi = new Api<SalesReportParams, SalesReportResponse[]>(
+  "sales-report",
+  async ({ startDate, endDate, region }, { client, sql }) => {
+    // Access the target table from the materialized view
+    const targetTable = dailySalesMV.targetTable;
+
+    // Build query with optional region filter
+    // Note: We use separate queries for clarity. Production code could
+    // consolidate these using conditional query building.
+    let query;
+    if (region) {
+      query = sql`
+        SELECT
+          saleDate,
+          region,
+          productCategory,
+          sum(transactionCount) AS transactionCount,
+          sum(totalQuantity) AS totalQuantity,
+          sum(totalRevenue) AS totalRevenue
+        FROM ${targetTable}
+        WHERE saleDate BETWEEN ${startDate} AND ${endDate}
+          AND region = ${region}
+        GROUP BY saleDate, region, productCategory
+        ORDER BY saleDate DESC, totalRevenue DESC
+      `;
+    } else {
+      query = sql`
+        SELECT
+          saleDate,
+          region,
+          productCategory,
+          sum(transactionCount) AS transactionCount,
+          sum(totalQuantity) AS totalQuantity,
+          sum(totalRevenue) AS totalRevenue
+        FROM ${targetTable}
+        WHERE saleDate BETWEEN ${startDate} AND ${endDate}
+        GROUP BY saleDate, region, productCategory
+        ORDER BY saleDate DESC, totalRevenue DESC
+      `;
+    }
+
+    const result = await client.query.execute<SalesReportResponse>(query);
+    return result.json();
+  }
+);
+```
+
+### Step 2: Update Exports
+
+Add the API export to `app/index.ts`:
+
+```typescript
+export * from "./ingest/SalesTransaction";
+export * from "./views/DailySalesSummary";
+export * from "./apis/salesReport";
+```
+
+### Step 3: Test the API
+
+Query your report endpoint:
+
+```bash
+curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-01&endDate=2025-01-31"
+```
+
+Filter by region:
+
+```bash
+curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15&region=West"
+```
+
+The response contains aggregated daily sales data in JSON format, ready for transformation into PDF or any other output format.
+
+---
+
+## Part 6: PDF Export
+
+**Time: ~8 minutes**
+
+Now let's transform the JSON report data into a professional PDF document that stakeholders can download, email, and archive.
+
+### Step 1: Install pdfmake
+
+```bash
+npm install pdfmake
+npm install -D @types/pdfmake
+```
+
+### Step 2: Create PDF Export Script
+
+Create `scripts/generate-pdf-report.ts`:
+
+```typescript
+import PdfPrinter from "pdfmake";
+import { TDocumentDefinitions, TFontDictionary } from "pdfmake/interfaces";
+import * as fs from "fs";
+
+// Use standard PDF fonts (no external files needed)
+const fonts: TFontDictionary = {
+  Roboto: {
+    normal: "Helvetica",
+    bold: "Helvetica-Bold",
+    italics: "Helvetica-Oblique",
+    bolditalics: "Helvetica-BoldOblique",
+  },
+};
+
+// Report data interface (matches API response)
+interface SalesReportRow {
+  saleDate: string;
+  region: string;
+  productCategory: string;
+  transactionCount: number;
+  totalQuantity: number;
+  totalRevenue: number;
+}
+
+async function fetchReportData(
+  startDate: string,
+  endDate: string
+): Promise<SalesReportRow[]> {
+  const url = `http://localhost:4000/consumption/sales-report?startDate=${startDate}&endDate=${endDate}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+function aggregateByRegion(
+  data: SalesReportRow[]
+): Map<string, { revenue: number; transactions: number }> {
+  const regionMap = new Map<string, { revenue: number; transactions: number }>();
+
+  for (const row of data) {
+    const existing = regionMap.get(row.region) || { revenue: 0, transactions: 0 };
+    regionMap.set(row.region, {
+      revenue: existing.revenue + row.totalRevenue,
+      transactions: existing.transactions + row.transactionCount,
+    });
+  }
+
+  return regionMap;
+}
+
+function aggregateByCategory(
+  data: SalesReportRow[]
+): Map<string, { revenue: number; transactions: number }> {
+  const categoryMap = new Map<string, { revenue: number; transactions: number }>();
+
+  for (const row of data) {
+    const existing = categoryMap.get(row.productCategory) || {
+      revenue: 0,
+      transactions: 0,
+    };
+    categoryMap.set(row.productCategory, {
+      revenue: existing.revenue + row.totalRevenue,
+      transactions: existing.transactions + row.transactionCount,
+    });
+  }
+
+  return categoryMap;
+}
+
+function formatCurrency(amount: number): string {
+  return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function generatePdf(
+  data: SalesReportRow[],
+  reportDate: string,
+  outputPath: string
+): void {
+  const printer = new PdfPrinter(fonts);
+
+  // Calculate totals
+  const totalRevenue = data.reduce((sum, row) => sum + row.totalRevenue, 0);
+  const totalTransactions = data.reduce(
+    (sum, row) => sum + row.transactionCount,
+    0
+  );
+
+  // Aggregate by region and category
+  const regionData = aggregateByRegion(data);
+  const categoryData = aggregateByCategory(data);
+
+  // Sort regions by revenue descending
+  const sortedRegions = Array.from(regionData.entries()).sort(
+    (a, b) => b[1].revenue - a[1].revenue
+  );
+
+  // Sort categories by revenue descending
+  const sortedCategories = Array.from(categoryData.entries()).sort(
+    (a, b) => b[1].revenue - a[1].revenue
+  );
+
+  const docDefinition: TDocumentDefinitions = {
+    content: [
+      // Header
+      { text: "APEX RETAIL", style: "companyName" },
+      { text: "Daily Sales Summary", style: "reportTitle" },
+      { text: reportDate, style: "reportDate" },
+      {
+        canvas: [
+          { type: "line", x1: 0, y1: 5, x2: 515, y2: 5, lineWidth: 1 },
+        ],
+      },
+
+      // Executive Summary
+      {
+        text: "EXECUTIVE SUMMARY",
+        style: "sectionHeader",
+        margin: [0, 15, 0, 10],
+      },
+      {
+        columns: [
+          {
+            text: [
+              { text: "Total Revenue: ", bold: true },
+              formatCurrency(totalRevenue),
+            ],
+          },
+          {
+            text: [
+              { text: "Transactions: ", bold: true },
+              totalTransactions.toLocaleString(),
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 15],
+      },
+
+      // Revenue by Region
+      {
+        text: "REVENUE BY REGION",
+        style: "sectionHeader",
+        margin: [0, 10, 0, 10],
+      },
+      {
+        table: {
+          headerRows: 1,
+          widths: ["*", "auto", "auto", "auto"],
+          body: [
+            [
+              { text: "Region", style: "tableHeader" },
+              { text: "Revenue", style: "tableHeader" },
+              { text: "Transactions", style: "tableHeader" },
+              { text: "Share", style: "tableHeader" },
+            ],
+            ...sortedRegions.map(([region, stats]) => [
+              region,
+              { text: formatCurrency(stats.revenue), alignment: "right" },
+              { text: stats.transactions.toLocaleString(), alignment: "right" },
+              {
+                text: `${totalRevenue > 0 ? ((stats.revenue / totalRevenue) * 100).toFixed(1) : "0.0"}%`,
+                alignment: "right",
+              },
+            ]),
+          ],
+        },
+        layout: "lightHorizontalLines",
+      },
+
+      // Revenue by Category
+      {
+        text: "REVENUE BY CATEGORY",
+        style: "sectionHeader",
+        margin: [0, 20, 0, 10],
+      },
+      {
+        table: {
+          headerRows: 1,
+          widths: ["*", "auto", "auto", "auto"],
+          body: [
+            [
+              { text: "Category", style: "tableHeader" },
+              { text: "Revenue", style: "tableHeader" },
+              { text: "Transactions", style: "tableHeader" },
+              { text: "Share", style: "tableHeader" },
+            ],
+            ...sortedCategories.map(([category, stats]) => [
+              category,
+              { text: formatCurrency(stats.revenue), alignment: "right" },
+              { text: stats.transactions.toLocaleString(), alignment: "right" },
+              {
+                text: `${totalRevenue > 0 ? ((stats.revenue / totalRevenue) * 100).toFixed(1) : "0.0"}%`,
+                alignment: "right",
+              },
+            ]),
+          ],
+        },
+        layout: "lightHorizontalLines",
+      },
+    ],
+
+    footer: {
+      text: `Generated: ${new Date().toISOString()} | Apex Retail Confidential`,
+      style: "footer",
+      margin: [40, 0],
+    },
+
+    styles: {
+      companyName: { fontSize: 24, bold: true, alignment: "center" },
+      reportTitle: {
+        fontSize: 16,
+        alignment: "center",
+        margin: [0, 5, 0, 5],
+      },
+      reportDate: { fontSize: 12, alignment: "center", color: "gray" },
+      sectionHeader: { fontSize: 12, bold: true },
+      tableHeader: { bold: true, fillColor: "#eeeeee" },
+      footer: { fontSize: 8, color: "gray", alignment: "center" },
+    },
+    defaultStyle: { font: "Roboto", fontSize: 10 },
+    pageMargins: [40, 40, 40, 60],
+  };
+
+  const pdfDoc = printer.createPdfKitDocument(docDefinition);
+  pdfDoc.pipe(fs.createWriteStream(outputPath));
+  pdfDoc.end();
+  console.log(`PDF report saved to ${outputPath}`);
+}
+
+// Main execution
+async function main() {
+  const startDate = process.argv[2] || "2025-01-01";
+  const endDate = process.argv[3] || "2025-12-31";
+  const outputPath = process.argv[4] || "apex-retail-report.pdf";
+
+  console.log(`Fetching report data from ${startDate} to ${endDate}...`);
+
+  try {
+    const data = await fetchReportData(startDate, endDate);
+
+    if (data.length === 0) {
+      console.log("No data found for the specified date range.");
+      return;
+    }
+
+    console.log(`Generating PDF with ${data.length} data rows...`);
+    generatePdf(data, `${startDate} to ${endDate}`, outputPath);
+  } catch (error) {
+    console.error("Error generating report:", error);
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+### Step 3: Generate the Report
+
+With your Moose dev server running, execute:
+
+```bash
+npx ts-node scripts/generate-pdf-report.ts 2025-01-15 2025-01-15 january-15-report.pdf
+```
+
+### Step 4: Verify the Output
+
+Open `january-15-report.pdf` to see your static report with:
+- Professional header with company name and date range
+- Executive summary totals (revenue, transactions)
+- Revenue breakdown by region with percentage share
+- Revenue breakdown by category with percentage share
+- Footer with generation timestamp
+
+**Key Insight:** The PDF is generated from pre-aggregated ClickHouse data that powers your API. This means PDF generation is nearly instantaneous regardless of how many raw transactions exist in your system.
+
+---
+
+## Wrap-Up
+
+### What You Built
+
+Congratulations! You've built a complete data pipeline:
+
+```
+CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API → PDF
+```
+
+| Component | Purpose |
+|-----------|---------|
+| `SalesTransaction` model | Type-safe schema auto-provisioned to ClickHouse |
+| File loader script | Parses CSV/JSON and sends to ingest API |
+| `DailySalesSummary` MV | Pre-aggregates daily metrics at insert time |
+| `sales-report` API | Parameterized endpoint for date-range queries |
+| PDF generator | Transforms JSON into executive summary |
+
+### Performance Comparison
+
+| Operation | Traditional OLTP | Moose + ClickHouse |
+|-----------|------------------|-------------------|
+| Raw transaction scan | Seconds to minutes | Milliseconds |
+| Daily aggregation query | 10-30+ seconds | <100ms |
+| Report generation | Minutes (compute + format) | <1 second |
+
+The pre-aggregated materialized view delivers 10-100x faster query performance, making PDF generation nearly instantaneous.
+
+### Next Steps
+
+To extend this implementation:
+
+1. **Add more dimensions** - Customer, Product, Store dimension tables for a star schema
+2. **Multiple aggregation levels** - Hourly, weekly, monthly materialized views
+3. **Excel export** - Add ExcelJS for spreadsheet output alongside PDF
+4. **Scheduled delivery** - Use Temporal workflows for automated report delivery
+5. **Email integration** - Send PDF reports to stakeholders automatically
+6. **Deploy to production** - Use Boreal Cloud for managed hosting
+
+---
+
+## Reference
+
+### Sample Queries
+
+**Daily revenue by region:**
+
+```sql
+SELECT
+  saleDate,
+  region,
+  sum(totalRevenue) AS revenue,
+  sum(transactionCount) AS transactions
+FROM local.DailySalesSummary
+GROUP BY saleDate, region
+ORDER BY saleDate DESC, revenue DESC;
+```
+
+**Hourly sales pattern (raw data):**
+
+```sql
+SELECT
+  toHour(saleTimestamp) AS hour_of_day,
+  count() AS transactions,
+  sum(totalAmount) AS revenue
+FROM local.sales_SalesTransaction
+GROUP BY hour_of_day
+ORDER BY hour_of_day;
+```
+
+**Top categories in date range:**
+
+```sql
+SELECT
+  productCategory,
+  sum(totalRevenue) AS revenue,
+  sum(transactionCount) AS transactions
+FROM local.DailySalesSummary
+WHERE saleDate BETWEEN '2025-01-01' AND '2025-01-31'
+GROUP BY productCategory
+ORDER BY revenue DESC
+LIMIT 5;
+```
+
+### Project Structure
+
+```
+sales-reports/
+├── app/
+│   ├── index.ts                    # Export all modules
+│   ├── ingest/
+│   │   └── SalesTransaction.ts     # IngestPipeline definition
+│   ├── views/
+│   │   └── DailySalesSummary.ts    # MaterializedView
+│   └── apis/
+│       └── salesReport.ts          # Consumption API
+├── scripts/
+│   ├── load-file.ts                # CSV/JSON file loader
+│   └── generate-pdf-report.ts      # PDF generator
+├── sample-data/
+│   └── west-store-001.csv          # Sample transactions
+├── moose.config.toml
+├── package.json
+└── tsconfig.json
+```
+
+### Configuration Reference
+
+Your `moose.config.toml` file:
+
+```toml
+[project]
+name = "sales-reports"
+language = "typescript"
+
+[features]
+olap = true
+streaming = true
+
+[clickhouse_config]
+db_name = "local"
+host = "localhost"
+host_port = 18123
+native_port = 9000
+user = "panda"
+password = "pandapass"
+use_ssl = false
+```
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| **Port 4000 in use** | Check with `lsof -i :4000` and stop the conflicting process |
+| **ClickHouse connection refused** | Ensure `moose dev` is running; wait 10-15 seconds after startup |
+| **Ingestion returns error** | Verify JSON field types match interface (strings vs numbers, ISO date format) |
+| **Materialized view not updating** | MVs aggregate per-batch; always use GROUP BY when querying |
+| **API returns empty results** | Check date format (use YYYY-MM-DD) and verify data exists |
+| **PDF not generating** | Ensure API is accessible; check for fetch errors |
+
+### Resources
+
+- **Moose Documentation:** https://docs.fiveonefour.com/moose
+- **Moose OLAP Guide:** https://docs.fiveonefour.com/moose/olap
+- **Materialized Views:** https://docs.fiveonefour.com/moose/building/materialized-views
+- **GitHub Repository:** https://github.com/514-labs/moosestack
+- **Moose Quickstart:** https://docs.fiveonefour.com/moose/getting-started/quickstart

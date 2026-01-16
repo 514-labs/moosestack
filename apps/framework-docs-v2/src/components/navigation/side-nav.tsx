@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { IconChevronRight, IconArrowRight } from "@tabler/icons-react";
-import type { NavItem, NavPage } from "@/config/navigation";
+import type { NavItem, NavPage, NavFilterFlags } from "@/config/navigation";
 import {
   Sidebar,
   SidebarContent,
@@ -36,7 +36,7 @@ interface SideNavProps {
   // Optional: can pass filtered items or let component filter by language
   items?: NavItem[];
   // Optional: feature flags to filter navigation items
-  flags?: { showDataSourcesPage?: boolean };
+  flags?: NavFilterFlags;
 }
 
 export function SideNav({ items, flags }: SideNavProps) {

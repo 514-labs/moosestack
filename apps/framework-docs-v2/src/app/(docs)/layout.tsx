@@ -4,20 +4,32 @@ import { headers } from "next/headers";
 import { SideNav } from "@/components/navigation/side-nav";
 import { AnalyticsProvider } from "@/components/analytics-provider";
 import { SidebarInset } from "@/components/ui/sidebar";
-import { showDataSourcesPage } from "@/flags";
+import { showDataSourcesPage, showDraftGuides, showBetaGuides } from "@/flags";
 
 interface DocLayoutProps {
   children: ReactNode;
 }
 
 async function FilteredSideNav() {
-  // Evaluate feature flag
+  // Evaluate feature flags
   // Note: Accessing headers() in the parent component marks this as dynamic,
   // which allows Date.now() usage in the flags SDK
-  const showDataSources = await showDataSourcesPage().catch(() => false);
+  const [showDataSources, showDraft, showBeta] = await Promise.all([
+    showDataSourcesPage().catch(() => false),
+    showDraftGuides().catch(() => false),
+    showBetaGuides().catch(() => false),
+  ]);
 
-  // Pass flag to SideNav, which will filter navigation items after language filtering
-  return <SideNav flags={{ showDataSourcesPage: showDataSources }} />;
+  // Pass flags to SideNav, which will filter navigation items after language filtering
+  return (
+    <SideNav
+      flags={{
+        showDataSourcesPage: showDataSources,
+        showDraftGuides: showDraft,
+        showBetaGuides: showBeta,
+      }}
+    />
+  );
 }
 
 export default async function DocLayout({ children }: DocLayoutProps) {

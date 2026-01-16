@@ -56,8 +56,6 @@ fn main() -> ExitCode {
     cli::settings::init_config_file().expect("Failed to init config file");
     let config = cli::settings::read_settings().expect("Failed to read settings");
 
-    let machine_id = utilities::machine_id::get_or_create_machine_id();
-
     // Parse CLI arguments
     let cli_result = match cli::Cli::try_parse() {
         Ok(cli_result) => cli_result,
@@ -83,21 +81,26 @@ fn main() -> ExitCode {
         std::env::set_var("RUST_LIB_BACKTRACE", "1");
     }
 
+    // Clone logger settings before moving config into async block
+    let logger_settings = config.logger.clone();
+
     // Create a runtime with a single thread to avoid issues with dropping runtimes
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("Failed to create Tokio runtime");
 
-    // Setup logging (after Tokio runtime creation for OTLP batch exporter)
-    cli::logger::setup_logging(&config.logger);
+    // Run inside runtime context so OTLP batch exporter can initialize properly
+    let result = runtime.block_on(async {
+        // Setup logging (inside runtime context for OTLP batch exporter)
+        cli::logger::setup_logging(&logger_settings);
 
-    // Run the async function to handle the command
-    let result = runtime.block_on(cli::top_command_handler(
-        config,
-        &cli_result.command,
-        machine_id,
-    ));
+        // Get machine ID (after logging setup so warnings are visible)
+        let machine_id = utilities::machine_id::get_or_create_machine_id();
+
+        // Run the async command handler
+        cli::top_command_handler(config, &cli_result.command, machine_id).await
+    });
 
     // Process the result using the original display formatting
     let exit_code = match result {

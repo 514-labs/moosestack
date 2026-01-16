@@ -4,6 +4,7 @@ import { CodeSnippet } from "./code-snippet";
 import { CodeEditorWrapper } from "./code-editor-wrapper";
 import { ShellSnippet } from "./shell-snippet";
 import { InlineCode } from "./inline-code";
+import { MermaidDiagram } from "./mermaid-diagram";
 import { extractTextContent } from "@/lib/extract-text-content";
 
 // Shell languages that should use terminal styling
@@ -67,6 +68,10 @@ export interface ServerCodeBlockProps
 
   // Animation flag (Nextra extension)
   "data-animate"?: string;
+
+  // Mermaid diagram settings
+  "data-maxheight"?: string;
+  "data-maxHeight"?: string;
 
   children?: React.ReactNode;
 }
@@ -258,7 +263,22 @@ export function ServerCodeBlock({
   // Determine component type based on language and attributes
   const isShell = SHELL_LANGUAGES.has(language);
   const isConfigFile = CONFIG_LANGUAGES.has(language);
+  const isMermaid = language === "mermaid";
   const isAnsi = language === "ansi";
+
+  // Mermaid diagrams: Always use MermaidDiagram (client-side renderer)
+  if (isMermaid) {
+    const maxHeight = props["data-maxheight"] || props["data-maxHeight"];
+    return (
+      <div className="not-prose">
+        <MermaidDiagram
+          code={codeText}
+          filename={filename}
+          maxHeight={maxHeight}
+        />
+      </div>
+    );
+  }
 
   // ANSI blocks render as plain text with ANSI escape code handling
   if (isAnsi) {
@@ -305,7 +325,7 @@ export function ServerCodeBlock({
       <div className="not-prose">
         <CodeEditorWrapper
           code={codeText}
-          language={language || "typescript"}
+          language={language || "plaintext"}
           filename={filename}
           variant={variant ?? (isShell ? "terminal" : "ide")}
           writing={writing}
@@ -331,7 +351,7 @@ export function ServerCodeBlock({
     <div className="not-prose">
       <CodeSnippet
         code={codeText}
-        language={language || "typescript"}
+        language={language || "plaintext"}
         filename={filename}
         copyButton={showCopy}
         lineNumbers={lineNumbers}
@@ -359,18 +379,9 @@ export function ServerInlineCode({
   if (isCodeBlock) {
     // This is a code block that should be handled by ServerCodeBlock
     // This is a fallback for when code is not wrapped in pre
-    const language = getLanguage(props as ServerCodeBlockProps);
-    const codeText = extractTextContent(children).trim();
-
-    return (
-      <div className="not-prose">
-        <CodeSnippet
-          code={codeText}
-          language={language || "typescript"}
-          copyButton={true}
-        />
-      </div>
-    );
+    // Return inline code instead of block to avoid nesting errors
+    const textContent = extractTextContent(children).trim();
+    return <InlineCode code={textContent} className={className} />;
   }
 
   // Check for inline code with language hint: `code{:lang}`
