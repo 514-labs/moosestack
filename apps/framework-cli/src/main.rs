@@ -123,7 +123,7 @@ fn main() -> ExitCode {
     };
 
     // Flush OTLP batches before exit
-    opentelemetry::global::shutdown_tracer_provider();
+    cli::logger::shutdown_otlp();
 
     exit_code
 }

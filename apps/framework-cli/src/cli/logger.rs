@@ -83,6 +83,7 @@ use opentelemetry_otlp::WithExportConfig;
 use serde::Deserialize;
 use std::fmt;
 use std::io::Write;
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 use tracing::field::{Field, Visit};
 use tracing::{error, info, warn, Event, Level, Subscriber};
@@ -97,6 +98,9 @@ use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
 
 use super::settings::user_directory;
+
+// Static storage for the OTLP tracer provider, used for shutdown
+static TRACER_PROVIDER: OnceLock<opentelemetry_sdk::trace::SdkTracerProvider> = OnceLock::new();
 
 // # STRUCTURED LOGGING INSTRUMENTATION GUIDE
 //
@@ -691,27 +695,34 @@ fn setup_otlp_layer(
 > {
     let endpoint = settings.otlp_endpoint.as_ref()?;
 
-    // Create OTLP tracer provider using the pipeline builder
-    let provider = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(
-            opentelemetry_otlp::new_exporter()
-                .tonic()
-                .with_endpoint(endpoint),
-        )
-        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
-            opentelemetry_sdk::Resource::new(vec![
-                opentelemetry::KeyValue::new("service.name", "moose"),
-                opentelemetry::KeyValue::new("service.version", env!("CARGO_PKG_VERSION")),
-            ]),
-        ))
-        .install_batch(opentelemetry_sdk::runtime::Tokio)
+    // Create OTLP exporter using builder pattern
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoint.clone())
+        .build()
         .ok()?;
 
-    // Register provider globally so shutdown can flush batches
-    opentelemetry::global::set_tracer_provider(provider.clone());
+    // Create resource with service information
+    let resource = opentelemetry_sdk::Resource::builder()
+        .with_service_name("moose")
+        .with_attributes([opentelemetry::KeyValue::new(
+            "service.version",
+            env!("CARGO_PKG_VERSION"),
+        )])
+        .build();
 
-    let tracer = provider.tracer("moose");
+    // Create tracer provider with batch exporter
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_resource(resource)
+        .with_batch_exporter(exporter)
+        .build();
+
+    // Store provider for shutdown and set as global
+    let provider_clone = provider.clone();
+    opentelemetry::global::set_tracer_provider(provider);
+    let _ = TRACER_PROVIDER.set(provider_clone);
+
+    let tracer = TRACER_PROVIDER.get()?.tracer("moose");
 
     Some(tracing_opentelemetry::layer().with_tracer(tracer))
 }
@@ -859,6 +870,17 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .with(env_filter)
                 .with(legacy_layer)
                 .init();
+        }
+    }
+}
+
+/// Shuts down the OTLP tracer provider, flushing any remaining spans.
+///
+/// This should be called before the application exits to ensure all spans are exported.
+pub fn shutdown_otlp() {
+    if let Some(provider) = TRACER_PROVIDER.get() {
+        if let Err(e) = provider.shutdown() {
+            eprintln!("Failed to shutdown OTLP tracer provider: {:?}", e);
         }
     }
 }
