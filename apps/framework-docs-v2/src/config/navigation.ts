@@ -1404,6 +1404,14 @@ const guidesNavigationConfig: NavigationConfig = [
         languages: ["typescript", "python"],
         status: "draft",
       },
+      {
+        type: "page",
+        slug: "guides/test-guides/code-blocks",
+        title: "Code Blocks Rendering Test",
+        icon: IconFileCode,
+        languages: ["typescript", "python"],
+        status: "draft",
+      },
     ],
   },
 ];
