@@ -1207,7 +1207,7 @@ const guidesNavigationConfig: NavigationConfig = [
     title: "Improving the Performance of Your Dashboards",
     icon: IconChartLine,
     languages: ["typescript", "python"],
-    status: "draft",
+    status: "beta",
   },
   {
     type: "page",
@@ -1215,7 +1215,7 @@ const guidesNavigationConfig: NavigationConfig = [
     title: "Chat in Your App",
     icon: IconMessageChatbot,
     languages: ["typescript", "python"],
-    status: "draft",
+    status: "beta",
   },
   {
     type: "page",
