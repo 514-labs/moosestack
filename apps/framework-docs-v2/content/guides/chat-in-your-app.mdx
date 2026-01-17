@@ -705,18 +705,45 @@ What this will walk through building:
 | **MCP Server** (/tools) | Express app exposing query_clickhouse and get_data_catalog tools |
 | **Authentication** | Bearer token flow between frontend and MCP server |
 
-### Backend Setup: MooseStack MCP Server
+### Backend Setup: MooseStack Service with MCP Server
 
-Choose your path:
+<Callout type="info" title="Already have a MooseStack project?">
+<ToggleBlock openText="Show instructions to add MCP to existing project" closeText="Hide instructions">
+Add the MCP server to your existing MooseStack service:
 
-- **Option A:** You don't have a MooseStack project yet → Add the full MooseStack service  
-- **Option B:** You already have a MooseStack project → Add just the MCP Express app
+1. **Install dependencies:**
+```shell
+cd packages/your-moosestack-service
+pnpm add @modelcontextprotocol/sdk@1.24.2 \
+  @514labs/express-pbkdf2-api-key-auth@^1.0.4 \
+  express@^5.1.0
+pnpm add -D @types/express@^5.0.3
+```
 
-#### Option A: Add the full MooseStack service
+2. **Add the MCP server to your MooseStack service** (exposes `query_clickhouse` and `get_data_catalog` tools at `/tools`):
+```shell
+mkdir -p app/apis
+curl -o app/apis/mcp.ts \
+  https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/moosestack-service/app/apis/mcp.ts
+```
 
-If you don't have MooseStack in your project yet: 
+3. **Export it** from `app/index.ts`:
+```ts
+export * from "./apis/mcp";
+```
 
-##### Copy the MooseStack service from the template
+4. **Generate an API key** and add `MCP_API_KEY` to `.env.local`:
+```shell
+moose generate hash-token
+```
+
+Then skip to [Frontend Setup](#frontend-setup).
+</ToggleBlock>
+</Callout>
+
+#### Add the MooseStack service to your project
+
+Pull the `moosestack-service` from the `typescript-mcp` template. It includes the MCP server (with `query_clickhouse` and `get_data_catalog` tools), a sample `DataEvent` data model, and all necessary dependencies.
 
 ```shell
 # From your monorepo root
@@ -733,7 +760,11 @@ cd ..
 rm -rf temp-moose
 ```
 
-##### Add the package to your workspace
+<Callout type="info" title="Replace the sample data model">
+The template includes a sample `DataEvent` model. Replace it with your own data models using the [AI-assisted approach above](#use-ai-to-design-your-data-model).
+</Callout>
+
+##### Add moosestack-service to your workspace
 
 If you don't have a `pnpm-workspace.yaml` at your monorepo root, create one:
 
@@ -789,56 +820,6 @@ MCP_API_KEY=<paste-the-ENV-API-KEY-here>
   }
 }
 ```
-
-**Continue to [Frontend Setup](#frontend-setup)**
-
-#### Option B: Add the MCP Express app to your existing MooseStack project
-
-If you already have a MooseStack project, you just need to add the MCP server Express app.
-
-##### Install additional dependencies
-
-```shell
-cd packages/your-moosestack-service
-pnpm add @modelcontextprotocol/sdk@1.24.2 @514labs/express-pbkdf2-api-key-auth@^1.0.4 express@^5.1.0
-pnpm add -D @types/express@^5.0.3
-```
-
-##### Copy the MCP server file
-
-Download `app/apis/mcp.ts` from the template:
-
-```shell
-# From your moosestack project root
-mkdir -p app/apis
-curl -o app/apis/mcp.ts \ 
-
-https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/moosestack-service/app/apis/mcp.ts
-```
-
-##### Export the MCP server in your index.ts
-
-Add this line to your `app/index.ts`:
-
-```ts
-export * from "./apis/mcp";
-```
-
-##### Set up authentication
-
-Add `MCP_API_KEY` to your `.env.local`:
-
-```shell
-moose generate hash-token
-```
-
-Copy the **ENV API KEY** output to your `.env.local`:
-
-```text
-MCP_API_KEY=<paste-the-ENV-API-KEY-here>
-```
-
-Save the **Bearer Token** for frontend configuration.
 
 ### Frontend Setup
 
