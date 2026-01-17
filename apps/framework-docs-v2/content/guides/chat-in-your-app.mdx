@@ -4,6 +4,7 @@ description: Build AI-powered chat experiences with real-time analytics using Mo
 ---
 
 import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 
 # Building a data-aware chat on top of your ClickHouse database with Next.js and MooseStack
 
@@ -838,31 +839,31 @@ pnpm add lucide-react@^0.552.0
 
 ##### Configure environment variables
 
-Create or update your `.env.local`:
-
-```shell
-cp .env.example .env.local  # if you have an example file
-```
-
-Add these variables:
+Add these variables to your `.env.local`:
 
 ```text
+# From https://console.anthropic.com/
 ANTHROPIC_API_KEY=<your-anthropic-api-key>
-MCP_API_TOKEN=<the-bearer-token-from-moose-generate-hash-token>
+
+# Output from `moose generate hash-token`
+MCP_API_TOKEN=<the-bearer-token>
+
+# http://localhost:4000 for local dev
 MCP_SERVER_URL=http://localhost:4000
 ```
 
-| Variable | Description | Where to get it |
-| :---- | :---- | :---- |
-| ANTHROPIC_API_KEY | Your Claude API key | [console.anthropic.com](https://console.anthropic.com/) |
-| MCP_API_TOKEN | Bearer token for MCP auth | Output from moose generate hash-token |
-| MCP_SERVER_URL | MooseStack server URL | http://localhost:4000 for local dev |
+##### Add environment variable helper
 
-##### Create environment variable helper
+Sample prompt:
+```text
+Create a TypeScript module that exports helper functions for accessing MCP_SERVER_URL and ANTHROPIC_API_KEY environment variables, throwing descriptive errors if they're not set.
+```
 
-Create `src/env-vars.ts`:
+Alternatively, manually add if you prefer:
+
 
 ```ts
+// src/env-vars.ts
 export function getMcpServerUrl(): string {
   const value = process.env.MCP_SERVER_URL;
   if (!value) {
@@ -890,77 +891,34 @@ MCP_SERVER_URL=http://localhost:4000
 
 The chat API route handles incoming messages, creates an MCP client to connect to your MooseStack server, and streams the AI response back to the frontend.
 
-##### Copy the chat feature files
+##### Add the chat feature
 
-```shell
-# From your Next.js app root (e.g., packages/web-app)
-mkdir -p src/features/chat
+Implement the chat feature modules from the [template's chat feature directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat):
+- `agent-config.ts` - Model configuration and MCP client setup
+- `get-agent-response.ts` - Core logic for streaming AI responses via MCP
+- `system-prompt.ts` - System prompt for the chat agent
 
-# Download the core chat logic files
-curl -o src/features/chat/agent-config.ts \
-  https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/features/chat/agent-config.ts
-
-curl -o src/features/chat/get-agent-response.ts \
-  https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/features/chat/get-agent-response.ts
-
-curl -o src/features/chat/system-prompt.ts \
-  https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/features/chat/system-prompt.ts
+Sample prompt:
+```text
+Implement a chat feature module for my Next.js app based on the files in https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat. Create agent-config.ts, get-agent-response.ts, and system-prompt.ts in src/features/chat/.
 ```
 
-##### Create the API route
+##### Add the API route
 
-Create `src/app/api/chat/route.ts`:
+Create a Next.js API route at `src/app/api/chat/route.ts` that handles POST requests, validates the messages array, and streams responses via `getAgentResponse`. See the [template's route.ts](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/route.ts) for reference.
 
-```ts
-import { NextRequest } from "next/server";
-import { UIMessage } from "ai";
-import { getAgentResponse } from "@/features/chat/get-agent-response";
-
-interface ChatBody {
-  messages: UIMessage[];
-}
-
-export async function POST(request: NextRequest) {
-  try {
-    const body: ChatBody = await request.json();
-    const { messages } = body;
-
-    if (!messages || !Array.isArray(messages)) {
-      return new Response(
-        JSON.stringify({ error: "Invalid request body", details: "messages must be an array" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
-
-    return await getAgentResponse(messages);
-  } catch (error) {
-    console.error("Chat error:", error);
-    return new Response(
-      JSON.stringify({ error: "Internal server error", details: error instanceof Error ? error.message : "Unknown error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
-  }
-}
+Sample prompt:
+```text
+Create a Next.js API route at src/app/api/chat/route.ts that handles POST requests with a messages array, validates input, calls getAgentResponse from @/features/chat/get-agent-response, and returns proper error responses. Reference: https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/route.ts
 ```
 
 ##### (Optional) Add status endpoint
 
-Create `src/app/api/chat/status/route.ts` to check if the Anthropic key is configured:
+Create `src/app/api/chat/status/route.ts` to check if the Anthropic key is configured. See the [template's status route](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/status/route.ts) for reference.
 
-```ts
-import { NextRequest } from "next/server";
-
-export async function GET(request: NextRequest) {
-  const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
-
-  return new Response(
-    JSON.stringify({
-      anthropicKeyAvailable: hasAnthropicKey,
-      status: hasAnthropicKey ? "ready" : "missing_key",
-    }),
-    { status: 200, headers: { "Content-Type": "application/json" } },
-  );
-}
+Sample prompt:
+```text
+Create a Next.js API route at src/app/api/chat/status/route.ts that returns JSON indicating whether ANTHROPIC_API_KEY is configured. Reference: https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/status/route.ts
 ```
 
 <Callout type="info">
@@ -971,88 +929,64 @@ To customize your chat's system prompt, edit `src/features/chat/system-prompt.ts
 
 The chat UI consists of several components. Rather than copying each individually, grab the entire chat feature folder and the required layout components.
 
-##### Copy all chat UI components
+##### Add chat UI components
 
-```shell
-# From your Next.js app root
-cd src/features/chat
+Implement the chat UI components from the [template's chat feature directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat). Key components include:
+- `chat-ui.tsx` - Main chat interface
+- `chat-input.tsx`, `chat-output-area.tsx` - Input and message display
+- `tool-invocation.tsx`, `clickhouse-tool-invocation.tsx`, `tool-data-catalog.tsx` - Tool result rendering
+- `code-block.tsx`, `text-formatter.tsx` - Content formatting
 
-# Download all chat components
-for file in chat-ui.tsx chat-input.tsx chat-output-area.tsx chat-button.tsx \
-            tool-invocation.tsx clickhouse-tool-invocation.tsx tool-data-catalog.tsx \
-            text-formatter.tsx reasoning-section.tsx source-section.tsx \
-            code-block.tsx suggested-prompt.tsx use-anthropic-status.ts; do
-  curl -O "https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/features/chat/$file"
-done
+Sample prompt:
+```text
+Implement chat UI components for my Next.js app based on the files in https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat. Create all .tsx components in src/features/chat/.
 ```
 
-##### Copy the layout components
+##### Add layout components
 
-```shell
-mkdir -p src/components/layout
+Implement the layout components from the [template's layout directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/components/layout):
+- `resizable-chat-layout.tsx` - Resizable panel layout
+- `chat-layout-wrapper.tsx` - Chat layout wrapper
+- `content-header.tsx` - Header component
 
-curl -o src/components/layout/resizable-chat-layout.tsx \
-  https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/components/layout/resizable-chat-layout.tsx
-
-curl -o src/components/layout/chat-layout-wrapper.tsx \
-  https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/components/layout/chat-layout-wrapper.tsx
-
-curl -o src/components/layout/content-header.tsx \
-  https://raw.githubusercontent.com/514-labs/moosestack/main/templates/typescript-mcp/packages/web-app/src/components/layout/content-header.tsx
+Sample prompt:
+```text
+Implement layout components for my Next.js app based on the files in https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/components/layout. Create resizable-chat-layout.tsx, chat-layout-wrapper.tsx, and content-header.tsx in src/components/layout/.
 ```
 
-##### Ensure you have required shadcn/ui components
+##### Add required shadcn/ui components
 
-The chat UI uses these shadcn/ui components. If you don't have them, install via:
+The chat UI uses these shadcn/ui components:
 
 ```shell
 npx shadcn@latest add button textarea scroll-area resizable collapsible badge
 ```
 
-##### Ensure you have the `cn` utility
+##### Add the `cn` utility
 
-If you don't have `src/lib/utils.ts`:
+If you don't have `src/lib/utils.ts`, add the standard Tailwind class merge utility:
 
-```ts
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+Sample prompt:
+```text
+Create src/lib/utils.ts with a cn() function that combines clsx and tailwind-merge for conditional class name handling.
 ```
+
+##### Update your root layout
+
+Wrap your app with the `ChatLayoutWrapper` in `src/app/layout.tsx`. See the [template's layout.tsx](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/layout.tsx) for reference.
+
+Sample prompt:
+```text
+Update my src/app/layout.tsx to wrap the app with ChatLayoutWrapper from @/components/layout/chat-layout-wrapper. If using next-themes or another theme provider, wrap ChatLayoutWrapper inside it. Reference: https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/layout.tsx
+```
+
+<Callout type="info" title="Theme providers">
+If you're using `next-themes` or another theme provider, wrap `ChatLayoutWrapper` inside it, not the other way around.
+</Callout>
 
 ### Integration & Testing
 
-#### Update your root layout
-
-Wrap your app with the `ChatLayoutWrapper`. Edit `src/app/layout.tsx`:
-
-```ts
-import { ChatLayoutWrapper } from "@/components/layout/chat-layout-wrapper";
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <body>
-        {/* If you have ThemeProvider, wrap ChatLayoutWrapper inside it */}
-        <ChatLayoutWrapper>{children}</ChatLayoutWrapper>
-      </body>
-    </html>
-  );
-}
-```
-
-**Note:** If you're using `next-themes` or another theme provider, wrap `ChatLayoutWrapper` inside it, not the other way around.
-
 #### Start both services
-
-```shell
-# From monorepo root
-pnpm dev
-```
-
-Or run them separately:
 
 ```shell
 # Terminal 1: MooseStack
@@ -1061,6 +995,8 @@ pnpm dev:moose
 # Terminal 2: Next.js
 pnpm dev:web
 ```
+
+Alternatively, run both with `pnpm dev`.
 
 #### Verify the MCP server is running
 
@@ -1080,46 +1016,64 @@ You should see a response listing `query_clickhouse` and `get_data_catalog` tool
 3. Ask a question like "What tables are available?"  
 4. The AI should call `get_data_catalog` and show you the results
 
-#### Troubleshooting
+## Troubleshooting
 
-##### "MCP\_SERVER\_URL environment variable is not set"
-
+<Accordion type="single" collapsible>
+<AccordionItem value="mcp-server-url">
+<AccordionTrigger>"MCP_SERVER_URL environment variable is not set"</AccordionTrigger>
+<AccordionContent>
 Make sure you have:
-
-- `.env.local` with `MCP_SERVER_URL=http://localhost:4000`  
+- `.env.local` with `MCP_SERVER_URL=http://localhost:4000`
 - Or `.env.development` as a fallback
+</AccordionContent>
+</AccordionItem>
 
-##### "Unauthorized" or 401 errors from MCP server
-
-1. Verify `MCP_API_KEY` in `moosestack-service/.env.local` matches the hash from `moose generate hash-token`  
-2. Verify `MCP_API_TOKEN` in `web-app/.env.local` is the Bearer Token (not the hash)  
+<AccordionItem value="unauthorized">
+<AccordionTrigger>"Unauthorized" or 401 errors from MCP server</AccordionTrigger>
+<AccordionContent>
+1. Verify `MCP_API_KEY` in `moosestack-service/.env.local` matches the hash from `moose generate hash-token`
+2. Verify `MCP_API_TOKEN` in `web-app/.env.local` is the Bearer Token (not the hash)
 3. Check the token is being sent: look for `Authorization: Bearer ...` in network requests
+</AccordionContent>
+</AccordionItem>
 
-##### CORS errors
-
+<AccordionItem value="cors">
+<AccordionTrigger>CORS errors</AccordionTrigger>
+<AccordionContent>
 The architecture avoids CORS issues because:
-
-- The Next.js API route (`/api/chat`) is same-origin with your frontend  
+- The Next.js API route (`/api/chat`) is same-origin with your frontend
 - The API route makes server-side requests to MooseStack with the Bearer token
 
 If you're still seeing CORS errors, ensure your chat UI is calling `/api/chat`, not the MooseStack server directly.
+</AccordionContent>
+</AccordionItem>
 
-##### Chat panel doesn't appear
-
-1. Check browser console for errors  
-2. Verify `ChatLayoutWrapper` is wrapping your app in `layout.tsx`  
+<AccordionItem value="chat-panel">
+<AccordionTrigger>Chat panel doesn't appear</AccordionTrigger>
+<AccordionContent>
+1. Check browser console for errors
+2. Verify `ChatLayoutWrapper` is wrapping your app in `layout.tsx`
 3. Verify all shadcn/ui components are installed
+</AccordionContent>
+</AccordionItem>
 
-##### "ANTHROPIC\_API\_KEY environment variable is not set"
-
-1. Add your key to `.env.local`  
+<AccordionItem value="anthropic-key">
+<AccordionTrigger>"ANTHROPIC_API_KEY environment variable is not set"</AccordionTrigger>
+<AccordionContent>
+1. Add your key to `.env.local`
 2. Restart the Next.js dev server (env vars only load on startup)
+</AccordionContent>
+</AccordionItem>
 
-##### Tool calls fail with ClickHouse errors
-
-1. Make sure MooseStack dev server is running (`pnpm dev:moose`)  
-2. Check that ClickHouse has tables: `moose ls` should show your data models  
+<AccordionItem value="clickhouse-errors">
+<AccordionTrigger>Tool calls fail with ClickHouse errors</AccordionTrigger>
+<AccordionContent>
+1. Make sure MooseStack dev server is running (`pnpm dev:moose`)
+2. Check that ClickHouse has tables: `moose ls` should show your data models
 3. Verify you've run data ingestion or the generator workflow
+</AccordionContent>
+</AccordionItem>
+</Accordion>
 
 ### Deployment
 
