@@ -7,7 +7,7 @@
     "dev": "moose-cli dev"
   },
   "dependencies": {
-    "@514labs/moose-lib": "0.6.309",
+    "@514labs/moose-lib": "0.6.325",
     "@514labs/express-pbkdf2-api-key-auth": "^1.0.4",
     "@cfworker/json-schema": "4.1.1",
     "@modelcontextprotocol/sdk": "1.24.2",
@@ -18,7 +18,7 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "0.6.309",
+    "@514labs/moose-cli": "0.6.325",
     "@types/express": "^5.0.3",
     "@types/node": "^20.12.12"
   }
