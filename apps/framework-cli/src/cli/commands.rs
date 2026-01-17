@@ -130,6 +130,10 @@ pub enum Commands {
         /// Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
         #[arg(long)]
         start_include_dependencies: bool,
+
+        /// Exit after infrastructure initialization (for Kubernetes init containers)
+        #[arg(long)]
+        exit_after_init: bool,
     },
     /// Generates helpers for your data models (i.e. sdk, api tokens)
     Generate(GenerateArgs),
