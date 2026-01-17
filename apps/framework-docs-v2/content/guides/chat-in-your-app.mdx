@@ -441,7 +441,7 @@ moose query "SELECT name, engine, total_rows FROM
       system.tables WHERE database = currentDatabase();" 
 ```
 
-It is also good practice to double check the model generated against the sample data (LLMs can make assumptions about types of data, even when presented with sample data):
+It is also good practice to ask the copilot to double check the model generated against the sample data (LLMs can make assumptions about types of data, even when presented with sample data):
 
 ```text
 check the type limitations against the sample data in /context/data
@@ -463,6 +463,18 @@ INSERT INTO `local`.PlayerActivity
       'Parquet'
   );
 ```
+
+<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
+```sql
+--load-data.sql
+INSERT INTO `local`.AmazonReviews
+  SELECT * FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet',
+    'Parquet'
+  );
+```
+Note: This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
+</ToggleBlock>
 
 Make sure to properly apply any transformations to conform your S3 data to the data model you’ve created. ClickHouse will do many of these transformations naturally. Notably though:
 
@@ -493,39 +505,40 @@ You will now have a ready to test and iterate on local development environment: 
 
 ### Chat with your data
 
-Just go to [http://localhost:3000](http://localhost:3000/): everything should be good to go. Chat away
+Just go to [http://localhost:3000](http://localhost:3000/): everything should be good to go. Chat away!
 
-#### (optionally) Customize the system prompt
-
-Edit `packages/web-app/src/features/chat/system-prompt.ts` to customize how the AI behaves. The default is generic; you may want to tailor it to your data and use case:
-
-```ts
-export function getAISystemPrompt(): string {
-  return `You are a helpful AI assistant that can query and analyze data.
-
-When users ask questions:
-1. Use get_data_catalog first to understand what tables are available
-2. Use query_clickhouse to run SQL queries and get results
-3. Explain results clearly and concisely
-
-You have access to a ClickHouse database with the following data:
-- [Describe your tables and what they contain]
-- [Add business context and metric definitions]
-
-Be helpful, accurate, and transparent about what queries you're running.`;
-}
-```
+<Callout type="info">
+To customize your chat's system prompt, edit `packages/web-app/src/features/chat/system-prompt.ts`.
+</Callout>
 
 ### Create custom API endpoints, and a custom front-end:
 
 There’s a bootstrapped Next.js application, and an Express app that you can use to add to your framework.
 
-I like to point the LLM at a ShadCN component I am interested in, the Express / MooseStack documentation, and the Next.js application folder:
+I like to point the LLM at a ShadCN component I am interested in, the Express / MooseStack documentation, and the Next.js application folder, e.g.:
 
 ```text
-I want to add a Data Table component from ShadCN (here: https://ui.shadcn.com/docs/components/data-table.md) to the web app here: <project-name>packages/web-app.  
+I want to add a Data Table component from ShadCN (here: 
+https://ui.shadcn.com/docs/components/data-table.md) to the web app here: 
+<project-name>/packages/web-app.  
 
-I want it to serve data from DataModel here: <project-name>/packages/moosestack-service/app/ingest/models.ts. Please create an express api in this directory to serve this component, here: <project-name>packages/moosestack-service/app/apis, as documented here: https://docs.fiveonefour.com/moose/app-api-frameworks/express/llm-ts.txt
+I want it to serve data from DataModel here: 
+<project-name>/packages/moosestack-service/app/ingest/models.ts. 
+
+Please create an Express API in this directory to serve this component: 
+<project-name>/packages/moosestack-service/app/apis
+
+Reference docs:
+- Express API docs: https://docs.fiveonefour.com/moose/app-api-frameworks/express/llm-ts.txt
+
+Examples:
+- cdp-analytics routes: https://github.com/514-labs/moose/tree/main/examples/cdp-analytics/packages/moosestack-service/app/apis
+- cdp-analytics services: https://github.com/514-labs/moose/tree/main/examples/cdp-analytics/packages/moosestack-service/app/services
+- fastify-moose router: https://github.com/514-labs/moose/blob/main/examples/fastify-moose/src/router.ts
+- fastify-moose controllers: https://github.com/514-labs/moose/tree/main/examples/fastify-moose/src/controller
+
+Follow Express best practices: separate routing from business logic, keep route 
+handlers thin, maintain type safety throughout.
 ```
 
 You should see your frontend application update here [http://localhost:3000](http://localhost:3000/).
@@ -569,14 +582,15 @@ Click Deploy, and you’ll see your application MooseStack being deployed.
 
 #### Deploy your Next.js frontend to Vercel
 
-##### Authentication
+<Callout type="warning" title="Authentication">
+The authentication set up above just ensures your backend and frontend can communicate securely. You still need to add authentication to your frontend to restrict access to your data.
 
-⚠️ Important: The authentication set up above just ensures your back end and frontend can communicate securely. We are going to set environment variables here that give the front end access to the data. Accordingly, please ensure that you are properly adding authentication to your front end. Vercel offers this natively if your deployment is a preview deployment. If you want to productionize this, you may have to implement authentication using something like NextAuth, Auth0 or Clerk.
+Vercel offers this natively for preview deployments. For production, consider [NextAuth](https://next-auth.js.org/), [Auth0](https://auth0.com/), or [Clerk](https://clerk.com/).
 
-See Vercel docs
-
-* Vercel auth: [https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/vercel-authentication](https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/vercel-authentication)  
-* Third party auth: [https://vercel.com/guides/application-authentication-on-vercel](https://vercel.com/guides/application-authentication-on-vercel)
+See Vercel docs:
+- [Vercel authentication](https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/vercel-authentication)
+- [Third party auth](https://vercel.com/guides/application-authentication-on-vercel)
+</Callout>
 
 ##### Deployment
 
@@ -626,6 +640,17 @@ FROM s3(
 );
 ```
 
+<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
+```sql
+INSERT INTO `<clickhouse-database>`.AmazonReviews
+SELECT * FROM s3(
+  'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet',
+  'Parquet'
+);
+```
+Note: This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
+</ToggleBlock>
+
 This will again return 0 rows. This is expected. You can validate that the transfer worked correctly as follows:
 
 ```sql
@@ -634,6 +659,13 @@ This will again return 0 rows. This is expected. You can validate that the trans
 ```
 
 ## Adding Chat to Your Existing Next.js Application
+
+<Callout type="info" title="Assumptions">
+- You have a monorepo
+- Your application already has a Next.js service
+- Your application already has a MooseStack service, or you are willing to create one
+- You are using Express for your APIs (other frameworks work, but aren't covered here)
+</Callout>
 
 <Callout type="info" title="Prerequisites">
 * **What you need (accounts)**:   
@@ -647,9 +679,6 @@ This will again return 0 rows. This is expected. You can validate that the trans
 * **Recommended tooling**: Your IDE / terminal. A copilot, like Claude Code, Codex, or Cursor.  
 * **How long it takes**: ~1 hour.
 </Callout>
-
-| Assumptions: You have a monorepo Your application already has a Next.js service Your application already has a MooseStack service, or you are willing to create one You are using Express for your APIs (you can use other frameworks, they just won’t be outlined in this tutorial |
-| :---- |
 
 **Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-mcp](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp)
 
