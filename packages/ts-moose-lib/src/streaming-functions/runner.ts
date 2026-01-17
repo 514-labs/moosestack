@@ -603,7 +603,8 @@ async function loadStreamingFunction(functionFilePath: string) {
     if (useCompiled) {
       // Replace source directory path with compiled directory path
       // Example: /app/path/app/functions/x.ts -> /app/path/.moose/compiled/app/functions/x.js
-      const sourceDirPattern = new RegExp(`/${sourceDir}/`);
+      // Use string replacement instead of RegExp to avoid ReDoS risk
+      const sourceDirPattern = `/${sourceDir}/`;
       actualPath = functionFilePath
         .replace(sourceDirPattern, `/.moose/compiled/${sourceDir}/`)
         .replace(/\.ts$/, ".js");

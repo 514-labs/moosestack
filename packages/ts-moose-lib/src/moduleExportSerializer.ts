@@ -9,9 +9,11 @@ export async function runExportSerializer(targetModel: string) {
   if (useCompiled) {
     // Replace source directory with compiled path and .ts with .js
     // Handle both absolute paths (starting with /) and relative paths
-    if (modulePath.includes(sourceDir)) {
+    // Use string replacement instead of RegExp to avoid ReDoS risk
+    const sourcePattern = `/${sourceDir}/`;
+    if (modulePath.includes(sourcePattern)) {
       modulePath = modulePath.replace(
-        new RegExp(`/${sourceDir}/`),
+        sourcePattern,
         `/.moose/compiled/${sourceDir}/`,
       );
     }

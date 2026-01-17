@@ -20,7 +20,9 @@ const useCompiled = shouldUseCompiled();
 // Skip registration if using pre-compiled mode.
 if (!useCompiled) {
   const command = process.argv[2];
-  const needsPlugins = COMMANDS_REQUIRING_PLUGINS.includes(command as any);
+  const needsPlugins = (
+    COMMANDS_REQUIRING_PLUGINS as readonly string[]
+  ).includes(command);
 
   if (needsPlugins) {
     register({

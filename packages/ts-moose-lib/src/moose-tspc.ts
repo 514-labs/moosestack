@@ -17,6 +17,7 @@ import {
   MOOSE_COMPILER_OPTIONS,
   detectModuleSystem,
   getModuleOptions,
+  getSourceDir,
 } from "./compiler-config";
 import { rewriteImportExtensions } from "./commons";
 
@@ -56,9 +57,13 @@ try {
       skipDefaultLibCheck: true,
       // Additional settings to handle module resolution conflicts
       allowSyntheticDefaultImports: true,
-      // CRITICAL: Emit JavaScript even when there are type errors
-      // This is essential for Docker builds where we need compilation to succeed
-      // Type errors are acceptable here since the code works at runtime
+      // IMPORTANT: Build Safety Trade-off
+      // noEmitOnError: false allows JavaScript emission even with type errors.
+      // This is intentional for Docker builds to succeed even when TypeScript
+      // finds type issues. The trade-off is that type errors that could cause
+      // runtime failures will not block the build - they will be logged as
+      // warnings below. For strict type safety, users should run `npx tsc --noEmit`
+      // before building to catch type errors that could indicate runtime issues.
       noEmitOnError: false,
     },
   };
@@ -94,17 +99,26 @@ try {
   } catch (compileError: any) {
     // TypeScript might exit with non-zero code even when noEmitOnError: false
     // Check if output files were actually created
-    const sourceDir = process.env.MOOSE_SOURCE_DIR || "app";
+    const sourceDir = getSourceDir();
     const outputIndexPath = path.join(projectRoot, outDir, sourceDir, "index.js");
 
     if (existsSync(outputIndexPath)) {
-      console.warn(
-        "Warning: TypeScript reported errors but files were emitted successfully.",
-      );
-      console.warn(
-        "Type errors detected, but continuing with generated JavaScript.",
-      );
-      console.log("TypeScript compilation complete (with type errors).");
+      console.warn("");
+      console.warn("⚠️  BUILD SAFETY WARNING ⚠️");
+      console.warn("═══════════════════════════════════════════════════════════════");
+      console.warn("TypeScript detected type errors but JavaScript was still emitted.");
+      console.warn("");
+      console.warn("IMPORTANT: Type errors can indicate code that will fail at runtime.");
+      console.warn("While this build will succeed, the resulting code may crash when:");
+      console.warn("  - Functions receive unexpected argument types");
+      console.warn("  - Properties are accessed on potentially null/undefined values");
+      console.warn("  - Incorrect types flow through your application logic");
+      console.warn("");
+      console.warn("RECOMMENDATION: Run `npx tsc --noEmit` to review type errors before");
+      console.warn("deploying to production. Fix any errors that could cause runtime issues.");
+      console.warn("═══════════════════════════════════════════════════════════════");
+      console.warn("");
+      console.log("TypeScript compilation complete (with type warnings).");
     } else {
       console.error("Compilation failed - no output files generated.");
       throw compileError;

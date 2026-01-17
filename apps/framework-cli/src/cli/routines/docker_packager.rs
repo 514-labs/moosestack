@@ -130,8 +130,10 @@ RUN npm install -g pnpm@latest
 
 /// Generates the TypeScript compile step for Docker with dynamic source directory
 fn generate_typescript_compile_step(source_dir: &str) -> String {
-    // Escape double quotes in source_dir to prevent shell injection
-    let escaped_source_dir = source_dir.replace('"', r#"\""#);
+    // Escape single quotes for shell safety: ' becomes '\''
+    // This prevents command substitution ($(...) and backticks) from being executed
+    // Single-quoted strings in shell are literal except for the quote itself
+    let escaped_source_dir = source_dir.replace('\'', r"'\''");
 
     format!(
         r#"# Run TypeScript type checking
@@ -140,7 +142,7 @@ RUN npx moose check
 
 # Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
 # This eliminates ts-node overhead at runtime for faster worker startup
-RUN MOOSE_SOURCE_DIR="{}" npx moose-tspc .moose/compiled
+RUN MOOSE_SOURCE_DIR='{}' npx moose-tspc .moose/compiled
 
 # Set environment variable to use pre-compiled JavaScript at runtime
 ENV MOOSE_USE_COMPILED=true"#,

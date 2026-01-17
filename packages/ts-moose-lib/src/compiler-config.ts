@@ -120,8 +120,12 @@ export function detectModuleSystem(
       if (pkg.type === "module") {
         return "esm";
       }
-    } catch {
+    } catch (e) {
       // If parsing fails, default to CJS
+      console.debug(
+        `[moose] Failed to parse package.json at ${pkgPath}, defaulting to CJS:`,
+        e,
+      );
     }
   }
 
@@ -173,5 +177,7 @@ export async function loadModule<T = any>(
   }
 
   // Use require for CJS
+  // Note: In ESM builds (compiled by tsup), this code path is replaced with
+  // the appropriate ESM imports. The dual-package build ensures compatibility.
   return require(modulePath);
 }
