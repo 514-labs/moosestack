@@ -88,10 +88,10 @@ logos = "0.15.0"
 # Monitoring
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-tracing-opentelemetry = "0.32"
 opentelemetry = "0.31"
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio", "logs"] }
 opentelemetry-otlp = { version = "0.31", features = ["logs", "grpc-tonic"] }
+opentelemetry-appender-tracing = "0.31"
 prometheus-client = "0.23"
 serde_yaml = "0.9.34"
 temporal-sdk-core = { git = "https://github.com/temporalio/sdk-core.git", rev = "b94b2fc172c2740705b3454a0e04b856fe426233" }

@@ -78,15 +78,12 @@
 //! fern-based log format (e.g., Boreal/hosting_telemetry). The modern format can be enabled
 //! via environment variable once downstream consumers are ready.
 
-use opentelemetry::trace::TracerProvider;
-use opentelemetry_otlp::WithExportConfig;
 use serde::Deserialize;
 use std::fmt;
 use std::io::Write;
-use std::sync::OnceLock;
 use std::time::{Duration, SystemTime};
 use tracing::field::{Field, Visit};
-use tracing::{error, info, warn, Event, Level, Subscriber};
+use tracing::{warn, Event, Level, Subscriber};
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::{Context, SubscriberExt};
@@ -97,10 +94,8 @@ use tracing_subscriber::{EnvFilter, Layer};
 use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
 
+use super::otlp;
 use super::settings::user_directory;
-
-// Static storage for the OTLP tracer provider, used for shutdown
-static TRACER_PROVIDER: OnceLock<opentelemetry_sdk::trace::SdkTracerProvider> = OnceLock::new();
 
 // # STRUCTURED LOGGING INSTRUMENTATION GUIDE
 //
@@ -671,110 +666,20 @@ pub fn setup_logging(settings: &LoggerSettings) {
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 
     // Priority 1: OTLP export (if endpoint configured)
-    if settings.otlp_endpoint.is_some() {
-        setup_with_otlp(settings);
-    } else if settings.use_tracing_format {
+    if let Some(endpoint) = &settings.otlp_endpoint {
+        otlp::setup_otlp_logs(otlp::OtlpLogSettings {
+            endpoint: endpoint.clone(),
+            level_filter: settings.level.to_tracing_level().to_string(),
+        });
+        return;
+    }
+
+    if settings.use_tracing_format {
         // Modern format using tracing built-ins
         setup_modern_format(settings);
     } else {
         // Legacy format matching fern exactly
         setup_legacy_format(settings, session_id);
-    }
-}
-
-/// Creates an OTLP layer for exporting traces via gRPC.
-///
-/// Returns None if the OTLP endpoint is not configured or if initialization fails.
-fn setup_otlp_layer(
-    settings: &LoggerSettings,
-) -> Option<
-    tracing_opentelemetry::OpenTelemetryLayer<
-        tracing_subscriber::Registry,
-        opentelemetry_sdk::trace::Tracer,
-    >,
-> {
-    let endpoint = settings.otlp_endpoint.as_ref()?;
-
-    // Create OTLP exporter using builder pattern
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
-        .with_tonic()
-        .with_endpoint(endpoint.clone())
-        .build()
-        .ok()?;
-
-    // Create resource with service information
-    let resource = opentelemetry_sdk::Resource::builder()
-        .with_service_name("moose")
-        .with_attributes([opentelemetry::KeyValue::new(
-            "service.version",
-            env!("CARGO_PKG_VERSION"),
-        )])
-        .build();
-
-    // Create tracer provider with batch exporter
-    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-        .with_resource(resource)
-        .with_batch_exporter(exporter)
-        .build();
-
-    // Store provider for shutdown and set as global
-    let provider_clone = provider.clone();
-    opentelemetry::global::set_tracer_provider(provider);
-    let _ = TRACER_PROVIDER.set(provider_clone);
-
-    let tracer = TRACER_PROVIDER.get()?.tracer("moose");
-
-    Some(tracing_opentelemetry::layer().with_tracer(tracer))
-}
-
-/// Setup OTLP export for structured logging.
-///
-/// Exports spans and logs to an OTLP collector via gRPC while also writing
-/// to local files/stdout for fallback observability. If OTLP initialization fails,
-/// this function panics to alert the user of the misconfiguration.
-fn setup_with_otlp(settings: &LoggerSettings) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
-
-    // Add OTLP layer first, then local file/stdout layer for fallback
-    if let Some(otlp_layer) = setup_otlp_layer(settings) {
-        if settings.stdout {
-            let ansi_enabled = !settings.no_ansi;
-            let local_layer = tracing_subscriber::fmt::layer()
-                .with_writer(std::io::stdout)
-                .with_target(true)
-                .with_level(true)
-                .with_ansi(ansi_enabled)
-                .compact();
-
-            tracing_subscriber::registry()
-                .with(otlp_layer)
-                .with(local_layer)
-                .with(env_filter)
-                .init();
-        } else {
-            // Write to file with ANSI disabled
-            let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-            let local_layer = tracing_subscriber::fmt::layer()
-                .with_writer(file_appender)
-                .with_target(true)
-                .with_level(true)
-                .with_ansi(false)
-                .compact();
-
-            tracing_subscriber::registry()
-                .with(otlp_layer)
-                .with(local_layer)
-                .with(env_filter)
-                .init();
-        }
-        info!(
-            "OTLP export enabled to {}",
-            settings.otlp_endpoint.as_ref().unwrap()
-        );
-    } else {
-        error!("Failed to initialize OTLP export");
-        panic!("OTLP endpoint configured but initialization failed");
     }
 }
 
@@ -874,15 +779,11 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
     }
 }
 
-/// Shuts down the OTLP tracer provider, flushing any remaining spans.
+/// Shuts down the OTLP log provider, flushing any remaining logs.
 ///
-/// This should be called before the application exits to ensure all spans are exported.
+/// This should be called before the application exits to ensure all logs are exported.
 pub fn shutdown_otlp() {
-    if let Some(provider) = TRACER_PROVIDER.get() {
-        if let Err(e) = provider.shutdown() {
-            eprintln!("Failed to shutdown OTLP tracer provider: {:?}", e);
-        }
-    }
+    otlp::shutdown_otlp();
 }
 
 #[cfg(test)]
