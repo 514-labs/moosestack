@@ -92,5 +92,9 @@ export function StaggeredCode({
   children,
   language = "ts",
 }: StaggeredCodeProps) {
-  return <div className="rounded-xl overflow-x-auto pr-8">{children}</div>;
+  // Important: don't add an overflow clipping context here.
+  // The animated code editor (`CodeEditor`) already handles its own scrolling + rounded corners.
+  // If this wrapper uses overflow clipping + asymmetric padding, it will shave off the left
+  // border radii of the child editor.
+  return <div className="min-w-0 pr-8">{children}</div>;
 }

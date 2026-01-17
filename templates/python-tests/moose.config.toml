@@ -51,6 +51,9 @@ api_key = ""
 
 [authentication]
 
+[watcher_config]
+ignore_patterns = []
+
 [features]
 streaming_engine = true
 workflows = true

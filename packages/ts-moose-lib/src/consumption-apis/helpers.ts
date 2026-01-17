@@ -29,16 +29,26 @@ function formatElapsedTime(ms: number): string {
   return `${minutes} minutes and ${remainingSeconds.toFixed(2)} seconds`;
 }
 
-export interface ApiUtil {
+/**
+ * Utilities provided by getMooseUtils() for database access and SQL queries.
+ * Works in both Moose runtime and standalone contexts.
+ */
+export interface MooseUtils {
   client: MooseClient;
-
-  // SQL interpolator
   sql: typeof sql;
-  jwt: JWTPayload | undefined;
+  jwt?: JWTPayload;
 }
 
-/** @deprecated Use ApiUtil instead. */
-export type ConsumptionUtil = ApiUtil;
+/**
+ * @deprecated Use MooseUtils instead. ApiUtil is now a type alias to MooseUtils
+ * and will be removed in a future version.
+ *
+ * Migration: Replace `ApiUtil` with `MooseUtils` in your type annotations.
+ */
+export type ApiUtil = MooseUtils;
+
+/** @deprecated Use MooseUtils instead. */
+export type ConsumptionUtil = MooseUtils;
 
 export class MooseClient {
   query: QueryClient;

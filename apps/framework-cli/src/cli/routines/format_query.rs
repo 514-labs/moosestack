@@ -5,7 +5,7 @@
 
 use crate::cli::display::Message;
 use crate::cli::routines::RoutineFailure;
-use sqlparser::ast::Statement;
+use sqlparser::ast::{Statement, ToSql};
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::parser::Parser;
 
@@ -60,9 +60,10 @@ pub fn validate_sql(sql: &str) -> Result<(), RoutineFailure> {
     Ok(())
 }
 
-/// Prettify SQL query using sqlparser's pretty printing.
+/// Prettify SQL query using sqlparser's dialect-aware serialization.
 ///
-/// Parses the SQL and formats it with proper indentation and line breaks.
+/// Parses the SQL and formats it using ClickHouse dialect to preserve
+/// type casing (e.g., Int64 stays Int64, not INT64).
 ///
 /// # Arguments
 ///
@@ -72,12 +73,13 @@ pub fn validate_sql(sql: &str) -> Result<(), RoutineFailure> {
 ///
 /// * `Result<String, RoutineFailure>` - Prettified SQL string or error
 fn prettify_sql(sql: &str) -> Result<String, RoutineFailure> {
+    let dialect = ClickHouseDialect {};
     let statements = parse_sql(sql)?;
 
-    // Format all statements with pretty printing
+    // Format all statements using dialect-aware ToSql to preserve type casing
     let formatted: Vec<String> = statements
         .iter()
-        .map(|stmt| format!("{:#}", stmt))
+        .map(|stmt| stmt.to_sql(&dialect))
         .collect();
 
     Ok(formatted.join(";\n"))
@@ -262,8 +264,24 @@ LIMIT 50"#;
         assert!(result.contains("FROM"));
         assert!(result.contains("users"));
         assert!(result.contains("WHERE"));
-        // Should have line breaks with sqlparser formatting
-        assert!(result.contains('\n'));
+    }
+
+    #[test]
+    fn test_prettify_sql_preserves_clickhouse_types() {
+        // Critical: ClickHouse types must be preserved with correct casing
+        let sql = "CREATE TABLE test (id Int64, name String, ts DateTime) ENGINE = MergeTree()";
+        let result = prettify_sql(sql).unwrap();
+
+        // Type casing must be preserved (not uppercased to INT64, STRING, DATETIME)
+        assert!(result.contains("Int64"), "Int64 type casing not preserved");
+        assert!(
+            result.contains("String"),
+            "String type casing not preserved"
+        );
+        assert!(
+            result.contains("DateTime"),
+            "DateTime type casing not preserved"
+        );
     }
 
     #[test]
@@ -279,13 +297,12 @@ LIMIT 50"#;
     fn test_format_as_code_with_prettify() {
         let sql = "SELECT id, name FROM users WHERE active = 1";
 
-        // With prettify
+        // With prettify - validates SQL syntax and formats with dialect-aware serialization
         let result = format_as_code(sql, CodeLanguage::Python, true).unwrap();
         assert!(result.starts_with("r\"\"\""));
-        assert!(result.contains('\n'));
         assert!(result.contains("SELECT"));
 
-        // Without prettify
+        // Without prettify - preserves original SQL
         let result_no_prettify = format_as_code(sql, CodeLanguage::Python, false).unwrap();
         assert!(result_no_prettify.starts_with("r\"\"\""));
         assert!(result_no_prettify.contains("SELECT id, name FROM users"));

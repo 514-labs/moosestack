@@ -1,10 +1,13 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
+import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
+import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
+import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
+import { CopyPageButton } from "@/components/copy-page-button";
 
 // export const dynamic = "force-dynamic";
 
@@ -74,7 +77,7 @@ export async function generateMetadata({
   }
 }
 
-export default async function DocPage({ params }: PageProps) {
+export default async function DocPage({ params, searchParams }: PageProps) {
   const resolvedParams = await params;
   const slugArray = resolvedParams.slug;
 
@@ -104,10 +107,27 @@ export default async function DocPage({ params }: PageProps) {
     : undefined,
   );
 
+  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  const resolvedSearchParams = await searchParams;
+  const langParam = resolvedSearchParams?.lang;
+
   return (
     <>
       <div className="flex w-full flex-col gap-6 pt-4">
-        <DocBreadcrumbs items={breadcrumbs} />
+        <div className="flex items-center justify-between">
+          <DocBreadcrumbs items={breadcrumbs} />
+          {showCopyButton && (
+            <CopyPageButton
+              content={
+                content.isMDX ?
+                  cleanContent(
+                    filterLanguageContent(content.content, langParam),
+                  )
+                : content.content
+              }
+            />
+          )}
+        </div>
         <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
           {content.isMDX ?
             <MDXRenderer source={content.content} />

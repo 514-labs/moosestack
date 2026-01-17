@@ -59,6 +59,7 @@ moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --langua
 
 ```bash
 cd my-project
+npm install  # or: pip install -r requirements.txt
 moose dev
 ```
 

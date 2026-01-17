@@ -2,6 +2,29 @@
 
 set -eo pipefail
 
+# Retry function for pnpm install (handles npm registry propagation delay)
+retry_pnpm_install() {
+    local max_attempts=5
+    local delay=15
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        echo "Attempt $attempt of $max_attempts: pnpm install $@"
+        if pnpm install "$@"; then
+            return 0
+        fi
+
+        if [ $attempt -lt $max_attempts ]; then
+            echo "pnpm install failed, waiting ${delay}s before retry..."
+            sleep $delay
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    echo "pnpm install failed after $max_attempts attempts"
+    return 1
+}
+
 # This script should be called from the root of the repository
 
 version=$1
@@ -22,7 +45,7 @@ fi
 cd ../..
 
 # This is run twice since the change the value of the dependencies in the previous step
-pnpm install --filter "@514labs/moose-connector-api" --no-frozen-lockfile # requires optional dependencies to be present in the registry
+retry_pnpm_install --filter "@514labs/moose-connector-api" --no-frozen-lockfile # requires optional dependencies to be present in the registry
 pnpm build --filter @514labs/moose-connector-api
 
 cd packages/ts-connector-api

@@ -322,6 +322,112 @@ If a field is optional in your app model but you provide a ClickHouse default, M
 This lets you keep optional fields at the application layer while avoiding Nullable columns in ClickHouse when a server-side default exists.
 </Callout>
 
+### Column Comments
+
+Add documentation directly to your data model fields that propagates to ClickHouse `COMMENT` clauses. This makes your schema self-documenting and easier to understand for anyone querying the database.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+Use TSDoc comments (`/** ... */`) directly above fields:
+
+```ts filename="ColumnComments.ts" copy
+import { Key, DateTime, OlapTable } from "@514labs/moose-lib";
+
+interface UserEvent {
+  /** Unique identifier for the user event */
+  id: Key<string>;
+  /** Timestamp when the event occurred */
+  timestamp: DateTime;
+  /** Email address of the user (must be valid format) */
+  email: string;
+  /** Total transaction amount in USD */
+  amount: number;
+  // Fields without TSDoc comments have no COMMENT in DDL
+  status: string;
+}
+
+export const userEventTable = new OlapTable<UserEvent>("user_events", {
+  orderByFields: ["id", "timestamp"],
+});
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Python supports two ways to add column comments:
+
+**Option 1: Field(description=...)**
+
+```python filename="ColumnComments.py" copy
+from pydantic import BaseModel, Field
+from moose_lib import Key, OlapTable, OlapConfig
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: Key[str] = Field(description="Unique identifier for the user event")
+    timestamp: datetime = Field(description="Timestamp when the event occurred")
+    email: str = Field(description="Email address of the user (must be valid format)")
+    amount: float = Field(description="Total transaction amount in USD")
+    # Fields without description have no COMMENT in DDL
+    status: str
+
+user_event_table = OlapTable[UserEvent](
+    "user_events",
+    OlapConfig(order_by_fields=["id", "timestamp"]),
+)
+```
+
+**Option 2: Attribute Docstrings**
+
+Use attribute docstrings with `use_attribute_docstrings=True` in your model config:
+
+```python filename="ColumnCommentsDocstring.py" copy
+from pydantic import BaseModel, ConfigDict
+from moose_lib import Key, OlapTable, OlapConfig
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+    id: Key[str]
+    """Unique identifier for the user event."""
+
+    timestamp: datetime
+    """Timestamp when the event occurred."""
+
+    email: str
+    """Email address of the user (must be valid format)."""
+
+    amount: float
+    """Total transaction amount in USD."""
+
+    status: str  # No docstring = no COMMENT in DDL
+
+user_event_table = OlapTable[UserEvent](
+    "user_events",
+    OlapConfig(order_by_fields=["id", "timestamp"]),
+)
+```
+
+Both approaches can be mixed in the same model.
+  </LanguageTabContent>
+</LanguageTabs>
+
+The generated ClickHouse DDL includes column comments:
+
+```sql
+CREATE TABLE user_events (
+  `id` String COMMENT 'Unique identifier for the user event',
+  `timestamp` DateTime COMMENT 'Timestamp when the event occurred',
+  `email` String COMMENT 'Email address of the user (must be valid format)',
+  `amount` Float64 COMMENT 'Total transaction amount in USD',
+  `status` String
+) ENGINE = MergeTree()
+ORDER BY (id, timestamp)
+```
+
+<Callout type="info" title="Viewing comments in ClickHouse">
+Query column comments using `SELECT name, comment FROM system.columns WHERE table = 'user_events'` or `DESCRIBE TABLE user_events FORMAT Vertical`.
+</Callout>
+
 ### Database Selection
 
 By default, tables are created in the database specified in your `moose.config.toml` ClickHouse configuration. You can override this on a per-table basis using the `database` field:

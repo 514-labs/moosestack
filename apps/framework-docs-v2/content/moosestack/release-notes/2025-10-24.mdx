@@ -1,0 +1,69 @@
+---
+title: October 24, 2025
+description: Release notes for October 24, 2025
+---
+
+import { Callout } from "@/components/mdx";
+
+# October 24, 2025
+
+<Callout type="info" title="Highlights">
+* **New:** `moose migrate --clickhouse-url` enables serverless ClickHouse schema deploys
+* **Improved:** `ClickHouseJson` type enables dynamic JSON payloads with fine-grained controls
+</Callout>
+
+## Serverless ClickHouse migrations with `moose migrate`
+Run schema diffs and applies straight against a ClickHouse endpoint—perfect for OLAP-only or CI/CD environments that don't boot the full Moose runtime.
+
+```bash
+# Detect changes and persist the migration plan
+moose generate migration \
+  --clickhouse-url "https://user:pass@ch.serverless.dev/main" \
+  --save
+
+# Apply the plan directly to ClickHouse
+moose migrate --clickhouse-url "https://user:pass@ch.serverless.dev/main"
+```
+
+PR: ([#2872](https://github.com/514-labs/moosestack/pull/2872)) | Docs: [Serverless ClickHouse migrations guide](/moosestack/migrate#serverless-deployments)
+
+## Adaptive JSON columns with `ClickHouseJson`
+Model semi-structured payloads while locking in typed paths for the fields you care about.
+
+```typescript
+import { Key, ClickHouseJson, Int64 } from "@514labs/moose-lib";
+
+interface UserMetadata {
+  userId: string;
+  sessionId: string;
+}
+
+export interface UserActivity {
+  id: Key<string>;
+  // ClickHouseJson<maxDynamicPaths, maxDynamicTypes, skipPaths, skipRegexes>
+  metadata: UserMetadata & ClickHouseJson<256, 16, ["internal.debug"], ["^tmp\\."]>;
+}
+```
+
+PR:([#2887](https://github.com/514-labs/moosestack/pull/2887)) | Docs: [Data modeling](/moosestack/data-modeling)
+
+## Moose
+
+- **`moose migrate --clickhouse-url`** – Generate and apply migrations directly against hosted ClickHouse, ideal for OLAP-only or CI/CD workflows that run without the full Moose runtime. [Docs: Serverless ClickHouse migrations](/moosestack/migrate#serverless-deployments) | PRs [#2872](https://github.com/514-labs/moosestack/pull/2872).
+- **LLM-friendly docs & endpoints** – Framework pages expose TS/Py "LLM view" links and the CLI now serves `/llm-ts.txt` + `/llm-py.txt` for assistants that need scoped context. [Docs: LLM docs](/moosestack/llm-docs) | PRs [#2892](https://github.com/514-labs/moosestack/pull/2892).
+- **Flexible JSON columns** – `ClickHouseJson` lets models cap dynamic paths, pin typed paths, or skip keys/regexes so ingestion can accept evolving payloads without breaking typed reads. [Docs: Data modeling](/moosestack/data-modeling) | PRs [#2887](https://github.com/514-labs/moosestack/pull/2887).
+- **Configurable `source_dir`** – `moose.config.toml` can point at `src/` (or any folder) instead of the default `app/`, simplifying adoption inside existing repos. [Docs: Configuration](/moosestack/configuration) | PRs [#2886](https://github.com/514-labs/moosestack/pull/2886).
+- **Array transforms can fan out events** – Transform functions that return arrays automatically emit one Kafka message per element, covering explode/normalize patterns without extra producers. [Docs: Transform functions](/moosestack/streaming/transform-functions) | PRs [#2882](https://github.com/514-labs/moosestack/pull/2882).
+- **ClickHouse modeling controls** – Table DSL now covers TTL per table/column, `sampleByExpression`, and fully configurable secondary indexes (type, args, granularity) so you can encode retention + performance plans directly in code. [Docs: TTL](/moosestack/olap/ttl) | [Docs: Schema optimization](/moosestack/olap/schema-optimization) | [Docs: Secondary indexes](/moosestack/olap/indexes) | PRs [#2845](https://github.com/514-labs/moosestack/pull/2845), [#2867](https://github.com/514-labs/moosestack/pull/2867), [#2869](https://github.com/514-labs/moosestack/pull/2869).
+- **`get_source` MCP tool** – AI assistants can resolve a Moose component (tables, APIs, streams) back to its source file for faster code navigation. [Docs: MCP get_source tool](/moosestack/mcp-dev-server#get_source) | PRs [#2848](https://github.com/514-labs/moosestack/pull/2848).
+- **Google Analytics v4 connector** – Service-account authenticated connector streams GA4 reports and realtime metrics into Moose pipelines so marketing data lands without bespoke ETL. [Docs: Connector reference](https://registry.514.ai/connectors/google-analytics) | PRs [registry#121](https://github.com/514-labs/registry/pull/121).
+- **Connector registry APIs** – Public REST endpoints expose connector metadata, docs, schemas, and versions for catalogs or automation. [Docs: Registry API docs](https://registry.514.ai/docs/api) | PRs [registry#120](https://github.com/514-labs/registry/pull/120).
+- **Onboarding & docs polish** – Quickstart, auth, materialized view, and config guides now call out install checkpoints, nullable column behavior, and when to prefer `moose.config.toml` over Docker overrides. [Docs: Quickstart](/moosestack/getting-started/quickstart) | PRs [#2903](https://github.com/514-labs/moosestack/pull/2903), [#2894](https://github.com/514-labs/moosestack/pull/2894), [#2893](https://github.com/514-labs/moosestack/pull/2893), [#2890](https://github.com/514-labs/moosestack/pull/2890).
+- **Integer validation parity** – The ingest API enforces every ClickHouse integer range (Int8–UInt256) with clear errors, preventing silent overflows. [Docs: Ingest API](/moosestack/apis/ingest-api) | PRs [#2861](https://github.com/514-labs/moosestack/pull/2861).
+- **MCP watcher stability** – The MCP server now waits for file-system changes to settle before responding so IDE bots always read consistent artifacts. [Docs: MCP server](/moosestack/mcp-dev-server) | PRs [#2884](https://github.com/514-labs/moosestack/pull/2884).
+- **Release + schema compiler hardening** – Version detection ignores CI-only tags, and ClickHouse parsing handles ORDER BY around `PARTITION BY`, `TTL`, `SAMPLE BY`, and secondary indexes even when optional arguments are omitted. PRs [#2902](https://github.com/514-labs/moosestack/pull/2902), [#2898](https://github.com/514-labs/moosestack/pull/2898), [#2897](https://github.com/514-labs/moosestack/pull/2897), [#2889](https://github.com/514-labs/moosestack/pull/2889).
+- **Proxy request fidelity** – Consumption APIs now preserve headers/body metadata end-to-end, keeping auth tokens and content negotiation intact. PRs [#2881](https://github.com/514-labs/moosestack/pull/2881).
+
+## Boreal
+
+- **Navigation slug fix** – Visiting a 404 no longer strips the org ID from subsequent links, so multi-tenant operators stay on the right workspace. ([commercial#1014](https://github.com/514-labs/commercial/pull/1014))

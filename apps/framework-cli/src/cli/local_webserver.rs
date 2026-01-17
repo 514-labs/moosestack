@@ -19,7 +19,8 @@
 /// The webserver is configurable through the `LocalWebserverConfig` struct and
 /// can be started in both development and production modes.
 use super::display::{
-    with_spinner_completion, with_spinner_completion_async, Message, MessageType,
+    with_spinner_completion, with_spinner_completion_async, with_timing, with_timing_async,
+    Message, MessageType,
 };
 use super::routines::auth::validate_auth_token;
 use super::routines::scripts::{
@@ -31,6 +32,8 @@ use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaStreamConfig;
 use crate::metrics::MetricEvent;
 
+use crate::cli::logger::{context, resource_type};
+
 use crate::framework::core::infrastructure::api_endpoint::APIType;
 use crate::framework::core::infrastructure_map::Change;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
@@ -38,6 +41,7 @@ use crate::framework::core::infrastructure_map::{InfraChanges, OlapChange, Table
 use crate::framework::versions::Version;
 use crate::metrics::Metrics;
 use crate::utilities::auth::{get_claims, validate_jwt};
+use crate::utilities::constants::SHOW_TIMING;
 
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::framework::typescript::bin::CliMessage;
@@ -70,8 +74,8 @@ use schema_registry_client::rest::schema_registry_client::SchemaRegistryClient;
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use serde_json::{json, Deserializer as JsonDeserializer, Value};
-use tokio::spawn;
-use tracing::{debug, error, info, trace, warn};
+use sha2::{Digest, Sha256};
+use tracing::{debug, error, info, instrument, trace, warn, Instrument};
 
 use crate::framework::data_model::model::DataModel;
 use crate::utilities::validate_passthrough::{DataModelArrayVisitor, DataModelVisitor};
@@ -121,6 +125,52 @@ const KAFKA_CLIENT_DESTROY_TIMEOUT_MS: i32 = 3000;
 /// Grace period in seconds after stopping managed processes to allow for full cleanup.
 /// This gives streaming functions additional time to close Kafka consumers and Redis connections.
 const PROCESS_CLEANUP_GRACE_PERIOD_SECS: u64 = 2;
+
+/// Spawns a task that automatically inherits the current span context.
+///
+/// This is a convenience wrapper around `tokio::spawn` that instruments the spawned
+/// future with the current tracing span. This ensures that logs and traces from the
+/// spawned task are properly associated with the parent context.
+///
+/// # Example
+/// ```rust
+/// spawn_with_span(async move {
+///     // This task will inherit the current span
+///     tracing::info!("Running in spawned task");
+/// });
+/// ```
+fn spawn_with_span<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    tokio::spawn(future.instrument(tracing::Span::current()))
+}
+
+/// Spawns a blocking task that automatically inherits the current span context.
+///
+/// This is a convenience wrapper around `tokio::task::spawn_blocking` that instruments
+/// the returned future with the current tracing span. This ensures that logs and traces
+/// from the blocking task are properly associated with the parent context.
+///
+/// # Example
+/// ```rust
+/// let result = spawn_blocking_with_span(move || {
+///     // This blocking task will inherit the current span
+///     expensive_computation()
+/// }).await;
+/// ```
+fn spawn_blocking_with_span<F, R>(f: F) -> impl Future<Output = Result<R, tokio::task::JoinError>>
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || {
+        let _guard = span.enter();
+        f()
+    })
+}
 
 /// Metadata for an API route.
 /// This struct contains information about the route, including the topic name,
@@ -410,7 +460,22 @@ fn add_cors_headers(builder: hyper::http::response::Builder) -> hyper::http::res
         )
 }
 
-#[tracing::instrument(skip(consumption_apis, req, is_prod), fields(uri = %req.uri(), method = %req.method(), headers = ?req.headers()))]
+/// Normalizes consumption API paths by removing /api/ or /consumption/ prefixes
+fn normalize_consumption_path(path: &str) -> &str {
+    path.strip_prefix("/api/")
+        .or_else(|| path.strip_prefix("/consumption/"))
+        .unwrap_or(path)
+}
+
+#[instrument(
+    name = "consumption_api_request",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::CONSUMPTION_API,
+        resource_name = %normalize_consumption_path(req.uri().path()),
+    )
+)]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
@@ -419,6 +484,9 @@ async fn get_consumption_api_res(
     is_prod: bool,
     proxy_port: u16,
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
+    // Normalize to the API name by removing either prefix for consistent resource naming
+    let normalized_path = normalize_consumption_path(req.uri().path());
+
     // Extract the Authorization header and check the bearer token
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
 
@@ -447,12 +515,8 @@ async fn get_consumption_api_res(
     {
         let consumption_apis = consumption_apis.read().await;
 
-        // Normalize to the API name by removing either prefix
-        let raw_path = req.uri().path();
-        let consumption_name = raw_path
-            .strip_prefix("/api/")
-            .or_else(|| raw_path.strip_prefix("/consumption/"))
-            .unwrap_or(raw_path);
+        // Use the already normalized path
+        let consumption_name = normalized_path;
 
         // Allow forwarding even if not an exact match; the proxy layer (runner) will
         // handle aliasing (unversioned -> sole versioned) or return 404.
@@ -697,6 +761,15 @@ async fn workflows_history_route(
     }
 }
 
+#[instrument(
+    name = "workflow_trigger",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::WORKFLOW,
+        resource_name = %workflow_name,
+    )
+)]
 async fn workflows_trigger_route(
     req: Request<hyper::body::Incoming>,
     is_prod: bool,
@@ -770,6 +843,15 @@ async fn workflows_trigger_route(
     }
 }
 
+#[instrument(
+    name = "workflow_terminate",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::WORKFLOW,
+        resource_name = %workflow_name,
+    )
+)]
 async fn workflows_terminate_route(
     req: Request<hyper::body::Incoming>,
     is_prod: bool,
@@ -811,6 +893,14 @@ async fn workflows_terminate_route(
     }
 }
 
+#[instrument(
+    name = "health_check",
+    skip_all,
+    fields(
+        context = context::SYSTEM,
+        // No resource_type/resource_name - infrastructure check
+    )
+)]
 async fn health_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
@@ -929,6 +1019,14 @@ async fn health_route(
         .body(Full::new(Bytes::from(json_response)))
 }
 
+#[instrument(
+    name = "ready_check",
+    skip_all,
+    fields(
+        context = context::SYSTEM,
+        // No resource_type/resource_name - infrastructure check
+    )
+)]
 async fn ready_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
@@ -1007,6 +1105,14 @@ async fn ready_route(
         .body(Full::new(Bytes::from(json_response)))
 }
 
+#[instrument(
+    name = "reality_check",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        // No resource_type/resource_name - infrastructure validation
+    )
+)]
 async fn admin_reality_check_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,
@@ -1314,6 +1420,31 @@ async fn send_to_kafka<T: Iterator<Item = Vec<u8>>>(
     res_arr
 }
 
+/// Creates a safe body summary for logging: length + SHA256 hash only.
+/// This prevents PII leaks and log injection attacks in error paths.
+///
+/// # Arguments
+/// * `body` - The request body bytes
+///
+/// # Returns
+/// A string in format: "len:{bytes} hash:{sha256}"
+fn safe_body_summary(body: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(body);
+    let hash = format!("{:x}", hasher.finalize());
+
+    format!("len:{} hash:{}", body.len(), hash)
+}
+
+#[instrument(
+    name = "ingest_request",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::INGEST_API,
+        resource_name = %topic_name,
+    )
+)]
 #[allow(clippy::too_many_arguments)]
 async fn handle_json_array_body(
     configured_producer: &ConfiguredProducer,
@@ -1324,6 +1455,7 @@ async fn handle_json_array_body(
     jwt_config: &Option<JwtConfig>,
     max_request_body_size: usize,
     schema_registry_schema_id: Option<i32>,
+    log_payloads: bool,
 ) -> Response<Full<Bytes>> {
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
     let jwt_claims = get_claims(auth_header, jwt_config);
@@ -1376,6 +1508,25 @@ async fn handle_json_array_body(
 
     debug!("parsed json array for {}", topic_name);
 
+    // Log payload if enabled (compact JSON on one line)
+    if log_payloads {
+        match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(json_value) => {
+                if let Ok(compact_json) = serde_json::to_string(&json_value) {
+                    info!("[PAYLOAD:INGEST] {}: {}", topic_name, compact_json);
+                }
+            }
+            Err(_) => {
+                // If we can't parse it, log the raw body (shouldn't happen since we already parsed it above)
+                info!(
+                    "[PAYLOAD:INGEST] {}: {}",
+                    topic_name,
+                    String::from_utf8_lossy(&body)
+                );
+            }
+        }
+    }
+
     let mut records = match parsed {
         Err(e) => {
             if let Some(dlq) = dead_letter_queue {
@@ -1415,8 +1566,10 @@ async fn handle_json_array_body(
                 .await;
             }
             warn!(
-                "Bad JSON in request to topic {}: {}. Body: {:?}",
-                topic_name, e, body
+                "Bad JSON in request to topic {}: {}. {}",
+                topic_name,
+                e,
+                safe_body_summary(&body)
             );
             return bad_json_response(e);
         }
@@ -1443,10 +1596,28 @@ async fn handle_json_array_body(
     )
     .await;
 
-    if res_arr.iter().any(|res| res.is_err()) {
+    // Check for Kafka errors and log details for debugging
+    let errors: Vec<_> = res_arr
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, res)| res.as_ref().err().map(|e| (idx, e)))
+        .collect();
+
+    if !errors.is_empty() {
+        // Log each individual error with record index
+        for (idx, kafka_err) in &errors {
+            error!(
+                "Failed to send record {} to topic {}: {}",
+                idx, topic_name, kafka_err
+            );
+        }
+        // Log summary with safe request body info
         error!(
-            "Internal server error sending to topic {}. Body: {:?}",
-            topic_name, body
+            "Internal server error: {}/{} records failed to topic {}. Request: {}",
+            errors.len(),
+            res_arr.len(),
+            topic_name,
+            safe_body_summary(&body)
         );
         return internal_server_error_response();
     }
@@ -1501,6 +1672,7 @@ async fn check_authorization(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ingest_route(
     req: Request<hyper::body::Incoming>,
     route: PathBuf,
@@ -1509,6 +1681,7 @@ async fn ingest_route(
     is_prod: bool,
     jwt_config: Option<JwtConfig>,
     max_request_body_size: usize,
+    log_payloads: bool,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     show_message!(
         MessageType::Info,
@@ -1548,6 +1721,7 @@ async fn ingest_route(
             &jwt_config,
             max_request_body_size,
             route_meta.schema_registry_schema_id,
+            log_payloads,
         )
         .await),
         None => {
@@ -1656,6 +1830,7 @@ async fn router(
                             is_prod,
                             jwt_config,
                             project.http_server_config.max_request_body_size,
+                            project.log_payloads,
                         )
                         .await
                     }
@@ -1669,6 +1844,7 @@ async fn router(
                             is_prod,
                             jwt_config,
                             project.http_server_config.max_request_body_size,
+                            project.log_payloads,
                         )
                         .await
                     }
@@ -1683,6 +1859,7 @@ async fn router(
                     is_prod,
                     jwt_config,
                     project.http_server_config.max_request_body_size,
+                    project.log_payloads,
                 )
                 .await
             } else {
@@ -1695,6 +1872,7 @@ async fn router(
                     is_prod,
                     jwt_config,
                     project.http_server_config.max_request_body_size,
+                    project.log_payloads,
                 )
                 .await
             }
@@ -1885,7 +2063,7 @@ async fn router(
     let metrics_path = route_clone.clone().to_str().unwrap().to_string();
     let metrics_path_clone = metrics_path.clone();
 
-    spawn(async move {
+    spawn_with_span(async move {
         if metrics_path_clone.starts_with("ingest/") {
             let _ = metrics_clone
                 .send_metric_event(MetricEvent::IngestedEvent {
@@ -2224,7 +2402,7 @@ impl Webserver {
 
         let (tx, mut rx) = mpsc::channel::<(InfrastructureMap, ApiChange)>(32);
 
-        tokio::spawn(async move {
+        spawn_with_span(async move {
             while let Some((infra_map, api_change)) = rx.recv().await {
                 let mut route_table = route_table.write().await;
                 match api_change {
@@ -2362,7 +2540,7 @@ impl Webserver {
         let (tx, mut rx) =
             mpsc::channel::<crate::framework::core::infrastructure_map::WebAppChange>(32);
 
-        tokio::spawn(async move {
+        spawn_with_span(async move {
             while let Some(webapp_change) = rx.recv().await {
                 tracing::info!("🔔 Received WebApp change: {:?}", webapp_change);
                 match webapp_change {
@@ -2466,7 +2644,7 @@ impl Webserver {
             // Fire once-only startup script as soon as server starts
             {
                 let project_clone = project.clone();
-                tokio::spawn(async move {
+                spawn_with_span(async move {
                     project_clone
                         .http_server_config
                         .run_dev_start_script_once()
@@ -2617,7 +2795,7 @@ impl Webserver {
                     let port = socket.port();
                     let project_name = api_service.route_service.project.name().to_string();
                     let version = api_service.route_service.current_version.clone();
-                    tokio::task::spawn(async move {
+                    spawn_with_span(async move {
                         if let Err(e) = watched.await {
                             error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
                         }
@@ -2639,7 +2817,7 @@ impl Webserver {
                     let port = management_socket.port();
                     let project_name = project.name().to_string();
                     let version = project.cur_version().to_string();
-                    tokio::task::spawn(async move {
+                    spawn_with_span(async move {
                         if let Err(e) = watched.await {
                             error!("server error on {} server (port {}): {} [project: {}, version: {}]", server_label, port, e, project_name, version);
                         }
@@ -2727,15 +2905,19 @@ async fn shutdown(
     // Step 1: Stop all managed processes (functions, syncing, consumption, orchestration workers)
     // This sends termination signals and waits with timeouts for all processes to exit
     // Note: This happens in BOTH dev and production - workers must always be stopped gracefully
-    let stop_result = with_spinner_completion_async(
-        "Stopping managed processes (functions, syncing, consumption, workers)",
-        "Managed processes stopped",
-        async {
-            let mut process_registry = process_registry.write().await;
-            process_registry.stop().await
-        },
-        !project.is_production, // Show spinner in dev only
-    )
+
+    let stop_result = with_timing_async("Stop Processes", async {
+        with_spinner_completion_async(
+            "Stopping managed processes (functions, syncing, consumption, workers)",
+            "Managed processes stopped",
+            async {
+                let mut process_registry = process_registry.write().await;
+                process_registry.stop().await
+            },
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+        )
+        .await
+    })
     .await;
 
     match stop_result {
@@ -2788,12 +2970,15 @@ async fn shutdown(
     //   running so other workers or future restarts can pick them up. Terminating production workflows
     //   should be an explicit operational decision, not automatic on every deployment.
     if !project.is_production && project.features.workflows {
-        let termination_result = with_spinner_completion_async(
-            "Stopping workflows",
-            "Workflows stopped",
-            async { terminate_all_workflows(project).await },
-            true, // Always show spinner in dev (this code only runs in dev)
-        )
+        let termination_result = with_timing_async("Stop Workflows", async {
+            with_spinner_completion_async(
+                "Stopping workflows",
+                "Workflows stopped",
+                async { terminate_all_workflows(project).await },
+                !SHOW_TIMING.load(Ordering::Relaxed),
+            )
+            .await
+        })
         .await;
 
         match termination_result {
@@ -2819,7 +3004,7 @@ async fn shutdown(
         info!("Producer dropped, waiting for Kafka clients to destroy...");
 
         // Wait for librdkafka to complete cleanup
-        let result = tokio::task::spawn_blocking(move || unsafe {
+        let result = spawn_blocking_with_span(move || unsafe {
             rdkafka_sys::rd_kafka_wait_destroyed(KAFKA_CLIENT_DESTROY_TIMEOUT_MS)
         })
         .await;
@@ -2848,14 +3033,16 @@ async fn shutdown(
             let docker = DockerClient::new(settings);
             info!("Starting container shutdown process");
 
-            with_spinner_completion(
-                "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
-                "Docker containers stopped",
-                || {
-                    let _ = docker.stop_containers(project);
-                },
-                true,
-            );
+            with_timing("Stop Containers", || {
+                with_spinner_completion(
+                    "Stopping Docker containers (ClickHouse, Redpanda, Redis)",
+                    "Docker containers stopped",
+                    || {
+                        let _ = docker.stop_containers(project);
+                    },
+                    !SHOW_TIMING.load(Ordering::Relaxed),
+                )
+            });
 
             info!("Container shutdown complete");
         } else if !project.should_load_infra() {
@@ -3126,6 +3313,14 @@ async fn store_updated_inframap(
 ///
 /// # Returns
 /// * Result containing the HTTP response with either success or error information
+#[instrument(
+    name = "admin_integrate_changes",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        // No resource_type/resource_name - varies by operation
+    )
+)]
 async fn admin_integrate_changes_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,
@@ -3321,6 +3516,11 @@ async fn get_admin_reconciled_inframap(
     let target_sql_resource_ids: HashSet<String> =
         current_map.sql_resources.keys().cloned().collect();
 
+    let target_materialized_view_ids: HashSet<String> =
+        current_map.materialized_views.keys().cloned().collect();
+
+    let target_view_ids: HashSet<String> = current_map.views.keys().cloned().collect();
+
     // Reconcile the loaded map with actual database state (single load, no race condition).
     // reconcile_with_reality handles the OLAP-disabled case internally, and in the future
     // may support reconciliation of other infrastructure types (e.g., Kafka topics).
@@ -3332,6 +3532,8 @@ async fn get_admin_reconciled_inframap(
             &current_map,
             &target_table_ids,
             &target_sql_resource_ids,
+            &target_materialized_view_ids,
+            &target_view_ids,
             clickhouse_client,
         )
         .await?
@@ -3350,6 +3552,14 @@ async fn get_admin_reconciled_inframap(
 ///
 /// The server's managed infrastructure state is reconciled with database reality to ensure accurate planning.
 /// The diff reflects changes against the true current state of managed tables only (excludes unmapped tables by design).
+#[instrument(
+    name = "admin_plan",
+    skip_all,
+    fields(
+        context = context::RUNTIME,
+        // No resource_type/resource_name - planning only
+    )
+)]
 async fn admin_plan_route(
     req: Request<hyper::body::Incoming>,
     admin_api_key: &Option<String>,
@@ -3603,6 +3813,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
         };
 
         let result = find_table_definition("test_table", &discrepancies);
@@ -3622,6 +3838,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();
@@ -3657,6 +3879,12 @@ mod tests {
             unmapped_sql_resources: vec![],
             missing_sql_resources: vec![],
             mismatched_sql_resources: vec![],
+            unmapped_materialized_views: vec![],
+            missing_materialized_views: vec![],
+            mismatched_materialized_views: vec![],
+            unmapped_views: vec![],
+            missing_views: vec![],
+            mismatched_views: vec![],
         };
 
         let mut infra_map = create_test_infra_map();

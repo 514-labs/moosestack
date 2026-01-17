@@ -70,6 +70,10 @@ pub fn run(
         args.push("--is-dmv2");
     }
 
+    if project.log_payloads {
+        args.push("--log-payloads");
+    }
+
     let mut streaming_function_process =
         bin::run(FUNCTION_RUNNER_BIN, project_path, &args, project)?;
 

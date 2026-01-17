@@ -25,7 +25,7 @@ on:
 jobs:
   version:
     concurrency: release
-    if: ${{ ! contains(github.event.head_commit.message , '[no-release]') && ! startsWith(github.ref, 'refs/heads/gh-readonly-queue/') }}
+    if: ${{ ! contains(github.event.head_commit.message , '[no-release]') && ! startsWith(github.ref, 'refs/heads/gh-readonly-queue/') && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     permissions:
       contents: "write"
@@ -186,13 +186,8 @@ jobs:
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
-
-      - name: Login NPM
-        shell: bash
-        run: |
-          pnpm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
 
       - name: Publish the NPM Moose CLI package
         shell: bash
@@ -332,12 +327,16 @@ jobs:
       - name: Run sccache-cache
         if: ${{ matrix.build.OS != 'ubuntu-22-8-core' }}
         uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          # sccache-action points at the latest sccache version
+          # sccache v0.13.0+ drops support for x86_64 darwin which will cause
+          # the workflow to fail
+          version: "v0.12.0"
 
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
+          node-version: "24"
 
       - uses: pnpm/action-setup@v4
       - name: pnpm install for scripts # for package-templates.js
@@ -381,19 +380,17 @@ jobs:
           # Maturin will use this for the Python package metadata
           perl -i -pe 's/^(\[project\])$/$1\nversion = "${{ needs.version.outputs.python_version }}"/' pyproject.toml
 
+          # Set MOOSE_CLI_VERSION environment variable for build.rs
+          # This overrides the Cargo.toml version and gives the Rust binary the full version string
+          echo "MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}" >> $GITHUB_ENV
+
           # Debug: Show what we set
           echo "Cargo.toml version (base): ${BASE_VERSION}"
+          echo "MOOSE_CLI_VERSION (full): ${{ needs.version.outputs.version }}"
           grep '^version = ' Cargo.toml || echo "  (not found)"
           echo "pyproject.toml [project] section:"
           sed -n '/^\[project\]/,/^\[/p' pyproject.toml | head -10
         working-directory: ./apps/framework-cli
-
-      - name: Override version for binary
-        run: |
-          # Set CARGO_PKG_VERSION env var to override what env!("CARGO_PKG_VERSION") sees
-          # This gives the Rust binary the full version string including -ci- part
-          echo "CARGO_PKG_VERSION=${{ needs.version.outputs.version }}" >> $GITHUB_ENV
-          echo "Set CARGO_PKG_VERSION to: ${{ needs.version.outputs.version }}"
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -414,6 +411,8 @@ jobs:
               PROTOC_VERSION=24.4
               PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-x86_64.zip
               export POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
+              export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
+              echo "MOOSE_CLI_VERSION set to: $MOOSE_CLI_VERSION"
 
               # Debian-based distribution
               apt install -y curl unzip
@@ -441,8 +440,6 @@ jobs:
         shell: bash
         working-directory: ./apps/moose-cli-npm
         run: ./scripts/release-bin.sh ${{ needs.version.outputs.version }} ${{ matrix.build.TARGET }} ${{ matrix.build.OS }} ${{ matrix.build.NAME }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Upload binary
         uses: ncipollo/release-action@v1
@@ -575,6 +572,7 @@ jobs:
     # Add explicit permissions
     permissions:
       contents: read
+      id-token: write
     env:
       TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
     steps:
@@ -594,15 +592,10 @@ jobs:
 
       - uses: pnpm/action-setup@v4
 
-      - name: Login NPM
-        shell: bash
-        run: |
-          pnpm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
-
       - name: Install node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "pnpm"
 
       - name: Install dependencies

@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
-use tracing::info;
+use tracing::{info, instrument};
 
-use crate::utilities::system::{RestartingProcess, StartChildFn};
+use crate::cli::logger::{context, resource_type};
+
+use crate::utilities::system::{RestartPolicy, RestartingProcess, StartChildFn};
 use crate::{
     framework::{languages::SupportedLanguages, python, typescript},
     infrastructure::olap::clickhouse::config::ClickHouseConfig,
@@ -57,6 +59,15 @@ impl ConsumptionProcessRegistry {
         }
     }
 
+    #[instrument(
+        name = "consumption_process_start",
+        skip_all,
+        fields(
+            context = context::RUNTIME,
+            resource_type = resource_type::CONSUMPTION_API,
+            // No resource_name - generic process
+        )
+    )]
     pub fn start(&mut self) -> Result<(), ConsumptionError> {
         info!("Starting analytics api...");
 
@@ -94,6 +105,7 @@ impl ConsumptionProcessRegistry {
         self.api_process = Some(RestartingProcess::create(
             "consumption-api".to_string(),
             start_child,
+            RestartPolicy::Always,
         )?);
 
         Ok(())

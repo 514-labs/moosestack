@@ -8,6 +8,11 @@ volumes:
   clickhouse-0-users: null
   clickhouse-keeper-data: null
   clickhouse-keeper-lib: null
+  {{#if has_clusters}}
+  clickhouse-1-data: null
+  clickhouse-1-logs: null
+  clickhouse-1-users: null
+  {{/if}}
   {{/if}}
   redis-data:
   {{#if scripts_feature}}
@@ -182,13 +187,75 @@ services:
           <macros>
             <shard>01</shard>
             <replica>replica_1</replica>
-            <database>local</database>
+            <database>{{database_name}}</database>
           </macros>
           <!-- Macros are used for ReplicatedMergeTree default paths -->
           <!-- Default path: /clickhouse/tables/{uuid}/{shard} works with Atomic database (default) -->
         </clickhouse>
         EOF
         exec /entrypoint.sh
+
+  # ClickHouse Node 2 (for cluster replication testing)
+  {{#if has_clusters}}
+  clickhousedb-2:
+    hostname: clickhousedb-2
+    image: docker.io/clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-25.8}
+    depends_on:
+      clickhouse-keeper:
+        condition: service_healthy
+    volumes:
+      - clickhouse-1-data:/var/lib/clickhouse/
+      - clickhouse-1-logs:/var/log/clickhouse-server/
+      - clickhouse-1-users:/etc/clickhouse-server/users.d
+      {{#if clickhouse_clusters_file}}
+      - "{{clickhouse_clusters_file}}:/etc/clickhouse-server/config.d/clusters.xml:ro"
+      {{/if}}
+    environment:
+      - CLICKHOUSE_DB=${DB_NAME:-local}
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-panda}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-pandapass}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    ports:
+      - "28123:8123"
+      - "29000:9000"
+    networks:
+      - clickhouse-network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client -q 'select version()'"]
+      interval: 5s
+      retries: 2
+      start_period: 20s
+      timeout: 20s
+    ulimits:
+      nofile:
+        soft: 20000
+        hard: 40000
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /etc/clickhouse-server/config.d
+        cat > /etc/clickhouse-server/config.d/keeper.xml << 'EOF'
+        <clickhouse>
+          <zookeeper>
+            <node>
+              <host>clickhouse-keeper</host>
+              <port>9181</port>
+            </node>
+          </zookeeper>
+          <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+          </distributed_ddl>
+          <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+          <macros>
+            <shard>01</shard>
+            <replica>replica_2</replica>
+            <database>{{database_name}}</database>
+          </macros>
+        </clickhouse>
+        EOF
+        exec /entrypoint.sh
+  {{/if}}
   {{/if}}
 
   {{#if scripts_feature}}

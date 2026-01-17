@@ -9,7 +9,7 @@ import { Callout } from "@/components/mdx";
 
 # Planned Migrations
 
-**Planned migrations** are the production-grade schema evolution mechanism in MooseStack. Unlike [Automatic Migrations](/moosestack/migrate/automatic-migrations), this system separates the *generation* of schema changes from their *execution*, introducing a reviewable artifact (the plan) into your deployment lifecycle.
+**Planned migrations** are the production-grade schema evolution mechanism in MooseStack. Unlike [Automatic Migrations](/moosestack/migrate/automatic), this system separates the *generation* of schema changes from their *execution*, introducing a reviewable artifact (the plan) into your deployment lifecycle.
 
 ## Command
 
@@ -53,7 +53,7 @@ Running the generation command produces three files in the `migrations/` directo
 
 | File | Purpose |
 | :--- | :--- |
-| `plan.yaml` | The imperative list of operations (e.g., `AddTableColumn`) to execute. See [Plan Reference](/moosestack/migrate/reference). |
+| `plan.yaml` | The imperative list of operations (e.g., `AddTableColumn`) to execute. See [Plan Reference](/moosestack/migrate/plan-format). |
 | `remote_state.json` | A snapshot of the production database schema at the time of generation. Used to detect drift. |
 | `local_infra_map.json` | A snapshot of your local code's schema definitions. Used to validate the plan against the code. |
 
@@ -117,6 +117,6 @@ moose generate migration ... --save
 
 ## See Also
 
-- [Migration Plan Reference](/moosestack/migrate/reference) - Detailed syntax of `plan.yaml`.
+- [Migration Plan Reference](/moosestack/migrate/plan-format) - Detailed syntax of `plan.yaml`.
 - [Manual Execution](/moosestack/migrate/apply-planned-migrations-cli) - Execute migration plans manually via the `moose migrate` command.
 - [Runtime Execution](/moosestack/migrate/apply-planned-migrations-service) - Execute migration plans automatically via the Moose Server Runtime.

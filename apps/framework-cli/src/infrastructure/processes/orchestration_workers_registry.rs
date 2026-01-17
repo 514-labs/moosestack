@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use tracing::info;
+use tracing::{info, instrument};
+
+use crate::cli::logger::{context, resource_type};
 
 use crate::{
     cli::settings::Settings,
@@ -8,7 +10,7 @@ use crate::{
         languages::SupportedLanguages, python, typescript,
     },
     project::Project,
-    utilities::system::KillProcessError,
+    utilities::system::{KillProcessError, RestartPolicy, RestartingProcess},
 };
 
 /// Error types that can occur when managing orchestration workers
@@ -57,6 +59,15 @@ impl OrchestrationWorkersRegistry {
     ///
     /// # Returns
     /// * `Result<(), OrchestrationWorkersRegistryError>` - Ok if worker started successfully, Error otherwise
+    #[instrument(
+        name = "orchestration_worker_start",
+        skip_all,
+        fields(
+            context = context::RUNTIME,
+            resource_type = resource_type::TASK,
+            resource_name = %orchestration_worker.id(),
+        )
+    )]
     pub async fn start(
         &mut self,
         orchestration_worker: &OrchestrationWorker,
@@ -87,9 +98,10 @@ impl OrchestrationWorkersRegistry {
                 })
             };
 
-        let restarting = crate::utilities::system::RestartingProcess::create(
+        let restarting = RestartingProcess::create(
             orchestration_worker.id(),
             start_fn,
+            RestartPolicy::OnFailure,
         )?;
         self.workers.insert(orchestration_worker.id(), restarting);
         Ok(())

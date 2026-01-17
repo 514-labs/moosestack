@@ -61,19 +61,43 @@ const TEST_ADMIN_HASH =
   "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
 
 const testLogger = logger.scope("cluster-test");
+
+/**
+ * Configuration for expected table in inframap verification
+ */
+interface ExpectedTableConfig {
+  name: string;
+  cluster: string | null;
+  database: string | null;
+}
+
+/**
+ * Helper function to execute code with a ClickHouse client, ensuring proper cleanup
+ */
+async function withClickHouseClient<T>(
+  fn: (client: ReturnType<typeof createClient>) => Promise<T>,
+): Promise<T> {
+  const client = createClient({
+    url: CLICKHOUSE_CONFIG.url,
+    username: CLICKHOUSE_CONFIG.username,
+    password: CLICKHOUSE_CONFIG.password,
+    database: CLICKHOUSE_CONFIG.database,
+  });
+
+  try {
+    return await fn(client);
+  } finally {
+    await client.close();
+  }
+}
+
 /**
  * Query ClickHouse to verify cluster configuration
  */
 async function verifyClustersInClickHouse(
   expectedClusters: string[],
 ): Promise<void> {
-  const client = createClient({
-    url: CLICKHOUSE_CONFIG.url,
-    username: CLICKHOUSE_CONFIG.username,
-    password: CLICKHOUSE_CONFIG.password,
-  });
-
-  try {
+  await withClickHouseClient(async (client) => {
     const result = await client.query({
       query: "SELECT DISTINCT cluster FROM system.clusters ORDER BY cluster",
       format: "JSONEachRow",
@@ -90,16 +114,14 @@ async function verifyClustersInClickHouse(
         `Cluster '${expected}' should be configured in ClickHouse`,
       ).to.include(expected);
     }
-  } finally {
-    await client.close();
-  }
+  });
 }
 
 /**
  * Query inframap to verify cluster_name is set correctly
  */
 async function verifyInfraMapClusters(
-  expectedTables: { name: string; cluster: string | null }[],
+  expectedTables: ExpectedTableConfig[],
 ): Promise<void> {
   const response = await fetch(`${SERVER_CONFIG.url}/admin/inframap`, {
     headers: {
@@ -125,7 +147,8 @@ async function verifyInfraMapClusters(
   testLogger.info("InfraMap tables:", Object.keys(infraMap.tables));
 
   for (const expectedTable of expectedTables) {
-    const tableKey = `local_${expectedTable.name}`;
+    const database = expectedTable.database ?? CLICKHOUSE_CONFIG.database;
+    const tableKey = `${database}_${expectedTable.name}`;
     const table = infraMap.tables[tableKey];
 
     expect(table, `Table ${expectedTable.name} should exist in inframap`).to
@@ -164,40 +187,6 @@ function verifyClusterXmlGenerated(projectDir: string): void {
   expect(xmlContent).to.include("<cluster_b>");
   expect(xmlContent).to.include("<shard>");
   expect(xmlContent).to.include("<replica>");
-}
-
-/**
- * Verify table exists in ClickHouse
- *
- * Note: ON CLUSTER is a DDL execution directive and is NOT stored in the table schema.
- * SHOW CREATE TABLE will never display ON CLUSTER, even if it was used during creation.
- * To verify cluster support, we rely on:
- * 1. The inframap showing cluster_name (preserved in our state)
- * 2. The table being successfully created (which would fail if cluster was misconfigured)
- */
-async function verifyTableExists(tableName: string): Promise<void> {
-  const client = createClient({
-    url: CLICKHOUSE_CONFIG.url,
-    username: CLICKHOUSE_CONFIG.username,
-    password: CLICKHOUSE_CONFIG.password,
-    database: CLICKHOUSE_CONFIG.database,
-  });
-
-  try {
-    const result = await client.query({
-      query: `SELECT name, engine FROM system.tables WHERE database = '${CLICKHOUSE_CONFIG.database}' AND name = '${tableName}'`,
-      format: "JSONEachRow",
-    });
-
-    const rows = await result.json<{ name: string; engine: string }>();
-    expect(
-      rows.length,
-      `Table ${tableName} should exist in ClickHouse`,
-    ).to.equal(1);
-    testLogger.info(`Table ${tableName} exists with engine: ${rows[0].engine}`);
-  } finally {
-    await client.close();
-  }
 }
 
 /**
@@ -313,35 +302,40 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       });
     });
 
-    it("should create tables with ON CLUSTER clauses", async function () {
+    it("should create all tables in ClickHouse", async function () {
       this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
       // Verify all tables were created in ClickHouse
-      const client = createClient({
-        url: CLICKHOUSE_CONFIG.url,
-        username: CLICKHOUSE_CONFIG.username,
-        password: CLICKHOUSE_CONFIG.password,
-        database: CLICKHOUSE_CONFIG.database,
-      });
-
-      try {
-        const result = await client.query({
-          query:
-            "SELECT name FROM system.tables WHERE database = 'local' AND name IN ('TableA', 'TableB', 'TableC', 'TableD', 'TableE') ORDER BY name",
+      await withClickHouseClient(async (client) => {
+        // Check tables in default database
+        const localResult = await client.query({
+          query: `SELECT name FROM system.tables WHERE database = '${CLICKHOUSE_CONFIG.database}' AND name IN ('TableA', 'TableB', 'TableC', 'TableD', 'TableE') ORDER BY name`,
           format: "JSONEachRow",
         });
 
-        const tables = await result.json<{ name: string }>();
-        const tableNames = tables.map((t) => t.name);
+        const localTables = await localResult.json<{ name: string }>();
+        const localTableNames = localTables.map((t) => t.name);
 
-        expect(tableNames).to.include("TableA");
-        expect(tableNames).to.include("TableB");
-        expect(tableNames).to.include("TableC");
-        expect(tableNames).to.include("TableD");
-        expect(tableNames).to.include("TableE");
-      } finally {
-        await client.close();
-      }
+        expect(localTableNames).to.deep.equal([
+          "TableA",
+          "TableB",
+          "TableC",
+          "TableD",
+          "TableE",
+        ]);
+
+        // Check tables in 'analytics' database
+        const analyticsResult = await client.query({
+          query:
+            "SELECT name FROM system.tables WHERE database = 'analytics' AND name = 'TableF' ORDER BY name",
+          format: "JSONEachRow",
+        });
+
+        const analyticsTables = await analyticsResult.json<{ name: string }>();
+        const analyticsTableNames = analyticsTables.map((t) => t.name);
+
+        expect(analyticsTableNames).to.deep.equal(["TableF"]);
+      });
     });
 
     it("should configure ClickHouse clusters from moose.config.toml", async function () {
@@ -357,40 +351,162 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
       this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
       await verifyInfraMapClusters([
-        { name: "TableA", cluster: "cluster_a" },
-        { name: "TableB", cluster: "cluster_b" },
-        { name: "TableC", cluster: null },
-        { name: "TableD", cluster: null },
-        { name: "TableE", cluster: null },
+        { name: "TableA", cluster: "cluster_a", database: null },
+        { name: "TableB", cluster: "cluster_b", database: null },
+        { name: "TableC", cluster: null, database: null },
+        { name: "TableD", cluster: null, database: null },
+        { name: "TableE", cluster: null, database: null },
+        { name: "TableF", cluster: "cluster_a", database: "analytics" },
       ]);
     });
 
-    it("should create tables successfully with cluster configuration", async function () {
+    it("should create clustered tables on all nodes", async function () {
       this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
-      // Verify tables were created successfully
-      // (If cluster was misconfigured, table creation would have failed)
-      await verifyTableExists("TableA");
-      await verifyTableExists("TableB");
-      await verifyTableExists("TableC");
-      await verifyTableExists("TableD");
-      await verifyTableExists("TableE");
+      await withClickHouseClient(async (client) => {
+        // TableA should exist on all nodes in cluster_a
+        const resultA = await client.query({
+          query: `
+            SELECT hostName() as host, name
+            FROM clusterAllReplicas(cluster_a, system.tables)
+            WHERE database = '${CLICKHOUSE_CONFIG.database}' AND name = 'TableA'
+          `,
+          format: "JSONEachRow",
+        });
+
+        const nodesA = await resultA.json<{ host: string; name: string }>();
+        testLogger.info(
+          `TableA on cluster_a nodes:`,
+          JSON.stringify(nodesA, null, 2),
+        );
+
+        expect(
+          nodesA.length,
+          "TableA should exist on all nodes in cluster_a (at least 2)",
+        ).to.be.at.least(2);
+
+        // TableB should exist on all nodes in cluster_b
+        const resultB = await client.query({
+          query: `
+            SELECT hostName() as host, name
+            FROM clusterAllReplicas(cluster_b, system.tables)
+            WHERE database = '${CLICKHOUSE_CONFIG.database}' AND name = 'TableB'
+          `,
+          format: "JSONEachRow",
+        });
+
+        const nodesB = await resultB.json<{ host: string; name: string }>();
+        testLogger.info(
+          `TableB on cluster_b nodes:`,
+          JSON.stringify(nodesB, null, 2),
+        );
+
+        expect(
+          nodesB.length,
+          "TableB should exist on all nodes in cluster_b (at least 2)",
+        ).to.be.at.least(2);
+      });
+    });
+
+    it("should create databases on all cluster nodes", async function () {
+      this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
+
+      await withClickHouseClient(async (client) => {
+        // Query cluster_a to verify default database exists on all nodes
+        // Using clusterAllReplicas function to query all nodes in the cluster
+        const localOnClusterA = await client.query({
+          query: `
+            SELECT hostName() as host, name
+            FROM clusterAllReplicas(cluster_a, system.databases)
+            WHERE name = '${CLICKHOUSE_CONFIG.database}'
+          `,
+          format: "JSONEachRow",
+        });
+
+        const localNodesA = await localOnClusterA.json<{
+          host: string;
+          name: string;
+        }>();
+        testLogger.info(
+          `'${CLICKHOUSE_CONFIG.database}' database on cluster_a nodes:`,
+          JSON.stringify(localNodesA, null, 2),
+        );
+
+        // Should have at least 2 nodes (our multi-node setup)
+        expect(
+          localNodesA.length,
+          `'${CLICKHOUSE_CONFIG.database}' database should exist on all nodes in cluster_a`,
+        ).to.be.at.least(2);
+
+        // All should have the database
+        localNodesA.forEach((node) => {
+          expect(node.name).to.equal(CLICKHOUSE_CONFIG.database);
+        });
+
+        // Repeat for cluster_b
+        const localOnClusterB = await client.query({
+          query: `
+            SELECT hostName() as host, name
+            FROM clusterAllReplicas(cluster_b, system.databases)
+            WHERE name = '${CLICKHOUSE_CONFIG.database}'
+          `,
+          format: "JSONEachRow",
+        });
+
+        const localNodesB = await localOnClusterB.json<{
+          host: string;
+          name: string;
+        }>();
+        testLogger.info(
+          `'${CLICKHOUSE_CONFIG.database}' database on cluster_b nodes:`,
+          JSON.stringify(localNodesB, null, 2),
+        );
+
+        expect(
+          localNodesB.length,
+          `'${CLICKHOUSE_CONFIG.database}' database should exist on all nodes in cluster_b`,
+        ).to.be.at.least(2);
+
+        localNodesB.forEach((node) => {
+          expect(node.name).to.equal(CLICKHOUSE_CONFIG.database);
+        });
+
+        const analyticsOnClusterA = await client.query({
+          query: `
+            SELECT hostName() as host, name
+            FROM clusterAllReplicas(cluster_a, system.databases)
+            WHERE name = 'analytics'
+          `,
+          format: "JSONEachRow",
+        });
+
+        const analyticsNodes = await analyticsOnClusterA.json<{
+          host: string;
+          name: string;
+        }>();
+        testLogger.info(
+          `'analytics' database on cluster_a nodes:`,
+          JSON.stringify(analyticsNodes, null, 2),
+        );
+
+        expect(
+          analyticsNodes.length,
+          "'analytics' database should exist on all nodes in cluster_a (THIS IS THE BUG FIX TEST)",
+        ).to.be.at.least(2);
+
+        analyticsNodes.forEach((node) => {
+          expect(node.name).to.equal("analytics");
+        });
+      });
     });
 
     it("should create TableD with explicit keeper args and no cluster", async function () {
       this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
       // Verify TableD was created with explicit keeper_path and replica_name
-      const client = createClient({
-        url: CLICKHOUSE_CONFIG.url,
-        username: CLICKHOUSE_CONFIG.username,
-        password: CLICKHOUSE_CONFIG.password,
-        database: CLICKHOUSE_CONFIG.database,
-      });
-
-      try {
+      await withClickHouseClient(async (client) => {
         const result = await client.query({
-          query: "SHOW CREATE TABLE local.TableD",
+          query: `SHOW CREATE TABLE TableD`,
           format: "JSONEachRow",
         });
 
@@ -407,25 +523,16 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         expect(createStatement).to.include("{replica}");
         // Verify it does NOT have ON CLUSTER (since no cluster is specified)
         expect(createStatement).to.not.include("ON CLUSTER");
-      } finally {
-        await client.close();
-      }
+      });
     });
 
     it("should create TableE with auto-injected params (ClickHouse Cloud mode)", async function () {
       this.timeout(TIMEOUTS.SCHEMA_VALIDATION_MS);
 
       // Verify TableE was created with ReplicatedMergeTree and auto-injected params
-      const client = createClient({
-        url: CLICKHOUSE_CONFIG.url,
-        username: CLICKHOUSE_CONFIG.username,
-        password: CLICKHOUSE_CONFIG.password,
-        database: CLICKHOUSE_CONFIG.database,
-      });
-
-      try {
+      await withClickHouseClient(async (client) => {
         const result = await client.query({
-          query: "SHOW CREATE TABLE local.TableE",
+          query: `SHOW CREATE TABLE TableE`,
           format: "JSONEachRow",
         });
 
@@ -440,9 +547,7 @@ const createClusterTestSuite = (config: ClusterTestConfig) => {
         expect(createStatement).to.match(/ReplicatedMergeTree\(/);
         // Verify it does NOT have ON CLUSTER (no cluster specified)
         expect(createStatement).to.not.include("ON CLUSTER");
-      } finally {
-        await client.close();
-      }
+      });
     });
   });
 };

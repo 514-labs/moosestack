@@ -71,7 +71,18 @@ export function Callout({
   compact = false,
   className,
 }: CalloutProps) {
-  const variantProps = calloutVariants[type];
+  // Defensive: handle invalid or undefined types gracefully
+  if (!type || !(type in calloutVariants)) {
+    console.warn(`[Callout] Invalid type: ${type}, defaulting to 'info'`);
+  }
+  const validType = type && type in calloutVariants ? type : "info";
+  const variantProps = calloutVariants[validType];
+
+  // Additional safety check
+  if (!variantProps) {
+    console.error(`[Callout] variantProps is undefined for type: ${validType}`);
+    return <div className="my-4 p-4 border rounded">{children}</div>;
+  }
 
   // Resolve icon: boolean -> default/undefined, string -> lookup from Tabler icons, component -> use directly
   const Icon =
@@ -87,8 +98,8 @@ export function Callout({
   if (compact) {
     return (
       <Alert variant={variantProps.variant} className={cn("my-2", className)}>
-        {!href && icon && <Icon className="h-4 w-4" />}
-        {href && icon && <Icon className="h-4 w-4 mt-0.5" />}
+        {!href && icon && Icon && <Icon className="h-4 w-4" />}
+        {href && icon && Icon && <Icon className="h-4 w-4 mt-0.5" />}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             {displayTitle && (
@@ -115,8 +126,8 @@ export function Callout({
   }
 
   return (
-    <Alert variant={variantProps.variant} className={cn("my-4", className)}>
-      {icon && <Icon className="h-4 w-4" />}
+    <Alert variant={variantProps?.variant} className={cn("my-4", className)}>
+      {icon && Icon && <Icon className="h-4 w-4" />}
       {displayTitle && <AlertTitle>{displayTitle}</AlertTitle>}
       <AlertDescription>
         {children}

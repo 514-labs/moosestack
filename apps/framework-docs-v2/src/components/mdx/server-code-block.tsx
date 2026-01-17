@@ -4,6 +4,7 @@ import { CodeSnippet } from "./code-snippet";
 import { CodeEditorWrapper } from "./code-editor-wrapper";
 import { ShellSnippet } from "./shell-snippet";
 import { InlineCode } from "./inline-code";
+import { MermaidDiagram } from "./mermaid-diagram";
 import { extractTextContent } from "@/lib/extract-text-content";
 
 // Shell languages that should use terminal styling
@@ -50,7 +51,9 @@ export interface ServerCodeBlockProps
   "data-rehype-pretty-code-title"?: string;
 
   // Custom attributes from markdown meta
+  // rehypeCodeMeta parses code meta like `title="file.ts"` into `data-title="file.ts"`
   "data-filename"?: string;
+  "data-title"?: string;
   "data-copy"?: string;
   "data-variant"?: string;
   "data-duration"?: string;
@@ -65,6 +68,10 @@ export interface ServerCodeBlockProps
 
   // Animation flag (Nextra extension)
   "data-animate"?: string;
+
+  // Mermaid diagram settings
+  "data-maxheight"?: string;
+  "data-maxHeight"?: string;
 
   children?: React.ReactNode;
 }
@@ -142,8 +149,8 @@ function parseLineHighlights(spec: string | undefined): number[] {
       if (
         start !== undefined &&
         end !== undefined &&
-        !isNaN(start) &&
-        !isNaN(end)
+        !Number.isNaN(start) &&
+        !Number.isNaN(end)
       ) {
         for (let i = start; i <= end; i++) {
           lines.push(i);
@@ -151,7 +158,7 @@ function parseLineHighlights(spec: string | undefined): number[] {
       }
     } else {
       const num = parseInt(trimmed, 10);
-      if (!isNaN(num)) {
+      if (!Number.isNaN(num)) {
         lines.push(num);
       }
     }
@@ -223,6 +230,7 @@ export function ServerCodeBlock({
   const filename =
     props["data-rehype-pretty-code-title"] ||
     props["data-filename"] ||
+    props["data-title"] ||
     ((props as Record<string, unknown>)["title"] as string | undefined);
 
   // Copy button: defaults to true unless explicitly set to "false"
@@ -234,7 +242,6 @@ export function ServerCodeBlock({
   // Animation settings - explicit animate flag takes precedence
   const animateFlag = props["data-animate"];
   const shouldAnimate = animateFlag === "true";
-  const shouldNotAnimate = animateFlag === "false";
 
   const duration =
     props["data-duration"] ? parseFloat(props["data-duration"]) : undefined;
@@ -256,7 +263,22 @@ export function ServerCodeBlock({
   // Determine component type based on language and attributes
   const isShell = SHELL_LANGUAGES.has(language);
   const isConfigFile = CONFIG_LANGUAGES.has(language);
+  const isMermaid = language === "mermaid";
   const isAnsi = language === "ansi";
+
+  // Mermaid diagrams: Always use MermaidDiagram (client-side renderer)
+  if (isMermaid) {
+    const maxHeight = props["data-maxheight"] || props["data-maxHeight"];
+    return (
+      <div className="not-prose">
+        <MermaidDiagram
+          code={codeText}
+          filename={filename}
+          maxHeight={maxHeight}
+        />
+      </div>
+    );
+  }
 
   // ANSI blocks render as plain text with ANSI escape code handling
   if (isAnsi) {
@@ -277,11 +299,8 @@ export function ServerCodeBlock({
   // Routing logic:
   // 1. Config files → Always static CodeSnippet (never animated unless explicit)
   // 2. Explicit animate flag → Use CodeEditorWrapper
-  // 3. Explicit animate=false → Use CodeSnippet
-  // 4. Shell + filename + copy=false → Animated CodeEditorWrapper (terminal style)
-  // 5. Shell (all other cases) → ShellSnippet (copyable Terminal tab UI)
-  // 6. Non-shell + filename + no copy attr + no animate=false → Animated CodeEditorWrapper
-  // 7. Default → Static CodeSnippet
+  // 3. Shell → ShellSnippet (copyable Terminal tab UI)
+  // 4. Default → Static CodeSnippet
 
   // Config files use static CodeSnippet unless explicitly animated
   if (isConfigFile && !shouldAnimate) {
@@ -306,7 +325,7 @@ export function ServerCodeBlock({
       <div className="not-prose">
         <CodeEditorWrapper
           code={codeText}
-          language={language || "typescript"}
+          language={language || "plaintext"}
           filename={filename}
           variant={variant ?? (isShell ? "terminal" : "ide")}
           writing={writing}
@@ -317,52 +336,12 @@ export function ServerCodeBlock({
     );
   }
 
-  // Shell commands: Use animated terminal only when explicitly copy=false with filename
-  // and animate flag is not explicitly false
-  // Otherwise, always use ShellSnippet (the Terminal tab UI with copy button)
+  // Shell commands: Always use ShellSnippet (Terminal tab with copy)
+  // Animation is only enabled via explicit animate flag (handled above)
   if (isShell) {
-    // Only use animated terminal when explicitly no copy button wanted
-    if (filename && props["data-copy"] === "false" && !shouldNotAnimate) {
-      return (
-        <div className="not-prose">
-          <CodeEditorWrapper
-            code={codeText}
-            language={language}
-            filename={filename}
-            variant="terminal"
-            writing={writing}
-            duration={duration ?? 3}
-            delay={delay ?? 0.3}
-          />
-        </div>
-      );
-    }
-
-    // All other shell commands use ShellSnippet (Terminal tab with copy)
     return (
       <div className="not-prose">
         <ShellSnippet code={codeText} language={language} />
-      </div>
-    );
-  }
-
-  // Non-shell: animate if filename present and copy not explicitly set
-  // unless animate is explicitly false
-  const legacyAnimate =
-    filename && props["data-copy"] === undefined && !shouldNotAnimate;
-
-  if (legacyAnimate) {
-    return (
-      <div className="not-prose">
-        <CodeEditorWrapper
-          code={codeText}
-          language={language || "typescript"}
-          filename={filename}
-          variant={variant ?? "ide"}
-          writing={writing}
-          duration={duration ?? 5}
-          delay={delay ?? 0.5}
-        />
       </div>
     );
   }
@@ -372,7 +351,7 @@ export function ServerCodeBlock({
     <div className="not-prose">
       <CodeSnippet
         code={codeText}
-        language={language || "typescript"}
+        language={language || "plaintext"}
         filename={filename}
         copyButton={showCopy}
         lineNumbers={lineNumbers}
@@ -407,7 +386,7 @@ export function ServerInlineCode({
       <div className="not-prose">
         <CodeSnippet
           code={codeText}
-          language={language || "typescript"}
+          language={language || "plaintext"}
           copyButton={true}
         />
       </div>

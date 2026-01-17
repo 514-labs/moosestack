@@ -11,6 +11,9 @@ from importlib import import_module
 from typing import Literal, Optional, List, Any, Dict, Union, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
+import os
+import sys
+from pathlib import Path
 from .data_models import Column, _to_columns
 from .blocks import EngineConfig, ClickHouseEngines
 from moose_lib.dmv2 import (
@@ -21,6 +24,8 @@ from moose_lib.dmv2 import (
     get_sql_resources,
     get_workflows,
     get_web_apps,
+    get_materialized_views,
+    get_views,
     OlapTable,
     OlapConfig,
     SqlResource,
@@ -456,6 +461,7 @@ class InfrastructureSignatureJson(BaseModel):
         "ApiEndpoint",
         "TopicToTableSyncProcess",
         "View",
+        "MaterializedView",
         "SqlResource",
     ]
 
@@ -484,6 +490,50 @@ class SqlResourceConfig(BaseModel):
     metadata: Optional[dict] = None
 
 
+class MaterializedViewJson(BaseModel):
+    """Internal representation of a structured Materialized View for serialization.
+
+    Attributes:
+        name: Name of the materialized view.
+        database: Optional database where the MV is created.
+        select_sql: The SELECT SQL statement.
+        source_tables: Names of source tables the SELECT reads from.
+        target_table: Name of the target table where data is written.
+        target_database: Optional database for the target table.
+        metadata: Optional metadata for the materialized view (e.g., description, source file).
+    """
+
+    model_config = model_config
+
+    name: str
+    database: Optional[str] = None
+    select_sql: str
+    source_tables: List[str]
+    target_table: str
+    target_database: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+class ViewJson(BaseModel):
+    """Internal representation of a structured Custom View for serialization.
+
+    Attributes:
+        name: Name of the view.
+        database: Optional database where the view is created.
+        select_sql: The SELECT SQL statement.
+        source_tables: Names of source tables the SELECT reads from.
+        metadata: Optional metadata for the view (e.g., description, source file).
+    """
+
+    model_config = model_config
+
+    name: str
+    database: Optional[str] = None
+    select_sql: str
+    source_tables: List[str]
+    metadata: Optional[dict] = None
+
+
 class InfrastructureMap(BaseModel):
     """Top-level model holding the configuration for all defined Moose resources.
 
@@ -497,6 +547,9 @@ class InfrastructureMap(BaseModel):
         sql_resources: Dictionary mapping SQL resource names to their configurations.
         workflows: Dictionary mapping workflow names to their configurations.
         web_apps: Dictionary mapping WebApp names to their configurations.
+        materialized_views: Dictionary mapping MV names to their structured configurations.
+        views: Dictionary mapping view names to their structured configurations.
+        unloaded_files: List of source files that exist but weren't loaded.
     """
 
     model_config = model_config
@@ -508,6 +561,9 @@ class InfrastructureMap(BaseModel):
     sql_resources: dict[str, SqlResourceConfig]
     workflows: dict[str, WorkflowJson]
     web_apps: dict[str, WebAppJson]
+    materialized_views: dict[str, MaterializedViewJson]
+    views: dict[str, ViewJson]
+    unloaded_files: list[str] = []
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -539,6 +595,10 @@ def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
             # Explicitly cast for type hint checking if needed
             resource = r  # type: SqlResource
             return InfrastructureSignatureJson(id=resource.name, kind="SqlResource")
+        elif r.kind == "View":
+            return InfrastructureSignatureJson(id=r.name, kind="View")
+        elif r.kind == "MaterializedView":
+            return InfrastructureSignatureJson(id=r.name, kind="MaterializedView")
         else:
             raise TypeError(f"Unknown SQL resource kind: {r.kind} for object: {r}")
     else:
@@ -741,6 +801,86 @@ def _convert_engine_instance_to_config_dict(engine: "EngineConfig") -> EngineCon
     return BaseEngineConfigDict(engine=engine.__class__.__name__.replace("Engine", ""))
 
 
+def _find_source_files(directory: str, extensions: tuple = (".py",)) -> list[str]:
+    """Recursively finds all Python files in a directory.
+
+    Args:
+        directory: The directory to search
+        extensions: Tuple of file extensions to include
+
+    Returns:
+        List of file paths relative to the current working directory
+    """
+    source_files = []
+    dir_path = Path(directory)
+
+    if not dir_path.exists():
+        return []
+
+    for item in dir_path.rglob("*"):
+        # Skip hidden directories and files, and __pycache__
+        # Only check parts relative to the search directory, not the full absolute path
+        try:
+            relative_parts = item.relative_to(dir_path).parts
+            if any(
+                part.startswith(".") or part == "__pycache__" for part in relative_parts
+            ):
+                continue
+        except ValueError:
+            # item is not relative to dir_path, skip it
+            continue
+
+        if item.is_file() and item.suffix in extensions:
+            try:
+                rel_path = item.relative_to(Path.cwd())
+                source_files.append(str(rel_path))
+            except ValueError:
+                # File is outside cwd, use absolute path
+                source_files.append(str(item))
+
+    return source_files
+
+
+def _find_unloaded_files(source_dir: str) -> list[str]:
+    """Checks for source files that exist but weren't loaded.
+
+    Args:
+        source_dir: The source directory to check (e.g., 'app')
+
+    Returns:
+        List of file paths that exist but weren't loaded
+    """
+    app_dir = Path.cwd() / source_dir
+
+    # Find all Python source files
+    all_source_files = set(_find_source_files(str(app_dir)))
+
+    # Get all loaded modules from sys.modules
+    loaded_files = set()
+    for _module_name, module in sys.modules.items():
+        if hasattr(module, "__file__") and module.__file__:
+            try:
+                module_path = Path(module.__file__).resolve()
+                # Check if module is in our app directory
+                try:
+                    module_path = Path(module.__file__).resolve()
+                    # Check if module is in our app directory
+                    if module_path.is_relative_to(app_dir.resolve()):
+                        rel_path = module_path.relative_to(Path.cwd())
+                        loaded_files.add(str(rel_path))
+                except (ValueError, OSError):
+                    # Module file is outside cwd or can't be resolved
+                    pass
+            except (ValueError, OSError):
+                # Module file is outside cwd or can't be resolved
+                pass
+
+    # Find files that exist but weren't loaded
+    unloaded = sorted(all_source_files - loaded_files)
+
+    return unloaded
+
+
 def _convert_engine_to_config_dict(
     engine: Union[ClickHouseEngines, EngineConfig], table: OlapTable
 ) -> EngineConfigDict:
@@ -823,6 +963,8 @@ def to_infra_map() -> dict:
     sql_resources = {}
     workflows = {}
     web_apps = {}
+    materialized_views = {}
+    views = {}
 
     for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
@@ -922,7 +1064,7 @@ def to_infra_map() -> dict:
 
     for name, api in get_ingest_apis().items():
         # Check if the Pydantic model allows extra fields (extra='allow')
-        # This is the Python equivalent of TypeScript's index signatures
+        # This is the Python equivalent of TypeScript's index signature `[key: string]: any`
         model_allows_extra = api._t.model_config.get("extra") == "allow"
 
         ingest_apis[name] = IngestApiConfig(
@@ -989,6 +1131,26 @@ def to_infra_map() -> dict:
             metadata=metadata,
         )
 
+    # Serialize materialized views with structured data
+    for name, mv in get_materialized_views().items():
+        materialized_views[name] = MaterializedViewJson(
+            name=mv.name,
+            select_sql=mv.select_sql,
+            source_tables=mv.source_tables,
+            target_table=mv.target_table.name,
+            target_database=getattr(mv.target_table.config, "database", None),
+            metadata=getattr(mv, "metadata", None),
+        )
+
+    # Serialize custom views with structured data
+    for name, view in get_views().items():
+        views[name] = ViewJson(
+            name=view.name,
+            select_sql=view.select_sql,
+            source_tables=view.source_tables,
+            metadata=getattr(view, "metadata", None),
+        )
+
     infra_map = InfrastructureMap(
         tables=tables,
         topics=topics,
@@ -997,31 +1159,22 @@ def to_infra_map() -> dict:
         sql_resources=sql_resources,
         workflows=workflows,
         web_apps=web_apps,
+        materialized_views=materialized_views,
+        views=views,
     )
 
     return infra_map.model_dump(by_alias=True, exclude_none=False)
 
 
-def load_models():
-    """Imports the user's main application module and prints the infrastructure map.
+def load_models() -> str:
+    """Imports the user's main application module to register all Moose resources.
 
-    This function is typically the entry point for the Moose infrastructure system
-    when processing Python-defined resources.
+    This function triggers the registration of all Moose resources defined in
+    the user's main module (OlapTable[...](...), Stream[...](...), etc.).
 
-    1. Imports `app.main`, which should trigger the registration of all Moose
-       resources defined therein (OlapTable[...](...), Stream[...](...), etc.).
-    2. Calls `to_infra_map()` to generate the infrastructure configuration dictionary.
-    3. Prints the dictionary as a JSON string, wrapped in specific delimiters
-       (`___MOOSE_STUFF___start` and `end___MOOSE_STUFF___`), which the
-       calling system uses to extract the configuration.
+    Returns:
+        The source directory name (e.g., "app") used for loading models.
     """
-    import os
-
     source_dir = os.environ.get("MOOSE_SOURCE_DIR", "app")
     import_module(f"{source_dir}.main")
-
-    # Generate the infrastructure map
-    infra_map = to_infra_map()
-
-    # Print in the format expected by the infrastructure system
-    print("___MOOSE_STUFF___start", json.dumps(infra_map), "end___MOOSE_STUFF___")
+    return source_dir

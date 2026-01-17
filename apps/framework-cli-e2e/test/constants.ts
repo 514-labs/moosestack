@@ -37,6 +37,9 @@ export const TIMEOUTS = {
   // Schema validation timeout (30 seconds)
   SCHEMA_VALIDATION_MS: 30_000,
 
+  // Structured logging test timeout (45 seconds)
+  STRUCTURED_LOGGING_TEST_MS: 45_000,
+
   // Migration operations timeout (2 minutes)
   MIGRATION_MS: 120_000,
 
@@ -66,7 +69,7 @@ export const RETRY_CONFIG = {
 
 // Test data configuration
 export const TEST_DATA = {
-  // Fixed timestamp for consistent testing (October 19, 2025 00:00:00 UTC)
+  // Fixed timestamp for consistent testing (February 18, 2025 08:00:00 UTC)
   // This is in seconds. If typescript, make sure to convert to milliseconds for Date constructor.
   // If python, datetime.fromtimestamp already expects seconds.
   TIMESTAMP: 1739865600,

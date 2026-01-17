@@ -1,4 +1,4 @@
-use crate::utilities::system::{RestartingProcess, StartChildFn};
+use crate::utilities::system::{RestartPolicy, RestartingProcess, StartChildFn};
 use crate::{
     framework::core::{
         infrastructure::function_process::FunctionProcess, infrastructure_map::InfrastructureMap,
@@ -10,7 +10,9 @@ use crate::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, instrument};
+
+use crate::cli::logger::{context, resource_type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FunctionRegistryError {
@@ -40,6 +42,15 @@ impl FunctionProcessRegistry {
         }
     }
 
+    #[instrument(
+        name = "transform_start",
+        skip_all,
+        fields(
+            context = context::RUNTIME,
+            resource_type = resource_type::TRANSFORM,
+            resource_name = %function_process.id(),
+        )
+    )]
     pub fn start(
         &mut self,
         infra_map: &InfrastructureMap,
@@ -107,8 +118,11 @@ impl FunctionProcessRegistry {
                         });
                     };
 
-                let restarting_process =
-                    RestartingProcess::create(function_process.id(), start_fn)?;
+                let restarting_process = RestartingProcess::create(
+                    function_process.id(),
+                    start_fn,
+                    RestartPolicy::Always,
+                )?;
                 self.registry
                     .insert(function_process.id(), restarting_process);
 
@@ -159,8 +173,11 @@ impl FunctionProcessRegistry {
                         });
                     };
 
-                let restarting_process =
-                    RestartingProcess::create(function_process.id(), start_fn)?;
+                let restarting_process = RestartingProcess::create(
+                    function_process.id(),
+                    start_fn,
+                    RestartPolicy::Always,
+                )?;
                 self.registry
                     .insert(function_process.id(), restarting_process);
 

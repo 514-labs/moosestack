@@ -12,6 +12,8 @@
  *           Its API might change without notice.
  */
 import process from "process";
+import * as fs from "fs";
+import * as path from "path";
 import { Api, IngestApi, SqlResource, Task, Workflow } from "./index";
 import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
 import { Column } from "../dataModels/dataModelTypes";
@@ -37,12 +39,78 @@ import {
 } from "./sdk/stream";
 import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
+import { MaterializedView } from "./sdk/materializedView";
+import { View } from "./sdk/view";
+import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
 
 /**
- * Gets the source directory from environment variable or defaults to "app"
+ * Recursively finds all TypeScript/JavaScript files in a directory
  */
-function getSourceDir(): string {
-  return process.env.MOOSE_SOURCE_DIR || "app";
+function findSourceFiles(
+  dir: string,
+  extensions: string[] = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"],
+): string[] {
+  const files: string[] = [];
+
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        // Skip node_modules and hidden directories
+        if (entry.name !== "node_modules" && !entry.name.startsWith(".")) {
+          files.push(...findSourceFiles(fullPath, extensions));
+        }
+      } else if (entry.isFile()) {
+        // Skip TypeScript declaration files (.d.ts, .d.mts, .d.cts)
+        // These are never loaded at runtime, only used for type-checking
+        if (
+          entry.name.endsWith(".d.ts") ||
+          entry.name.endsWith(".d.mts") ||
+          entry.name.endsWith(".d.cts")
+        ) {
+          continue;
+        }
+
+        const ext = path.extname(entry.name);
+        if (extensions.includes(ext)) {
+          files.push(fullPath);
+        }
+      }
+    }
+  } catch (error) {
+    // Directory doesn't exist or can't be read
+    compilerLog(`Warning: Could not read directory ${dir}: ${error}`);
+  }
+
+  return files;
+}
+
+/**
+ * Checks for source files that exist but weren't loaded
+ */
+function findUnloadedFiles(): string[] {
+  const appDir = path.resolve(process.cwd(), getSourceDir());
+
+  // Find all source files in the directory
+  const allSourceFiles = findSourceFiles(appDir);
+
+  // Get all loaded files from require.cache
+  const loadedFiles = new Set(
+    Object.keys(require.cache)
+      .filter((key) => key.startsWith(appDir))
+      .map((key) => path.resolve(key)),
+  );
+
+  // Find files that exist but weren't loaded
+  const unloadedFiles = allSourceFiles
+    .map((file) => path.resolve(file))
+    .filter((file) => !loadedFiles.has(file))
+    .map((file) => path.relative(process.cwd(), file));
+
+  return unloadedFiles;
 }
 
 /**
@@ -71,6 +139,8 @@ const moose_internal = {
   sqlResources: new Map<string, SqlResource>(),
   workflows: new Map<string, Workflow>(),
   webApps: new Map<string, WebApp>(),
+  materializedViews: new Map<string, MaterializedView<any>>(),
+  views: new Map<string, View>(),
 };
 /**
  * Default retention period for streams if not specified (7 days in seconds).
@@ -396,6 +466,7 @@ interface InfrastructureSignatureJson {
     | "ApiEndpoint"
     | "TopicToTableSyncProcess"
     | "View"
+    | "MaterializedView"
     | "SqlResource";
 }
 
@@ -430,6 +501,42 @@ interface SqlResourceJson {
   sourceLine?: number;
   /** Optional source column number where this resource is defined. */
   sourceColumn?: number;
+}
+
+/**
+ * JSON representation of a structured Materialized View.
+ */
+interface MaterializedViewJson {
+  /** Name of the materialized view */
+  name: string;
+  /** Database where the MV is created (optional, uses default if not set) */
+  database?: string;
+  /** The SELECT SQL statement */
+  selectSql: string;
+  /** Source tables that the SELECT reads from */
+  sourceTables: string[];
+  /** Target table where transformed data is written */
+  targetTable: string;
+  /** Target table database (optional) */
+  targetDatabase?: string;
+  /** Optional metadata for the materialized view (e.g., description, source file) */
+  metadata?: { [key: string]: any };
+}
+
+/**
+ * JSON representation of a structured View.
+ */
+interface ViewJson {
+  /** Name of the view */
+  name: string;
+  /** Database where the view is created (optional, uses default if not set) */
+  database?: string;
+  /** The SELECT SQL statement */
+  selectSql: string;
+  /** Source tables that the SELECT reads from */
+  sourceTables: string[];
+  /** Optional metadata for the view (e.g., description, source file) */
+  metadata?: { [key: string]: any };
 }
 
 /**
@@ -810,6 +917,8 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const sqlResources: { [key: string]: SqlResourceJson } = {};
   const workflows: { [key: string]: WorkflowJson } = {};
   const webApps: { [key: string]: WebAppJson } = {};
+  const materializedViews: { [key: string]: MaterializedViewJson } = {};
+  const views: { [key: string]: ViewJson } = {};
 
   registry.tables.forEach((table) => {
     const id =
@@ -1014,6 +1123,18 @@ export const toInfraMap = (registry: typeof moose_internal) => {
             id: resource.name,
             kind: "SqlResource",
           };
+        } else if (r.kind === "View") {
+          const view = r as View;
+          return {
+            id: view.name,
+            kind: "View",
+          };
+        } else if (r.kind === "MaterializedView") {
+          const mv = r as MaterializedView<any>;
+          return {
+            id: mv.name,
+            kind: "MaterializedView",
+          };
         } else {
           throw new Error(`Unknown sql resource dependency type: ${r}`);
         }
@@ -1034,6 +1155,18 @@ export const toInfraMap = (registry: typeof moose_internal) => {
           return {
             id: resource.name,
             kind: "SqlResource",
+          };
+        } else if (r.kind === "View") {
+          const view = r as View;
+          return {
+            id: view.name,
+            kind: "View",
+          };
+        } else if (r.kind === "MaterializedView") {
+          const mv = r as MaterializedView<any>;
+          return {
+            id: mv.name,
+            kind: "MaterializedView",
           };
         } else {
           throw new Error(`Unknown sql resource dependency type: ${r}`);
@@ -1059,6 +1192,28 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     };
   });
 
+  // Serialize materialized views with structured data
+  registry.materializedViews.forEach((mv) => {
+    materializedViews[mv.name] = {
+      name: mv.name,
+      selectSql: mv.selectSql,
+      sourceTables: mv.sourceTables,
+      targetTable: mv.targetTable.name,
+      targetDatabase: mv.targetTable.config.database,
+      metadata: mv.metadata,
+    };
+  });
+
+  // Serialize views with structured data
+  registry.views.forEach((view) => {
+    views[view.name] = {
+      name: view.name,
+      selectSql: view.selectSql,
+      sourceTables: view.sourceTables,
+      metadata: view.metadata,
+    };
+  });
+
   return {
     topics,
     tables,
@@ -1067,6 +1222,9 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     sqlResources,
     workflows,
     webApps,
+    materializedViews,
+    views,
+    unloadedFiles: [] as string[], // Will be populated by dumpMooseInternal
   };
 };
 
@@ -1094,16 +1252,27 @@ if (getMooseInternal() === undefined) {
  * and `end___MOOSE_STUFF___`) for easy extraction by the calling process.
  */
 export const dumpMooseInternal = async () => {
-  loadIndex();
+  await loadIndex();
+
+  const infraMap = toInfraMap(getMooseInternal());
+
+  // Check for unloaded files
+  const unloadedFiles = findUnloadedFiles();
+  infraMap.unloadedFiles = unloadedFiles;
 
   console.log(
     "___MOOSE_STUFF___start",
-    JSON.stringify(toInfraMap(getMooseInternal())),
+    JSON.stringify(infraMap),
     "end___MOOSE_STUFF___",
   );
 };
 
-const loadIndex = () => {
+const loadIndex = async () => {
+  // Check if we should use pre-compiled JavaScript.
+  // This checks MOOSE_USE_COMPILED=true AND verifies artifacts exist,
+  // providing automatic fallback to ts-node if compilation wasn't run.
+  const useCompiled = shouldUseCompiled();
+
   // Clear the registry before loading to support hot reloading
   const registry = getMooseInternal();
   registry.tables.clear();
@@ -1113,29 +1282,64 @@ const loadIndex = () => {
   registry.sqlResources.clear();
   registry.workflows.clear();
   registry.webApps.clear();
+  registry.materializedViews.clear();
+  registry.views.clear();
 
-  // Clear require cache for app directory to pick up changes
-  const appDir = `${process.cwd()}/${getSourceDir()}`;
-  Object.keys(require.cache).forEach((key) => {
-    if (key.startsWith(appDir)) {
-      delete require.cache[key];
-    }
-  });
+  // Skip require.cache clearing in compiled mode (no hot reload needed in production)
+  if (!useCompiled) {
+    // Clear require cache for app directory to pick up changes
+    const appDir = `${process.cwd()}/${getSourceDir()}`;
+    Object.keys(require.cache).forEach((key) => {
+      if (key.startsWith(appDir)) {
+        delete require.cache[key];
+      }
+    });
+  }
 
   try {
-    require(`${process.cwd()}/${getSourceDir()}/index.ts`);
+    // Load from compiled directory if available, otherwise TypeScript
+    const sourceDir = getSourceDir();
+    if (useCompiled) {
+      // In compiled mode, load pre-compiled JavaScript from .moose/compiled/
+      // Use dynamic loader that handles both CJS and ESM
+      await loadModule(`${process.cwd()}/.moose/compiled/${sourceDir}/index.js`);
+    } else {
+      // In development mode, load TypeScript via ts-node
+      require(`${process.cwd()}/${sourceDir}/index.ts`);
+    }
   } catch (error) {
     let hint: string | undefined;
+    let includeDetails = true;
     const details = error instanceof Error ? error.message : String(error);
-    if (details.includes("ERR_REQUIRE_ESM") || details.includes("ES Module")) {
+
+    // Check for typia configuration errors
+    if (
+      details.includes("no transform has been configured") ||
+      details.includes("NoTransformConfigurationError")
+    ) {
+      hint =
+        "🔴 Typia Transformation Error\n\n" +
+        "This is likely a bug in Moose. The Typia type transformer failed to process your code.\n\n" +
+        "Please report this issue:\n" +
+        "  • Moose Slack: https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg\n" +
+        "  • Include the stack trace below and the file being processed\n\n";
+      includeDetails = false;
+    } else if (
+      details.includes("ERR_REQUIRE_ESM") ||
+      details.includes("ES Module")
+    ) {
       hint =
         "The file or its dependencies are ESM-only. Switch to packages that dual-support CJS & ESM, or upgrade to Node 22.12+. " +
         "If you must use Node 20, you may try Node 20.19\n\n";
     }
 
-    const errorMsg = `${hint ?? ""}${details}`;
-    const cause = error instanceof Error ? error : undefined;
-    throw new Error(errorMsg, { cause });
+    if (hint === undefined) {
+      throw error;
+    } else {
+      const errorMsg = includeDetails ? `${hint}${details}` : hint;
+      const cause = error instanceof Error ? error : undefined;
+      throw new Error(errorMsg, { cause });
+    }
   }
 };
 
@@ -1148,7 +1352,7 @@ const loadIndex = () => {
  *          and values are tuples containing: [handler function, config, source stream columns]
  */
 export const getStreamingFunctions = async () => {
-  loadIndex();
+  await loadIndex();
 
   const registry = getMooseInternal();
   const transformFunctions = new Map<
@@ -1194,7 +1398,7 @@ export const getStreamingFunctions = async () => {
  *          are their corresponding handler functions.
  */
 export const getApis = async () => {
-  loadIndex();
+  await loadIndex();
   const apiFunctions = new Map<
     string,
     (params: unknown, utils: ApiUtil) => unknown
@@ -1368,7 +1572,7 @@ export const dlqColumns: Column[] = [
 ];
 
 export const getWorkflows = async () => {
-  loadIndex();
+  await loadIndex();
 
   const registry = getMooseInternal();
   return registry.workflows;
@@ -1416,6 +1620,6 @@ export const getTaskForWorkflow = async (
 };
 
 export const getWebApps = async () => {
-  loadIndex();
+  await loadIndex();
   return getMooseInternal().webApps;
 };

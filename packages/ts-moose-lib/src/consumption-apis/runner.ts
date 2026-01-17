@@ -8,6 +8,7 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
+import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
 
 interface ClickhouseConfig {
   database: string;
@@ -49,7 +50,10 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   useSSL: config.useSSL ? "true" : "false",
 });
 
-const createPath = (apisDir: string, path: string) => `${apisDir}${path}.ts`;
+const createPath = (apisDir: string, path: string, useCompiled: boolean) => {
+  const extension = useCompiled ? ".js" : ".ts";
+  return `${apisDir}${path}${extension}`;
+};
 
 const httpLogger = (
   req: http.IncomingMessage,
@@ -86,6 +90,15 @@ const apiHandler = async (
   isDmv2: boolean,
   jwtConfig?: JwtConfig,
 ) => {
+  // Check if we should use compiled code
+  const useCompiled = shouldUseCompiled();
+  const sourceDir = getSourceDir();
+
+  // Adjust apisDir for compiled mode
+  const actualApisDir = useCompiled
+    ? `${process.cwd()}/.moose/compiled/${sourceDir}/apis/`
+    : apisDir;
+
   const apis = isDmv2 ? await getApis() : new Map();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const start = Date.now();
@@ -126,7 +139,7 @@ const apiHandler = async (
         return;
       }
 
-      const pathName = createPath(apisDir, fileName);
+      const pathName = createPath(actualApisDir, fileName, useCompiled);
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
         (obj: { [key: string]: string[] | string }, [key, value]) => {
           const existingValue = obj[key];
@@ -196,7 +209,8 @@ const apiHandler = async (
           modulesCache.set(pathName, userFuncModule);
           console.log(`[API] | Executing API: ${apiName}`);
         } else {
-          userFuncModule = require(pathName);
+          // Use dynamic loader that handles both CJS and ESM
+          userFuncModule = await loadModule(pathName);
           modulesCache.set(pathName, userFuncModule);
         }
       }
@@ -334,12 +348,9 @@ const createMainRouter = async (
 
       if (matches) {
         if (webApp.config.injectMooseUtils !== false) {
-          const queryClient = new QueryClient(clickhouseClient, pathname);
-          (req as any).moose = {
-            client: new MooseClient(queryClient, temporalClient),
-            sql: sql,
-            jwt: jwtPayload,
-          };
+          // Import getMooseUtils dynamically to avoid circular deps
+          const { getMooseUtils } = await import("./standalone");
+          (req as any).moose = await getMooseUtils();
         }
 
         let proxiedUrl = req.url;
@@ -428,6 +439,12 @@ export const runApis = async (config: ApisConfig) => {
         console.log("Importing JWT public key...");
         publicKey = await jose.importSPKI(config.jwtConfig.secret, "RS256");
       }
+
+      // Set runtime context for getMooseUtils() to detect
+      const runtimeQueryClient = new QueryClient(clickhouseClient, "runtime");
+      (globalThis as any)._mooseRuntimeContext = {
+        client: new MooseClient(runtimeQueryClient, temporalClient),
+      };
 
       const server = http.createServer(
         await createMainRouter(

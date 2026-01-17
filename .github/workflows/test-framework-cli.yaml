@@ -41,13 +41,13 @@ jobs:
           # Define patterns to check - one per line for readability
           PATTERNS=(
             "^\.github/workflows/test-framework-cli\.yaml"
+            "^\.github/scripts/check-cli-dependencies\.sh"
             "^apps/framework-cli-e2e/"
             "^apps/framework-cli/"
             "^templates/python"
             "^templates/typescript"
             "^packages/"
             "Cargo.lock"
-            "pnpm-lock.yaml"
           )
 
           # Join patterns with | for grep
@@ -60,7 +60,7 @@ jobs:
           cat changes.txt
           echo "::endgroup::"
 
-          echo "::group::📋 Files Matching Patterns"
+          echo "::group::📋 Files Matching Patterns (excluding pnpm-lock.yaml)"
           echo "Looking for files matching these patterns:"
           printf '%s\n' "${PATTERNS[@]}"
           echo "---"
@@ -68,10 +68,20 @@ jobs:
           grep -E "${GREP_PATTERN}" changes.txt || echo "No files match patterns"
           echo "::endgroup::"
 
-          # Check if any relevant files were changed
+          # Check if any relevant files were changed (excluding pnpm-lock)
           if grep -q -E "${GREP_PATTERN}" changes.txt; then
             echo "::notice title=✅ Running Tests::Detected relevant changes in the codebase. Tests will run."
             echo "should_run=true" >> $GITHUB_OUTPUT
+          # If only pnpm-lock.yaml changed, use smart analysis
+          elif grep -q "pnpm-lock.yaml" changes.txt; then
+            echo "::notice title=🔍 Analyzing Dependencies::Only pnpm-lock.yaml changed, checking if CLI is affected..."
+            if .github/scripts/check-cli-dependencies.sh; then
+              echo "::notice title=✅ Running Tests::pnpm-lock.yaml changes affect CLI packages. Tests will run."
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            else
+              echo "::notice title=⏭️ Skipping Tests::pnpm-lock.yaml changes don't affect CLI packages. Tests will be skipped."
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "::notice title=⏭️ Skipping Tests::No relevant changes detected. Tests will be skipped."
             echo "should_run=false" >> $GITHUB_OUTPUT
@@ -83,7 +93,7 @@ jobs:
     name: Check
     # This is doing both checks and compilation hence why there is a
     # Bigger machine
-    runs-on: ubuntu-22-8-core
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -100,17 +110,13 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -119,7 +125,7 @@ jobs:
         run: cargo check
 
       - name: Check for unused dependencies
-        uses: bnjbvr/cargo-machete@main
+        uses: bnjbvr/cargo-machete@v0.9.1
 
       - name: Run cargo Build in release mode
         run: cargo build --release --locked
@@ -137,7 +143,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [blacksmith-4vcpu-ubuntu-2404, macos-latest-large]
     steps:
       - name: Install Protoc (Needed for Temporal)
         uses: arduino/setup-protoc@v3
@@ -159,25 +165,13 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Get system info (Linux)
-        id: system-linux
-        if: runner.os == 'Linux'
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
-      - name: Get system info (macOS)
-        id: system-macos
-        if: runner.os == 'macOS'
-        run: |
-          echo "version=$(sw_vers -productVersion)" >> $GITHUB_OUTPUT
-          echo "distro=macOS" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system-linux.outputs.distro || steps.system-macos.outputs.distro }}-${{ steps.system-linux.outputs.version || steps.system-macos.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -199,7 +193,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test TS Moose Lib (Node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -231,7 +225,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test Py Moose Lib (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -262,12 +256,61 @@ jobs:
         env:
           MOOSE_TELEMETRY_ENABLED: false
 
+  test-e2e-module-compilation:
+    needs: [detect-changes, check, test-cli, test-ts-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E Module Compilation (ESM/CJS)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      - name: Run Module Compilation E2E Tests
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Module Compilation"
+        env:
+          MOOSE_TELEMETRY_ENABLED: false
+
+      - name: Inspect Logs
+        if: always()
+        run: |
+          cat ~/.moose/*-cli.log || true
+
   test-e2e-typescript-default:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Default Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -327,17 +370,13 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -358,7 +397,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E TypeScript Tests Template (Node ${{ matrix.node-version }}, ${{ matrix.package-manager }})
-    runs-on: ubuntu-22-8-core
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -400,17 +439,13 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -431,7 +466,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Default Template (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -468,17 +503,13 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -507,7 +538,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Python Tests Template (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -544,17 +575,13 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -583,7 +610,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Backward Compatibility - TypeScript (Node 20)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -615,17 +642,13 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -648,7 +671,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Backward Compatibility - Python (Python 3.13)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -680,17 +703,13 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -721,7 +740,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Cluster Support - TypeScript (Node 20)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -753,17 +772,13 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -783,7 +798,7 @@ jobs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Test E2E Cluster Support - Python (Python 3.13)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
     env:
@@ -815,17 +830,13 @@ jobs:
           node-version: 20
           cache: "pnpm"
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -852,7 +863,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.should_run == 'true'
     name: Lints
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Add explicit read-only permissions
     permissions:
       contents: read
@@ -869,17 +880,14 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Get system info
-        id: system
-        run: |
-          echo "version=$(lsb_release -rs)" >> $GITHUB_OUTPUT
-          echo "distro=$(lsb_release -is)" >> $GITHUB_OUTPUT
-
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
+          toolchain: stable
           components: rustfmt, clippy
           cache: true
-          cache-shared-key: ${{ runner.os }}-${{ steps.system.outputs.distro }}-${{ steps.system.outputs.version }}-${{ runner.arch }}-rust
+          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+          # This allows cache sharing across all Linux/macOS jobs in this workflow
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
           cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
@@ -904,6 +912,7 @@ jobs:
         test-cli,
         test-ts-moose-lib,
         test-py-moose-lib,
+        test-e2e-module-compilation,
         test-e2e-typescript-default,
         test-e2e-typescript-tests,
         test-e2e-python-default,
@@ -935,6 +944,7 @@ jobs:
              [[ "${{ needs.test-cli.result }}" == "failure" ]] || \
              [[ "${{ needs.test-ts-moose-lib.result }}" == "failure" ]] || \
              [[ "${{ needs.test-py-moose-lib.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-module-compilation.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-typescript-default.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-python-default.result }}" == "failure" ]] || \
@@ -951,6 +961,7 @@ jobs:
              [[ "${{ needs.test-cli.result }}" == "success" ]] && \
              [[ "${{ needs.test-ts-moose-lib.result }}" == "success" ]] && \
              [[ "${{ needs.test-py-moose-lib.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-module-compilation.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-typescript-default.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-default.result }}" == "success" ]] && \
