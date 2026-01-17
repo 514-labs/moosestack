@@ -150,18 +150,15 @@ The decisions below define the shape of your chat system. The template defaults 
 ## Tutorial: From Parquet in S3 to Chat Application
 
 <Callout type="info" title="Prerequisites">
-* **What you need (accounts)**:   
-  * Boreal account: [https://www.boreal.cloud/sign-in](https://www.boreal.cloud/sign-in)  
-  * Vercel account: [https://vercel.com/](https://vercel.com/)   
-  * Github account: [https://github.com](https://github.com)   
-  * Claude LLM API key: [https://console.anthropic.com/](https://console.anthropic.com/)   
-* **What you need (for local dev)**:  
-  * **Node.js (v20+)**: Install from [nodejs.org](http://nodejs.org).  
-  * **pnpm (v8+)**: Install from [pnpm.io](http://pnpm.io).  
-  * **Docker Desktop (v20+)**: Install from [docker.com/get-started](http://docker.com/get-started). Docker must be running.  
-  * **Moose CLI (latest)**: Install via the docs at [https://docs.fiveonefour.com/moosestack](https://docs.fiveonefour.com/moosestack) or run `bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose`.  
-* **Recommended tooling**: Your IDE / terminal. A copilot, like Claude Code, Codex, or Cursor.  
-* **How long it takes**: Demo (minutes), baseline (hours), production-quality (days).
+- [GitHub account](https://github.com)
+- [Claude API key](https://console.anthropic.com/)
+- [Boreal account](https://www.boreal.cloud/sign-in)
+- [Vercel account](https://vercel.com/)
+- [Node.js v20+](https://nodejs.org)
+- [pnpm v8+](https://pnpm.io)
+- [Docker Desktop v20+](https://docker.com/get-started) (must be running)
+- [Moose CLI](https://docs.fiveonefour.com/moosestack)
+- Recommended: a copilot like Claude Code, Cursor, or Codex
 </Callout>
 
 <Callout type="info">
@@ -668,16 +665,14 @@ This will again return 0 rows. This is expected. You can validate that the trans
 </Callout>
 
 <Callout type="info" title="Prerequisites">
-* **What you need (accounts)**:   
-  * Github account: [https://github.com](https://github.com)   
-  * Claude LLM API key: [https://console.anthropic.com/](https://console.anthropic.com/)   
-* **What you need (for local dev)**:  
-  * **Node.js (v20+)**: Install from [nodejs.org](http://nodejs.org).  
-  * **pnpm (v8+)**: Install from [pnpm.io](http://pnpm.io).  
-  * **Docker Desktop (v20+)**: Install from [docker.com/get-started](http://docker.com/get-started). Docker must be running.  
-  * **Moose CLI (latest)**: Install via the docs at [https://docs.fiveonefour.com/moosestack](https://docs.fiveonefour.com/moosestack) or run `bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose`.  
-* **Recommended tooling**: Your IDE / terminal. A copilot, like Claude Code, Codex, or Cursor.  
-* **How long it takes**: ~1 hour.
+- [GitHub](https://github.com)
+- [Claude API key](https://console.anthropic.com/)
+- [Boreal account](https://www.boreal.cloud/sign-in)
+- [Node.js v20+](https://nodejs.org)
+- [pnpm v8+](https://pnpm.io)
+- [Docker Desktop v20+](https://docker.com/get-started) (must be running)
+- [Moose CLI](https://docs.fiveonefour.com/moosestack)
+- Recommended: Claude Code, Cursor, Codex, or other MCP compatible copilot.
 </Callout>
 
 **Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-mcp](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp)
@@ -686,30 +681,26 @@ This will again return 0 rows. This is expected. You can validate that the trans
 
 This part of the guide will walk your through adding a chat panel embedded in your Next.js app that can query your ClickHouse data using natural language. The chat uses Claude to interpret questions and call MCP tools that execute SQL queries against your database.
 
-```text
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Your Next.js App                              │
-│  ┌─────────────┐    ┌──────────────────┐    ┌────────────────────────┐ │
-│  │  Chat UI    │───▶│  /api/chat route │───▶│  MCP Client            │ │
-│  │  Components │    │  (streams resp)  │    │  (@ai-sdk/mcp)         │ │
-│  └─────────────┘    └──────────────────┘    └───────────┬────────────┘ │
-└─────────────────────────────────────────────────────────┼──────────────┘
-                                                          │ HTTP + Bearer Token
-                                                          ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│          MooseStack Service (localhost:4000 or your Boreal URL)         │
-│  ┌──────────────────┐    ┌─────────────────┐    ┌───────────────────┐  │
-│  │  /tools endpoint │───▶│  MCP Server     │───▶│  ClickHouse       │  │
-│  │  (Express app)   │    │  (tool handlers)│    │  (your data)      │  │
-│  └──────────────────┘    └─────────────────┘    └───────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph nextjs["Next.js App"]
+        direction LR
+        ChatUI["Chat UI"] --> APIRoute["/api/chat"] --> MCPClient["MCP Client"]
+    end
+    
+    subgraph moose["MooseStack Service"]
+        direction LR
+        Tools["/tools"] --> MCP["MCP Server"] --> CH["ClickHouse"]
+    end
+    
+    MCPClient -->|"HTTP + Bearer Token"| Tools
 ```
 
 What this will walk through building:
 
-| Chat UI | Resizable panel with message input/output, tool result rendering |
+| Component | Description |
 | :---- | :---- |
+| **Chat UI** | Resizable panel with message input/output, tool result rendering |
 | **API Route** (/api/chat) | Handles chat requests, creates MCP client, streams responses |
 | **MCP Server** (/tools) | Express app exposing query_clickhouse and get_data_catalog tools |
 | **Authentication** | Bearer token flow between frontend and MCP server |
@@ -991,26 +982,9 @@ export async function GET(request: NextRequest) {
 }
 ```
 
-##### (optionally) Customize the system prompt
-
-Edit `src/features/chat/system-prompt.ts` to customize how the AI behaves. The default is generic; you'll want to tailor it to your data and use case:
-
-```ts
-export function getAISystemPrompt(): string {
-  return `You are a helpful AI assistant that can query and analyze data.
-
-When users ask questions:
-1. Use get_data_catalog first to understand what tables are available
-2. Use query_clickhouse to run SQL queries and get results
-3. Explain results clearly and concisely
-
-You have access to a ClickHouse database with the following data:
-- [Describe your tables and what they contain]
-- [Add business context and metric definitions]
-
-Be helpful, accurate, and transparent about what queries you're running.`;
-}
-```
+<Callout type="info">
+To customize your chat's system prompt, edit `src/features/chat/system-prompt.ts`.
+</Callout>
 
 #### Frontend Setup: UI Components
 
