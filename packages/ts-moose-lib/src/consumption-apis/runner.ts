@@ -1,4 +1,5 @@
 import http from "http";
+import { AsyncLocalStorage } from "async_hooks";
 import { getClickhouseClient } from "../commons";
 import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
 import * as jose from "jose";
@@ -8,6 +9,7 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
+import * as util from "util";
 
 interface ClickhouseConfig {
   database: string;
@@ -63,6 +65,63 @@ const httpLogger = (
 
 const modulesCache = new Map<string, any>();
 
+// AsyncLocalStorage to track API context without mutating globals
+const apiContextStorage = new AsyncLocalStorage<{ apiName: string }>();
+
+// Safe serialization that handles circular references and BigInt
+function safeStringify(arg: any): string {
+  if (typeof arg === "object" && arg !== null) {
+    try {
+      return JSON.stringify(arg);
+    } catch (e) {
+      // Fall back to util.inspect for circular references or BigInt
+      return util.inspect(arg, { depth: 2, breakLength: Infinity });
+    }
+  }
+  return String(arg);
+}
+
+// Structured console wrapper that uses AsyncLocalStorage
+function createStructuredConsoleWrapper(
+  originalMethod: (...args: any[]) => void,
+  level: string,
+) {
+  return (...args: any[]) => {
+    const context = apiContextStorage.getStore();
+    if (context) {
+      // We're in an API context - emit structured log
+      const message = args.map((arg) => safeStringify(arg)).join(" ");
+      process.stderr.write(
+        JSON.stringify({
+          __moose_structured_log__: true,
+          level,
+          message,
+          api_name: context.apiName,
+          timestamp: new Date().toISOString(),
+        }) + "\n",
+      );
+    } else {
+      // Not in API context - use original console
+      originalMethod(...args);
+    }
+  };
+}
+
+// Wrap console methods once at module load
+const originalConsole = {
+  log: console.log,
+  info: console.info,
+  warn: console.warn,
+  error: console.error,
+  debug: console.debug,
+};
+
+console.log = createStructuredConsoleWrapper(originalConsole.log, "info");
+console.info = createStructuredConsoleWrapper(originalConsole.info, "info");
+console.warn = createStructuredConsoleWrapper(originalConsole.warn, "warn");
+console.error = createStructuredConsoleWrapper(originalConsole.error, "error");
+console.debug = createStructuredConsoleWrapper(originalConsole.debug, "debug");
+
 export function createApi<T extends object, R = any>(
   _handler: (params: T, utils: ApiUtil) => Promise<R>,
 ): (
@@ -94,7 +153,7 @@ const apiHandler = async (
       const url = new URL(req.url || "", "http://localhost");
       const fileName = url.pathname;
 
-      let jwtPayload;
+      let jwtPayload: jose.JWTPayload | undefined;
       if (publicKey && jwtConfig) {
         const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
         if (jwt) {
@@ -202,18 +261,25 @@ const apiHandler = async (
       }
 
       const queryClient = new QueryClient(clickhouseClient, fileName);
-      let result =
-        isDmv2 ?
-          await userFuncModule(paramsObject, {
-            client: new MooseClient(queryClient, temporalClient),
-            sql: sql,
-            jwt: jwtPayload,
-          })
-        : await userFuncModule.default(paramsObject, {
-            client: new MooseClient(queryClient, temporalClient),
-            sql: sql,
-            jwt: jwtPayload,
-          });
+
+      // Get API name for context
+      const apiName = isDmv2 ? fileName.replace(/^\/+|\/+$/g, "") : fileName;
+
+      // Use AsyncLocalStorage to set context for this API call
+      // This avoids race conditions from concurrent API requests
+      const result = await apiContextStorage.run({ apiName }, async () => {
+        return isDmv2 ?
+            await userFuncModule(paramsObject, {
+              client: new MooseClient(queryClient, temporalClient),
+              sql: sql,
+              jwt: jwtPayload,
+            })
+          : await userFuncModule.default(paramsObject, {
+              client: new MooseClient(queryClient, temporalClient),
+              sql: sql,
+              jwt: jwtPayload,
+            });
+      });
 
       let body: string;
       let status: number | undefined;
@@ -305,7 +371,7 @@ const createMainRouter = async (
       return;
     }
 
-    let jwtPayload;
+    let jwtPayload: jose.JWTPayload | undefined;
     if (publicKey && jwtConfig) {
       const jwt = req.headers.authorization?.split(" ")[1];
       if (jwt) {

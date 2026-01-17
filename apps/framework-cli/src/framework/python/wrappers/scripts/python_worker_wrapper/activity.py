@@ -2,15 +2,63 @@ from temporalio import activity
 from dataclasses import dataclass
 from moose_lib.dmv2 import get_workflow
 from moose_lib.dmv2.workflow import TaskContext
-from typing import Optional, Callable
+from typing import Optional, Callable, Any, TextIO
 import asyncio
+import builtins
+import contextvars
+from datetime import datetime, timezone
 import json
+import sys
 import traceback
 import concurrent.futures
 
 from .logging import log
 from .types import WorkflowStepResult
 from .serialization import moose_json_decode
+
+# Context variable to track task name without mutating globals
+_task_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "task_context", default=None
+)
+
+# Store original print for restoration
+_original_print = builtins.print
+
+
+# Structured print wrapper that respects kwargs and uses contextvars
+def _structured_print(
+    *args: Any,
+    sep: str = " ",
+    end: str = "\n",
+    file: Optional[TextIO] = None,
+    flush: bool = False,
+    **kwargs: Any,
+) -> None:
+    """Print wrapper that emits structured logs when in a task context."""
+    task_name = _task_context.get()
+
+    if task_name and file in (None, sys.stderr, sys.stdout):
+        # We're in a task context - emit structured log to stderr
+        message = sep.join(str(arg) for arg in args)
+        structured_log = json.dumps(
+            {
+                "__moose_structured_log__": True,
+                "level": "info",
+                "message": message,
+                "task_name": task_name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        sys.stderr.write(structured_log + "\n")
+        if flush:
+            sys.stderr.flush()
+    else:
+        # Not in task context or custom file specified - use original print
+        _original_print(*args, sep=sep, end=end, file=file, flush=flush, **kwargs)
+
+
+# Replace global print with structured wrapper at module load
+builtins.print = _structured_print
 
 
 @dataclass
@@ -91,7 +139,9 @@ def _validate_input_data(input_data: dict | None, task) -> any:
         )
 
 
-async def _execute_task_function(task, input_data, executor, task_state: dict) -> any:
+async def _execute_task_function(
+    task, input_data, executor, task_state: dict, task_identifier: str
+) -> any:
     """Execute the task function with a single context parameter.
 
     Supports both async and sync handlers via a thread executor for sync ones.
@@ -99,12 +149,21 @@ async def _execute_task_function(task, input_data, executor, task_state: dict) -
     task_func = task.config.run
     context = TaskContext(state=task_state, input=input_data)
 
-    if asyncio.iscoroutinefunction(task_func):
-        return await task_func(context)
-    else:
-        loop = asyncio.get_running_loop()
-        future = loop.run_in_executor(executor, lambda: task_func(context))
-        return await asyncio.wait_for(future, timeout=None)
+    # Set context for structured logging via contextvars
+    _task_context.set(task_identifier)
+
+    try:
+        if asyncio.iscoroutinefunction(task_func):
+            return await task_func(context)
+        else:
+            loop = asyncio.get_running_loop()
+            # Copy context to propagate to thread executor
+            ctx = contextvars.copy_context()
+            future = loop.run_in_executor(executor, lambda: ctx.run(task_func, context))
+            return await asyncio.wait_for(future, timeout=None)
+    finally:
+        # Clear context
+        _task_context.set(None)
 
 
 async def _handle_task_cancellation(task, task_name: str, task_state: dict, input_data):
@@ -177,9 +236,14 @@ async def _execute_dmv2_task(
         activity.heartbeat(f"Starting task: {execution_input.task_name}")
 
         try:
+            # Create task identifier for logging
+            task_identifier = (
+                f"{execution_input.dmv2_workflow_name}/{execution_input.task_name}"
+            )
+
             # Execute the task function
             result = await _execute_task_function(
-                task, validated_input, executor, shared_task_state
+                task, validated_input, executor, shared_task_state, task_identifier
             )
 
             # Return structured result

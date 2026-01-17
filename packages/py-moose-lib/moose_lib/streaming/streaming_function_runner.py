@@ -14,6 +14,8 @@ The runner handles:
 """
 
 import argparse
+import builtins
+import contextvars
 import dataclasses
 import traceback
 from datetime import datetime, timezone
@@ -26,7 +28,7 @@ from kafka import KafkaConsumer, KafkaProducer
 import requests
 import threading
 import time
-from typing import Optional, Callable, Tuple, Any
+from typing import Optional, Callable, Tuple, Any, TextIO
 
 from moose_lib.dmv2 import get_streams, DeadLetterModel
 from moose_lib import cli_log, CliLogData, DeadLetterQueue
@@ -47,6 +49,50 @@ sys.stdout = io.TextIOWrapper(
 PARTITION_ASSIGNMENT_TIMEOUT_SECONDS = 60
 # Polling interval (seconds) when waiting for partition assignment
 PARTITION_ASSIGNMENT_POLL_INTERVAL_SECONDS = 0.1
+
+# Context variable to track function name without mutating globals
+_function_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "function_context", default=None
+)
+
+# Store original print for restoration
+_original_print = builtins.print
+
+
+# Structured print wrapper that respects kwargs and uses contextvars
+def _structured_print(
+    *args: Any,
+    sep: str = " ",
+    end: str = "\n",
+    file: Optional[TextIO] = None,
+    flush: bool = False,
+    **kwargs: Any,
+) -> None:
+    """Print wrapper that emits structured logs when in a function context."""
+    function_name = _function_context.get()
+
+    if function_name and file in (None, sys.stderr, sys.stdout):
+        # We're in a streaming function context - emit structured log to stderr
+        message = sep.join(str(arg) for arg in args)
+        structured_log = json.dumps(
+            {
+                "__moose_structured_log__": True,
+                "level": "info",
+                "message": message,
+                "function_name": function_name,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        sys.stderr.write(structured_log + "\n")
+        if flush:
+            sys.stderr.flush()
+    else:
+        # Not in function context or custom file specified - use original print
+        _original_print(*args, sep=sep, end=end, file=file, flush=flush, **kwargs)
+
+
+# Replace global print with structured wrapper at module load
+builtins.print = _structured_print
 
 
 @dataclasses.dataclass
@@ -611,6 +657,10 @@ def main():
                                 streaming_function_callable,
                                 dlq,
                             ) in streaming_function_callables:
+                                # Set context for structured logging via contextvars
+                                # This avoids race conditions from concurrent processing
+                                _function_context.set(log_prefix)
+
                                 try:
                                     output_data = streaming_function_callable(
                                         input_data
@@ -646,6 +696,9 @@ def main():
                                         )
                                     # Skip to the next transformation or message
                                     continue
+                                finally:
+                                    # Clear context
+                                    _function_context.set(None)
 
                                 # For consumers, output_data will be None
                                 if output_data is None:

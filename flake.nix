@@ -150,6 +150,7 @@
               nodejs
               pnpm
               wrappedPython
+              pkgs.black
 
               # Development tools
               pkgs.git

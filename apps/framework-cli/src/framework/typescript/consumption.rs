@@ -126,6 +126,24 @@ pub fn run(
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
+            // Try to parse as structured log from Node.js consumption API
+            if let Some(log_data) = crate::cli::logger::parse_structured_log(&line, "api_name") {
+                let span = tracing::info_span!(
+                    "consumption_api_log",
+                    context = crate::cli::logger::context::RUNTIME,
+                    resource_type = crate::cli::logger::resource_type::CONSUMPTION_API,
+                    resource_name = %log_data.resource_name,
+                );
+                let _guard = span.enter();
+                match log_data.level.as_str() {
+                    "error" => tracing::error!("{}", log_data.message),
+                    "warn" => tracing::warn!("{}", log_data.message),
+                    "debug" => tracing::debug!("{}", log_data.message),
+                    _ => tracing::info!("{}", log_data.message),
+                }
+                continue;
+            }
+            // Fall back to regular error logging if not a structured log
             error!("{}", line);
         }
     });
