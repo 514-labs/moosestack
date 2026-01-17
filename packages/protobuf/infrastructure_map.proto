@@ -23,6 +23,10 @@ message InfrastructureMap {
   map<string, SqlResource> sql_resources = 12;
   map<string, WebApp> web_apps = 13;
 
+  // Version of Moose CLI that created or last updated this infrastructure map
+  // Helps with debugging, compatibility tracking, and migration planning
+  string moose_version = 14;
+
   string default_database = 15;
 
   // Structured materialized views (replaces SqlResource for MVs)
