@@ -1369,6 +1369,10 @@ export const getStreamingFunctions = async () => {
       transforms.forEach(([_, transform, config]) => {
         const transformFunctionKey = `${stream.name}_${destinationName}${config.version ? `_${config.version}` : ""}`;
         compilerLog(`getStreamingFunctions: ${transformFunctionKey}`);
+        // DEBUG: Log the function type to verify it's not undefined after compilation
+        compilerLog(
+          `[DEBUG] Function type for ${transformFunctionKey}: type=${typeof transform}, isFunction=${typeof transform === "function"}`,
+        );
         transformFunctions.set(transformFunctionKey, [
           transform,
           config,

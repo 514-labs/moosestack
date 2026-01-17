@@ -289,7 +289,12 @@ const handleMessage = async (
     }
 
     const transformedData = await Promise.all(
-      streamingFunctionWithConfigList.map(async ([fn, config]) => {
+      streamingFunctionWithConfigList.map(async ([fn, config], idx) => {
+        // DEBUG: Log before invoking the transform function
+        logger.log(
+          `[DEBUG] Calling transform function ${idx}: type=${typeof fn}, isFunction=${typeof fn === "function"}`,
+        );
+
         try {
           return await fn(parsedData);
         } catch (e) {
@@ -722,6 +727,16 @@ const startConsumer = async (
     );
     streamingFunctions = result.functions;
     fieldMutations = result.fieldMutations;
+
+    // DEBUG: Log loaded functions to verify they're valid after compilation
+    logger.log(
+      `[DEBUG] Loaded ${streamingFunctions.length} streaming function(s)`,
+    );
+    streamingFunctions.forEach(([fn, config], i) => {
+      logger.log(
+        `[DEBUG] Function ${i}: type=${typeof fn}, isFunction=${typeof fn === "function"}`,
+      );
+    });
   } else {
     streamingFunctions = [
       [await loadStreamingFunction(args.functionFilePath), {}],
@@ -738,6 +753,11 @@ const startConsumer = async (
     // Enable parallel processing of partitions
     partitionsConsumedConcurrently: PARTITIONS_CONSUMED_CONCURRENTLY, // To be adjusted
     eachBatch: async ({ batch, heartbeat, isRunning, isStale }) => {
+      // DEBUG: Log immediately when eachBatch is called, before any checks
+      logger.log(
+        `[DEBUG] eachBatch called with ${batch.messages.length} messages, isRunning=${isRunning()}, isStale=${isStale()}`,
+      );
+
       if (!isRunning() || isStale()) {
         return;
       }
