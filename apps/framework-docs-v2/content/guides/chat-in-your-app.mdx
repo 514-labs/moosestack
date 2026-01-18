@@ -264,7 +264,7 @@ This is a blank canvas for you to use to build whatever user facing analytics yo
 
 Note: whilst the chat will be functional, since you’ve not added any data to your MooseStack project, the tools available in the chat won’t be able to retrieve any data. In the next section, we’ll explore and model the data.
 
-#### Start up MooseDev MCP and your copilot
+#### (Optional) Start up MooseDev MCP with your copilot
 
 Once your MooseDev Server is up and running, your development MCP server is ready to be connected to your copilot. For documentation for each copilot, [see docs](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript#configure-your-ai-client). By way of example, here’s how you configure Claude Code:
 
@@ -273,6 +273,14 @@ claude mcp add --transport http moose-dev http://localhost:4000/mcp
 ```
 
 Note, you may have to do this before you start Claude Code (or restart Claude Code once you have done this). You can validate that it is working with the `/mcp` slash command.
+
+#### (Optional) Add Context7 for MooseStack documentation
+
+[Context7](https://context7.com) can serve up-to-date MooseStack docs to your copilot.
+
+**Setup:** [Install Context7 for your IDE](https://github.com/upstash/context7#installation)
+
+**Usage:** When you refer to MooseStack documentation in prompts, add `use context7` for better results.
 
 ### Model your data
 
