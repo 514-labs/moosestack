@@ -28,7 +28,8 @@
     "dist"
   ],
   "bin": {
-    "moose-runner": "./dist/moose-runner.js"
+    "moose-runner": "./dist/moose-runner.js",
+    "moose-tspc": "./dist/moose-tspc.js"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
