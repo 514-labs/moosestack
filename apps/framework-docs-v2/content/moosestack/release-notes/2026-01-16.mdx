@@ -22,29 +22,12 @@ Documentation and Developer Experience Focus. This release centers on making Moo
 
 Added support for configuring ignore patterns in the file watcher to prevent unnecessary hot-reloads. Users can now specify glob patterns in their moose.config.toml to exclude files like generated code, SDK files, or temporary files from triggering development server rebuilds. This improves development performance by avoiding infinite loops and reducing unnecessary processing.
 
-**Configure file watcher ignore patterns in moose.config.toml**
+**Configure file watcher ignore patterns**
 
 ```toml
-# moose.config.toml
-
-# Configure file watcher to ignore generated files and SDK outputs
 [watcher_config]
-ignore_patterns = [
-    # Ignore generated SDK files to prevent infinite rebuild loops
-    "sdk/**",
-
-    # Ignore generated Python files from code generation
-    "**/*.gen.py",
-    "generated/**",
-
-    # Ignore temporary files and build artifacts
-    "**/*.tmp",
-    "dist/**",
-    "build/**"
-]
+ignore_patterns = ["sdk/**", "**/*.gen.py", "generated/**", "dist/**"]
 ```
-
-This example shows how to configure file watcher ignore patterns in moose.config.toml to prevent unnecessary hot-reloads during development. The patterns exclude generated SDK files, build artifacts, and temporary files that would otherwise trigger infinite rebuild loops.
 
 PR: [#3314](https://github.com/514-labs/moosestack/pull/3314) | Docs: [File Watcher Configuration](/moosestack/configuration/dev-environment#file-watcher)
 
@@ -60,63 +43,26 @@ PR: [#3312](https://github.com/514-labs/moosestack/pull/3312)
 
 Added new structured logging infrastructure that outputs JSON logs with automatic span field inclusion. Users can enable this with the MOOSE_LOGGER\_\_STRUCTURED_LOGS environment variable to get better observability and filtering capabilities. This includes predefined constants for logging contexts (runtime, boot, system) and resource types (streams, tables, transforms, etc.) that developers can use when instrumenting their code.
 
-**Structured logging with spans for data pipeline observability**
+**Structured logging with spans**
 
 ```rust
 use tracing::{info, instrument};
 use moose_cli::cli::logger::{context, resource_type};
 
-// Example: Instrumenting a data ingestion function with structured logging
 #[instrument(
-    name = "ingest_user_events",
-    skip_all,
+    name = "process_events",
     fields(
         context = context::RUNTIME,
         resource_type = resource_type::STREAM,
-        resource_name = %stream_name,
-        batch_size = batch.len()
+        resource_name = %stream_name
     )
 )]
-async fn ingest_user_events(stream_name: &str, batch: Vec<UserEvent>) -> Result<(), IngestError> {
-    info!("Starting batch ingestion");
-
-    // Process the batch
-    for event in &batch {
-        validate_event(event)?;
-    }
-
-    info!(processed_count = batch.len(), "Batch validation complete");
-
-    // Send to Kafka stream
-    send_to_stream(stream_name, batch).await?;
-
-    info!("Batch successfully ingested");
-    Ok(())
-}
-
-// Example: Instrumenting a data transformation with context
-#[instrument(
-    name = "transform_user_analytics",
-    skip_all,
-    fields(
-        context = context::RUNTIME,
-        resource_type = resource_type::TRANSFORM,
-        resource_name = "user_daily_analytics"
-    )
-)]
-async fn transform_user_analytics() -> Result<(), TransformError> {
-    info!("Starting daily analytics transformation");
-
-    let result = execute_clickhouse_query(
-        "INSERT INTO user_daily_analytics SELECT ... FROM user_events"
-    ).await?;
-
-    info!(rows_processed = result.rows_affected, "Transformation complete");
+async fn process_events(stream_name: &str, batch: Vec<Event>) -> Result<(), Error> {
+    info!("Processing batch");
+    // Process events...
     Ok(())
 }
 ```
-
-Shows how to use the new structured JSON logging with span support in MooseStack data pipeline functions. The #[instrument] attribute automatically includes context and resource metadata in JSON logs when MOOSE_LOGGER\_\_STRUCTURED_LOGS=true is set.
 
 PR: [#3187](https://github.com/514-labs/moosestack/pull/3187), [#3186](https://github.com/514-labs/moosestack/pull/3186) | Docs: [Logging](/moosestack/metrics#logging)
 
@@ -130,59 +76,16 @@ Users can now use View objects in SQL template literals alongside existing OlapT
 import { sql } from "@514labs/moose-lib";
 import { OlapTable, View } from "@514labs/moose-lib/dmv2";
 
-// Define a table for raw user events
-const userEventsTable = new OlapTable({
-  name: "user_events",
-  columns: {
-    user_id: "String",
-    event_type: "String",
-    timestamp: "DateTime",
-    session_id: "String",
-  },
-});
+const eventsTable = new OlapTable({ name: "events", columns: { ... } });
 
-// Define a view for active user sessions
 const activeSessionsView = new View({
-  name: "active_user_sessions",
-  query: sql`
-    SELECT 
-      user_id,
-      session_id,
-      COUNT(*) as event_count,
-      MAX(timestamp) as last_activity
-    FROM ${userEventsTable}
-    WHERE timestamp > now() - INTERVAL 1 HOUR
-    GROUP BY user_id, session_id
-    HAVING event_count > 5
-  `,
+  name: "active_sessions",
+  query: sql`SELECT user_id, COUNT(*) FROM ${eventsTable} GROUP BY user_id`,
 });
 
-// Now you can reference the View directly in SQL queries
-const getTopActiveUsers = sql`
-  SELECT 
-    user_id,
-    SUM(event_count) as total_events,
-    COUNT(DISTINCT session_id) as session_count
-  FROM ${activeSessionsView}
-  GROUP BY user_id
-  ORDER BY total_events DESC
-  LIMIT 10
-`;
-
-// Views work alongside tables and columns in the same query
-const detailedUserActivity = sql`
-  SELECT 
-    s.user_id,
-    s.session_count,
-    e.event_type,
-    COUNT(*) as type_count
-  FROM ${activeSessionsView} s
-  JOIN ${userEventsTable} e ON s.user_id = e.user_id
-  GROUP BY s.user_id, s.session_count, e.event_type
-`;
+// Reference View directly in SQL queries
+const query = sql`SELECT * FROM ${activeSessionsView} LIMIT 10`;
 ```
-
-This example shows how to use View objects directly in SQL template literals alongside existing OlapTable support. Views can now be interpolated into SQL queries using the sql`` syntax, enabling seamless composition of complex queries that reference both tables and views.
 
 PR: [#3177](https://github.com/514-labs/moosestack/pull/3177) | Docs: [Modeling Views](/moosestack/olap/model-view)
 
