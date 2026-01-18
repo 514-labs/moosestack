@@ -1,0 +1,144 @@
+---
+title: January 16, 2026
+description: Release notes for January 16, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# January 16, 2026
+
+Documentation and Developer Experience Focus. This release centers on making MooseStack more accessible through comprehensive guides, improved developer tooling, and better observability. New guides provide step-by-step tutorials for common use cases, while enhanced logging and SQL tooling improve the day-to-day development experience.
+
+<Callout type="info" title="Highlights">
+  * **New:** [Add structured JSON logging with span support for better
+  observability](#add-structured-json-logging-with-span-support-for-better-observability)
+  * **New:** [Add View support to SQL
+  interpolator](#add-view-support-to-sql-interpolator)
+</Callout>
+
+## Moose
+
+### Add file watcher ignore patterns configuration
+
+Added support for configuring ignore patterns in the file watcher to prevent unnecessary hot-reloads. Users can now specify glob patterns in their moose.config.toml to exclude files like generated code, SDK files, or temporary files from triggering development server rebuilds. This improves development performance by avoiding infinite loops and reducing unnecessary processing.
+
+**Configure file watcher ignore patterns**
+
+```toml
+[watcher_config]
+ignore_patterns = ["sdk/**", "**/*.gen.py", "generated/**", "dist/**"]
+```
+
+PR: [#3314](https://github.com/514-labs/moosestack/pull/3314) | Docs: [File Watcher Configuration](/moosestack/configuration/dev-environment#file-watcher)
+
+### Add CDP Analytics example application
+
+Added a complete Customer Data Platform (CDP) example application that demonstrates building analytics dashboards with AI-powered data exploration. The example includes a full-stack application with email campaign funnel tracking, customer journey visualization, real-time data ingestion patterns, and an AI chat interface for natural language data queries. This provides users with a comprehensive reference implementation for building production-ready analytics applications with MooseStack.
+
+PR: [#3312](https://github.com/514-labs/moosestack/pull/3312) | Example: [CDP Analytics](https://github.com/514-labs/moosestack/tree/main/examples/cdp-analytics)
+
+### Add structured JSON logging with span support for better observability
+
+Added new structured logging infrastructure that outputs JSON logs with automatic span field inclusion. Users can enable this with the MOOSE_LOGGER\_\_STRUCTURED_LOGS environment variable to get better observability and filtering capabilities. This includes predefined constants for logging contexts (runtime, boot, system) and resource types (streams, tables, transforms, etc.) that developers can use when instrumenting their code.
+
+**Structured logging with spans**
+
+```rust
+use tracing::{info, instrument};
+use moose_cli::cli::logger::{context, resource_type};
+
+#[instrument(
+    name = "process_events",
+    fields(
+        context = context::RUNTIME,
+        resource_type = resource_type::STREAM,
+        resource_name = %stream_name
+    )
+)]
+async fn process_events(stream_name: &str, batch: Vec<Event>) -> Result<(), Error> {
+    info!("Processing batch");
+    // Process events...
+    Ok(())
+}
+```
+
+PR: [#3187](https://github.com/514-labs/moosestack/pull/3187), [#3186](https://github.com/514-labs/moosestack/pull/3186) | Docs: [Logging](/moosestack/metrics#logging)
+
+### Add View support to SQL interpolator
+
+Users can now use View objects in SQL template literals alongside existing OlapTable and Column support. This enables Views to be referenced directly in SQL queries using the sql`` template syntax.
+
+**Using Views in SQL template literals**
+
+```typescript
+import { sql } from "@514labs/moose-lib";
+import { OlapTable, View } from "@514labs/moose-lib/dmv2";
+
+const eventsTable = new OlapTable({ name: "events", columns: { ... } });
+
+const activeSessionsView = new View({
+  name: "active_sessions",
+  query: sql`SELECT user_id, COUNT(*) FROM ${eventsTable} GROUP BY user_id`,
+});
+
+// Reference View directly in SQL queries
+const query = sql`SELECT * FROM ${activeSessionsView} LIMIT 10`;
+```
+
+PR: [#3177](https://github.com/514-labs/moosestack/pull/3177) | Docs: [Modeling Views](/moosestack/olap/model-view)
+
+### Add workflow task completion callbacks with onComplete event handling
+
+Workflow tasks can now define onComplete callbacks that execute after a task finishes successfully. This enables users to chain follow-up actions like sending notifications, triggering other workflows, or updating dashboards when workflow tasks complete. The feature includes proper error handling with configurable retries and timeouts for completion callbacks.
+
+**Workflow task with completion callback**
+
+```typescript
+import { Task } from "@514labs/moose-lib";
+
+// Completion callback task
+const sendNotification = new Task<number, void>("sendNotification", {
+  run: async ({ input: recordCount }) => {
+    console.log(`Processing complete! ${recordCount} records processed`);
+    // Send notification, update dashboard, etc.
+  },
+  retries: 3,
+  timeout: "15s",
+});
+
+// Main task with onComplete callback
+const processData = new Task<Data[], number>("processData", {
+  run: async ({ input: data }) => {
+    // Process data...
+    return data.length;
+  },
+  onComplete: [sendNotification], // Executes after successful completion
+});
+```
+
+PR: [#3168](https://github.com/514-labs/moosestack/pull/3168) | Docs: [Define Workflows](/moosestack/workflows/define-workflow)
+
+### Improvements
+
+- Improved documentation for getting started with Moose development: Added clearer instructions for installing dependencies before running `moose dev`, including language-specific commands for TypeScript (npm install) and Python (pip install -r requirements.txt). Also added guidance for running Moose in the background using `nohup moose dev &` for AI assistants or when needing to use the same terminal for other commands. PR [#3175](https://github.com/514-labs/moosestack/pull/3175), [#3165](https://github.com/514-labs/moosestack/pull/3165), [#3153](https://github.com/514-labs/moosestack/pull/3153)
+- Improved MCP documentation formatting and organization: Enhanced the MCP server documentation with better formatting, clearer structure, and improved readability. Reorganized tool descriptions to start with get_infra_map as the recommended first step, and standardized code block formatting throughout the documentation. PR [#3174](https://github.com/514-labs/moosestack/pull/3174)
+
+### Bug Fixes
+
+- Fix `moose peek` command to correctly find tables and topics by name: Fixed a bug where `moose peek` would fail to find tables and topics when their internal IDs differed from their display names. The command now properly searches by the actual table/topic names and provides better error messages listing available options when a name isn't found. Also fixed database resolution to respect explicit table databases instead of always using the project default. PR [#3184](https://github.com/514-labs/moosestack/pull/3184)
+
+## Boreal
+
+### Added collapsible sidebar navigation
+
+The sidebar navigation can now be collapsed to save screen space. Use <kbd>⌘</kbd><kbd>B</kbd> to toggle.
+
+### Improvements
+
+- Improved GitHub integration performance and scalability: Optimized GitHub authentication and repository access by reducing redundant API calls to Clerk. This improves page load times and overall responsiveness when creating new projects and managing GitHub repositories in the dashboard.
+
+### Bug Fixes
+
+- Fix installation script to support CI and development builds: Fixed the Moose CLI installation script to properly handle CI and development builds. The installer now automatically falls back to the dev channel when CI/dev versions aren't found in the stable channel, ensuring successful installation of pre-release versions.
+- Fixed various GitHub integration issues: Resolved multiple GitHub authentication and integration problems including authorization caching issues, authentication flow problems in project creation, callback routing errors, OAuth authentication for preview environments, and sign-in issues. Users should now experience more reliable GitHub authentication and repository connections.
+- Fixed sidebar scrollbar display issue in Firefox: Resolved a visual issue where the sidebar scrollbar was incorrectly displayed in Firefox, improving the overall appearance and consistency of the navigation interface across different browsers.
