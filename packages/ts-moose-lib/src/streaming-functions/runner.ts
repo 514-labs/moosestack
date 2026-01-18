@@ -38,6 +38,11 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -581,12 +586,30 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
  * const result = await fn(data);
  * ```
  */
-function loadStreamingFunction(functionFilePath: string) {
+async function loadStreamingFunction(functionFilePath: string) {
   let streamingFunctionImport: { default: StreamingFunction };
   try {
-    streamingFunctionImport = require(
-      functionFilePath.substring(0, functionFilePath.length - 3),
-    );
+    // Check if we should use compiled code
+    const useCompiled = shouldUseCompiled();
+    const sourceDir = getSourceDir();
+
+    // Adjust path for compiled mode
+    let actualPath = functionFilePath;
+    if (useCompiled) {
+      // Replace source directory path with compiled directory path
+      // Example: /app/path/app/functions/x.ts -> /app/path/.moose/compiled/app/functions/x.js
+      // Use string replacement instead of RegExp to avoid ReDoS risk
+      const sourceDirPattern = `/${sourceDir}/`;
+      actualPath = functionFilePath
+        .replace(sourceDirPattern, `/.moose/compiled/${sourceDir}/`)
+        .replace(/\.ts$/, ".js");
+      // Use dynamic loader that handles both CJS and ESM
+      streamingFunctionImport = await loadModule(actualPath);
+    } else {
+      // In development mode, remove extension for require()
+      const pathWithoutExt = actualPath.replace(/\.(ts|js)$/, "");
+      streamingFunctionImport = require(pathWithoutExt);
+    }
   } catch (e) {
     cliLog({ action: "Function", message: `${e}`, message_type: "Error" });
     throw e;
@@ -701,7 +724,9 @@ const startConsumer = async (
     streamingFunctions = result.functions;
     fieldMutations = result.fieldMutations;
   } else {
-    streamingFunctions = [[loadStreamingFunction(args.functionFilePath), {}]];
+    streamingFunctions = [
+      [await loadStreamingFunction(args.functionFilePath), {}],
+    ];
     fieldMutations = undefined;
   }
 

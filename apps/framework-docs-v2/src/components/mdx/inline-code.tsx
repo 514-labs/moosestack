@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 interface InlineCodeProps {
   code: string;
-  language: string;
+  language?: string;
   className?: string;
 }
 
@@ -23,6 +23,13 @@ export function InlineCode({ code, language, className }: InlineCodeProps) {
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
+    // If no language is specified, skip syntax highlighting
+    if (!language) {
+      setHighlightedCode(code);
+      setIsLoading(false);
+      return;
+    }
+
     const loadHighlightedCode = async () => {
       try {
         const { codeToHtml } = await import("shiki");

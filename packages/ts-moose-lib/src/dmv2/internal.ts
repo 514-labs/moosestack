@@ -41,13 +41,7 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
-
-/**
- * Gets the source directory from environment variable or defaults to "app"
- */
-function getSourceDir(): string {
-  return process.env.MOOSE_SOURCE_DIR || "app";
-}
+import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
 
 /**
  * Recursively finds all TypeScript/JavaScript files in a directory
@@ -1258,7 +1252,7 @@ if (getMooseInternal() === undefined) {
  * and `end___MOOSE_STUFF___`) for easy extraction by the calling process.
  */
 export const dumpMooseInternal = async () => {
-  loadIndex();
+  await loadIndex();
 
   const infraMap = toInfraMap(getMooseInternal());
 
@@ -1273,7 +1267,12 @@ export const dumpMooseInternal = async () => {
   );
 };
 
-const loadIndex = () => {
+const loadIndex = async () => {
+  // Check if we should use pre-compiled JavaScript.
+  // This checks MOOSE_USE_COMPILED=true AND verifies artifacts exist,
+  // providing automatic fallback to ts-node if compilation wasn't run.
+  const useCompiled = shouldUseCompiled();
+
   // Clear the registry before loading to support hot reloading
   const registry = getMooseInternal();
   registry.tables.clear();
@@ -1286,16 +1285,28 @@ const loadIndex = () => {
   registry.materializedViews.clear();
   registry.views.clear();
 
-  // Clear require cache for app directory to pick up changes
-  const appDir = `${process.cwd()}/${getSourceDir()}`;
-  Object.keys(require.cache).forEach((key) => {
-    if (key.startsWith(appDir)) {
-      delete require.cache[key];
-    }
-  });
+  // Skip require.cache clearing in compiled mode (no hot reload needed in production)
+  if (!useCompiled) {
+    // Clear require cache for app directory to pick up changes
+    const appDir = `${process.cwd()}/${getSourceDir()}`;
+    Object.keys(require.cache).forEach((key) => {
+      if (key.startsWith(appDir)) {
+        delete require.cache[key];
+      }
+    });
+  }
 
   try {
-    require(`${process.cwd()}/${getSourceDir()}/index.ts`);
+    // Load from compiled directory if available, otherwise TypeScript
+    const sourceDir = getSourceDir();
+    if (useCompiled) {
+      // In compiled mode, load pre-compiled JavaScript from .moose/compiled/
+      // Use dynamic loader that handles both CJS and ESM
+      await loadModule(`${process.cwd()}/.moose/compiled/${sourceDir}/index.js`);
+    } else {
+      // In development mode, load TypeScript via ts-node
+      require(`${process.cwd()}/${sourceDir}/index.ts`);
+    }
   } catch (error) {
     let hint: string | undefined;
     let includeDetails = true;
@@ -1341,7 +1352,7 @@ const loadIndex = () => {
  *          and values are tuples containing: [handler function, config, source stream columns]
  */
 export const getStreamingFunctions = async () => {
-  loadIndex();
+  await loadIndex();
 
   const registry = getMooseInternal();
   const transformFunctions = new Map<
@@ -1387,7 +1398,7 @@ export const getStreamingFunctions = async () => {
  *          are their corresponding handler functions.
  */
 export const getApis = async () => {
-  loadIndex();
+  await loadIndex();
   const apiFunctions = new Map<
     string,
     (params: unknown, utils: ApiUtil) => unknown
@@ -1561,7 +1572,7 @@ export const dlqColumns: Column[] = [
 ];
 
 export const getWorkflows = async () => {
-  loadIndex();
+  await loadIndex();
 
   const registry = getMooseInternal();
   return registry.workflows;
@@ -1609,6 +1620,6 @@ export const getTaskForWorkflow = async (
 };
 
 export const getWebApps = async () => {
-  loadIndex();
+  await loadIndex();
   return getMooseInternal().webApps;
 };

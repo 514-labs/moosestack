@@ -128,6 +128,28 @@ RUN npm install -g pnpm@latest
     )
 }
 
+/// Generates the TypeScript compile step for Docker with dynamic source directory
+fn generate_typescript_compile_step(source_dir: &str) -> String {
+    // Escape single quotes for shell safety: ' becomes '\''
+    // This prevents command substitution ($(...) and backticks) from being executed
+    // Single-quoted strings in shell are literal except for the quote itself
+    let escaped_source_dir = source_dir.replace('\'', r"'\''");
+
+    format!(
+        r#"# Run TypeScript type checking
+# Run typecheck before we compile since we skip typecheck there
+RUN npx moose check
+
+# Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
+# This eliminates ts-node overhead at runtime for faster worker startup
+RUN MOOSE_SOURCE_DIR='{}' npx moose-tspc .moose/compiled
+
+# Set environment variable to use pre-compiled JavaScript at runtime
+ENV MOOSE_USE_COMPILED=true"#,
+        escaped_source_dir
+    )
+}
+
 // Python and node 'slim' term is flipped
 static PY_BASE_DOCKER_FILE: &str = r#"
 FROM python:3.12-slim-bookworm
@@ -174,7 +196,7 @@ MONOREPO_PACKAGE_COPIES
 # Install all dependencies from monorepo root
 {}
 
-# Stage 2: Production image  
+# Stage 2: Production image
 FROM node:{}-bookworm-slim
 
 # This is to remove the notice to update NPM that will break the output from STDOUT
@@ -247,6 +269,8 @@ COPY --chown=moose:moose ./versions .moose/versions
 # Placeholder for the language specific install command
 INSTALL_COMMAND
 
+# Placeholder for TypeScript pre-compilation step (empty for Python)
+TYPESCRIPT_COMPILE_STEP
 
 # all commands from here on will be run as the moose user
 USER moose:moose
@@ -286,7 +310,7 @@ CMD ["moose", "prod"]
 /// ```
 ///
 /// But in Docker's node_modules structure, these become:
-/// ```json  
+/// ```json
 /// { "paths": { "@shared/*": ["./node_modules/@my-org/shared/*"] } }
 /// ```
 ///
@@ -579,6 +603,11 @@ WORKDIR /application"#,
                     "INSTALL_COMMAND",
                     "# Dependencies copied from monorepo build stage",
                 );
+                // Pre-compile TypeScript with moose plugins for faster worker startup
+                dockerfile = dockerfile.replace(
+                    "TYPESCRIPT_COMPILE_STEP",
+                    &generate_typescript_compile_step(&project.source_dir),
+                );
 
                 // Replace the placeholder with a simple comment (tsconfig.json is pre-transformed)
                 let typescript_comment = if typescript_mappings.is_empty() {
@@ -616,7 +645,9 @@ COPY --chown=moose:moose ./{} ./{}"#,
             );
             let install = DOCKER_FILE_COMMON
                 .replace("COPY_PACKAGE_FILE", &copy_package_content)
-                .replace("INSTALL_COMMAND", "RUN pip install -r requirements.txt");
+                .replace("INSTALL_COMMAND", "RUN pip install -r requirements.txt")
+                // No TypeScript compilation for Python projects
+                .replace("TYPESCRIPT_COMPILE_STEP", "");
 
             format!("{PY_BASE_DOCKER_FILE}{install}")
         }
@@ -1407,7 +1438,12 @@ fn create_standard_typescript_dockerfile_content(
             "COPY_PACKAGE_FILE",
             &format!("\n                    {copy_section}"),
         )
-        .replace("INSTALL_COMMAND", &install_command);
+        .replace("INSTALL_COMMAND", &install_command)
+        // Pre-compile TypeScript with moose plugins for faster worker startup
+        .replace(
+            "TYPESCRIPT_COMPILE_STEP",
+            &generate_typescript_compile_step(&project.source_dir),
+        );
 
     let ts_base_dockerfile = generate_ts_base_dockerfile(node_version);
     Ok(format!("{ts_base_dockerfile}{install}"))
