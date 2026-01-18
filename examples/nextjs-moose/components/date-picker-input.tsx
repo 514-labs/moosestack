@@ -40,7 +40,7 @@ function dateToString(date: Date | undefined): string {
 
 interface DatePickerInputProps {
   id: string;
-  label?: string;
+  label?: React.ReactNode;
   value: string; // YYYY-MM-DD format
   onChange: (date: string) => void;
   placeholder?: string;

@@ -3,6 +3,7 @@ import { FilterBar } from "@/components/filter-bar";
 import { DashboardCharts } from "@/components/dashboard-charts";
 import { DashboardStats } from "@/components/dashboard-stats";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ReportBuilder } from "@/components/report-builder";
 
 export default function Page() {
   return (
@@ -28,6 +29,9 @@ export default function Page() {
 
           {/* Charts */}
           <DashboardCharts />
+
+          {/* Report Builder */}
+          <ReportBuilder />
         </div>
       </div>
     </DateFilterProvider>
