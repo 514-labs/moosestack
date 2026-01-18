@@ -190,86 +190,30 @@ PR: [#3177](https://github.com/514-labs/moosestack/pull/3177) | Docs: [Modeling 
 
 Workflow tasks can now define onComplete callbacks that execute after a task finishes successfully. This enables users to chain follow-up actions like sending notifications, triggering other workflows, or updating dashboards when workflow tasks complete. The feature includes proper error handling with configurable retries and timeouts for completion callbacks.
 
-**Workflow task with completion callback for notifications**
+**Workflow task with completion callback**
 
 ```typescript
 import { Task } from "@514labs/moose-lib";
-import { OlapTable } from "@514labs/moose-lib";
 
-interface UserActivity {
-  userId: string;
-  action: string;
-  timestamp: Date;
-}
-
-// Create table for tracking workflow results
-const workflowResults = new OlapTable<{
-  workflowId: string;
-  status: string;
-  recordsProcessed: number;
-}>("WorkflowResults");
-
-// Completion callback that sends notifications and updates dashboards
-const sendCompletionNotification = new Task<number, void>("sendNotification", {
+// Completion callback task
+const sendNotification = new Task<number, void>("sendNotification", {
   run: async ({ input: recordCount }) => {
-    console.log(
-      `📊 Processing complete! ${recordCount} user activities processed`,
-    );
-
-    // Send webhook notification to external monitoring system
-    await fetch("https://monitoring.company.com/workflow-complete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        workflowType: "user-activity-processing",
-        recordsProcessed: recordCount,
-        completedAt: new Date().toISOString(),
-      }),
-    });
-
-    // Update internal dashboard
-    await workflowResults.insert([
-      {
-        workflowId: "user-activity-batch",
-        status: "completed",
-        recordsProcessed: recordCount,
-      },
-    ]);
+    console.log(`Processing complete! ${recordCount} records processed`);
+    // Send notification, update dashboard, etc.
   },
   retries: 3,
   timeout: "15s",
 });
 
-// Main workflow task with onComplete callback
-export const processUserActivities = new Task<UserActivity[], number>(
-  "processActivities",
-  {
-    run: async ({ input: activities }) => {
-      let processedCount = 0;
-
-      for (const activity of activities) {
-        // Process each user activity (transform, validate, enrich)
-        const enrichedActivity = {
-          ...activity,
-          processedAt: new Date(),
-          region: await getUserRegion(activity.userId),
-        };
-
-        // Send to downstream systems
-        await sendToAnalytics(enrichedActivity);
-        processedCount++;
-      }
-
-      return processedCount;
-    },
-    onComplete: [sendCompletionNotification], // Callback executes after successful completion
-    retries: 2,
-    timeout: "5m",
+// Main task with onComplete callback
+const processData = new Task<Data[], number>("processData", {
+  run: async ({ input: data }) => {
+    // Process data...
+    return data.length;
   },
-);
+  onComplete: [sendNotification], // Executes after successful completion
+});
 ```
-
-This example shows how to use onComplete callbacks in MooseStack workflows to automatically send notifications and update dashboards when a data processing task finishes successfully. The callback includes error handling with retries and timeouts.
 
 PR: [#3168](https://github.com/514-labs/moosestack/pull/3168) | Docs: [Define Workflows](/moosestack/workflows/define-workflow)
 
