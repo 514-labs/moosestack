@@ -28,7 +28,7 @@ Added support for configuring ignore patterns in the file watcher to prevent unn
 # moose.config.toml
 
 # Configure file watcher to ignore generated files and SDK outputs
-[watcher]
+[watcher_config]
 ignore_patterns = [
     # Ignore generated SDK files to prevent infinite rebuild loops
     "sdk/**",
@@ -46,7 +46,7 @@ ignore_patterns = [
 
 This example shows how to configure file watcher ignore patterns in moose.config.toml to prevent unnecessary hot-reloads during development. The patterns exclude generated SDK files, build artifacts, and temporary files that would otherwise trigger infinite rebuild loops.
 
-PR: [#3314](https://github.com/514-labs/moosestack/pull/3314)
+PR: [#3314](https://github.com/514-labs/moosestack/pull/3314) | Docs: [File Watcher Configuration](/moosestack/configuration/dev-environment#file-watcher)
 
 ### Add CDP Analytics example application
 
