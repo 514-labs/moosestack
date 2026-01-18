@@ -118,7 +118,7 @@ async fn transform_user_analytics() -> Result<(), TransformError> {
 
 Shows how to use the new structured JSON logging with span support in MooseStack data pipeline functions. The #[instrument] attribute automatically includes context and resource metadata in JSON logs when MOOSE_LOGGER\_\_STRUCTURED_LOGS=true is set.
 
-PR: [#3187](https://github.com/514-labs/moosestack/pull/3187), [#3186](https://github.com/514-labs/moosestack/pull/3186)
+PR: [#3187](https://github.com/514-labs/moosestack/pull/3187), [#3186](https://github.com/514-labs/moosestack/pull/3186) | Docs: [Logging](/moosestack/metrics#logging)
 
 ### Add View support to SQL interpolator
 
@@ -184,7 +184,7 @@ const detailedUserActivity = sql`
 
 This example shows how to use View objects directly in SQL template literals alongside existing OlapTable support. Views can now be interpolated into SQL queries using the sql`` syntax, enabling seamless composition of complex queries that reference both tables and views.
 
-PR: [#3177](https://github.com/514-labs/moosestack/pull/3177)
+PR: [#3177](https://github.com/514-labs/moosestack/pull/3177) | Docs: [Modeling Views](/moosestack/olap/model-view)
 
 ### Add workflow task completion callbacks with onComplete event handling
 
@@ -271,7 +271,7 @@ export const processUserActivities = new Task<UserActivity[], number>(
 
 This example shows how to use onComplete callbacks in MooseStack workflows to automatically send notifications and update dashboards when a data processing task finishes successfully. The callback includes error handling with retries and timeouts.
 
-PR: [#3168](https://github.com/514-labs/moosestack/pull/3168)
+PR: [#3168](https://github.com/514-labs/moosestack/pull/3168) | Docs: [Define Workflows](/moosestack/workflows/define-workflow)
 
 ### Improvements
 
