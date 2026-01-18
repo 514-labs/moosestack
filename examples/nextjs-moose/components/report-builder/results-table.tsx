@@ -1,0 +1,103 @@
+"use client";
+
+import { cn } from "@/lib/utils";
+import { TableIcon } from "lucide-react";
+import type { ResultsTableConfig } from "./types";
+
+/**
+ * Default value formatter for table cells.
+ */
+function defaultFormatValue(key: string, value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "number") {
+    // Format percentages (keys containing "ratio" or ending in "Ratio")
+    if (key.toLowerCase().includes("ratio")) {
+      return `${(value * 100).toFixed(1)}%`;
+    }
+    // Format currency (keys containing "amount" or "Amount")
+    if (key.toLowerCase().includes("amount")) {
+      return `$${value.toLocaleString()}`;
+    }
+    return value.toLocaleString();
+  }
+  return String(value);
+}
+
+export type ResultsTableProps<
+  TDimension extends string = string,
+  TMetric extends string = string,
+  TResult extends Record<string, unknown> = Record<string, unknown>,
+> = ResultsTableConfig<TDimension, TMetric, TResult>;
+
+export function ResultsTable<
+  TDimension extends string,
+  TMetric extends string,
+  TResult extends Record<string, unknown>,
+>({
+  data,
+  dimensions,
+  metrics,
+  dimensionLabels,
+  metricLabels,
+  formatValue = defaultFormatValue,
+}: ResultsTableProps<TDimension, TMetric, TResult>) {
+  if (data.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <TableIcon className="size-12 mb-4 opacity-40" />
+        <p className="text-lg font-medium">No results</p>
+        <p className="text-sm">Try adjusting your filters or selections</p>
+      </div>
+    );
+  }
+
+  const columns = [...dimensions, ...metrics];
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-muted/50 border-b border-border">
+            {columns.map((col) => (
+              <th
+                key={col}
+                className={cn(
+                  "px-4 py-3 text-left font-semibold",
+                  dimensions.includes(col as TDimension) ? "text-chart-3" : (
+                    "text-chart-1"
+                  ),
+                )}
+              >
+                {dimensionLabels[col as TDimension] ||
+                  metricLabels[col as TMetric] ||
+                  col}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((row, i) => (
+            <tr
+              key={i}
+              className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
+            >
+              {columns.map((col) => (
+                <td
+                  key={col}
+                  className={cn(
+                    "px-4 py-3",
+                    metrics.includes(col as TMetric) ?
+                      "font-mono tabular-nums text-right"
+                    : "font-medium",
+                  )}
+                >
+                  {formatValue(col, row[col])}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
