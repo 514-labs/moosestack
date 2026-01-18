@@ -157,7 +157,7 @@ The decisions below define the shape of your chat system. The template defaults 
 - [Vercel account](https://vercel.com/)
 - [Node.js v20+](https://nodejs.org)
 - [pnpm v8+](https://pnpm.io)
-- [Docker Desktop v20+](https://docker.com/get-started) (must be running)
+- [Docker Desktop](https://docker.com/get-started) (must be running)
 - [Moose CLI](https://docs.fiveonefour.com/moosestack)
 - Recommended: a copilot like Claude Code, Cursor, or Codex
 </Callout>
@@ -324,7 +324,7 @@ The [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-starte
 ```shell
 aws s3 cp \
   s3://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/ \
-  context/data/ \
+  packages/moosestack-service/context/data/ \
   --recursive --no-sign-request
 ```
 
@@ -335,7 +335,7 @@ moose query "
   SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet'
   ) LIMIT 10;
-" > context/data/amazon-reviews-sample.txt
+" > packages/moosestack-service/context/data/amazon-reviews-sample.txt
 ```
 </Callout>
 
@@ -442,7 +442,7 @@ moose query "SELECT name, engine, total_rows FROM
 It is also good practice to ask the copilot to double check the model generated against the sample data (LLMs can make assumptions about types of data, even when presented with sample data):
 
 ```text
-check the type limitations against the sample data in /context/data
+validate the inferred types against the sample data in context/data - check for type mismatches or incorrect assumptions
 ```
 
 Repeat this for each table you want to model.
@@ -513,7 +513,7 @@ To customize your chat's system prompt, edit `packages/web-app/src/features/chat
 
 There’s a bootstrapped Next.js application, and an Express app that you can use to add to your framework.
 
-I like to point the LLM at a ShadCN component I am interested in, the Express / MooseStack documentation, and the Next.js application folder, e.g.:
+Example prompt that references a ShadCN component, Express/MooseStack docs, and your app folder:
 
 ```text
 I want to add a Data Table component from ShadCN (here: 
@@ -671,7 +671,7 @@ This will again return 0 rows. This is expected. You can validate that the trans
 - [Boreal account](https://www.boreal.cloud/sign-in)
 - [Node.js v20+](https://nodejs.org)
 - [pnpm v8+](https://pnpm.io)
-- [Docker Desktop v20+](https://docker.com/get-started) (must be running)
+- [Docker Desktop](https://docker.com/get-started) (must be running)
 - [Moose CLI](https://docs.fiveonefour.com/moosestack)
 - Recommended: Claude Code, Cursor, Codex, or other MCP compatible copilot.
 </Callout>
@@ -712,7 +712,7 @@ What this will walk through building:
 <ToggleBlock openText="Show instructions to add MCP to existing project" closeText="Hide instructions">
 Add the MCP server to your existing MooseStack service:
 
-1. **Install dependencies:**
+1. **Install dependencies** (versions from [template package.json](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/moosestack-service/package.json)):
 ```shell
 cd packages/your-moosestack-service
 pnpm add @modelcontextprotocol/sdk@1.24.2 \
