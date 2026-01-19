@@ -701,6 +701,7 @@ impl PartialInfrastructureMap {
             web_apps,
             materialized_views: self.materialized_views,
             views: self.views,
+            moose_version: None,
         };
 
         normalize_all_metadata_paths(&mut infra_map, project_root);
