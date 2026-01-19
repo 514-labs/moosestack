@@ -12,6 +12,7 @@ const CONTENT_ROOT = path.join(process.cwd(), "content");
 
 // --- Language Content Filtering ---
 
+/** Normalize ?lang= query param to valid Language type (defaults to typescript) */
 function normalizeLanguageParam(
   param?: string | string[] | undefined,
 ): Language {
@@ -24,6 +25,7 @@ function normalizeLanguageParam(
   return "typescript";
 }
 
+/** Build regex to match <LanguageTabContent value="..."> blocks */
 function buildLanguageTabRegex(language: string) {
   return new RegExp(
     `<LanguageTabContent\\s+value="${language}"[^>]*>([\\s\\S]*?)</LanguageTabContent>`,
@@ -31,6 +33,7 @@ function buildLanguageTabRegex(language: string) {
   );
 }
 
+/** Strip opposite language blocks and unwrap matching language blocks */
 export function filterLanguageContent(
   content: string,
   languageParam?: string | string[] | undefined,
@@ -51,7 +54,6 @@ export function filterLanguageContent(
 
 /**
  * Clean markdown content for LLM consumption
- * Removes MDX imports, JSX components, HTML tags, and comments
  */
 export function cleanContent(content: string): string {
   let cleaned = content;
@@ -100,6 +102,7 @@ interface TocEntry {
   url: string;
 }
 
+/** Read title/description from MDX file's YAML frontmatter */
 function getFrontmatter(
   slug: string,
 ): { title?: string; description?: string } | null {
@@ -125,6 +128,7 @@ function getFrontmatter(
   return null;
 }
 
+/** Convert NavPage to TocEntry, merging nav config with frontmatter */
 function processPage(page: NavPage): TocEntry {
   const frontmatter = getFrontmatter(page.slug);
   return {
@@ -134,6 +138,7 @@ function processPage(page: NavPage): TocEntry {
   };
 }
 
+/** Recursively walk nav tree, skipping draft/beta pages */
 function processNavItems(items: NavItem[]): TocEntry[] {
   const entries: TocEntry[] = [];
 
