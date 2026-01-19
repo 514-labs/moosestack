@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   IconCopy,
@@ -24,6 +24,15 @@ export function MarkdownMenu({ content }: MarkdownMenuProps) {
   const [copied, setCopied] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   const copyToClipboard = async () => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
@@ -34,7 +43,7 @@ export function MarkdownMenu({ content }: MarkdownMenuProps) {
     try {
       await navigator.clipboard.writeText(content);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       console.error("Failed to copy:", error);
     }
@@ -42,7 +51,7 @@ export function MarkdownMenu({ content }: MarkdownMenuProps) {
 
   const openMarkdown = () => {
     const query = searchParams.toString();
-    const url = `${pathname}/llm.md${query ? `?${query}` : ""}`;
+    const url = `${pathname}.md${query ? `?${query}` : ""}`;
     window.open(url, "_blank");
   };
 

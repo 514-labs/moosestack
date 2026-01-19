@@ -7,10 +7,9 @@ import {
   type NavItem,
   type NavPage,
 } from "@/config/navigation";
+import { CONTENT_ROOT } from "./includes";
 
-export const LLM_MD_SUFFIX = "/llm.md";
-
-const CONTENT_ROOT = path.join(process.cwd(), "content");
+export const LLM_MD_SUFFIX = ".md";
 
 // --- Language Content Filtering ---
 
@@ -122,7 +121,8 @@ function getFrontmatter(
         const fileContent = fs.readFileSync(filePath, "utf8");
         const { data } = matter(fileContent);
         return { title: data.title, description: data.description };
-      } catch {
+      } catch (error) {
+        console.warn(`Failed to parse frontmatter for ${filePath}:`, error);
         return null;
       }
     }

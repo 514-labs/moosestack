@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { generateLlmToc } from "@/lib/llms-generator";
 
 /**
- * GET /api/llm
- * Returns a table of contents for all documentation with links to /llm.md endpoints
+ * GET /llm.md
+ * Returns a table of contents for all documentation with links to .md endpoints
  */
 export async function GET(): Promise<NextResponse> {
   try {
