@@ -16,12 +16,11 @@ declare global {
 
 export function CommonRoom() {
   return (
-    <>
-      <Script
-        id="common-room-init"
-        strategy="afterInteractive"
-        dangerouslySetInnerHTML={{
-          __html: `
+    <Script
+      id="common-room-init"
+      strategy="beforeInteractive"
+      dangerouslySetInnerHTML={{
+        __html: `
 (function() {
   if (typeof window === 'undefined') return;
   if (typeof window.signals !== 'undefined') return;
@@ -41,9 +40,8 @@ export function CommonRoom() {
   );
   document.head.appendChild(script);
 })();
-          `.trim(),
-        }}
-      />
-    </>
+        `.trim(),
+      }}
+    />
   );
 }
