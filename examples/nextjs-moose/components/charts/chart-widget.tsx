@@ -4,25 +4,21 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { X, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type {
-  ChartTypeConfig,
-  GridSpan,
-  ChartDisplayOptions,
-} from "./chart-types";
+import type { ChartTypeConfig, GridSpan, ChartDisplayOptions } from "./types";
 import { useChartDisplayOptions } from "./chart-display-options";
 
-export interface DashboardChartWidgetProps {
-  // Chart identity
+export interface ChartWidgetProps {
+  /** Chart identity */
   chartId: string;
   chartType: string;
   title: string;
   description?: string;
   icon?: React.ReactNode;
 
-  // Layout
+  /** Layout */
   gridSpan?: GridSpan;
 
-  // Chart content - receives options and expanded state
+  /** Chart content - receives options and expanded state */
   children:
     | React.ReactNode
     | ((props: {
@@ -30,15 +26,18 @@ export interface DashboardChartWidgetProps {
         options: ChartDisplayOptions;
       }) => React.ReactNode);
 
-  // Chart-specific config
+  /** Chart-specific config */
   chartConfig: ChartTypeConfig;
 
-  // Styling
+  /** Styling */
   className?: string;
   triggerSize?: "sm" | "md" | "lg";
 }
 
-export function DashboardChartWidget({
+/**
+ * Generic chart widget wrapper with fullscreen support and display options.
+ */
+export function ChartWidget({
   chartId: _chartId,
   chartType: _chartType,
   title,
@@ -49,10 +48,10 @@ export function DashboardChartWidget({
   chartConfig,
   className,
   triggerSize = "md",
-}: DashboardChartWidgetProps): React.JSX.Element {
-  // chartId and chartType are kept for API consistency but not currently used
+}: ChartWidgetProps): React.JSX.Element {
   void _chartId;
   void _chartType;
+
   const [isExpanded, setIsExpanded] = React.useState(false);
 
   const { options, ChartDisplayOptions } = useChartDisplayOptions({
@@ -96,7 +95,6 @@ export function DashboardChartWidget({
     if (!gridSpan) return "";
     const classes: string[] = [];
 
-    // Map grid span values to Tailwind classes (must use full class names for JIT)
     const spanMap: Record<number, string> = {
       1: "col-span-1",
       2: "col-span-2",

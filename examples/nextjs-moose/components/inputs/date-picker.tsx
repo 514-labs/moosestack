@@ -38,23 +38,35 @@ function dateToString(date: Date | undefined): string {
   return `${year}-${month}-${day}`;
 }
 
-interface DatePickerInputProps {
-  id: string;
+export interface DatePickerProps {
+  /** Unique ID for the input */
+  id?: string;
+  /** Label displayed above the input */
   label?: React.ReactNode;
-  value: string; // YYYY-MM-DD format
+  /** Current value in YYYY-MM-DD format */
+  value: string;
+  /** Called when date changes */
   onChange: (date: string) => void;
+  /** Placeholder text */
   placeholder?: string;
+  /** Additional CSS classes */
   className?: string;
+  /** Disable the input */
+  disabled?: boolean;
 }
 
-export function DatePickerInput({
+export function DatePicker({
   id,
   label,
   value,
   onChange,
   placeholder = "Select date",
   className,
-}: DatePickerInputProps) {
+  disabled = false,
+}: DatePickerProps) {
+  const generatedId = React.useId();
+  const inputId = id ?? generatedId;
+
   const [open, setOpen] = React.useState(false);
   const date = stringToDate(value);
   const [month, setMonth] = React.useState<Date | undefined>(
@@ -100,21 +112,22 @@ export function DatePickerInput({
     <div className={className}>
       {label && (
         <label
-          htmlFor={id}
-          className="text-muted-foreground text-sm mb-1 block"
+          htmlFor={inputId}
+          className="text-muted-foreground text-xs font-medium mb-1 block"
         >
           {label}
         </label>
       )}
       <div className="relative">
         <Input
-          id={id}
+          id={inputId}
           value={inputValue}
           placeholder={placeholder}
           className="bg-background pr-10"
           onChange={handleInputChange}
+          disabled={disabled}
           onKeyDown={(e) => {
-            if (e.key === "ArrowDown") {
+            if (e.key === "ArrowDown" && !disabled) {
               e.preventDefault();
               setOpen(true);
             }
@@ -122,9 +135,11 @@ export function DatePickerInput({
         />
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
+            disabled={disabled}
             className={cn(
               buttonVariants({ variant: "ghost", size: "icon" }),
               "absolute top-1/2 right-2 size-6 -translate-y-1/2",
+              disabled && "opacity-50 cursor-not-allowed",
             )}
           >
             <CalendarIcon className="size-3.5" />

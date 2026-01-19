@@ -2,6 +2,14 @@
 
 import { cn } from "@/lib/utils";
 import { TableIcon } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { ResultsTableConfig } from "./types";
 
 /**
@@ -39,8 +47,11 @@ export function ResultsTable<
   metrics,
   dimensionLabels,
   metricLabels,
+  dataKeyMap = {},
   formatValue = defaultFormatValue,
 }: ResultsTableProps<TDimension, TMetric, TResult>) {
+  // Helper to get actual data key for a column
+  const getDataKey = (col: string) => dataKeyMap[col] ?? col;
   if (data.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
@@ -54,35 +65,33 @@ export function ResultsTable<
   const columns = [...dimensions, ...metrics];
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-muted/50 border-b border-border">
+    <div className="rounded-lg border border-border overflow-hidden">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/50">
             {columns.map((col) => (
-              <th
+              <TableHead
                 key={col}
                 className={cn(
-                  "px-4 py-3 text-left font-semibold",
+                  "px-4 py-3 font-semibold",
                   dimensions.includes(col as TDimension) ? "text-chart-3" : (
                     "text-chart-1"
                   ),
+                  metrics.includes(col as TMetric) && "text-right",
                 )}
               >
                 {dimensionLabels[col as TDimension] ||
                   metricLabels[col as TMetric] ||
                   col}
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {data.map((row, i) => (
-            <tr
-              key={i}
-              className="border-b border-border/50 last:border-0 hover:bg-muted/30 transition-colors"
-            >
+            <TableRow key={i} className="hover:bg-muted/30">
               {columns.map((col) => (
-                <td
+                <TableCell
                   key={col}
                   className={cn(
                     "px-4 py-3",
@@ -91,13 +100,13 @@ export function ResultsTable<
                     : "font-medium",
                   )}
                 >
-                  {formatValue(col, row[col])}
-                </td>
+                  {formatValue(col, row[getDataKey(col)])}
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

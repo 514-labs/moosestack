@@ -7,14 +7,14 @@ import type {
   ChartDisplayOptions,
   ExportData,
   ShareableState,
-} from "./chart-types";
-import type { TimeSeriesData } from "@/app/actions/events";
-import type { ChartDataItem } from "./donut-chart";
+  TimeSeriesDataPoint,
+  PieDataPoint,
+} from "./types";
 
 /**
  * Convert time series data to CSV format.
  */
-function timeSeriesToCSV(data: TimeSeriesData): string {
+function timeSeriesToCSV(data: TimeSeriesDataPoint[]): string {
   const headers = ["time", "count"];
   const rows = data.map((row) => [row.time, row.count.toString()]);
   return [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
@@ -23,7 +23,7 @@ function timeSeriesToCSV(data: TimeSeriesData): string {
 /**
  * Convert pie/donut data to CSV format.
  */
-function donutDataToCSV(data: ChartDataItem[]): string {
+function pieDataToCSV(data: PieDataPoint[]): string {
   const headers = ["name", "value"];
   const rows = data.map((row) => [row.name, row.value.toString()]);
   return [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
@@ -32,7 +32,7 @@ function donutDataToCSV(data: ChartDataItem[]): string {
 /**
  * Chart type configurations for each supported chart type.
  */
-export const chartTypeConfigs: Record<string, ChartTypeConfig> = {
+export const chartConfigs: Record<string, ChartTypeConfig> = {
   timeSeries: {
     type: "timeSeries",
     displayOptions: {
@@ -41,7 +41,7 @@ export const chartTypeConfigs: Record<string, ChartTypeConfig> = {
     },
     exportFormats: ["png", "svg", "csv", "json"],
     serializeData: (data: unknown): ExportData => {
-      const timeSeriesData = data as TimeSeriesData;
+      const timeSeriesData = data as TimeSeriesDataPoint[];
       return {
         csv: timeSeriesToCSV(timeSeriesData),
         json: timeSeriesData,
@@ -65,9 +65,9 @@ export const chartTypeConfigs: Record<string, ChartTypeConfig> = {
     },
     exportFormats: ["png", "svg", "csv", "json"],
     serializeData: (data: unknown): ExportData => {
-      const chartData = data as ChartDataItem[];
+      const chartData = data as PieDataPoint[];
       return {
-        csv: donutDataToCSV(chartData),
+        csv: pieDataToCSV(chartData),
         json: chartData,
       };
     },
@@ -78,6 +78,49 @@ export const chartTypeConfigs: Record<string, ChartTypeConfig> = {
     ): ShareableState => ({
       chartId,
       chartType: "donut",
+      data,
+      options,
+    }),
+  },
+  bar: {
+    type: "bar",
+    displayOptions: {
+      showGrid: true,
+      showTooltip: true,
+      showLabels: true,
+    },
+    exportFormats: ["png", "svg", "csv", "json"],
+    serializeData: (data: unknown): ExportData => ({
+      json: data,
+    }),
+    getShareableState: (
+      chartId: string,
+      data: unknown,
+      options: ChartDisplayOptions,
+    ): ShareableState => ({
+      chartId,
+      chartType: "bar",
+      data,
+      options,
+    }),
+  },
+  area: {
+    type: "area",
+    displayOptions: {
+      showGrid: true,
+      showTooltip: true,
+    },
+    exportFormats: ["png", "svg", "csv", "json"],
+    serializeData: (data: unknown): ExportData => ({
+      json: data,
+    }),
+    getShareableState: (
+      chartId: string,
+      data: unknown,
+      options: ChartDisplayOptions,
+    ): ShareableState => ({
+      chartId,
+      chartType: "area",
       data,
       options,
     }),

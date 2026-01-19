@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { DatePickerInput } from "@/components/date-picker-input";
 import {
   LayoutGrid,
   BarChart3,
@@ -11,10 +10,13 @@ import {
   Loader2,
   TableIcon,
   TrendingUp,
-  Calendar,
   AlertCircle,
 } from "lucide-react";
-import { ToggleChip } from "./toggle-chip";
+import {
+  DateRangeInput,
+  MultiSelectChips,
+  type FieldOption,
+} from "@/components/inputs";
 import { ResultsTable } from "./results-table";
 import type { ReportBuilderConfig, ReportQueryParams } from "./types";
 
@@ -34,11 +36,9 @@ export function ReportBuilder<
   execute,
   title = "Report Builder",
   description = "Build custom reports by selecting dimensions and metrics",
-  defaultDimensions,
+  defaultBreakdown,
   defaultMetrics,
-  defaultGroupBy,
   showDateFilter = true,
-  showGroupBy = true,
 }: ReportBuilderProps<TDimension, TMetric, TResult>) {
   // Build label maps for the results table
   const dimensionLabels = React.useMemo(
@@ -58,17 +58,29 @@ export function ReportBuilder<
     [metrics],
   );
 
+  // Build dataKey map for columns with different data keys (e.g., snake_case)
+  const dataKeyMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const d of dimensions) {
+      if (d.dataKey) map[d.id] = d.dataKey;
+    }
+    for (const m of metrics) {
+      if (m.dataKey) map[m.id] = m.dataKey;
+    }
+    return map;
+  }, [dimensions, metrics]);
+
+  // Convert FieldMeta to FieldOption for inputs
+  const dimensionOptions: readonly FieldOption<TDimension>[] = dimensions;
+  const metricOptions: readonly FieldOption<TMetric>[] = metrics;
+
   // Form state (UI selections)
-  const [selectedDimensions, setSelectedDimensions] = React.useState<
-    TDimension[]
-  >(defaultDimensions ?? (dimensions[0] ? [dimensions[0].id] : []));
+  const [breakdown, setBreakdown] = React.useState<TDimension[]>(
+    defaultBreakdown ?? (dimensions[0] ? [dimensions[0].id] : []),
+  );
 
   const [selectedMetrics, setSelectedMetrics] = React.useState<TMetric[]>(
     defaultMetrics ?? metrics.slice(0, 2).map((m) => m.id),
-  );
-
-  const [groupBy, setGroupBy] = React.useState<TDimension>(
-    defaultGroupBy ?? dimensions[0]?.id ?? ("" as TDimension),
   );
 
   const [startDate, setStartDate] = React.useState<string>("");
@@ -77,17 +89,16 @@ export function ReportBuilder<
   // Build query params from form state
   const queryParams: ReportQueryParams<TDimension, TMetric> = React.useMemo(
     () => ({
-      dimensions: selectedDimensions,
+      breakdown: breakdown,
       metrics: selectedMetrics,
-      groupBy: groupBy,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
     }),
-    [selectedDimensions, selectedMetrics, groupBy, startDate, endDate],
+    [breakdown, selectedMetrics, startDate, endDate],
   );
 
   // Check if we can run a query
-  const canQuery = selectedDimensions.length > 0 || selectedMetrics.length > 0;
+  const canQuery = breakdown.length > 0 || selectedMetrics.length > 0;
 
   // Query - automatically refetches when queryParams change
   const {
@@ -101,19 +112,6 @@ export function ReportBuilder<
     queryFn: () => execute(queryParams),
     enabled: canQuery, // Only run when there's something to query
   });
-
-  // Toggle handlers
-  const toggleDimension = (id: TDimension) => {
-    setSelectedDimensions((prev) =>
-      prev.includes(id) ? prev.filter((d) => d !== id) : [...prev, id],
-    );
-  };
-
-  const toggleMetric = (id: TMetric) => {
-    setSelectedMetrics((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
-    );
-  };
 
   return (
     <div className="space-y-6">
@@ -130,29 +128,6 @@ export function ReportBuilder<
 
       {/* Configuration Panel */}
       <div className="rounded-xl border bg-card p-6 space-y-6">
-        {/* Dimensions */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-chart-3">
-            <LayoutGrid className="size-4" />
-            <span>Dimensions</span>
-            <span className="text-xs font-normal text-muted-foreground">
-              (group & filter by)
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {dimensions.map((dim) => (
-              <ToggleChip
-                key={dim.id}
-                label={dim.label}
-                description={dim.description}
-                selected={selectedDimensions.includes(dim.id)}
-                onClick={() => toggleDimension(dim.id)}
-                variant="dimension"
-              />
-            ))}
-          </div>
-        </div>
-
         {/* Metrics */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-sm font-semibold text-chart-1">
@@ -162,68 +137,47 @@ export function ReportBuilder<
               (aggregate values)
             </span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {metrics.map((metric) => (
-              <ToggleChip
-                key={metric.id}
-                label={metric.label}
-                description={metric.description}
-                selected={selectedMetrics.includes(metric.id)}
-                onClick={() => toggleMetric(metric.id)}
-                variant="metric"
-              />
-            ))}
+          <MultiSelectChips
+            options={metricOptions}
+            selected={selectedMetrics}
+            onChange={setSelectedMetrics}
+            variant="primary"
+          />
+        </div>
+        {/* Breakdown (dimensions to group by) */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-chart-3">
+            <LayoutGrid className="size-4" />
+            <span>Breakdown</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              (segment data by)
+            </span>
           </div>
+          <MultiSelectChips
+            options={dimensionOptions}
+            selected={breakdown}
+            onChange={setBreakdown}
+            variant="secondary"
+          />
         </div>
 
-        {/* Group By & Date Range */}
-        <div className="flex flex-wrap items-end gap-4 pt-2 border-t border-border/50">
-          {/* Group By */}
-          {showGroupBy && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                <LayoutGrid className="size-3" />
-                Group By
-              </label>
-              <select
-                value={groupBy}
-                onChange={(e) => setGroupBy(e.target.value as TDimension)}
-                className="h-9 px-3 rounded-md border border-input bg-background text-sm shadow-xs focus:border-ring focus:ring-2 focus:ring-ring/50 outline-none"
-              >
-                {dimensions.map((dim) => (
-                  <option key={dim.id} value={dim.id}>
-                    {dim.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
+        {/* Date Range & Refresh */}
+        <div className="flex flex-wrap items-end gap-4 pt-4 border-t border-border/50">
           {/* Date Range */}
           {showDateFilter && (
-            <div className="flex items-end gap-2">
-              <DatePickerInput
-                id="report-start-date"
-                label={
-                  <span className="flex items-center gap-1.5">
-                    <Calendar className="size-3" />
-                    From
-                  </span>
-                }
-                value={startDate}
-                onChange={setStartDate}
-                placeholder="Start date"
-                className="w-[160px]"
-              />
-              <DatePickerInput
-                id="report-end-date"
-                label="To"
-                value={endDate}
-                onChange={setEndDate}
-                placeholder="End date"
-                className="w-[160px]"
-              />
-            </div>
+            <DateRangeInput
+              startDate={startDate}
+              endDate={endDate}
+              onChange={({ start, end }) => {
+                setStartDate(start);
+                setEndDate(end);
+              }}
+              showPresets={true}
+              presetLabel="Date Range"
+              startLabel="From"
+              endLabel="To"
+              inputWidth="w-[140px]"
+            />
           )}
 
           {/* Spacer + Refresh Button */}
@@ -285,10 +239,11 @@ export function ReportBuilder<
             </div>
           : <ResultsTable
               data={data ?? []}
-              dimensions={selectedDimensions}
+              dimensions={breakdown}
               metrics={selectedMetrics}
               dimensionLabels={dimensionLabels}
               metricLabels={metricLabels}
+              dataKeyMap={dataKeyMap}
             />
           }
         </div>

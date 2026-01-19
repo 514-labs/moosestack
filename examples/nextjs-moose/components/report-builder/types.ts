@@ -5,15 +5,15 @@
  * by accepting configuration props instead of hardcoded values.
  */
 
+// Re-export FieldOption as FieldMeta for backwards compatibility
+import type { FieldOption } from "@/components/inputs";
+
 /**
  * Field metadata for UI display.
  * Used for both dimensions and metrics.
+ * (Alias for FieldOption from inputs module)
  */
-export interface FieldMeta<TId extends string = string> {
-  id: TId;
-  label: string;
-  description?: string;
-}
+export type FieldMeta<TId extends string = string> = FieldOption<TId>;
 
 /**
  * Query parameters passed to the execute function.
@@ -23,10 +23,13 @@ export interface ReportQueryParams<
   TDimension extends string = string,
   TMetric extends string = string,
 > {
-  dimensions?: TDimension[];
+  /** Dimensions to break down / group by */
+  breakdown?: TDimension[];
+  /** Metrics to aggregate */
   metrics?: TMetric[];
-  groupBy?: TDimension;
+  /** Optional start date filter */
   startDate?: string;
+  /** Optional end date filter */
   endDate?: string;
 }
 
@@ -42,7 +45,7 @@ export interface ReportBuilderConfig<
   TMetric extends string = string,
   TResult extends Record<string, unknown> = Record<string, unknown>,
 > {
-  /** Available dimensions with UI metadata */
+  /** Available dimensions (for breakdown selection) with UI metadata */
   dimensions: readonly FieldMeta<TDimension>[];
 
   /** Available metrics with UI metadata */
@@ -59,20 +62,14 @@ export interface ReportBuilderConfig<
   /** Optional: Description for the report builder */
   description?: string;
 
-  /** Optional: Default selected dimensions */
-  defaultDimensions?: TDimension[];
+  /** Optional: Default selected breakdown dimensions */
+  defaultBreakdown?: TDimension[];
 
   /** Optional: Default selected metrics */
   defaultMetrics?: TMetric[];
 
-  /** Optional: Default groupBy dimension */
-  defaultGroupBy?: TDimension;
-
   /** Optional: Show date range filter (default: true) */
   showDateFilter?: boolean;
-
-  /** Optional: Show group by selector (default: true) */
-  showGroupBy?: boolean;
 }
 
 /**
@@ -88,33 +85,8 @@ export interface ResultsTableConfig<
   metrics: TMetric[];
   dimensionLabels: Record<TDimension, string>;
   metricLabels: Record<TMetric, string>;
+  /** Maps column ID to actual data key (for snake_case vs camelCase) */
+  dataKeyMap?: Record<string, string>;
   /** Optional custom value formatter */
   formatValue?: (key: string, value: unknown) => string;
-}
-
-/**
- * Helper to create a ReportBuilder config from QueryModel metadata.
- * This provides a cleaner API for creating configurations.
- *
- * @example
- * const config = createReportConfig({
- *   dimensions: [
- *     { id: "status", label: "Status", description: "Event status" },
- *     { id: "day", label: "Day", description: "Day (date)" },
- *   ],
- *   metrics: [
- *     { id: "totalEvents", label: "Total Events" },
- *     { id: "totalAmount", label: "Total Amount" },
- *   ],
- *   execute: async (params) => getReport(params),
- * });
- */
-export function createReportConfig<
-  TDimension extends string,
-  TMetric extends string,
-  TResult extends Record<string, unknown>,
->(
-  config: ReportBuilderConfig<TDimension, TMetric, TResult>,
-): ReportBuilderConfig<TDimension, TMetric, TResult> {
-  return config;
 }

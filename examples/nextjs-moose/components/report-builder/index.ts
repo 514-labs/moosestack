@@ -1,46 +1,69 @@
 /**
  * Report Builder Components
  *
- * A generic, modular report builder that works with any QueryModel instance.
+ * A generic, reusable report builder for QueryModel instances.
+ * See README.md for full documentation and usage patterns.
  *
- * Components:
- * - ToggleChip: Selectable dimension/metric chips
- * - ResultsTable: Display query results in a table
- * - ReportBuilder: Main component for building custom reports
+ * ## Quick Start
  *
- * @example
- * import { ReportBuilder, createReportConfig } from "@/components/report-builder";
+ * 1. Create a Server Action for your QueryModel:
+ *    ```ts
+ *    // app/actions/my-report.ts
+ *    "use server";
+ *    import { getMyData } from "moose";
+ *    export async function executeMyQuery(params) {
+ *      return getMyData(params);
+ *    }
+ *    ```
  *
- * // Define configuration for your QueryModel
- * const config = createReportConfig({
- *   dimensions: [
- *     { id: "status", label: "Status", description: "Event status" },
- *     { id: "day", label: "Day", description: "Day (date)" },
- *   ],
- *   metrics: [
- *     { id: "totalEvents", label: "Total Events" },
- *     { id: "totalAmount", label: "Total Amount" },
- *   ],
- *   execute: async (params) => {
- *     "use server";
- *     return getOverallStats(params);
- *   },
- * });
+ * 2. Create a wrapper Client Component:
+ *    ```tsx
+ *    // components/my-report-builder.tsx
+ *    "use client";
+ *    import { ReportBuilder, FieldMeta } from "@/components/report-builder";
+ *    import { executeMyQuery } from "@/app/actions/my-report";
  *
- * // Use in your component
- * <ReportBuilder {...config} />
+ *    const DIMENSIONS: FieldMeta<MyDimension>[] = [...];
+ *    const METRICS: FieldMeta<MyMetric>[] = [...];
+ *
+ *    export function MyReportBuilder() {
+ *      return (
+ *        <ReportBuilder
+ *          dimensions={DIMENSIONS}
+ *          metrics={METRICS}
+ *          execute={executeMyQuery}
+ *        />
+ *      );
+ *    }
+ *    ```
+ *
+ * 3. Use in your page:
+ *    ```tsx
+ *    import { MyReportBuilder } from "@/components/my-report-builder";
+ *    export default function Page() {
+ *      return <MyReportBuilder />;
+ *    }
+ *    ```
+ *
+ * @module report-builder
  */
 
 // Components
-export { ToggleChip, type ToggleChipProps } from "./toggle-chip";
 export { ResultsTable, type ResultsTableProps } from "./results-table";
 export { ReportBuilder, type ReportBuilderProps } from "./report-builder";
 
-// Types and utilities
+// Types
 export {
-  createReportConfig,
   type FieldMeta,
   type ReportQueryParams,
   type ReportBuilderConfig,
   type ResultsTableConfig,
 } from "./types";
+
+// Re-export shared input components for convenience
+export {
+  MultiSelectChips,
+  DatePicker,
+  DateRangeInput,
+  SelectDropdown,
+} from "@/components/inputs";

@@ -1,10 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { TimeSeriesChart } from "@/components/time-series-chart";
-import { DonutChart } from "@/components/donut-chart";
-import { useDateFilter } from "@/lib/hooks";
-import { useMetrics, useEventsOverTime } from "@/lib/hooks";
+import { LineChart, DonutChart } from "@/components/charts";
+import { useDateFilter, useMetrics, useEventsOverTime } from "@/lib/hooks";
 import type { EventsOverTimeBucket } from "@/app/actions/events";
 import { ChartLine } from "lucide-react";
 import { type ChartConfig } from "@/components/ui/chart";
@@ -54,13 +52,12 @@ export function DashboardCharts() {
   const { data: metrics } = useMetrics(startDate, endDate);
 
   // Data is already in the right format from the query (name and value)
-  // Colors are handled via chartConfig
   const chartData = metrics?.eventsByStatus ?? [];
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {/* Time Series Chart */}
-      <TimeSeriesChart
+      <LineChart
         title="Events over time"
         description="COUNT(events) grouped by time bucket"
         data={timeSeriesData}

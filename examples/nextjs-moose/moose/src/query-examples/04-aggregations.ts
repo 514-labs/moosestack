@@ -32,7 +32,7 @@ export const statsModel = defineQueryModel({
 
   // Dimensions: columns for grouping and filtering (all are automatically groupable)
   dimensions: {
-    status: { column: "id" },
+    status: { column: "status" },
     timestamp: { column: "event_time" },
     day: { expression: sql`toDate(${Events.columns.event_time})`, as: "day" },
     month: {
@@ -43,11 +43,14 @@ export const statsModel = defineQueryModel({
 
   // Metrics: aggregates computed over dimensions
   metrics: {
-    totalEvents: { agg: count(), as: "total_events" },
-    totalAmount: { agg: sum(Events.columns.amount), as: "total_amount" },
-    avgAmount: { agg: avg(Events.columns.amount), as: "avg_amount" },
-    minAmount: { agg: min(Events.columns.amount), as: "min_amount" },
-    maxAmount: { agg: max(Events.columns.amount), as: "max_amount" },
+    totalEvents: { agg: sql`count(*)`, as: "total_events" },
+    totalAmount: {
+      agg: sql`sum(${Events.columns.amount})`,
+      as: "total_amount",
+    },
+    avgAmount: { agg: sql`avg(${Events.columns.amount})`, as: "avg_amount" },
+    minAmount: { agg: sql`min(${Events.columns.amount})`, as: "min_amount" },
+    maxAmount: { agg: sql`max(${Events.columns.amount})`, as: "max_amount" },
     highValueRatio: {
       agg: sql`countIf(${Events.columns.amount} > 100) / count(*)`,
       as: "high_value_ratio",

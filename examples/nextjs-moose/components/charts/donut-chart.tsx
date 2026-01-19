@@ -3,19 +3,13 @@
 import * as React from "react";
 import { Pie, PieChart, Cell, Sector } from "recharts";
 import { cn } from "@/lib/utils";
-import { DashboardChartWidget } from "@/components/dashboard-chart-widget";
-import { chartTypeConfigs } from "@/components/chart-type-configs";
-import type { ChartDisplayOptions } from "./chart-types";
-import type { ReactNode } from "react";
+import { ChartWidget } from "./chart-widget";
+import { chartConfigs } from "./chart-configs";
+import type { ChartDisplayOptions, GridSpan, PieDataPoint } from "./types";
 import { ChartContainer, type ChartConfig } from "@/components/ui/chart";
 
-export interface ChartDataItem {
-  name: string;
-  value: number;
-}
-
 interface PieChartVisualProps {
-  chartData: ChartDataItem[];
+  data: PieDataPoint[];
   chartConfig: ChartConfig;
   activeIndex: number | null;
   onPieEnter: (_: unknown, index: number) => void;
@@ -24,7 +18,7 @@ interface PieChartVisualProps {
 }
 
 function PieChartVisual({
-  chartData,
+  data,
   chartConfig,
   activeIndex,
   onPieEnter,
@@ -38,7 +32,7 @@ function PieChartVisual({
     >
       <PieChart>
         <Pie
-          data={chartData}
+          data={data}
           cx="50%"
           cy="50%"
           innerRadius="42%"
@@ -51,7 +45,7 @@ function PieChartVisual({
           onMouseEnter={onPieEnter}
           onMouseLeave={onPieLeave}
         >
-          {chartData.map((entry: ChartDataItem, index: number) => (
+          {data.map((_entry: PieDataPoint, index: number) => (
             <Cell
               key={`cell-${index}`}
               fill={`var(--chart-${(index % 5) + 1})`}
@@ -84,14 +78,14 @@ function ChartCenterLabel({ value, label }: ChartCenterLabelProps) {
 }
 
 interface ChartLabelsProps {
-  chartData: ChartDataItem[];
+  data: PieDataPoint[];
   activeIndex: number | null;
   onItemHover: (index: number | null) => void;
   showLabels?: boolean;
 }
 
 function ChartLabels({
-  chartData,
+  data,
   activeIndex,
   onItemHover,
   showLabels = true,
@@ -101,7 +95,7 @@ function ChartLabels({
   }
   return (
     <div className="flex-1 w-full grid grid-cols-1 gap-2 @[400px]:gap-4">
-      {chartData.map((item: ChartDataItem, index: number) => (
+      {data.map((item: PieDataPoint, index: number) => (
         <div
           key={item.name}
           className={cn(
@@ -130,20 +124,30 @@ function ChartLabels({
 }
 
 export interface DonutChartProps {
-  data: ChartDataItem[];
+  /** Chart data */
+  data: PieDataPoint[];
+  /** Chart config for colors/labels */
   chartConfig: ChartConfig;
+  /** Chart title */
   title: string;
-  icon?: ReactNode;
+  /** Custom icon */
+  icon?: React.ReactNode;
+  /** Center value display */
   centerValue: number | string;
+  /** Center label */
   centerLabel?: string;
+  /** Unique chart ID */
   chartId?: string;
-  gridSpan?: { sm?: number; md?: number; lg?: number; xl?: number };
+  /** Grid span for layout */
+  gridSpan?: GridSpan;
+  /** Additional CSS classes */
   className?: string;
+  /** Trigger button size */
   triggerSize?: "sm" | "md" | "lg";
 }
 
 export function DonutChart({
-  data: chartData,
+  data,
   chartConfig,
   title,
   icon,
@@ -196,13 +200,13 @@ export function DonutChart({
   }, []);
 
   return (
-    <DashboardChartWidget
+    <ChartWidget
       chartId={chartId}
       chartType="donut"
       title={title}
       icon={icon}
       gridSpan={gridSpan}
-      chartConfig={chartTypeConfigs.donut}
+      chartConfig={chartConfigs.donut}
       className={className}
       triggerSize={triggerSize}
     >
@@ -210,7 +214,7 @@ export function DonutChart({
         <div className="flex flex-col @[400px]:flex-row items-center gap-4 @[400px]:gap-6">
           <div className="relative shrink-0 size-[220px]">
             <PieChartVisual
-              chartData={chartData}
+              data={data}
               chartConfig={chartConfig}
               activeIndex={activeIndex}
               onPieEnter={handlePieEnter}
@@ -221,13 +225,13 @@ export function DonutChart({
           </div>
 
           <ChartLabels
-            chartData={chartData}
+            data={data}
             activeIndex={activeIndex}
             onItemHover={handleItemHover}
             showLabels={options.showLabels ?? true}
           />
         </div>
       )}
-    </DashboardChartWidget>
+    </ChartWidget>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * Chart type registry and type definitions for the unified dashboard chart widget system.
+ * Chart type definitions and interfaces.
  */
 
 export type ChartType = "timeSeries" | "donut" | "bar" | "area";
@@ -44,3 +44,28 @@ export interface ChartTypeConfig {
     options: ChartDisplayOptions,
   ) => ShareableState;
 }
+
+/** Generic data point for charts */
+export interface DataPoint {
+  [key: string]: string | number | boolean | null | undefined;
+}
+
+/** Time series data point */
+export interface TimeSeriesDataPoint {
+  time: string;
+  count: number;
+}
+
+/** Pie/donut chart data point */
+export interface PieDataPoint {
+  name: string;
+  value: number;
+}
+
+/** Default option labels for display options */
+export const DEFAULT_OPTION_LABELS: Record<string, string> = {
+  showLabels: "Show labels",
+  showLegend: "Show legend",
+  showGrid: "Show grid",
+  showTooltip: "Show tooltip",
+} as const;

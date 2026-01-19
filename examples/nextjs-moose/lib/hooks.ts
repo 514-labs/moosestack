@@ -1,9 +1,10 @@
-import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getEventsOverTimeAction } from "@/app/actions/events";
 import { getMetrics } from "@/app/actions/metrics";
 import type { EventsOverTimeBucket } from "@/app/actions/events";
-import { DateFilterContext } from "@/components/dashboard-date-context";
+
+// Re-export useDateFilter from dashboard module
+export { useDateFilter } from "@/components/dashboard";
 
 // Internal query key factory - exported for components that need to access cache directly
 export const queryKeys = {
@@ -31,12 +32,4 @@ export function useEventsOverTime(
     queryFn: () => getEventsOverTimeAction(startDate, endDate, bucket),
     enabled: !!startDate && !!endDate,
   });
-}
-
-export function useDateFilter() {
-  const context = React.useContext(DateFilterContext);
-  if (!context) {
-    throw new Error("useDateFilter must be used within DateFilterProvider");
-  }
-  return context;
 }
