@@ -489,22 +489,33 @@ function validateRecord(record: SalesTransaction, index: number): ValidationErro
     errors.push({ row: index, field: "saleTimestamp", message: "Invalid date format (expected ISO 8601)" });
   }
 
-  // Numeric validation
-  if (record.totalAmount < 0) {
+  // Numeric validation - use Number.isFinite() to catch NaN/undefined
+  if (!Number.isFinite(record.totalAmount)) {
+    errors.push({ row: index, field: "totalAmount", message: "Amount must be a valid number" });
+  } else if (record.totalAmount < 0) {
     errors.push({ row: index, field: "totalAmount", message: "Negative amount not allowed" });
   }
-  if (record.quantity <= 0) {
+
+  if (!Number.isFinite(record.quantity)) {
+    errors.push({ row: index, field: "quantity", message: "Quantity must be a valid number" });
+  } else if (record.quantity <= 0) {
     errors.push({ row: index, field: "quantity", message: "Quantity must be positive" });
   }
 
-  // Business rule validation
-  const expectedTotal = record.quantity * record.unitPrice;
-  if (Math.abs(record.totalAmount - expectedTotal) > 0.01) {
-    errors.push({
-      row: index,
-      field: "totalAmount",
-      message: `Amount mismatch: expected ${expectedTotal.toFixed(2)}, got ${record.totalAmount}`
-    });
+  if (!Number.isFinite(record.unitPrice)) {
+    errors.push({ row: index, field: "unitPrice", message: "Unit price must be a valid number" });
+  }
+
+  // Business rule validation - only check if all numeric fields are valid
+  if (Number.isFinite(record.quantity) && Number.isFinite(record.unitPrice) && Number.isFinite(record.totalAmount)) {
+    const expectedTotal = record.quantity * record.unitPrice;
+    if (Math.abs(record.totalAmount - expectedTotal) > 0.01) {
+      errors.push({
+        row: index,
+        field: "totalAmount",
+        message: `Amount mismatch: expected ${expectedTotal.toFixed(2)}, got ${record.totalAmount}`
+      });
+    }
   }
 
   return errors;
