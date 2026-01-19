@@ -8,7 +8,7 @@ export function proxy(request: NextRequest) {
   // Why this approach:
   // - Can't use /[...slug]/llm.md/route.ts - Next.js doesn't allow static segments after catch-all
   // - Can't use /[...slug]/route.ts - conflicts with existing /[...slug]/page.tsx
-  // - Solution: API route + proxy rewrite keeps pretty URLs without conflicts
+  // - This: API route + proxy rewrite keeps pretty URLs without conflicts
   if (pathname.endsWith("/llm.md")) {
     const contentPath = pathname.slice(0, -"/llm.md".length);
     const url = request.nextUrl.clone();
@@ -21,7 +21,9 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Match paths ending in /llm.md
+    // Match /llm.md (root TOC)
+    "/llm.md",
+    // Match /path/to/doc/llm.md (individual pages)
     "/((?!_next/static|_next/image|favicon.ico).*)/llm.md",
   ],
 };

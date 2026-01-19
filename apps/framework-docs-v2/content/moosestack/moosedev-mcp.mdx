@@ -569,7 +569,24 @@ The MCP server:
 
 ## LLM-Optimized Documentation Feeds
 
-### Context7 for MooseStack Documentation
+### Copy Page Button
+
+Every doc page has a **Copy Page** button that copies clean markdown to your clipboard — useful for pasting into chat interfaces or AI assistants that don't support MCP.
+
+### Per-Page Markdown Endpoints
+
+Append `/llm.md` to any doc URL to get clean markdown:
+
+- `/moosestack/olap/model-table/llm.md` — Tables documentation
+- `/moosestack/olap/model-table/llm.md?lang=python` — Python-specific content
+
+Useful for AI agents fetching specific pages on-demand.
+
+### Documentation Index
+
+The root `/llm.md` returns a table of contents linking to all public pages. LLMs can discover what exists, then fetch only what they need — avoiding context window limits.
+
+### Context7
 
 For general MooseStack documentation and code examples, use Context7 MCP.
 
