@@ -142,7 +142,7 @@ export async function parseMarkdownContent(
 /**
  * Extract headings from markdown content
  * Uses github-slugger to generate IDs consistent with rehype-slug
- * Skips headings inside code blocks (``` or ````)
+ * Skips headings inside code blocks (backtick or tilde fences, including indented)
  */
 function extractHeadings(content: string): Heading[] {
   const headingRegex = /^(#{2,3})\s+(.+)$/gm;
@@ -154,25 +154,50 @@ function extractHeadings(content: string): Heading[] {
   const lines = content.split("\n");
   let inCodeBlock = false;
   let codeBlockStart = -1;
-  let codeBlockDelimiter = "";
+  let codeBlockChar = ""; // The fence character (` or ~)
+  let codeBlockLength = 0; // The length of the opening fence
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (!line) continue;
+    if (line === undefined) continue;
 
-    // Check for code block delimiter (``` or ````)
-    const codeBlockMatch = line.match(/^(`{3,})/);
-    if (codeBlockMatch && codeBlockMatch[1]) {
+    // Check for code fence delimiter (backticks or tildes, with up to 3 leading spaces)
+    // Per CommonMark: fences can be indented 0-3 spaces and must be at least 3 chars
+    const fenceMatch = line.match(/^\s{0,3}([`~]{3,})/);
+
+    if (fenceMatch && fenceMatch[1]) {
+      const fenceDelimiter = fenceMatch[1];
+      const fenceChar = fenceDelimiter[0]; // First character (` or ~)
+      const fenceLength = fenceDelimiter.length;
+
       if (!inCodeBlock) {
         // Starting a code block
         inCodeBlock = true;
         codeBlockStart = i;
-        codeBlockDelimiter = codeBlockMatch[1];
-      } else if (line.startsWith(codeBlockDelimiter)) {
-        // Ending a code block (must match the opening delimiter)
-        inCodeBlock = false;
-        codeBlockRanges.push({ start: codeBlockStart, end: i });
-        codeBlockDelimiter = "";
+        codeBlockChar = fenceChar ?? "";
+        codeBlockLength = fenceLength;
+      } else {
+        // Check if this closes the current code block
+        // Per CommonMark: closing fence must:
+        // 1. Use the same character (` or ~)
+        // 2. Be at least as long as opening fence
+        // 3. NOT have an info string (only whitespace after the fence)
+        // Note: fenceMatch[0] includes leading whitespace, fenceMatch[1] is just the fence chars
+        const fullMatchLength = fenceMatch[0].length;
+        const restOfLine = line.substring(fenceMatch.index! + fullMatchLength);
+        const hasInfoString = restOfLine.trim().length > 0;
+
+        if (
+          fenceChar === codeBlockChar &&
+          fenceLength >= codeBlockLength &&
+          !hasInfoString
+        ) {
+          // This closes the code block
+          inCodeBlock = false;
+          codeBlockRanges.push({ start: codeBlockStart, end: i });
+          codeBlockChar = "";
+          codeBlockLength = 0;
+        }
       }
     }
   }
