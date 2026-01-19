@@ -51,6 +51,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "flags": "^4.0.2",
+    "github-slugger": "catalog:",
     "gray-matter": "^4.0.3",
     "html-to-text": "^9.0.5",
     "mermaid": "catalog:",
