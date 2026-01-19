@@ -43,6 +43,9 @@ export function MarkdownMenu({ content }: MarkdownMenuProps) {
     try {
       await navigator.clipboard.writeText(content);
       setCopied(true);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
       timeoutRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       console.error("Failed to copy:", error);

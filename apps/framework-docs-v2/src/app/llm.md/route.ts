@@ -15,7 +15,8 @@ export async function GET(): Promise<NextResponse> {
         "Cache-Control": "s-maxage=1800, stale-while-revalidate=300",
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Failed to generate LLM TOC:", error);
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
