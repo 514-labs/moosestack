@@ -19,7 +19,7 @@
     "lucide-react": "^0.483.0",
     "next": "^16.0.7",
     "react": "^19.0.1",
-    "react-dom": "^19.0.1",
+    "react-dom": "^19.2.3",
     "recharts": "^2.15.1",
     "tailwind-merge": "^3.0.2",
     "tailwindcss-animate": "^1.0.7"
