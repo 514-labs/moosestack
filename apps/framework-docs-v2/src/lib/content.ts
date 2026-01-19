@@ -1,13 +1,14 @@
 import fs from "fs";
-import path from "path";
+import GithubSlugger from "github-slugger";
 import matter from "gray-matter";
+import { compileMDX } from "next-mdx-remote/rsc";
+import path from "path";
+import rehypeAutolinkHeadings from "rehype-autolink-headings";
+import rehypePrettyCode from "rehype-pretty-code";
+import rehypeSlug from "rehype-slug";
 import { remark } from "remark";
 import remarkGfm from "remark-gfm";
 import remarkHtml from "remark-html";
-import rehypeSlug from "rehype-slug";
-import rehypeAutolinkHeadings from "rehype-autolink-headings";
-import rehypePrettyCode from "rehype-pretty-code";
-import { compileMDX } from "next-mdx-remote/rsc";
 import type {
   FrontMatter,
   Heading,
@@ -16,7 +17,7 @@ import type {
   ParsedContent,
 } from "@/lib/content-types";
 
-import { processIncludes, CONTENT_ROOT } from "./includes";
+import { CONTENT_ROOT, processIncludes } from "./includes";
 
 /**
  * Get all content files from the content directory
@@ -102,7 +103,7 @@ export async function parseMarkdownContent(
   const processedContent = processIncludes(rawContent);
 
   let content: string;
-  let mdxContent: any = null;
+  const mdxContent: any = null;
 
   if (isMDX) {
     // For MDX files, we'll return the processed content and let the component handle compilation
@@ -140,22 +141,68 @@ export async function parseMarkdownContent(
 
 /**
  * Extract headings from markdown content
+ * Uses github-slugger to generate IDs consistent with rehype-slug
+ * Skips headings inside code blocks (``` or ````)
  */
 function extractHeadings(content: string): Heading[] {
   const headingRegex = /^(#{2,3})\s+(.+)$/gm;
   const headings: Heading[] = [];
-  let match;
+  const slugger = new GithubSlugger();
 
-  while ((match = headingRegex.exec(content)) !== null) {
-    if (!match[1] || !match[2]) continue;
-    const level = match[1].length;
-    const text = match[2].trim();
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .replace(/\s+/g, "-");
+  // First, identify all code block ranges to exclude them
+  const codeBlockRanges: Array<{ start: number; end: number }> = [];
+  const lines = content.split("\n");
+  let inCodeBlock = false;
+  let codeBlockStart = -1;
+  let codeBlockDelimiter = "";
 
-    headings.push({ level, text, id });
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) continue;
+
+    // Check for code block delimiter (``` or ````)
+    const codeBlockMatch = line.match(/^(`{3,})/);
+    if (codeBlockMatch && codeBlockMatch[1]) {
+      if (!inCodeBlock) {
+        // Starting a code block
+        inCodeBlock = true;
+        codeBlockStart = i;
+        codeBlockDelimiter = codeBlockMatch[1];
+      } else if (line.startsWith(codeBlockDelimiter)) {
+        // Ending a code block (must match the opening delimiter)
+        inCodeBlock = false;
+        codeBlockRanges.push({ start: codeBlockStart, end: i });
+        codeBlockDelimiter = "";
+      }
+    }
+  }
+
+  // Now extract headings, but skip those inside code blocks
+  let match: RegExpExecArray | null = headingRegex.exec(content);
+  while (match !== null) {
+    if (match[1] && match[2]) {
+      // Find the line number of this match
+      const matchIndex = match.index;
+      const lineNumber =
+        content.substring(0, matchIndex).split("\n").length - 1;
+
+      // Check if this heading is inside a code block
+      const isInCodeBlock = codeBlockRanges.some(
+        (range) => lineNumber >= range.start && lineNumber <= range.end,
+      );
+
+      if (!isInCodeBlock) {
+        // Only add headings that are not inside code blocks
+        const level = match[1].length;
+        const text = match[2].trim();
+        // Use github-slugger to generate IDs the same way rehype-slug does
+        const id = slugger.slug(text);
+
+        headings.push({ level, text, id });
+      }
+    }
+
+    match = headingRegex.exec(content);
   }
 
   return headings;
