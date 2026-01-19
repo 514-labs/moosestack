@@ -255,9 +255,10 @@ if [ "$DOCS_ONLY" = true ]; then
   exit 1
 fi
 
-# If we detected packages but none matched CLI or docs, be safe and run tests
-if [ "$total_changed_count" -gt 0 ] && [ "$docs_match_count" -eq 0 ] && [ "$CLI_AFFECTED" = false ]; then
-  echo "⚠️  Unknown packages changed, running tests to be safe"
+# If we detected packages that aren't CLI or docs, be safe and run tests
+# This catches unknown packages (not in either list) that might affect CLI
+if [ "$total_changed_count" -gt "$docs_match_count" ] && [ "$CLI_AFFECTED" = false ]; then
+  echo "⚠️  Unknown packages changed (not in CLI or docs list), running tests to be safe"
   exit 0
 fi
 

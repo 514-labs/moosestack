@@ -528,4 +528,74 @@ fi
 unset PNPM_LOCKFILE
 echo ""
 
+# Test 11: Docs + unknown package changes (should run tests to be safe)
+# In this lockfile: importers at line 6, apps/framework-docs-v2 at line 11, apps/some-unknown-app at line 17, packages at line 23
+# Diff hunks at lines 15 (in docs section) and 21 (in unknown-app section)
+cat > "$PNPM_DIFF_FILE" << 'EOF'
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index abc123..def456 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -14,0 +15,3 @@ importers:
++      new-docs-dep:
++        specifier: ^1.0.0
++        version: 1.0.0
+@@ -20,0 +21,3 @@ importers:
++      some-new-dep:
++        specifier: ^1.0.0
++        version: 1.0.0
+EOF
+
+# Create a lockfile with both docs and unknown packages
+export PNPM_LOCKFILE="/tmp/test-lockfile-11.yaml"
+cat > "$PNPM_LOCKFILE" << 'EOF'
+lockfileVersion: '9.0'
+
+catalogs:
+  default: {}
+
+importers:
+
+  .:
+    dependencies: {}
+
+  apps/framework-docs-v2:
+    dependencies:
+      new-docs-dep:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+  apps/some-unknown-app:
+    dependencies:
+      some-new-dep:
+        specifier: ^1.0.0
+        version: 1.0.0
+
+packages:
+
+  new-docs-dep@1.0.0:
+    resolution: {integrity: sha512-abc}
+  some-new-dep@1.0.0:
+    resolution: {integrity: sha512-def}
+EOF
+
+echo "Test 11: Docs + unknown package changed (should run tests)"
+echo "Expected: exit 0 (run tests to be safe - unknown package present)"
+echo "---"
+
+set +e
+"$DETECTOR_SCRIPT" > /dev/null 2>&1
+exit_code=$?
+set -e
+
+if [ "$exit_code" -eq 0 ]; then
+  echo "✅ Correctly runs tests when docs + unknown package changed (exit 0)"
+else
+  echo "❌ Failed: Script returned exit $exit_code but expected exit 0"
+  exit 1
+fi
+
+unset PNPM_LOCKFILE
+echo ""
+
 echo "✨ All tests passed!"
