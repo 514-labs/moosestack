@@ -192,9 +192,7 @@ A successful response returns `{"success": true}`.
 
 Verify data landed by querying ClickHouse directly:
 
-<Note>
-The credentials `panda`/`pandapass` are local development defaults configured by `moose dev`. Never use these in production—configure secure credentials in your deployment environment.
-</Note>
+> **Note:** The credentials `panda`/`pandapass` are local development defaults configured by `moose dev`. Never use these in production—configure secure credentials in your deployment environment.
 
 ```bash
 clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
@@ -289,9 +287,7 @@ if (!filePath) {
 loadFile(filePath).catch(console.error);
 ```
 
-<Note>
-This script sends records one at a time for simplicity. For production workloads with large files, consider batch ingestion by posting arrays of records to improve throughput.
-</Note>
+> **Note:** This script sends records one at a time for simplicity. For production workloads with large files, consider batch ingestion by posting arrays of records to improve throughput.
 
 ### Step 3: Create Sample Data
 
@@ -878,8 +874,8 @@ CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API
 | Operation | Traditional OLTP | Moose + ClickHouse |
 |-----------|------------------|-------------------|
 | Raw transaction scan | Seconds to minutes | Milliseconds |
-| Daily aggregation query | 10-30+ seconds | <100ms |
-| Report generation | Minutes (compute + format) | <1 second |
+| Daily aggregation query | 10-30+ seconds | `<100ms` |
+| Report generation | Minutes (compute + format) | `<1 second` |
 
 The pre-aggregated materialized view delivers 10-100x faster query performance, making PDF generation nearly instantaneous.
 
