@@ -5,7 +5,7 @@ import { generateLlmToc } from "@/lib/llms-generator";
  * GET /api/llm
  * Returns a table of contents for all documentation with links to /llm.md endpoints
  */
-export async function GET() {
+export async function GET(): Promise<NextResponse> {
   try {
     const toc = generateLlmToc();
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { LLM_MD_SUFFIX } from "@/lib/llms-generator";
 
-export function proxy(request: NextRequest) {
+export function proxy(request: NextRequest): NextResponse {
   const pathname = request.nextUrl.pathname;
 
   // Rewrite /path/to/doc/llm.md to /api/llm/path/to/doc

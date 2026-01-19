@@ -36,10 +36,18 @@ interface RouteParams {
   params: Promise<{ slug: string[] }>;
 }
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(
+  request: NextRequest,
+  { params }: RouteParams,
+): Promise<NextResponse> {
   const { slug: slugArray } = await params;
 
   if (!slugArray?.length) {
+    return new NextResponse("Not Found", { status: 404 });
+  }
+
+  // Block path traversal attempts
+  if (slugArray.some((segment) => segment === ".." || segment === ".")) {
     return new NextResponse("Not Found", { status: 404 });
   }
 
@@ -50,7 +58,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const content = await parseMarkdownContent(slug);
 
     if (slug.startsWith("guides/")) {
-      return handleGuide(slug, content, lang, searchParams);
+      return await handleGuide(slug, content, lang, searchParams);
     }
 
     return markdownResponse(cleanMarkdown(content, lang));

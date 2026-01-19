@@ -146,8 +146,8 @@ function processNavItems(items: NavItem[]): TocEntry[] {
 
   for (const item of items) {
     if (item.type === "page") {
-      // Skip draft/beta pages (behind feature flags)
-      if (item.status === "draft" || item.status === "beta") {
+      // Skip draft/beta pages (behind feature flags) and external pages (no local content)
+      if (item.status === "draft" || item.status === "beta" || item.external) {
         continue;
       }
       entries.push(processPage(item));
