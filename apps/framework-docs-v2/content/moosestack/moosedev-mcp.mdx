@@ -577,14 +577,14 @@ The root `/llm.md` returns a table of contents linking to all public pages. LLMs
 
 Append `/llm.md` to any doc URL to get clean markdown:
 
-- `/moosestack/olap/model-table/llm.md` — Tables documentation
-- `/moosestack/olap/model-table/llm.md?lang=python` — Python-specific content
+- `/moosestack/olap/model-table/llm.md` — Defaults to typescript
+- `/moosestack/olap/model-table/llm.md?lang=python` — Specific language
 
 Useful for AI agents fetching specific pages on-demand.
 
 ### Context7
 
-For general MooseStack documentation and code examples, use Context7 MCP.
+Context7 indexes MooseStack documentation and code examples, letting LLMs pull context on-demand.
 
 **Setup:** [Install Context7 for your IDE](https://context7.com/docs/overview)
 
@@ -598,7 +598,7 @@ Show me how to create a streaming function in MooseStack using TypeScript. use c
 
 ### Copy Page Button
 
-Every doc page has a **Copy Page** button that copies clean markdown to your clipboard — useful for pasting into chat interfaces or AI assistants that don't support MCP.
+Every doc page has a **Copy Page** button that copies clean markdown to your clipboard — useful for pasting into AI assistants.
 
 ## Troubleshooting
 
