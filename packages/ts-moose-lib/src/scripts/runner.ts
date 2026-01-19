@@ -32,11 +32,11 @@ function collectActivities(
   logger: DefaultLogger,
   workflows: Map<string, Workflow>,
 ) {
-  logger.info(`<WF> Collecting tasks from workflows`);
+  logger.info(`Collecting tasks from workflows`);
   const scriptNames: string[] = [];
   for (const [name, workflow] of workflows.entries()) {
     logger.info(
-      `<WF> Registering workflow: ${name} with starting task: ${workflow.config.startingTask.name}`,
+      `Registering workflow: ${name} with starting task: ${workflow.config.startingTask.name}`,
     );
     scriptNames.push(`${name}/${workflow.config.startingTask.name}`);
   }
@@ -54,7 +54,7 @@ async function createTemporalConnection(
   temporalConfig: TemporalConfig,
 ): Promise<NativeConnection> {
   logger.info(
-    `<workflow> Using temporal_url: ${temporalConfig.url} and namespace: ${temporalConfig.namespace}`,
+    `Using temporal_url: ${temporalConfig.url} and namespace: ${temporalConfig.namespace}`,
   );
 
   let connectionOptions: NativeConnectionOptions = {
@@ -83,9 +83,7 @@ async function createTemporalConnection(
     };
   }
 
-  logger.info(
-    `<workflow> Connecting to Temporal at ${connectionOptions.address}`,
-  );
+  logger.info(`Connecting to Temporal at ${connectionOptions.address}`);
 
   const maxRetries = 5;
   const baseDelay = 1000;
@@ -94,11 +92,11 @@ async function createTemporalConnection(
   while (true) {
     try {
       const connection = await NativeConnection.connect(connectionOptions);
-      logger.info("<workflow> Connected to Temporal server");
+      logger.info("Connected to Temporal server");
       return connection;
     } catch (err) {
       attempt++;
-      logger.error(`<workflow> Connection attempt ${attempt} failed: ${err}`);
+      logger.error(`Connection attempt ${attempt} failed: ${err}`);
 
       if (attempt >= maxRetries) {
         logger.error(`Failed to connect after ${attempt} attempts`);
@@ -106,7 +104,7 @@ async function createTemporalConnection(
       }
 
       const backoff = baseDelay * Math.pow(2, attempt - 1);
-      logger.warn(`<workflow> Retrying connection in ${backoff}ms...`);
+      logger.warn(`Retrying connection in ${backoff}ms...`);
       await new Promise((resolve) => setTimeout(resolve, backoff));
     }
   }
@@ -125,32 +123,32 @@ async function registerWorkflows(
   try {
     const workflows = await getWorkflows();
     if (workflows.size > 0) {
-      logger.info(`<WF> Found ${workflows.size} workflows`);
+      logger.info(`Found ${workflows.size} workflows`);
       allScriptPaths.push(...collectActivities(logger, workflows));
 
       if (allScriptPaths.length === 0) {
-        logger.info(`<WF> No tasks found in workflows`);
+        logger.info(`No tasks found in workflows`);
         return null;
       }
 
-      logger.info(`<WF> Found ${allScriptPaths.length} tasks in workflows`);
+      logger.info(`Found ${allScriptPaths.length} tasks in workflows`);
 
       for (const activityName of allScriptPaths) {
         if (!ALREADY_REGISTERED.has(activityName)) {
           const activity = await createActivityForScript(activityName);
           dynamicActivities.push(activity);
           ALREADY_REGISTERED.add(activityName);
-          logger.info(`<WF> Registered task ${activityName}`);
+          logger.info(`Registered task ${activityName}`);
         }
       }
 
       if (dynamicActivities.length === 0) {
-        logger.info(`<WF> No dynamic activities found in workflows`);
+        logger.info(`No dynamic activities found in workflows`);
         return null;
       }
 
       logger.info(
-        `<WF> Found ${dynamicActivities.length} dynamic activities in workflows`,
+        `Found ${dynamicActivities.length} dynamic activities in workflows`,
       );
     }
 
