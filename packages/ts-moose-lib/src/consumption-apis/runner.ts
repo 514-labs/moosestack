@@ -164,13 +164,9 @@ const apiHandler = async (
           }
 
           // Only do versioned lookup if we still haven't found it
-          if (!userFuncModule) {
-            if (version) {
-              const versionedKey = `${apiName}:${version}`;
-              userFuncModule = apis.get(versionedKey);
-            } else {
-              userFuncModule = apis.get(apiName);
-            }
+          if (!userFuncModule && version) {
+            const versionedKey = `${apiName}:${version}`;
+            userFuncModule = apis.get(versionedKey);
           }
         }
 
