@@ -8,6 +8,8 @@ import {
   type NavPage,
 } from "@/config/navigation";
 
+export const LLM_MD_SUFFIX = "/llm.md";
+
 const CONTENT_ROOT = path.join(process.cwd(), "content");
 
 // --- Language Content Filtering ---
@@ -134,7 +136,7 @@ function processPage(page: NavPage): TocEntry {
   return {
     title: page.title || frontmatter?.title || page.slug,
     description: page.description || frontmatter?.description,
-    url: `/${page.slug}/llm.md`,
+    url: `/${page.slug}${LLM_MD_SUFFIX}`,
   };
 }
 
