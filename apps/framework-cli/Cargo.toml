@@ -88,10 +88,10 @@ logos = "0.15.0"
 # Monitoring
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust.git" }
-opentelemetry_sdk = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", features = ["rt-tokio", "logs"] }
-opentelemetry-otlp = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", features = ["logs", "grpc-tonic"] }
-opentelemetry-appender-tracing = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", features = ["experimental_span_attributes"] }
+opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb" }
+opentelemetry_sdk = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["rt-tokio", "logs"] }
+opentelemetry-otlp = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["logs", "grpc-tonic"] }
+opentelemetry-appender-tracing = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["experimental_span_attributes"] }
 prometheus-client = "0.23"
 serde_yaml = "0.9.34"
 temporal-sdk-core = { git = "https://github.com/temporalio/sdk-core.git", rev = "b94b2fc172c2740705b3454a0e04b856fe426233" }

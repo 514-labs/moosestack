@@ -63,10 +63,11 @@ pub fn setup_otlp_logs(settings: OtlpLogSettings) {
         .unwrap_or_else(|_| EnvFilter::new(&settings.level_filter));
 
     // The OpenTelemetryTracingBridge with experimental_span_attributes enabled
-    // automatically captures span fields and adds them as log record attributes
+    // automatically captures span fields and adds them as log record attributes.
+    // Layer order: env_filter first to filter events before they reach the bridge.
     tracing_subscriber::registry()
-        .with(otel_bridge)
         .with(env_filter)
+        .with(otel_bridge)
         .init();
 }
 
@@ -83,7 +84,6 @@ pub fn shutdown_otlp() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tracing::instrument;
 
     /// Test that instrumented functions work with OTLP setup (compilation test).
