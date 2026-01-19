@@ -103,7 +103,6 @@ export async function parseMarkdownContent(
   const processedContent = processIncludes(rawContent);
 
   let content: string;
-  const mdxContent: any = null;
 
   if (isMDX) {
     // For MDX files, we'll return the processed content and let the component handle compilation
