@@ -874,8 +874,8 @@ CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API
 | Operation | Traditional OLTP | Moose + ClickHouse |
 |-----------|------------------|-------------------|
 | Raw transaction scan | Seconds to minutes | Milliseconds |
-| Daily aggregation query | 10-30+ seconds | <100ms |
-| Report generation | Minutes (compute + format) | <1 second |
+| Daily aggregation query | 10-30+ seconds | `<100ms` |
+| Report generation | Minutes (compute + format) | `<1 second` |
 
 The pre-aggregated materialized view delivers 10-100x faster query performance, making PDF generation nearly instantaneous.
 
