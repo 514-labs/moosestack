@@ -15,16 +15,51 @@ This guide shows you how to automate the generation of static reports using Moos
 - Building parameterized consumption APIs for report generation
 - Generating professional PDF reports from aggregated data
 
+## How to Use This Guide
+
+We've organized this guide for different audiences:
+
+**Operations teams:** Focus on Part 1 to understand automation value, then skim Parts 2-6 to see what's possible. Share with your development team for implementation.
+
+**Developers who learn by doing:** Jump directly to Part 2 and start building. Come back to Part 1 later if you want business context.
+
+**Data engineers evaluating architecture:** Read Part 1 for the business case, review the architecture diagram, then follow the full tutorial. Part 7 explains the technical concepts in depth.
+
+**Choose your path:**
+- 📊 Business/ROI focus? → Read Part 1, evaluate if this fits your needs
+- 💻 Hands-on builder? → Jump to Part 2, start coding immediately
+- 🧠 Concepts first? → Read Part 1, build in Parts 2-6, learn theory in Part 7
+
 ## Prerequisites
 
 - Node.js 18+ installed
+- Docker Desktop installed and running
 - Basic familiarity with TypeScript and SQL
 - Terminal access
 - ~40 minutes for hands-on work
 
+### Verify Your Environment
+
+Before starting, confirm your tools are ready:
+
+**Check Node.js:**
+```bash
+node --version
+```
+You should see `v18.x.x` or higher.
+
+**Check Docker:**
+```bash
+docker --version
+docker info > /dev/null 2>&1 && echo "Docker is running" || echo "Docker is NOT running"
+```
+You should see a version number and "Docker is running". If Docker isn't running, start Docker Desktop before proceeding.
+
 ---
 
 ## Part 1: The Scenario
+
+*Read this section to understand why automated report generation matters and what business problems it solves. This context helps you evaluate whether this approach fits your needs and provides justification for stakeholders.*
 
 ### Apex Retail Daily Sales Consolidation
 
@@ -38,6 +73,43 @@ You're a data engineer at **Apex Retail**, a growing retail chain with 12 stores
 
 **What You'll Build:**
 > An automated pipeline that ingests store file uploads, stores them in ClickHouse, pre-aggregates daily summaries with materialized views, and generates an executive PDF report—all with about 60 lines of TypeScript.
+
+### Why Automate Report Generation?
+
+**The hidden costs of manual reporting:**
+
+| Cost Factor | Manual Process | Automated Pipeline |
+|-------------|----------------|-------------------|
+| Time per report | 2 hours | < 1 minute |
+| Annual analyst hours | 500+ hours/year | ~10 hours/year (maintenance) |
+| Error rate | 5-10% (copy/paste, formula errors) | 0% (deterministic code) |
+| Availability | Depends on one person | Runs automatically, 24/7 |
+| Audit trail | None (who changed what?) | Full version control |
+| Scalability | Linear (more stores = more time) | Constant (1 store or 100 stores) |
+
+**Real-world symptoms you might recognize:**
+
+- Reports are late when the analyst is on vacation or sick
+- "The numbers don't match" disputes between regional managers
+- Hours spent debugging Excel formulas
+- No historical record of past report calculations
+- Can't easily answer "show me last Tuesday's numbers"
+
+**Why not just use existing tools?**
+
+| Approach | Limitation |
+|----------|------------|
+| **Excel macros** | No version control, formula errors, breaks when file formats change |
+| **BI dashboards (Tableau, Looker)** | Great for interactive exploration, but PDF generation often requires custom scripting anyway |
+| **Scheduled database queries** | No data transformation layer, raw SQL becomes unmaintainable |
+| **Manual scripts** | No streaming, no type safety, hard to extend |
+
+**This approach gives you:**
+- **Type-safe data models** - Catch schema mismatches at compile time
+- **Streaming ingestion** - Data flows through Redpanda for reliability
+- **Pre-aggregated analytics** - Materialized views make queries instant
+- **Version-controlled pipelines** - Git history shows exactly what changed
+- **Reproducible reports** - Same inputs always produce same outputs
 
 ### Architecture Overview
 
@@ -109,6 +181,36 @@ You should see output indicating the API server started on http://localhost:4000
 
 **Important:** The development server auto-reloads when you change files. Changes to your code are automatically applied.
 
+#### Verify the Stack is Running
+
+In a new terminal, confirm all services are healthy:
+
+```bash
+# Test the API server
+curl http://localhost:4000/health
+```
+
+Expected output: `{"status":"ok"}` or similar success response.
+
+```bash
+# Test ClickHouse connection
+curl http://localhost:18123/ping
+```
+
+Expected output: `Ok.`
+
+If either check fails, wait 10-15 seconds for containers to fully initialize, then try again. See the Troubleshooting section if issues persist.
+
+**What Just Happened:**
+
+MooseStack automatically provisioned a complete development stack:
+- **ClickHouse** (port 18123) - Columnar analytical database optimized for aggregations
+- **Redpanda** (port 19092) - Kafka-compatible streaming platform for reliable data flow
+- **Temporal** (port 8080) - Workflow orchestration for scheduled tasks
+- **HTTP Server** (port 4000) - API endpoints for ingestion and consumption
+
+All running locally in Docker containers. No cloud accounts or external services required.
+
 ### Step 4: Define the Data Model
 
 Create the file `app/ingest/SalesTransaction.ts` with your data model. This represents what a store POS system exports each night:
@@ -164,6 +266,29 @@ Update `app/index.ts` to export your models:
 ```typescript
 export * from "./ingest/SalesTransaction";
 ```
+
+#### Verify Model Detection
+
+Check your `moose dev` terminal. You should see output like:
+
+```
+✓ Detected model changes
+✓ Created table: sales_SalesTransaction
+✓ Created stream: sales
+✓ Registered API endpoint: /ingest/sales
+```
+
+If you don't see this, ensure your file is saved and check for TypeScript errors in the terminal output.
+
+**What Just Happened:**
+
+From a single TypeScript interface, MooseStack automatically:
+1. **Inferred the ClickHouse schema** - Mapped TypeScript types to ClickHouse column types
+2. **Created the table** - With optimal ordering for time-series queries (`saleTimestamp` first)
+3. **Set up streaming** - Redpanda topic for reliable, ordered data delivery
+4. **Generated the API** - REST endpoint with automatic validation against your interface
+
+This is the core value proposition: define your data model once, get infrastructure automatically.
 
 ### Step 6: Test Basic Ingestion
 
@@ -330,6 +455,81 @@ clickhouse-client --host localhost --port 9000 --user panda --password pandapass
   --query "SELECT count() FROM local.sales_SalesTransaction"
 ```
 
+### Step 5: Add Data Validation (Recommended)
+
+Production data is messy. Before loading files, add validation to catch common issues early.
+
+Update `scripts/load-file.ts` to include validation:
+
+```typescript
+// Add this validation function before the loadFile function
+
+interface ValidationError {
+  row: number;
+  field: string;
+  message: string;
+}
+
+function validateRecord(record: SalesTransaction, index: number): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  // Required fields
+  if (!record.transactionId) {
+    errors.push({ row: index, field: "transactionId", message: "Missing required field" });
+  }
+  if (!record.saleTimestamp) {
+    errors.push({ row: index, field: "saleTimestamp", message: "Missing required field" });
+  }
+  if (!record.storeId) {
+    errors.push({ row: index, field: "storeId", message: "Missing required field" });
+  }
+
+  // Date format validation
+  if (record.saleTimestamp && isNaN(Date.parse(record.saleTimestamp))) {
+    errors.push({ row: index, field: "saleTimestamp", message: "Invalid date format (expected ISO 8601)" });
+  }
+
+  // Numeric validation
+  if (record.totalAmount < 0) {
+    errors.push({ row: index, field: "totalAmount", message: "Negative amount not allowed" });
+  }
+  if (record.quantity <= 0) {
+    errors.push({ row: index, field: "quantity", message: "Quantity must be positive" });
+  }
+
+  // Business rule validation
+  const expectedTotal = record.quantity * record.unitPrice;
+  if (Math.abs(record.totalAmount - expectedTotal) > 0.01) {
+    errors.push({
+      row: index,
+      field: "totalAmount",
+      message: `Amount mismatch: expected ${expectedTotal.toFixed(2)}, got ${record.totalAmount}`
+    });
+  }
+
+  return errors;
+}
+
+// Then in loadFile(), add validation before sending:
+// const validationErrors = records.flatMap((r, i) => validateRecord(r, i));
+// if (validationErrors.length > 0) {
+//   console.error("Validation errors:", validationErrors);
+//   // Decide: skip invalid rows or abort entire file
+// }
+```
+
+**Common data quality issues to catch:**
+
+| Issue | Detection | Impact if Missed |
+|-------|-----------|------------------|
+| Missing transaction ID | Check for empty/null | Duplicate records, can't track lineage |
+| Invalid date format | `Date.parse()` returns NaN | Query filters fail silently |
+| Negative amounts | `totalAmount < 0` | Incorrect revenue totals |
+| Math errors | `quantity × unitPrice ≠ totalAmount` | Inconsistent reporting |
+| Future dates | `saleTimestamp > now()` | Skews time-series analysis |
+
+**Tip:** For production, consider rejecting entire files with validation errors rather than partial loads. This ensures data consistency and makes debugging easier.
+
 ---
 
 ## Part 4: Time-Series Aggregation
@@ -412,6 +612,24 @@ clickhouse-client --host localhost --port 9000 --user panda --password pandapass
 ```
 
 You should see both `sales_SalesTransaction` and `DailySalesSummary`.
+
+**What Just Happened:**
+
+You created a materialized view that transforms your data pipeline:
+
+1. **Triggers on INSERT** - Every time data lands in `sales_SalesTransaction`, ClickHouse automatically runs the aggregation query
+2. **Pre-computes daily totals** - `toStartOfDay()` groups transactions by calendar day, collapsing potentially millions of rows into one row per day/region/category
+3. **Creates a target table** - `DailySalesSummary` stores the pre-aggregated results permanently
+4. **Uses SummingMergeTree** - Background merges automatically combine partial aggregates into final totals
+
+**Why this matters for performance:**
+
+| Query Target | Rows to Scan | Typical Query Time |
+|--------------|--------------|-------------------|
+| Raw transactions (1 year) | ~10 million | 2-10 seconds |
+| Daily summaries (1 year) | ~1,500 | 10-50 milliseconds |
+
+The materialized view gives you **100x faster queries** by doing the aggregation work once at insert time, not on every query.
 
 ### Step 4: Query the Aggregated Data
 
@@ -534,6 +752,18 @@ export * from "./ingest/SalesTransaction";
 export * from "./views/DailySalesSummary";
 export * from "./apis/salesReport";
 ```
+
+**What Just Happened:**
+
+You created a consumption API that:
+
+1. **Exposes a REST endpoint** at `/consumption/sales-report` - accessible via HTTP GET
+2. **Accepts query parameters** - `startDate`, `endDate`, and optional `region` filter
+3. **Queries the materialized view** - Not the raw transaction table, so responses are fast
+4. **Uses parameterized SQL** - The `sql` template literal prevents SQL injection automatically
+5. **Returns typed JSON** - Response matches your `SalesReportResponse` interface
+
+This API becomes the single source of truth for report data. The PDF generator, dashboards, and any other consumers all use this same endpoint, ensuring consistency.
 
 ### Step 3: Test the API
 
@@ -851,6 +1081,176 @@ Open `january-15-report.pdf` to see your static report with:
 
 ---
 
+## Part 7: How It Works (Conceptual Deep Dive)
+
+*This section explains the technical concepts behind what you built. Read this to understand why materialized views are so fast and when to use different aggregation strategies.*
+
+### Why ClickHouse is Fast for Analytics
+
+ClickHouse is a **columnar** database, which stores data fundamentally differently from traditional row-oriented databases like PostgreSQL or MySQL.
+
+**Row-oriented storage (PostgreSQL, MySQL):**
+
+Data is stored as complete rows, one after another:
+
+```
+Record 1: [txn_id=1, timestamp=..., store=W001, region=West, amount=599.98]
+Record 2: [txn_id=2, timestamp=..., store=W001, region=West, amount=49.99]
+Record 3: [txn_id=3, timestamp=..., store=W002, region=East, amount=89.99]
+```
+
+When you query `SELECT SUM(amount) FROM sales WHERE region='West'`, the database must:
+1. Read every complete row from disk
+2. Check if region matches 'West'
+3. If yes, add amount to the sum
+4. Repeat for millions of rows
+
+**Problem:** You read 100% of the data to use 2% of it (just `region` and `amount` columns).
+
+**Columnar storage (ClickHouse):**
+
+Data is stored column-by-column:
+
+```
+txn_ids:    [1, 2, 3, ...]
+timestamps: [2025-01-15T09:00, 2025-01-15T09:30, ...]
+stores:     [W001, W001, W002, ...]
+regions:    [West, West, East, ...]
+amounts:    [599.98, 49.99, 89.99, ...]
+```
+
+When you query `SELECT SUM(amount) FROM sales WHERE region='West'`, ClickHouse:
+1. Reads only the `region` column (small!)
+2. Reads only the `amount` column (small!)
+3. Scans both in parallel, summing where region matches
+4. Never touches `txn_id`, `timestamp`, `store`, etc.
+
+**Result:** Read 2% of the data, use 100% of what you read. **10-100x faster.**
+
+### Why Materialized Views Beat Batch Jobs
+
+Traditional approach: Run a scheduled job (cron, Airflow) every hour/day to aggregate data.
+
+```
+Raw Data → [Wait for schedule] → Batch Job → Aggregated Table
+```
+
+**Problems:**
+- Data is stale between runs
+- Batch job must scan all new data since last run
+- If batch fails, data is missing until next run
+- Scaling requires bigger batch windows or more complex incremental logic
+
+**ClickHouse materialized views:**
+
+```
+Raw Data → [INSERT triggers MV] → Aggregated Table (immediate)
+```
+
+**How it works:**
+
+1. You INSERT a transaction into `sales_SalesTransaction`
+2. ClickHouse immediately runs your MV's SELECT statement on the new rows
+3. Results are INSERTed into `DailySalesSummary`
+4. This happens synchronously—by the time INSERT returns, the MV is updated
+
+**Benefits:**
+- Data is always current (milliseconds latency, not hours)
+- No separate batch infrastructure to maintain
+- Scales automatically with write throughput
+- If an INSERT fails, the MV isn't corrupted
+
+### Understanding SummingMergeTree
+
+Your materialized view uses `SummingMergeTree`, a ClickHouse table engine designed for aggregation.
+
+**How it works:**
+
+1. When data arrives, ClickHouse writes it to disk immediately (fast writes)
+2. In the background, ClickHouse periodically **merges** data files
+3. During merge, rows with the same ORDER BY keys are combined:
+   - Numeric columns are summed
+   - Other columns take the last value
+
+**Example:**
+
+Two separate INSERTs for the same day/region/category:
+
+```
+INSERT 1: [saleDate=2025-01-15, region=West, category=Electronics, count=5, revenue=1000]
+INSERT 2: [saleDate=2025-01-15, region=West, category=Electronics, count=3, revenue=600]
+```
+
+After background merge:
+
+```
+Merged:   [saleDate=2025-01-15, region=West, category=Electronics, count=8, revenue=1600]
+```
+
+**Important:** Merges happen asynchronously. Until merge completes, you might see both rows. That's why you must always use `GROUP BY` when querying:
+
+```sql
+-- Always correct, regardless of merge state
+SELECT saleDate, region, sum(transactionCount), sum(totalRevenue)
+FROM DailySalesSummary
+GROUP BY saleDate, region
+```
+
+### When to Use Different Aggregation Strategies
+
+| Strategy | Use When | Example |
+|----------|----------|---------|
+| **Raw queries** | Ad-hoc exploration, data is small (<1M rows) | Debugging, one-time analysis |
+| **Materialized view** | Repeated queries, predictable aggregation patterns | Daily summaries, dashboards |
+| **Pre-aggregated API** | External consumers, need caching/rate limiting | PDF reports, third-party integrations |
+
+**Rule of thumb:** If you run the same aggregation query more than once, create a materialized view.
+
+### Time-Series Best Practices
+
+**1. Always order by time first:**
+
+```typescript
+orderByFields: ["saleTimestamp", "transactionId"]  // Good
+orderByFields: ["transactionId", "saleTimestamp"]  // Bad for time queries
+```
+
+ClickHouse uses the ORDER BY for data layout on disk. Time-first ordering means date-range queries skip irrelevant data blocks entirely.
+
+**2. Use appropriate time granularity:**
+
+| Granularity | Function | Rows/Year (1 store) | Use Case |
+|-------------|----------|---------------------|----------|
+| Hourly | `toStartOfHour()` | ~8,760 | Intraday patterns |
+| Daily | `toStartOfDay()` | ~365 | Standard reporting |
+| Weekly | `toStartOfWeek()` | ~52 | Trend analysis |
+| Monthly | `toStartOfMonth()` | ~12 | Executive summaries |
+
+Finer granularity = more rows = slower queries but more detail. Choose based on your reporting needs.
+
+**3. Consider multiple aggregation levels:**
+
+For large-scale systems, create MVs at multiple granularities:
+
+```
+Raw transactions → Hourly MV → Daily MV → Monthly MV
+```
+
+Each level is 10-30x smaller than the previous, enabling fast queries at any time scale.
+
+### Summary
+
+You now understand:
+
+- **Columnar storage** - Why ClickHouse reads less data than row-oriented databases
+- **Materialized views** - How they provide real-time aggregation without batch jobs
+- **SummingMergeTree** - Why you need GROUP BY and how background merges work
+- **Time-series patterns** - How to structure data for efficient time-range queries
+
+These concepts apply beyond this tutorial—they're fundamental to building any high-performance analytics system.
+
+---
+
 ## Wrap-Up
 
 ### What You Built
@@ -869,6 +1269,33 @@ CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API
 | `sales-report` API | Parameterized endpoint for date-range queries |
 | PDF generator | Transforms JSON into executive summary |
 
+### Before vs After
+
+**Before (Manual Process):**
+- Analyst downloads 12 CSV files from store servers each morning
+- Copies data into Excel, writes formulas for aggregations
+- Formats a Word document with tables and charts
+- Emails PDF to 4 regional managers
+- **Time: 2+ hours daily**
+- **Reliability: Depends on one person being available**
+- **Audit trail: None**
+
+**After (Automated Pipeline):**
+- Store POS systems upload files to ingest API automatically
+- ClickHouse stores and pre-aggregates data in real-time
+- API serves any date range on demand
+- PDF generation takes < 1 second
+- **Time: < 1 minute (automated)**
+- **Reliability: Runs 24/7, no human intervention**
+- **Audit trail: Full version control, reproducible outputs**
+
+**Business Impact:**
+- **500+ analyst hours/year** freed for higher-value work
+- **Zero delayed reports** due to sick days or vacations
+- **Consistent numbers** - no more formula errors or copy/paste mistakes
+- **Historical queries** - instantly pull any past date range
+- **Scalable** - works the same for 12 stores or 1,200 stores
+
 ### Performance Comparison
 
 | Operation | Traditional OLTP | Moose + ClickHouse |
@@ -878,6 +1305,17 @@ CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API
 | Report generation | Minutes (compute + format) | `<1 second` |
 
 The pre-aggregated materialized view delivers 10-100x faster query performance, making PDF generation nearly instantaneous.
+
+### What You Can Do Now
+
+With this pipeline in place, you can:
+
+1. **Generate reports for any date range** - Just change the API parameters
+2. **Add new aggregations** - Create additional materialized views (hourly, weekly, by product)
+3. **Build dashboards** - Connect BI tools directly to the API
+4. **Schedule automated delivery** - Use cron or Temporal to email reports daily
+5. **Scale to more stores** - Same code handles 10x more data with no changes
+6. **Add data quality alerts** - Extend validation to catch anomalies
 
 ### Next Steps
 
@@ -982,14 +1420,161 @@ use_ssl = false
 
 ### Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| **Port 4000 in use** | Check with `lsof -i :4000` and stop the conflicting process |
-| **ClickHouse connection refused** | Ensure `moose dev` is running; wait 10-15 seconds after startup |
-| **Ingestion returns error** | Verify JSON field types match interface (strings vs numbers, ISO date format) |
-| **Materialized view not updating** | MVs aggregate per-batch; always use GROUP BY when querying |
-| **API returns empty results** | Check date format (use YYYY-MM-DD) and verify data exists |
-| **PDF not generating** | Ensure API is accessible; check for fetch errors |
+#### Setup Issues
+
+**Port 4000 in use:**
+
+```bash
+# Find what's using port 4000
+lsof -i :4000
+
+# Kill the process if needed
+kill -9 <PID>
+```
+
+**ClickHouse connection refused:**
+
+After running `moose dev`, wait 10-15 seconds for containers to fully initialize. Verify with:
+
+```bash
+curl http://localhost:18123/ping
+```
+
+If it still fails, check Docker is running:
+
+```bash
+docker ps | grep clickhouse
+```
+
+**Docker not starting:**
+
+```bash
+# Check Docker daemon status
+docker info
+
+# On Mac/Windows: Open Docker Desktop and ensure it's running
+# On Linux: sudo systemctl start docker
+```
+
+**Model not detected after saving:**
+
+- Ensure file is saved (check for unsaved indicator in editor)
+- Verify export in `app/index.ts`
+- Check `moose dev` terminal for TypeScript compilation errors
+- Restart `moose dev` if hot-reload isn't working
+
+#### Data Issues
+
+**CSV date parsing fails:**
+
+Dates must use ISO 8601 format. Common mistakes:
+
+| Wrong Format | Correct Format |
+|--------------|----------------|
+| `01/15/2025` (US format) | `2025-01-15T09:00:00Z` |
+| `15-01-2025` (EU format) | `2025-01-15T09:00:00Z` |
+| `2025-1-15` (no leading zeros) | `2025-01-15T09:00:00Z` |
+
+**Ingestion returns error:**
+
+Verify your JSON matches the TypeScript interface exactly:
+
+```bash
+# Test with minimal valid payload
+curl -X POST http://localhost:4000/ingest/sales \
+  -H "Content-Type: application/json" \
+  -d '{"transactionId":"TEST-001","saleTimestamp":"2025-01-15T10:00:00Z","storeId":"STORE-001","region":"West","productId":"PROD-001","productCategory":"Electronics","customerId":"","quantity":1,"unitPrice":10.00,"totalAmount":10.00}'
+```
+
+Common type mismatches:
+- `quantity` must be a number, not `"1"` (string)
+- `totalAmount` must be a number, not `"10.00"` (string)
+- `saleTimestamp` must be ISO format string
+
+**Duplicate transaction IDs:**
+
+ClickHouse doesn't enforce uniqueness. Check for duplicates:
+
+```sql
+SELECT transactionId, count() as cnt
+FROM local.sales_SalesTransaction
+GROUP BY transactionId
+HAVING cnt > 1
+```
+
+To deduplicate queries, use the `FINAL` modifier:
+
+```sql
+SELECT * FROM local.sales_SalesTransaction FINAL
+```
+
+#### Query Issues
+
+**Materialized view returns unexpected results:**
+
+Remember: MVs aggregate per-batch, not globally. Always use GROUP BY:
+
+```sql
+-- Wrong (may show partial aggregates)
+SELECT * FROM local.DailySalesSummary
+
+-- Correct (consolidates partial aggregates)
+SELECT
+  saleDate,
+  region,
+  sum(transactionCount) AS transactionCount,
+  sum(totalRevenue) AS totalRevenue
+FROM local.DailySalesSummary
+GROUP BY saleDate, region
+```
+
+**API returns empty results:**
+
+1. Check date format uses `YYYY-MM-DD`:
+   ```bash
+   # Wrong
+   curl "http://localhost:4000/consumption/sales-report?startDate=01-15-2025&endDate=01-31-2025"
+
+   # Correct
+   curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-31"
+   ```
+
+2. Verify data exists for the date range:
+   ```sql
+   SELECT min(saleDate), max(saleDate) FROM local.DailySalesSummary
+   ```
+
+**Query is slow:**
+
+If queries take more than 100ms, check:
+- Are you querying the materialized view or raw table?
+- Is the date filter using the indexed column?
+- Run `EXPLAIN` to see query plan:
+  ```sql
+  EXPLAIN SELECT ... FROM local.DailySalesSummary WHERE saleDate BETWEEN ...
+  ```
+
+#### PDF Issues
+
+**PDF not generating:**
+
+1. Ensure API is accessible:
+   ```bash
+   curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15"
+   ```
+
+2. Check for fetch errors in the script output
+
+3. Verify pdfmake is installed:
+   ```bash
+   npm list pdfmake
+   ```
+
+**PDF is empty or malformed:**
+
+- Check API response has data (not empty array)
+- Verify date range contains transactions
+- Check script error output for JSON parsing issues
 
 ### Resources
 
