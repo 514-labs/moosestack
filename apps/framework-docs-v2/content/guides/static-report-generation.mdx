@@ -489,6 +489,15 @@ function validateRecord(record: SalesTransaction, index: number): ValidationErro
     errors.push({ row: index, field: "saleTimestamp", message: "Invalid date format (expected ISO 8601)" });
   }
 
+  // Future date check - transactions shouldn't be in the future
+  if (record.saleTimestamp && !isNaN(Date.parse(record.saleTimestamp))) {
+    const saleDate = new Date(record.saleTimestamp);
+    const now = new Date();
+    if (saleDate > now) {
+      errors.push({ row: index, field: "saleTimestamp", message: "Future dates not allowed" });
+    }
+  }
+
   // Numeric validation - use Number.isFinite() to catch NaN/undefined
   if (!Number.isFinite(record.totalAmount)) {
     errors.push({ row: index, field: "totalAmount", message: "Amount must be a valid number" });
