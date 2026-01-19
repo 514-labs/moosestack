@@ -580,6 +580,12 @@ pub struct InfrastructureMap {
     /// Collection of views indexed by view name
     #[serde(default)]
     pub views: HashMap<String, View>,
+
+    /// Version of Moose CLI that created or last updated this infrastructure map.
+    /// Populated automatically during storage operations.
+    /// None for maps created by older CLI versions (pre-version-tracking).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moose_version: Option<String>,
 }
 
 impl InfrastructureMap {
@@ -618,6 +624,7 @@ impl InfrastructureMap {
             web_apps: Default::default(),
             materialized_views: Default::default(),
             views: Default::default(),
+            moose_version: None,
         }
     }
 
@@ -798,6 +805,7 @@ impl InfrastructureMap {
             web_apps: Default::default(),
             materialized_views: Default::default(),
             views: Default::default(),
+            moose_version: None,
         }
     }
 
@@ -2785,6 +2793,7 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            moose_version: self.moose_version.clone().unwrap_or_default(),
             special_fields: Default::default(),
         }
     }
@@ -2932,6 +2941,11 @@ impl InfrastructureMap {
                 .collect(),
             materialized_views,
             views,
+            moose_version: if proto.moose_version.is_empty() {
+                None // Backward compat: empty string = not set
+            } else {
+                Some(proto.moose_version)
+            },
         })
     }
 
@@ -3690,6 +3704,7 @@ impl Default for InfrastructureMap {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None, // Not set until storage
         }
     }
 }
@@ -4378,6 +4393,89 @@ mod tests {
             table_removals, 1,
             "When respect_life_cycle=false, drops should not be blocked"
         );
+    }
+
+    #[test]
+    fn test_proto_roundtrip_with_version() {
+        let map = InfrastructureMap {
+            moose_version: Some("0.3.45".to_string()),
+            ..Default::default()
+        };
+
+        let bytes = map.to_proto_bytes();
+        let decoded = InfrastructureMap::from_proto(bytes).unwrap();
+
+        assert_eq!(decoded.moose_version, Some("0.3.45".to_string()));
+    }
+
+    #[test]
+    fn test_proto_roundtrip_without_version() {
+        let map = InfrastructureMap {
+            moose_version: None,
+            ..Default::default()
+        };
+
+        let bytes = map.to_proto_bytes();
+        let decoded = InfrastructureMap::from_proto(bytes).unwrap();
+
+        assert_eq!(decoded.moose_version, None);
+    }
+
+    #[test]
+    fn test_backward_compatibility_json() {
+        let old_json = r#"{
+            "default_database": "test_db",
+            "topics": {},
+            "tables": {},
+            "api_endpoints": {},
+            "dmv1_views": {},
+            "views": {},
+            "topic_to_table_sync_processes": {},
+            "topic_to_topic_sync_processes": {},
+            "function_processes": {},
+            "block_db_processes": {},
+            "consumption_api_web_server": {},
+            "orchestration_workers": {},
+            "sql_resources": {},
+            "workflows": {},
+            "web_apps": {},
+            "materialized_views": {}
+        }"#;
+
+        let map: InfrastructureMap = serde_json::from_str(old_json).unwrap();
+        assert_eq!(map.moose_version, None);
+    }
+
+    #[test]
+    fn test_forward_compatibility_json() {
+        let new_json = r#"{
+            "default_database": "test_db",
+            "moose_version": "0.3.45",
+            "topics": {},
+            "tables": {},
+            "api_endpoints": {},
+            "dmv1_views": {},
+            "views": {},
+            "topic_to_table_sync_processes": {},
+            "topic_to_topic_sync_processes": {},
+            "function_processes": {},
+            "block_db_processes": {},
+            "consumption_api_web_server": {},
+            "orchestration_workers": {},
+            "sql_resources": {},
+            "workflows": {},
+            "web_apps": {},
+            "materialized_views": {}
+        }"#;
+
+        let map: InfrastructureMap = serde_json::from_str(new_json).unwrap();
+        assert_eq!(map.moose_version, Some("0.3.45".to_string()));
+    }
+
+    #[test]
+    fn test_version_not_set_on_creation() {
+        let map = InfrastructureMap::default();
+        assert_eq!(map.moose_version, None);
     }
 }
 

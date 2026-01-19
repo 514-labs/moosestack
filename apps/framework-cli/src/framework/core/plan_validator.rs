@@ -201,6 +201,7 @@ mod tests {
                 web_apps: HashMap::new(),
                 materialized_views: HashMap::new(),
                 views: HashMap::new(),
+                moose_version: None,
             },
             changes: Default::default(),
         }

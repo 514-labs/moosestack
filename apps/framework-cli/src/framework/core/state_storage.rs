@@ -60,7 +60,9 @@ impl RedisStateStorage {
 #[async_trait]
 impl StateStorage for RedisStateStorage {
     async fn store_infrastructure_map(&self, infra_map: &InfrastructureMap) -> Result<()> {
-        infra_map.store_in_redis(&self.client).await
+        let mut versioned_map = infra_map.clone();
+        versioned_map.moose_version = Some(crate::utilities::constants::CLI_VERSION.to_string());
+        versioned_map.store_in_redis(&self.client).await
     }
 
     async fn load_infrastructure_map(&self) -> Result<Option<InfrastructureMap>> {
@@ -184,8 +186,12 @@ impl StateStorage for ClickHouseStateStorage {
         // Ensure table exists
         self.ensure_state_table().await?;
 
+        // Add version tracking before serialization
+        let mut versioned_map = infra_map.clone();
+        versioned_map.moose_version = Some(crate::utilities::constants::CLI_VERSION.to_string());
+
         // Serialize to protobuf
-        let encoded: Vec<u8> = infra_map.to_proto().write_to_bytes()?;
+        let encoded: Vec<u8> = versioned_map.to_proto().write_to_bytes()?;
         let encoded_base64 =
             base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &encoded);
 
