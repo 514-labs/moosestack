@@ -5,10 +5,6 @@ on:
   schedule:
     # Monday and Thursday at 6am PST
     - cron: '0 14 * * 1,4'
-  push:
-    # # TODO: Remove before merge
-    branches:
-      - llm-driven-e2e-test
 
 jobs:
   test-llm-docs:
