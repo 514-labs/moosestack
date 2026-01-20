@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LineChart, type TimeBucketOption } from "@/components/charts";
+import { LineChart, type TimeBucketOption } from "@/components/widgets";
 import { useTimeseries } from "./dashboard-hooks";
 import type { BucketSize } from "@/app/actions";
 
@@ -16,7 +16,7 @@ export function EventsOverTimeChart() {
   return (
     <LineChart
       title="Events over time"
-      description="COUNT(events) grouped by time bucket"
+      description={`Total count of events grouped by ${bucket}`}
       data={data ?? []}
       className="lg:col-span-2"
       height={350}

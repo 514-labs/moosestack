@@ -1,27 +1,16 @@
 "use client";
 
-import * as React from "react";
 import {
   DashboardProvider,
   FilterBar,
-  useMetrics,
   useEventsByStatus,
+  useMetrics,
   EventsOverTimeChart,
+  MetricCards,
 } from "@/components/dashboard";
-import { StatsCards, type StatItem } from "@/components/stats-cards";
-import { DonutChart } from "@/components/charts";
+import { DonutChart } from "@/components/widgets";
 import { type ChartConfig } from "@/components/ui/chart";
-import { type MetricsResult } from "@/app/actions";
-import {
-  ActivityIcon,
-  DollarSignIcon,
-  CalculatorIcon,
-  TrendingDownIcon,
-  TrendingUpIcon,
-  PercentIcon,
-  ChartLine,
-  type LucideIcon,
-} from "lucide-react";
+import { ChartLine } from "lucide-react";
 
 // =============================================================================
 // Chart Configuration
@@ -34,82 +23,16 @@ const statusChartConfig = {
 } satisfies ChartConfig;
 
 // =============================================================================
-// Stats Card Configuration
-// =============================================================================
-
-interface MetricCardConfig {
-  title: string;
-  icon: LucideIcon;
-  description?: string;
-  format?: (value: number) => string | number;
-}
-
-const metricCards: Record<keyof MetricsResult, MetricCardConfig> = {
-  totalEvents: {
-    title: "Total Events",
-    icon: ActivityIcon,
-    description: "All events in period",
-  },
-  totalAmount: {
-    title: "Total Amount",
-    icon: DollarSignIcon,
-    format: (v) => `$${v.toLocaleString()}`,
-  },
-  avgAmount: {
-    title: "Average Amount",
-    icon: CalculatorIcon,
-    format: (v) => `$${v.toFixed(2)}`,
-  },
-  minAmount: {
-    title: "Min Amount",
-    icon: TrendingDownIcon,
-    format: (v) => `$${v.toLocaleString()}`,
-  },
-  maxAmount: {
-    title: "Max Amount",
-    icon: TrendingUpIcon,
-    format: (v) => `$${v.toLocaleString()}`,
-  },
-  highValueRatio: {
-    title: "High Value Ratio",
-    icon: PercentIcon,
-    format: (v) => `${(v * 100).toFixed(1)}%`,
-  },
-};
-
-const displayMetrics: (keyof MetricsResult)[] = [
-  "totalEvents",
-  "totalAmount",
-  "avgAmount",
-  "highValueRatio",
-];
-
-// =============================================================================
 // Dashboard Content
 // =============================================================================
 
 function DashboardContent() {
-  const { data: metrics, isLoading: metricsLoading } = useMetrics();
+  const { data: metrics } = useMetrics();
   const { data: eventsByStatus = [] } = useEventsByStatus();
-
-  const stats: StatItem[] = React.useMemo(() => {
-    if (!metrics) return [];
-    return displayMetrics.map((key) => {
-      const config = metricCards[key];
-      const value = metrics[key];
-      return {
-        title: config.title,
-        value: config.format ? config.format(value) : value,
-        icon: config.icon,
-        description: config.description,
-        isPositive: value > 0,
-      };
-    });
-  }, [metrics]);
 
   return (
     <>
-      <StatsCards stats={stats} isLoading={metricsLoading || !metrics} />
+      <MetricCards />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <EventsOverTimeChart />

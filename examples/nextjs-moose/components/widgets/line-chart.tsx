@@ -136,11 +136,6 @@ export function LineChartComponent({
     <ChartWidget
       title={title}
       description={description}
-      icon={
-        icon ?? (
-          <TrendingUp className="size-4 sm:size-[18px] text-muted-foreground" />
-        )
-      }
       headerRight={headerContent}
       className={className}
     >

@@ -11,7 +11,6 @@ export interface DonutChartProps {
   data: PieDataPoint[];
   chartConfig: ChartConfig;
   title: string;
-  icon?: React.ReactNode;
   centerValue: number | string;
   centerLabel?: string;
   className?: string;
@@ -21,7 +20,6 @@ export function DonutChart({
   data,
   chartConfig,
   title,
-  icon,
   centerValue,
   centerLabel,
   className = "@container",
@@ -63,7 +61,7 @@ export function DonutChart({
   }, []);
 
   return (
-    <ChartWidget title={title} icon={icon} className={className}>
+    <ChartWidget title={title} className={className}>
       <div className="flex flex-col @[400px]:flex-row items-center gap-4 @[400px]:gap-6">
         {/* Pie Chart */}
         <div className="relative shrink-0 size-[220px]">

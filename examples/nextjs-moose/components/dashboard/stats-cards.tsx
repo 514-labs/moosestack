@@ -6,7 +6,6 @@
  * Reusable component for displaying key metrics in a grid.
  */
 
-import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LucideIcon } from "lucide-react";
 

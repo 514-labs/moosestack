@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 export interface ChartWidgetProps {
   title: string;
   description?: string;
-  icon?: React.ReactNode;
   children: React.ReactNode;
   headerRight?: React.ReactNode;
   className?: string;
@@ -18,7 +17,6 @@ export interface ChartWidgetProps {
 export function ChartWidget({
   title,
   description,
-  icon,
   children,
   headerRight,
   className,
@@ -32,11 +30,6 @@ export function ChartWidget({
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 sm:gap-2.5">
-          {icon && (
-            <div className="flex items-center justify-center size-7 sm:size-8 rounded-md border bg-background">
-              {icon}
-            </div>
-          )}
           <div>
             <h3 className="text-sm sm:text-base font-semibold">{title}</h3>
             {description && (

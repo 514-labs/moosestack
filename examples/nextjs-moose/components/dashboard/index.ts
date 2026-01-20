@@ -24,6 +24,11 @@ export {
 // UI Components
 export { FilterBar, type FilterBarProps } from "./filter-bar";
 export { EventsOverTimeChart } from "./events-over-time-chart";
+export {
+  DashboardMetricCards,
+  MetricCards,
+  type DashboardMetricCardsProps,
+} from "./metric-cards";
 
 // Types (re-export from actions for convenience)
 export type { BucketSize } from "@/app/actions";
