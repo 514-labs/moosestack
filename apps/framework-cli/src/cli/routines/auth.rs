@@ -41,7 +41,6 @@ pub fn generate_hash_token() -> HashTokenResult {
 }
 
 /// Displays the hash token result using styled terminal output
-#[allow(dead_code)]
 pub fn display_hash_token_result(result: &HashTokenResult) {
     show_message!(
         MessageType::Info,

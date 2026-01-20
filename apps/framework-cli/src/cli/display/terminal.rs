@@ -10,7 +10,7 @@ use crossterm::{
         Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
     },
 };
-use std::io::{stdout, Result as IoResult};
+use std::io::{stderr, stdout, Result as IoResult};
 
 use crate::utilities::display_config::load_display_config;
 
@@ -273,16 +273,22 @@ fn write_styled_line_to<W: std::io::Write>(
     Ok(())
 }
 
-pub fn write_styled_line(styled_text: &StyledText, message: &str) -> IoResult<()> {
-    let config = load_display_config();
-    let mut stdout = stdout();
-    write_styled_line_to(
-        &mut stdout,
-        styled_text,
-        message,
-        config.no_ansi,
-        config.show_timestamps,
-    )
+pub fn write_styled_line(
+    styled_text: &StyledText,
+    message: &str,
+    no_ansi: bool,
+    show_timestamps: bool,
+    quiet_stdout: bool,
+) -> IoResult<()> {
+    // When quiet_stdout is set, redirect messages to stderr to keep stdout clean
+    // for structured/JSON output
+    if quiet_stdout {
+        let mut stderr = stderr();
+        write_styled_line_to(&mut stderr, styled_text, message, no_ansi, show_timestamps)
+    } else {
+        let mut stdout = stdout();
+        write_styled_line_to(&mut stdout, styled_text, message, no_ansi, show_timestamps)
+    }
 }
 
 #[cfg(test)]

@@ -32,8 +32,8 @@ use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::infrastructure::stream::kafka::models::KafkaStreamConfig;
 use crate::metrics::MetricEvent;
 
-use crate::cli::display::should_show_spinner;
 use crate::cli::logger::{context, resource_type};
+
 use crate::framework::core::infrastructure::api_endpoint::APIType;
 use crate::framework::core::infrastructure_map::Change;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};

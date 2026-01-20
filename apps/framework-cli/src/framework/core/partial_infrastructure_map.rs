@@ -553,8 +553,12 @@ pub struct PartialInfrastructureMap {
     /// Materialized views and regular views from the SDK
     /// Using serde_json::Value temporarily until proper types are implemented
     #[serde(default)]
-    #[allow(dead_code)]
-    materialized_views: HashMap<String, serde_json::Value>,
+    materialized_views: HashMap<
+        String,
+        crate::framework::core::infrastructure::materialized_view::MaterializedView,
+    >,
+    #[serde(default)]
+    views: HashMap<String, crate::framework::core::infrastructure::view::View>,
     /// List of source files that exist in the project but were not loaded during the build process.
     /// This is used to warn developers about potentially missing imports or configuration issues.
     /// File paths should be relative to the project root.
