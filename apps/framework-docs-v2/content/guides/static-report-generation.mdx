@@ -541,7 +541,7 @@ function validateRecord(record: SalesTransaction, index: number): ValidationErro
 | Issue | Detection | Impact if Missed |
 |-------|-----------|------------------|
 | Missing transaction ID | Check for empty/null | Duplicate records, can't track lineage |
-| Invalid date format | `Date.parse()` returns NaN | Query filters fail silently |
+| Invalid date format | `parseISO()` + `isValid()` from date-fns | Query filters fail silently |
 | Negative amounts | `totalAmount < 0` | Incorrect revenue totals |
 | Math errors | `quantity × unitPrice ≠ totalAmount` | Inconsistent reporting |
 | Future dates | `saleTimestamp > now()` | Skews time-series analysis |
