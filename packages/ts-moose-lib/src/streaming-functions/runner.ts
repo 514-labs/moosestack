@@ -110,7 +110,6 @@ export interface StreamingFunctionArgs {
   functionFilePath: string;
   broker: string; // Comma-separated list of Kafka broker addresses (e.g., "broker1:9092, broker2:9092"). Whitespace around commas is automatically trimmed.
   maxSubscriberCount: number;
-  isDmv2: boolean;
   logPayloads?: boolean;
   saslUsername?: string;
   saslPassword?: string;
@@ -582,11 +581,11 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
  * @throws Will throw and log an error if the function file cannot be loaded
  * @example
  * ```ts
- * const fn = loadStreamingFunction({functionFilePath: './transform.js'});
+ * const fn = loadStreamingFunctionPrecompiled({functionFilePath: './transform.js'});
  * const result = await fn(data);
  * ```
  */
-async function loadStreamingFunction(functionFilePath: string) {
+async function loadStreamingFunctionPrecompiled(functionFilePath: string) {
   let streamingFunctionImport: { default: StreamingFunction };
   try {
     // Check if we should use compiled code
@@ -617,7 +616,7 @@ async function loadStreamingFunction(functionFilePath: string) {
   return streamingFunctionImport.default;
 }
 
-async function loadStreamingFunctionV2(
+async function loadStreamingFunction(
   sourceTopic: TopicConfig,
   targetTopic?: TopicConfig,
 ): Promise<{
@@ -716,8 +715,8 @@ const startConsumer = async (
   ][];
   let fieldMutations: FieldMutations | undefined;
 
-  if (args.isDmv2) {
-    const result = await loadStreamingFunctionV2(
+  if (!shouldUseCompiled()) {
+    const result = await loadStreamingFunction(
       args.sourceTopic,
       args.targetTopic,
     );
@@ -725,7 +724,7 @@ const startConsumer = async (
     fieldMutations = result.fieldMutations;
   } else {
     streamingFunctions = [
-      [await loadStreamingFunction(args.functionFilePath), {}],
+      [await loadStreamingFunctionPrecompiled(args.functionFilePath), {}],
     ];
     fieldMutations = undefined;
   }
@@ -924,8 +923,7 @@ export function validateTopicConfig(config: TopicConfig): void {
  *   targetTopic: { name: 'target', partitions: 3, retentionPeriod: 86400, maxMessageBytes: 1048576 },
  *   functionFilePath: './transform.js',
  *   broker: 'localhost:9092',
- *   maxSubscriberCount: 3,
- *   isDmv2: false
+ *   maxSubscriberCount: 3
  * }); // Starts the streaming function cluster
  * ```
  */

@@ -3,6 +3,7 @@ export type Key<T extends string | number | Date> = T;
 export type JWT<T extends object> = T;
 
 export {
+  ClickHouseEngines,
   Aggregated,
   SimpleAggregated,
   OlapTable,

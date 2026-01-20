@@ -234,3 +234,28 @@ export type ClickHouseMaterialized<SqlExpression extends string> = {
  * @example{ updated_at: WithDefault<Date, "now()"> }
  */
 export type WithDefault<T, _SqlExpression extends string> = T;
+
+/**
+ * ClickHouse table engine types supported by Moose.
+ */
+export enum ClickHouseEngines {
+  MergeTree = "MergeTree",
+  ReplacingMergeTree = "ReplacingMergeTree",
+  SummingMergeTree = "SummingMergeTree",
+  AggregatingMergeTree = "AggregatingMergeTree",
+  CollapsingMergeTree = "CollapsingMergeTree",
+  VersionedCollapsingMergeTree = "VersionedCollapsingMergeTree",
+  GraphiteMergeTree = "GraphiteMergeTree",
+  S3Queue = "S3Queue",
+  S3 = "S3",
+  Buffer = "Buffer",
+  Distributed = "Distributed",
+  IcebergS3 = "IcebergS3",
+  Kafka = "Kafka",
+  ReplicatedMergeTree = "ReplicatedMergeTree",
+  ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree",
+  ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree",
+  ReplicatedSummingMergeTree = "ReplicatedSummingMergeTree",
+  ReplicatedCollapsingMergeTree = "ReplicatedCollapsingMergeTree",
+  ReplicatedVersionedCollapsingMergeTree = "ReplicatedVersionedCollapsingMergeTree",
+}
