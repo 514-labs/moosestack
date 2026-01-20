@@ -6,9 +6,11 @@
  * - Type-safe filtering
  * - Configurable sorting and pagination
  * - Custom SQL assembly via QueryParts
+ *
+ * @module query-layer/query-model
  */
 
-import { sql, Sql, OlapTable } from "@514labs/moose-lib";
+import { sql, Sql, OlapTable, QueryClient } from "@514labs/moose-lib";
 import {
   raw,
   empty,
@@ -30,26 +32,75 @@ import {
   orderBy as orderByClause,
   groupBy as groupByClause,
   paginate,
+} from "./sql-utils";
+import {
+  type FilterOperator,
+  type SortDir,
   type SqlValue,
   type ColRef,
-} from "./utils";
-import type { FilterOperator, SortDir } from "./types";
-import type { FieldDef, DimensionDef, MetricDef } from "./fields";
-import {
-  deriveInputTypeFromDataType,
-  type FilterDef,
+  type DimensionDef,
+  type MetricDef,
   type ModelFilterDef,
   type FilterDefBase,
-  type FilterValueType,
   type FilterInputTypeHint,
-} from "./filters";
-import type { QueryRequest, QueryParts, FilterParams } from "./query-request";
-import type { ResolvedQuerySpec } from "./resolved-query-spec";
-import type {
-  Names,
-  OperatorValueType,
-  InferFilterParamsWithTable,
-} from "./type-helpers";
+  type Names,
+  type OperatorValueType,
+  type QueryRequest,
+  type QueryParts,
+  type FilterParams,
+  deriveInputTypeFromDataType,
+} from "./types";
+
+// =============================================================================
+// Internal Types (not exported)
+// =============================================================================
+
+/**
+ * Field definition for SELECT clauses (internal runtime type).
+ * A field can be a simple column, a computed expression, or an aggregate.
+ * @internal
+ */
+interface FieldDef {
+  column?: ColRef<any>;
+  expression?: Sql;
+  agg?: Sql;
+  as?: string;
+  alias?: string;
+}
+
+/**
+ * Runtime filter definition (internal).
+ * Created from ModelFilterDef during model initialization.
+ * @internal
+ */
+interface FilterDef<TModel, TValue = SqlValue> {
+  column: ColRef<TModel>;
+  operators: readonly FilterOperator[];
+  transform?: (value: TValue) => SqlValue;
+}
+
+/**
+ * Resolved query specification (internal).
+ * Contains select/groupBy (SQL concepts) derived from QueryRequest (dimensions/metrics).
+ * @internal
+ */
+type ResolvedQuerySpec<
+  TMetrics extends string,
+  TDimensions extends string,
+  TFilters extends Record<string, FilterDefBase>,
+  TSortable extends string,
+  TTable = any,
+> = {
+  filters?: FilterParams<TFilters, TTable>;
+  select?: Array<TMetrics | TDimensions>;
+  groupBy?: TDimensions[];
+  orderBy?: Array<[TSortable, SortDir]>;
+  sortBy?: TSortable;
+  sortDir?: SortDir;
+  limit?: number;
+  page?: number;
+  offset?: number;
+};
 
 // =============================================================================
 // Query Model Configuration
@@ -57,7 +108,6 @@ import type {
 
 /**
  * Configuration for defining a query model.
- * Specifies the table, available fields (dimensions/metrics), filters, and sorting options.
  *
  * @template TTable - The table's model type (row type)
  * @template TMetrics - Record of metric definitions
@@ -77,12 +127,11 @@ export interface QueryModelConfig<
 
   /**
    * Dimension fields - columns used for grouping, filtering, and display.
-   * All dimensions are automatically groupable (no separate `groupable` needed).
    *
    * @example
    * dimensions: {
-   *   status: { column: "status" },  // Simple column
-   *   day: { expression: sql`toDate(timestamp)`, as: "day" },  // Computed
+   *   status: { column: "status" },
+   *   day: { expression: sql`toDate(timestamp)`, as: "day" },
    * }
    */
   dimensions?: TDimensions;
@@ -100,7 +149,6 @@ export interface QueryModelConfig<
 
   /**
    * Filterable fields with allowed operators.
-   * Column names must be keys of the table's model type.
    *
    * @example
    * filters: {
@@ -112,25 +160,17 @@ export interface QueryModelConfig<
 
   /**
    * Which fields can be sorted.
-   * Must be a readonly array of string literals for proper type inference.
    *
    * @example
    * sortable: ["timestamp", "amount", "status"] as const
    */
   sortable: readonly TSortable[];
 
-  /**
-   * Default query behavior.
-   * These defaults are applied when not specified in query parameters.
-   */
+  /** Default query behavior */
   defaults?: {
-    /** Default sort order */
     orderBy?: Array<[TSortable, SortDir]>;
-    /** Default grouping dimensions */
     groupBy?: string[];
-    /** Default row limit */
     limit?: number;
-    /** Maximum allowed limit (enforced to prevent excessive queries) */
     maxLimit?: number;
   };
 }
@@ -142,6 +182,7 @@ export interface QueryModelConfig<
 /**
  * Query model interface providing type-safe query building and execution.
  *
+ * @template TTable - The table's model type
  * @template TMetrics - Record of metric definitions
  * @template TDimensions - Record of dimension definitions
  * @template TFilters - Record of filter definitions
@@ -158,16 +199,15 @@ export interface QueryModel<
 > {
   /** Filter definitions (exposed for type inference) */
   readonly filters: TFilters;
-  /** Sortable fields (exposed for type inference) */
+  /** Sortable fields */
   readonly sortable: readonly TSortable[];
-  /** Dimension definitions (exposed for type inference) */
+  /** Dimension definitions */
   readonly dimensions?: TDimensions;
-  /** Metric definitions (exposed for type inference) */
+  /** Metric definitions */
   readonly metrics?: TMetrics;
 
   /** Available dimension names (runtime access) */
   readonly dimensionNames: readonly string[];
-
   /** Available metric names (runtime access) */
   readonly metricNames: readonly string[];
 
@@ -177,79 +217,90 @@ export interface QueryModel<
    */
   readonly $inferDimensions: Names<TDimensions>;
   readonly $inferMetrics: Names<TMetrics>;
-  /**
-   * Infers the filter parameter structure with expected value types for each operator.
-   * Uses TTable to look up column types directly from the table model.
-   */
-  readonly $inferFilters: InferFilterParamsWithTable<TFilters, TTable>;
+  readonly $inferFilters: FilterParams<TFilters, TTable>;
   readonly $inferRequest: QueryRequest<
     Names<TMetrics>,
     Names<TDimensions>,
     TFilters,
-    TSortable
+    TSortable,
+    TTable
   >;
   readonly $inferResult: TResult;
 
   /**
-   * Execute query with request and return results.
-   * @param request - Query request (user-facing: dimensions/metrics)
-   * @param execute - Function to execute the SQL query
+   * Execute query with Moose QueryClient.
+   *
+   * @param request - Query request (dimensions/metrics)
+   * @param client - Moose QueryClient from getMooseClients()
    * @returns Promise resolving to array of result rows
+   *
+   * @example
+   * const { client } = await getMooseClients();
+   * const results = await model.query(request, client.query);
    */
   query: (
     request: QueryRequest<
       Names<TMetrics>,
       Names<TDimensions>,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >,
-    execute: (query: Sql) => Promise<TResult[]>,
+    client: QueryClient,
   ) => Promise<TResult[]>;
 
   /**
    * Build complete SQL query from request.
-   * @param request - Query request (user-facing: dimensions/metrics)
+   *
+   * @param request - Query request (dimensions/metrics)
    * @returns Complete SQL query
+   *
+   * @example
+   * const sql = model.toSql({ dimensions: ["status"], metrics: ["totalEvents"] });
    */
   toSql: (
     request: QueryRequest<
       Names<TMetrics>,
       Names<TDimensions>,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >,
   ) => Sql;
 
   /**
    * Get individual SQL parts for custom assembly.
-   * @param request - Query request (user-facing: dimensions/metrics)
+   *
+   * This is the advanced escape hatch for when you need full control
+   * over the SQL structure (CTEs, unions, custom ordering, etc.).
+   *
+   * @param request - Query request (dimensions/metrics)
    * @returns Object containing individual SQL clauses
+   *
+   * @example
+   * const parts = model.toParts(request);
+   * const customQuery = sql`
+   *   SELECT ${parts.dimensions}, ${parts.metrics}
+   *   ${parts.from}
+   *   ${parts.where}
+   *   ${parts.groupBy}
+   *   ORDER BY custom_column DESC
+   * `;
    */
   toParts: (
     request: QueryRequest<
       Names<TMetrics>,
       Names<TDimensions>,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >,
   ) => QueryParts;
-
-  /**
-   * Build SQL with custom assembly function.
-   * @param request - Query request (user-facing: dimensions/metrics)
-   * @param assemble - Function to assemble SQL parts into final query
-   * @returns Complete SQL query
-   */
-  build: (
-    request: QueryRequest<
-      Names<TMetrics>,
-      Names<TDimensions>,
-      TFilters,
-      TSortable
-    >,
-    assemble: (parts: QueryParts) => Sql,
-  ) => Sql;
 }
+
+// =============================================================================
+// defineQueryModel Implementation
+// =============================================================================
 
 /**
  * Define a query model with controlled field selection, filtering, and sorting.
@@ -308,18 +359,16 @@ export function defineQueryModel<
   } = config;
   const { maxLimit = 1000 } = defaults;
 
-  // Resolve column names to actual column references and derive inputType from data_type
+  // Resolve column names to actual column references and derive inputType
   const resolvedFilters: Record<
     string,
     FilterDef<TTable, any> & { inputType?: FilterInputTypeHint }
   > = {};
   for (const [name, def] of Object.entries(filters)) {
-    // Type-safe: def.column is keyof TTable, and table.columns[key] is ColRef<TTable>
     const columnRef = table.columns[def.column] as ColRef<TTable> & {
       data_type?: unknown;
     };
 
-    // Auto-derive inputType from column's data_type if not explicitly provided
     const inputType =
       def.inputType ??
       (columnRef.data_type ?
@@ -334,23 +383,17 @@ export function defineQueryModel<
     };
   }
 
-  /**
-   * Normalize a dimension definition to FieldDef.
-   * Converts string column names to actual ColRef objects for SQL generation.
-   */
+  // Normalize dimension definitions
   const normalizeDimension = (
     name: string,
     def: DimensionDef<TTable, keyof TTable>,
-  ): FieldDef => {
-    return {
-      column:
-        def.column ? (table.columns[def.column] as ColRef<TTable>) : undefined,
-      expression: def.expression,
-      as: def.as,
-    };
-  };
+  ): FieldDef => ({
+    column:
+      def.column ? (table.columns[def.column] as ColRef<TTable>) : undefined,
+    expression: def.expression,
+    as: def.as,
+  });
 
-  // Normalize dimensions: convert DimensionDef (with string keys) to FieldDef (with ColRef)
   const normalizedDimensions: Record<string, FieldDef> = {};
   if (dimensions) {
     for (const [name, def] of Object.entries(dimensions)) {
@@ -361,7 +404,6 @@ export function defineQueryModel<
     }
   }
 
-  // Normalize metrics (already have the right shape, just extract agg and as)
   const normalizedMetrics: Record<string, FieldDef> = {};
   if (metrics) {
     for (const [name, def] of Object.entries(metrics) as [
@@ -372,22 +414,16 @@ export function defineQueryModel<
     }
   }
 
-  // Combine into normalizedFields
   const normalizedFields: Record<string, FieldDef> = {};
   Object.assign(normalizedFields, normalizedDimensions, normalizedMetrics);
 
-  // Track which fields are dimensions vs metrics (as Sets for lookup)
   const dimensionNamesSet = new Set(Object.keys(normalizedDimensions));
   const metricNamesSet = new Set(Object.keys(normalizedMetrics));
 
-  // Extract dimension and metric names for runtime access
   const dimensionNames = Object.keys(normalizedDimensions) as readonly string[];
   const metricNames = Object.keys(normalizedMetrics) as readonly string[];
 
-  /**
-   * Build a field SQL expression with alias.
-   * Priority: agg > expression > column
-   */
+  // Build field SQL expression with alias
   const buildFieldExpr = (field: FieldDef, defaultAlias: string): Sql => {
     const expr =
       field.agg ??
@@ -398,10 +434,7 @@ export function defineQueryModel<
     return sql`${expr} AS ${raw(String(alias))}`;
   };
 
-  /**
-   * Build a list of field SQL expressions.
-   * Filters out empty/invalid fields.
-   */
+  // Build list of field SQL expressions
   function buildFieldList(
     fieldDefs: Record<string, FieldDef>,
     selectFields?: string[],
@@ -416,9 +449,7 @@ export function defineQueryModel<
       .filter((s) => s !== empty);
   }
 
-  /**
-   * Build complete SELECT clause.
-   */
+  // Build complete SELECT clause
   function buildSelectClause(selectFields?: string[]): Sql {
     const fieldNames = selectFields ?? Object.keys(normalizedFields);
     const parts = fieldNames
@@ -472,7 +503,9 @@ export function defineQueryModel<
     }
   }
 
-  function buildFilterConditions(filterParams?: FilterParams<TFilters>): Sql[] {
+  function buildFilterConditions(
+    filterParams?: FilterParams<TFilters, TTable>,
+  ): Sql[] {
     if (!filterParams) return [];
 
     const conditions: Sql[] = [];
@@ -506,7 +539,8 @@ export function defineQueryModel<
       Names<TMetrics>,
       Names<TDimensions>,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >,
   ): Sql {
     let orderBySpec: Array<[TSortable, SortDir]> | undefined;
@@ -540,24 +574,22 @@ export function defineQueryModel<
     return sql`ORDER BY ${join(parts)}`;
   }
 
-  // Internal resolution function (not exported)
   function resolveQuerySpec(
     request: QueryRequest<
       Names<TMetrics>,
       Names<TDimensions>,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >,
   ): ResolvedQuerySpec<
     Names<TMetrics>,
     Names<TDimensions>,
     TFilters,
-    TSortable
+    TSortable,
+    TTable
   > {
-    // Auto-derive select from dimensions + metrics
     const select = [...(request.dimensions ?? []), ...(request.metrics ?? [])];
-
-    // Auto-derive groupBy from dimensions (if dimensions are present)
     const groupBy =
       request.dimensions && request.dimensions.length > 0 ?
         request.dimensions
@@ -581,17 +613,16 @@ export function defineQueryModel<
       keyof TMetrics & string,
       keyof TDimensions & string,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >,
   ): Sql {
     const groupByFields = spec.groupBy ?? defaults.groupBy;
     if (!groupByFields || groupByFields.length === 0) return empty;
 
-    // Map field names to their actual column/expression
     const groupExprs = groupByFields.map((fieldName) => {
       const field = normalizedFields[fieldName];
       if (!field) return raw(fieldName);
-      // For grouping, use the column directly (not the alias)
       if (field.column) return sql`${field.column}`;
       if (field.expression) return field.expression;
       return raw(fieldName);
@@ -605,24 +636,22 @@ export function defineQueryModel<
       Names<TMetrics>,
       Names<TDimensions>,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >,
   ): QueryParts {
-    // Resolve request to resolved query specification
     const spec = resolveQuerySpec(request);
 
     const limitVal = Math.min(spec.limit ?? defaults.limit ?? 100, maxLimit);
     const offsetVal =
       spec.page != null ? spec.page * limitVal : (spec.offset ?? 0);
 
-    // Filter selected fields into dimensions vs metrics
     const selectedFields = spec.select ?? Object.keys(normalizedFields);
     const selectedDimensions = selectedFields.filter((f) =>
       dimensionNamesSet.has(f),
     );
     const selectedMetrics = selectedFields.filter((f) => metricNamesSet.has(f));
 
-    // Build separate dimension and metric clauses
     const dimensionParts = buildFieldList(
       normalizedDimensions,
       selectedDimensions.length > 0 ? selectedDimensions : undefined,
@@ -658,7 +687,8 @@ export function defineQueryModel<
       Names<TMetrics>,
       Names<TDimensions>,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >,
   ): Sql {
     const parts = toParts(request);
@@ -687,20 +717,19 @@ export function defineQueryModel<
 
   const model = {
     filters: filtersWithInputType as TFilters &
-      Record<string, { inputType?: FilterInputTypeHint }>, // Include derived inputType
+      Record<string, { inputType?: FilterInputTypeHint }>,
     sortable,
-    // Expose dimensions and metrics for type inference
-    // Note: These are Records, use `keyof typeof model.dimensions` to get union types
     dimensions: dimensions as TDimensions | undefined,
     metrics: metrics as TMetrics | undefined,
     dimensionNames,
     metricNames,
-    query: async (request, execute) => execute(toSql(request)),
+    query: async (request, client: QueryClient) => {
+      const result = await client.execute(toSql(request));
+      return result.json();
+    },
     toSql,
     toParts,
-    build: (request, assemble) => assemble(toParts(request)),
-    // Type-only inference helpers (similar to Drizzle's $inferSelect)
-    // These properties don't exist at runtime but provide type inference
+    // Type-only inference helpers
     $inferDimensions: undefined as never,
     $inferMetrics: undefined as never,
     $inferFilters: undefined as never,

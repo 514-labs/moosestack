@@ -6,7 +6,7 @@ import type {
   FieldOption,
   FilterMeta,
   FilterValue,
-  ReportQueryParams,
+  QueryRequest,
 } from "./types";
 
 // =============================================================================
@@ -33,7 +33,7 @@ export interface UseReportOptions {
   /** Model metadata (from prepareModel) */
   model: ReportModel;
   /** Function to execute the query */
-  execute: (params: ReportQueryParams) => Promise<unknown[]>;
+  execute: (params: QueryRequest) => Promise<unknown[]>;
   /** Default selections */
   defaults?: {
     dimensions?: string[];
@@ -203,7 +203,7 @@ export function useReport(options: UseReportOptions): UseReportReturn {
   // Query Params
   // ---------------------------------------------------------------------------
 
-  const queryParams = React.useMemo((): ReportQueryParams => {
+  const queryParams = React.useMemo((): QueryRequest => {
     // Filter out empty filter values
     const activeFilters: Record<string, FilterValue> = {};
     for (const [key, value] of Object.entries(filters)) {

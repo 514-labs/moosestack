@@ -1,45 +1,19 @@
-import { sql, Sql, OlapTable } from "@514labs/moose-lib";
-import type { IValidation } from "typia";
-
-// =============================================================================
-// Types
-// =============================================================================
-
-/** Valid SQL values that can be parameterized */
-export type SqlValue = string | number | boolean | Date;
-
 /**
- * Column reference - accepts actual Column objects from OlapTable.columns.* or raw Sql.
+ * SQL Utilities
  *
- * Note: Uses `any` for the Column part because the Column type is not exported from @514labs/moose-lib.
- * Type safety for column names comes from the DimensionDef and FilterDef generic constraints.
+ * Low-level SQL building utilities for constructing type-safe queries.
+ * These are the building blocks used by QueryModel and can also be used
+ * directly for custom query construction.
  *
- * @example
- * // Column references work with OlapTable.columns.*
- * const col = Events.columns.amount;
- *
- * // Also accepts raw Sql expressions
- * const expr = sql`CASE WHEN ${Events.columns.amount} > 100 THEN 'high' ELSE 'low' END`;
+ * @module query-layer/sql-utils
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ColRef<TModel> = Sql | any;
 
-/** Supported filter operators */
-export type FilterOp =
-  | "eq"
-  | "ne"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "like"
-  | "ilike"
-  | "in"
-  | "notIn"
-  | "between";
+import { sql, Sql } from "@514labs/moose-lib";
+import type { IValidation } from "typia";
+import type { SqlValue, ColRef } from "./types";
 
 // =============================================================================
-// Layer 1: Core SQL Utilities
+// Core SQL Utilities
 // =============================================================================
 
 /**
@@ -73,14 +47,26 @@ export function isEmpty(fragment: Sql): boolean {
 }
 
 // =============================================================================
-// Layer 1: Filter Function (Primary API)
+// Filter Operators
 // =============================================================================
+
+/** Supported filter operators for the filter() function */
+export type FilterOp =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "like"
+  | "ilike"
+  | "in"
+  | "notIn"
+  | "between";
 
 /**
  * Create a filter condition. Automatically skips if value is undefined/null.
  * This is the recommended way to build conditional WHERE clauses.
- *
- * Type-safe: validates that the column exists on the model.
  *
  * @example
  * where(
@@ -146,7 +132,7 @@ export function filter<TModel>(
 }
 
 // =============================================================================
-// Layer 1: Comparison Operators (Advanced Use)
+// Comparison Operators
 // =============================================================================
 
 /** Equal: column = value */
@@ -221,7 +207,7 @@ export function isNotNull<TModel>(col: ColRef<TModel>): Sql {
 }
 
 // =============================================================================
-// Layer 1: Logical Combinators
+// Logical Combinators
 // =============================================================================
 
 /** Combine conditions with AND, filtering out empty fragments */
@@ -245,7 +231,7 @@ export function not(condition: Sql): Sql {
 }
 
 // =============================================================================
-// Layer 1: SQL Clauses
+// SQL Clauses
 // =============================================================================
 
 /** Build WHERE clause - returns empty if no conditions */
@@ -300,7 +286,7 @@ export function having(...conditions: Sql[]): Sql {
 }
 
 // =============================================================================
-// Layer 1: Expression with Fluent Alias
+// Expression with Fluent Alias
 // =============================================================================
 
 /** SQL expression with fluent `.as()` method */
@@ -316,7 +302,7 @@ function expr(fragment: Sql): Expr {
 }
 
 // =============================================================================
-// Layer 1: Aggregation Functions
+// Aggregation Functions
 // =============================================================================
 
 /** COUNT(*) or COUNT(column) */
@@ -350,7 +336,7 @@ export function max<TModel>(col: ColRef<TModel>): Expr {
 }
 
 // =============================================================================
-// Layer 1: Select Helpers
+// Select Helpers
 // =============================================================================
 
 /** Build SELECT clause with columns */
@@ -413,11 +399,11 @@ export function assertValid<T>(result: IValidation<T>): T {
 }
 
 // =============================================================================
-// Query Handler (Layer 1 - Simple)
+// Query Handler
 // =============================================================================
 
 /**
- * Query handler with three entry points for Layer 1 queries.
+ * Query handler with three entry points for queries.
  * Use this when writing raw SQL without a query model.
  */
 export interface QueryHandler<P, R> {

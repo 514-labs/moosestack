@@ -12,7 +12,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: "/", label: "Dashboard" },
-  { href: "/reports/04", label: "Report Builder" },
+  { href: "/builder", label: "Report Builder" },
 ];
 
 export function NavBar() {

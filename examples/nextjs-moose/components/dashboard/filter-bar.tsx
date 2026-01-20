@@ -2,26 +2,18 @@
 
 import * as React from "react";
 import { DateRangeInput } from "@/components/inputs";
-import { useDateFilter } from "./date-context";
+import { useDashboardFilters } from "./dashboard-provider";
 
 export interface FilterBarProps {
-  /** Additional CSS classes */
   className?: string;
-  /** Show preset selector */
   showPresets?: boolean;
 }
 
 /**
  * Dashboard filter bar with date range selection.
- * Uses the DateFilterContext for state management.
  */
 export function FilterBar({ className, showPresets = true }: FilterBarProps) {
-  const { startDate, endDate, setStartDate, setEndDate } = useDateFilter();
-
-  const handleDateChange = ({ start, end }: { start: string; end: string }) => {
-    setStartDate(start);
-    setEndDate(end);
-  };
+  const { filters, actions } = useDashboardFilters();
 
   return (
     <div
@@ -31,9 +23,9 @@ export function FilterBar({ className, showPresets = true }: FilterBarProps) {
       }
     >
       <DateRangeInput
-        startDate={startDate}
-        endDate={endDate}
-        onChange={handleDateChange}
+        startDate={filters.startDate}
+        endDate={filters.endDate}
+        onChange={({ start, end }) => actions.setDateRange(start, end)}
         showPresets={showPresets}
         presetLabel="Filter Date"
         startLabel="From"

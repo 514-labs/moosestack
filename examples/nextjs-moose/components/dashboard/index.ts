@@ -1,45 +1,29 @@
 /**
  * Dashboard Components
  *
- * Components specific to the dashboard page.
- *
- * ## Components
- *
- * - `DateFilterProvider` - Context provider for date filter state
- * - `useDateFilter` - Hook to access date filter context
- * - `FilterBar` - Date range filter bar
- * - `StatsCards` - Stats cards grid
- *
- * ## Usage
- *
- * ```tsx
- * import {
- *   DateFilterProvider,
- *   FilterBar,
- *   StatsCards,
- * } from "@/components/dashboard";
- *
- * export default function DashboardPage() {
- *   return (
- *     <DateFilterProvider>
- *       <FilterBar />
- *       <StatsCards stats={[...]} />
- *     </DateFilterProvider>
- *   );
- * }
- * ```
- *
- * @module dashboard
+ * Components and hooks for building dashboard pages with shared global filters.
  */
 
-// Context
+// Provider & Filters
 export {
-  DateFilterProvider,
-  DateFilterContext,
-  useDateFilter,
-  type DateFilterContextType,
-} from "./date-context";
+  DashboardProvider,
+  useDashboardFilters,
+  type DashboardFilters,
+  type DashboardActions,
+  type DashboardContextValue,
+} from "./dashboard-provider";
 
-// Components
+// Query Hooks
+export {
+  useMetrics,
+  useEventsByStatus,
+  useTimeseries,
+  dashboardQueryKeys,
+} from "./dashboard-hooks";
+
+// UI Components
 export { FilterBar, type FilterBarProps } from "./filter-bar";
-export { StatsCards, type StatsCardsProps, type StatItem } from "./stats-cards";
+export { EventsOverTimeChart } from "./events-over-time-chart";
+
+// Types (re-export from actions for convenience)
+export type { BucketSize } from "@/app/actions";

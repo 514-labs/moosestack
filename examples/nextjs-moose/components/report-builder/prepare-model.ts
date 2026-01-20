@@ -267,7 +267,6 @@ export function prepareModel<
       });
     }
   }
-
   return {
     dimensions,
     metrics,

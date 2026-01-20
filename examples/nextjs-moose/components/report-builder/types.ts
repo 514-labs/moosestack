@@ -5,6 +5,20 @@
  * Single source of truth for all types used across the module.
  */
 
+// Import shared types from query-layer (single source of truth)
+import type {
+  QueryRequest,
+  FilterOperator,
+  FilterInputTypeHint,
+  FilterParams,
+} from "@/moose/src/query-layer";
+
+// Re-export for convenience
+export type { FilterOperator, QueryRequest, FilterParams };
+
+// Alias for backwards compatibility
+export type FilterInputType = FilterInputTypeHint;
+
 // =============================================================================
 // Core Field Types
 // =============================================================================
@@ -36,36 +50,6 @@ export interface FieldMeta<TId extends string = string>
 // =============================================================================
 // Filter Types
 // =============================================================================
-
-/**
- * Filter operator type.
- * All supported SQL-like operators for filtering.
- */
-export type FilterOperator =
-  | "eq"
-  | "ne"
-  | "gt"
-  | "gte"
-  | "lt"
-  | "lte"
-  | "like"
-  | "ilike"
-  | "in"
-  | "notIn"
-  | "between"
-  | "isNull"
-  | "isNotNull";
-
-/**
- * Filter input type hint for UI rendering.
- * Determines which input component to use for a filter.
- */
-export type FilterInputType =
-  | "text"
-  | "number"
-  | "date"
-  | "select"
-  | "multiselect";
 
 /**
  * Option for select/multiselect filters.
@@ -101,22 +85,6 @@ export interface FilterMeta<TFilterName extends string = string> {
 export type FilterValue = Record<string, unknown>;
 
 // =============================================================================
-// Query Types
-// =============================================================================
-
-/**
- * Query parameters passed to the execute function.
- */
-export interface ReportQueryParams {
-  /** Dimensions to break down / group by */
-  dimensions: string[];
-  /** Metrics to aggregate */
-  metrics: string[];
-  /** Filter conditions */
-  filters?: Record<string, FilterValue>;
-}
-
-// =============================================================================
 // Component Props Types
 // =============================================================================
 
@@ -132,7 +100,7 @@ export interface ReportBuilderProviderProps {
   /** Metric options */
   metrics?: FieldOption[];
   /** Execute function that runs the query */
-  onExecute: (params: ReportQueryParams) => Promise<unknown[]>;
+  onExecute: (params: QueryRequest) => Promise<unknown[]>;
   /** Default selected dimensions */
   defaultDimensions?: string[];
   /** Default selected metrics */
@@ -185,21 +153,4 @@ export interface ResultsTableProps {
   dataKeyMap?: Record<string, string>;
   /** Optional custom value formatter */
   formatValue?: (key: string, value: unknown) => string;
-}
-
-// =============================================================================
-// Client Props (Serializable for Server → Client)
-// =============================================================================
-
-/**
- * Serializable props for passing from Server Component to Client Component.
- * All readonly arrays are converted to mutable for JSON serialization.
- */
-export interface ReportClientProps {
-  filterMeta: FilterMeta[];
-  dimensionOptions: FieldOption[];
-  metricOptions: FieldOption[];
-  onExecute: (params: ReportQueryParams) => Promise<unknown[]>;
-  defaultDimensions?: string[];
-  defaultMetrics?: string[];
 }

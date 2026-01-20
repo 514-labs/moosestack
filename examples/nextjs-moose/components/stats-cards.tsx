@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * Stats Cards
+ *
+ * Reusable component for displaying key metrics in a grid.
+ */
+
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LucideIcon } from "lucide-react";
@@ -18,19 +24,12 @@ export interface StatItem {
 }
 
 export interface StatsCardsProps {
-  /** Array of stat items to display */
   stats: StatItem[];
-  /** Loading state */
   isLoading?: boolean;
-  /** Number of columns on different breakpoints */
   columns?: { sm?: number; md?: number; lg?: number };
-  /** Additional CSS classes */
   className?: string;
 }
 
-/**
- * Stats cards grid for displaying key metrics.
- */
 export function StatsCards({
   stats,
   isLoading = false,

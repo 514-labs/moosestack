@@ -18,22 +18,33 @@ import {
   ExecuteButton,
   SimpleResultsTable,
   type ReportModel,
-  type ReportQueryParams,
+  type QueryRequest,
+  FilterValue,
 } from "@/components/report-builder";
 
-interface ReportPageProps {
+interface ReportBuilderPageProps {
   model: ReportModel;
-  executeQuery: (params: ReportQueryParams) => Promise<unknown[]>;
+  executeQuery: (params: QueryRequest) => Promise<unknown[]>;
+  defaults: {
+    dimensions?: string[];
+    metrics?: string[];
+    filters?: Record<string, FilterValue>;
+  };
 }
 
-export function ReportPage({ model, executeQuery }: ReportPageProps) {
+export function ReportBuilderPage({
+  model,
+  executeQuery,
+  defaults,
+}: ReportBuilderPageProps) {
   // The hook gives you everything you need
   const report = useReport({
     model,
     execute: executeQuery,
     defaults: {
-      dimensions: ["status"],
-      metrics: ["totalEvents", "totalAmount"],
+      dimensions: defaults.dimensions ?? [],
+      metrics: defaults.metrics ?? [],
+      filters: defaults.filters ?? {},
     },
   });
 

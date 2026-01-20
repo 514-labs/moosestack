@@ -104,7 +104,8 @@ export type {
   FilterSelectOption,
   FilterMeta,
   FilterValue,
-  ReportQueryParams,
+  QueryRequest,
+  FilterParams,
 } from "./types";
 
 // =============================================================================

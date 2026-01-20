@@ -1,29 +1,21 @@
 /* 04 - Aggregations & GROUP BY
  *
  * Define metrics (aggregates) in your model and use GROUP BY.
- * Use .build() for custom SQL assembly when you need full control.
- *
- * **This example uses QueryMapper** - an alternative to QueryBuilder.
- * Use QueryMapper when transforming custom API shapes (e.g., from HTTP requests).
- * Use QueryBuilder when building queries programmatically in code.
- * Both produce QueryRequest objects that get resolved and executed.
+ * Use toParts() for custom SQL assembly when you need full control.
  */
 
-import { sql } from "@514labs/moose-lib";
-import { executeQuery } from "../client";
+import { sql, getMooseClients } from "@514labs/moose-lib";
 import { Events } from "../models";
-import { InferResult, defineQueryModel, defineMapper } from "../query-layer";
-import { count, sum, avg, min, max, orderBy } from "../query-layer/utils";
-
+import { defineQueryModel, orderBy } from "../query-layer";
+import { tags } from "typia";
 // =============================================================================
 // Query Model with Dimensions & Metrics
 // =============================================================================
 
-// Define the query model with explicit input types for filters
 export const statsModel = defineQueryModel({
   table: Events,
 
-  // Dimensions: columns for grouping and filtering (all are automatically groupable)
+  // Dimensions: columns for grouping and filtering
   dimensions: {
     status: { column: "status" },
     day: { expression: sql`toDate(${Events.columns.event_time})`, as: "day" },
@@ -48,6 +40,7 @@ export const statsModel = defineQueryModel({
       as: "high_value_ratio",
     },
   },
+
   filters: {
     timestamp: { column: "event_time", operators: ["gte", "lte"] as const },
     status: { column: "status", operators: ["eq", "in"] as const },
@@ -62,6 +55,7 @@ export const statsModel = defineQueryModel({
 export type StatsDimension = typeof statsModel.$inferDimensions;
 export type StatsMetric = typeof statsModel.$inferMetrics;
 export type StatsFilterParams = typeof statsModel.$inferFilters;
+export type StatsRequest = typeof statsModel.$inferRequest;
 
 // =============================================================================
 // API Params
@@ -69,47 +63,52 @@ export type StatsFilterParams = typeof statsModel.$inferFilters;
 
 export interface StatsParams {
   // Filter params
-  startDate?: string;
-  endDate?: string;
+  startDate?: string & tags.Format<"date">;
+  endDate?: string & tags.Format<"date">;
   status?: "completed" | "active" | "inactive";
 
-  // Dynamic field selection (arrays of dimension/metric names)
+  // Dynamic field selection
   dimensions?: StatsDimension[];
   metrics?: StatsMetric[];
 }
 
 // =============================================================================
-// QueryMapper: Transform API params → QueryRequest
-// =============================================================================
-// Alternative approach: Use QueryBuilder for programmatic query building
-const mapToQueryRequest = defineMapper<StatsParams>()(statsModel, {
-  startDate: ["timestamp", "gte"],
-  endDate: ["timestamp", "lte"],
-  status: ["status", "eq"],
-  // Pass-through: dimensions and metrics map directly
-  dimensions: "dimensions",
-  metrics: "metrics",
-});
-
-// =============================================================================
-// Result Type (inferred from model)
+// Mapping Function
 // =============================================================================
 
-// Result type inferred from the model's dimensions and metrics
-type StatsResult = InferResult<typeof statsModel>;
-// Equivalent to:
-// {
-//   status?: string;
-//   timestamp?: string;
-//   day?: string;
-//   month?: string;
-//   totalEvents: number;
-//   totalAmount: number;
-//   avgAmount: number;
-//   minAmount: number;
-//   maxAmount: number;
-//   highValueRatio: number;
-// }
+/**
+ * Maps API params to QueryRequest.
+ * Note: Date strings are converted to Date objects to match the model's type.
+ */
+function mapToQueryRequest(params: StatsParams): StatsRequest {
+  return {
+    filters: {
+      ...(params.startDate && {
+        timestamp: { gte: new Date(params.startDate) },
+      }),
+      ...(params.endDate && { timestamp: { lte: new Date(params.endDate) } }),
+      ...(params.status && { status: { eq: params.status } }),
+    },
+    dimensions: params.dimensions,
+    metrics: params.metrics,
+  };
+}
+
+// =============================================================================
+// Result Type
+// =============================================================================
+
+interface StatsResult {
+  status?: string;
+  day?: string;
+  month?: string;
+  total_events?: number;
+  total_amount?: number;
+  avg_amount?: number;
+  min_amount?: number;
+  max_amount?: number;
+  high_value_ratio?: number;
+}
 
 // =============================================================================
 // Query Functions
@@ -117,36 +116,29 @@ type StatsResult = InferResult<typeof statsModel>;
 
 /**
  * Get stats with dynamic dimension and metric selection.
- * Only returns the fields you ask for.
  */
 export async function getStatsSimple(
   params: StatsParams,
-): Promise<Partial<StatsResult>[]> {
+): Promise<StatsResult[]> {
   const request = mapToQueryRequest({
     ...params,
     dimensions: params.dimensions ?? ["status"],
     metrics: params.metrics ?? ["totalEvents", "totalAmount"],
   });
 
-  const query = statsModel.toSql(request);
-  return executeQuery<Partial<StatsResult>>(query);
+  const { client } = await getMooseClients();
+  return statsModel.query(request, client.query);
 }
 
 /**
- * Get stats with GROUP BY using the model's dimensions and metrics.
- * Uses parts.dimensions and parts.metrics for clean separation.
+ * Get stats using toParts() for custom SQL assembly.
  */
 export async function getStats(params: StatsParams): Promise<StatsResult[]> {
   const groupByDim = params.dimensions?.[0] ?? "status";
-
-  // Select the grouping dimension + all metrics
   const metricsToSelect = params.metrics ?? [
     "totalEvents",
     "totalAmount",
     "avgAmount",
-    "minAmount",
-    "maxAmount",
-    "highValueRatio",
   ];
 
   const request = mapToQueryRequest({
@@ -155,18 +147,19 @@ export async function getStats(params: StatsParams): Promise<StatsResult[]> {
     metrics: metricsToSelect,
   });
 
-  const query = statsModel.build(
-    request,
-    (parts) => sql`
+  // Use toParts() for custom assembly
+  const parts = statsModel.toParts(request);
+  const query = sql`
     SELECT ${parts.dimensions}, ${parts.metrics}
     ${parts.from}
     ${parts.where}
     ${parts.groupBy}
     ${orderBy([sql`total_amount`, "DESC"])}
-  `,
-  );
+  `;
 
-  return executeQuery<StatsResult>(query);
+  const { client } = await getMooseClients();
+  const result = await client.query.execute(query);
+  return result.json();
 }
 
 /**
@@ -175,7 +168,6 @@ export async function getStats(params: StatsParams): Promise<StatsResult[]> {
 export async function getOverallStats(
   params: StatsParams,
 ): Promise<StatsResult> {
-  // Select only metrics (no dimensions = no grouping)
   const request = mapToQueryRequest({
     ...params,
     metrics: params.metrics ?? [
@@ -184,7 +176,6 @@ export async function getOverallStats(
       "avgAmount",
       "minAmount",
       "maxAmount",
-      "highValueRatio",
     ],
   });
 
@@ -196,8 +187,10 @@ export async function getOverallStats(
     ${where}
   `;
 
-  const [result] = await executeQuery<StatsResult>(query);
-  return result;
+  const { client } = await getMooseClients();
+  const result = await client.query.execute(query);
+  const rows = (await result.json()) as StatsResult[];
+  return rows[0];
 }
 
 // =============================================================================
@@ -205,15 +198,10 @@ export async function getOverallStats(
 // =============================================================================
 
 /*
-// ─────────────────────────────────────────────────────────────────────────────
-// Dimensions & Metrics: Clear Semantic Separation
-// ─────────────────────────────────────────────────────────────────────────────
-
 // Select specific dimensions and metrics
 await getStatsSimple({
   dimensions: ["status"],
   metrics: ["totalEvents", "totalAmount"],
-  groupBy: "status",
 });
 // → SELECT status, COUNT(*) AS total_events, SUM(amount) AS total_amount
 //   FROM events GROUP BY status
@@ -222,7 +210,6 @@ await getStatsSimple({
 await getStatsSimple({
   dimensions: ["day"],
   metrics: ["totalEvents", "totalAmount", "avgAmount"],
-  groupBy: "day",
 });
 // → SELECT toDate(event_time) AS day, COUNT(*), SUM(amount), AVG(amount)
 //   FROM events GROUP BY toDate(event_time)
@@ -235,25 +222,10 @@ await getOverallStats({
 // → SELECT COUNT(*) AS total_events, SUM(amount) AS total_amount
 //   FROM events WHERE event_time >= '2024-01-01'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Using parts.dimensions and parts.metrics for custom assembly
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Group by status
-await getStats({ groupBy: "status", startDate: "2024-01-01" });
+// Group by status with custom SQL assembly
+await getStats({ startDate: "2024-01-01" });
 // → [
 //   { status: "active", total_events: 150, total_amount: 25000, ... },
 //   { status: "completed", total_events: 300, total_amount: 75000, ... },
 // ]
-
-// Group by month (computed dimension)
-await getStats({ groupBy: "month", startDate: "2024-01-01" });
-// → [
-//   { month: "2024-01-01", total_events: 100, ... },
-//   { month: "2024-02-01", total_events: 120, ... },
-// ]
-
-// Overall stats (no grouping)
-await getOverallStats({ startDate: "2024-01-01" });
-// → { total_events: 450, total_amount: 100000, avg_amount: 222.22, ... }
 */

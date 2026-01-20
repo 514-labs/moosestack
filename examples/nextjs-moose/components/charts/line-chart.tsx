@@ -9,13 +9,15 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ChartWidget } from "./chart-widget";
-import { chartConfigs } from "./chart-configs";
-import type {
-  ChartDisplayOptions,
-  GridSpan,
-  TimeSeriesDataPoint,
-} from "./types";
+import type { TimeSeriesDataPoint } from "./types";
 
 const defaultChartConfig = {
   value: {
@@ -24,30 +26,42 @@ const defaultChartConfig = {
   },
 } satisfies ChartConfig;
 
+// =============================================================================
+// Time Bucket Types & Options
+// =============================================================================
+
+export type TimeBucketOption = "auto" | "day" | "month";
+
+const timeBucketOptions: { value: TimeBucketOption; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "day", label: "Day" },
+  { value: "month", label: "Month" },
+];
+
+// =============================================================================
+// Props
+// =============================================================================
+
 export interface LineChartProps {
-  /** Chart data */
   data: TimeSeriesDataPoint[];
-  /** Chart title */
   title: string;
-  /** Chart description */
   description?: string;
-  /** X-axis data key */
   xKey?: string;
-  /** Y-axis data key */
   yKey?: string;
-  /** Unique chart ID */
-  chartId?: string;
-  /** Grid span for layout */
-  gridSpan?: GridSpan;
-  /** Custom chart config for colors/labels */
   chartConfig?: ChartConfig;
-  /** Custom icon */
   icon?: React.ReactNode;
-  /** Additional CSS classes */
+  headerRight?: React.ReactNode;
+  height?: number;
   className?: string;
-  /** Format X-axis tick */
   formatXAxis?: (value: string) => string;
+  showTimeBucket?: boolean;
+  timeBucket?: TimeBucketOption;
+  onTimeBucketChange?: (bucket: TimeBucketOption) => void;
 }
+
+// =============================================================================
+// Component
+// =============================================================================
 
 export function LineChartComponent({
   data,
@@ -55,17 +69,71 @@ export function LineChartComponent({
   description,
   xKey = "time",
   yKey = "count",
-  chartId = "line-chart",
-  gridSpan,
   chartConfig = defaultChartConfig,
   icon,
+  headerRight,
+  height = 350,
   className,
   formatXAxis = (value) => new Date(value).toLocaleDateString(),
+  showTimeBucket = false,
+  timeBucket,
+  onTimeBucketChange,
 }: LineChartProps) {
+  const [internalBucket, setInternalBucket] =
+    React.useState<TimeBucketOption>("auto");
+
+  const currentBucket = timeBucket ?? internalBucket;
+  const handleBucketChange = React.useCallback(
+    (value: TimeBucketOption) => {
+      if (onTimeBucketChange) {
+        onTimeBucketChange(value);
+      } else {
+        setInternalBucket(value);
+      }
+    },
+    [onTimeBucketChange],
+  );
+
+  const selectedLabel =
+    timeBucketOptions.find((o) => o.value === currentBucket)?.label ?? "Auto";
+
+  const headerContent = React.useMemo(() => {
+    if (!showTimeBucket && !headerRight) return undefined;
+
+    return (
+      <>
+        {showTimeBucket && (
+          <Select
+            value={currentBucket}
+            onValueChange={(value) => {
+              if (value) handleBucketChange(value as TimeBucketOption);
+            }}
+          >
+            <SelectTrigger className="w-[100px] h-8 text-xs">
+              <SelectValue>{selectedLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {timeBucketOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {headerRight}
+      </>
+    );
+  }, [
+    showTimeBucket,
+    headerRight,
+    currentBucket,
+    selectedLabel,
+    handleBucketChange,
+  ]);
+
   return (
     <ChartWidget
-      chartId={chartId}
-      chartType="timeSeries"
       title={title}
       description={description}
       icon={
@@ -73,85 +141,43 @@ export function LineChartComponent({
           <TrendingUp className="size-4 sm:size-[18px] text-muted-foreground" />
         )
       }
-      gridSpan={gridSpan}
-      chartConfig={chartConfigs.timeSeries}
+      headerRight={headerContent}
       className={className}
     >
-      {({ options }: { options: ChartDisplayOptions }) => (
-        <LineChartContent
-          data={data}
-          xKey={xKey}
-          yKey={yKey}
-          chartConfig={chartConfig}
-          showGrid={options.showGrid ?? true}
-          showTooltip={options.showTooltip ?? true}
-          formatXAxis={formatXAxis}
-        />
-      )}
-    </ChartWidget>
-  );
-}
-
-interface LineChartContentProps {
-  data: TimeSeriesDataPoint[];
-  xKey: string;
-  yKey: string;
-  chartConfig: ChartConfig;
-  height?: number;
-  showGrid?: boolean;
-  showTooltip?: boolean;
-  formatXAxis?: (value: string) => string;
-}
-
-function LineChartContent({
-  data,
-  xKey,
-  yKey,
-  chartConfig,
-  height = 300,
-  showGrid = true,
-  showTooltip = true,
-  formatXAxis,
-}: LineChartContentProps) {
-  return (
-    <ChartContainer config={chartConfig}>
-      <LineChart
-        accessibilityLayer
-        data={data}
-        height={height}
-        margin={{
-          left: 12,
-          right: 12,
-          top: 12,
-          bottom: 12,
-        }}
+      <ChartContainer
+        config={chartConfig}
+        className="w-full"
+        style={{ height }}
       >
-        {showGrid && <CartesianGrid vertical={false} />}
-        <XAxis
-          dataKey={xKey}
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          tickFormatter={formatXAxis}
-        />
-        <YAxis tickLine={false} axisLine={false} tickMargin={8} width={40} />
-        {showTooltip && (
+        <LineChart
+          accessibilityLayer
+          data={data}
+          margin={{ left: 12, right: 12, top: 12, bottom: 12 }}
+        >
+          <CartesianGrid vertical={false} />
+          <XAxis
+            dataKey={xKey}
+            tickLine={false}
+            axisLine={false}
+            tickMargin={8}
+            tickFormatter={formatXAxis}
+          />
+          <YAxis tickLine={false} axisLine={false} tickMargin={8} width={40} />
           <ChartTooltip
             cursor={false}
             content={<ChartTooltipContent hideLabel />}
           />
-        )}
-        <Line
-          dataKey={yKey}
-          type="natural"
-          stroke="var(--chart-1)"
-          strokeWidth={2}
-          dot={false}
-        />
-      </LineChart>
-    </ChartContainer>
+          <Line
+            dataKey={yKey}
+            type="natural"
+            stroke="var(--chart-1)"
+            strokeWidth={2}
+            dot={false}
+          />
+        </LineChart>
+      </ChartContainer>
+    </ChartWidget>
   );
 }
 
-// Export with shorter name
 export { LineChartComponent as LineChart };

@@ -1,31 +1,38 @@
 /**
- * Fluent Query Builder API.
+ * Fluent Query Builder API
  *
  * Provides a chainable API for building QueryRequest objects.
  * Users specify dimensions/metrics - semantic concepts, not SQL concepts.
- * The builder automatically handles undefined/null values and provides type-safe methods.
  *
- * **IMPORTANT**: QueryBuilder and QueryMapper are alternatives - use one OR the other, not both.
- * - Use QueryBuilder when building queries programmatically in code
- * - Use QueryMapper when transforming custom API request shapes
- * Both produce QueryRequest objects that get resolved and executed.
+ * @module query-layer/query-builder
  */
 
-import type { Sql } from "@514labs/moose-lib";
-import type { SortDir } from "./types";
-import type { FilterDefBase, FilterValueType } from "./filters";
-import type { QueryRequest, QueryParts } from "./query-request";
+import type { Sql, QueryClient } from "@514labs/moose-lib";
+import type {
+  SortDir,
+  FilterDefBase,
+  QueryRequest,
+  QueryParts,
+  Names,
+  OperatorValueType,
+  DimensionDef,
+  MetricDef,
+  SqlValue,
+} from "./types";
 import type { QueryModel } from "./query-model";
-import type { MetricDef, DimensionDef } from "./fields";
-import type { Names, OperatorValueType } from "./type-helpers";
+
+/**
+ * Extract the value type from a filter definition.
+ */
+type FilterValueType<T> =
+  T extends { column: infer TKey extends string } ?
+    T extends { column: TKey } ?
+      SqlValue
+    : SqlValue
+  : SqlValue;
 
 /**
  * Fluent builder for constructing query requests.
- * Provides a chainable API for building QueryRequest objects.
- * Users specify dimensions/metrics - semantic concepts, not SQL concepts.
- *
- * **Alternative to QueryMapper**: Use QueryBuilder for programmatic query building,
- * or QueryMapper for transforming custom API shapes. Don't use both together.
  *
  * @template TMetrics - Union type of metric field names
  * @template TDimensions - Union type of dimension field names
@@ -34,21 +41,13 @@ import type { Names, OperatorValueType } from "./type-helpers";
  * @template TResult - Result row type
  *
  * @example
- * // Build and execute (programmatic approach)
  * const results = await buildQuery(model)
  *   .dimensions(["status"])
  *   .metrics(["totalEvents", "totalAmount"])
  *   .filter("status", "eq", "active")
  *   .sort("totalAmount", "DESC")
  *   .limit(10)
- *   .execute(executeQuery);
- *
- * // Or build QueryRequest and use later
- * const request = buildQuery(model)
- *   .dimensions(["status"])
- *   .metrics(["totalEvents"])
- *   .build();
- * const results = await model.query(request, executeQuery);
+ *   .execute(client.query);
  */
 export interface QueryBuilder<
   TMetrics extends string,
@@ -56,142 +55,87 @@ export interface QueryBuilder<
   TFilters extends Record<string, FilterDefBase>,
   TSortable extends string,
   TResult,
+  TTable = any,
 > {
   /**
    * Add a filter condition.
    * Automatically skips if value is undefined or null.
-   * @param filterName - Name of the filter (must be a key of TFilters)
-   * @param op - Filter operator (must be allowed for this filter)
-   * @param value - Filter value (type-checked based on operator and filter definition)
    */
   filter<K extends keyof TFilters, Op extends TFilters[K]["operators"][number]>(
     filterName: K,
     op: Op,
     value: OperatorValueType<Op, FilterValueType<TFilters[K]>> | undefined,
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult>;
+  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
-  /**
-   * Set dimensions to include in query (user-facing semantic concept).
-   * @param fields - Array of dimension field names
-   */
+  /** Set dimensions to include in query */
   dimensions(
     fields: TDimensions[],
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult>;
+  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
-  /**
-   * Set metrics to include in query (user-facing semantic concept).
-   * @param fields - Array of metric field names
-   */
+  /** Set metrics to include in query */
   metrics(
     fields: TMetrics[],
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult>;
+  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
-  /**
-   * Set sort field and direction.
-   * @param field - Field to sort by (must be in sortable list)
-   * @param dir - Sort direction (defaults to "DESC")
-   */
+  /** Set sort field and direction */
   sort(
     field: TSortable,
     dir?: SortDir,
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult>;
+  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
-  /**
-   * Set multi-column sort.
-   * @param orders - Array of [field, direction] tuples
-   */
+  /** Set multi-column sort */
   orderBy(
     ...orders: Array<[TSortable, SortDir]>
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult>;
+  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
-  /**
-   * Set maximum number of rows to return.
-   * @param n - Limit value
-   */
+  /** Set maximum number of rows to return */
   limit(
     n: number,
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult>;
+  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
-  /**
-   * Set page number (0-indexed) for pagination.
-   * @param n - Page number
-   */
+  /** Set page number (0-indexed) for pagination */
   page(
     n: number,
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult>;
+  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
-  /**
-   * Set row offset for pagination.
-   * @param n - Offset value
-   */
+  /** Set row offset for pagination */
   offset(
     n: number,
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult>;
+  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
-  /**
-   * Build the QueryRequest object from current builder state.
-   * @returns QueryRequest ready to pass to QueryModel methods
-   */
-  build(): QueryRequest<TMetrics, TDimensions, TFilters, TSortable>;
+  /** Build the QueryRequest object */
+  build(): QueryRequest<TMetrics, TDimensions, TFilters, TSortable, TTable>;
 
-  /**
-   * Build the SQL query from current builder state.
-   * @returns Complete SQL query
-   */
+  /** Build the SQL query */
   toSql(): Sql;
 
-  /**
-   * Build the SQL query from current builder state.
-   * @returns Complete SQL query
-   */
-  toSql(): Sql;
-
-  /**
-   * Get query parts for custom assembly.
-   * @returns QueryParts object with individual SQL clauses
-   */
+  /** Get query parts for custom assembly */
   toParts(): QueryParts;
 
-  /**
-   * Build SQL with custom assembly function.
-   * @param fn - Function to assemble SQL parts into final query
-   * @returns Complete SQL query
-   */
+  /** Build SQL with custom assembly function */
   assemble(fn: (parts: QueryParts) => Sql): Sql;
 
   /**
-   * Execute the query with current builder state.
-   * @param execute - Function to execute the SQL query
-   * @returns Promise resolving to array of result rows
+   * Execute the query with Moose QueryClient.
+   * @param client - Moose QueryClient from getMooseClients()
    */
-  execute(execute: (query: Sql) => Promise<TResult[]>): Promise<TResult[]>;
+  execute(client: QueryClient): Promise<TResult[]>;
 }
 
 /**
  * Create a fluent query builder for a model.
- * Provides a chainable API for building QueryRequest objects.
- *
- * **Alternative to QueryMapper**: Use this for programmatic query building.
- * If you need to transform custom API shapes, use `defineMapper()` instead.
- *
- * @template TMetrics - Record of metric definitions
- * @template TDimensions - Record of dimension definitions
- * @template TFilters - Record of filter definitions
- * @template TSortable - Union type of sortable field names
- * @template TResult - Result row type
  *
  * @param model - QueryModel instance to build queries for
  * @returns QueryBuilder instance with chainable methods
  *
  * @example
- * // Programmatic query building
  * const results = await buildQuery(model)
  *   .dimensions(["status"])
  *   .metrics(["totalEvents", "totalAmount"])
  *   .filter("status", "eq", "active")
  *   .sort("totalAmount", "DESC")
  *   .limit(10)
- *   .execute(executeQuery);
+ *   .execute(client.query);
  */
 export function buildQuery<
   TTable,
@@ -214,7 +158,8 @@ export function buildQuery<
   Names<TDimensions>,
   TFilters,
   TSortable,
-  TResult
+  TResult,
+  TTable
 > {
   const state: {
     filters: Record<string, Record<string, unknown>>;
@@ -232,7 +177,8 @@ export function buildQuery<
     Names<TMetrics>,
     Names<TDimensions>,
     TFilters,
-    TSortable
+    TSortable,
+    TTable
   > =>
     ({
       filters:
@@ -249,7 +195,8 @@ export function buildQuery<
       Names<TMetrics>,
       Names<TDimensions>,
       TFilters,
-      TSortable
+      TSortable,
+      TTable
     >;
 
   const builder: QueryBuilder<
@@ -257,7 +204,8 @@ export function buildQuery<
     Names<TDimensions>,
     TFilters,
     TSortable,
-    TResult
+    TResult,
+    TTable
   > = {
     filter(filterName, op, value) {
       if (value === undefined || value === null) return builder;
@@ -306,8 +254,8 @@ export function buildQuery<
     build: buildRequest,
     toSql: () => model.toSql(buildRequest()),
     toParts: () => model.toParts(buildRequest()),
-    assemble: (fn) => model.build(buildRequest(), fn),
-    execute: (execute) => model.query(buildRequest(), execute),
+    assemble: (fn) => fn(model.toParts(buildRequest())),
+    execute: (client) => model.query(buildRequest(), client),
   };
 
   return builder;
