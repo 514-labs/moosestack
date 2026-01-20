@@ -22,11 +22,7 @@ const isTable = (
 
 const isView = (
   value: RawValue | Column | OlapTable<any> | View,
-): value is View =>
-  typeof value === "object" &&
-  value !== null &&
-  "kind" in value &&
-  value.kind === "View";
+): value is View => value instanceof View;
 
 export type IdentifierBrandedString = string & {
   readonly __identifier_brand?: unique symbol;
