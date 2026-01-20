@@ -50,7 +50,7 @@ This guide is about building a conversational interface embedded directly into y
 
 This works because modern LLMs can call tools: they can inspect table metadata and run structured queries through a controlled interface (in this guide, an [MCP](https://modelcontextprotocol.io/) server over ClickHouse), then explain the output in plain language.
 
-*What this guide is not about*: a generic chatbot that summarizes docs, a RAG-style assistant fed with your knowledge base, or a support bot optimized for ticket deflection. We mean chat that can actually access and query your data: it can inspect schemas, run SQL, compute aggregates, and explain real results inside the workflows your app already supports, and that data access is the focus of this guide.
+*What this guide is not about*: a generic chatbot that summarizes docs, a RAG-style assistant fed with your knowledge base, or a support bot optimized for ticket deflection. This means chat that can actually access and query your data: it can inspect schemas, run SQL, compute aggregates, and explain real results inside the workflows your app already supports, and that data access is the focus of this guide.
 
 ### Why chat is worth building, and why data is key
 
@@ -280,7 +280,7 @@ Your web-application is available at [http://localhost:3000](http://localhost:30
 
 This is a blank canvas for you to use to build whatever user facing analytics you want to. And the chat’s already configured, click the chat icon on the bottom right to open your chat. Our engineer GRoy put some work into that chat panel, and you’ll find that it is resizable, has differentiated scrolling, and more\! Feel free to use and modify how you like.
 
-Note: whilst the chat will be functional, since you’ve not added any data to your MooseStack project, the tools available in the chat won’t be able to retrieve any data. In the next section, we’ll explore and model the data.
+Note: whilst the chat will be functional, since you’ve not added any data to your MooseStack project, the tools available in the chat won’t be able to retrieve any data. The next section covers exploring and modeling the data.
 
 :::include /shared/chat-guide/optional-mcp-setup.mdx
 
@@ -290,7 +290,7 @@ The following steps cover how to get data from a source, model that data in Moos
 
 You can [model your data manually](https://docs.fiveonefour.com/moosestack/data-modeling?lang=typescript) or you can generate a data model from your data. This guide will walk through the generative approach. This guide assumes you have direct access to the files in S3.
 
-If the files are relatively small, we recommend building up a `packages/moosestack-service/context/` directory to gather context (you should gitignore your context directory), e.g.:
+If the files are relatively small, just build up a `packages/moosestack-service/context/` directory to gather context (you should gitignore your context directory), e.g.:
 
 <FileTree>
   <FileTree.Folder name="<project-name>">
@@ -351,7 +351,7 @@ moose query "
 
 #### Add other context relevant for data modeling
 
-OLAP, and especially ClickHouse, benefits from rigorous data modeling. LLMs aren’t perfect at understanding the nuance of OLAP data modeling, so we created some docs as a guide: [https://github.com/514-labs/olap-agent-ref](https://github.com/514-labs/olap-agent-ref)  (you can clone it into the `context/rules` directory).
+OLAP, and especially ClickHouse, benefits from rigorous data modeling. LLMs aren’t perfect at understanding the nuance of OLAP data modeling, so here's a reference a guide: [https://github.com/514-labs/olap-agent-ref](https://github.com/514-labs/olap-agent-ref)  (you can clone it into the `context/rules` directory).
 
 ```shell
 cd packages/moosestack-service/context/rules
@@ -384,7 +384,7 @@ Create
   </FileTree.Folder>
 </FileTree>
 
-We suggest you do this sequentially, e.g. with the following prompt pattern:
+Do this sequentially, e.g. with the following prompt pattern:
 
 ```text
 '<project-name>/packages/moosestack-service/app/ingest/models.ts' look at this 
@@ -656,7 +656,9 @@ flowchart LR
 - Configuring authentication between frontend and backend
 - Testing and deploying the integrated system
 
-### Backend Setup: MooseStack Service with MCP Server
+### Setup
+
+#### Backend Setup: MooseStack Service with MCP Server
 
 <Callout type="info" title="Already have a MooseStack project?">
 <ToggleBlock openText="Show instructions to add MCP to existing project" closeText="Hide instructions">
@@ -692,7 +694,7 @@ Then skip to [Frontend Setup](#frontend-setup).
 </ToggleBlock>
 </Callout>
 
-#### Add the MooseStack service to your project
+##### Add the MooseStack service to your project
 
 Pull the `moosestack-service` from the `typescript-mcp` template. It includes the MCP server (with `query_clickhouse` and `get_data_catalog` tools), a sample `DataEvent` data model, and all necessary dependencies.
 
@@ -715,7 +717,7 @@ rm -rf temp-moose
 The template includes a sample `DataEvent` model. Replace it with your own data models using the [AI-assisted approach above](#use-ai-to-design-your-data-model).
 </Callout>
 
-##### Add moosestack-service to your workspace
+###### Add moosestack-service to your workspace
 
 If you don't have a `pnpm-workspace.yaml` at your monorepo root, create one:
 
@@ -724,20 +726,20 @@ packages:
   - 'packages/*'
 ```
 
-##### Install dependencies
+###### Install dependencies
 
 ```shell
 cd packages/moosestack-service
 pnpm install
 ```
 
-##### Configure environment variables
+###### Configure environment variables
 
 ```shell
 cp .env.example .env.local
 ```
 
-##### Generate an API key for authentication:
+###### Generate an API key for authentication:
 
 ```shell
 moose generate hash-token
@@ -754,7 +756,7 @@ Your `.env.local` should look like:
 MCP_API_KEY=<paste-the-ENV-API-KEY-here>
 ```
 
-##### Add dev scripts to your root package.json
+###### Add dev scripts to your root package.json
 
 ```json
 {
@@ -772,11 +774,11 @@ MCP_API_KEY=<paste-the-ENV-API-KEY-here>
 }
 ```
 
-### Frontend Setup
+#### Frontend Setup
 
-#### Frontend Setup: Dependencies & Environment
+##### Frontend Setup: Dependencies & Environment
 
-##### Install required packages
+###### Install required packages
 
 **Note:** If you don't have shadcn/ui set up, you'll also need the UI components. See [ui.shadcn.com/docs/installation](https://ui.shadcn.com/docs/installation).
 
@@ -787,7 +789,7 @@ pnpm add react-resizable-panels@^3.0.6 react-markdown@^10.1.0 remark-gfm@^4.0.1
 pnpm add lucide-react@^0.552.0
 ```
 
-##### Configure environment variables
+###### Configure environment variables
 
 Add these variables to your `.env.local`:
 
@@ -802,7 +804,7 @@ MCP_API_TOKEN=<the-bearer-token>
 MCP_SERVER_URL=http://localhost:4000
 ```
 
-##### Add environment variable helper
+###### Add environment variable helper
 
 Sample prompt:
 ```text
@@ -831,17 +833,17 @@ export function getAnthropicApiKey(): string {
 }
 ```
 
-##### Create `.env.development` for defaults
+###### Create `.env.development` for defaults
 
 ```text
 MCP_SERVER_URL=http://localhost:4000
 ```
 
-#### Frontend Setup: API Route
+##### Frontend Setup: API Route
 
 The chat API route handles incoming messages, creates an MCP client to connect to your MooseStack server, and streams the AI response back to the frontend.
 
-##### Add the chat feature
+###### Add the chat feature
 
 Implement the chat feature modules from the [template's chat feature directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat):
 - `agent-config.ts` - Model configuration and MCP client setup
@@ -853,7 +855,7 @@ Sample prompt:
 Implement a chat feature module for my Next.js app based on the files in https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat. Create agent-config.ts, get-agent-response.ts, and system-prompt.ts in src/features/chat/.
 ```
 
-##### Add the API route
+###### Add the API route
 
 Create a Next.js API route at `src/app/api/chat/route.ts` that handles POST requests, validates the messages array, and streams responses via `getAgentResponse`. See the [template's route.ts](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/route.ts) for reference.
 
@@ -862,7 +864,7 @@ Sample prompt:
 Create a Next.js API route at src/app/api/chat/route.ts that handles POST requests with a messages array, validates input, calls getAgentResponse from @/features/chat/get-agent-response, and returns proper error responses. Reference: https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/route.ts
 ```
 
-##### (Optional) Add status endpoint
+###### (Optional) Add status endpoint
 
 Create `src/app/api/chat/status/route.ts` to check if the Anthropic key is configured. See the [template's status route](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/api/chat/status/route.ts) for reference.
 
@@ -875,11 +877,11 @@ Create a Next.js API route at src/app/api/chat/status/route.ts that returns JSON
 To customize your chat's system prompt, edit `src/features/chat/system-prompt.ts`.
 </Callout>
 
-#### Frontend Setup: UI Components
+##### Frontend Setup: UI Components
 
 The chat UI consists of several components. Rather than copying each individually, grab the entire chat feature folder and the required layout components.
 
-##### Add chat UI components
+###### Add chat UI components
 
 Implement the chat UI components from the [template's chat feature directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat). Key components include:
 - `chat-ui.tsx` - Main chat interface
@@ -892,7 +894,7 @@ Sample prompt:
 Implement chat UI components for my Next.js app based on the files in https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/features/chat. Create all .tsx components in src/features/chat/.
 ```
 
-##### Add layout components
+###### Add layout components
 
 Implement the layout components from the [template's layout directory](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/components/layout):
 - `resizable-chat-layout.tsx` - Resizable panel layout
@@ -904,7 +906,7 @@ Sample prompt:
 Implement layout components for my Next.js app based on the files in https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp/packages/web-app/src/components/layout. Create resizable-chat-layout.tsx, chat-layout-wrapper.tsx, and content-header.tsx in src/components/layout/.
 ```
 
-##### Add required shadcn/ui components
+###### Add required shadcn/ui components
 
 The chat UI uses these shadcn/ui components:
 
@@ -912,7 +914,7 @@ The chat UI uses these shadcn/ui components:
 npx shadcn@latest add button textarea scroll-area resizable collapsible badge
 ```
 
-##### Add the `cn` utility
+###### Add the `cn` utility
 
 If you don't have `src/lib/utils.ts`, add the standard Tailwind class merge utility:
 
@@ -921,7 +923,7 @@ Sample prompt:
 Create src/lib/utils.ts with a cn() function that combines clsx and tailwind-merge for conditional class name handling.
 ```
 
-##### Update your root layout
+###### Update your root layout
 
 Wrap your app with the `ChatLayoutWrapper` in `src/app/layout.tsx`. See the [template's layout.tsx](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/web-app/src/app/layout.tsx) for reference.
 
