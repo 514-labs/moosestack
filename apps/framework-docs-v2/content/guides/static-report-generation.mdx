@@ -812,7 +812,7 @@ export * from "./apis/salesReport";
 
 You created a consumption API that:
 
-1. **Exposes a REST endpoint** at `/api/sales-report` - accessible via HTTP GET
+1. **Exposes a REST endpoint** at `/consumption/sales-report` - accessible via HTTP GET
 2. **Accepts query parameters** - `startDate`, `endDate`, and optional `region` filter
 3. **Queries the materialized view** - Not the raw transaction table, so responses are fast
 4. **Uses parameterized SQL** - The `sql` template literal prevents SQL injection automatically
@@ -825,13 +825,13 @@ This API becomes the single source of truth for report data. The PDF generator, 
 Query your report endpoint:
 
 ```bash
-curl "http://localhost:4000/api/sales-report?startDate=2025-01-01&endDate=2025-01-31"
+curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-01&endDate=2025-01-31"
 ```
 
 Filter by region:
 
 ```bash
-curl "http://localhost:4000/api/sales-report?startDate=2025-01-15&endDate=2025-01-15&region=West"
+curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15&region=West"
 ```
 
 The response contains aggregated daily sales data in JSON format, ready for transformation into PDF or any other output format.
@@ -885,7 +885,7 @@ async function fetchReportData(
   startDate: string,
   endDate: string
 ): Promise<SalesReportRow[]> {
-  const url = `http://localhost:4000/api/sales-report?startDate=${startDate}&endDate=${endDate}`;
+  const url = `http://localhost:4000/consumption/sales-report?startDate=${startDate}&endDate=${endDate}`;
   const response = await fetch(url);
 
   if (!response.ok) {
@@ -1083,7 +1083,8 @@ async function generatePdf(
     pageMargins: [40, 40, 40, 60],
   };
 
-  // createPdfKitDocument returns a PDFKit.PDFDocument synchronously
+  // Note: createPdfKitDocument is SYNCHRONOUS - do not use await here.
+  // It returns a PDFKit.PDFDocument stream object immediately.
   const pdfDoc = printer.createPdfKitDocument(docDefinition);
 
   // Return a promise that resolves when the PDF is written
@@ -1617,10 +1618,10 @@ GROUP BY saleDate, region
 1. Check date format uses `YYYY-MM-DD`:
    ```bash
    # Wrong
-   curl "http://localhost:4000/api/sales-report?startDate=01-15-2025&endDate=01-31-2025"
+   curl "http://localhost:4000/consumption/sales-report?startDate=01-15-2025&endDate=01-31-2025"
 
    # Correct
-   curl "http://localhost:4000/api/sales-report?startDate=2025-01-15&endDate=2025-01-31"
+   curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-31"
    ```
 
 2. Verify data exists for the date range:
@@ -1644,7 +1645,7 @@ If queries take more than 100ms, check:
 
 1. Ensure API is accessible:
    ```bash
-   curl "http://localhost:4000/api/sales-report?startDate=2025-01-15&endDate=2025-01-15"
+   curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15"
    ```
 
 2. Check for fetch errors in the script output
