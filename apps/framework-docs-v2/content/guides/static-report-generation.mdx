@@ -1073,8 +1073,8 @@ async function generatePdf(
     pageMargins: [40, 40, 40, 60],
   };
 
-  // createPdfKitDocument returns a Promise in newer pdfmake versions
-  const pdfDoc = await printer.createPdfKitDocument(docDefinition);
+  // createPdfKitDocument returns a PDFKit.PDFDocument synchronously
+  const pdfDoc = printer.createPdfKitDocument(docDefinition);
 
   // Return a promise that resolves when the PDF is written
   return new Promise<void>((resolve, reject) => {
