@@ -955,6 +955,8 @@ def to_infra_map() -> dict:
     sql_resources = {}
     workflows = {}
     web_apps = {}
+    materialized_views = {}
+    views = {}
 
     for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
@@ -1129,6 +1131,8 @@ def to_infra_map() -> dict:
         sql_resources=sql_resources,
         workflows=workflows,
         web_apps=web_apps,
+        materialized_views=materialized_views,
+        views=views,
     )
 
     return infra_map.model_dump(by_alias=True, exclude_none=False)
