@@ -391,7 +391,15 @@ async function loadFile(filePath: string): Promise<void> {
       }));
   } else if (ext === ".json") {
     const parsed = JSON.parse(content);
-    records = Array.isArray(parsed) ? parsed : [parsed];
+    const rawRecords: SalesTransaction[] = Array.isArray(parsed) ? parsed : [parsed];
+    // Apply same normalization as CSV: filter empty rows and normalize fields
+    records = rawRecords
+      .filter((r) => r.transactionId)
+      .map((r) => ({
+        ...r,
+        // Normalize null customerId to empty string (API expects string, not null)
+        customerId: r.customerId ?? "",
+      }));
   } else {
     throw new Error(`Unsupported file format: ${ext}`);
   }
