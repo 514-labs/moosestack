@@ -1,138 +1,102 @@
 "use client";
 
-/**
- * Metric Card
- *
- * Generic reusable component for displaying a single metric.
- */
-
 import * as React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 
-// =============================================================================
-// Types
-// =============================================================================
+// MetricCard
 
 export interface MetricCardProps {
   title: string;
   value: number | string;
   description?: string;
   icon?: LucideIcon;
-  change?: string;
-  isPositive?: boolean;
-  showDivider?: boolean;
 }
-
-// =============================================================================
-// Helpers
-// =============================================================================
-
-function formatNumber(num: number): string {
-  return new Intl.NumberFormat("en-US").format(num);
-}
-
-// =============================================================================
-// Metric Card
-// =============================================================================
 
 export function MetricCard({
   title,
   value,
   description,
   icon: Icon,
-  change,
-  isPositive,
-  showDivider = false,
 }: MetricCardProps) {
+  const formatted =
+    typeof value === "number" ?
+      new Intl.NumberFormat("en-US").format(value)
+    : value;
+
   return (
-    <div className="flex items-start">
-      <div className="flex-1 space-y-2 sm:space-y-4 lg:space-y-6">
-        <div className="flex items-center gap-1 sm:gap-1.5 text-muted-foreground">
-          {Icon && <Icon className="size-3.5 sm:size-[18px]" />}
-          <span className="text-[10px] sm:text-xs lg:text-sm font-medium truncate">
-            {title}
-          </span>
-        </div>
-        <p className="text-lg sm:text-xl lg:text-[28px] font-semibold leading-tight tracking-tight">
-          {typeof value === "number" ? formatNumber(value) : value}
-        </p>
-        {(change || description) && (
-          <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-[10px] sm:text-xs lg:text-sm font-medium">
-            {change && (
-              <span
-                className={isPositive ? "text-emerald-600" : "text-red-600"}
-              >
-                <span className="hidden sm:inline">{change}</span>
-              </span>
-            )}
-            {description && (
-              <span className="text-muted-foreground hidden sm:inline">
-                {description}
-              </span>
-            )}
-          </div>
-        )}
+    <div className="space-y-2 lg:space-y-4">
+      <div className="flex items-center gap-1.5 text-muted-foreground">
+        {Icon && <Icon className="size-4" />}
+        <span className="text-xs lg:text-sm font-medium">{title}</span>
       </div>
-      {showDivider && (
-        <div className="hidden lg:block w-px h-full bg-border mx-4 xl:mx-6" />
+      <p className="text-xl lg:text-3xl font-semibold tracking-tight">
+        {formatted}
+      </p>
+      {description && (
+        <span className="text-xs lg:text-sm text-muted-foreground">
+          {description}
+        </span>
       )}
     </div>
   );
 }
 
-// =============================================================================
-// Metric Card Skeleton
-// =============================================================================
+// MetricRow
 
-export function MetricCardSkeleton() {
+export interface MetricRowProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function MetricRow({ children, className }: MetricRowProps) {
+  const items = React.Children.toArray(children);
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">Loading...</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">-</div>
-      </CardContent>
-    </Card>
+    <div className={cn("flex p-4 lg:p-6", className)}>
+      {items.map((child, i) => (
+        <React.Fragment key={i}>
+          <div
+            className={cn(
+              "flex-1 px-4 lg:px-6",
+              i === 0 && "pl-0",
+              i === items.length - 1 && "pr-0",
+            )}
+          >
+            {child}
+          </div>
+          {i < items.length - 1 && (
+            <div className="my-1 border-r border-border" />
+          )}
+        </React.Fragment>
+      ))}
+    </div>
   );
 }
 
-// =============================================================================
-// Metric Cards Container
-// =============================================================================
+// MetricCardsContainer
 
 export interface MetricCardsContainerProps {
   children: React.ReactNode;
-  isLoading?: boolean;
-  skeletonCount?: number;
   className?: string;
 }
 
 export function MetricCardsContainer({
   children,
-  isLoading = false,
-  skeletonCount = 4,
   className,
 }: MetricCardsContainerProps) {
-  if (isLoading) {
-    return (
-      <div className={className ?? "grid grid-cols-2 lg:grid-cols-4 gap-4"}>
-        {Array.from({ length: skeletonCount }).map((_, i) => (
-          <MetricCardSkeleton key={i} />
-        ))}
-      </div>
-    );
-  }
+  const rows = React.Children.toArray(children);
 
   return (
-    <div
-      className={
-        className ??
-        "grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6 p-3 sm:p-4 lg:p-6 rounded-xl border bg-card"
-      }
-    >
-      {children}
+    <div className={cn("flex flex-col rounded-xl border bg-card", className)}>
+      {rows.map((row, i) => (
+        <React.Fragment key={i}>
+          {row}
+          {i < rows.length - 1 && (
+            <div className="mx-4 lg:mx-6 border-b border-border" />
+          )}
+        </React.Fragment>
+      ))}
     </div>
   );
 }

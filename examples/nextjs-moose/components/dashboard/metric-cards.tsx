@@ -20,6 +20,7 @@ import {
 import {
   MetricCard,
   MetricCardsContainer,
+  MetricRow,
 } from "@/components/widgets/metric-card";
 import { useMetrics } from "./dashboard-hooks";
 import { type MetricsResult } from "@/app/actions";
@@ -68,47 +69,65 @@ const metricConfigs: Record<keyof MetricsResult, MetricConfig> = {
   },
 };
 
-const defaultDisplayMetrics: (keyof MetricsResult)[] = [
-  "totalEvents",
-  "totalAmount",
-  "avgAmount",
-  "highValueRatio",
-];
-
 // =============================================================================
 // Dashboard Metric Cards
 // =============================================================================
 
 export interface DashboardMetricCardsProps {
-  displayMetrics?: (keyof MetricsResult)[];
+  config?: Record<keyof MetricsResult, MetricConfig>;
+  columns?: number;
+}
+
+// Helper to chunk array into rows
+function chunk<T>(arr: T[], size: number): T[][] {
+  return Array.from({ length: Math.ceil(arr.length / size) }, (_, i) =>
+    arr.slice(i * size, i * size + size),
+  );
 }
 
 export function DashboardMetricCards({
-  displayMetrics = defaultDisplayMetrics,
+  columns = 3,
+  config = metricConfigs,
 }: DashboardMetricCardsProps = {}) {
   const { data: metrics, isLoading } = useMetrics();
 
+  if (isLoading || !metrics) {
+    return (
+      <MetricCardsContainer>
+        <MetricRow>
+          {Array.from({ length: columns }).map((_, i) => (
+            <div key={i} className="animate-pulse space-y-3">
+              <div className="h-4 w-20 bg-muted rounded" />
+              <div className="h-8 w-32 bg-muted rounded" />
+            </div>
+          ))}
+        </MetricRow>
+      </MetricCardsContainer>
+    );
+  }
+
+  const metricEntries = Object.entries(metrics);
+  const rows = chunk(metricEntries, columns);
+
   return (
-    <MetricCardsContainer
-      isLoading={isLoading || !metrics}
-      skeletonCount={displayMetrics.length}
-    >
-      {metrics &&
-        displayMetrics.map((key, index) => {
-          const config = metricConfigs[key];
-          const value = metrics[key];
-          return (
-            <MetricCard
-              key={key}
-              title={config.title}
-              value={config.format ? config.format(value) : value}
-              icon={config.icon}
-              description={config.description}
-              isPositive={value > 0}
-              showDivider={index < displayMetrics.length - 1}
-            />
-          );
-        })}
+    <MetricCardsContainer>
+      {rows.map((row, rowIndex) => (
+        <MetricRow key={rowIndex}>
+          {row.map(([key, value]) => {
+            const cfg = config[key as keyof MetricsResult];
+            return (
+              <MetricCard
+                key={key}
+                title={cfg.title}
+                value={cfg.format ? cfg.format(value) : value}
+                icon={cfg.icon}
+                description={cfg.description}
+                isPositive={value > 0}
+              />
+            );
+          })}
+        </MetricRow>
+      ))}
     </MetricCardsContainer>
   );
 }
