@@ -9,7 +9,11 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
-import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
 import {
   safeStringify,
   createStructuredConsoleWrapper,
@@ -39,12 +43,10 @@ interface TemporalConfig {
 }
 
 interface ApisConfig {
-  apisDir: string;
   clickhouseConfig: ClickhouseConfig;
   jwtConfig?: JwtConfig;
   temporalConfig?: TemporalConfig;
   enforceAuth: boolean;
-  isDmv2: boolean;
   proxyPort?: number;
   workerCount?: number;
 }
@@ -138,9 +140,7 @@ const apiHandler = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
-  apisDir: string,
   enforceAuth: boolean,
-  isDmv2: boolean,
   jwtConfig?: JwtConfig,
 ) => {
   // Check if we should use compiled code
@@ -148,11 +148,12 @@ const apiHandler = async (
   const sourceDir = getSourceDir();
 
   // Adjust apisDir for compiled mode
-  const actualApisDir = useCompiled
-    ? `${process.cwd()}/.moose/compiled/${sourceDir}/apis/`
-    : apisDir;
+  const actualApisDir =
+    useCompiled ?
+      `${process.cwd()}/.moose/compiled/${sourceDir}/apis/`
+    : undefined;
 
-  const apis = isDmv2 ? await getApis() : new Map();
+  const apis = await getApis();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const start = Date.now();
 
@@ -192,7 +193,10 @@ const apiHandler = async (
         return;
       }
 
-      const pathName = createPath(actualApisDir, fileName, useCompiled);
+      const pathName =
+        actualApisDir ?
+          createPath(actualApisDir, fileName, useCompiled)
+        : fileName;
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
         (obj: { [key: string]: string[] | string }, [key, value]) => {
           const existingValue = obj[key];
@@ -212,84 +216,67 @@ const apiHandler = async (
 
       let userFuncModule = modulesCache.get(pathName);
       if (userFuncModule === undefined) {
-        if (isDmv2) {
-          let apiName = fileName.replace(/^\/+|\/+$/g, "");
-          let version: string | null = null;
+        let apiName = fileName.replace(/^\/+|\/+$/g, "");
+        let version: string | null = null;
 
-          // First, try to find the API by the full path (for custom paths)
-          userFuncModule = apis.get(apiName);
+        // First, try to find the API by the full path (for custom paths)
+        userFuncModule = apis.get(apiName);
 
-          if (!userFuncModule) {
-            // Fall back to the old name:version parsing
-            version = url.searchParams.get("version");
+        if (!userFuncModule) {
+          // Fall back to the old name:version parsing
+          version = url.searchParams.get("version");
 
-            // Check if version is in the path (e.g., /bar/1)
-            if (!version && apiName.includes("/")) {
-              const pathParts = apiName.split("/");
-              if (pathParts.length >= 2) {
-                // Try the full path first (it might be a custom path)
-                userFuncModule = apis.get(apiName);
-                if (!userFuncModule) {
-                  // If not found, treat it as name/version
-                  apiName = pathParts[0];
-                  version = pathParts.slice(1).join("/");
-                }
-              }
-            }
-
-            // Only do versioned lookup if we still haven't found it
-            if (!userFuncModule) {
-              if (version) {
-                const versionedKey = `${apiName}:${version}`;
-                userFuncModule = apis.get(versionedKey);
-              } else {
-                userFuncModule = apis.get(apiName);
+          // Check if version is in the path (e.g., /bar/1)
+          if (!version && apiName.includes("/")) {
+            const pathParts = apiName.split("/");
+            if (pathParts.length >= 2) {
+              // Try the full path first (it might be a custom path)
+              userFuncModule = apis.get(apiName);
+              if (!userFuncModule) {
+                // If not found, treat it as name/version
+                apiName = pathParts[0];
+                version = pathParts.slice(1).join("/");
               }
             }
           }
 
-          if (!userFuncModule) {
-            const availableApis = Array.from(apis.keys()).map((key) =>
-              key.replace(":", "/"),
-            );
-            const errorMessage =
-              version ?
-                `API ${apiName} with version ${version} not found. Available APIs: ${availableApis.join(", ")}`
-              : `API ${apiName} not found. Available APIs: ${availableApis.join(", ")}`;
-            throw new Error(errorMessage);
+          // Only do versioned lookup if we still haven't found it
+          if (!userFuncModule && version) {
+            const versionedKey = `${apiName}:${version}`;
+            userFuncModule = apis.get(versionedKey);
           }
-
-          modulesCache.set(pathName, userFuncModule);
-          console.log(`[API] | Executing API: ${apiName}`);
-        } else {
-          // Use dynamic loader that handles both CJS and ESM
-          userFuncModule = await loadModule(pathName);
-          modulesCache.set(pathName, userFuncModule);
         }
+
+        if (!userFuncModule) {
+          const availableApis = Array.from(apis.keys()).map((key) =>
+            key.replace(":", "/"),
+          );
+          const errorMessage =
+            version ?
+              `API ${apiName} with version ${version} not found. Available APIs: ${availableApis.join(", ")}`
+            : `API ${apiName} not found. Available APIs: ${availableApis.join(", ")}`;
+          throw new Error(errorMessage);
+        }
+
+        modulesCache.set(pathName, userFuncModule);
+        console.log(`[API] | Executing API: ${apiName}`);
       }
 
       const queryClient = new QueryClient(clickhouseClient, fileName);
 
       // Get API name for context
-      const apiName = isDmv2 ? fileName.replace(/^\/+|\/+$/g, "") : fileName;
+      const apiName = fileName.replace(/^\/+|\/+$/g, "");
 
       // Use AsyncLocalStorage to set context for this API call.
       // This avoids race conditions from concurrent API requests - each async
       // execution chain has its own isolated context value
       const result = await apiContextStorage.run({ apiName }, async () => {
-        return isDmv2 ?
-            await userFuncModule(paramsObject, {
-              client: new MooseClient(queryClient, temporalClient),
-              sql: sql,
-              jwt: jwtPayload,
-            })
-          : await userFuncModule.default(paramsObject, {
-              client: new MooseClient(queryClient, temporalClient),
-              sql: sql,
-              jwt: jwtPayload,
-            });
+        return await userFuncModule(paramsObject, {
+          client: new MooseClient(queryClient, temporalClient),
+          sql: sql,
+          jwt: jwtPayload,
+        });
       });
-
       let body: string;
       let status: number | undefined;
 
@@ -339,22 +326,18 @@ const createMainRouter = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
-  apisDir: string,
   enforceAuth: boolean,
-  isDmv2: boolean,
   jwtConfig?: JwtConfig,
 ) => {
   const apiRequestHandler = await apiHandler(
     publicKey,
     clickhouseClient,
     temporalClient,
-    apisDir,
     enforceAuth,
-    isDmv2,
     jwtConfig,
   );
 
-  const webApps = isDmv2 ? await getWebApps() : new Map();
+  const webApps = await getWebApps();
 
   const sortedWebApps = Array.from(webApps.values()).sort((a, b) => {
     const pathA = a.config.mountPath || "/";
@@ -512,9 +495,7 @@ export const runApis = async (config: ApisConfig) => {
           publicKey,
           clickhouseClient,
           temporalClient,
-          config.apisDir,
           config.enforceAuth,
-          config.isDmv2,
           config.jwtConfig,
         ),
       );

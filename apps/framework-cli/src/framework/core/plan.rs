@@ -16,7 +16,6 @@ use crate::framework::core::infra_reality_checker::{InfraRealityChecker, Reality
 use crate::framework::core::infrastructure_map::{
     Change, InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::olap::clickhouse;
 #[cfg(test)]
@@ -33,10 +32,6 @@ use tracing::{debug, error, info};
 /// Errors that can occur during the planning process.
 #[derive(Debug, thiserror::Error)]
 pub enum PlanningError {
-    /// Error occurred while loading the primitive map
-    #[error("Failed to load primitive map")]
-    PrimitiveMapLoading(#[from] crate::framework::core::primitive_map::PrimitiveMapLoadingError),
-
     /// Error occurred while connecting to Kafka
     #[error("Failed to connect to streaming engine")]
     Kafka(#[from] KafkaError),
@@ -510,13 +505,8 @@ pub async fn load_target_infrastructure(
             error!("Docker Build images should have the infrastructure map already created and embedded");
         }
 
-        if project.features.data_model_v2 {
-            // Resolve credentials at runtime for dev/prod mode
-            InfrastructureMap::load_from_user_code(project, true).await?
-        } else {
-            let primitive_map = PrimitiveMap::load(project).await?;
-            InfrastructureMap::new(project, primitive_map)
-        }
+        // Resolve credentials at runtime for dev/prod mode
+        InfrastructureMap::load_from_user_code(project, true).await?
     };
 
     // ALWAYS resolve runtime credentials at runtime in prod mode
@@ -1282,15 +1272,14 @@ mod tests {
         // Verify that default_database is the ONLY field in InfrastructureMap
         // that comes directly from project clickhouse_config.db_name.
         // This is the critical field for ENG-1160: when InfrastructureMap::default()
-        // is used instead of InfrastructureMap::new(), default_database gets "local"
+        // is used instead of InfrastructureMap::empty_from_project(), default_database gets "local"
         // instead of the project's configured database name.
 
         const CUSTOM_DB_NAME: &str = "custom_db";
         let mut project = create_test_project();
         project.clickhouse_config.db_name = CUSTOM_DB_NAME.to_string();
 
-        let primitive_map = PrimitiveMap::default();
-        let infra_map = InfrastructureMap::new(&project, primitive_map);
+        let infra_map = InfrastructureMap::empty_from_project(&project);
 
         // Critical: default_database must be set from project config
         assert_eq!(

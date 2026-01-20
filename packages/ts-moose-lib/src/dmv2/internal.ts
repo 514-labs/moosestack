@@ -41,7 +41,11 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
-import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
 
 /**
  * Recursively finds all TypeScript/JavaScript files in a directory
@@ -1302,7 +1306,9 @@ const loadIndex = async () => {
     if (useCompiled) {
       // In compiled mode, load pre-compiled JavaScript from .moose/compiled/
       // Use dynamic loader that handles both CJS and ESM
-      await loadModule(`${process.cwd()}/.moose/compiled/${sourceDir}/index.js`);
+      await loadModule(
+        `${process.cwd()}/.moose/compiled/${sourceDir}/index.js`,
+      );
     } else {
       // In development mode, load TypeScript via ts-node
       require(`${process.cwd()}/${sourceDir}/index.ts`);

@@ -1,13 +1,18 @@
 import process from "process";
-import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
 
 export async function runApiTypeSerializer(targetModel: string) {
   const sourceDir = getSourceDir();
   const useCompiled = shouldUseCompiled();
 
   // Build path based on compilation mode
-  const apiPath = useCompiled
-    ? `${process.cwd()}/.moose/compiled/${sourceDir}/apis/${targetModel}.js`
+  const apiPath =
+    useCompiled ?
+      `${process.cwd()}/.moose/compiled/${sourceDir}/apis/${targetModel}.js`
     : `${process.cwd()}/${sourceDir}/apis/${targetModel}.ts`;
 
   // Use dynamic loader that handles both CJS and ESM

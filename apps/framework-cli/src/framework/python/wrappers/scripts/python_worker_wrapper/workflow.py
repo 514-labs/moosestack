@@ -135,23 +135,21 @@ class ScriptWorkflow:
         log.info("Monitor task exiting because main task completed")
         return None
 
-    async def _execute_dmv2_activity_with_state(
-        self, dmv2wf: Workflow, task: Task, input_data: Optional[Dict] = None
+    async def _execute_activity_with_state(
+        self, wf: Workflow, task: Task, input_data: Optional[Dict] = None
     ) -> Union[List[Any], ContinueAsNewData]:
-        activity_name = f"{dmv2wf.name}/{task.name}"
+        activity_name = f"{wf.name}/{task.name}"
         self._state.current_step = activity_name
 
         completed_event: asyncio.Event = asyncio.Event()
-        history_monitor = self._monitor_workflow_history(
-            dmv2wf.name, task, completed_event
-        )
+        history_monitor = self._monitor_workflow_history(wf.name, task, completed_event)
 
         activity_task: Optional[asyncio.Task] = None
         monitor_task: Optional[asyncio.Task] = None
 
         try:
             # Create task execution coroutine
-            task_execution = self._execute_single_activity(dmv2wf, task, input_data)
+            task_execution = self._execute_single_activity(wf, task, input_data)
 
             # Race them like TypeScript Promise.race - but don't manually cancel!
             activity_task = asyncio.create_task(task_execution)
@@ -180,8 +178,8 @@ class ScriptWorkflow:
 
             if task.config.on_complete:
                 for child_task in task.config.on_complete:
-                    child_result = await self._execute_dmv2_activity_with_state(
-                        dmv2wf,
+                    child_result = await self._execute_activity_with_state(
+                        wf,
                         child_task,
                         result.data if hasattr(result, "data") else result,
                     )
@@ -209,15 +207,15 @@ class ScriptWorkflow:
             )
 
     async def _execute_single_activity(
-        self, dmv2wf: Workflow, task: Task, input_data: Optional[Dict] = None
+        self, wf: Workflow, task: Task, input_data: Optional[Dict] = None
     ) -> WorkflowStepResult:
         """Execute a single activity without racing against history monitor."""
-        activity_name = f"{dmv2wf.name}/{task.name}"
+        activity_name = f"{wf.name}/{task.name}"
 
         timeout = self._parse_task_timeout(task.config.timeout)
         retries = task.config.retries or 3
         log.info(
-            f"<DMV2WF> Executing activity {activity_name} with timeout {timeout} and retries {retries}"
+            f"<WF> Executing activity {activity_name} with timeout {timeout} and retries {retries}"
         )
 
         if timeout is None:
@@ -225,7 +223,7 @@ class ScriptWorkflow:
             result = await workflow.execute_activity(
                 activity_name,
                 ScriptExecutionInput(
-                    dmv2_workflow_name=dmv2wf.name,
+                    workflow_name=wf.name,
                     task_name=task.name,
                     input_data=input_data,
                 ),
@@ -240,7 +238,7 @@ class ScriptWorkflow:
             result = await workflow.execute_activity(
                 activity_name,
                 ScriptExecutionInput(
-                    dmv2_workflow_name=dmv2wf.name,
+                    workflow_name=wf.name,
                     task_name=task.name,
                     input_data=input_data,
                 ),
@@ -256,7 +254,7 @@ class ScriptWorkflow:
     async def run(
         self, request: WorkflowRequest, input_data: Optional[Dict] = None
     ) -> List[WorkflowStepResult]:
-        """Execute a DMv2 workflow by name or continue from a specific task.
+        """Execute a workflow by name or continue from a specific task.
 
         Args:
             request: WorkflowRequest with workflow_name, execution_mode, and optional continue_from_task
@@ -280,7 +278,7 @@ class ScriptWorkflow:
         )
 
         log.info(
-            f"Starting DMv2 workflow: {workflow_name} (mode: {request.execution_mode}) with input: {input_data}"
+            f"Starting workflow: {workflow_name} (mode: {request.execution_mode}) with input: {input_data}"
         )
         if current_task_name:
             log.info(f"Continuing from task: {current_task_name}")
@@ -298,31 +296,27 @@ class ScriptWorkflow:
                 log.error(f"Failed to decode input data: {e}")
                 raise ValueError(f"Invalid input data: {e}")
 
-        # Get DMv2 workflow
-        dmv2wf = get_workflow(workflow_name)
-        if not dmv2wf:
-            raise ValueError(f"DMv2 workflow '{workflow_name}' not found")
+        # Get workflow
+        wf = get_workflow(workflow_name)
+        if not wf:
+            raise ValueError(f"Workflow '{workflow_name}' not found")
 
         # Determine which task to start from
         if current_task_name:
             # Continue-as-new: find the specific task to resume from
-            current_task = dmv2wf.get_task(current_task_name)
+            current_task = wf.get_task(current_task_name)
             if not current_task:
                 raise ValueError(
                     f"Task '{current_task_name}' not found in workflow '{workflow_name}'"
                 )
-            log.info(
-                f"Continuing DMv2 workflow: {dmv2wf.name} from task: {current_task.name}"
-            )
+            log.info(f"Continuing workflow: {wf.name} from task: {current_task.name}")
         else:
             # Normal start: use starting task
-            current_task = dmv2wf.config.starting_task
-            log.info(f"Starting DMv2 workflow: {dmv2wf.name} from beginning")
+            current_task = wf.config.starting_task
+            log.info(f"Starting workflow: {wf.name} from beginning")
 
         # Execute workflow
-        result = await self._execute_dmv2_activity_with_state(
-            dmv2wf, current_task, current_data
-        )
+        result = await self._execute_activity_with_state(wf, current_task, current_data)
 
         # Handle continue-as-new
         if isinstance(result, ContinueAsNewData):
