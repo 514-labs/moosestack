@@ -37,7 +37,7 @@ This guide will:
   />
   <CTACard
     title="Tutorials"
-    description="Start from scratch or build it in to your existing Next.js application"
+    description="Start from scratch or add chat to your existing Next.js app"
     ctaLink="#tutorial-from-parquet-in-s3-to-chat-application"
     ctaLabel="Build now"
     Icon="Rocket"
@@ -172,17 +172,44 @@ In this tutorial, you’ll bootstrap the MooseStack MCP template, load real Parq
 If you already have a Next.js app that you want to add this chat to, see [Adding Chat to Your Existing Next.js Application](#adding-chat-to-your-existing-nextjs-application).
 </Callout>
 
-### Scope
+### Architecture & Scope
 
-This tutorial covers the end-to-end workflow for bootstrapping the MooseStack MCP template with real Parquet data sourced from S3. It has sample sources for you to use in creating the demo application.
+This tutorial bootstraps a complete chat-over-data application using the MooseStack MCP template with Parquet data from S3.
 
-* Walks through installing the Moose CLI, running the MooseStack \+ Next.js dev services, staging sample data under `packages/moosestack-service/context/`, generating the TypeScript ingest pipelines, bulk-loading local ClickHouse, and validating via the MCP-enabled chat UI.  
-* Covers local testing of chat, and developing the Next.js template alongside local MooseStack.  
-* Covers deploying MooseStack project to Boreal, and web-app to Vercel, as well as authentication concerns for the same.
+```mermaid
+flowchart LR
+    subgraph nextjs["Next.js App"]
+        direction LR
+        ChatUI["Chat UI"] --> APIRoute["/api/chat"] --> MCPClient["MCP Client"]
+    end
+    
+    subgraph moose["MooseStack Service"]
+        direction LR
+        Tools["/tools"] --> MCP["MCP Server"] --> CH["ClickHouse"]
+    end
+    
+    MCPClient -->|"HTTP + Bearer Token"| Tools
+```
 
-#### Not in scope
+**What you'll build:**
 
-* Continuous data ingestion. This covers the initial bulk load only. If you are considering continuous ingestion, use MooseStack’s Workflows.
+| Component | Description |
+| :---- | :---- |
+| **Chat UI** | Resizable panel with message input/output, tool result rendering |
+| **API Route** | Handles chat requests, streams responses from Claude |
+| **MCP Server** | Exposes `query_clickhouse` and `get_data_catalog` tools |
+| **Authentication** | Bearer token flow between frontend and backend |
+| **Production deployment** | Backend on Boreal, frontend on Vercel |
+
+**What this covers:**
+
+- Installing the Moose CLI and initializing the template
+- Modeling your data and bulk-loading from S3 into ClickHouse
+- Testing chat locally and customizing the frontend
+- Deploying MooseStack to Boreal and the Next.js app to Vercel
+
+
+**Not in scope:** Continuous data ingestion. This covers initial bulk load only. For recurring ingestion, see [MooseStack Workflows](https://docs.fiveonefour.com/moosestack/workflows).
 
 ### Setup
 
@@ -552,70 +579,8 @@ handlers thin, maintain type safety throughout.
 
 You should see your frontend application update here [http://localhost:3000](http://localhost:3000/).
 
-### Deploy to Boreal and Vercel
 
-We’ll prepare the application for deployment by setting up authentication, then deploy the MooseStack application to Boreal, and the web-app to Vercel. You can set up authentication and hosting to your preferences, if we haven’t covered your preferred option in our docs, reach out in our slack community: [https://slack.moosestack.com/](https://slack.moosestack.com/). 
-
-Authentication was covered in the start of this guide, but covers back end to front end authentication only (you should also add authentication to restrict access to your frontend).
-
-#### Deploy MooseStack to Boreal
-
-[Go to boreal.cloud, and set up an account](https://www.boreal.cloud/sign-up). Link your Github account. Create an organization. Create a new project:
-
-Select import a MooseStack Project:
-
-![][image1]
-
-Set the path to the root of the MooseStack service:
-
-```text
-packages/moosestack-service
-```
-
-And set the Environment Variables used in the project ([following the same steps defined above](#create-and-configure-.env-files:)):
-
-```text
-MOOSE_INGEST_API_KEY
-MOOSE_CONSUMPTION_API_KEY
-MOOSE_ADMIN_TOKEN
-MOOSE_WEB_APP_API_KEYS
-```
-
-![][image2]
-
-Continue, selecting Boreal default hosting (or point it at your own managed ClickHouse and Redpanda instances if you like).
-
-![][image3]
-
-Click Deploy, and you’ll see your application MooseStack being deployed.
-
-#### Deploy your Next.js frontend to Vercel
-
-<Callout type="warning" title="Authentication">
-The authentication set up above just ensures your backend and frontend can communicate securely. You still need to add authentication to your frontend to restrict access to your data.
-
-Vercel offers this natively for preview deployments. For production, consider [NextAuth](https://next-auth.js.org/), [Auth0](https://auth0.com/), or [Clerk](https://clerk.com/).
-
-See Vercel docs:
-- [Vercel authentication](https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/vercel-authentication)
-- [Third party auth](https://vercel.com/guides/application-authentication-on-vercel)
-</Callout>
-
-##### Deployment
-
-1. From the Vercel home-page, add a new project.  
-2. Point it at this project, and set the root directory to packages/web-app  
-3. Set the following environment variables
-
-```text
-​​ANTHROPIC_API_KEY: Your Anthropic API key for chat functionality
-NEXT_PUBLIC_API_URL: Your Boreal endpoint URL (e.g., `https://your-project.boreal.cloud`)
-API_KEY: Use the bearer token generated earlier
-```
-
-You can find your Boreal endpoint URL at the top of the project overview page:
-
-![][image4]
+:::include /shared/chat-guide/deploy-to-boreal-and-vercel.mdx
 
 #### Hydrate your production deployment
 
@@ -689,9 +654,9 @@ This will again return 0 rows. This is expected. You can validate that the trans
 
 **Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-mcp](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp)
 
-### Overview & Architecture
+### Architecture & Scope
 
-This part of the guide will walk your through adding a chat panel embedded in your Next.js app that can query your ClickHouse data using natural language. The chat uses Claude to interpret questions and call MCP tools that execute SQL queries against your database.
+This tutorial adds a chat panel to your existing Next.js app that queries your ClickHouse data using natural language. The chat uses Claude to interpret questions and call MCP tools that execute SQL queries against your database.
 
 ```mermaid
 flowchart LR
@@ -708,14 +673,21 @@ flowchart LR
     MCPClient -->|"HTTP + Bearer Token"| Tools
 ```
 
-What this will walk through building:
+**What you'll build:**
 
 | Component | Description |
 | :---- | :---- |
 | **Chat UI** | Resizable panel with message input/output, tool result rendering |
-| **API Route** (/api/chat) | Handles chat requests, creates MCP client, streams responses |
-| **MCP Server** (/tools) | Express app exposing query_clickhouse and get_data_catalog tools |
-| **Authentication** | Bearer token flow between frontend and MCP server |
+| **API Route** | Handles chat requests, streams responses from Claude |
+| **MCP Server** | Exposes `query_clickhouse` and `get_data_catalog` tools |
+| **Authentication** | Bearer token flow between frontend and backend |
+| **Production deployment** | Backend on Boreal, frontend on Vercel |
+
+**What this covers:**
+- Adding MooseStack service with MCP server to your monorepo
+- Integrating chat UI components into your Next.js app
+- Configuring authentication between frontend and backend
+- Testing and deploying the integrated system
 
 ### Backend Setup: MooseStack Service with MCP Server
 
@@ -1027,9 +999,7 @@ You should see a response listing `query_clickhouse` and `get_data_catalog` tool
 3. Ask a question like "What tables are available?"  
 4. The AI should call `get_data_catalog` and show you the results
 
-### Deployment
-
-See [Deploy to Boreal and Vercel](#deploy-to-boreal-and-vercel).
+:::include /shared/chat-guide/deploy-to-boreal-and-vercel.mdx
 
 ## Troubleshooting
 
