@@ -486,6 +486,50 @@ class SqlResourceConfig(BaseModel):
     metadata: Optional[dict] = None
 
 
+class MaterializedViewJson(BaseModel):
+    """Internal representation of a structured Materialized View for serialization.
+
+    Attributes:
+        name: Name of the materialized view.
+        database: Optional database where the MV is created.
+        select_sql: The SELECT SQL statement.
+        source_tables: Names of source tables the SELECT reads from.
+        target_table: Name of the target table where data is written.
+        target_database: Optional database for the target table.
+        metadata: Optional metadata for the materialized view (e.g., description, source file).
+    """
+
+    model_config = model_config
+
+    name: str
+    database: Optional[str] = None
+    select_sql: str
+    source_tables: List[str]
+    target_table: str
+    target_database: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+class ViewJson(BaseModel):
+    """Internal representation of a structured Custom View for serialization.
+
+    Attributes:
+        name: Name of the view.
+        database: Optional database where the view is created.
+        select_sql: The SELECT SQL statement.
+        source_tables: Names of source tables the SELECT reads from.
+        metadata: Optional metadata for the view (e.g., description, source file).
+    """
+
+    model_config = model_config
+
+    name: str
+    database: Optional[str] = None
+    select_sql: str
+    source_tables: List[str]
+    metadata: Optional[dict] = None
+
+
 class InfrastructureMap(BaseModel):
     """Top-level model holding the configuration for all defined Moose resources.
 
