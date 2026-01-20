@@ -4,6 +4,7 @@ packages:
   - "scripts"
 
 catalog:
+  "@anthropic-ai/sdk": "0.71.2"
   "@clickhouse/client": "1.12.1"
   "@iarna/toml": "3.0.0"
   "@types/chai": "4.3.20"
@@ -15,6 +16,7 @@ catalog:
   github-slugger: "2.0.0"
   mermaid: "11.12.0"
   mocha: "10.8.2"
+  posthog-node: "5.21.0"
   ts-node: "10.9.2"
   typescript: "5.9.3"
   yaml: "2.8.2"
