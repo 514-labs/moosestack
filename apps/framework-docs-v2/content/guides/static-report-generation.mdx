@@ -504,19 +504,21 @@ function validateRecord(record: SalesTransaction, index: number): ValidationErro
   // Date validation - handle both string and Date types
   // Note: papaparse dynamicTyping converts ISO dates to Date objects
   if (record.saleTimestamp) {
-    let parsed: Date;
+    let parsed: Date | null = null;
     if (record.saleTimestamp instanceof Date) {
       parsed = record.saleTimestamp;
     } else if (typeof record.saleTimestamp === "string") {
       parsed = parseISO(record.saleTimestamp);
     } else {
       errors.push({ row: index, field: "saleTimestamp", message: "Invalid date type" });
-      return errors;
     }
-    if (!isValid(parsed)) {
-      errors.push({ row: index, field: "saleTimestamp", message: "Invalid date format (expected ISO 8601, e.g., 2025-01-15T09:00:00Z)" });
-    } else if (parsed > new Date()) {
-      errors.push({ row: index, field: "saleTimestamp", message: "Future dates not allowed" });
+    // Only validate parsed date if we successfully parsed it
+    if (parsed !== null) {
+      if (!isValid(parsed)) {
+        errors.push({ row: index, field: "saleTimestamp", message: "Invalid date format (expected ISO 8601, e.g., 2025-01-15T09:00:00Z)" });
+      } else if (parsed > new Date()) {
+        errors.push({ row: index, field: "saleTimestamp", message: "Future dates not allowed" });
+      }
     }
   }
 
