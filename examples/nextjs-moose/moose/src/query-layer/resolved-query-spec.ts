@@ -6,20 +6,8 @@
  */
 
 import type { SortDir } from "./types";
-import type { FilterDefBase, FilterValueType } from "./filters";
-import type { OperatorValueType } from "./type-helpers";
-
-/**
- * Filter parameters structure derived from filter definitions.
- */
-export type FilterParams<TFilters extends Record<string, FilterDefBase>> = {
-  [K in keyof TFilters]?: {
-    [Op in TFilters[K]["operators"][number]]?: OperatorValueType<
-      Op,
-      FilterValueType<TFilters[K]>
-    >;
-  };
-};
+import type { FilterDefBase } from "./filters";
+import type { FilterParams } from "./query-request";
 
 /**
  * Resolved query specification.

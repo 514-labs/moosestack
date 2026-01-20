@@ -10,30 +10,22 @@
  */
 
 import { sql } from "@514labs/moose-lib";
-import { tags } from "typia";
 import { executeQuery } from "../client";
 import { Events } from "../models";
-import {
-  InferRequest,
-  InferResult,
-  InferDimensionNames,
-  InferMetricNames,
-  defineQueryModel,
-  defineMapper,
-} from "../query-layer";
+import { InferResult, defineQueryModel, defineMapper } from "../query-layer";
 import { count, sum, avg, min, max, orderBy } from "../query-layer/utils";
 
 // =============================================================================
 // Query Model with Dimensions & Metrics
 // =============================================================================
 
+// Define the query model with explicit input types for filters
 export const statsModel = defineQueryModel({
   table: Events,
 
   // Dimensions: columns for grouping and filtering (all are automatically groupable)
   dimensions: {
     status: { column: "status" },
-    timestamp: { column: "event_time" },
     day: { expression: sql`toDate(${Events.columns.event_time})`, as: "day" },
     month: {
       expression: sql`toStartOfMonth(${Events.columns.event_time})`,
@@ -56,7 +48,6 @@ export const statsModel = defineQueryModel({
       as: "high_value_ratio",
     },
   },
-
   filters: {
     timestamp: { column: "event_time", operators: ["gte", "lte"] as const },
     status: { column: "status", operators: ["eq", "in"] as const },
@@ -67,22 +58,19 @@ export const statsModel = defineQueryModel({
   defaults: {},
 });
 
-export type StatsDimension = InferDimensionNames<typeof statsModel>;
-export type StatsMetric = InferMetricNames<typeof statsModel>;
+// Type exports derived from the model
+export type StatsDimension = typeof statsModel.$inferDimensions;
+export type StatsMetric = typeof statsModel.$inferMetrics;
+export type StatsFilterParams = typeof statsModel.$inferFilters;
 
 // =============================================================================
 // API Params
 // =============================================================================
 
-// Types inferred from the model - no manual definitions needed!
-// These are kept for backwards compatibility but resolve to the direct literal exports
-export type Dimension = StatsDimension;
-export type Metric = StatsMetric;
-
 export interface StatsParams {
   // Filter params
-  startDate?: string & tags.Format<"date">;
-  endDate?: string & tags.Format<"date">;
+  startDate?: string;
+  endDate?: string;
   status?: "completed" | "active" | "inactive";
 
   // Dynamic field selection (arrays of dimension/metric names)

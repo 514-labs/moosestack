@@ -34,7 +34,7 @@ import type { SortDir } from "./types";
  */
 export interface QueryMapper<
   TApiRequest,
-  TModel extends QueryModel<any, any, any, any, any>,
+  TModel extends QueryModel<any, any, any, any, any, any>,
 > {
   /**
    * Map API request to QueryRequest.
@@ -47,17 +47,10 @@ export interface QueryMapper<
 /**
  * Extract filter types from QueryModel for type-safe mappings.
  */
-type ExtractFilterTypes<TModel extends QueryModel<any, any, any, any, any>> =
-  TModel extends (
-    QueryModel<
-      infer _TMetrics,
-      infer _TDimensions,
-      infer TFilters,
-      infer _TSortable,
-      infer _TResult
-    >
-  ) ?
-    TFilters
+type ExtractFilterTypes<
+  TModel extends QueryModel<any, any, any, any, any, any>,
+> =
+  TModel extends QueryModel<any, any, any, infer TFilters, any, any> ? TFilters
   : never;
 
 /**
@@ -165,10 +158,11 @@ type MappingsConfig<
  * const results = await model.query(request, executeQuery);
  */
 export function defineMapper<TApiRequest>() {
-  return <TModel extends QueryModel<any, any, any, any, any>>(
+  return <TModel extends QueryModel<any, any, any, any, any, any>>(
     model: TModel,
     mappings: TModel extends (
       QueryModel<
+        any,
         infer TMetrics,
         infer TDimensions,
         infer TFilters,
@@ -246,7 +240,7 @@ export function defineMapper<TApiRequest>() {
  * const result = await model.query(request, executeQuery);
  */
 export function toQueryRequest<
-  TModel extends QueryModel<any, any, any, any, any>,
+  TModel extends QueryModel<any, any, any, any, any, any>,
 >(model: TModel, request: InferRequest<TModel>): InferRequest<TModel> {
   return request;
 }

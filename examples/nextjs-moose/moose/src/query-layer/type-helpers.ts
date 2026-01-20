@@ -4,11 +4,9 @@
  */
 
 import type { FilterOperator, SqlValue } from "./types";
-import type { FilterDefBase, FilterValueType } from "./filters";
+import type { FilterDefBase } from "./filters";
 import type { QueryRequest } from "./query-request";
 import type { QueryModel } from "./query-model";
-import type { MetricDef } from "./fields";
-import type { DimensionDef } from "./fields";
 
 /**
  * Extract string keys from a record type.
@@ -52,13 +50,7 @@ export type OperatorValueType<Op extends FilterOperator, TValue = SqlValue> =
  */
 export type InferDimensionNames<TModel> =
   TModel extends (
-    QueryModel<
-      infer _TMetrics,
-      infer TDimensions,
-      infer _TFilters,
-      infer _TSortable,
-      infer _TResult
-    >
+    QueryModel<any, infer TMetrics, infer TDimensions, any, any, any>
   ) ?
     TDimensions extends Record<string, any> ?
       keyof TDimensions & string
@@ -75,15 +67,7 @@ export type InferDimensionNames<TModel> =
  * type MetricNames = InferMetricNames<typeof model>; // "totalEvents" | "totalAmount"
  */
 export type InferMetricNames<TModel> =
-  TModel extends (
-    QueryModel<
-      infer TMetrics,
-      infer _TDimensions,
-      infer _TFilters,
-      infer _TSortable,
-      infer _TResult
-    >
-  ) ?
+  TModel extends QueryModel<any, infer TMetrics, any, any, any, any> ?
     TMetrics extends Record<string, any> ?
       keyof TMetrics & string
     : never
@@ -103,6 +87,7 @@ export type InferMetricNames<TModel> =
 export type InferRequest<TModel> =
   TModel extends (
     QueryModel<
+      any,
       infer TMetrics,
       infer TDimensions,
       infer TFilters,
@@ -121,5 +106,31 @@ export type InferRequest<TModel> =
  * @template TModel - QueryModel instance
  */
 export type InferResult<TModel> =
-  TModel extends QueryModel<any, any, any, any, infer TResult> ? TResult
+  TModel extends QueryModel<any, any, any, any, any, infer TResult> ? TResult
   : never;
+
+/**
+ * Infer filter parameters with proper value types from a QueryModel.
+ * Uses TTable to look up column types directly from the table model.
+ *
+ * @template TFilters - Record of filter definitions
+ * @template TTable - Table model type for column type lookups
+ *
+ * @example
+ * // Given filters: { status: { column: "status", operators: ["eq", "in"] } }
+ * // And table model: { status: "active" | "inactive" }
+ * // Result type: { status?: { eq?: "active" | "inactive"; in?: ("active" | "inactive")[] } }
+ */
+export type InferFilterParamsWithTable<
+  TFilters extends Record<string, FilterDefBase>,
+  TTable,
+> = {
+  [K in keyof TFilters]?: {
+    [Op in TFilters[K]["operators"][number]]?: OperatorValueType<
+      Op,
+      TFilters[K] extends { column: infer TKey extends keyof TTable } ?
+        TTable[TKey]
+      : SqlValue
+    >;
+  };
+};

@@ -35,21 +35,10 @@ export function MultiSelectChips<TId extends string>({
   variant = "primary",
   disabled = false,
   className,
-  minSelections = 0,
-  maxSelections,
 }: MultiSelectChipsProps<TId>) {
   const handleValueChange = (value: string[]) => {
     // ToggleGroup returns string[], but we need TId[]
     const newSelected = value as TId[];
-
-    // Enforce min/max constraints
-    if (newSelected.length < minSelections) {
-      return; // Don't allow going below minimum
-    }
-    if (maxSelections !== undefined && newSelected.length > maxSelections) {
-      return; // Don't allow going above maximum
-    }
-
     onChange(newSelected);
   };
 
@@ -59,23 +48,15 @@ export function MultiSelectChips<TId extends string>({
       value={selected}
       onValueChange={handleValueChange}
       variant="outline"
-      spacing={8}
+      spacing={4}
       className={cn("flex flex-wrap", className)}
     >
       {options.map((option) => {
-        const isSelected = selected.includes(option.id);
-        const isAtMin = selected.length <= minSelections && isSelected;
-        const isAtMax =
-          maxSelections !== undefined &&
-          selected.length >= maxSelections &&
-          !isSelected;
-        const isDisabled = disabled || isAtMin || isAtMax;
-
         return (
           <ToggleGroupItem
             key={option.id}
             value={option.id}
-            disabled={isDisabled}
+            disabled={disabled}
             title={option.description}
             className={cn(
               "px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200",

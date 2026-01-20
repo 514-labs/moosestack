@@ -12,12 +12,16 @@ import type { Sql } from "@514labs/moose-lib";
  * Filter parameters structure derived from filter definitions.
  * Provides type-safe filter values based on the allowed operators for each filter.
  *
+ * Uses FilterValueType from filters.ts which automatically extracts column types
+ * from ModelFilterDef<TTable, TKey> as TTable[TKey].
+ *
  * @template TFilters - Record of filter definitions
  *
  * @example
- * // Given filters: { status: { operators: ["eq", "in"] }, amount: { operators: ["gte", "lte"] } }
+ * // Given filters: { status: { column: "status", operators: ["eq", "in"] }, amount: { column: "amount", operators: ["gte", "lte"] } }
+ * // And table model: { status: "active" | "inactive", amount: number }
  * // Result type: {
- * //   status?: { eq?: string; in?: string[] };
+ * //   status?: { eq?: "active" | "inactive"; in?: ("active" | "inactive")[] };
  * //   amount?: { gte?: number; lte?: number };
  * // }
  */

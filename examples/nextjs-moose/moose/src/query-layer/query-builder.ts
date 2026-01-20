@@ -194,13 +194,21 @@ export interface QueryBuilder<
  *   .execute(executeQuery);
  */
 export function buildQuery<
+  TTable,
   TMetrics extends Record<string, MetricDef>,
   TDimensions extends Record<string, DimensionDef<any, any>>,
   TFilters extends Record<string, FilterDefBase>,
   TSortable extends string,
   TResult,
 >(
-  model: QueryModel<TMetrics, TDimensions, TFilters, TSortable, TResult>,
+  model: QueryModel<
+    TTable,
+    TMetrics,
+    TDimensions,
+    TFilters,
+    TSortable,
+    TResult
+  >,
 ): QueryBuilder<
   Names<TMetrics>,
   Names<TDimensions>,

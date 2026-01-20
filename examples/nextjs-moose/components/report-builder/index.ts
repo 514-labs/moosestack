@@ -1,66 +1,116 @@
 /**
- * Report Builder Components
+ * Report Builder
  *
- * A generic, reusable report builder for QueryModel instances.
- * See README.md for full documentation and usage patterns.
+ * A hook-based report builder for QueryModel instances.
  *
  * ## Quick Start
  *
- * 1. Create a Server Action for your QueryModel:
- *    ```ts
- *    // app/actions/my-report.ts
- *    "use server";
- *    import { getMyData } from "moose";
- *    export async function executeMyQuery(params) {
- *      return getMyData(params);
- *    }
- *    ```
+ * ```tsx
+ * // page.tsx (Server Component)
+ * import { prepareModel } from "@/components/report-builder";
+ * import { statsModel } from "moose";
  *
- * 2. Create a wrapper Client Component:
- *    ```tsx
- *    // components/my-report-builder.tsx
- *    "use client";
- *    import { ReportBuilder, FieldMeta } from "@/components/report-builder";
- *    import { executeMyQuery } from "@/app/actions/my-report";
+ * const model = prepareModel(statsModel, {
+ *   filters: {
+ *     status: { inputType: "select", options: [...] },
+ *   },
+ * });
  *
- *    const DIMENSIONS: FieldMeta<MyDimension>[] = [...];
- *    const METRICS: FieldMeta<MyMetric>[] = [...];
+ * export default function Page() {
+ *   return <ReportPage model={model} />;
+ * }
+ * ```
  *
- *    export function MyReportBuilder() {
- *      return (
- *        <ReportBuilder
- *          dimensions={DIMENSIONS}
- *          metrics={METRICS}
- *          execute={executeMyQuery}
- *        />
- *      );
- *    }
- *    ```
+ * ```tsx
+ * // report-page.tsx (Client Component)
+ * "use client";
+ * import { useReport, DimensionChips, MetricChips } from "@/components/report-builder";
  *
- * 3. Use in your page:
- *    ```tsx
- *    import { MyReportBuilder } from "@/components/my-report-builder";
- *    export default function Page() {
- *      return <MyReportBuilder />;
- *    }
- *    ```
+ * export function ReportPage({ model, executeQuery }) {
+ *   const report = useReport({
+ *     model,
+ *     execute: executeQuery,
+ *     defaults: { dimensions: ["status"], metrics: ["totalEvents"] },
+ *   });
+ *
+ *   return (
+ *     <div>
+ *       <DimensionChips
+ *         options={report.model.dimensions}
+ *         selected={report.state.dimensions}
+ *         onToggle={report.actions.toggleDimension}
+ *       />
+ *       <MetricChips
+ *         options={report.model.metrics}
+ *         selected={report.state.metrics}
+ *         onToggle={report.actions.toggleMetric}
+ *       />
+ *       // ... filters, results, etc.
+ *     </div>
+ *   );
+ * }
+ * ```
  *
  * @module report-builder
  */
 
-// Components
-export { ResultsTable, type ResultsTableProps } from "./results-table";
-export { ReportBuilder, type ReportBuilderProps } from "./report-builder";
+// =============================================================================
+// Primary API - Hook & Server Helper
+// =============================================================================
 
-// Types
 export {
-  type FieldMeta,
-  type ReportQueryParams,
-  type ReportBuilderConfig,
-  type ResultsTableConfig,
+  useReport,
+  type UseReportOptions,
+  type UseReportReturn,
+  type ReportModel,
+  type ReportState,
+  type ReportActions,
+  type ReportQuery,
+} from "./use-report";
+
+export {
+  prepareModel,
+  type PrepareModelOptions,
+  type FilterOverride,
+  type FieldOverride,
+} from "./prepare-model";
+
+// =============================================================================
+// UI Components (use with useReport)
+// =============================================================================
+
+export {
+  DimensionChips,
+  MetricChips,
+  FilterRow,
+  ExecuteButton,
+  SimpleResultsTable,
+  type DimensionChipsProps,
+  type MetricChipsProps,
+  type FilterRowProps,
+  type ExecuteButtonProps,
+  type SimpleResultsTableProps,
+} from "./components";
+
+// =============================================================================
+// Core Types
+// =============================================================================
+
+export type {
+  FieldOption,
+  FieldMeta,
+  FilterOperator,
+  FilterInputType,
+  FilterSelectOption,
+  FilterMeta,
+  FilterValue,
+  ReportQueryParams,
 } from "./types";
 
-// Re-export shared input components for convenience
+// =============================================================================
+// Re-exported Input Components
+// =============================================================================
+
 export {
   MultiSelectChips,
   DatePicker,

@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import type { FieldOption } from "./types";
 
 export interface SelectDropdownProps<TId extends string> {
@@ -46,20 +47,22 @@ export function SelectDropdown<TId extends string>({
 }: SelectDropdownProps<TId>) {
   const selectId = React.useId();
 
+  // Find the selected option to display its label
+  const selectedOption = options.find((opt) => opt.id === value);
+
   return (
     <div className={className}>
       {label && (
-        <label
+        <Label
           htmlFor={selectId}
           className="text-muted-foreground text-xs font-medium mb-1 block"
         >
           {label}
-        </label>
+        </Label>
       )}
       <Select
         value={value}
         onValueChange={(newValue) => {
-          // Handle null case from base-ui Select
           if (newValue !== null) {
             onChange(newValue as TId);
           }
@@ -67,9 +70,9 @@ export function SelectDropdown<TId extends string>({
         disabled={disabled}
       >
         <SelectTrigger id={selectId} className={width}>
-          {!value && placeholder ?
-            <SelectValue>{placeholder}</SelectValue>
-          : <SelectValue />}
+          <SelectValue>
+            {selectedOption ? selectedOption.label : placeholder}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>

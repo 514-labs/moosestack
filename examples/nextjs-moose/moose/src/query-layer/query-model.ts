@@ -35,15 +35,21 @@ import {
 } from "./utils";
 import type { FilterOperator, SortDir } from "./types";
 import type { FieldDef, DimensionDef, MetricDef } from "./fields";
-import type {
-  FilterDef,
-  ModelFilterDef,
-  FilterDefBase,
-  FilterValueType,
+import {
+  deriveInputTypeFromDataType,
+  type FilterDef,
+  type ModelFilterDef,
+  type FilterDefBase,
+  type FilterValueType,
+  type FilterInputTypeHint,
 } from "./filters";
 import type { QueryRequest, QueryParts, FilterParams } from "./query-request";
 import type { ResolvedQuerySpec } from "./resolved-query-spec";
-import type { Names, OperatorValueType } from "./type-helpers";
+import type {
+  Names,
+  OperatorValueType,
+  InferFilterParamsWithTable,
+} from "./type-helpers";
 
 // =============================================================================
 // Query Model Configuration
@@ -143,6 +149,7 @@ export interface QueryModelConfig<
  * @template TResult - Result row type
  */
 export interface QueryModel<
+  TTable,
   TMetrics extends Record<string, MetricDef>,
   TDimensions extends Record<string, DimensionDef<any, any>>,
   TFilters extends Record<string, FilterDefBase>,
@@ -163,6 +170,25 @@ export interface QueryModel<
 
   /** Available metric names (runtime access) */
   readonly metricNames: readonly string[];
+
+  /**
+   * Type inference helpers (similar to Drizzle's $inferSelect pattern).
+   * These are type-only properties that don't exist at runtime.
+   */
+  readonly $inferDimensions: Names<TDimensions>;
+  readonly $inferMetrics: Names<TMetrics>;
+  /**
+   * Infers the filter parameter structure with expected value types for each operator.
+   * Uses TTable to look up column types directly from the table model.
+   */
+  readonly $inferFilters: InferFilterParamsWithTable<TFilters, TTable>;
+  readonly $inferRequest: QueryRequest<
+    Names<TMetrics>,
+    Names<TDimensions>,
+    TFilters,
+    TSortable
+  >;
+  readonly $inferResult: TResult;
 
   /**
    * Execute query with request and return results.
@@ -271,7 +297,7 @@ export function defineQueryModel<
   TResult = TTable,
 >(
   config: QueryModelConfig<TTable, TMetrics, TDimensions, TFilters, TSortable>,
-): QueryModel<TMetrics, TDimensions, TFilters, TSortable, TResult> {
+): QueryModel<TTable, TMetrics, TDimensions, TFilters, TSortable, TResult> {
   const {
     table,
     dimensions,
@@ -282,15 +308,29 @@ export function defineQueryModel<
   } = config;
   const { maxLimit = 1000 } = defaults;
 
-  // Resolve column names to actual column references
-  const resolvedFilters: Record<string, FilterDef<TTable, any>> = {};
+  // Resolve column names to actual column references and derive inputType from data_type
+  const resolvedFilters: Record<
+    string,
+    FilterDef<TTable, any> & { inputType?: FilterInputTypeHint }
+  > = {};
   for (const [name, def] of Object.entries(filters)) {
     // Type-safe: def.column is keyof TTable, and table.columns[key] is ColRef<TTable>
-    const columnRef = table.columns[def.column] as ColRef<TTable>;
+    const columnRef = table.columns[def.column] as ColRef<TTable> & {
+      data_type?: unknown;
+    };
+
+    // Auto-derive inputType from column's data_type if not explicitly provided
+    const inputType =
+      def.inputType ??
+      (columnRef.data_type ?
+        deriveInputTypeFromDataType(columnRef.data_type)
+      : undefined);
+
     resolvedFilters[name] = {
       column: columnRef,
       operators: def.operators,
       transform: def.transform as any,
+      inputType,
     };
   }
 
@@ -632,8 +672,22 @@ export function defineQueryModel<
     `;
   }
 
-  return {
-    filters,
+  // Build filters object with auto-derived inputType for the public API
+  const filtersWithInputType: Record<
+    string,
+    ModelFilterDef<TTable, keyof TTable> & { inputType?: FilterInputTypeHint }
+  > = {};
+  for (const [name, def] of Object.entries(filters)) {
+    const resolved = resolvedFilters[name];
+    filtersWithInputType[name] = {
+      ...def,
+      inputType: resolved?.inputType ?? def.inputType,
+    };
+  }
+
+  const model = {
+    filters: filtersWithInputType as TFilters &
+      Record<string, { inputType?: FilterInputTypeHint }>, // Include derived inputType
     sortable,
     // Expose dimensions and metrics for type inference
     // Note: These are Records, use `keyof typeof model.dimensions` to get union types
@@ -645,5 +699,21 @@ export function defineQueryModel<
     toSql,
     toParts,
     build: (request, assemble) => assemble(toParts(request)),
-  };
+    // Type-only inference helpers (similar to Drizzle's $inferSelect)
+    // These properties don't exist at runtime but provide type inference
+    $inferDimensions: undefined as never,
+    $inferMetrics: undefined as never,
+    $inferFilters: undefined as never,
+    $inferRequest: undefined as never,
+    $inferResult: undefined as never,
+  } satisfies QueryModel<
+    TTable,
+    TMetrics,
+    TDimensions,
+    TFilters,
+    TSortable,
+    TResult
+  >;
+
+  return model;
 }

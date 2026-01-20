@@ -1,74 +1,70 @@
-import { ReportBuilder, FieldMeta } from "@/components/report-builder";
+import {
+  prepareModel,
+  type ReportQueryParams,
+} from "@/components/report-builder";
+import { statsModel } from "moose";
+import { ReportPage } from "./report-page";
 import { executeStatsQuery } from "./actions";
-import type { StatsDimension, StatsMetric } from "moose";
 
 /**
- * Dimension definitions with UI metadata.
+ * Server Component: Prepare model and render client component.
+ *
+ * The new API is simple:
+ * 1. Call prepareModel(queryModel, options) to convert model to serializable format
+ * 2. Pass the model and execute function to a client component
+ * 3. Use useReport hook in the client component
  */
-export const STATS_DIMENSIONS: readonly FieldMeta<StatsDimension>[] = [
-  { id: "status", label: "Status", description: "Event status" },
-  { id: "timestamp", label: "Timestamp", description: "Event timestamp" },
-  { id: "day", label: "Day", description: "Day (date)" },
-  { id: "month", label: "Month", description: "Month start" },
-] as const;
 
-/**
- * Metric definitions with UI metadata.
- * dataKey maps the UI id to the snake_case key in query results.
- */
-export const STATS_METRICS: readonly FieldMeta<StatsMetric>[] = [
-  {
-    id: "totalEvents",
-    label: "Total Events",
-    description: "Count of events",
-    dataKey: "total_events",
+// Prepare the model for the client (one simple function call)
+const model = prepareModel(statsModel, {
+  // Filter overrides (only needed for select options)
+  filters: {
+    status: {
+      inputType: "select",
+      options: [
+        { value: "active", label: "Active" },
+        { value: "completed", label: "Completed" },
+        { value: "inactive", label: "Inactive" },
+      ],
+    },
   },
-  {
-    id: "totalAmount",
-    label: "Total Amount",
-    description: "Sum of amounts",
-    dataKey: "total_amount",
+  // Optional: Override labels
+  metrics: {
+    highValueRatio: { label: "High Value %" },
   },
-  {
-    id: "avgAmount",
-    label: "Avg Amount",
-    description: "Average amount",
-    dataKey: "avg_amount",
-  },
-  {
-    id: "minAmount",
-    label: "Min Amount",
-    description: "Minimum amount",
-    dataKey: "min_amount",
-  },
-  {
-    id: "maxAmount",
-    label: "Max Amount",
-    description: "Maximum amount",
-    dataKey: "max_amount",
-  },
-  {
-    id: "highValueRatio",
-    label: "High Value %",
-    description: "Ratio of high-value events",
-    dataKey: "high_value_ratio",
-  },
-] as const;
+});
+
+// Server action wrapper to adapt ReportQueryParams to statsModel types
+async function executeQuery(params: ReportQueryParams) {
+  "use server";
+  return executeStatsQuery({
+    dimensions: params.dimensions as ("status" | "day" | "month")[],
+    metrics: params.metrics as (
+      | "totalEvents"
+      | "totalAmount"
+      | "avgAmount"
+      | "minAmount"
+      | "maxAmount"
+      | "highValueRatio"
+    )[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    filters: params.filters as any,
+  });
+}
 
 export default function StatsReportPage() {
   return (
     <div className="p-6">
-      <div className="mx-auto max-w-7xl">
-        <ReportBuilder
-          dimensions={STATS_DIMENSIONS}
-          metrics={STATS_METRICS}
-          execute={executeStatsQuery}
-          title="04-Aggregations Report Builder"
-          description="Build custom reports by selecting breakdown dimensions and metrics"
-          defaultBreakdown={["status"]}
-          defaultMetrics={["totalEvents", "totalAmount"]}
-          showDateFilter={true}
-        />
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">04-Aggregations Report Builder</h1>
+          <p className="text-muted-foreground">
+            Build custom reports by selecting breakdown dimensions and metrics
+          </p>
+        </div>
+
+        {/* Pass model and execute function to client component */}
+        <ReportPage model={model} executeQuery={executeQuery} />
       </div>
     </div>
   );
