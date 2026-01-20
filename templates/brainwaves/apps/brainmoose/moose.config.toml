@@ -30,6 +30,9 @@ main_branch_name = "main"
 
 [supported_old_versions]
 
+[watcher_config]
+ignore_patterns = []
+
 [features]
 streaming_engine = true
 workflows = true

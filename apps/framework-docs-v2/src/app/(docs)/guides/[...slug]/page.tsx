@@ -8,7 +8,7 @@ import {
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
 import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
-import { showCopyAsMarkdown } from "@/flags";
+import { showCopyAsMarkdown, showLinearIntegration } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
@@ -107,6 +107,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   );
 
   const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  const showLinear = await showLinearIntegration().catch(() => false);
   const langParam = resolvedSearchParams?.lang;
 
   // Check if this is a dynamic guide by checking for guide.toml
@@ -187,6 +188,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
         <TOCNav
           headings={allHeadings}
           helpfulLinks={content.frontMatter.helpfulLinks}
+          showLinearIntegration={showLinear}
         />
       </>
     );
@@ -272,6 +274,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
       <TOCNav
         headings={allHeadings}
         helpfulLinks={content.frontMatter.helpfulLinks}
+        showLinearIntegration={showLinear}
       />
     </>
   );

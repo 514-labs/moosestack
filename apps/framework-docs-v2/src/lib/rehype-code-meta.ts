@@ -62,11 +62,27 @@ export function rehypeCodeMeta() {
             node.properties = {};
           }
 
-          // Set each parsed attribute as a data-* attribute
+          // Ensure data object exists for storing metadata
+          if (!node.data) {
+            node.data = {};
+          }
+
+          // Store custom attributes on the code element so they survive rehype-pretty-code
+          // rehype-pretty-code will preserve data attributes on the code element
+          if (!(child as HastElement).properties) {
+            (child as HastElement).properties = {};
+          }
+
+          // Store custom attributes in node.data (preserved through transformations)
+          // AND try setting on properties (in case it works)
           for (const [key, value] of Object.entries(parsed.attributes)) {
             // Use lowercase keys with data- prefix
             const dataKey = `data-${key.toLowerCase()}`;
+            // Store in node.data for preservation
+            node.data[dataKey] = value;
+            // Also try properties (may be overwritten)
             node.properties[dataKey] = value;
+            (child as HastElement).properties![dataKey] = value;
           }
 
           // Set line highlighting if present

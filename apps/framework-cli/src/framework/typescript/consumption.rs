@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use super::bin;
 
@@ -103,7 +103,6 @@ pub fn run(
         .expect("Analytics api process did not have a handle to stderr");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -124,29 +123,12 @@ pub fn run(
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            // Try to parse as structured log from Node.js consumption API
-            if let Some(log_data) = crate::cli::logger::parse_structured_log(&line, "api_name") {
-                let span = tracing::info_span!(
-                    "consumption_api_log",
-                    context = crate::cli::logger::context::RUNTIME,
-                    resource_type = crate::cli::logger::resource_type::CONSUMPTION_API,
-                    resource_name = %log_data.resource_name,
-                );
-                let _guard = span.enter();
-                match log_data.level.as_str() {
-                    "error" => tracing::error!("{}", log_data.message),
-                    "warn" => tracing::warn!("{}", log_data.message),
-                    "debug" => tracing::debug!("{}", log_data.message),
-                    _ => tracing::info!("{}", log_data.message),
-                }
-                continue;
-            }
-            // Fall back to regular error logging if not a structured log
-            error!("{}", line);
-        }
-    });
+    // Spawn structured logger for stderr
+    crate::cli::logger::spawn_stderr_structured_logger(
+        stderr,
+        "api_name",
+        crate::cli::logger::resource_type::CONSUMPTION_API,
+    );
 
     Ok(consumption_process)
 }

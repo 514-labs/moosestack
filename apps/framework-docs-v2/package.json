@@ -4,13 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "tsx scripts/validate-includes.ts",
     "build": "next build && pnpm run index:search",
     "postbuild": "next-sitemap",
     "generate:search-content": "tsx scripts/generate-search-index.ts",
     "index:search": "pnpm run generate:search-content && pagefind --site .search-index --output-path public/pagefind",
     "start": "next start",
     "lint": "next lint",
-    "test:snippets": "tsx scripts/test-snippets.ts"
+    "test:snippets": "tsx scripts/test-snippets.ts",
+    "validate:includes": "tsx scripts/validate-includes.ts"
   },
   "dependencies": {
     "@flags-sdk/posthog": "^0.2.2",
@@ -49,8 +51,10 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "flags": "^4.0.2",
+    "github-slugger": "catalog:",
     "gray-matter": "^4.0.3",
     "html-to-text": "^9.0.5",
+    "mermaid": "catalog:",
     "motion": "^12.23.12",
     "next": "^16.0.7",
     "next-mdx-remote": "^5.0.0",
@@ -76,8 +80,9 @@
     "@repo/eslint-config-custom": "workspace:*",
     "@repo/ts-config": "workspace:*",
     "@tailwindcss/typography": "^0.5.19",
+    "@types/hast": "catalog:",
     "@types/html-to-text": "^9.0.4",
-    "@types/node": "^22.10.2",
+    "@types/node": "^20",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.16",

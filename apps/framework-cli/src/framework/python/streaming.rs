@@ -74,7 +74,6 @@ pub fn run(
         .expect("Streaming process did not have a handle to stderr");
 
     let mut stdout_reader = tokio::io::BufReader::new(stdout).lines();
-    let mut stderr_reader = tokio::io::BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -82,30 +81,12 @@ pub fn run(
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            // Try to parse as structured log from Python streaming function
-            if let Some(log_data) = crate::cli::logger::parse_structured_log(&line, "function_name")
-            {
-                let span = tracing::info_span!(
-                    "streaming_function_log",
-                    context = crate::cli::logger::context::RUNTIME,
-                    resource_type = crate::cli::logger::resource_type::TRANSFORM,
-                    resource_name = %log_data.resource_name,
-                );
-                let _guard = span.enter();
-                match log_data.level.as_str() {
-                    "error" => tracing::error!("{}", log_data.message),
-                    "warn" => tracing::warn!("{}", log_data.message),
-                    "debug" => tracing::debug!("{}", log_data.message),
-                    _ => tracing::info!("{}", log_data.message),
-                }
-                continue;
-            }
-            // Fall back to regular error logging if not a structured log
-            tracing::error!("{}", line);
-        }
-    });
+    // Spawn structured logger for stderr
+    crate::cli::logger::spawn_stderr_structured_logger(
+        stderr,
+        "function_name",
+        crate::cli::logger::resource_type::TRANSFORM,
+    );
 
     Ok(streaming_function_process)
 }

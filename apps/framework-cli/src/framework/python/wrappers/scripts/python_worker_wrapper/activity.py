@@ -2,7 +2,8 @@ from temporalio import activity
 from dataclasses import dataclass
 from moose_lib.dmv2 import get_workflow
 from moose_lib.dmv2.workflow import TaskContext
-from typing import Optional, Callable, Any, TextIO
+from collections.abc import Callable
+from typing import Optional, Any, TextIO
 import asyncio
 import builtins
 import contextvars
@@ -51,6 +52,9 @@ def _structured_print(
         )
         sys.stderr.write(structured_log + "\n")
         if flush:
+            # Flush immediately to ensure logs appear in real-time for debugging.
+            # This is intentional despite performance implications, as Temporal
+            # task logs are critical for troubleshooting workflow issues.
             sys.stderr.flush()
     else:
         # Not in task context or custom file specified - use original print

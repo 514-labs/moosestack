@@ -1,52 +1,16 @@
 import { log as logger, Context } from "@temporalio/activity";
 import { AsyncLocalStorage } from "async_hooks";
-import * as util from "util";
 import { isCancellation } from "@temporalio/workflow";
 import { Task, Workflow } from "../dmv2";
 import { getWorkflows, getTaskForWorkflow } from "../dmv2/internal";
 import { jsonDateReviver } from "../utilities/json";
+import {
+  safeStringify,
+  createStructuredConsoleWrapper,
+} from "../utils/structured-logging";
 
 // AsyncLocalStorage to track task context without mutating globals
 const taskContextStorage = new AsyncLocalStorage<{ taskName: string }>();
-
-// Safe serialization that handles circular references and BigInt
-function safeStringify(arg: any): string {
-  if (typeof arg === "object" && arg !== null) {
-    try {
-      return JSON.stringify(arg);
-    } catch (e) {
-      // Fall back to util.inspect for circular references or BigInt
-      return util.inspect(arg, { depth: 2, breakLength: Infinity });
-    }
-  }
-  return String(arg);
-}
-
-// Structured console wrapper that uses AsyncLocalStorage
-function createStructuredConsoleWrapper(
-  originalMethod: (...args: any[]) => void,
-  level: string,
-) {
-  return (...args: any[]) => {
-    const context = taskContextStorage.getStore();
-    if (context) {
-      // We're in a task context - emit structured log
-      const message = args.map((arg) => safeStringify(arg)).join(" ");
-      process.stderr.write(
-        JSON.stringify({
-          __moose_structured_log__: true,
-          level,
-          message,
-          task_name: context.taskName,
-          timestamp: new Date().toISOString(),
-        }) + "\n",
-      );
-    } else {
-      // Not in task context - use original console
-      originalMethod(...args);
-    }
-  };
-}
 
 // Wrap console methods once at module load
 const originalConsole = {
@@ -57,11 +21,41 @@ const originalConsole = {
   debug: console.debug,
 };
 
-console.log = createStructuredConsoleWrapper(originalConsole.log, "info");
-console.info = createStructuredConsoleWrapper(originalConsole.info, "info");
-console.warn = createStructuredConsoleWrapper(originalConsole.warn, "warn");
-console.error = createStructuredConsoleWrapper(originalConsole.error, "error");
-console.debug = createStructuredConsoleWrapper(originalConsole.debug, "debug");
+console.log = createStructuredConsoleWrapper(
+  taskContextStorage,
+  (ctx) => ctx.taskName,
+  "task_name",
+  originalConsole.log,
+  "info",
+);
+console.info = createStructuredConsoleWrapper(
+  taskContextStorage,
+  (ctx) => ctx.taskName,
+  "task_name",
+  originalConsole.info,
+  "info",
+);
+console.warn = createStructuredConsoleWrapper(
+  taskContextStorage,
+  (ctx) => ctx.taskName,
+  "task_name",
+  originalConsole.warn,
+  "warn",
+);
+console.error = createStructuredConsoleWrapper(
+  taskContextStorage,
+  (ctx) => ctx.taskName,
+  "task_name",
+  originalConsole.error,
+  "error",
+);
+console.debug = createStructuredConsoleWrapper(
+  taskContextStorage,
+  (ctx) => ctx.taskName,
+  "task_name",
+  originalConsole.debug,
+  "debug",
+);
 
 export interface ScriptExecutionInput {
   scriptPath: string;

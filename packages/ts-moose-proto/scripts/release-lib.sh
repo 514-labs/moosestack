@@ -2,6 +2,29 @@
 
 set -eo pipefail
 
+# Retry function for pnpm install (handles npm registry propagation delay)
+retry_pnpm_install() {
+    local max_attempts=5
+    local delay=15
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        echo "Attempt $attempt of $max_attempts: pnpm install $@"
+        if pnpm install "$@"; then
+            return 0
+        fi
+
+        if [ $attempt -lt $max_attempts ]; then
+            echo "pnpm install failed, waiting ${delay}s before retry..."
+            sleep $delay
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    echo "pnpm install failed after $max_attempts attempts"
+    return 1
+}
+
 # This script should be called from the root of the repository
 
 version=$1
@@ -11,7 +34,7 @@ npm version $version --no-git-tag-version
 cd ../..
 
 # No frozen lockfile because design-system-base has its package.json updated without changing the lock file
-pnpm install --filter "@514labs/moose-proto" --no-frozen-lockfile
+retry_pnpm_install --filter "@514labs/moose-proto" --no-frozen-lockfile
 pnpm --filter @514labs/moose-proto run gen
 pnpm --filter @514labs/moose-proto run build
 

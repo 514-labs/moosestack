@@ -46,14 +46,24 @@ type TablerIcon = React.ComponentType<IconProps>;
 /**
  * Individual page in navigation
  */
+/**
+ * Guide status for visibility control
+ * - draft: Hidden by default, visible only with show-draft-guides flag
+ * - beta: Hidden by default, visible only with show-beta-guides flag
+ * - undefined/not set: Always visible (public)
+ */
+export type GuideStatus = "draft" | "beta";
+
 export interface NavPage {
   type: "page";
   slug: string;
   title: string;
+  description?: string; // Optional description for guides
   languages: Language[];
   icon?: TablerIcon;
   children?: NavItem[]; // Allow NavItem[] to support labels/separators within children
   external?: boolean; // If true, indicates this is a standalone page (not part of the current section)
+  status?: GuideStatus; // Visibility level for guides (draft, beta, or public if not set)
 }
 
 /**
@@ -915,6 +925,12 @@ const moosestackNavigationConfig: NavigationConfig = [
     children: [
       {
         type: "page",
+        slug: "moosestack/release-notes/2026-01-16",
+        title: "January 16, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/release-notes/2026-01-09",
         title: "January 9, 2026",
         languages: ["typescript", "python"],
@@ -1181,16 +1197,63 @@ const templatesNavigationConfig: NavigationConfig = [];
 
 /**
  * Guides navigation configuration
+ * Note: No Overview page here - the guides index page handles its own content
+ * (Coming Soon or Grid layout based on visible guides)
+ *
+ * Top-level pages (type: "page" at root) appear without a section header
+ * Sectioned pages (inside type: "section") appear under their section title
  */
 const guidesNavigationConfig: NavigationConfig = [
+  // ===========================================
+  // 5 Priority Guides (from Linear project)
+  // https://linear.app/514/project/ship-the-first-iteration-of-guides-and-test-them-within-our-customers-d3b3d83562d9
+  // ===========================================
   {
     type: "page",
-    slug: "guides/index",
-    title: "Overview",
-    icon: IconChartArea,
+    slug: "guides/performant-dashboards",
+    title: "Improving the Performance of Your Dashboards",
+    description:
+      "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
+    icon: IconChartLine,
     languages: ["typescript", "python"],
   },
-  { type: "separator" },
+  {
+    type: "page",
+    slug: "guides/chat-in-your-app",
+    title: "Chat in your app",
+    description:
+      "Build a data-aware chat on top of your ClickHouse database with Next.js and MooseStack.",
+    icon: IconMessageChatbot,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "guides/customer-data-platform",
+    title: "Customer Data Platform (CDP)",
+    icon: IconUsers,
+    languages: ["typescript", "python"],
+    status: "draft",
+  },
+  {
+    type: "page",
+    slug: "guides/static-report-generation",
+    title: "Static Report Generation",
+    icon: IconFileReport,
+    languages: ["typescript", "python"],
+    status: "draft",
+  },
+  {
+    type: "page",
+    slug: "guides/data-warehouses",
+    title: "Data Warehouses",
+    icon: IconDatabase,
+    languages: ["typescript", "python"],
+    status: "draft",
+  },
+
+  // ===========================================
+  // Additional Draft Guides (organized by section)
+  // ===========================================
   {
     type: "section",
     title: "Applications",
@@ -1201,6 +1264,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Performant Dashboards",
         icon: IconChartLine,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1208,6 +1272,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "In-App Chat Analytics",
         icon: IconMessageChatbot,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1215,6 +1280,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Automated Reports",
         icon: IconFileReport,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1222,6 +1288,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Going to Production",
         icon: IconCloudUpload,
         languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
@@ -1235,6 +1302,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Migrations",
         icon: IconDatabaseImport,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1242,6 +1310,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Impact Analysis",
         icon: IconChartDots,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1249,6 +1318,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Change Data Capture",
         icon: IconBolt,
         languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
@@ -1262,6 +1332,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Customer Data Platform",
         icon: IconUsers,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1269,6 +1340,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Operational Analytics",
         icon: IconChartBarOff,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1276,6 +1348,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Startup Metrics",
         icon: IconChartBar,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1283,6 +1356,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Connectors",
         icon: IconStack,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1290,6 +1364,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Pipelines",
         icon: IconRoute,
         languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
@@ -1303,6 +1378,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Data as Code",
         icon: IconCode,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1310,40 +1386,37 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "DORA for Data",
         icon: IconTrendingUp,
         languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
   {
     type: "section",
-    title: "Strategy",
+    title: "Test Guides",
     items: [
       {
         type: "page",
-        slug: "guides/strategy/ai-enablement",
-        title: "AI Enablement",
-        icon: IconBrain,
+        slug: "guides/test-guides/mermaid-test",
+        title: "Mermaid Diagram Test",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
-        slug: "guides/strategy/data-foundation",
-        title: "Data Foundation",
-        icon: IconDatabase,
+        slug: "guides/test-guides/content-components-demo",
+        title: "Content Components Demo",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
-        slug: "guides/strategy/platform-engineering",
-        title: "Platform Engineering",
-        icon: IconServer,
+        slug: "guides/test-guides/code-blocks",
+        title: "Code Blocks Rendering Test",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "guides/strategy/olap-evaluation",
-        title: "OLAP Evaluation",
-        icon: IconDatabase,
-        languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
@@ -1492,12 +1565,21 @@ export function buildNavItems(
 }
 
 /**
+ * Feature flags for navigation filtering
+ */
+export interface NavFilterFlags {
+  showDataSourcesPage?: boolean;
+  showDraftGuides?: boolean;
+  showBetaGuides?: boolean;
+}
+
+/**
  * Filter navigation items based on feature flags
  * Removes pages that should be hidden based on flags
  */
 export function filterNavItemsByFlags(
   items: NavItem[],
-  flags: { showDataSourcesPage?: boolean },
+  flags: NavFilterFlags,
 ): NavItem[] {
   function filterNavItem(item: NavItem): NavItem | null {
     if (item.type === "separator" || item.type === "label") {
@@ -1527,6 +1609,16 @@ export function filterNavItemsByFlags(
       return null;
     }
 
+    // Filter draft pages if flag is off
+    if (page.status === "draft" && !flags.showDraftGuides) {
+      return null;
+    }
+
+    // Filter beta pages if flag is off
+    if (page.status === "beta" && !flags.showBetaGuides) {
+      return null;
+    }
+
     // Filter children recursively
     const filteredChildren = page.children
       ?.map(filterNavItem)
@@ -1544,4 +1636,168 @@ export function filterNavItemsByFlags(
   return items
     .map(filterNavItem)
     .filter((item): item is NavItem => item !== null);
+}
+
+/**
+ * Check if there are any visible guides after filtering
+ * Used to determine whether to show Coming Soon page
+ */
+export function hasVisibleGuides(
+  items: NavItem[],
+  flags: { showDraftGuides: boolean; showBetaGuides: boolean },
+): boolean {
+  function checkItems(navItems: NavItem[]): boolean {
+    for (const item of navItems) {
+      if (item.type === "page") {
+        // Skip draft pages if flag is off
+        if (item.status === "draft" && !flags.showDraftGuides) {
+          continue;
+        }
+        // Skip beta pages if flag is off
+        if (item.status === "beta" && !flags.showBetaGuides) {
+          continue;
+        }
+        // Found a visible guide page
+        if (item.slug.startsWith("guides/") && item.slug !== "guides/index") {
+          return true;
+        }
+      }
+      if (item.type === "section") {
+        if (checkItems(item.items)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  return checkItems(items);
+}
+
+/**
+ * Serializable guide item for passing to client components
+ * Does not include icon (which is a function/component)
+ */
+export interface SerializableGuideItem {
+  slug: string;
+  title: string;
+  description?: string;
+  iconName?: string;
+}
+
+/**
+ * Serializable guide section for passing to client components
+ * title can be null for uncategorized/top-level guides
+ */
+export interface SerializableGuideSection {
+  title: string | null;
+  items: SerializableGuideItem[];
+}
+
+/**
+ * Map of icon components to their string names for serialization
+ * This is necessary because React components created with forwardRef
+ * don't have a reliable .name property
+ */
+const iconToNameMap = new Map<TablerIcon, string>([
+  [IconChartLine, "IconChartLine"],
+  [IconMessageChatbot, "IconMessageChatbot"],
+  [IconFileReport, "IconFileReport"],
+  [IconCloudUpload, "IconCloudUpload"],
+  [IconDatabaseImport, "IconDatabaseImport"],
+  [IconChartDots, "IconChartDots"],
+  [IconBolt, "IconBolt"],
+  [IconUsers, "IconUsers"],
+  [IconChartBarOff, "IconChartBarOff"],
+  [IconChartBar, "IconChartBar"],
+  [IconStack, "IconStack"],
+  [IconRoute, "IconRoute"],
+  [IconCode, "IconCode"],
+  [IconTrendingUp, "IconTrendingUp"],
+  [IconBrain, "IconBrain"],
+  [IconDatabase, "IconDatabase"],
+  [IconServer, "IconServer"],
+  [IconRocket, "IconRocket"],
+]);
+
+/**
+ * Get icon name from icon component for serialization
+ */
+function getIconName(icon?: TablerIcon): string | undefined {
+  if (!icon) return undefined;
+  return iconToNameMap.get(icon);
+}
+
+/**
+ * Get visible guides sections for the grid layout
+ * Returns serializable sections (without icon components) for client components
+ * Supports both:
+ * - Top-level guides (pages not inside a section) - shown first with null title
+ * - Sectioned guides (pages inside a section) - shown with section title
+ */
+export function getVisibleGuideSections(flags: {
+  showDraftGuides: boolean;
+  showBetaGuides: boolean;
+}): SerializableGuideSection[] {
+  const sections: SerializableGuideSection[] = [];
+
+  function isPageVisible(page: NavPage): boolean {
+    if (page.status === "draft" && !flags.showDraftGuides) return false;
+    if (page.status === "beta" && !flags.showBetaGuides) return false;
+    return true;
+  }
+
+  // First, collect top-level guides (not inside a section)
+  const topLevelGuides: SerializableGuideItem[] = [];
+
+  for (const item of guidesNavigationConfig) {
+    if (item.type === "page") {
+      // Skip hidden pages
+      if (!isPageVisible(item)) continue;
+      // Skip index page
+      if (item.slug === "guides/index") continue;
+
+      topLevelGuides.push({
+        slug: item.slug,
+        title: item.title,
+        description: item.description,
+        iconName: getIconName(item.icon),
+      });
+    }
+  }
+
+  // Add top-level guides as first section (with null title)
+  if (topLevelGuides.length > 0) {
+    sections.push({
+      title: null,
+      items: topLevelGuides,
+    });
+  }
+
+  // Then collect sectioned guides
+  for (const item of guidesNavigationConfig) {
+    if (item.type === "section") {
+      const visibleItems: SerializableGuideItem[] = [];
+
+      for (const subItem of item.items) {
+        if (subItem.type !== "page") continue;
+        if (!isPageVisible(subItem)) continue;
+
+        visibleItems.push({
+          slug: subItem.slug,
+          title: subItem.title,
+          description: subItem.description,
+          iconName: getIconName(subItem.icon),
+        });
+      }
+
+      if (visibleItems.length > 0) {
+        sections.push({
+          title: item.title,
+          items: visibleItems,
+        });
+      }
+    }
+  }
+
+  return sections;
 }

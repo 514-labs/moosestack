@@ -4,9 +4,11 @@
   "description": "E2E tests for framework-cli",
   "scripts": {
     "pretest": "cd ../.. && cargo build && pnpm run build --filter=@514labs/moose-lib && ./scripts/package-templates.js",
-    "test": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 180000 --async-only --timeout 240000"
+    "test": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 180000 --async-only --timeout 240000",
+    "test:llm-docs": "mocha -r ts-node/register -p 'test/**/*.ts' --jobs 1 --slow 180000 --async-only --timeout 600000"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "catalog:",
     "@clickhouse/client": "catalog:",
     "@iarna/toml": "catalog:",
     "@types/chai": "catalog:",
@@ -15,6 +17,7 @@
     "axios": "catalog:",
     "chai": "catalog:",
     "mocha": "catalog:",
+    "posthog-node": "catalog:",
     "ts-node": "catalog:",
     "typescript": "catalog:"
   }

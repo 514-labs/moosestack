@@ -4,13 +4,14 @@ pub(crate) mod display;
 mod commands;
 pub mod local_webserver;
 pub mod logger;
+mod otlp;
 pub mod processing_coordinator;
 pub mod routines;
 use crate::cli::routines::seed_data;
 pub mod settings;
-mod watcher;
+pub mod watcher;
 use super::metrics::Metrics;
-use crate::utilities::docker::DockerClient;
+use crate::utilities::{constants, docker::DockerClient};
 use clap::Parser;
 use commands::{
     Commands, DbCommands, GenerateCommand, KafkaArgs, KafkaCommands, TemplateSubCommands,
@@ -19,7 +20,7 @@ use commands::{
 use config::ConfigError;
 use display::with_spinner_completion;
 use regex::Regex;
-use routines::auth::generate_hash_token;
+use routines::auth::{display_hash_token_result, generate_hash_token};
 use routines::build::build_package;
 use routines::clean::clean_project;
 use routines::docker_packager::{build_dockerfile, create_dockerfile};
@@ -69,7 +70,7 @@ use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
 use crate::framework::languages::SupportedLanguages;
-use crate::utilities::constants::{SHOW_TIMESTAMPS, SHOW_TIMING};
+use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
 use anyhow::Result;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -127,7 +128,7 @@ pub fn prompt_user(
 }
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
+#[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
@@ -700,8 +701,15 @@ pub async fn top_command_handler(
             )))
         }
         Commands::Generate(generate) => match &generate.command {
-            Some(GenerateCommand::HashToken {}) => {
+            Some(GenerateCommand::HashToken { json }) => {
                 info!("Running generate hash token command");
+
+                // Set QUIET_STDOUT early to redirect any messages (like config warnings)
+                // to stderr, keeping stdout clean for JSON output
+                if *json {
+                    QUIET_STDOUT.store(true, Ordering::Relaxed);
+                }
+
                 let project = load_project(commands)?;
                 let project_arc = Arc::new(project);
 
@@ -714,13 +722,19 @@ pub async fn top_command_handler(
                 );
 
                 check_project_name(&project_arc.name())?;
-                generate_hash_token();
+                let result = generate_hash_token();
+
+                if *json {
+                    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+                } else {
+                    display_hash_token_result(&result);
+                }
 
                 wait_for_usage_capture(capture_handle).await;
 
                 Ok(RoutineSuccess::success(Message::new(
                     "Token".to_string(),
-                    "Success".to_string(),
+                    "Generated successfully".to_string(),
                 )))
             }
             Some(GenerateCommand::Migration {

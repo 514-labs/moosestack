@@ -25,14 +25,6 @@ export const GET = createFlagsDiscoveryEndpoint(async () => {
           { value: true, label: "On" },
         ],
       },
-      "show-guides-section": {
-        description: "Show Guides section in top navigation",
-        origin: "https://us.i.posthog.com",
-        options: [
-          { value: false, label: "Off" },
-          { value: true, label: "On" },
-        ],
-      },
       "show-ai-section": {
         description: "Show AI section in top navigation",
         origin: "https://us.i.posthog.com",
@@ -51,6 +43,33 @@ export const GET = createFlagsDiscoveryEndpoint(async () => {
       },
       "show-copy-as-markdown": {
         description: "Show Copy Page button in doc & guide pages",
+        origin: "https://us.i.posthog.com",
+        options: [
+          { value: false, label: "Off" },
+          { value: true, label: "On" },
+        ],
+      },
+      "show-draft-guides": {
+        description:
+          "Show draft guides (internal WIP, not ready for external users)",
+        origin: "https://us.i.posthog.com",
+        options: [
+          { value: false, label: "Off" },
+          { value: true, label: "On" },
+        ],
+      },
+      "show-beta-guides": {
+        description:
+          "Show beta guides (ready for select external users to preview)",
+        origin: "https://us.i.posthog.com",
+        options: [
+          { value: false, label: "Off" },
+          { value: true, label: "On" },
+        ],
+      },
+      "show-linear-integration": {
+        description:
+          "Show Linear integration (scope selector + add to Linear) on guide pages",
         origin: "https://us.i.posthog.com",
         options: [
           { value: false, label: "Off" },

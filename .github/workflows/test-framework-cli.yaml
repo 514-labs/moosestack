@@ -41,13 +41,13 @@ jobs:
           # Define patterns to check - one per line for readability
           PATTERNS=(
             "^\.github/workflows/test-framework-cli\.yaml"
+            "^\.github/scripts/check-cli-dependencies\.sh"
             "^apps/framework-cli-e2e/"
             "^apps/framework-cli/"
             "^templates/python"
             "^templates/typescript"
             "^packages/"
             "Cargo.lock"
-            "pnpm-lock.yaml"
           )
 
           # Join patterns with | for grep
@@ -60,7 +60,7 @@ jobs:
           cat changes.txt
           echo "::endgroup::"
 
-          echo "::group::📋 Files Matching Patterns"
+          echo "::group::📋 Files Matching Patterns (excluding pnpm-lock.yaml)"
           echo "Looking for files matching these patterns:"
           printf '%s\n' "${PATTERNS[@]}"
           echo "---"
@@ -68,10 +68,20 @@ jobs:
           grep -E "${GREP_PATTERN}" changes.txt || echo "No files match patterns"
           echo "::endgroup::"
 
-          # Check if any relevant files were changed
+          # Check if any relevant files were changed (excluding pnpm-lock)
           if grep -q -E "${GREP_PATTERN}" changes.txt; then
             echo "::notice title=✅ Running Tests::Detected relevant changes in the codebase. Tests will run."
             echo "should_run=true" >> $GITHUB_OUTPUT
+          # If only pnpm-lock.yaml changed, use smart analysis
+          elif grep -q "pnpm-lock.yaml" changes.txt; then
+            echo "::notice title=🔍 Analyzing Dependencies::Only pnpm-lock.yaml changed, checking if CLI is affected..."
+            if .github/scripts/check-cli-dependencies.sh; then
+              echo "::notice title=✅ Running Tests::pnpm-lock.yaml changes affect CLI packages. Tests will run."
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            else
+              echo "::notice title=⏭️ Skipping Tests::pnpm-lock.yaml changes don't affect CLI packages. Tests will be skipped."
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            fi
           else
             echo "::notice title=⏭️ Skipping Tests::No relevant changes detected. Tests will be skipped."
             echo "should_run=false" >> $GITHUB_OUTPUT
@@ -245,6 +255,55 @@ jobs:
           python -m pytest tests/
         env:
           MOOSE_TELEMETRY_ENABLED: false
+
+  test-e2e-module-compilation:
+    needs: [detect-changes, check, test-cli, test-ts-moose-lib]
+    if: needs.detect-changes.outputs.should_run == 'true'
+    name: Test E2E Module Compilation (ESM/CJS)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    permissions:
+      contents: read
+    env:
+      RUST_BACKTRACE: full
+    steps:
+      - name: Install Protoc (Needed for Temporal)
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          version: "23.x"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      - name: Run Module Compilation E2E Tests
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Module Compilation"
+        env:
+          MOOSE_TELEMETRY_ENABLED: false
+
+      - name: Inspect Logs
+        if: always()
+        run: |
+          cat ~/.moose/*-cli.log || true
 
   test-e2e-typescript-default:
     needs:
@@ -853,6 +912,7 @@ jobs:
         test-cli,
         test-ts-moose-lib,
         test-py-moose-lib,
+        test-e2e-module-compilation,
         test-e2e-typescript-default,
         test-e2e-typescript-tests,
         test-e2e-python-default,
@@ -884,6 +944,7 @@ jobs:
              [[ "${{ needs.test-cli.result }}" == "failure" ]] || \
              [[ "${{ needs.test-ts-moose-lib.result }}" == "failure" ]] || \
              [[ "${{ needs.test-py-moose-lib.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-module-compilation.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-typescript-default.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-python-default.result }}" == "failure" ]] || \
@@ -900,6 +961,7 @@ jobs:
              [[ "${{ needs.test-cli.result }}" == "success" ]] && \
              [[ "${{ needs.test-ts-moose-lib.result }}" == "success" ]] && \
              [[ "${{ needs.test-py-moose-lib.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-module-compilation.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-typescript-default.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-typescript-tests.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-python-default.result }}" == "success" ]] && \

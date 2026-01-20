@@ -28,7 +28,8 @@ from kafka import KafkaConsumer, KafkaProducer
 import requests
 import threading
 import time
-from typing import Optional, Callable, Tuple, Any, TextIO
+from collections.abc import Callable
+from typing import Optional, Any, TextIO
 
 from moose_lib.dmv2 import get_streams, DeadLetterModel
 from moose_lib import cli_log, CliLogData, DeadLetterQueue
@@ -145,7 +146,7 @@ class KafkaTopicConfig:
 
 def load_streaming_function_dmv1(
     function_file_dir: str, function_file_name: str
-) -> Tuple[type, Callable]:
+) -> tuple[type, Callable]:
     """
     Load a DMV1 (legacy) streaming function from a Python module.
 

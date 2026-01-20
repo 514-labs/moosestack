@@ -9,7 +9,11 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
-import * as util from "util";
+import { getSourceDir, shouldUseCompiled, loadModule } from "../compiler-config";
+import {
+  safeStringify,
+  createStructuredConsoleWrapper,
+} from "../utils/structured-logging";
 
 interface ClickhouseConfig {
   database: string;
@@ -51,7 +55,10 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   useSSL: config.useSSL ? "true" : "false",
 });
 
-const createPath = (apisDir: string, path: string) => `${apisDir}${path}.ts`;
+const createPath = (apisDir: string, path: string, useCompiled: boolean) => {
+  const extension = useCompiled ? ".js" : ".ts";
+  return `${apisDir}${path}${extension}`;
+};
 
 const httpLogger = (
   req: http.IncomingMessage,
@@ -68,45 +75,6 @@ const modulesCache = new Map<string, any>();
 // AsyncLocalStorage to track API context without mutating globals
 const apiContextStorage = new AsyncLocalStorage<{ apiName: string }>();
 
-// Safe serialization that handles circular references and BigInt
-function safeStringify(arg: any): string {
-  if (typeof arg === "object" && arg !== null) {
-    try {
-      return JSON.stringify(arg);
-    } catch (e) {
-      // Fall back to util.inspect for circular references or BigInt
-      return util.inspect(arg, { depth: 2, breakLength: Infinity });
-    }
-  }
-  return String(arg);
-}
-
-// Structured console wrapper that uses AsyncLocalStorage
-function createStructuredConsoleWrapper(
-  originalMethod: (...args: any[]) => void,
-  level: string,
-) {
-  return (...args: any[]) => {
-    const context = apiContextStorage.getStore();
-    if (context) {
-      // We're in an API context - emit structured log
-      const message = args.map((arg) => safeStringify(arg)).join(" ");
-      process.stderr.write(
-        JSON.stringify({
-          __moose_structured_log__: true,
-          level,
-          message,
-          api_name: context.apiName,
-          timestamp: new Date().toISOString(),
-        }) + "\n",
-      );
-    } else {
-      // Not in API context - use original console
-      originalMethod(...args);
-    }
-  };
-}
-
 // Wrap console methods once at module load
 const originalConsole = {
   log: console.log,
@@ -116,11 +84,41 @@ const originalConsole = {
   debug: console.debug,
 };
 
-console.log = createStructuredConsoleWrapper(originalConsole.log, "info");
-console.info = createStructuredConsoleWrapper(originalConsole.info, "info");
-console.warn = createStructuredConsoleWrapper(originalConsole.warn, "warn");
-console.error = createStructuredConsoleWrapper(originalConsole.error, "error");
-console.debug = createStructuredConsoleWrapper(originalConsole.debug, "debug");
+console.log = createStructuredConsoleWrapper(
+  apiContextStorage,
+  (ctx) => ctx.apiName,
+  "api_name",
+  originalConsole.log,
+  "info",
+);
+console.info = createStructuredConsoleWrapper(
+  apiContextStorage,
+  (ctx) => ctx.apiName,
+  "api_name",
+  originalConsole.info,
+  "info",
+);
+console.warn = createStructuredConsoleWrapper(
+  apiContextStorage,
+  (ctx) => ctx.apiName,
+  "api_name",
+  originalConsole.warn,
+  "warn",
+);
+console.error = createStructuredConsoleWrapper(
+  apiContextStorage,
+  (ctx) => ctx.apiName,
+  "api_name",
+  originalConsole.error,
+  "error",
+);
+console.debug = createStructuredConsoleWrapper(
+  apiContextStorage,
+  (ctx) => ctx.apiName,
+  "api_name",
+  originalConsole.debug,
+  "debug",
+);
 
 export function createApi<T extends object, R = any>(
   _handler: (params: T, utils: ApiUtil) => Promise<R>,
@@ -145,6 +143,15 @@ const apiHandler = async (
   isDmv2: boolean,
   jwtConfig?: JwtConfig,
 ) => {
+  // Check if we should use compiled code
+  const useCompiled = shouldUseCompiled();
+  const sourceDir = getSourceDir();
+
+  // Adjust apisDir for compiled mode
+  const actualApisDir = useCompiled
+    ? `${process.cwd()}/.moose/compiled/${sourceDir}/apis/`
+    : apisDir;
+
   const apis = isDmv2 ? await getApis() : new Map();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const start = Date.now();
@@ -185,7 +192,7 @@ const apiHandler = async (
         return;
       }
 
-      const pathName = createPath(apisDir, fileName);
+      const pathName = createPath(actualApisDir, fileName, useCompiled);
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
         (obj: { [key: string]: string[] | string }, [key, value]) => {
           const existingValue = obj[key];
@@ -255,7 +262,8 @@ const apiHandler = async (
           modulesCache.set(pathName, userFuncModule);
           console.log(`[API] | Executing API: ${apiName}`);
         } else {
-          userFuncModule = require(pathName);
+          // Use dynamic loader that handles both CJS and ESM
+          userFuncModule = await loadModule(pathName);
           modulesCache.set(pathName, userFuncModule);
         }
       }
@@ -265,8 +273,9 @@ const apiHandler = async (
       // Get API name for context
       const apiName = isDmv2 ? fileName.replace(/^\/+|\/+$/g, "") : fileName;
 
-      // Use AsyncLocalStorage to set context for this API call
-      // This avoids race conditions from concurrent API requests
+      // Use AsyncLocalStorage to set context for this API call.
+      // This avoids race conditions from concurrent API requests - each async
+      // execution chain has its own isolated context value
       const result = await apiContextStorage.run({ apiName }, async () => {
         return isDmv2 ?
             await userFuncModule(paramsObject, {

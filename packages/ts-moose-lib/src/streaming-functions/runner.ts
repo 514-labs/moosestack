@@ -1,6 +1,5 @@
 import { Readable } from "node:stream";
 import { AsyncLocalStorage } from "async_hooks";
-import * as util from "util";
 import { KafkaJS } from "@514labs/kafka-javascript";
 const { Kafka } = KafkaJS;
 
@@ -40,6 +39,15 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
+import {
+  safeStringify,
+  createStructuredConsoleWrapper,
+} from "../utils/structured-logging";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -54,45 +62,6 @@ const CONSUMER_MAX_BATCH_SIZE = 1000;
 // AsyncLocalStorage to track function context without mutating globals
 const functionContextStorage = new AsyncLocalStorage<{ functionName: string }>();
 
-// Safe serialization that handles circular references and BigInt
-function safeStringify(arg: any): string {
-  if (typeof arg === "object" && arg !== null) {
-    try {
-      return JSON.stringify(arg);
-    } catch (e) {
-      // Fall back to util.inspect for circular references or BigInt
-      return util.inspect(arg, { depth: 2, breakLength: Infinity });
-    }
-  }
-  return String(arg);
-}
-
-// Structured console wrapper that uses AsyncLocalStorage
-function createStructuredConsoleWrapper(
-  originalMethod: (...args: any[]) => void,
-  level: string,
-) {
-  return (...args: any[]) => {
-    const context = functionContextStorage.getStore();
-    if (context) {
-      // We're in a streaming function context - emit structured log
-      const message = args.map((arg) => safeStringify(arg)).join(" ");
-      process.stderr.write(
-        JSON.stringify({
-          __moose_structured_log__: true,
-          level,
-          message,
-          function_name: context.functionName,
-          timestamp: new Date().toISOString(),
-        }) + "\n",
-      );
-    } else {
-      // Not in function context - use original console
-      originalMethod(...args);
-    }
-  };
-}
-
 // Wrap console methods once at module load
 const originalConsole = {
   log: console.log,
@@ -102,11 +71,41 @@ const originalConsole = {
   debug: console.debug,
 };
 
-console.log = createStructuredConsoleWrapper(originalConsole.log, "info");
-console.info = createStructuredConsoleWrapper(originalConsole.info, "info");
-console.warn = createStructuredConsoleWrapper(originalConsole.warn, "warn");
-console.error = createStructuredConsoleWrapper(originalConsole.error, "error");
-console.debug = createStructuredConsoleWrapper(originalConsole.debug, "debug");
+console.log = createStructuredConsoleWrapper(
+  functionContextStorage,
+  (ctx) => ctx.functionName,
+  "function_name",
+  originalConsole.log,
+  "info",
+);
+console.info = createStructuredConsoleWrapper(
+  functionContextStorage,
+  (ctx) => ctx.functionName,
+  "function_name",
+  originalConsole.info,
+  "info",
+);
+console.warn = createStructuredConsoleWrapper(
+  functionContextStorage,
+  (ctx) => ctx.functionName,
+  "function_name",
+  originalConsole.warn,
+  "warn",
+);
+console.error = createStructuredConsoleWrapper(
+  functionContextStorage,
+  (ctx) => ctx.functionName,
+  "function_name",
+  originalConsole.error,
+  "error",
+);
+console.debug = createStructuredConsoleWrapper(
+  functionContextStorage,
+  (ctx) => ctx.functionName,
+  "function_name",
+  originalConsole.debug,
+  "debug",
+);
 
 /**
  * Data structure for metrics logging containing counts and metadata
@@ -650,12 +649,30 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
  * const result = await fn(data);
  * ```
  */
-function loadStreamingFunction(functionFilePath: string) {
+async function loadStreamingFunction(functionFilePath: string) {
   let streamingFunctionImport: { default: StreamingFunction };
   try {
-    streamingFunctionImport = require(
-      functionFilePath.substring(0, functionFilePath.length - 3),
-    );
+    // Check if we should use compiled code
+    const useCompiled = shouldUseCompiled();
+    const sourceDir = getSourceDir();
+
+    // Adjust path for compiled mode
+    let actualPath = functionFilePath;
+    if (useCompiled) {
+      // Replace source directory path with compiled directory path
+      // Example: /app/path/app/functions/x.ts -> /app/path/.moose/compiled/app/functions/x.js
+      // Use string replacement instead of RegExp to avoid ReDoS risk
+      const sourceDirPattern = `/${sourceDir}/`;
+      actualPath = functionFilePath
+        .replace(sourceDirPattern, `/.moose/compiled/${sourceDir}/`)
+        .replace(/\.ts$/, ".js");
+      // Use dynamic loader that handles both CJS and ESM
+      streamingFunctionImport = await loadModule(actualPath);
+    } else {
+      // In development mode, remove extension for require()
+      const pathWithoutExt = actualPath.replace(/\.(ts|js)$/, "");
+      streamingFunctionImport = require(pathWithoutExt);
+    }
   } catch (e) {
     cliLog({ action: "Function", message: `${e}`, message_type: "Error" });
     throw e;
@@ -770,7 +787,9 @@ const startConsumer = async (
     streamingFunctions = result.functions;
     fieldMutations = result.fieldMutations;
   } else {
-    streamingFunctions = [[loadStreamingFunction(args.functionFilePath), {}]];
+    streamingFunctions = [
+      [await loadStreamingFunction(args.functionFilePath), {}],
+    ];
     fieldMutations = undefined;
   }
 

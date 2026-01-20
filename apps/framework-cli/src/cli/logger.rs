@@ -94,6 +94,7 @@ use tracing_subscriber::{EnvFilter, Layer};
 use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
 
+use super::otlp;
 use super::settings::user_directory;
 
 // # STRUCTURED LOGGING INSTRUMENTATION GUIDE
@@ -285,7 +286,6 @@ pub mod resource_type {
 
 /// Default date format for log file names: YYYY-MM-DD-cli.log
 pub const DEFAULT_LOG_FILE_FORMAT: &str = "%Y-%m-%d-cli.log";
-
 #[derive(Deserialize, Debug, Clone)]
 pub enum LoggerLevel {
     #[serde(alias = "DEBUG", alias = "debug")]
@@ -338,6 +338,11 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_structured_logs")]
     pub structured_logs: bool,
+
+    /// OTLP gRPC endpoint for structured logs (e.g., "http://localhost:4317")
+    /// When set, exports spans/logs to OTLP collector via gRPC
+    #[serde(default)]
+    pub otlp_endpoint: Option<String>,
 }
 
 fn default_log_file() -> String {
@@ -383,6 +388,7 @@ impl Default for LoggerSettings {
             use_tracing_format: default_use_tracing_format(),
             no_ansi: default_no_ansi(),
             structured_logs: default_structured_logs(),
+            otlp_endpoint: None,
         }
     }
 }
@@ -659,58 +665,21 @@ pub fn setup_logging(settings: &LoggerSettings) {
 
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 
-    // Check for P0 structured logs with span support
-    if settings.structured_logs {
-        // P0: JSON format with span fields for Boreal UI
-        setup_structured_logs(settings);
-    } else if settings.use_tracing_format {
+    // Priority 1: OTLP export (if endpoint configured)
+    if let Some(endpoint) = &settings.otlp_endpoint {
+        otlp::setup_otlp_logs(otlp::OtlpLogSettings {
+            endpoint: endpoint.clone(),
+            level_filter: settings.level.to_tracing_level().to_string(),
+        });
+        return;
+    }
+
+    if settings.use_tracing_format {
         // Modern format using tracing built-ins
         setup_modern_format(settings);
     } else {
         // Legacy format matching fern exactly
         setup_legacy_format(settings, session_id);
-    }
-}
-
-/// Setup P0 structured logging with JSON format and span field support.
-///
-/// This format outputs JSON logs with automatic span field inclusion for filtering
-/// in the Boreal UI. Span fields (context, resource_type, resource_name) are
-/// automatically included in the output when functions are instrumented with
-/// #[instrument] attributes.
-fn setup_structured_logs(settings: &LoggerSettings) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
-
-    if settings.stdout {
-        let json_layer = tracing_subscriber::fmt::layer()
-            .json()
-            .with_current_span(true) // Include current span in output
-            .with_span_list(false) // Disable span hierarchy (performance)
-            .with_target(true) // Include module path
-            .with_file(false) // Don't include file:line (verbose)
-            .with_line_number(false)
-            .with_writer(std::io::stdout);
-
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(json_layer)
-            .init();
-    } else {
-        let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-        let json_layer = tracing_subscriber::fmt::layer()
-            .json()
-            .with_current_span(true) // Include current span in output
-            .with_span_list(false) // Disable span hierarchy (performance)
-            .with_target(true) // Include module path
-            .with_file(false) // Don't include file:line (verbose)
-            .with_line_number(false)
-            .with_writer(file_appender);
-
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(json_layer)
-            .init();
     }
 }
 
@@ -810,6 +779,13 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
     }
 }
 
+/// Shuts down the OTLP log provider, flushing any remaining logs.
+///
+/// This should be called before the application exits to ensure all logs are exported.
+pub fn shutdown_otlp() {
+    otlp::shutdown_otlp();
+}
+
 /// Parsed structured log data from a child process.
 #[derive(Debug, Clone)]
 pub struct StructuredLogData {
@@ -825,15 +801,19 @@ pub struct StructuredLogData {
 /// for creating the span and emitting the log, since tracing macros require literal
 /// span names.
 ///
+/// ## Returns
+///
+/// Returns `Some(StructuredLogData)` if the line contains the
+/// `__moose_structured_log__` marker, `None` otherwise.
+///
+/// The marker is required to distinguish structured logs from regular
+/// JSON output that user code might emit. Without this marker, we would
+/// incorrectly parse user's JSON logs as structured logs.
+///
 /// ## Parameters
 ///
 /// - `line`: The log line to parse (expected to be JSON with `__moose_structured_log__` marker)
 /// - `resource_name_field`: The JSON field name for the resource (e.g., "function_name", "api_name", "task_name")
-///
-/// ## Returns
-///
-/// Returns `Some(StructuredLogData)` if the line was successfully parsed as a structured log,
-/// `None` otherwise (allowing the caller to handle the line as a regular log).
 ///
 /// ## Example
 ///
@@ -895,6 +875,70 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
         resource_name,
         message,
         level,
+    })
+}
+
+/// Spawns an async task to read stderr and parse structured logs.
+///
+/// This helper consolidates the common pattern of reading stderr from child
+/// processes and parsing structured logs with span context. It handles both
+/// structured logs (JSON with `__moose_structured_log__` marker) and regular
+/// stderr output.
+///
+/// ## Parameters
+///
+/// - `stderr`: The child process stderr stream to read from
+/// - `resource_name_field`: The JSON field name for the resource (e.g., "function_name", "api_name", "task_name")
+/// - `resource_type`: The resource type constant (e.g., "transform", "consumption_api", "task")
+///
+/// ## Returns
+///
+/// Returns a `JoinHandle` for the spawned task, which can be awaited to ensure
+/// the stderr processing completes.
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// use crate::cli::logger;
+///
+/// if let Some(stderr) = child.stderr.take() {
+///     logger::spawn_stderr_structured_logger(
+///         stderr,
+///         "function_name",
+///         logger::resource_type::TRANSFORM,
+///     );
+/// }
+/// ```
+pub fn spawn_stderr_structured_logger(
+    stderr: tokio::process::ChildStderr,
+    resource_name_field: &'static str,
+    resource_type: &'static str,
+) -> tokio::task::JoinHandle<()> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tracing::error;
+
+    tokio::spawn(async move {
+        let mut stderr_reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = stderr_reader.next_line().await {
+            if let Some(log_data) = parse_structured_log(&line, resource_name_field) {
+                let span = tracing::info_span!(
+                    "child_process_log",
+                    context = context::RUNTIME,
+                    resource_type = resource_type,
+                    resource_name = %log_data.resource_name,
+                );
+                let _guard = span.enter();
+                match log_data.level.as_str() {
+                    "error" => tracing::error!("{}", log_data.message),
+                    "warn" => tracing::warn!("{}", log_data.message),
+                    "debug" => tracing::debug!("{}", log_data.message),
+                    _ => tracing::info!("{}", log_data.message),
+                }
+                continue;
+            }
+            // Fall back to regular error logging if not a structured log
+            error!("{}", line);
+        }
     })
 }
 
@@ -1070,5 +1114,34 @@ mod tests {
         assert_eq!(resource_type::CONSUMER, "consumer");
         assert_eq!(resource_type::WORKFLOW, "workflow");
         assert_eq!(resource_type::TASK, "task");
+    }
+
+    #[test]
+    fn test_parse_structured_log_valid() {
+        let line = r#"{"__moose_structured_log__":true,"function_name":"test_fn","message":"hello","level":"warn"}"#;
+        let result = parse_structured_log(line, "function_name").unwrap();
+        assert_eq!(result.resource_name, "test_fn");
+        assert_eq!(result.message, "hello");
+        assert_eq!(result.level, "warn");
+    }
+
+    #[test]
+    fn test_parse_structured_log_not_json() {
+        assert!(parse_structured_log("plain text", "function_name").is_none());
+    }
+
+    #[test]
+    fn test_parse_structured_log_missing_marker() {
+        let line = r#"{"function_name":"test_fn","message":"hello"}"#;
+        assert!(parse_structured_log(line, "function_name").is_none());
+    }
+
+    #[test]
+    fn test_parse_structured_log_defaults() {
+        let line = r#"{"__moose_structured_log__":true}"#;
+        let result = parse_structured_log(line, "function_name").unwrap();
+        assert_eq!(result.resource_name, "unknown");
+        assert_eq!(result.message, "");
+        assert_eq!(result.level, "info");
     }
 }

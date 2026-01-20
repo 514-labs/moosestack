@@ -830,6 +830,7 @@ mod tests {
             typescript_config: crate::project::TypescriptConfig::default(),
             source_dir: crate::project::default_source_dir(),
             docker_config: crate::project::DockerConfig::default(),
+            watcher_config: crate::cli::watcher::WatcherConfig::default(),
         }
     }
 

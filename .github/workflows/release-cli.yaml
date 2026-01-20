@@ -129,7 +129,7 @@ jobs:
     if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
     needs:
       - version
-      - cleanup-pypi
+      # - cleanup-pypi  # Commented out: job is disabled, skipped jobs cause dependents to skip
     # Add explicit permissions
     permissions:
       contents: read
@@ -380,19 +380,17 @@ jobs:
           # Maturin will use this for the Python package metadata
           perl -i -pe 's/^(\[project\])$/$1\nversion = "${{ needs.version.outputs.python_version }}"/' pyproject.toml
 
+          # Set MOOSE_CLI_VERSION environment variable for build.rs
+          # This overrides the Cargo.toml version and gives the Rust binary the full version string
+          echo "MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}" >> $GITHUB_ENV
+
           # Debug: Show what we set
           echo "Cargo.toml version (base): ${BASE_VERSION}"
+          echo "MOOSE_CLI_VERSION (full): ${{ needs.version.outputs.version }}"
           grep '^version = ' Cargo.toml || echo "  (not found)"
           echo "pyproject.toml [project] section:"
           sed -n '/^\[project\]/,/^\[/p' pyproject.toml | head -10
         working-directory: ./apps/framework-cli
-
-      - name: Override version for binary
-        run: |
-          # Set CARGO_PKG_VERSION env var to override what env!("CARGO_PKG_VERSION") sees
-          # This gives the Rust binary the full version string including -ci- part
-          echo "CARGO_PKG_VERSION=${{ needs.version.outputs.version }}" >> $GITHUB_ENV
-          echo "Set CARGO_PKG_VERSION to: ${{ needs.version.outputs.version }}"
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -413,6 +411,8 @@ jobs:
               PROTOC_VERSION=24.4
               PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-x86_64.zip
               export POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
+              export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
+              echo "MOOSE_CLI_VERSION set to: $MOOSE_CLI_VERSION"
 
               # Debian-based distribution
               apt install -y curl unzip
@@ -537,7 +537,8 @@ jobs:
   release-python:
     name: Release Python Wheels
     runs-on: ubuntu-latest
-    needs: [version, build-and-publish-binaries, cleanup-pypi]
+    # cleanup-pypi commented out: job is disabled, skipped jobs cause dependents to skip
+    needs: [version, build-and-publish-binaries]  # cleanup-pypi
     if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
     # Add explicit permissions
     permissions:
@@ -694,8 +695,15 @@ jobs:
   cleanup-pypi:
     name: Cleanup PyPI
     runs-on: ubuntu-latest
-    # Only run for release builds (main branch), not CI builds
-    # if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
+    # DISABLED: PyPI no longer supports automated deletion of releases.
+    # The pypi-cleanup tool uses web scraping which breaks due to:
+    # 1. PyPI sends device confirmation emails for each new IP (GitHub Actions runners change IPs)
+    # 2. PyPI has no public API for deleting releases
+    # Open feature requests to watch:
+    # - https://github.com/pypi/warehouse/issues/12810 (API to delete old .dev wheels)
+    # - https://github.com/pypi/warehouse/issues/11397 (Automatically delete old releases)
+    # Re-enable this job if/when PyPI adds a proper deletion API.
+    if: false
     continue-on-error: true
     needs:
       - version
