@@ -1,0 +1,17 @@
+#### (Optional) Start up MooseDev MCP with your copilot
+
+Once your MooseDev Server is up and running, your development MCP server is ready to be connected to your copilot. For documentation for each copilot, [see docs](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript#configure-your-ai-client). By way of example, here's how you configure Claude Code:
+
+```shell
+claude mcp add --transport http moose-dev http://localhost:4000/mcp
+```
+
+Note, you may have to do this before you start Claude Code or your IDE (or restart your copilot for the MCP server to be picked up). You can validate that it is working with the `/mcp` slash command.
+
+#### (Optional) Add Context7 for MooseStack documentation
+
+[Context7](https://context7.com) can serve up-to-date MooseStack docs to your copilot.
+
+**Setup:** [Install Context7 for your IDE](https://github.com/upstash/context7#installation). You may have to do this before you start Claude Code or your IDE (or restart your copilot for the MCP server to be picked up).
+
+**Usage:** When you refer to MooseStack documentation in prompts, add `use context7` for better results.

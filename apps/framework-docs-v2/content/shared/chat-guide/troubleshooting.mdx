@@ -1,0 +1,58 @@
+## Troubleshooting
+
+<Accordion type="single" collapsible>
+<AccordionItem value="mcp-server-url">
+<AccordionTrigger>"MCP_SERVER_URL environment variable is not set"</AccordionTrigger>
+<AccordionContent>
+Make sure you have:
+- `.env.local` with `MCP_SERVER_URL=http://localhost:4000`
+- Or `.env.development` as a fallback
+</AccordionContent>
+</AccordionItem>
+
+<AccordionItem value="unauthorized">
+<AccordionTrigger>"Unauthorized" or 401 errors from MCP server</AccordionTrigger>
+<AccordionContent>
+1. Verify `MCP_API_KEY` in `moosestack-service/.env.local` matches the hash from `moose generate hash-token`
+2. Verify `MCP_API_TOKEN` in `web-app/.env.local` is the Bearer Token (not the hash)
+3. Check the token is being sent: look for `Authorization: Bearer ...` in network requests
+</AccordionContent>
+</AccordionItem>
+
+<AccordionItem value="cors">
+<AccordionTrigger>CORS errors</AccordionTrigger>
+<AccordionContent>
+The architecture avoids CORS issues because:
+- The Next.js API route (`/api/chat`) is same-origin with your frontend
+- The API route makes server-side requests to MooseStack with the Bearer token
+
+If you're still seeing CORS errors, ensure your chat UI is calling `/api/chat`, not the MooseStack server directly.
+</AccordionContent>
+</AccordionItem>
+
+<AccordionItem value="chat-panel">
+<AccordionTrigger>Chat panel doesn't appear</AccordionTrigger>
+<AccordionContent>
+1. Check browser console for errors
+2. Verify `ChatLayoutWrapper` is wrapping your app in `layout.tsx`
+3. Verify all shadcn/ui components are installed
+</AccordionContent>
+</AccordionItem>
+
+<AccordionItem value="anthropic-key">
+<AccordionTrigger>"ANTHROPIC_API_KEY environment variable is not set"</AccordionTrigger>
+<AccordionContent>
+1. Add your key to `.env.local`
+2. Restart the Next.js dev server (env vars only load on startup)
+</AccordionContent>
+</AccordionItem>
+
+<AccordionItem value="clickhouse-errors">
+<AccordionTrigger>Tool calls fail with ClickHouse errors</AccordionTrigger>
+<AccordionContent>
+1. Make sure MooseStack dev server is running (`pnpm dev:moose`)
+2. Check that ClickHouse has tables: `moose ls` should show your data models
+3. Verify you've run data ingestion or the generator workflow
+</AccordionContent>
+</AccordionItem>
+</Accordion>

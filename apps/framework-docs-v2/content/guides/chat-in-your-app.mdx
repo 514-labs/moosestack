@@ -150,17 +150,7 @@ The decisions below define the shape of your chat system. The template defaults 
 
 ## Tutorial: From Parquet in S3 to Chat Application
 
-<Callout type="info" title="Prerequisites">
-- [GitHub account](https://github.com)
-- [Claude API key](https://console.anthropic.com/)
-- [Boreal account](https://www.boreal.cloud/sign-in)
-- [Vercel account](https://vercel.com/)
-- [Node.js v20+](https://nodejs.org)
-- [pnpm v8+](https://pnpm.io)
-- [Docker Desktop](https://docker.com/get-started) (must be running)
-- [Moose CLI](https://docs.fiveonefour.com/moosestack)
-- Recommended: a copilot like Claude Code, Cursor, or Codex
-</Callout>
+:::include /shared/chat-guide/prerequisites.mdx
 
 <Callout type="info" title="Data source">
 This tutorial requires a Parquet data source in S3. Bring your own, or use the [Amazon Customer Reviews dataset](https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews) (150M+ rows, no auth required).
@@ -292,23 +282,7 @@ This is a blank canvas for you to use to build whatever user facing analytics yo
 
 Note: whilst the chat will be functional, since you’ve not added any data to your MooseStack project, the tools available in the chat won’t be able to retrieve any data. In the next section, we’ll explore and model the data.
 
-#### (Optional) Start up MooseDev MCP with your copilot
-
-Once your MooseDev Server is up and running, your development MCP server is ready to be connected to your copilot. For documentation for each copilot, [see docs](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript#configure-your-ai-client). By way of example, here’s how you configure Claude Code:
-
-```shell
-claude mcp add --transport http moose-dev http://localhost:4000/mcp
-```
-
-Note, you may have to do this before you start Claude Code or your IDE (or restart your copilot for the MCP server to be picked up). You can validate that it is working with the `/mcp` slash command.
-
-#### (Optional) Add Context7 for MooseStack documentation
-
-[Context7](https://context7.com) can serve up-to-date MooseStack docs to your copilot.
-
-**Setup:** [Install Context7 for your IDE](https://github.com/upstash/context7#installation). You may have to do this before you start Claude Code or your IDE (or restart your copilot for the MCP server to be picked up).
-
-**Usage:** When you refer to MooseStack documentation in prompts, add `use context7` for better results.
+:::include /shared/chat-guide/optional-mcp-setup.mdx
 
 ### Model your data
 
@@ -641,16 +615,7 @@ This will again return 0 rows. This is expected. You can validate that the trans
 - You are using Express for your APIs (other frameworks work, but aren't covered here)
 </Callout>
 
-<Callout type="info" title="Prerequisites">
-- [GitHub](https://github.com)
-- [Claude API key](https://console.anthropic.com/)
-- [Boreal account](https://www.boreal.cloud/sign-in)
-- [Node.js v20+](https://nodejs.org)
-- [pnpm v8+](https://pnpm.io)
-- [Docker Desktop](https://docker.com/get-started) (must be running)
-- [Moose CLI](https://docs.fiveonefour.com/moosestack)
-- Recommended: Claude Code, Cursor, Codex, or other MCP compatible copilot.
-</Callout>
+:::include /shared/chat-guide/prerequisites.mdx
 
 **Source template:** All code snippets reference [github.com/514-labs/moosestack/tree/main/templates/typescript-mcp](https://github.com/514-labs/moosestack/tree/main/templates/typescript-mcp)
 
@@ -1001,64 +966,7 @@ You should see a response listing `query_clickhouse` and `get_data_catalog` tool
 
 :::include /shared/chat-guide/deploy-to-boreal-and-vercel.mdx
 
-## Troubleshooting
-
-<Accordion type="single" collapsible>
-<AccordionItem value="mcp-server-url">
-<AccordionTrigger>"MCP_SERVER_URL environment variable is not set"</AccordionTrigger>
-<AccordionContent>
-Make sure you have:
-- `.env.local` with `MCP_SERVER_URL=http://localhost:4000`
-- Or `.env.development` as a fallback
-</AccordionContent>
-</AccordionItem>
-
-<AccordionItem value="unauthorized">
-<AccordionTrigger>"Unauthorized" or 401 errors from MCP server</AccordionTrigger>
-<AccordionContent>
-1. Verify `MCP_API_KEY` in `moosestack-service/.env.local` matches the hash from `moose generate hash-token`
-2. Verify `MCP_API_TOKEN` in `web-app/.env.local` is the Bearer Token (not the hash)
-3. Check the token is being sent: look for `Authorization: Bearer ...` in network requests
-</AccordionContent>
-</AccordionItem>
-
-<AccordionItem value="cors">
-<AccordionTrigger>CORS errors</AccordionTrigger>
-<AccordionContent>
-The architecture avoids CORS issues because:
-- The Next.js API route (`/api/chat`) is same-origin with your frontend
-- The API route makes server-side requests to MooseStack with the Bearer token
-
-If you're still seeing CORS errors, ensure your chat UI is calling `/api/chat`, not the MooseStack server directly.
-</AccordionContent>
-</AccordionItem>
-
-<AccordionItem value="chat-panel">
-<AccordionTrigger>Chat panel doesn't appear</AccordionTrigger>
-<AccordionContent>
-1. Check browser console for errors
-2. Verify `ChatLayoutWrapper` is wrapping your app in `layout.tsx`
-3. Verify all shadcn/ui components are installed
-</AccordionContent>
-</AccordionItem>
-
-<AccordionItem value="anthropic-key">
-<AccordionTrigger>"ANTHROPIC_API_KEY environment variable is not set"</AccordionTrigger>
-<AccordionContent>
-1. Add your key to `.env.local`
-2. Restart the Next.js dev server (env vars only load on startup)
-</AccordionContent>
-</AccordionItem>
-
-<AccordionItem value="clickhouse-errors">
-<AccordionTrigger>Tool calls fail with ClickHouse errors</AccordionTrigger>
-<AccordionContent>
-1. Make sure MooseStack dev server is running (`pnpm dev:moose`)
-2. Check that ClickHouse has tables: `moose ls` should show your data models
-3. Verify you've run data ingestion or the generator workflow
-</AccordionContent>
-</AccordionItem>
-</Accordion>
+:::include /shared/chat-guide/troubleshooting.mdx
 
 ## Appendix: Data context as code
 
