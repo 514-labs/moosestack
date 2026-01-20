@@ -117,7 +117,6 @@ use super::{Message, MessageType};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -554,7 +553,6 @@ pub async fn start_development_mode(
         api_changes_channel,
         webapp_changes_channel,
         metrics: metrics.clone(),
-        redis_client: &redis_client,
     })
     .await?;
 
@@ -772,7 +770,6 @@ pub async fn start_production_mode(
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
-        redis_client: &redis_client,
     })
     .await?;
 
@@ -927,14 +924,8 @@ async fn legacy_remote_plan_logic(
     json: bool,
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
-    let local_infra_map = if project.features.data_model_v2 {
-        debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project, true).await?
-    } else {
-        debug!("Loading InfrastructureMap from primitives");
-        let primitive_map = PrimitiveMap::load(project).await?;
-        InfrastructureMap::new(project, primitive_map)
-    };
+    debug!("Loading InfrastructureMap from user code");
+    let local_infra_map = InfrastructureMap::load_from_user_code(project, true).await?;
 
     // Use existing implementation
     let target_url = prepend_base_url(base_url.as_deref(), "admin/plan");
@@ -994,7 +985,7 @@ async fn legacy_remote_plan_logic(
             // Output empty plan as JSON
             let temp_plan = InfraPlan {
                 changes: plan_response.changes,
-                target_infra_map: InfrastructureMap::new(project, PrimitiveMap::default()),
+                target_infra_map: InfrastructureMap::empty_from_project(project),
             };
             println!("{}", serde_json::to_string_pretty(&temp_plan)?);
         } else {
@@ -1012,7 +1003,7 @@ async fn legacy_remote_plan_logic(
     // Create a temporary InfraPlan to use with the show_changes function
     let temp_plan = InfraPlan {
         changes: plan_response.changes,
-        target_infra_map: InfrastructureMap::new(project, PrimitiveMap::default()),
+        target_infra_map: InfrastructureMap::empty_from_project(project),
     };
 
     if json {
