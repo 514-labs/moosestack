@@ -1,6 +1,3 @@
 packages:
-  - .
-  - moose
-
-overrides:
-  '@514labs/moose-lib': link:../../packages/ts-moose-lib
+  - "."
+  - "moose"

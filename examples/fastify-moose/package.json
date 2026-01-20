@@ -10,7 +10,7 @@
     "dev": "pnpm dev:fastify",
     "build:moose:types": "pnpm -C moose run build:types",
     "build:moose": "pnpm -C moose run build",
-    "dev:fastify": "cross-env NODE_ENV=development node --env-file=.env.local --watch src/index.ts",
+    "dev:fastify": "cross-env NODE_ENV=development node --env-file=.env --watch src/index.ts",
     "dev:moose": "pnpm -C moose run dev",
     "moose": "pnpm -C moose run moose",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -18,9 +18,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@514labs/moose-lib": "link:../../packages/ts-moose-lib",
-    "fastify": "^5.6.2",
     "moose": "workspace:*",
+    "fastify": "^5.6.2",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
     "typia": "^10.1.0"
