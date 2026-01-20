@@ -100,23 +100,44 @@ try {
     // TypeScript might exit with non-zero code even when noEmitOnError: false
     // Check if output files were actually created
     const sourceDir = getSourceDir();
-    const outputIndexPath = path.join(projectRoot, outDir, sourceDir, "index.js");
+    const outputIndexPath = path.join(
+      projectRoot,
+      outDir,
+      sourceDir,
+      "index.js",
+    );
 
     if (existsSync(outputIndexPath)) {
       console.warn("");
       console.warn("⚠️  BUILD SAFETY WARNING ⚠️");
-      console.warn("═══════════════════════════════════════════════════════════════");
-      console.warn("TypeScript detected type errors but JavaScript was still emitted.");
+      console.warn(
+        "═══════════════════════════════════════════════════════════════",
+      );
+      console.warn(
+        "TypeScript detected type errors but JavaScript was still emitted.",
+      );
       console.warn("");
-      console.warn("IMPORTANT: Type errors can indicate code that will fail at runtime.");
-      console.warn("While this build will succeed, the resulting code may crash when:");
+      console.warn(
+        "IMPORTANT: Type errors can indicate code that will fail at runtime.",
+      );
+      console.warn(
+        "While this build will succeed, the resulting code may crash when:",
+      );
       console.warn("  - Functions receive unexpected argument types");
-      console.warn("  - Properties are accessed on potentially null/undefined values");
+      console.warn(
+        "  - Properties are accessed on potentially null/undefined values",
+      );
       console.warn("  - Incorrect types flow through your application logic");
       console.warn("");
-      console.warn("RECOMMENDATION: Run `npx tsc --noEmit` to review type errors before");
-      console.warn("deploying to production. Fix any errors that could cause runtime issues.");
-      console.warn("═══════════════════════════════════════════════════════════════");
+      console.warn(
+        "RECOMMENDATION: Run `npx tsc --noEmit` to review type errors before",
+      );
+      console.warn(
+        "deploying to production. Fix any errors that could cause runtime issues.",
+      );
+      console.warn(
+        "═══════════════════════════════════════════════════════════════",
+      );
       console.warn("");
       console.log("TypeScript compilation complete (with type warnings).");
     } else {
