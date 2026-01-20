@@ -181,6 +181,8 @@ You should see output indicating the API server started on http://localhost:4000
 
 **Important:** The development server auto-reloads when you change files. Changes to your code are automatically applied.
 
+> **Note:** The first time you run `moose dev`, the CLI may auto-upgrade to match the moose-lib version in your package.json. This is normal behavior and ensures version compatibility.
+
 #### Verify the Stack is Running
 
 In a new terminal, confirm all services are healthy:
@@ -216,12 +218,12 @@ All running locally in Docker containers. No cloud accounts or external services
 Create the file `app/ingest/SalesTransaction.ts` with your data model. This represents what a store POS system exports each night:
 
 ```typescript
-import { Key, IngestPipeline } from "@514labs/moose-lib";
+import { IngestPipeline } from "@514labs/moose-lib";
 
 // Define the data model - matches store POS export format
 export interface SalesTransaction {
-  // Primary key
-  transactionId: Key<string>;  // e.g., "TXN-W001-20250115-0001"
+  // Transaction identifier
+  transactionId: string;  // e.g., "TXN-W001-20250115-0001"
 
   // Timestamp - the star of time-series analytics
   saleTimestamp: Date;
@@ -273,7 +275,7 @@ Check your `moose dev` terminal. You should see output like:
 
 ```
 ✓ Detected model changes
-✓ Created table: sales_SalesTransaction
+✓ Created table: sales
 ✓ Created stream: sales
 ✓ Registered API endpoint: /ingest/sales
 ```
@@ -320,8 +322,8 @@ Verify data landed by querying ClickHouse directly:
 > **Note:** The credentials `panda`/`pandapass` are local development defaults configured by `moose dev`. Never use these in production—configure secure credentials in your deployment environment.
 
 ```bash
-clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
-  --query "SELECT * FROM local.sales_SalesTransaction"
+curl -s "http://localhost:18123/?user=panda&password=pandapass" \
+  -d "SELECT * FROM local.sales FORMAT Pretty"
 ```
 
 ---
@@ -348,14 +350,16 @@ import Papa from "papaparse";
 import fs from "fs";
 import path from "path";
 
+// Note: saleTimestamp can be string or Date because papaparse dynamicTyping
+// converts ISO date strings to Date objects
 interface SalesTransaction {
   transactionId: string;
-  saleTimestamp: string;
+  saleTimestamp: string | Date;
   storeId: string;
   region: string;
   productId: string;
   productCategory: string;
-  customerId: string;
+  customerId: string | null;  // null for customers without loyalty cards
   quantity: number;
   unitPrice: number;
   totalAmount: number;
@@ -372,7 +376,19 @@ async function loadFile(filePath: string): Promise<void> {
       header: true,
       dynamicTyping: true,
     });
-    records = data.filter((r) => r.transactionId); // Filter empty rows
+    // Filter empty rows and normalize fields
+    records = data
+      .filter((r) => r.transactionId)
+      .map((r) => ({
+        ...r,
+        // papaparse dynamicTyping converts Date objects - convert back to ISO string
+        saleTimestamp: r.saleTimestamp instanceof Date
+          ? r.saleTimestamp.toISOString()
+          : r.saleTimestamp,
+        // papaparse dynamicTyping converts empty CSV fields to null
+        // but the API expects empty strings for optional string fields
+        customerId: r.customerId ?? "",
+      }));
   } else if (ext === ".json") {
     const parsed = JSON.parse(content);
     records = Array.isArray(parsed) ? parsed : [parsed];
@@ -451,8 +467,8 @@ Successfully loaded 10 records
 Verify in ClickHouse:
 
 ```bash
-clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
-  --query "SELECT count() FROM local.sales_SalesTransaction"
+curl -s "http://localhost:18123/?user=panda&password=pandapass" \
+  -d "SELECT count() FROM local.sales"
 ```
 
 ### Step 5: Add Data Validation (Recommended)
@@ -485,10 +501,18 @@ function validateRecord(record: SalesTransaction, index: number): ValidationErro
     errors.push({ row: index, field: "storeId", message: "Missing required field" });
   }
 
-  // Date validation using date-fns for strict ISO 8601 parsing
-  // Note: parseISO rejects non-ISO formats like "01/15/2025" that Date.parse would accept
+  // Date validation - handle both string and Date types
+  // Note: papaparse dynamicTyping converts ISO dates to Date objects
   if (record.saleTimestamp) {
-    const parsed = parseISO(record.saleTimestamp);
+    let parsed: Date;
+    if (record.saleTimestamp instanceof Date) {
+      parsed = record.saleTimestamp;
+    } else if (typeof record.saleTimestamp === "string") {
+      parsed = parseISO(record.saleTimestamp);
+    } else {
+      errors.push({ row: index, field: "saleTimestamp", message: "Invalid date type" });
+      return errors;
+    }
     if (!isValid(parsed)) {
       errors.push({ row: index, field: "saleTimestamp", message: "Invalid date format (expected ISO 8601, e.g., 2025-01-15T09:00:00Z)" });
     } else if (parsed > new Date()) {
@@ -583,8 +607,11 @@ export interface DailySalesSummary {
   totalRevenue: number;
 }
 
-// Get table reference from pipeline
+// Get table reference from pipeline (with null check for TypeScript)
 const salesTable = salesPipeline.table;
+if (!salesTable) {
+  throw new Error("Sales table not configured in pipeline");
+}
 
 // Create materialized view with auto-created target table
 export const dailySalesMV = new MaterializedView<DailySalesSummary>({
@@ -625,17 +652,17 @@ export * from "./views/DailySalesSummary";
 Check that the materialized view was created:
 
 ```bash
-clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
-  --query "SHOW TABLES FROM local"
+curl -s "http://localhost:18123/?user=panda&password=pandapass" \
+  -d "SHOW TABLES FROM local"
 ```
 
-You should see both `sales_SalesTransaction` and `DailySalesSummary`.
+You should see both `sales` and `DailySalesSummary`.
 
 **What Just Happened:**
 
 You created a materialized view that transforms your data pipeline:
 
-1. **Triggers on INSERT** - Every time data lands in `sales_SalesTransaction`, ClickHouse automatically runs the aggregation query
+1. **Triggers on INSERT** - Every time data lands in `sales`, ClickHouse automatically runs the aggregation query
 2. **Pre-computes daily totals** - `toStartOfDay()` groups transactions by calendar day, collapsing potentially millions of rows into one row per day/region/category
 3. **Creates a target table** - `DailySalesSummary` stores the pre-aggregated results permanently
 4. **Requires GROUP BY on queries** - Since MVs aggregate per-batch, always use `GROUP BY` when querying to consolidate results correctly
@@ -654,17 +681,17 @@ The materialized view gives you **100x faster queries** by doing the aggregation
 Query the pre-aggregated data (always use GROUP BY with SummingMergeTree):
 
 ```bash
-clickhouse-client --host localhost --port 9000 --user panda --password pandapass \
-  --query "
-    SELECT
-      saleDate,
-      region,
-      sum(transactionCount) AS transactions,
-      sum(totalRevenue) AS revenue
-    FROM local.DailySalesSummary
-    GROUP BY saleDate, region
-    ORDER BY saleDate, region
-  "
+curl -s "http://localhost:18123/?user=panda&password=pandapass" -d "
+  SELECT
+    saleDate,
+    region,
+    sum(transactionCount) AS transactions,
+    sum(totalRevenue) AS revenue
+  FROM local.DailySalesSummary
+  GROUP BY saleDate, region
+  ORDER BY saleDate, region
+  FORMAT Pretty
+"
 ```
 
 ### ClickHouse Time-Series Functions Reference
@@ -775,7 +802,7 @@ export * from "./apis/salesReport";
 
 You created a consumption API that:
 
-1. **Exposes a REST endpoint** at `/consumption/sales-report` - accessible via HTTP GET
+1. **Exposes a REST endpoint** at `/api/sales-report` - accessible via HTTP GET
 2. **Accepts query parameters** - `startDate`, `endDate`, and optional `region` filter
 3. **Queries the materialized view** - Not the raw transaction table, so responses are fast
 4. **Uses parameterized SQL** - The `sql` template literal prevents SQL injection automatically
@@ -788,13 +815,13 @@ This API becomes the single source of truth for report data. The PDF generator, 
 Query your report endpoint:
 
 ```bash
-curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-01&endDate=2025-01-31"
+curl "http://localhost:4000/api/sales-report?startDate=2025-01-01&endDate=2025-01-31"
 ```
 
 Filter by region:
 
 ```bash
-curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15&region=West"
+curl "http://localhost:4000/api/sales-report?startDate=2025-01-15&endDate=2025-01-15&region=West"
 ```
 
 The response contains aggregated daily sales data in JSON format, ready for transformation into PDF or any other output format.
@@ -819,7 +846,8 @@ npm install -D @types/pdfmake
 Create `scripts/generate-pdf-report.ts`:
 
 ```typescript
-import PdfPrinter from "pdfmake";
+// Use require for pdfmake as it doesn't have proper ESM exports
+const PdfPrinter = require("pdfmake/js/Printer").default;
 import { TDocumentDefinitions, TFontDictionary } from "pdfmake/interfaces";
 import * as fs from "fs";
 
@@ -847,7 +875,7 @@ async function fetchReportData(
   startDate: string,
   endDate: string
 ): Promise<SalesReportRow[]> {
-  const url = `http://localhost:4000/consumption/sales-report?startDate=${startDate}&endDate=${endDate}`;
+  const url = `http://localhost:4000/api/sales-report?startDate=${startDate}&endDate=${endDate}`;
   const response = await fetch(url);
 
   if (!response.ok) {
@@ -896,11 +924,11 @@ function formatCurrency(amount: number): string {
   return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function generatePdf(
+async function generatePdf(
   data: SalesReportRow[],
   reportDate: string,
   outputPath: string
-): void {
+): Promise<void> {
   const printer = new PdfPrinter(fonts);
 
   // Calculate totals
@@ -979,11 +1007,11 @@ function generatePdf(
             ],
             ...sortedRegions.map(([region, stats]) => [
               region,
-              { text: formatCurrency(stats.revenue), alignment: "right" },
-              { text: stats.transactions.toLocaleString(), alignment: "right" },
+              { text: formatCurrency(stats.revenue), alignment: "right" as const },
+              { text: stats.transactions.toLocaleString(), alignment: "right" as const },
               {
                 text: `${totalRevenue > 0 ? ((stats.revenue / totalRevenue) * 100).toFixed(1) : "0.0"}%`,
-                alignment: "right",
+                alignment: "right" as const,
               },
             ]),
           ],
@@ -1010,11 +1038,11 @@ function generatePdf(
             ],
             ...sortedCategories.map(([category, stats]) => [
               category,
-              { text: formatCurrency(stats.revenue), alignment: "right" },
-              { text: stats.transactions.toLocaleString(), alignment: "right" },
+              { text: formatCurrency(stats.revenue), alignment: "right" as const },
+              { text: stats.transactions.toLocaleString(), alignment: "right" as const },
               {
                 text: `${totalRevenue > 0 ? ((stats.revenue / totalRevenue) * 100).toFixed(1) : "0.0"}%`,
-                alignment: "right",
+                alignment: "right" as const,
               },
             ]),
           ],
@@ -1045,10 +1073,20 @@ function generatePdf(
     pageMargins: [40, 40, 40, 60],
   };
 
-  const pdfDoc = printer.createPdfKitDocument(docDefinition);
-  pdfDoc.pipe(fs.createWriteStream(outputPath));
-  pdfDoc.end();
-  console.log(`PDF report saved to ${outputPath}`);
+  // createPdfKitDocument returns a Promise in newer pdfmake versions
+  const pdfDoc = await printer.createPdfKitDocument(docDefinition);
+
+  // Return a promise that resolves when the PDF is written
+  return new Promise<void>((resolve, reject) => {
+    const stream = fs.createWriteStream(outputPath);
+    stream.on("finish", () => {
+      console.log(`PDF report saved to ${outputPath}`);
+      resolve();
+    });
+    stream.on("error", reject);
+    pdfDoc.pipe(stream);
+    pdfDoc.end();
+  });
 }
 
 // Main execution
@@ -1068,7 +1106,7 @@ async function main() {
     }
 
     console.log(`Generating PDF with ${data.length} data rows...`);
-    generatePdf(data, `${startDate} to ${endDate}`, outputPath);
+    await generatePdf(data, `${startDate} to ${endDate}`, outputPath);
   } catch (error) {
     console.error("Error generating report:", error);
     process.exit(1);
@@ -1167,7 +1205,7 @@ Raw Data → [INSERT triggers MV] → Aggregated Table (immediate)
 
 **How it works:**
 
-1. You INSERT a transaction into `sales_SalesTransaction`
+1. You INSERT a transaction into `sales`
 2. ClickHouse immediately runs your MV's SELECT statement on the new rows
 3. Results are INSERTed into `DailySalesSummary`
 4. This happens synchronously—by the time INSERT returns, the MV is updated
@@ -1184,7 +1222,7 @@ ClickHouse materialized views process data in batches, which has important impli
 
 **How MVs aggregate data:**
 
-1. When you INSERT transactions into `sales_SalesTransaction`, ClickHouse triggers the MV
+1. When you INSERT transactions into `sales`, ClickHouse triggers the MV
 2. The MV's SELECT statement runs on the **new batch only**, not all existing data
 3. Results are inserted into the target table (`DailySalesSummary`)
 4. Multiple batches for the same day/region/category create **multiple rows**
@@ -1377,7 +1415,7 @@ SELECT
   toHour(saleTimestamp) AS hour_of_day,
   count() AS transactions,
   sum(totalAmount) AS revenue
-FROM local.sales_SalesTransaction
+FROM local.sales
 GROUP BY hour_of_day
 ORDER BY hour_of_day;
 ```
@@ -1520,7 +1558,7 @@ ClickHouse doesn't enforce uniqueness. Check for duplicates:
 
 ```sql
 SELECT transactionId, count() as cnt
-FROM local.sales_SalesTransaction
+FROM local.sales
 GROUP BY transactionId
 HAVING cnt > 1
 ```
@@ -1530,14 +1568,14 @@ To deduplicate in queries, use `GROUP BY` or subqueries:
 ```sql
 -- Option 1: Aggregate to get unique transactions
 SELECT transactionId, max(saleTimestamp) as saleTimestamp, sum(totalAmount) as totalAmount
-FROM local.sales_SalesTransaction
+FROM local.sales
 GROUP BY transactionId
 
 -- Option 2: Use a subquery to get the latest record per transaction
-SELECT * FROM local.sales_SalesTransaction
+SELECT * FROM local.sales
 WHERE (transactionId, saleTimestamp) IN (
   SELECT transactionId, max(saleTimestamp)
-  FROM local.sales_SalesTransaction
+  FROM local.sales
   GROUP BY transactionId
 )
 ```
@@ -1569,10 +1607,10 @@ GROUP BY saleDate, region
 1. Check date format uses `YYYY-MM-DD`:
    ```bash
    # Wrong
-   curl "http://localhost:4000/consumption/sales-report?startDate=01-15-2025&endDate=01-31-2025"
+   curl "http://localhost:4000/api/sales-report?startDate=01-15-2025&endDate=01-31-2025"
 
    # Correct
-   curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-31"
+   curl "http://localhost:4000/api/sales-report?startDate=2025-01-15&endDate=2025-01-31"
    ```
 
 2. Verify data exists for the date range:
@@ -1596,7 +1634,7 @@ If queries take more than 100ms, check:
 
 1. Ensure API is accessible:
    ```bash
-   curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15"
+   curl "http://localhost:4000/api/sales-report?startDate=2025-01-15&endDate=2025-01-15"
    ```
 
 2. Check for fetch errors in the script output
