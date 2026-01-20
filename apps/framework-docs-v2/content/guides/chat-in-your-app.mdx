@@ -280,7 +280,9 @@ Your web-application is available at [http://localhost:3000](http://localhost:30
 
 This is a blank canvas for you to use to build whatever user facing analytics you want to. And the chat’s already configured, click the chat icon on the bottom right to open your chat. Our engineer GRoy put some work into that chat panel, and you’ll find that it is resizable, has differentiated scrolling, and more\! Feel free to use and modify how you like.
 
-Note: whilst the chat will be functional, since you’ve not added any data to your MooseStack project, the tools available in the chat won’t be able to retrieve any data. The next section covers exploring and modeling the data.
+<Callout type="info" title="No data yet">
+The chat will be functional, but since you've not added any data to your MooseStack project, the tools available in the chat won't be able to retrieve any data. The next section covers exploring and modeling the data.
+</Callout>
 
 :::include /shared/chat-guide/optional-mcp-setup.mdx
 
@@ -481,7 +483,9 @@ INSERT INTO `local`.AmazonReviews
     'Parquet'
   );
 ```
-Note: This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
+<Callout type="tip" title="Large dataset">
+This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
+</Callout>
 </ToggleBlock>
 
 Make sure to properly apply any transformations to conform your S3 data to the data model you’ve created. ClickHouse will do many of these transformations naturally. Notably though:
@@ -596,7 +600,9 @@ SELECT * FROM s3(
   'Parquet'
 );
 ```
-Note: This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
+<Callout type="tip" title="Large dataset">
+This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
+</Callout>
 </ToggleBlock>
 
 This will again return 0 rows. This is expected. You can validate that the transfer worked correctly as follows:
@@ -780,7 +786,9 @@ MCP_API_KEY=<paste-the-ENV-API-KEY-here>
 
 **Install required packages**
 
-**Note:** If you don't have shadcn/ui set up, you'll also need the UI components. See [ui.shadcn.com/docs/installation](https://ui.shadcn.com/docs/installation).
+<Callout type="info" title="shadcn/ui setup">
+If you don't have shadcn/ui set up, you'll also need the UI components. See [ui.shadcn.com/docs/installation](https://ui.shadcn.com/docs/installation).
+</Callout>
 
 ```shell
 cd packages/web-app  # or your Next.js app directory
