@@ -7,7 +7,7 @@ import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { CopyPageButton } from "@/components/copy-page-button";
+import { MarkdownMenu } from "@/components/markdown-menu";
 
 // export const dynamic = "force-dynamic";
 
@@ -117,7 +117,7 @@ export default async function DocPage({ params, searchParams }: PageProps) {
         <div className="flex items-center justify-between">
           <DocBreadcrumbs items={breadcrumbs} />
           {showCopyButton && (
-            <CopyPageButton
+            <MarkdownMenu
               content={
                 content.isMDX ?
                   cleanContent(
