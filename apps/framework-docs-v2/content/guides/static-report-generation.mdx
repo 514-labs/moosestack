@@ -463,6 +463,7 @@ Update `scripts/load-file.ts` to include validation:
 
 ```typescript
 // Add this validation function before the loadFile function
+import { parseISO, isValid } from "date-fns";
 
 interface ValidationError {
   row: number;
@@ -484,16 +485,13 @@ function validateRecord(record: SalesTransaction, index: number): ValidationErro
     errors.push({ row: index, field: "storeId", message: "Missing required field" });
   }
 
-  // Date format validation
-  if (record.saleTimestamp && isNaN(Date.parse(record.saleTimestamp))) {
-    errors.push({ row: index, field: "saleTimestamp", message: "Invalid date format (expected ISO 8601)" });
-  }
-
-  // Future date check - transactions shouldn't be in the future
-  if (record.saleTimestamp && !isNaN(Date.parse(record.saleTimestamp))) {
-    const saleDate = new Date(record.saleTimestamp);
-    const now = new Date();
-    if (saleDate > now) {
+  // Date validation using date-fns for strict ISO 8601 parsing
+  // Note: parseISO rejects non-ISO formats like "01/15/2025" that Date.parse would accept
+  if (record.saleTimestamp) {
+    const parsed = parseISO(record.saleTimestamp);
+    if (!isValid(parsed)) {
+      errors.push({ row: index, field: "saleTimestamp", message: "Invalid date format (expected ISO 8601, e.g., 2025-01-15T09:00:00Z)" });
+    } else if (parsed > new Date()) {
       errors.push({ row: index, field: "saleTimestamp", message: "Future dates not allowed" });
     }
   }
@@ -611,7 +609,7 @@ export const dailySalesMV = new MaterializedView<DailySalesSummary>({
 **Key Points:**
 - `toStartOfDay()` truncates timestamps to daily granularity
 - ORDER BY `saleDate` first enables efficient date-range queries
-- SummingMergeTree (default) automatically merges rows with same ORDER BY keys
+- Always use `GROUP BY` when querying to ensure accurate aggregation results
 
 ### Step 2: Update Exports
 
@@ -640,7 +638,7 @@ You created a materialized view that transforms your data pipeline:
 1. **Triggers on INSERT** - Every time data lands in `sales_SalesTransaction`, ClickHouse automatically runs the aggregation query
 2. **Pre-computes daily totals** - `toStartOfDay()` groups transactions by calendar day, collapsing potentially millions of rows into one row per day/region/category
 3. **Creates a target table** - `DailySalesSummary` stores the pre-aggregated results permanently
-4. **Uses SummingMergeTree** - Background merges automatically combine partial aggregates into final totals
+4. **Requires GROUP BY on queries** - Since MVs aggregate per-batch, always use `GROUP BY` when querying to consolidate results correctly
 
 **Why this matters for performance:**
 
@@ -1180,41 +1178,46 @@ Raw Data → [INSERT triggers MV] → Aggregated Table (immediate)
 - Scales automatically with write throughput
 - If an INSERT fails, the MV isn't corrupted
 
-### Understanding SummingMergeTree
+### Understanding MergeTree and Batch Aggregation
 
-Your materialized view uses `SummingMergeTree`, a ClickHouse table engine designed for aggregation.
+ClickHouse materialized views process data in batches, which has important implications for how you query them.
 
-**How it works:**
+**How MVs aggregate data:**
 
-1. When data arrives, ClickHouse writes it to disk immediately (fast writes)
-2. In the background, ClickHouse periodically **merges** data files
-3. During merge, rows with the same ORDER BY keys are combined:
-   - Numeric columns are summed
-   - Other columns take the last value
+1. When you INSERT transactions into `sales_SalesTransaction`, ClickHouse triggers the MV
+2. The MV's SELECT statement runs on the **new batch only**, not all existing data
+3. Results are inserted into the target table (`DailySalesSummary`)
+4. Multiple batches for the same day/region/category create **multiple rows**
 
 **Example:**
 
-Two separate INSERTs for the same day/region/category:
+Two separate INSERTs on the same day for West/Electronics:
 
 ```
-INSERT 1: [saleDate=2025-01-15, region=West, category=Electronics, count=5, revenue=1000]
-INSERT 2: [saleDate=2025-01-15, region=West, category=Electronics, count=3, revenue=600]
+Batch 1 (morning): 50 transactions → MV inserts [saleDate=2025-01-15, region=West, category=Electronics, count=50, revenue=5000]
+Batch 2 (evening): 30 transactions → MV inserts [saleDate=2025-01-15, region=West, category=Electronics, count=30, revenue=3000]
 ```
 
-After background merge:
+The target table now has **two rows** for the same day/region/category:
 
 ```
-Merged:   [saleDate=2025-01-15, region=West, category=Electronics, count=8, revenue=1600]
+Row 1: [saleDate=2025-01-15, region=West, category=Electronics, count=50, revenue=5000]
+Row 2: [saleDate=2025-01-15, region=West, category=Electronics, count=30, revenue=3000]
 ```
 
-**Important:** Merges happen asynchronously. Until merge completes, you might see both rows. That's why you must always use `GROUP BY` when querying:
+**This is why you must always use `GROUP BY` when querying:**
 
 ```sql
--- Always correct, regardless of merge state
+-- Wrong: May return multiple rows per day/region
+SELECT * FROM DailySalesSummary WHERE saleDate = '2025-01-15'
+
+-- Correct: Consolidates all batches into final aggregates
 SELECT saleDate, region, sum(transactionCount), sum(totalRevenue)
 FROM DailySalesSummary
 GROUP BY saleDate, region
 ```
+
+**Note:** ClickHouse offers specialized engines like `SummingMergeTree` that automatically combine rows during background merges. However, even with these engines, using `GROUP BY` is the safe practice since merges happen asynchronously.
 
 ### When to Use Different Aggregation Strategies
 
@@ -1264,7 +1267,7 @@ You now understand:
 
 - **Columnar storage** - Why ClickHouse reads less data than row-oriented databases
 - **Materialized views** - How they provide real-time aggregation without batch jobs
-- **SummingMergeTree** - Why you need GROUP BY and how background merges work
+- **Batch aggregation** - Why you need GROUP BY when querying MVs
 - **Time-series patterns** - How to structure data for efficient time-range queries
 
 These concepts apply beyond this tutorial—they're fundamental to building any high-performance analytics system.
