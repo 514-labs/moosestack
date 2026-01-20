@@ -9,7 +9,7 @@ message InfrastructureMap {
   map<string, Topic> topics = 1;
   map<string, ApiEndpoint> api_endpoints = 2;
   map<string, Table> tables = 3;
-  map<string, View> views = 4;
+  map<string, Dmv1View> dmv1_views = 4;
   map<string, TopicToTableSyncProcess> topic_to_table_sync_processes = 5;
   map<string, TopicToTopicSyncProcess> topic_to_topic_sync_processes = 6;
   map<string, FunctionProcess> function_processes = 7;
@@ -24,6 +24,11 @@ message InfrastructureMap {
   map<string, WebApp> web_apps = 13;
 
   string default_database = 15;
+
+  // Structured materialized views (replaces SqlResource for MVs)
+  map<string, MaterializedView> materialized_views = 16;
+  // Structured views (replaces SqlResource for views)
+  map<string, View> views = 17;
 }
 
 message SourceLocation {
@@ -188,7 +193,7 @@ message TableIndex {
   uint64 granularity = 5;
 }
 
-message View {
+message Dmv1View {
   string name = 1;
   string version = 2;
   oneof view_type {
@@ -198,6 +203,50 @@ message View {
 
 message TableAlias {
   string source_table_name = 1;
+}
+
+// Reference to a table, optionally qualified with database
+message TableReference {
+  // Database name (empty means use default database)
+  optional string database = 1;
+  // Table name
+  string table = 2;
+}
+
+// Represents a SELECT query with semantic information
+message SelectQuery {
+  // The raw SELECT SQL statement
+  string sql = 1;
+  // Tables/views referenced in the FROM clause(s)
+  repeated TableReference source_tables = 2;
+}
+
+// User-defined ClickHouse View with an arbitrary SELECT query.
+// Views are virtual tables that compute results on-demand.
+message View {
+  // Name of the view
+  string name = 1;
+  // Database where the view is created (empty = default database)
+  optional string database = 2;
+  // The SELECT query that defines the view
+  SelectQuery select_query = 3;
+  // Optional metadata for the view (e.g., description, source file)
+  optional Metadata metadata = 4;
+}
+
+// ClickHouse Materialized View that writes transformed data to a target table.
+// MVs run the SELECT query on insert and persist results.
+message MaterializedView {
+  // Name of the materialized view
+  string name = 1;
+  // Database where the MV is created (empty = default database)
+  optional string database = 2;
+  // The SELECT query that defines the transformation
+  SelectQuery select_query = 3;
+  // Target table where transformed data is written (the TO clause)
+  TableReference target_table = 4;
+  // Optional metadata for the materialized view (e.g., description, source file)
+  optional Metadata metadata = 5;
 }
 
 message TopicToTableSyncProcess {
@@ -435,10 +484,12 @@ message InfrastructureSignature {
   oneof signature {
     string topic_id = 1;
     string table_id = 2;
-    string view_id = 3;
+    string dmv1_view_id = 3;
     string sql_resource_id = 4;
     string api_endpoint_id = 5;
     string topic_to_table_sync_process_id = 6;
+    string materialized_view_id = 7;
+    string view_id = 8;
   }
 }
 

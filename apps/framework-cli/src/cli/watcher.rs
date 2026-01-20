@@ -341,8 +341,9 @@ async fn watch(
                             Ok(())
                         },
                         {
-                            use crate::cli::display::should_show_spinner;
-                            should_show_spinner(project.is_production)
+                            use crate::utilities::constants::SHOW_TIMING;
+                            use std::sync::atomic::Ordering;
+                            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
                         },
                     )
                     .await;

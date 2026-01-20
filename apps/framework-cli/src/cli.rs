@@ -11,6 +11,7 @@ use crate::cli::routines::seed_data;
 pub mod settings;
 pub mod watcher;
 use super::metrics::Metrics;
+use crate::utilities::display_config::{load_display_config, update_display_config, DisplayConfig};
 use crate::utilities::{constants, docker::DockerClient};
 use clap::Parser;
 use commands::{
@@ -39,6 +40,7 @@ use tracing::{debug, info, warn};
 use settings::Settings;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use crate::cli::routines::logs::{follow_logs, show_logs};
@@ -70,7 +72,7 @@ use crate::cli::routines::ls::ls_dmv2;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
 use crate::framework::languages::SupportedLanguages;
-use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
+use crate::utilities::constants::QUIET_STDOUT;
 use anyhow::Result;
 use std::time::Duration;
 use tokio::time::timeout;

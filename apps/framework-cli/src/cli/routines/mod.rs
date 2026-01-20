@@ -1078,12 +1078,19 @@ pub async fn remote_plan(
         let sql_resource_ids: HashSet<String> =
             local_infra_map.sql_resources.keys().cloned().collect();
 
+        let materialized_view_ids: HashSet<String> =
+            local_infra_map.materialized_views.keys().cloned().collect();
+
+        let view_ids: HashSet<String> = local_infra_map.views.keys().cloned().collect();
+
         get_remote_inframap_serverless(
             project,
             clickhouse_url,
             None,
             &table_names,
             &sql_resource_ids,
+            &materialized_view_ids,
+            &view_ids,
         )
         .await?
     } else {
@@ -1265,6 +1272,9 @@ pub async fn remote_gen_migration(
                 .collect();
             let target_sql_resource_ids: HashSet<String> =
                 local_infra_map.sql_resources.keys().cloned().collect();
+            let target_materialized_view_ids: HashSet<String> =
+                local_infra_map.materialized_views.keys().cloned().collect();
+            let target_view_ids: HashSet<String> = local_infra_map.views.keys().cloned().collect();
 
             get_remote_inframap_serverless(
                 project,
@@ -1272,6 +1282,8 @@ pub async fn remote_gen_migration(
                 redis_url.as_deref(),
                 &target_table_ids,
                 &target_sql_resource_ids,
+                &target_materialized_view_ids,
+                &target_view_ids,
             )
             .await?
         }
@@ -1324,6 +1336,8 @@ async fn get_remote_inframap_serverless(
     redis_url: Option<&str>,
     target_table_ids: &HashSet<String>,
     target_sql_resource_ids: &HashSet<String>,
+    target_materialized_view_ids: &HashSet<String>,
+    target_view_ids: &HashSet<String>,
 ) -> anyhow::Result<InfrastructureMap> {
     use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
     use crate::infrastructure::olap::clickhouse::create_client;
@@ -1345,6 +1359,8 @@ async fn get_remote_inframap_serverless(
         olap_client,
         target_table_ids,
         target_sql_resource_ids,
+        target_materialized_view_ids,
+        target_view_ids,
     )
     .await?;
 

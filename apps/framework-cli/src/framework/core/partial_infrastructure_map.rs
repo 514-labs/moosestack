@@ -54,7 +54,7 @@ use super::{
         table::{Column, Metadata, Table, TableIndex},
         topic::{KafkaSchema, Topic, DEFAULT_MAX_MESSAGE_BYTES},
         topic_sync_process::{TopicToTableSyncProcess, TopicToTopicSyncProcess},
-        view::View,
+        view::Dmv1View,
     },
     infrastructure_map::{InfrastructureMap, PrimitiveSignature, PrimitiveTypes},
 };
@@ -535,8 +535,6 @@ pub struct PartialInfrastructureMap {
     #[serde(default)]
     tables: HashMap<String, PartialTable>,
     #[serde(default)]
-    views: HashMap<String, View>,
-    #[serde(default)]
     sql_resources: HashMap<String, SqlResource>,
     #[serde(default)]
     topic_to_table_sync_processes: HashMap<String, TopicToTableSyncProcess>,
@@ -550,13 +548,16 @@ pub struct PartialInfrastructureMap {
     workflows: HashMap<String, PartialWorkflow>,
     #[serde(default)]
     web_apps: HashMap<String, PartialWebApp>,
-    /// Materialized views and regular views from the SDK
-    /// Using serde_json::Value temporarily until proper types are implemented
+    /// Internal views for data model versioning (aliases)
+    #[serde(default)]
+    dmv1_views: HashMap<String, Dmv1View>,
+    /// Materialized views from the SDK
     #[serde(default)]
     materialized_views: HashMap<
         String,
         crate::framework::core::infrastructure::materialized_view::MaterializedView,
     >,
+    /// Regular views from the SDK
     #[serde(default)]
     views: HashMap<String, crate::framework::core::infrastructure::view::View>,
     /// List of source files that exist in the project but were not loaded during the build process.
@@ -689,6 +690,8 @@ impl PartialInfrastructureMap {
             topics,
             api_endpoints,
             tables,
+            dmv1_views: self.dmv1_views,
+            materialized_views: self.materialized_views,
             views: self.views,
             sql_resources: self.sql_resources,
             topic_to_table_sync_processes,

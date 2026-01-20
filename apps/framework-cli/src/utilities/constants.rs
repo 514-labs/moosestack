@@ -8,6 +8,7 @@
 
 use lazy_static::lazy_static;
 use std::collections::HashMap;
+use std::sync::atomic::AtomicBool;
 use uuid::Uuid;
 
 pub const CLI_VERSION: &str = env!("MOOSE_CLI_VERSION");

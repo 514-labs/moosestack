@@ -194,13 +194,13 @@ fn get_latest_topic_id(topics: &HashMap<String, Topic>, data_model: &str) -> Opt
 }
 
 impl DataLineage for FunctionProcess {
-    fn pulls_data_from(&self) -> Vec<InfrastructureSignature> {
+    fn pulls_data_from(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
         vec![InfrastructureSignature::Topic {
             id: self.source_topic_id.clone(),
         }]
     }
 
-    fn pushes_data_to(&self) -> Vec<InfrastructureSignature> {
+    fn pushes_data_to(&self, _default_database: &str) -> Vec<InfrastructureSignature> {
         match &self.target_topic_id {
             Some(target_topic_id) => vec![InfrastructureSignature::Topic {
                 id: target_topic_id.clone(),

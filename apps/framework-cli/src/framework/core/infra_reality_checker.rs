@@ -16,15 +16,19 @@
 /// - Identifying structural differences in tables
 use crate::{
     framework::core::{
+        infrastructure::materialized_view::MaterializedView,
         infrastructure::sql_resource::SqlResource,
         infrastructure::table::Table,
+        infrastructure::view::View,
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
-    infrastructure::olap::{OlapChangesError, OlapOperations},
+    infrastructure::olap::{
+        clickhouse::sql_parser::normalize_sql_for_comparison, OlapChangesError, OlapOperations,
+    },
     project::Project,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 use tracing::{debug, warn};
 
@@ -63,6 +67,18 @@ pub struct InfraDiscrepancies {
     pub missing_sql_resources: Vec<String>,
     /// SQL resources that exist in both but have differences
     pub mismatched_sql_resources: Vec<OlapChange>,
+    /// Materialized views that exist in reality but are not in the map
+    pub unmapped_materialized_views: Vec<MaterializedView>,
+    /// Materialized views that are in the map but don't exist in reality
+    pub missing_materialized_views: Vec<String>,
+    /// Materialized views that exist in both but have differences
+    pub mismatched_materialized_views: Vec<OlapChange>,
+    /// Views that exist in reality but are not in the map
+    pub unmapped_views: Vec<View>,
+    /// Views that are in the map but don't exist in reality
+    pub missing_views: Vec<String>,
+    /// Views that exist in both but have differences
+    pub mismatched_views: Vec<OlapChange>,
 }
 
 impl InfraDiscrepancies {
@@ -74,7 +90,135 @@ impl InfraDiscrepancies {
             && self.unmapped_sql_resources.is_empty()
             && self.missing_sql_resources.is_empty()
             && self.mismatched_sql_resources.is_empty()
+            && self.unmapped_materialized_views.is_empty()
+            && self.missing_materialized_views.is_empty()
+            && self.mismatched_materialized_views.is_empty()
+            && self.unmapped_views.is_empty()
+            && self.missing_views.is_empty()
+            && self.mismatched_views.is_empty()
     }
+}
+
+/// Checks if two SQL strings are semantically equivalent.
+/// Uses AST-based normalization to handle:
+/// - Whitespace differences (newlines, tabs, multiple spaces)
+/// - Database prefix differences (e.g., `local.Table` vs `Table`)
+/// - Identifier quoting differences (e.g., `` `column` `` vs `column`)
+/// - Keyword casing differences
+///
+/// This is needed because ClickHouse reformats SQL when storing it
+/// (e.g., puts everything on one line, adds database prefixes, adds backticks).
+fn sql_is_equivalent(sql1: &str, sql2: &str, default_database: &str) -> bool {
+    let normalized1 = normalize_sql_for_comparison(sql1, default_database);
+    let normalized2 = normalize_sql_for_comparison(sql2, default_database);
+    normalized1 == normalized2
+}
+
+/// Normalizes a database reference for comparison.
+/// Treats `None` as equivalent to `Some(default_database)`.
+fn normalize_database(db: &Option<String>, default_database: &str) -> String {
+    db.as_deref().unwrap_or(default_database).to_string()
+}
+
+/// Normalizes a table reference for comparison.
+/// Now that source_tables come pre-formatted from TypeScript/Python libraries as:
+/// - `database_name`.`table_name` (with backticks) when database is specified
+/// - `table_name` (with backticks) when database is not specified
+///
+/// This function strips the default database prefix if present, leaving just `table_name`.
+/// Also removes backticks to match the SQL parser's behavior (sql_parser.rs:736).
+fn normalize_table_name(table: &str, default_database: &str) -> String {
+    // Handle the format: `database_name`.`table_name`
+    let prefix = format!("`{}`.", default_database);
+    let normalized = if table.starts_with(&prefix) {
+        // Strip the database prefix, leaving just `table_name`
+        table[prefix.len()..].to_string()
+    } else {
+        table.to_string()
+    };
+    // Strip backticks to match SQL parser behavior (sql_parser.rs:736)
+    normalized.replace('`', "")
+}
+
+/// Normalizes source tables for comparison by stripping default database prefix.
+/// Returns a HashSet for order-independent comparison.
+fn normalize_source_tables(tables: &[String], default_database: &str) -> HashSet<String> {
+    tables
+        .iter()
+        .map(|t| normalize_table_name(t, default_database))
+        .collect()
+}
+
+/// Checks if two MaterializedViews are semantically equivalent.
+/// Compares target table, source tables (order-independent), and normalized SELECT SQL.
+/// Uses default_database to normalize `None` database references.
+pub fn materialized_views_are_equivalent(
+    mv1: &MaterializedView,
+    mv2: &MaterializedView,
+    default_database: &str,
+) -> bool {
+    // Compare names
+    if mv1.name != mv2.name {
+        return false;
+    }
+
+    // Compare MV databases (where the MV itself is created)
+    if normalize_database(&mv1.database, default_database)
+        != normalize_database(&mv2.database, default_database)
+    {
+        return false;
+    }
+
+    // Compare target tables (normalize to strip backticks and database prefix)
+    if normalize_table_name(&mv1.target_table, default_database)
+        != normalize_table_name(&mv2.target_table, default_database)
+    {
+        return false;
+    }
+
+    // Compare target databases (None is equivalent to default_database)
+    if normalize_database(&mv1.target_database, default_database)
+        != normalize_database(&mv2.target_database, default_database)
+    {
+        return false;
+    }
+
+    // Compare source tables (order-independent via HashSet)
+    let sources1 = normalize_source_tables(&mv1.source_tables, default_database);
+    let sources2 = normalize_source_tables(&mv2.source_tables, default_database);
+    if sources1 != sources2 {
+        return false;
+    }
+
+    // Compare SELECT SQL (normalized)
+    sql_is_equivalent(&mv1.select_sql, &mv2.select_sql, default_database)
+}
+
+/// Checks if two Views are semantically equivalent.
+/// Compares source tables (order-independent) and normalized SELECT SQL.
+/// Uses default_database to normalize table references.
+pub fn views_are_equivalent(v1: &View, v2: &View, default_database: &str) -> bool {
+    // Compare names
+    if v1.name != v2.name {
+        return false;
+    }
+
+    // Compare view databases (where the view itself is created)
+    if normalize_database(&v1.database, default_database)
+        != normalize_database(&v2.database, default_database)
+    {
+        return false;
+    }
+
+    // Compare source tables (order-independent via HashSet)
+    let sources1 = normalize_source_tables(&v1.source_tables, default_database);
+    let sources2 = normalize_source_tables(&v2.source_tables, default_database);
+    if sources1 != sources2 {
+        return false;
+    }
+
+    // Compare SELECT SQL (normalized)
+    sql_is_equivalent(&v1.select_sql, &v2.select_sql, default_database)
 }
 
 /// The Infrastructure Reality Checker compares actual infrastructure state with the infrastructure map.
@@ -366,8 +510,47 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             actual_sql_resources.len()
         );
 
-        // Create a map of actual SQL resources by name
-        let actual_sql_resource_map: HashMap<String, _> = actual_sql_resources
+        // Convert SQL resources from reality to structured types (MVs and views)
+        // This allows us to compare them with the infra_map's materialized_views and views
+        let mut actual_materialized_views: HashMap<String, MaterializedView> = HashMap::new();
+        let mut actual_views: HashMap<String, View> = HashMap::new();
+        let mut remaining_sql_resources: Vec<SqlResource> = Vec::new();
+
+        for sql_resource in actual_sql_resources {
+            // Try to convert to MaterializedView first
+            if let Some(mv) = InfrastructureMap::try_migrate_sql_resource_to_mv(
+                &sql_resource,
+                &infra_map.default_database,
+            ) {
+                debug!(
+                    "Converted SQL resource '{}' to MaterializedView",
+                    sql_resource.name
+                );
+                actual_materialized_views.insert(mv.name.clone(), mv);
+            }
+            // Try to convert to View
+            else if let Some(view) = InfrastructureMap::try_migrate_sql_resource_to_view(
+                &sql_resource,
+                &infra_map.default_database,
+            ) {
+                debug!("Converted SQL resource '{}' to View", sql_resource.name);
+                actual_views.insert(view.name.clone(), view);
+            }
+            // Keep as SqlResource if it doesn't match MV or View patterns
+            else {
+                remaining_sql_resources.push(sql_resource);
+            }
+        }
+
+        debug!(
+            "Classified SQL resources: {} MVs, {} views, {} remaining sql_resources",
+            actual_materialized_views.len(),
+            actual_views.len(),
+            remaining_sql_resources.len()
+        );
+
+        // Create a map of actual SQL resources by name (only those that weren't converted)
+        let actual_sql_resource_map: HashMap<String, _> = remaining_sql_resources
             .into_iter()
             .map(|r| (r.name.clone(), r))
             .collect();
@@ -430,6 +613,115 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             mismatched_sql_resources.len()
         );
 
+        // Compare Materialized Views
+        debug!("Comparing materialized views with infrastructure map");
+        debug!(
+            "Actual MV IDs: {:?}",
+            actual_materialized_views.keys().collect::<Vec<_>>()
+        );
+        debug!(
+            "Infrastructure map MV IDs: {:?}",
+            infra_map.materialized_views.keys().collect::<Vec<_>>()
+        );
+
+        // Find unmapped MVs (exist in reality but not in map)
+        let unmapped_materialized_views: Vec<_> = actual_materialized_views
+            .values()
+            .filter(|mv| !infra_map.materialized_views.contains_key(&mv.name))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} unmapped materialized views",
+            unmapped_materialized_views.len()
+        );
+
+        // Find missing MVs (in map but don't exist in reality)
+        let missing_materialized_views: Vec<String> = infra_map
+            .materialized_views
+            .keys()
+            .filter(|id| !actual_materialized_views.contains_key(*id))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} missing materialized views: {:?}",
+            missing_materialized_views.len(),
+            missing_materialized_views
+        );
+
+        // Find mismatched MVs (exist in both but differ)
+        let mut mismatched_materialized_views = Vec::new();
+        for (id, desired) in &infra_map.materialized_views {
+            if let Some(actual) = actual_materialized_views.get(id) {
+                if !materialized_views_are_equivalent(actual, desired, &infra_map.default_database)
+                {
+                    debug!("Found mismatch in materialized view: {}", id);
+                    mismatched_materialized_views.push(OlapChange::MaterializedView(
+                        Change::Updated {
+                            before: Box::new(actual.clone()),
+                            after: Box::new(desired.clone()),
+                        },
+                    ));
+                }
+            }
+        }
+
+        debug!(
+            "Found {} mismatched materialized views",
+            mismatched_materialized_views.len()
+        );
+
+        // Compare Views
+        debug!("Comparing views with infrastructure map");
+        debug!(
+            "Actual view IDs: {:?}",
+            actual_views.keys().collect::<Vec<_>>()
+        );
+        debug!(
+            "Infrastructure map view IDs: {:?}",
+            infra_map.views.keys().collect::<Vec<_>>()
+        );
+
+        // Find unmapped views (exist in reality but not in map)
+        let unmapped_views: Vec<_> = actual_views
+            .values()
+            .filter(|view| !infra_map.views.contains_key(&view.name))
+            .cloned()
+            .collect();
+
+        debug!("Found {} unmapped views", unmapped_views.len());
+
+        // Find missing views (in map but don't exist in reality)
+        let missing_views: Vec<String> = infra_map
+            .views
+            .keys()
+            .filter(|id| !actual_views.contains_key(*id))
+            .cloned()
+            .collect();
+
+        debug!(
+            "Found {} missing views: {:?}",
+            missing_views.len(),
+            missing_views
+        );
+
+        // Find mismatched views (exist in both but differ)
+        let mut mismatched_views = Vec::new();
+        for (id, desired) in &infra_map.views {
+            if let Some(actual) = actual_views.get(id) {
+                if !views_are_equivalent(actual, desired, &infra_map.default_database) {
+                    debug!("Found mismatch in view: {}", id);
+                    mismatched_views.push(OlapChange::View(Change::Updated {
+                        before: Box::new(actual.clone()),
+                        after: Box::new(desired.clone()),
+                    }));
+                }
+            }
+        }
+
+        debug!("Found {} mismatched views", mismatched_views.len());
+
         let discrepancies = InfraDiscrepancies {
             unmapped_tables,
             missing_tables,
@@ -437,16 +729,31 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
             unmapped_sql_resources,
             missing_sql_resources,
             mismatched_sql_resources,
+            unmapped_materialized_views,
+            missing_materialized_views,
+            mismatched_materialized_views,
+            unmapped_views,
+            missing_views,
+            mismatched_views,
         };
 
         debug!(
-            "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables, {} unmapped SQL resources, {} missing SQL resources, {} mismatched SQL resources",
+            "Reality check complete. Found {} unmapped, {} missing, and {} mismatched tables, \
+            {} unmapped SQL resources, {} missing SQL resources, {} mismatched SQL resources, \
+            {} unmapped MVs, {} missing MVs, {} mismatched MVs, \
+            {} unmapped views, {} missing views, {} mismatched views",
             discrepancies.unmapped_tables.len(),
             discrepancies.missing_tables.len(),
             discrepancies.mismatched_tables.len(),
             discrepancies.unmapped_sql_resources.len(),
             discrepancies.missing_sql_resources.len(),
-            discrepancies.mismatched_sql_resources.len()
+            discrepancies.mismatched_sql_resources.len(),
+            discrepancies.unmapped_materialized_views.len(),
+            discrepancies.missing_materialized_views.len(),
+            discrepancies.mismatched_materialized_views.len(),
+            discrepancies.unmapped_views.len(),
+            discrepancies.missing_views.len(),
+            discrepancies.mismatched_views.len()
         );
 
         if discrepancies.is_empty() {
@@ -607,7 +914,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -617,6 +924,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         // Create reality checker
@@ -678,7 +987,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -688,6 +997,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -755,7 +1066,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -765,6 +1076,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -823,7 +1136,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -833,6 +1146,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -893,7 +1208,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -903,6 +1218,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -979,7 +1296,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -989,6 +1306,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1182,7 +1501,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -1192,6 +1511,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1247,7 +1568,7 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables: HashMap::new(),
-            views: HashMap::new(),
+            dmv1_views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
@@ -1257,6 +1578,8 @@ mod tests {
             sql_resources: HashMap::new(),
             workflows: HashMap::new(),
             web_apps: HashMap::new(),
+            materialized_views: HashMap::new(),
+            views: HashMap::new(),
         };
 
         infra_map
@@ -1298,5 +1621,104 @@ mod tests {
             }
             _ => panic!("Expected TableChange::Updated variant"),
         }
+    }
+
+    #[test]
+    fn test_normalize_table_name_strips_backticks() {
+        let default_db = "mydb";
+
+        // Test simple table name with backticks
+        assert_eq!(
+            normalize_table_name("`events`", default_db),
+            "events",
+            "Should strip backticks from table name"
+        );
+
+        // Test table name without backticks (should remain unchanged)
+        assert_eq!(
+            normalize_table_name("events", default_db),
+            "events",
+            "Should handle table name without backticks"
+        );
+
+        // Test qualified table name with backticks
+        assert_eq!(
+            normalize_table_name("`mydb`.`events`", default_db),
+            "events",
+            "Should strip database prefix and backticks"
+        );
+
+        // Test qualified table name with different database
+        assert_eq!(
+            normalize_table_name("`otherdb`.`events`", default_db),
+            "otherdb.events",
+            "Should keep other database prefix but strip backticks"
+        );
+    }
+
+    #[test]
+    fn test_materialized_views_are_equivalent_with_backticks() {
+        use crate::framework::core::infrastructure::materialized_view::MaterializedView;
+
+        let default_db = "mydb";
+
+        // MV from SDK (with backticks)
+        let mv_sdk = MaterializedView {
+            name: "test_mv".to_string(),
+            database: None,
+            target_table: "`events`".to_string(),
+            target_database: None,
+            select_sql: "SELECT * FROM `source`".to_string(),
+            source_tables: vec!["`source`".to_string()],
+            metadata: None,
+        };
+
+        // MV from migrated SQL (without backticks, as SQL parser strips them)
+        let mv_migrated = MaterializedView {
+            name: "test_mv".to_string(),
+            database: None,
+            target_table: "events".to_string(),
+            target_database: None,
+            select_sql: "SELECT * FROM source".to_string(),
+            source_tables: vec!["source".to_string()],
+            metadata: None,
+        };
+
+        // These should be equivalent despite backtick differences
+        assert!(
+            materialized_views_are_equivalent(&mv_sdk, &mv_migrated, default_db),
+            "MVs should be equivalent despite backtick differences"
+        );
+    }
+
+    #[test]
+    fn test_views_are_equivalent_with_backticks() {
+        use crate::framework::core::infrastructure::view::View;
+
+        let default_db = "mydb";
+
+        // View from SDK (with backticks)
+        let view_sdk = View {
+            name: "test_view".to_string(),
+            database: None,
+            select_sql: "SELECT * FROM `source`".to_string(),
+            source_tables: vec!["`source`".to_string()],
+            metadata: None,
+        };
+
+        // View from migrated SQL (without backticks)
+        let view_migrated = View {
+            name: "test_view".to_string(),
+            database: None,
+            select_sql: "SELECT * FROM source".to_string(),
+            source_tables: vec!["source".to_string()],
+            metadata: None,
+        };
+
+        // These should be equivalent despite backtick differences
+        assert!(
+            views_are_equivalent(&view_sdk, &view_migrated, default_db),
+            "Views should be equivalent despite backtick differences"
+        );
     }
 }

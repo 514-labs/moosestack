@@ -626,6 +626,8 @@ mod tests {
             topics: HashMap::new(),
             api_endpoints: HashMap::new(),
             tables,
+            dmv1_views: HashMap::new(),
+            materialized_views: HashMap::new(),
             views: HashMap::new(),
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),

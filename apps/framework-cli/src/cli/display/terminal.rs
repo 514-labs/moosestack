@@ -12,8 +12,6 @@ use crossterm::{
 };
 use std::io::{stderr, stdout, Result as IoResult};
 
-use crate::utilities::display_config::load_display_config;
-
 /// Width of the action column in terminal output
 pub const ACTION_WIDTH: usize = 15;
 

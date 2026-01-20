@@ -5,20 +5,20 @@ use super::{
     },
     RoutineFailure, RoutineSuccess,
 };
-use crate::cli::display::should_show_spinner;
 use crate::cli::display::{
     show_message_wrapper, with_spinner_completion, with_timing, Message, MessageType,
 };
 use crate::cli::settings::Settings;
 use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
-use crate::utilities::constants::CLI_PROJECT_INTERNAL_DIR;
+use crate::utilities::constants::{CLI_PROJECT_INTERNAL_DIR, SHOW_TIMING};
 use crate::utilities::package_managers::{
     check_local_pnpm_version_warning, detect_pnpm_deploy_mode, find_pnpm_workspace_root,
     legacy_deploy_terminal_message, legacy_deploy_warning_message, PnpmDeployMode,
 };
 use crate::{cli::routines::util::ensure_docker_running, utilities::docker::DockerClient};
 use lazy_static::lazy_static;
+use std::sync::atomic::Ordering;
 
 pub fn run_local_infrastructure(
     project: &Project,
@@ -121,7 +121,7 @@ pub fn run_local_infrastructure(
 lazy_static! {
     static ref FAILED_TO_CREATE_INTERNAL_DIR: Message = Message::new(
         "Failed".to_string(),
-        format!("to create {CLI_PROJECT_INTERNAL_DIR} directory. Check permissions or contact us"),
+        format!("to create {CLI_PROJECT_INTERNAL_DIR} directory. Check permissions or contact us`"),
     );
 }
 
@@ -131,7 +131,7 @@ pub fn run_containers(project: &Project, docker_client: &DockerClient) -> anyhow
             "Starting local infrastructure",
             "Local infrastructure started successfully",
             || docker_client.start_containers(project),
-            should_show_spinner(project.is_production),
+            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
         )
     })
 }

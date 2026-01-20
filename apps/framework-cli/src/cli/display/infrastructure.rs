@@ -37,6 +37,7 @@ use crate::framework::core::{
 };
 use crate::utilities::constants::{NO_ANSI, QUIET_STDOUT, SHOW_TIMESTAMPS};
 use crossterm::{execute, style::Print};
+use std::sync::atomic::Ordering;
 use tracing::info;
 
 /// Create the detail indentation string at compile time
@@ -645,6 +646,12 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                     format!("Source tables: {}", sources),
                 ],
             );
+        }
+        OlapChange::Dmv1View(view_change) => {
+            handle_standard_change!(view_change);
+        }
+        OlapChange::MaterializedView(view_change) => {
+            handle_standard_change!(view_change);
         }
     });
 }
