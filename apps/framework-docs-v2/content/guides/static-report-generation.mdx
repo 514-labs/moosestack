@@ -1525,11 +1525,24 @@ GROUP BY transactionId
 HAVING cnt > 1
 ```
 
-To deduplicate queries, use the `FINAL` modifier:
+To deduplicate in queries, use `GROUP BY` or subqueries:
 
 ```sql
-SELECT * FROM local.sales_SalesTransaction FINAL
+-- Option 1: Aggregate to get unique transactions
+SELECT transactionId, max(saleTimestamp) as saleTimestamp, sum(totalAmount) as totalAmount
+FROM local.sales_SalesTransaction
+GROUP BY transactionId
+
+-- Option 2: Use a subquery to get the latest record per transaction
+SELECT * FROM local.sales_SalesTransaction
+WHERE (transactionId, saleTimestamp) IN (
+  SELECT transactionId, max(saleTimestamp)
+  FROM local.sales_SalesTransaction
+  GROUP BY transactionId
+)
 ```
+
+**Note:** The `FINAL` modifier only works with specific MergeTree variants (ReplacingMergeTree, CollapsingMergeTree) that support row-level deduplication. Standard MergeTree tables require manual deduplication via queries.
 
 #### Query Issues
 
