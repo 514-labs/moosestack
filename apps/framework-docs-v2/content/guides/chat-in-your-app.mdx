@@ -456,7 +456,7 @@ validate the inferred types against the sample data in context/data - check for 
 
 Repeat this for each table you want to model.
 
-### Bulk add data locally
+#### Bulk add data locally
 
 Create a SQL file to load up your data from your remote source to your local ClickHouse:
 
@@ -488,7 +488,7 @@ Make sure to properly apply any transformations to conform your S3 data to the d
 * Column renamings will have to be done in SQL  
 * Default values in CH only set the value where the column is omitted in an insert. If the column was “null” in the source, you will have to cast that in the insert.
 
-#### Execute the SQL query to load data into your local ClickHouse
+**Execute the SQL query to load data into your local ClickHouse:**
 
 ```shell
 moose query -f load-data.sql
@@ -510,7 +510,9 @@ moose query "SELECT COUNT(*) FROM
 
 You will now have a ready to test and iterate on local development environment: with your local MooseStack up and running, with local ClickHouse populated with real data, and the front-end ready to test.
 
-### Chat with your data
+### Test and extend your frontend application
+
+#### Chat with your data
 
 Just go to [http://localhost:3000](http://localhost:3000/): everything should be good to go. Chat away!
 
@@ -518,7 +520,7 @@ Just go to [http://localhost:3000](http://localhost:3000/): everything should be
 To customize your chat's system prompt, edit `packages/web-app/src/features/chat/system-prompt.ts`.
 </Callout>
 
-### Create custom API endpoints, and a custom front-end:
+#### Create custom API endpoints and a custom front-end
 
 There’s a bootstrapped Next.js application, and an Express app that you can use to add to your framework.
 
@@ -615,7 +617,7 @@ You can find your Boreal endpoint URL at the top of the project overview page:
 
 ![][image4]
 
-### Hydrate your production deployment
+#### Hydrate your production deployment
 
 Your project is now deployed. You have a Vercel hosted frontend. You have a Boreal hosted backend, with tables, APIs etc. set up for you.
 
@@ -625,7 +627,7 @@ This section will cover how to get data into prod.
 
 Note, it assumes a bulk ingest from a Parquet file on S3 with direct insertion through SQL, like the rest of this tutorial. If you configured a recurring workflow, that would automate data ingest (depending on the trigger). If you set up an ingestion endpoint, you may need to send data to said endpoint. 
 
-#### Find your boreal connection string / database details
+**Find your Boreal connection string / database details:**
 
 It is in the Database tab of your deployment overview:  
 ![][image5]  
@@ -633,7 +635,7 @@ Make sure to select the appropriate connection string type:
 
 ![][image6]
 
-#### Connect your SQL client, and run the following ClickHouse SQL query:
+**Connect your SQL client, and run the following ClickHouse SQL query:**
 
 ```sql
 -- Bulk load Parquet data from S3 into ClickHouse 
@@ -665,7 +667,7 @@ This will again return 0 rows. This is expected. You can validate that the trans
       `<clickhouse-database>`.tablename"
 ```
 
-## Adding Chat to Your Existing Next.js Application
+## Tutorial: Adding Chat to Your Existing Next.js Application
 
 <Callout type="info" title="Assumptions">
 - You have a monorepo

@@ -4,6 +4,11 @@ import { cliLog, getClickhouseClient } from "../commons";
 import { Blocks } from "./helpers";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
 
 const walkDir = (dir: string, fileExtension: string, fileList: string[]) => {
   const files = fs.readdirSync(dir);
@@ -104,7 +109,19 @@ export const runBlocks = async (config: BlocksConfig) => {
   const chClient = getClickhouseClient(toClientConfig(config.clickhouseConfig));
   console.log(`Connected`);
 
-  const blocksFiles = walkDir(config.blocksDir, ".ts", []);
+  // Check if we should use compiled code
+  const useCompiled = shouldUseCompiled();
+  const sourceDir = getSourceDir();
+
+  // Adjust blocksDir for compiled mode
+  const blocksDir =
+    useCompiled ?
+      `${process.cwd()}/.moose/compiled/${sourceDir}/blocks/`
+    : config.blocksDir;
+
+  // Use appropriate file extension for compiled mode
+  const fileExtension = useCompiled ? ".js" : ".ts";
+  const blocksFiles = walkDir(blocksDir, fileExtension, []);
   const numOfBlockFiles = blocksFiles.length;
   console.log(`Found ${numOfBlockFiles} blocks files`);
 
@@ -118,11 +135,13 @@ export const runBlocks = async (config: BlocksConfig) => {
     }
   });
 
-  for (const path of blocksFiles) {
-    console.log(`Adding to queue: ${path}`);
+  for (const blockPath of blocksFiles) {
+    console.log(`Adding to queue: ${blockPath}`);
 
     try {
-      const blocks = require(path).default as Blocks;
+      // Use dynamic loader that handles both CJS and ESM
+      const blockModule = await loadModule(blockPath);
+      const blocks = blockModule.default as Blocks;
       queue.push({
         chClient,
         blocks,
@@ -131,7 +150,7 @@ export const runBlocks = async (config: BlocksConfig) => {
     } catch (err) {
       cliLog({
         action: "Blocks",
-        message: `Failed to import blocks from ${path}: ${err}`,
+        message: `Failed to import blocks from ${blockPath}: ${err}`,
         message_type: "Error",
       });
     }

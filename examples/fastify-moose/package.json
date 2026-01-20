@@ -4,7 +4,7 @@
   "description": "Example repository for embedding MooseStack in a Fastify app",
   "type": "module",
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=20 <25"
   },
   "scripts": {
     "dev": "pnpm dev:fastify",
@@ -25,7 +25,7 @@
     "typia": "^10.1.0"
   },
   "devDependencies": {
-    "@types/node": "^24.10.4",
+    "@types/node": "^20",
     "cross-env": "^10.1.0",
     "fastify-tsconfig": "^3.0.0",
     "prettier": "^3.7.3",
