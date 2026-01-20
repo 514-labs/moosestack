@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Suspense } from "react";
 import "@/styles/globals.css";
 import { VercelToolbar } from "@vercel/toolbar/next";
+import { Apollo } from "@/components/apollo";
 import { CommonRoom } from "@/components/common-room";
 import { LanguageProviderWrapper } from "@/components/language-provider-wrapper";
 import { TopNavWithFlags } from "@/components/navigation/top-nav-with-flags";
@@ -29,6 +30,7 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <Apollo />
         <CommonRoom />
         <ScrollRestoration />
         <ThemeProvider
