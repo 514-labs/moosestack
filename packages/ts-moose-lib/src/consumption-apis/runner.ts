@@ -8,6 +8,11 @@ import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
 
 interface ClickhouseConfig {
   database: string;
@@ -47,6 +52,11 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   useSSL: config.useSSL ? "true" : "false",
 });
 
+const createPath = (apisDir: string, path: string, useCompiled: boolean) => {
+  const extension = useCompiled ? ".js" : ".ts";
+  return `${apisDir}${path}${extension}`;
+};
+
 const httpLogger = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -80,6 +90,16 @@ const apiHandler = async (
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
 ) => {
+  // Check if we should use compiled code
+  const useCompiled = shouldUseCompiled();
+  const sourceDir = getSourceDir();
+
+  // Adjust apisDir for compiled mode
+  const actualApisDir =
+    useCompiled ?
+      `${process.cwd()}/.moose/compiled/${sourceDir}/apis/`
+    : undefined;
+
   const apis = await getApis();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const start = Date.now();
@@ -120,6 +140,10 @@ const apiHandler = async (
         return;
       }
 
+      const pathName =
+        actualApisDir ?
+          createPath(actualApisDir, fileName, useCompiled)
+        : fileName;
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
         (obj: { [key: string]: string[] | string }, [key, value]) => {
           const existingValue = obj[key];
@@ -137,7 +161,7 @@ const apiHandler = async (
         {},
       );
 
-      let userFuncModule = modulesCache.get(fileName);
+      let userFuncModule = modulesCache.get(pathName);
       if (userFuncModule === undefined) {
         let apiName = fileName.replace(/^\/+|\/+$/g, "");
         let version: string | null = null;
