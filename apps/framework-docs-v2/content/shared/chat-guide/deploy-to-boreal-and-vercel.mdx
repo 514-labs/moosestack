@@ -1,0 +1,64 @@
+### Deploy to Boreal and Vercel
+
+We'll prepare the application for deployment by setting up authentication, then deploy the MooseStack application to Boreal, and the web-app to Vercel. You can set up authentication and hosting to your preferences, if we haven't covered your preferred option in our docs, reach out in our slack community: [https://slack.moosestack.com/](https://slack.moosestack.com/). 
+
+Authentication was covered in the start of this guide, but covers back end to front end authentication only (you should also add authentication to restrict access to your frontend).
+
+#### Deploy MooseStack to Boreal
+
+[Go to boreal.cloud, and set up an account](https://www.boreal.cloud/sign-up). Link your Github account. Create an organization. Create a new project:
+
+Select import a MooseStack Project:
+
+![][image1]
+
+Set the path to the root of the MooseStack service:
+
+```text
+packages/moosestack-service
+```
+
+And set the Environment Variables used in the project ([following the same steps defined above](#create-and-configure-.env-files:)):
+
+```text
+MOOSE_INGEST_API_KEY
+MOOSE_CONSUMPTION_API_KEY
+MOOSE_ADMIN_TOKEN
+MOOSE_WEB_APP_API_KEYS
+```
+
+![][image2]
+
+Continue, selecting Boreal default hosting (or point it at your own managed ClickHouse and Redpanda instances if you like).
+
+![][image3]
+
+Click Deploy, and you'll see your application MooseStack being deployed.
+
+#### Deploy your Next.js frontend to Vercel
+
+<Callout type="warning" title="Authentication">
+The authentication set up above just ensures your backend and frontend can communicate securely. You still need to add authentication to your frontend to restrict access to your data.
+
+Vercel offers this natively for preview deployments. For production, consider [NextAuth](https://next-auth.js.org/), [Auth0](https://auth0.com/), or [Clerk](https://clerk.com/).
+
+See Vercel docs:
+- [Vercel authentication](https://vercel.com/docs/deployment-protection/methods-to-protect-deployments/vercel-authentication)
+- [Third party auth](https://vercel.com/guides/application-authentication-on-vercel)
+</Callout>
+
+##### Deployment
+
+1. From the Vercel home-page, add a new project.  
+2. Point it at this project, and set the root directory to packages/web-app  
+3. Set the following environment variables
+
+```text
+ANTHROPIC_API_KEY: Your Anthropic API key for chat functionality
+NEXT_PUBLIC_API_URL: Your Boreal endpoint URL (e.g., `https://your-project.boreal.cloud`)
+API_KEY: Use the bearer token generated earlier
+```
+
+You can find your Boreal endpoint URL at the top of the project overview page:
+
+![][image4]
