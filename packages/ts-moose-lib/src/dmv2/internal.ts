@@ -480,6 +480,36 @@ interface WebAppJson {
   metadata?: { description?: string };
 }
 
+interface MaterializedViewJson {
+  /** The name of the materialized view. */
+  name: string;
+  /** Database where the MV is created (None = default database). */
+  database?: string;
+  /** The raw SELECT SQL statement. */
+  select_sql: string;
+  /** Names of source tables/views referenced in the SELECT. */
+  source_tables: string[];
+  /** Name of the target table where transformed data is written. */
+  target_table: string;
+  /** Database of the target table (None = same as MV database). */
+  target_database?: string;
+  /** Optional metadata for the materialized view. */
+  metadata?: { description?: string };
+}
+
+interface ViewJson {
+  /** The name of the view. */
+  name: string;
+  /** Database where the view is created (None = default database). */
+  database?: string;
+  /** The raw SELECT SQL statement. */
+  select_sql: string;
+  /** Names of source tables/views referenced in the SELECT. */
+  source_tables: string[];
+  /** Optional metadata for the view. */
+  metadata?: { description?: string };
+}
+
 interface SqlResourceJson {
   /** The name of the SQL resource. */
   name: string;
@@ -878,6 +908,8 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const sqlResources: { [key: string]: SqlResourceJson } = {};
   const workflows: { [key: string]: WorkflowJson } = {};
   const webApps: { [key: string]: WebAppJson } = {};
+  const materializedViews: { [key: string]: MaterializedViewJson } = {};
+  const views: { [key: string]: ViewJson } = {};
 
   registry.tables.forEach((table) => {
     const id =
