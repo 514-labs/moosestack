@@ -113,22 +113,26 @@ You're a data engineer at **Apex Retail**, a growing retail chain with 12 stores
 
 ### Architecture Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Data Flow                                   │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   CSV/JSON Files     POST /ingest/sales      Redpanda Stream        │
-│   ─────────────► ──────────────────────► ────────────────────►      │
-│                                                                     │
-│   ClickHouse Table   Materialized View      Consumption API         │
-│   ◄────────────────  ◄────────────────     ◄────────────────        │
-│   (Raw Transactions) (Daily Summaries)     (JSON Endpoint)          │
-│                                                                     │
-│                                              PDF Export             │
-│                                             ◄────────────────       │
-│                                             (Executive Summary)     │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Input
+        A[CSV/JSON Files]
+    end
+
+    subgraph MooseStack
+        B[POST /ingest/sales]
+        C[Redpanda Stream]
+        D[(ClickHouse Table<br/>Raw Transactions)]
+        E[Materialized View<br/>Daily Summaries]
+        F[Consumption API<br/>JSON Endpoint]
+    end
+
+    subgraph Output
+        G[PDF Export<br/>Executive Summary]
+    end
+
+    A --> B --> C --> D
+    D --> E --> F --> G
 ```
 
 ### The End Result
