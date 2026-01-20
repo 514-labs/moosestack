@@ -70,7 +70,7 @@
 //! );
 //! ```
 
-use crate::utilities::display_config::load_display_config;
+use crate::utilities::display_config::{load_display_config, DisplayConfig};
 
 #[macro_use]
 pub mod message_display;
@@ -117,7 +117,13 @@ pub use timing::{with_timing, with_timing_async};
 /// }
 /// ```
 pub fn should_show_spinner(is_production: bool) -> bool {
-    !is_production && !load_display_config().show_timing
+    should_show_spinner_with_config(is_production, &load_display_config())
+}
+
+/// Internal helper for determining if spinner should be shown.
+/// Exposed for testing without global state.
+fn should_show_spinner_with_config(is_production: bool, config: &DisplayConfig) -> bool {
+    !is_production && !config.show_timing
 }
 
 // Legacy compatibility - maintain the crossterm_utils module for existing code
@@ -139,67 +145,55 @@ pub mod crossterm_utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utilities::display_config::{
-        test_utils::TEST_LOCK, update_display_config, DisplayConfig,
-    };
+    use crate::utilities::display_config::DisplayConfig;
+
+    // Unit tests for should_show_spinner logic (no global state, no lock needed)
 
     #[test]
     fn test_should_show_spinner_in_dev_mode_without_timing() {
-        let _lock = TEST_LOCK.lock().unwrap();
-
-        // Setup: dev mode (is_production=false), no timing
-        update_display_config(DisplayConfig {
+        let config = DisplayConfig {
             no_ansi: false,
             show_timestamps: false,
             show_timing: false,
-        });
+        };
 
         // Should show spinner in dev mode when timing is disabled
-        assert!(should_show_spinner(false));
+        assert!(should_show_spinner_with_config(false, &config));
     }
 
     #[test]
     fn test_should_not_show_spinner_in_production() {
-        let _lock = TEST_LOCK.lock().unwrap();
-
-        // Setup: production mode (is_production=true), no timing
-        update_display_config(DisplayConfig {
+        let config = DisplayConfig {
             no_ansi: false,
             show_timestamps: false,
             show_timing: false,
-        });
+        };
 
         // Should NOT show spinner in production mode
-        assert!(!should_show_spinner(true));
+        assert!(!should_show_spinner_with_config(true, &config));
     }
 
     #[test]
     fn test_should_not_show_spinner_when_timing_enabled() {
-        let _lock = TEST_LOCK.lock().unwrap();
-
-        // Setup: dev mode (is_production=false), timing enabled
-        update_display_config(DisplayConfig {
+        let config = DisplayConfig {
             no_ansi: false,
             show_timestamps: false,
             show_timing: true,
-        });
+        };
 
         // Should NOT show spinner when timing is enabled (conflicts with timing output)
-        assert!(!should_show_spinner(false));
+        assert!(!should_show_spinner_with_config(false, &config));
     }
 
     #[test]
     fn test_should_not_show_spinner_in_production_with_timing() {
-        let _lock = TEST_LOCK.lock().unwrap();
-
-        // Setup: production mode (is_production=true), timing enabled
-        update_display_config(DisplayConfig {
+        let config = DisplayConfig {
             no_ansi: false,
             show_timestamps: false,
             show_timing: true,
-        });
+        };
 
         // Should NOT show spinner in production mode even with timing
-        assert!(!should_show_spinner(true));
+        assert!(!should_show_spinner_with_config(true, &config));
     }
 }

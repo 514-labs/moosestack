@@ -128,22 +128,9 @@ mod tests {
         test_utils::TEST_LOCK, update_display_config, DisplayConfig,
     };
 
-    #[test]
-    fn test_with_timing_returns_value() {
-        let _lock = TEST_LOCK.lock().unwrap();
-
-        update_display_config(DisplayConfig {
-            no_ansi: false,
-            show_timestamps: false,
-            show_timing: false,
-        });
-        let result = with_timing("Test", || 42);
-        assert_eq!(result, 42);
-    }
-
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn test_with_timing_async_returns_value() {
+    async fn test_timing_functions_return_values() {
         let _lock = TEST_LOCK.lock().unwrap();
 
         update_display_config(DisplayConfig {
@@ -152,10 +139,12 @@ mod tests {
             show_timing: false,
         });
 
-        // Hold the lock across the await for proper test isolation
-        // The future `async { 42 }` resolves immediately, so there's no actual
-        // concurrency that would cause deadlock issues (Clippy warning suppressed above)
-        let result = with_timing_async("Test", async { 42 }).await;
-        assert_eq!(result, 42);
+        // Test sync version
+        let result_sync = with_timing("Test", || 42);
+        assert_eq!(result_sync, 42);
+
+        // Test async version
+        let result_async = with_timing_async("Test", async { 42 }).await;
+        assert_eq!(result_async, 42);
     }
 }
