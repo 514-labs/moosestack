@@ -205,7 +205,7 @@ const apiHandler = async (
           throw new Error(errorMessage);
         }
 
-        modulesCache.set(fileName, userFuncModule);
+        modulesCache.set(pathName, userFuncModule);
         console.log(`[API] | Executing API: ${apiName}`);
       }
 
