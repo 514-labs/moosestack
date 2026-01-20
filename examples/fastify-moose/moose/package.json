@@ -1,0 +1,38 @@
+{
+  "name": "moose",
+  "private": true,
+  "version": "0.0.1",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build:types": "tspc -p tsconfig.json --declaration --emitDeclarationOnly",
+    "build": "pnpm build:types && tspc -p tsconfig.json",
+    "dev": "moose-cli dev",
+    "moose": "moose-cli"
+  },
+  "dependencies": {
+    "@514labs/moose-lib": "^0.6.293",
+    "ts-patch": "^3.3.0",
+    "typia": "^10.1.0"
+  },
+  "devDependencies": {
+    "@514labs/moose-cli": "^0.6.293",
+    "@types/node": "^20",
+    "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript"
+    ]
+  }
+}

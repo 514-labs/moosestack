@@ -1,0 +1,355 @@
+# Code Blocks Rendering Test
+
+This guide tests how code blocks render across different languages and scenarios commonly used in the documentation.
+
+## Inline Code
+
+Inline code should render within the flow of text. For example, you can use `npm install` to install packages, or run `moose dev` to start the development server.
+
+Here are more examples:
+- The `BOREAL_CONNECTION_STRING` environment variable is required
+- Use `const x = 5;` to declare a constant in TypeScript
+- The function `getUserById(id)` returns a user object
+- Import with `import { useState } from 'react'`
+- Database connection: `postgresql://localhost:5432/mydb`
+
+You can also have inline code with special characters like `<Component />` or `array[0]` or `user?.name`.
+
+## Plain Text (No Language Specification)
+
+Code blocks without a language should render as plain text with no syntax highlighting:
+
+```
+This is plain text
+No syntax highlighting should be applied
+Just plain text rendering
+Some more lines here
+```
+
+## TypeScript
+
+```typescript
+import { Ingest } from "@514labs/moose-lib";
+
+interface UserActivity {
+  eventId: string;
+  timestamp: string;
+  userId: string;
+  activity: string;
+}
+
+export default function handler(event: UserActivity) {
+  return event;
+}
+```
+
+## Python
+
+```python
+from mooseclient import Ingest
+from dataclasses import dataclass
+from datetime import datetime
+
+@dataclass
+class UserActivity:
+    event_id: str
+    timestamp: datetime
+    user_id: str
+    activity: str
+
+def handler(event: UserActivity):
+    return event
+```
+
+## JavaScript
+
+```javascript
+const express = require("express");
+const app = express();
+
+app.get("/api/users", async (req, res) => {
+  const users = await db.query("SELECT * FROM users");
+  res.json(users);
+});
+```
+
+## SQL
+
+```sql
+SELECT
+  user_id,
+  COUNT(*) as event_count,
+  MAX(timestamp) as last_activity
+FROM user_events
+WHERE timestamp >= now() - INTERVAL 7 DAY
+GROUP BY user_id
+ORDER BY event_count DESC
+LIMIT 10;
+```
+
+## Shell/Bash Commands
+
+```shell
+moose init my-project typescript
+cd my-project
+pnpm install
+pnpm dev
+```
+
+```bash
+npm install -g @514labs/moose-cli
+moose --version
+```
+
+## Long Shell Commands (Testing Horizontal Scrolling)
+
+```shell
+docker run -d --name my-container --env DATABASE_URL=postgresql://user:password@localhost:5432/mydb --env API_KEY=sk_test_1234567890abcdefghijklmnopqrstuvwxyz --env NODE_ENV=production -p 8080:8080 -v /host/path/to/data:/container/data my-image:latest
+```
+
+```bash
+curl -X POST https://api.example.com/v1/users/create \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ" \
+  -d '{"name":"John Doe","email":"john@example.com","role":"admin"}'
+```
+
+```shell
+# Complex command with pipes and redirects
+cat /var/log/application.log | grep "ERROR" | awk '{print $1, $2, $NF}' | sort | uniq -c | sort -rn | head -20 > error-summary.txt
+```
+
+```bash
+# Long NPM install with specific versions
+npm install @typescript-eslint/parser@5.62.0 @typescript-eslint/eslint-plugin@5.62.0 eslint-config-next@14.0.4 eslint-plugin-react@7.33.2 eslint-plugin-react-hooks@4.6.0 --save-dev
+```
+
+## YAML Configuration
+
+```yaml
+name: moose-project
+version: 1.0.0
+dependencies:
+  - clickhouse
+  - redpanda
+services:
+  database:
+    type: clickhouse
+    port: 8123
+```
+
+## JSON
+
+```json
+{
+  "name": "user-activity-tracker",
+  "version": "0.1.0",
+  "config": {
+    "database": {
+      "host": "localhost",
+      "port": 5432
+    },
+    "features": ["analytics", "realtime"]
+  }
+}
+```
+
+## TOML
+
+```toml
+[package]
+name = "moose-cli"
+version = "0.1.0"
+
+[dependencies]
+clickhouse = "0.11"
+tokio = { version = "1.0", features = ["full"] }
+```
+
+## Rust
+
+```rust
+use clickhouse::Client;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct UserEvent {
+    user_id: String,
+    timestamp: i64,
+    event_type: String,
+}
+
+async fn query_events(client: &Client) -> Result<Vec<UserEvent>> {
+    let events = client
+        .query("SELECT * FROM user_events")
+        .fetch_all::<UserEvent>()
+        .await?;
+    Ok(events)
+}
+```
+
+## Go
+
+```go
+package main
+
+import (
+    "fmt"
+    "database/sql"
+    _ "github.com/ClickHouse/clickhouse-go"
+)
+
+type UserEvent struct {
+    UserID    string
+    Timestamp int64
+    EventType string
+}
+
+func main() {
+    db, err := sql.Open("clickhouse", "tcp://localhost:9000")
+    if err != nil {
+        panic(err)
+    }
+    defer db.Close()
+}
+```
+
+## Dockerfile
+
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+## Environment Variables (.env)
+
+```env
+DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=sk_test_1234567890
+NODE_ENV=development
+PORT=3000
+```
+
+## XML
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <database>
+    <host>localhost</host>
+    <port>8123</port>
+  </database>
+  <features>
+    <feature name="analytics" enabled="true" />
+    <feature name="realtime" enabled="false" />
+  </features>
+</configuration>
+```
+
+## Markdown
+
+```markdown
+# My Documentation
+
+This is a **bold** statement and this is *italic*.
+
+- Item 1
+- Item 2
+- Item 3
+
+[Link to docs](https://example.com)
+```
+
+## HTML
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard</title>
+</head>
+<body>
+    <div id="app">
+        <h1>Welcome to MooseStack</h1>
+    </div>
+</body>
+</html>
+```
+
+## CSS
+
+```css
+.code-block {
+  border-radius: 8px;
+  background-color: #f6f8fa;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.code-block pre {
+  margin: 0;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+```
+
+## GraphQL
+
+```graphql
+query GetUser($id: ID!) {
+  user(id: $id) {
+    id
+    name
+    email
+    posts {
+      id
+      title
+      content
+    }
+  }
+}
+
+mutation CreatePost($input: PostInput!) {
+  createPost(input: $input) {
+    id
+    title
+  }
+}
+```
+
+## Long Lines Test (Horizontal Scrolling)
+
+Code blocks should support horizontal scrolling for very long lines:
+
+```
+This is a very long line of text that should test how the code block handles wrapping or horizontal scrolling when the content exceeds the width of the container and continues on and on and on
+Short line
+Another very long line with lots of content: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris
+Normal line again
+https://this-is-a-very-long-url-that-should-not-break-and-should-allow-horizontal-scrolling.example.com/api/v1/users/12345/profile/settings/notifications/preferences/email/subscriptions/marketing
+```
+
+## Mixed Content
+
+```typescript
+// TypeScript with comments and long lines
+export const VERY_LONG_CONSTANT_NAME = "https://api.example.com/v1/users/profiles/settings/notifications/preferences/subscriptions";
+
+/**
+ * This is a multiline comment that explains the function
+ * It should render properly with syntax highlighting
+ */
+function processUserData(userId: string, options: { enableCache: boolean; timeout: number }) {
+  // Implementation here
+  return fetch(`${VERY_LONG_CONSTANT_NAME}/${userId}`);
+}
+```

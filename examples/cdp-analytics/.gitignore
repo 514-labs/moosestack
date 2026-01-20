@@ -1,0 +1,17 @@
+.moose
+node_modules
+dist
+coverage
+.ts-node
+
+# Environment files with secrets
+.env.local
+.env*.local
+
+# Documentation files (maintained separately)
+how-to.md
+INGEST_SCHEMAS_REFERENCE.md
+PREREQUISITES.md
+
+# Todo tracking
+todo.md

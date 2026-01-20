@@ -1,0 +1,107 @@
+---
+title: December 22, 2025
+description: Release notes for December 22, 2025
+---
+
+import { Callout } from "@/components/mdx";
+
+# December 22, 2025
+
+This release focuses on self-documenting schemas and developer experience. Data models now support column comments that persist to ClickHouse, making schemas more readable for data analysts. Enhanced documentation spans migrations, data types, and streams, while fixes improve build reliability for pnpm workspaces and Python code generation.
+
+<Callout type="info" title="Highlights">
+* **New:** [Support for column comments in data models](#support-for-column-comments-in-data-models)
+</Callout>
+
+
+## Moose
+
+### Support for column comments in data models
+
+Data model fields now support comments that are preserved in the generated ClickHouse database schema. In TypeScript, use TSDoc comments `/** */`. In Python, use either `Field(description="...")` or attribute docstrings with `use_attribute_docstrings=True`. These comments appear as COMMENT clauses in the database DDL, making schemas more self-documenting and easier to understand for data analysts and other team members.
+
+```typescript
+// models/UserEvent.ts
+export interface UserEvent {
+  /** Unique identifier for the record */
+  id: string;
+
+  /** Timestamp when the event occurred */
+  timestamp: Date;
+
+  /** Email address of the user (must be valid) */
+  email: string;
+
+  /** Total price in USD ($) */
+  price: number;
+
+  // No comment - this field won't have a database comment
+  status: string;
+}
+```
+
+```python
+# models.py
+# Option 1: Using Field(description=...)
+from moose_lib import Key
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class UserEvent(BaseModel):
+    id: Key[str] = Field(description="Unique identifier for the record")
+    timestamp: datetime = Field(description="Timestamp when the event occurred")
+    email: str = Field(description="Email address of the user (must be valid)")
+    price: float = Field(description="Total price in USD ($)")
+
+    # No description - this field won't have a database comment
+    status: str
+
+# Option 2: Using attribute docstrings
+from pydantic import ConfigDict
+
+class UserEvent(BaseModel):
+    model_config = ConfigDict(use_attribute_docstrings=True)
+
+    id: Key[str]
+    """Unique identifier for the record"""
+
+    timestamp: datetime
+    """Timestamp when the event occurred"""
+
+    email: str
+    """Email address of the user (must be valid)"""
+
+    price: float
+    """Total price in USD ($)"""
+
+    # No docstring - this field won't have a database comment
+    status: str
+```
+
+PR: [#3137](https://github.com/514-labs/moosestack/pull/3137) | Docs: [Column Comments](https://docs.fiveonefour.com/moosestack/olap/model-table?lang=typescript#column-comments)
+
+### Other Improvements
+- **Added ClickHouse connection info to moose dev output** – The moose dev command now displays ClickHouse connection URLs when starting local infrastructure, making it easier for developers to connect to their databases for debugging and data exploration. Connection details are shown with masked passwords for security. [#3103](https://github.com/514-labs/moosestack/pull/3103)
+- **Improved Python project loading error messages with diagnostic information** – Enhanced error messages when Python projects fail to load, providing detailed diagnostic information including specific file paths, common causes, and step-by-step troubleshooting guidance. Users now get clearer feedback when setup.py is missing, contains syntax errors, or lacks required setup() function calls, making it easier to debug and fix Python project configuration issues. [#3147](https://github.com/514-labs/moosestack/pull/3147)
+- **Expanded documentation across core concepts** – Added comprehensive guides for migrations (CLI, automatic, and planned workflows), stream configuration (parallelism and retention trade-offs), data modeling (problem-solution structure), and complete ClickHouse reference documentation covering all data types and table engines. [#3136](https://github.com/514-labs/moosestack/pull/3136) [#3119](https://github.com/514-labs/moosestack/pull/3119) [#3144](https://github.com/514-labs/moosestack/pull/3144) [#3134](https://github.com/514-labs/moosestack/pull/3134)
+- **Added custom Dockerfile support** – Added `--custom-dockerfile` flag to `moose init` to enable custom Dockerfile mode. Run `moose build --docker` to generate a Dockerfile at project root for customization. [#3135](https://github.com/514-labs/moosestack/pull/3135)
+- **Simplified consumption API utilities** – Introduced unified async `getMooseUtils()` that auto-detects context and works without parameters. Legacy APIs (`getMooseClients()`, `expressMiddleware()`) are deprecated but remain backwards compatible. [#3145](https://github.com/514-labs/moosestack/pull/3145)
+- **Added timing flags to moose dev** – Added optional `--timestamps` and `--timing` flags to display timestamps and operation durations during development, helping debug performance issues and track event sequences. [#3113](https://github.com/514-labs/moosestack/pull/3113)
+
+### Bug Fixes
+- **Fix pnpm build requirements for Kafka JavaScript dependencies** – Fixed build issues with pnpm by adding @514labs/kafka-javascript to the onlyBuiltDependencies list across all project templates. This ensures that Kafka-related dependencies are properly built during installation, preventing runtime errors when using streaming features. [#3146](https://github.com/514-labs/moosestack/pull/3146)
+- **Fix process restart behavior when workflows exit cleanly** – Fixed an issue where workflow processes would unnecessarily restart even when they exited cleanly (with exit code 0). Now processes only restart on failures, improving stability and reducing resource usage. Also improved warning messages when no workflows are found to guide users on disabling workflow infrastructure. [#3141](https://github.com/514-labs/moosestack/pull/3141)
+- **Fix enum comparison to handle different member ordering** – Fixed a bug where enum schema comparisons would fail when enum members were defined in different orders between models and ClickHouse tables. This ensures that schema migrations and validations work correctly regardless of how enum members are ordered in the source code versus the database. [#3142](https://github.com/514-labs/moosestack/pull/3142)
+- **Fix Docker builds to respect inject-workspace-dependencies setting** – Fixed an issue where Docker builds for TypeScript projects in pnpm workspaces would ignore the inject-workspace-dependencies setting in .npmrc files. This could cause builds to fail or produce inconsistent results when workspace dependencies weren't properly injected. The CLI now detects the workspace configuration and uses the appropriate pnpm deploy mode, with helpful warnings when legacy mode is required. [#3129](https://github.com/514-labs/moosestack/pull/3129)
+- **Fix Python code generation for Buffer and Distributed engines** – Fixed a bug where Python code generation was missing imports for BufferEngine and DistributedEngine, causing errors when users tried to use these ClickHouse table engines in their data models. [#3133](https://github.com/514-labs/moosestack/pull/3133)
+- **Fix prompts for externally managed tables to reference Boreal instead of ClickHouse Cloud** – Updated CLI prompts and help text to reference Boreal (boreal.cloud) instead of ClickHouse Cloud when configuring externally managed tables. Also clarified the command to use 'moose db pull' instead of 'moose pull' and updated the setup requirements to be more specific about ClickHouse connection details needed. [#3130](https://github.com/514-labs/moosestack/pull/3130)
+- **Fix ReplacingMergeTree parameter validation** – Fixed parameter validation for ReplacingMergeTree engines to enforce correct parameter counts, preventing silent truncation. [#3145](https://github.com/514-labs/moosestack/pull/3145)
+
+## Boreal
+
+### Improvements
+- **Improved ClickHouse query monitoring to include INSERT statements** - The log drain system now captures and monitors INSERT statements in addition to SELECT queries, providing more comprehensive database activity visibility. Query filtering has been improved to exclude DDL operations (CREATE, DROP, ALTER) while including data manipulation queries. This gives users better insights into their database performance and usage patterns.
+
+### Bug Fixes
+- **Fix project deployment for repositories with non-main default branches** - Fixed an issue where project deployment would fail for GitHub repositories that use a default branch other than 'main' (such as 'master', 'develop', etc.). Projects can now be successfully deployed regardless of the repository's default branch configuration.
+

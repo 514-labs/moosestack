@@ -1,0 +1,91 @@
+---
+title: Content Components Demo Guide
+description: A demonstration of reusable MDX content components and nested includes
+---
+
+# Content Components Demo Guide
+
+This guide demonstrates the content component system for documentation. It shows how to reuse content across multiple pages using the `:::include` directive.
+
+<Callout type="info" title="About This Guide">
+This is a test guide to demonstrate the content component system. All the sections below are pulled from reusable components in `/content/shared/examples/`.
+</Callout>
+
+## Example 1: Simple Include
+
+Let's start with a simple example that includes a single component:
+
+:::include /shared/examples/setup-example.mdx
+
+## Example 2: Another Simple Include
+
+Here's another standalone component:
+
+:::include /shared/examples/code-snippet-example.mdx
+
+## Example 3: Combined Components
+
+This next example is itself a component that includes other components (2-level nesting):
+
+:::include /shared/examples/combined-example.mdx
+
+## Example 4: Deep Nesting (3 Levels)
+
+Now let's demonstrate the maximum nesting depth. This component includes another component, which includes yet another component:
+
+:::include /shared/examples/level-1-component.mdx
+
+## Example 5: Using Prerequisites
+
+You can also include practical prerequisites. Here's how to install Moose:
+
+:::include /shared/prerequisites/install-moose.mdx
+
+## Summary
+
+This guide demonstrated:
+
+<BulletPointsCard
+  title="Content Component Features"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Simple Includes",
+      description: "Include a single component with :::include"
+    },
+    {
+      title: "Nested Includes",
+      description: "Components can include other components up to 3 levels deep"
+    },
+    {
+      title: "Real-World Usage",
+      description: "Reuse prerequisites, patterns, and common sections"
+    },
+    {
+      title: "Language Support",
+      description: "All MDX components work within content components"
+    }
+  ]}
+/>
+
+## How to Create Your Own
+
+To create your own content components:
+
+1. Create a `.mdx` file in `/content/shared/` (under `prerequisites/` or `examples/`)
+2. Write your content using any MDX components
+3. Use `:::include /shared/path/to/your-component.mdx` in any guide
+
+## Next Steps
+
+Try creating your own content components! Common use cases:
+
+- Installation instructions that appear in multiple guides
+- Example code patterns that can be reused
+- Prerequisite checks shared across guides
+
+---
+
+<Callout type="warning" title="This is a Test Guide">
+This guide is marked as `draft` status and is used for testing and demonstration purposes.
+</Callout>
