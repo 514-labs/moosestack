@@ -458,7 +458,6 @@ class InfrastructureSignatureJson(BaseModel):
         "Topic",
         "ApiEndpoint",
         "TopicToTableSyncProcess",
-        "View",
         "SqlResource",
     ]
 
