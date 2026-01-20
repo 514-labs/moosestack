@@ -17,11 +17,7 @@
     "build:types": "tspc -p tsconfig.json --declaration --emitDeclarationOnly",
     "build": "pnpm build:types && tspc -p tsconfig.json",
     "dev": "moose-cli dev",
-    "dev:local": "~/moose/target/debug/moose-cli dev",
-    "moose": "moose-cli",
-    "moose:local": "~/moose/target/debug/moose-cli",
-    "link:local": "pnpm link ../../../packages/ts-moose-lib",
-    "unlink:local": "pnpm unlink @514labs/moose-lib && pnpm install"
+    "moose": "moose-cli"
   },
   "dependencies": {
     "@514labs/moose-lib": "^0.6.293",
