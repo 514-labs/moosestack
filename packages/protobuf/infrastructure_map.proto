@@ -484,11 +484,16 @@ message InfrastructureSignature {
   oneof signature {
     string topic_id = 1;
     string table_id = 2;
+    // NOTE: Breaking change in PR #3080 - field 3 was renamed from "view_id" to "dmv1_view_id"
+    // to distinguish legacy table-alias views from new structured views (field 8).
+    // Old clients expecting "view_id" at field 3 will not be wire-compatible.
     string dmv1_view_id = 3;
     string sql_resource_id = 4;
     string api_endpoint_id = 5;
     string topic_to_table_sync_process_id = 6;
+    // Added in PR #3080 for structured materialized views
     string materialized_view_id = 7;
+    // Added in PR #3080 for structured views (replaces legacy field 3 usage)
     string view_id = 8;
   }
 }

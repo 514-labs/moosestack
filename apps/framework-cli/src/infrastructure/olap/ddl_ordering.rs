@@ -346,10 +346,7 @@ impl AtomicOlapOperation {
                 view,
                 dependency_info: _,
             } => {
-                let Dmv1View {
-                    view_type: ViewType::TableAlias { source_table_name },
-                    ..
-                } = view;
+                let ViewType::TableAlias { source_table_name } = &view.view_type;
                 let query = format!(
                     "CREATE VIEW IF NOT EXISTS `{}` AS SELECT * FROM `{source_table_name}`;",
                     view.id(),
@@ -977,11 +974,12 @@ fn create_view_operation(
 /// Creates an operation to drop a Dmv1 view
 fn drop_view_operation(
     view: &Dmv1View,
+    pulls_from: Vec<InfrastructureSignature>,
     pushes_to: Vec<InfrastructureSignature>,
 ) -> AtomicOlapOperation {
     AtomicOlapOperation::DropDmv1View {
         view: view.clone(),
-        dependency_info: create_dependency_info(vec![], pushes_to),
+        dependency_info: create_dependency_info(pulls_from, pushes_to),
     }
 }
 
@@ -1018,8 +1016,9 @@ fn handle_dmv1_view_add(view: &Dmv1View, default_database: &str) -> OperationPla
 
 /// Handles removing a dmv1 view operation
 fn handle_dmv1_view_remove(view: &Dmv1View, default_database: &str) -> OperationPlan {
+    let pulls_from = view.pulls_data_from(default_database);
     let pushed_to = view.pushes_data_to(default_database);
-    let teardown_op = drop_view_operation(view, pushed_to);
+    let teardown_op = drop_view_operation(view, pulls_from, pushed_to);
     OperationPlan::teardown(vec![teardown_op])
 }
 
@@ -1030,8 +1029,9 @@ fn handle_dmv1_view_update(
     default_database: &str,
 ) -> OperationPlan {
     // For views we always drop and recreate
+    let pulls_from_before = before.pulls_data_from(default_database);
     let pushed_to = before.pushes_data_to(default_database);
-    let teardown_op = drop_view_operation(before, pushed_to);
+    let teardown_op = drop_view_operation(before, pulls_from_before, pushed_to);
 
     let pulls_from = after.pulls_data_from(default_database);
     let setup_op = create_view_operation(after, pulls_from);
