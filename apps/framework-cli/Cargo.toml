@@ -12,7 +12,11 @@ homepage = "https://www.fiveonefour.com/moose"
 
 [dependencies]
 posthog514client-rs = { path = "../../packages/posthog514client-rs" }
-sqlparser = { version = "0.59", features = ["visitor"] }
+# FORK: Using patched sqlparser with ToSql trait for dialect-aware serialization.
+# ClickHouse requires PascalCase types (Int64, String) but Display uppercases them.
+# Upstream issue: https://github.com/apache/datafusion-sqlparser-rs/issues/2153
+# Remove this fork once upstream adds dialect-aware serialization.
+sqlparser = { git = "https://github.com/514-labs/datafusion-sqlparser-rs", rev = "f84bd06", features = ["visitor"] }
 itertools = "0.13.0"
 openssl = { version = "0.10", features = ["vendored"] }
 clap = { version = "4.3.17", features = ["derive"] }
@@ -46,7 +50,7 @@ anyhow = "1.0"
 arc-swap = "1.7"
 git2 = { version = "0.18.1", features = ["vendored-libgit2"] }
 regex = "1.10.3"
-reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }
+reqwest = { version = "0.13.1", features = ["stream", "json", "blocking", "query"] }
 chrono = { version = "0.4", features = ["serde"] }
 bytes = "1"
 futures = "0.3"
@@ -85,6 +89,10 @@ logos = "0.15.0"
 # Monitoring
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb" }
+opentelemetry_sdk = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["rt-tokio", "logs"] }
+opentelemetry-otlp = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["logs", "grpc-tonic"] }
+opentelemetry-appender-tracing = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["experimental_span_attributes"] }
 prometheus-client = "0.23"
 serde_yaml = "0.9.34"
 temporal-sdk-core = { git = "https://github.com/temporalio/sdk-core.git", rev = "b94b2fc172c2740705b3454a0e04b856fe426233" }
@@ -107,7 +115,7 @@ clickhouse = { version = "0.14.0", features = ["uuid", "test-util"] }
 assert_cmd = "2.0.12"
 assert_fs = "1.0.13"
 predicates = "3.0.4"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { version = "0.13.1", features = ["blocking", "json", "query"] }
 serial_test = "3.1.1"
 
 [build-dependencies]

@@ -38,6 +38,11 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
+import {
+  getSourceDir,
+  shouldUseCompiled,
+  loadModule,
+} from "../compiler-config";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -106,6 +111,7 @@ export interface StreamingFunctionArgs {
   broker: string; // Comma-separated list of Kafka broker addresses (e.g., "broker1:9092, broker2:9092"). Whitespace around commas is automatically trimmed.
   maxSubscriberCount: number;
   isDmv2: boolean;
+  logPayloads?: boolean;
   saslUsername?: string;
   saslPassword?: string;
   saslMechanism?: string;
@@ -256,6 +262,7 @@ const handleMessage = async (
   message: KafkaMessage,
   producer: Producer,
   fieldMutations?: FieldMutations,
+  logPayloads?: boolean,
 ): Promise<KafkaMessageWithLineage[] | undefined> => {
   if (message.value === undefined || message.value === null) {
     logger.log(`Received message with no value, skipping...`);
@@ -275,6 +282,12 @@ const handleMessage = async (
     // Parse JSON then apply field mutations using pre-built configuration
     const parsedData = JSON.parse(payloadBuffer.toString());
     mutateParsedJson(parsedData, fieldMutations);
+
+    // Log payload before transformation if enabled
+    if (logPayloads) {
+      logger.log(`[PAYLOAD:STREAM_IN] ${JSON.stringify(parsedData)}`);
+    }
+
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {
@@ -328,7 +341,7 @@ const handleMessage = async (
       }),
     );
 
-    return transformedData
+    const processedMessages = transformedData
       .map((userFunctionOutput, i) => {
         const [_, config] = streamingFunctionWithConfigList[i];
         if (userFunctionOutput) {
@@ -361,6 +374,19 @@ const handleMessage = async (
       })
       .flat()
       .filter((item) => item !== undefined && item !== null);
+
+    // Log payload after transformation if enabled (what we're actually sending to Kafka)
+    if (logPayloads) {
+      if (processedMessages.length > 0) {
+        // msg.value is already JSON stringified, just construct array format
+        const outgoingJsonStrings = processedMessages.map((msg) => msg.value);
+        logger.log(`[PAYLOAD:STREAM_OUT] [${outgoingJsonStrings.join(",")}]`);
+      } else {
+        logger.log(`[PAYLOAD:STREAM_OUT] (no output from streaming function)`);
+      }
+    }
+
+    return processedMessages;
   } catch (e) {
     // TODO: Track failure rate
     logger.error(`Failed to transform data`);
@@ -560,12 +586,30 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
  * const result = await fn(data);
  * ```
  */
-function loadStreamingFunction(functionFilePath: string) {
+async function loadStreamingFunction(functionFilePath: string) {
   let streamingFunctionImport: { default: StreamingFunction };
   try {
-    streamingFunctionImport = require(
-      functionFilePath.substring(0, functionFilePath.length - 3),
-    );
+    // Check if we should use compiled code
+    const useCompiled = shouldUseCompiled();
+    const sourceDir = getSourceDir();
+
+    // Adjust path for compiled mode
+    let actualPath = functionFilePath;
+    if (useCompiled) {
+      // Replace source directory path with compiled directory path
+      // Example: /app/path/app/functions/x.ts -> /app/path/.moose/compiled/app/functions/x.js
+      // Use string replacement instead of RegExp to avoid ReDoS risk
+      const sourceDirPattern = `/${sourceDir}/`;
+      actualPath = functionFilePath
+        .replace(sourceDirPattern, `/.moose/compiled/${sourceDir}/`)
+        .replace(/\.ts$/, ".js");
+      // Use dynamic loader that handles both CJS and ESM
+      streamingFunctionImport = await loadModule(actualPath);
+    } else {
+      // In development mode, remove extension for require()
+      const pathWithoutExt = actualPath.replace(/\.(ts|js)$/, "");
+      streamingFunctionImport = require(pathWithoutExt);
+    }
   } catch (e) {
     cliLog({ action: "Function", message: `${e}`, message_type: "Error" });
     throw e;
@@ -680,7 +724,9 @@ const startConsumer = async (
     streamingFunctions = result.functions;
     fieldMutations = result.fieldMutations;
   } else {
-    streamingFunctions = [[loadStreamingFunction(args.functionFilePath), {}]];
+    streamingFunctions = [
+      [await loadStreamingFunction(args.functionFilePath), {}],
+    ];
     fieldMutations = undefined;
   }
 
@@ -726,6 +772,7 @@ const startConsumer = async (
                 message,
                 producer,
                 fieldMutations,
+                args.logPayloads,
               );
             },
             {

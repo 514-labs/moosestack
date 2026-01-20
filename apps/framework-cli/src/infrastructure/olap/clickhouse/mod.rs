@@ -47,10 +47,12 @@ use sql_parser::{
     extract_source_tables_from_query, extract_source_tables_from_query_regex,
     extract_table_settings_from_create_table, normalize_sql_for_comparison, split_qualified_name,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::sync::LazyLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
+
+use crate::cli::logger::{context, resource_type};
 
 use self::model::ClickHouseSystemTable;
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
@@ -227,6 +229,30 @@ pub enum SerializableOlapOperation {
         /// Optional cluster name for ON CLUSTER support
         cluster_name: Option<String>,
     },
+    /// Create a materialized view
+    CreateMaterializedView {
+        name: String,
+        database: Option<String>,
+        target_table: String,
+        target_database: Option<String>,
+        select_sql: String,
+    },
+    /// Drop a materialized view
+    DropMaterializedView {
+        name: String,
+        database: Option<String>,
+    },
+    /// Create a regular view
+    CreateView {
+        name: String,
+        database: Option<String>,
+        select_sql: String,
+    },
+    /// Drop a regular view
+    DropView {
+        name: String,
+        database: Option<String>,
+    },
     RawSql {
         /// The SQL statements to execute
         sql: Vec<String>,
@@ -336,19 +362,55 @@ pub async fn execute_changes(
 
     let db_name = &project.clickhouse_config.db_name;
 
+    // Scan setup_plan to find which databases need which clusters
+    let mut db_to_clusters: HashMap<String, HashSet<String>> = HashMap::new();
+
+    for op in setup_plan {
+        if let AtomicOlapOperation::CreateTable { table, .. } = op {
+            // Get database (defaults to project.clickhouse_config.db_name)
+            let db = table.database.as_ref().unwrap_or(db_name);
+
+            // If table has cluster, track it
+            if let Some(cluster) = &table.cluster_name {
+                db_to_clusters
+                    .entry(db.clone())
+                    .or_default()
+                    .insert(cluster.clone());
+            }
+        }
+    }
+
     // Create all configured databases
     let mut all_databases = vec![db_name.clone()];
     all_databases.extend(project.clickhouse_config.additional_databases.clone());
 
     for database in &all_databases {
-        let create_db_query = format!("CREATE DATABASE IF NOT EXISTS `{}`", database);
-        info!("Creating database: {}", database);
-        run_query(&create_db_query, &client).await.map_err(|e| {
-            ClickhouseChangesError::ClickhouseClient {
-                error: e,
-                resource: Some(format!("database:{}", database)),
+        if let Some(clusters) = db_to_clusters.get(database) {
+            // Database has tables with clusters - create on each cluster
+            for cluster in clusters {
+                let create_db_query = format!(
+                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER {}",
+                    database, cluster
+                );
+                info!("Creating database {} on cluster {}", database, cluster);
+                run_query(&create_db_query, &client).await.map_err(|e| {
+                    ClickhouseChangesError::ClickhouseClient {
+                        error: e,
+                        resource: Some(format!("database:{}@cluster:{}", database, cluster)),
+                    }
+                })?;
             }
-        })?;
+        } else {
+            // No clusters for this database - create normally
+            let create_db_query = format!("CREATE DATABASE IF NOT EXISTS `{}`", database);
+            info!("Creating database: {}", database);
+            run_query(&create_db_query, &client).await.map_err(|e| {
+                ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(format!("database:{}", database)),
+                }
+            })?;
+        }
     }
 
     // Execute Teardown Plan
@@ -445,6 +507,18 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
             } else {
                 format!("Removing table TTL from '{}'", table)
             }
+        }
+        SerializableOlapOperation::CreateMaterializedView { name, .. } => {
+            format!("Creating materialized view '{}'", name)
+        }
+        SerializableOlapOperation::DropMaterializedView { name, .. } => {
+            format!("Dropping materialized view '{}'", name)
+        }
+        SerializableOlapOperation::CreateView { name, .. } => {
+            format!("Creating view '{}'", name)
+        }
+        SerializableOlapOperation::DropView { name, .. } => {
+            format!("Dropping view '{}'", name)
         }
         SerializableOlapOperation::RawSql { description, .. } => description.clone(),
     }
@@ -644,6 +718,37 @@ pub async fn execute_atomic_operation(
             let target_db = database.as_deref().unwrap_or(db_name);
             execute_remove_sample_by(target_db, table, cluster_name.as_deref(), client).await?;
         }
+        SerializableOlapOperation::CreateMaterializedView {
+            name,
+            database,
+            target_table,
+            target_database,
+            select_sql,
+        } => {
+            execute_create_materialized_view(
+                db_name,
+                name,
+                database.as_deref(),
+                target_table,
+                target_database.as_deref(),
+                select_sql,
+                client,
+            )
+            .await?;
+        }
+        SerializableOlapOperation::DropMaterializedView { name, database } => {
+            execute_drop_materialized_view(db_name, name, database.as_deref(), client).await?;
+        }
+        SerializableOlapOperation::CreateView {
+            name,
+            database,
+            select_sql,
+        } => {
+            execute_create_view(db_name, name, database.as_deref(), select_sql, client).await?;
+        }
+        SerializableOlapOperation::DropView { name, database } => {
+            execute_drop_view(db_name, name, database.as_deref(), client).await?;
+        }
         SerializableOlapOperation::RawSql { sql, description } => {
             execute_raw_sql(sql, description, client).await?;
         }
@@ -651,16 +756,25 @@ pub async fn execute_atomic_operation(
     Ok(())
 }
 
+#[instrument(
+    name = "create_table",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %table.id(table.database.as_deref().unwrap_or(db_name)),
+    )
+)]
 async fn execute_create_table(
     db_name: &str,
     table: &Table,
     client: &ConfiguredDBClient,
     is_dev: bool,
 ) -> Result<(), ClickhouseChangesError> {
-    tracing::info!("Executing CreateTable: {:?}", table.id(db_name));
-    let clickhouse_table = std_table_to_clickhouse_table(table)?;
     // Use table's database if specified, otherwise use global database
     let target_database = table.database.as_deref().unwrap_or(db_name);
+    tracing::info!("Executing CreateTable: {:?}", table.id(target_database));
+    let clickhouse_table = std_table_to_clickhouse_table(table)?;
     let create_data_table_query = create_table_query(target_database, clickhouse_table, is_dev)?;
     run_query(&create_data_table_query, client)
         .await
@@ -770,6 +884,15 @@ async fn execute_remove_sample_by(
         })
 }
 
+#[instrument(
+    name = "drop_table",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %format!("{}_{}", table_database.unwrap_or(db_name), table_name),
+    )
+)]
 async fn execute_drop_table(
     db_name: &str,
     table_name: &str,
@@ -777,9 +900,9 @@ async fn execute_drop_table(
     cluster_name: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
-    tracing::info!("Executing DropTable: {:?}", table_name);
     // Use table's database if specified, otherwise use global database
     let target_database = table_database.unwrap_or(db_name);
+    tracing::info!("Executing DropTable: {}.{}", target_database, table_name);
     let drop_query = drop_table_query(target_database, table_name, cluster_name)?;
     run_query(&drop_query, client)
         .await
@@ -795,6 +918,15 @@ async fn execute_drop_table(
 // TODO: Future refactoring opportunity - Consider eliminating the `required` boolean field
 // from ClickHouseColumn and rely solely on the Nullable type wrapper.
 
+#[instrument(
+    name = "add_column",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %format!("{}_{}", db_name, table_name),
+    )
+)]
 async fn execute_add_table_column(
     db_name: &str,
     table_name: &str,
@@ -804,7 +936,8 @@ async fn execute_add_table_column(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!(
-        "Executing AddTableColumn for table: {}, column: {}, after: {:?}",
+        "Executing AddTableColumn for table: {}.{}, column: {}, after: {:?}",
+        db_name,
         table_name,
         column.name,
         after_column
@@ -870,6 +1003,15 @@ async fn execute_add_table_column(
     Ok(())
 }
 
+#[instrument(
+    name = "drop_column",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %format!("{}_{}", db_name, table_name),
+    )
+)]
 async fn execute_drop_table_column(
     db_name: &str,
     table_name: &str,
@@ -878,7 +1020,8 @@ async fn execute_drop_table_column(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     tracing::info!(
-        "Executing DropTableColumn for table: {}, column: {}",
+        "Executing DropTableColumn for table: {}.{}, column: {}",
+        db_name,
         table_name,
         column_name
     );
@@ -905,6 +1048,15 @@ async fn execute_drop_table_column(
 /// When only the comment has changed (e.g., when enum metadata is added or user documentation
 /// is updated), it uses a more efficient comment-only modification instead of recreating
 /// the entire column definition.
+#[instrument(
+    name = "modify_column",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::OLAP_TABLE,
+        resource_name = %format!("{}_{}", db_name, table_name),
+    )
+)]
 async fn execute_modify_table_column(
     db_name: &str,
     table_name: &str,
@@ -1312,6 +1464,144 @@ async fn execute_raw_sql(
         }
     }
     Ok(())
+}
+
+/// Strips backticks from an identifier string.
+/// This is necessary because SDK-provided table/view names may already have backticks,
+/// and we need to ensure we don't create double-backticks in SQL.
+fn strip_backticks(s: &str) -> String {
+    s.trim().trim_matches('`').replace('`', "")
+}
+
+/// Executes a CREATE MATERIALIZED VIEW statement
+#[instrument(
+    name = "create_materialized_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::MATERIALIZED_VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
+async fn execute_create_materialized_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    target_table: &str,
+    target_database: Option<&str>,
+    select_sql: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let target_db = view_database.unwrap_or(db_name);
+    // Strip any existing backticks from target_table to avoid double-backticks
+    let clean_target_table = strip_backticks(target_table);
+    let to_target = match target_database {
+        Some(tdb) => format!("`{}`.`{}`", tdb, clean_target_table),
+        None => format!("`{}`.`{}`", target_db, clean_target_table),
+    };
+    let sql = format!(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS `{}`.`{}` TO {} AS {}",
+        target_db, view_name, to_target, select_sql
+    );
+    tracing::info!("Creating materialized view: {}.{}", target_db, view_name);
+    tracing::debug!("MV SQL: {}", sql);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(format!("materialized_view:{}", view_name)),
+        })?;
+    Ok(())
+}
+
+/// Executes a CREATE VIEW statement for views
+#[instrument(
+    name = "create_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
+async fn execute_create_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    select_sql: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let target_db = view_database.unwrap_or(db_name);
+    let sql = format!(
+        "CREATE VIEW IF NOT EXISTS `{}`.`{}` AS {}",
+        target_db, view_name, select_sql
+    );
+    tracing::info!("Creating custom view: {}.{}", target_db, view_name);
+    tracing::debug!("View SQL: {}", sql);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(format!("view:{}", view_name)),
+        })?;
+    Ok(())
+}
+
+/// Shared implementation for dropping views (both regular and materialized)
+async fn execute_drop_view_inner(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let target_db = view_database.unwrap_or(db_name);
+    let sql = format!("DROP VIEW IF EXISTS `{}`.`{}`", target_db, view_name);
+    tracing::info!("Dropping view: {}.{}", target_db, view_name);
+    run_query(&sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(format!("view:{}", view_name)),
+        })?;
+    Ok(())
+}
+
+/// Executes a DROP MATERIALIZED VIEW statement
+#[instrument(
+    name = "drop_materialized_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::MATERIALIZED_VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
+async fn execute_drop_materialized_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    execute_drop_view_inner(db_name, view_name, view_database, client).await
+}
+
+/// Executes a DROP VIEW statement
+#[instrument(
+    name = "drop_view",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
+async fn execute_drop_view(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    execute_drop_view_inner(db_name, view_name, view_database, client).await
 }
 
 /// Extracts version information from a table name

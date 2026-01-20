@@ -48,6 +48,9 @@ postgresql_version = "13"
 
 [supported_old_versions]
 
+[watcher_config]
+ignore_patterns = []
+
 [features]
 streaming_engine = false
 workflows = false

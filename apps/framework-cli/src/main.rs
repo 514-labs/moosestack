@@ -10,6 +10,10 @@ pub mod utilities;
 
 pub mod proto;
 
+#[cfg(test)]
+#[path = "../tests/test_utils.rs"]
+pub mod test_utils;
+
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -52,11 +56,6 @@ fn main() -> ExitCode {
     cli::settings::init_config_file().expect("Failed to init config file");
     let config = cli::settings::read_settings().expect("Failed to read settings");
 
-    // Setup logging
-    cli::logger::setup_logging(&config.logger);
-
-    let machine_id = utilities::machine_id::get_or_create_machine_id();
-
     // Parse CLI arguments
     let cli_result = match cli::Cli::try_parse() {
         Ok(cli_result) => cli_result,
@@ -82,21 +81,29 @@ fn main() -> ExitCode {
         std::env::set_var("RUST_LIB_BACKTRACE", "1");
     }
 
+    // Clone logger settings before moving config into async block
+    let logger_settings = config.logger.clone();
+
     // Create a runtime with a single thread to avoid issues with dropping runtimes
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("Failed to create Tokio runtime");
 
-    // Run the async function to handle the command
-    let result = runtime.block_on(cli::top_command_handler(
-        config,
-        &cli_result.command,
-        machine_id,
-    ));
+    // Run inside runtime context so OTLP batch exporter can initialize properly
+    let result = runtime.block_on(async {
+        // Setup logging (inside runtime context for OTLP batch exporter)
+        cli::logger::setup_logging(&logger_settings);
+
+        // Get machine ID (after logging setup so warnings are visible)
+        let machine_id = utilities::machine_id::get_or_create_machine_id();
+
+        // Run the async command handler
+        cli::top_command_handler(config, &cli_result.command, machine_id).await
+    });
 
     // Process the result using the original display formatting
-    match result {
+    let exit_code = match result {
         Ok(s) => {
             // Skip displaying empty messages (used for --json output where JSON is already printed)
             if !s.message.action.is_empty() || !s.message.details.is_empty() {
@@ -113,5 +120,10 @@ fn main() -> ExitCode {
             ensure_terminal_cleanup();
             ExitCode::from(1)
         }
-    }
+    };
+
+    // Flush OTLP batches before exit
+    cli::logger::shutdown_otlp();
+
+    exit_code
 }

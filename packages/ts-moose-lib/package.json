@@ -1,6 +1,13 @@
 {
   "name": "@514labs/moose-lib",
   "version": "0.0.2",
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/514-labs/moosestack"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
@@ -21,7 +28,8 @@
     "dist"
   ],
   "bin": {
-    "moose-runner": "./dist/moose-runner.js"
+    "moose-runner": "./dist/moose-runner.js",
+    "moose-tspc": "./dist/moose-tspc.js"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

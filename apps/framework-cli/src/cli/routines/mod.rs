@@ -119,6 +119,7 @@ use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorageBuilder;
+use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::olap::OlapOperations;
@@ -651,6 +652,59 @@ pub async fn start_production_mode(
             details: "production mode".to_string(),
         },
     );
+
+    // Pre-compile TypeScript with moose plugins for faster startup
+    // This eliminates ts-node overhead in production by using pre-compiled JavaScript
+    if project.language == SupportedLanguages::Typescript {
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "Compiling".to_string(),
+                details: "TypeScript for production...".to_string(),
+            },
+        );
+
+        let compile_result = std::process::Command::new("npx")
+            .arg("moose-tspc")
+            .arg(".moose/compiled")
+            .current_dir(&project.project_location)
+            .env("MOOSE_SOURCE_DIR", &project.source_dir)
+            .output();
+
+        match compile_result {
+            Ok(output) if output.status.success() => {
+                display::show_message_wrapper(
+                    MessageType::Success,
+                    Message {
+                        action: "Compiled".to_string(),
+                        details: "TypeScript successfully".to_string(),
+                    },
+                );
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                warn!("TypeScript compilation failed: {}", stderr);
+                display::show_message_wrapper(
+                    MessageType::Warning,
+                    Message {
+                        action: "Warning".to_string(),
+                        details: "TypeScript compilation failed, falling back to ts-node"
+                            .to_string(),
+                    },
+                );
+            }
+            Err(e) => {
+                warn!("Failed to run moose-tspc: {}", e);
+                display::show_message_wrapper(
+                    MessageType::Warning,
+                    Message {
+                        action: "Warning".to_string(),
+                        details: "moose-tspc not found, falling back to ts-node".to_string(),
+                    },
+                );
+            }
+        }
+    }
 
     if std::env::var("MOOSE_TEST__CRASH").is_ok() {
         panic!("Crashing for testing purposes");

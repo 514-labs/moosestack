@@ -11,18 +11,23 @@
 /// - `FileWatcher`: The main struct that initializes and starts the file watching process
 /// - `EventListener`: Handles file system events and forwards them to the processing pipeline
 /// - `EventBuckets`: Tracks changes in the app directory with debouncing
+/// - `WatcherConfig`: Configuration for ignore patterns to prevent infinite loops
 ///
 /// ## Process Flow:
 /// 1. The watcher monitors the project directory for file changes
 /// 2. When changes are detected, they are tracked in EventBuckets
-/// 3. After a short delay (debouncing), changes are processed to update the infrastructure
-/// 4. The updated infrastructure is applied to the system
+/// 3. Paths matching ignore patterns are filtered out
+/// 4. After a short delay (debouncing), changes are processed to update the infrastructure
+/// 5. The updated infrastructure is applied to the system
 use crate::framework;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 use display::with_timing_async;
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use notify::event::ModifyKind;
 use notify::{Event, EventHandler, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{io::Error, path::PathBuf};
@@ -39,6 +44,45 @@ use crate::infrastructure::processes::process_registry::ProcessRegistries;
 use crate::metrics::Metrics;
 use crate::project::Project;
 use crate::utilities::PathExt;
+
+/// Configuration for the file watcher, including ignore patterns.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WatcherConfig {
+    /// Glob patterns for paths to ignore (relative to app directory).
+    /// Files matching these patterns will not trigger rebuilds.
+    #[serde(default)]
+    pub ignore_patterns: Vec<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WatcherConfigError {
+    #[error("Invalid glob pattern '{pattern}': {source}")]
+    InvalidPattern {
+        pattern: String,
+        source: globset::Error,
+    },
+}
+
+impl WatcherConfig {
+    pub fn build_ignore_matcher(&self) -> Result<Option<GlobSet>, WatcherConfigError> {
+        if self.ignore_patterns.is_empty() {
+            return Ok(None);
+        }
+
+        let mut builder = GlobSetBuilder::new();
+        for pattern in &self.ignore_patterns {
+            let glob = Glob::new(pattern).map_err(|e| WatcherConfigError::InvalidPattern {
+                pattern: pattern.clone(),
+                source: e,
+            })?;
+            builder.add(glob);
+        }
+
+        let globset = builder.build().expect("all patterns already validated");
+
+        Ok(Some(globset))
+    }
+}
 
 /// Event listener that receives file system events and forwards them to the event processing pipeline.
 /// It uses a watch channel to communicate with the main processing loop.
@@ -65,20 +109,50 @@ impl EventHandler for EventListener {
 
 /// Container for tracking file system events in the app directory.
 /// Implements debouncing by tracking changes until they are processed.
-#[derive(Default, Debug)]
+/// Supports ignore patterns to filter out paths that shouldn't trigger hot-reloads.
+#[derive(Debug)]
 struct EventBuckets {
     changes: HashSet<PathBuf>,
+    ignore_matcher: Option<Arc<GlobSet>>,
+    app_dir: PathBuf,
 }
 
 impl EventBuckets {
+    pub fn new(ignore_matcher: Option<Arc<GlobSet>>, app_dir: PathBuf) -> Self {
+        Self {
+            changes: HashSet::new(),
+            ignore_matcher,
+            app_dir,
+        }
+    }
+
     /// Checks if there are no pending changes
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
     }
 
+    /// Checks if a path should be ignored based on configured patterns.
+    /// Patterns are matched against the path relative to the app directory.
+    fn is_ignored(&self, path: &Path) -> bool {
+        if let Some(ref matcher) = self.ignore_matcher {
+            if let Ok(relative) = path.strip_prefix(&self.app_dir) {
+                let is_match = matcher.is_match(relative);
+                if is_match {
+                    tracing::debug!(
+                        "Path {:?} (relative: {:?}) matches ignore pattern",
+                        path,
+                        relative
+                    );
+                }
+                return is_match;
+            }
+        }
+        false
+    }
+
     /// Processes a file system event and tracks it if it's relevant.
     /// Only processes events that are relevant (create, modify, remove) and
-    /// ignores metadata changes and access events.
+    /// ignores metadata changes, access events, and paths matching ignore patterns.
     pub fn insert(&mut self, event: Event) {
         match event.kind {
             EventKind::Access(_) | EventKind::Modify(ModifyKind::Metadata(_)) => return,
@@ -93,10 +167,15 @@ impl EventBuckets {
             if !path.ext_is_supported_lang() {
                 continue;
             }
+            if self.is_ignored(&path) {
+                continue;
+            }
             self.changes.insert(path);
         }
 
-        info!("App directory changes detected: {:?}", self.changes);
+        if !self.changes.is_empty() {
+            info!("App directory changes detected: {:?}", self.changes);
+        }
     }
 }
 
@@ -132,20 +211,31 @@ async fn watch(
     settings: Settings,
     processing_coordinator: ProcessingCoordinator,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+    ignore_matcher: Option<Arc<GlobSet>>,
+    app_dir: PathBuf,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
         project.app_dir().display()
     );
 
-    let (tx, mut rx) = tokio::sync::watch::channel(EventBuckets::default());
+    if ignore_matcher.is_some() {
+        info!(
+            "File watcher configured with {} ignore pattern(s): {:?}",
+            project.watcher_config.ignore_patterns.len(),
+            project.watcher_config.ignore_patterns
+        );
+    }
+
+    let (tx, mut rx) =
+        tokio::sync::watch::channel(EventBuckets::new(ignore_matcher.clone(), app_dir.clone()));
     let receiver_ack = tx.clone();
 
     let mut watcher = RecommendedWatcher::new(EventListener { tx }, notify::Config::default())
         .map_err(|e| Error::other(format!("Failed to create file watcher: {e}")))?;
 
     watcher
-        .watch(project.app_dir().as_ref(), RecursiveMode::Recursive)
+        .watch(app_dir.as_ref(), RecursiveMode::Recursive)
         .map_err(|e| Error::other(format!("Failed to watch file: {e}")))?;
 
     tracing::debug!("Watcher setup complete, entering main loop");
@@ -157,7 +247,7 @@ async fn watch(
                 return Ok(());
             }
             Ok(()) = rx.changed() => {
-                tracing::debug!("Received change notification, current changes: {:?}", rx.borrow());
+                tracing::debug!("Received change notification, current changes: {:?}", rx.borrow().changes);
             }
             _ = tokio::time::sleep(Duration::from_secs(1)) => {
                 let should_process = {
@@ -167,7 +257,7 @@ async fn watch(
 
                 if should_process {
                     tracing::debug!("Debounce period elapsed, processing changes");
-                    receiver_ack.send_replace(EventBuckets::default());
+                    receiver_ack.send_replace(EventBuckets::new(ignore_matcher.clone(), app_dir.clone()));
                     rx.mark_unchanged();
 
                     // Begin processing - guard will mark complete on drop
@@ -321,10 +411,19 @@ impl FileWatcher {
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), Error> {
+        // Validate ignore patterns early so errors are shown to the user
+        let ignore_matcher = project
+            .watcher_config
+            .build_ignore_matcher()
+            .map_err(|e| Error::other(format!("Invalid watcher ignore pattern: {e}")))?
+            .map(Arc::new);
+
+        let app_dir = project.app_dir();
+
         show_message!(MessageType::Info, {
             Message {
                 action: "Watching".to_string(),
-                details: format!("{:?}", project.app_dir().display()),
+                details: format!("{:?}", app_dir.display()),
             }
         });
 
@@ -341,6 +440,8 @@ impl FileWatcher {
                 settings,
                 processing_coordinator,
                 shutdown_rx,
+                ignore_matcher,
+                app_dir,
             )
             .await
         };
@@ -348,5 +449,92 @@ impl FileWatcher {
         tokio::spawn(watch_task);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_watcher_config_empty_patterns_returns_none() {
+        let config = WatcherConfig {
+            ignore_patterns: vec![],
+        };
+        assert!(config.build_ignore_matcher().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_watcher_config_invalid_patterns() {
+        let config = WatcherConfig {
+            ignore_patterns: vec!["[invalid".to_string()],
+        };
+        assert!(config.build_ignore_matcher().is_err());
+
+        let config = WatcherConfig {
+            ignore_patterns: vec!["{unclosed".to_string()],
+        };
+        assert!(config.build_ignore_matcher().is_err());
+
+        let config = WatcherConfig {
+            ignore_patterns: vec!["**[".to_string()],
+        };
+        assert!(config.build_ignore_matcher().is_err());
+    }
+
+    #[test]
+    fn test_no_patterns_means_nothing_ignored() {
+        let buckets = EventBuckets::new(None, PathBuf::from("/app"));
+        assert!(!buckets.is_ignored(Path::new("/app/sdk/client.ts")));
+    }
+
+    #[test]
+    fn test_event_buckets_single_char_wildcard() {
+        let config = WatcherConfig {
+            ignore_patterns: vec!["test?.ts".to_string()],
+        };
+        let matcher = config.build_ignore_matcher().unwrap().map(Arc::new);
+        let app_dir = PathBuf::from("/project/app");
+        let buckets = EventBuckets::new(matcher, app_dir);
+
+        assert!(buckets.is_ignored(Path::new("/project/app/test1.ts")));
+        assert!(buckets.is_ignored(Path::new("/project/app/testA.ts")));
+
+        assert!(!buckets.is_ignored(Path::new("/project/app/test12.ts")));
+        assert!(!buckets.is_ignored(Path::new("/project/app/test.ts")));
+    }
+
+    #[test]
+    fn test_path_outside_app_dir_not_ignored() {
+        let config = WatcherConfig {
+            ignore_patterns: vec!["sdk/**".to_string()],
+        };
+        let matcher = config.build_ignore_matcher().unwrap().map(Arc::new);
+        let app_dir = PathBuf::from("/project/app");
+        let buckets = EventBuckets::new(matcher, app_dir);
+
+        assert!(!buckets.is_ignored(Path::new("/other/path/sdk/client.ts")));
+    }
+
+    #[test]
+    fn test_event_buckets_multiple_ignore_patterns() {
+        let config = WatcherConfig {
+            ignore_patterns: vec![
+                "sdk/**".to_string(),
+                "generated/**".to_string(),
+                "**/*.gen.py".to_string(),
+            ],
+        };
+        let matcher = config.build_ignore_matcher().unwrap().map(Arc::new);
+        let app_dir = PathBuf::from("/project/app");
+        let buckets = EventBuckets::new(matcher, app_dir);
+
+        assert!(buckets.is_ignored(Path::new("/project/app/sdk/client.ts")));
+        assert!(buckets.is_ignored(Path::new("/project/app/sdk/nested/file.ts")));
+        assert!(buckets.is_ignored(Path::new("/project/app/generated/types.ts")));
+        assert!(buckets.is_ignored(Path::new("/project/app/models/user.gen.py")));
+
+        assert!(!buckets.is_ignored(Path::new("/project/app/datamodels/user.ts")));
     }
 }

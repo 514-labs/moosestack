@@ -335,6 +335,24 @@ fn validate_table_databases_and_clusters(
             } => {
                 validate(database, cluster_name, table);
             }
+            SerializableOlapOperation::CreateMaterializedView {
+                name,
+                database,
+                ..
+            } => {
+                validate(database, &None, name);
+            }
+            SerializableOlapOperation::DropMaterializedView { name, database } => {
+                validate(database, &None, name);
+            }
+            SerializableOlapOperation::CreateView {
+                name, database, ..
+            } => {
+                validate(database, &None, name);
+            }
+            SerializableOlapOperation::DropView { name, database } => {
+                validate(database, &None, name);
+            }
             SerializableOlapOperation::RawSql { .. } => {
                 // RawSql doesn't reference specific tables/databases/clusters, skip validation
             }

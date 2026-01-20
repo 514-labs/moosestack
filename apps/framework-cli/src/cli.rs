@@ -4,11 +4,12 @@ pub(crate) mod display;
 mod commands;
 pub mod local_webserver;
 pub mod logger;
+pub mod otlp;
 pub mod processing_coordinator;
 pub mod routines;
 use crate::cli::routines::seed_data;
 pub mod settings;
-mod watcher;
+pub mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::docker::DockerClient;
 use clap::Parser;
@@ -555,8 +556,13 @@ pub async fn top_command_handler(
 
                 let docker_client = DockerClient::new(&settings);
                 create_dockerfile(&project_arc, &docker_client)?.show();
-                let _: RoutineSuccess =
-                    build_dockerfile(&project_arc, &docker_client, *amd64, *arm64)?;
+                let _: RoutineSuccess = build_dockerfile(
+                    &project_arc,
+                    &docker_client,
+                    *amd64,
+                    *arm64,
+                    settings.release_channel(),
+                )?;
 
                 wait_for_usage_capture(capture_handle).await;
 
@@ -601,6 +607,7 @@ pub async fn top_command_handler(
             mcp,
             timestamps,
             timing,
+            log_payloads: _,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -692,7 +699,7 @@ pub async fn top_command_handler(
             )))
         }
         Commands::Generate(generate) => match &generate.command {
-            Some(GenerateCommand::HashToken {}) => {
+            Some(GenerateCommand::HashToken { json: _ }) => {
                 info!("Running generate hash token command");
                 let project = load_project(commands)?;
                 let project_arc = Arc::new(project);

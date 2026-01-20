@@ -46,14 +46,24 @@ type TablerIcon = React.ComponentType<IconProps>;
 /**
  * Individual page in navigation
  */
+/**
+ * Guide status for visibility control
+ * - draft: Hidden by default, visible only with show-draft-guides flag
+ * - beta: Hidden by default, visible only with show-beta-guides flag
+ * - undefined/not set: Always visible (public)
+ */
+export type GuideStatus = "draft" | "beta";
+
 export interface NavPage {
   type: "page";
   slug: string;
   title: string;
+  description?: string; // Optional description for guides
   languages: Language[];
   icon?: TablerIcon;
   children?: NavItem[]; // Allow NavItem[] to support labels/separators within children
   external?: boolean; // If true, indicates this is a standalone page (not part of the current section)
+  status?: GuideStatus; // Visibility level for guides (draft, beta, or public if not set)
 }
 
 /**
@@ -125,37 +135,50 @@ const moosestackNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
   },
 
-  // Quick Start (moved to top level)
+  // Separator
+  { type: "separator" },
+
+  // Getting Started (top-level paths)
+  { type: "label", title: "Build a New App" },
+
+  // Build a new app
   {
     type: "page",
-    slug: "moosestack/quickstart",
-    title: "Quick Start",
-    icon: IconDatabase,
+    slug: "moosestack/getting-started/quickstart",
+    title: "5 Minute Quickstart",
+    icon: IconRocket,
     languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/getting-started/quickstart",
-        title: "5-Minute Quickstart",
-        languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/getting-started/from-clickhouse",
-        title: "Use with Existing ClickHouse",
-        languages: ["typescript", "python"],
-      },
-    ],
   },
-
-  // Templates / Examples (standalone page, shown in MooseStack nav with arrow)
   {
     type: "page",
     slug: "templates",
-    title: "Templates / Examples",
+    title: "Browse Templates",
     icon: IconCode,
     languages: ["typescript", "python"],
     external: true,
+  },
+  // Connect to an existing ClickHouse
+  {
+    type: "page",
+    slug: "moosestack/getting-started/from-clickhouse",
+    icon: IconDatabase,
+    title: "Existing ClickHouse",
+    languages: ["typescript", "python"],
+  },
+  // Embed in an existing app
+  { type: "separator" },
+  { type: "label", title: "Add to Existing App" },
+  {
+    type: "page",
+    slug: "moosestack/getting-started/existing-app/next-js",
+    title: "Next.js",
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/getting-started/existing-app/fastify",
+    title: "Fastify",
+    languages: ["typescript", "python"],
   },
 
   // Separator
@@ -184,70 +207,8 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconDatabase,
     languages: ["typescript", "python"],
   },
-
-  // Separator
   { type: "separator" },
-
-  // MooseStack in your App section
-  { type: "label", title: "MooseStack in your App" },
-  {
-    type: "page",
-    slug: "moosestack/data-sources",
-    title: "Data sources",
-    icon: IconGitCompare,
-    languages: ["typescript", "python"],
-  },
-  {
-    type: "page",
-    slug: "moosestack/app-api-frameworks",
-    title: "App / API frameworks",
-    icon: IconCode,
-    languages: ["typescript", "python"],
-    children: [
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/nextjs",
-        title: "Next.js",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/express",
-        title: "Express",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/fastify",
-        title: "Fastify",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/koa",
-        title: "Koa",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/raw-nodejs",
-        title: "Raw Node.js",
-        languages: ["typescript"],
-      },
-      {
-        type: "page",
-        slug: "moosestack/app-api-frameworks/fastapi",
-        title: "FastAPI",
-        languages: ["python"],
-      },
-    ],
-  },
-
-  // Separator
-  { type: "separator" },
-
-  // Modules section
-  { type: "label", title: "Modules" },
+  { type: "label", title: "Moose Modules" },
   {
     type: "page",
     slug: "moosestack/olap",
@@ -440,40 +401,28 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/apis",
-    title: "Moose APIs",
+    title: "Moose APIs & Web Apps",
     icon: IconCode,
     languages: ["typescript", "python"],
     children: [
-      {
-        type: "page",
-        slug: "moosestack/apis/auth",
-        title: "Auth",
-        languages: ["typescript", "python"],
-      },
+      { type: "separator" },
+      { type: "label", title: "Native APIs" },
       {
         type: "page",
         slug: "moosestack/apis/ingest-api",
-        title: "Ingest New Data",
+        title: "Ingest API",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/apis/analytics-api",
-        title: "Expose Analytics",
+        title: "Analytics API",
         languages: ["typescript", "python"],
       },
       {
         type: "page",
         slug: "moosestack/apis/trigger-api",
-        title: "Trigger Workflows",
-        languages: ["typescript", "python"],
-      },
-      { type: "separator" },
-      { type: "label", title: "Client Libraries" },
-      {
-        type: "page",
-        slug: "moosestack/apis/openapi-sdk",
-        title: "OpenAPI SDK",
+        title: "Workflow Trigger",
         languages: ["typescript", "python"],
       },
       {
@@ -481,6 +430,52 @@ const moosestackNavigationConfig: NavigationConfig = [
         slug: "moosestack/apis/admin-api",
         title: "Admin APIs",
         languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/apis/auth",
+        title: "Authentication",
+        languages: ["typescript", "python"],
+      },
+
+      // Modules section
+      { type: "separator" },
+      { type: "label", title: "Use Your Web Framework" },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks",
+        title: "Overview",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/express",
+        title: "Express",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/fastify",
+        title: "Fastify",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/koa",
+        title: "Koa",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/raw-nodejs",
+        title: "Raw Node.js",
+        languages: ["typescript"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/app-api-frameworks/fastapi",
+        title: "FastAPI",
+        languages: ["python"],
       },
     ],
   },
@@ -500,7 +495,7 @@ const moosestackNavigationConfig: NavigationConfig = [
       { type: "label", title: "Migration Modes" },
       {
         type: "page",
-        slug: "moosestack/migrate/auto-inferred",
+        slug: "moosestack/migrate/automatic",
         title: "Automatic Migrations",
         languages: ["typescript", "python"],
       },
@@ -923,10 +918,72 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
-    slug: "moosestack/changelog",
-    title: "Changelog",
-    icon: IconHistory,
+    slug: "moosestack/release-notes",
+    title: "Release Notes",
+    icon: IconFileReport,
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-01-16",
+        title: "January 16, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-01-09",
+        title: "January 9, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2025-12-22",
+        title: "December 22, 2025",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2025-12-15",
+        title: "December 15, 2025",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2025-12-05",
+        title: "December 5, 2025",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2025-11-22",
+        title: "November 22, 2025",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2025-11-14",
+        title: "November 14, 2025",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2025-11-07",
+        title: "November 7, 2025",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2025-11-01",
+        title: "November 1, 2025",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2025-10-24",
+        title: "October 24, 2025",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   { type: "separator" },
   { type: "label", title: "Contribution" },
@@ -1140,16 +1197,63 @@ const templatesNavigationConfig: NavigationConfig = [];
 
 /**
  * Guides navigation configuration
+ * Note: No Overview page here - the guides index page handles its own content
+ * (Coming Soon or Grid layout based on visible guides)
+ *
+ * Top-level pages (type: "page" at root) appear without a section header
+ * Sectioned pages (inside type: "section") appear under their section title
  */
 const guidesNavigationConfig: NavigationConfig = [
+  // ===========================================
+  // 5 Priority Guides (from Linear project)
+  // https://linear.app/514/project/ship-the-first-iteration-of-guides-and-test-them-within-our-customers-d3b3d83562d9
+  // ===========================================
   {
     type: "page",
-    slug: "guides/index",
-    title: "Overview",
-    icon: IconChartArea,
+    slug: "guides/performant-dashboards",
+    title: "Improving the Performance of Your Dashboards",
+    description:
+      "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
+    icon: IconChartLine,
     languages: ["typescript", "python"],
   },
-  { type: "separator" },
+  {
+    type: "page",
+    slug: "guides/chat-in-your-app",
+    title: "Chat in your app",
+    description:
+      "Build a data-aware chat on top of your ClickHouse database with Next.js and MooseStack.",
+    icon: IconMessageChatbot,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "guides/customer-data-platform",
+    title: "Customer Data Platform (CDP)",
+    icon: IconUsers,
+    languages: ["typescript", "python"],
+    status: "draft",
+  },
+  {
+    type: "page",
+    slug: "guides/static-report-generation",
+    title: "Static Report Generation",
+    icon: IconFileReport,
+    languages: ["typescript", "python"],
+    status: "draft",
+  },
+  {
+    type: "page",
+    slug: "guides/data-warehouses",
+    title: "Data Warehouses",
+    icon: IconDatabase,
+    languages: ["typescript", "python"],
+    status: "draft",
+  },
+
+  // ===========================================
+  // Additional Draft Guides (organized by section)
+  // ===========================================
   {
     type: "section",
     title: "Applications",
@@ -1160,6 +1264,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Performant Dashboards",
         icon: IconChartLine,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1167,6 +1272,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "In-App Chat Analytics",
         icon: IconMessageChatbot,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1174,6 +1280,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Automated Reports",
         icon: IconFileReport,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1181,6 +1288,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Going to Production",
         icon: IconCloudUpload,
         languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
@@ -1194,6 +1302,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Migrations",
         icon: IconDatabaseImport,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1201,6 +1310,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Impact Analysis",
         icon: IconChartDots,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1208,6 +1318,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Change Data Capture",
         icon: IconBolt,
         languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
@@ -1221,6 +1332,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Customer Data Platform",
         icon: IconUsers,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1228,6 +1340,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Operational Analytics",
         icon: IconChartBarOff,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1235,6 +1348,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Startup Metrics",
         icon: IconChartBar,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1242,6 +1356,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Connectors",
         icon: IconStack,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1249,6 +1364,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Pipelines",
         icon: IconRoute,
         languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
@@ -1262,6 +1378,7 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "Data as Code",
         icon: IconCode,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
@@ -1269,40 +1386,37 @@ const guidesNavigationConfig: NavigationConfig = [
         title: "DORA for Data",
         icon: IconTrendingUp,
         languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
   {
     type: "section",
-    title: "Strategy",
+    title: "Test Guides",
     items: [
       {
         type: "page",
-        slug: "guides/strategy/ai-enablement",
-        title: "AI Enablement",
-        icon: IconBrain,
+        slug: "guides/test-guides/mermaid-test",
+        title: "Mermaid Diagram Test",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
-        slug: "guides/strategy/data-foundation",
-        title: "Data Foundation",
-        icon: IconDatabase,
+        slug: "guides/test-guides/content-components-demo",
+        title: "Content Components Demo",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
+        status: "draft",
       },
       {
         type: "page",
-        slug: "guides/strategy/platform-engineering",
-        title: "Platform Engineering",
-        icon: IconServer,
+        slug: "guides/test-guides/code-blocks",
+        title: "Code Blocks Rendering Test",
+        icon: IconFileCode,
         languages: ["typescript", "python"],
-      },
-      {
-        type: "page",
-        slug: "guides/strategy/olap-evaluation",
-        title: "OLAP Evaluation",
-        icon: IconDatabase,
-        languages: ["typescript", "python"],
+        status: "draft",
       },
     ],
   },
@@ -1451,12 +1565,21 @@ export function buildNavItems(
 }
 
 /**
+ * Feature flags for navigation filtering
+ */
+export interface NavFilterFlags {
+  showDataSourcesPage?: boolean;
+  showDraftGuides?: boolean;
+  showBetaGuides?: boolean;
+}
+
+/**
  * Filter navigation items based on feature flags
  * Removes pages that should be hidden based on flags
  */
 export function filterNavItemsByFlags(
   items: NavItem[],
-  flags: { showDataSourcesPage?: boolean },
+  flags: NavFilterFlags,
 ): NavItem[] {
   function filterNavItem(item: NavItem): NavItem | null {
     if (item.type === "separator" || item.type === "label") {
@@ -1486,6 +1609,16 @@ export function filterNavItemsByFlags(
       return null;
     }
 
+    // Filter draft pages if flag is off
+    if (page.status === "draft" && !flags.showDraftGuides) {
+      return null;
+    }
+
+    // Filter beta pages if flag is off
+    if (page.status === "beta" && !flags.showBetaGuides) {
+      return null;
+    }
+
     // Filter children recursively
     const filteredChildren = page.children
       ?.map(filterNavItem)
@@ -1503,4 +1636,168 @@ export function filterNavItemsByFlags(
   return items
     .map(filterNavItem)
     .filter((item): item is NavItem => item !== null);
+}
+
+/**
+ * Check if there are any visible guides after filtering
+ * Used to determine whether to show Coming Soon page
+ */
+export function hasVisibleGuides(
+  items: NavItem[],
+  flags: { showDraftGuides: boolean; showBetaGuides: boolean },
+): boolean {
+  function checkItems(navItems: NavItem[]): boolean {
+    for (const item of navItems) {
+      if (item.type === "page") {
+        // Skip draft pages if flag is off
+        if (item.status === "draft" && !flags.showDraftGuides) {
+          continue;
+        }
+        // Skip beta pages if flag is off
+        if (item.status === "beta" && !flags.showBetaGuides) {
+          continue;
+        }
+        // Found a visible guide page
+        if (item.slug.startsWith("guides/") && item.slug !== "guides/index") {
+          return true;
+        }
+      }
+      if (item.type === "section") {
+        if (checkItems(item.items)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  return checkItems(items);
+}
+
+/**
+ * Serializable guide item for passing to client components
+ * Does not include icon (which is a function/component)
+ */
+export interface SerializableGuideItem {
+  slug: string;
+  title: string;
+  description?: string;
+  iconName?: string;
+}
+
+/**
+ * Serializable guide section for passing to client components
+ * title can be null for uncategorized/top-level guides
+ */
+export interface SerializableGuideSection {
+  title: string | null;
+  items: SerializableGuideItem[];
+}
+
+/**
+ * Map of icon components to their string names for serialization
+ * This is necessary because React components created with forwardRef
+ * don't have a reliable .name property
+ */
+const iconToNameMap = new Map<TablerIcon, string>([
+  [IconChartLine, "IconChartLine"],
+  [IconMessageChatbot, "IconMessageChatbot"],
+  [IconFileReport, "IconFileReport"],
+  [IconCloudUpload, "IconCloudUpload"],
+  [IconDatabaseImport, "IconDatabaseImport"],
+  [IconChartDots, "IconChartDots"],
+  [IconBolt, "IconBolt"],
+  [IconUsers, "IconUsers"],
+  [IconChartBarOff, "IconChartBarOff"],
+  [IconChartBar, "IconChartBar"],
+  [IconStack, "IconStack"],
+  [IconRoute, "IconRoute"],
+  [IconCode, "IconCode"],
+  [IconTrendingUp, "IconTrendingUp"],
+  [IconBrain, "IconBrain"],
+  [IconDatabase, "IconDatabase"],
+  [IconServer, "IconServer"],
+  [IconRocket, "IconRocket"],
+]);
+
+/**
+ * Get icon name from icon component for serialization
+ */
+function getIconName(icon?: TablerIcon): string | undefined {
+  if (!icon) return undefined;
+  return iconToNameMap.get(icon);
+}
+
+/**
+ * Get visible guides sections for the grid layout
+ * Returns serializable sections (without icon components) for client components
+ * Supports both:
+ * - Top-level guides (pages not inside a section) - shown first with null title
+ * - Sectioned guides (pages inside a section) - shown with section title
+ */
+export function getVisibleGuideSections(flags: {
+  showDraftGuides: boolean;
+  showBetaGuides: boolean;
+}): SerializableGuideSection[] {
+  const sections: SerializableGuideSection[] = [];
+
+  function isPageVisible(page: NavPage): boolean {
+    if (page.status === "draft" && !flags.showDraftGuides) return false;
+    if (page.status === "beta" && !flags.showBetaGuides) return false;
+    return true;
+  }
+
+  // First, collect top-level guides (not inside a section)
+  const topLevelGuides: SerializableGuideItem[] = [];
+
+  for (const item of guidesNavigationConfig) {
+    if (item.type === "page") {
+      // Skip hidden pages
+      if (!isPageVisible(item)) continue;
+      // Skip index page
+      if (item.slug === "guides/index") continue;
+
+      topLevelGuides.push({
+        slug: item.slug,
+        title: item.title,
+        description: item.description,
+        iconName: getIconName(item.icon),
+      });
+    }
+  }
+
+  // Add top-level guides as first section (with null title)
+  if (topLevelGuides.length > 0) {
+    sections.push({
+      title: null,
+      items: topLevelGuides,
+    });
+  }
+
+  // Then collect sectioned guides
+  for (const item of guidesNavigationConfig) {
+    if (item.type === "section") {
+      const visibleItems: SerializableGuideItem[] = [];
+
+      for (const subItem of item.items) {
+        if (subItem.type !== "page") continue;
+        if (!isPageVisible(subItem)) continue;
+
+        visibleItems.push({
+          slug: subItem.slug,
+          title: subItem.title,
+          description: subItem.description,
+          iconName: getIconName(subItem.icon),
+        });
+      }
+
+      if (visibleItems.length > 0) {
+        sections.push({
+          title: item.title,
+          items: visibleItems,
+        });
+      }
+    }
+  }
+
+  return sections;
 }

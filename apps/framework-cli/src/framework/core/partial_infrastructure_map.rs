@@ -550,6 +550,16 @@ pub struct PartialInfrastructureMap {
     workflows: HashMap<String, PartialWorkflow>,
     #[serde(default)]
     web_apps: HashMap<String, PartialWebApp>,
+    /// Materialized views and regular views from the SDK
+    /// Using serde_json::Value temporarily until proper types are implemented
+    #[serde(default)]
+    #[allow(dead_code)]
+    materialized_views: HashMap<String, serde_json::Value>,
+    /// List of source files that exist in the project but were not loaded during the build process.
+    /// This is used to warn developers about potentially missing imports or configuration issues.
+    /// File paths should be relative to the project root.
+    #[serde(default, rename = "unloadedFiles")]
+    pub unloaded_files: Vec<String>,
 }
 
 impl PartialInfrastructureMap {

@@ -1,6 +1,10 @@
 {
   "name": "@514labs/moose-cli",
   "version": "0.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/514-labs/moosestack"
+  },
   "bin": {
     "moose": "dist/index.js",
     "moose-cli": "dist/index.js"
@@ -15,7 +19,7 @@
     "build": "tsc"
   },
   "devDependencies": {
-    "@types/node": "18.16.19",
+    "@types/node": "^20",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
     "eslint": "^8.46.0",

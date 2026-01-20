@@ -123,6 +123,12 @@ pub struct Settings {
     /// Development-specific settings
     #[serde(default)]
     pub dev: DevSettings,
+
+    /// Release channel for downloading CLI binaries (stable or dev)
+    /// This can be set via the MOOSE_RELEASE_CHANNEL environment variable
+    /// Defaults to "stable" if not specified
+    #[serde(default = "default_release_channel")]
+    pub release_channel: String,
 }
 
 /// Development-specific configuration options
@@ -169,6 +175,10 @@ fn default_infrastructure_timeout() -> u64 {
     120
 }
 
+fn default_release_channel() -> String {
+    "stable".to_string()
+}
+
 /// Returns the path to the config file in the user's home directory
 fn config_path() -> PathBuf {
     let mut path: PathBuf = user_directory();
@@ -195,7 +205,8 @@ pub fn setup_user_directory() -> Result<(), std::io::Error> {
 /// Configuration is loaded in the following order:
 /// 1. Default values
 /// 2. Local configuration file
-/// 3. Environment variables
+/// 3. Environment variables (prefixed with MOOSE_)
+/// 4. RELEASE_CHANNEL environment variable (for release_channel field, matches install script)
 ///
 /// Returns a Result containing the parsed Settings or a ConfigError
 pub fn read_settings() -> Result<Settings, ConfigError> {
@@ -211,7 +222,23 @@ pub fn read_settings() -> Result<Settings, ConfigError> {
         )
         .build()?;
 
-    s.try_deserialize()
+    let mut settings: Settings = s.try_deserialize()?;
+
+    // Check RELEASE_CHANNEL env var (matches install script behavior)
+    // This takes precedence over MOOSE_RELEASE_CHANNEL and config file
+    if let Ok(channel) = std::env::var("RELEASE_CHANNEL") {
+        let channel_lower = channel.to_lowercase();
+        if channel_lower == "stable" || channel_lower == "dev" {
+            settings.release_channel = channel_lower;
+        } else {
+            warn!(
+                "Invalid RELEASE_CHANNEL value '{}', ignoring (valid: stable, dev)",
+                channel
+            );
+        }
+    }
+
+    Ok(settings)
 }
 
 /// Initializes the config file with default values if it doesn't exist
@@ -322,6 +349,21 @@ impl Settings {
     /// - Environment variable: `MOOSE_DEV__BYPASS_INFRASTRUCTURE_EXECUTION=true`
     pub fn should_bypass_infrastructure_execution(&self) -> bool {
         self.dev.bypass_infrastructure_execution
+    }
+
+    /// Gets the release channel for downloading CLI binaries
+    ///
+    /// This determines which GCP bucket path to use for binary downloads:
+    /// - "stable" (default): Production releases at downloads.fiveonefour.com/stable/
+    /// - "dev": Development/CI builds at downloads.fiveonefour.com/dev/
+    ///
+    /// The value can be set via (in order of precedence):
+    /// - Environment variable: `RELEASE_CHANNEL=dev` (matches install script behavior)
+    /// - Environment variable: `MOOSE_RELEASE_CHANNEL=dev`
+    /// - Configuration file: `release_channel = "dev"`
+    /// - Default: "stable"
+    pub fn release_channel(&self) -> &str {
+        &self.release_channel
     }
 }
 

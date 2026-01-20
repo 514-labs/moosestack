@@ -55,6 +55,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Once;
 
 use crate::cli::local_webserver::LocalWebserverConfig;
+use crate::cli::watcher::WatcherConfig;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::streaming::loader::parse_streaming_function;
 use crate::framework::versions::Version;
@@ -225,8 +226,8 @@ pub struct ProjectFeatures {
     #[serde(default)]
     pub workflows: bool,
 
-    /// ongoing redesign of data models
-    #[serde(default)]
+    /// Whether data model v2 is enabled
+    #[serde(default = "_true")]
     pub data_model_v2: bool,
 
     /// Whether OLAP (ClickHouse) is enabled
@@ -247,7 +248,7 @@ impl Default for ProjectFeatures {
         ProjectFeatures {
             streaming_engine: true,
             workflows: false,
-            data_model_v2: false,
+            data_model_v2: true,
             olap: true,
             ddl_plan: false,
             apis: true,
@@ -302,6 +303,9 @@ pub struct Project {
     /// Whether the project is running in production mode
     #[serde(skip, default = "Project::default_production")]
     pub is_production: bool,
+    /// Whether to log payloads for debugging (not serialized, set at runtime)
+    #[serde(skip)]
+    pub log_payloads: bool,
     /// Map of supported old versions and their locations
     #[serde(default = "HashMap::new")]
     pub supported_old_versions: HashMap<Version, String>,
@@ -324,6 +328,9 @@ pub struct Project {
     /// Docker configuration for custom Dockerfile support
     #[serde(default)]
     pub docker_config: DockerConfig,
+    /// File watcher configuration
+    #[serde(default)]
+    pub watcher_config: WatcherConfig,
 }
 
 pub fn default_source_dir() -> String {
@@ -386,6 +393,7 @@ impl Project {
         Project {
             language,
             is_production: false,
+            log_payloads: false,
             project_location: location.clone(),
             redpanda_config: KafkaConfig::default(),
             clickhouse_config: ClickHouseConfig::default(),
@@ -404,6 +412,7 @@ impl Project {
             typescript_config: TypescriptConfig::default(),
             source_dir: default_source_dir(),
             docker_config: DockerConfig::default(),
+            watcher_config: WatcherConfig::default(),
         }
     }
 

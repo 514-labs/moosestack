@@ -393,13 +393,19 @@ impl DockerClient {
                 continue;
             }
 
-            // Create a single-node cluster for dev mode
-            // In dev, we just point all clusters to the local ClickHouse instance
+            // Create a multi-node cluster for dev mode to test replication
+            // Both nodes are in the same shard (replicas of each other)
             xml.push_str(&format!(
                 "    <{name}>\n\
                        <shard>\n\
                          <replica>\n\
                            <host>clickhousedb</host>\n\
+                           <port>9000</port>\n\
+                           <user>{user}</user>\n\
+                           <password>{password}</password>\n\
+                         </replica>\n\
+                         <replica>\n\
+                           <host>clickhousedb-2</host>\n\
                            <port>9000</port>\n\
                            <user>{user}</user>\n\
                            <password>{password}</password>\n\
@@ -469,6 +475,22 @@ impl DockerClient {
                     obj.insert("clickhouse_host_data_path".to_string(), json!(path_str));
                 }
             }
+        }
+
+        // Check if clusters are configured to enable multi-node setup
+        let has_clusters = project
+            .clickhouse_config
+            .clusters
+            .as_ref()
+            .map(|c| !c.is_empty())
+            .unwrap_or(false);
+
+        if let Some(obj) = data.as_object_mut() {
+            obj.insert("has_clusters".to_string(), json!(has_clusters));
+            obj.insert(
+                "database_name".to_string(),
+                json!(project.clickhouse_config.db_name),
+            );
         }
 
         // Generate and write ClickHouse clusters config if clusters are defined
@@ -612,12 +634,20 @@ impl DockerClient {
     }
 
     /// Runs buildx command
+    ///
+    /// # Arguments
+    /// * `directory` - The build context directory
+    /// * `version` - The CLI version to download
+    /// * `architecture` - The Docker platform architecture (e.g., "linux/amd64")
+    /// * `binarylabel` - The target triple (e.g., "x86_64-unknown-linux-gnu")
+    /// * `channel` - The release channel ("stable" or "dev")
     pub fn buildx(
         &self,
         directory: &PathBuf,
         version: &str,
         architecture: &str,
         binarylabel: &str,
+        channel: &str,
     ) -> std::io::Result<()> {
         let mut child = self
             .create_command()
@@ -626,7 +656,7 @@ impl DockerClient {
             .arg("build")
             .arg("--build-arg")
             .arg(format!(
-                "DOWNLOAD_URL=https://github.com/514-labs/moose/releases/download/v{version}/moose-cli-{binarylabel}"
+                "DOWNLOAD_URL=https://downloads.fiveonefour.com/{channel}/{version}/{binarylabel}/moose-cli"
             ))
             .arg("--platform")
             .arg(architecture)

@@ -4,7 +4,7 @@
   "description": "Create Moose apps with one command",
   "repository": {
     "type": "git",
-    "url": "https://github.com/514-labs/moose/issues",
+    "url": "https://github.com/514-labs/moosestack",
     "directory": "apps/create-moose-app"
   },
   "files": [
@@ -16,7 +16,7 @@
   "license": "MIT",
   "bin": "./dist/index.js",
   "devDependencies": {
-    "@types/node": "18.16.19",
+    "@types/node": "^20",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
     "eslint": "^8.46.0",
