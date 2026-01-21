@@ -1,8 +1,8 @@
-import { sql } from "@514labs/moose-lib";
+import { sql, Sql } from "@514labs/moose-lib";
 import typia, { tags } from "typia";
 import { executeQuery } from "./client";
 import { EventModel, Events } from "./models";
-import { createQueryHandler, joinSql } from "./utils";
+import { createQueryHandler } from "./utils";
 
 interface GetEventsParams {
   minAmount?: number & tags.Type<"uint32"> & tags.Minimum<0>;
@@ -13,7 +13,7 @@ interface GetEventsParams {
 }
 
 async function getEvents(params: GetEventsParams): Promise<EventModel[]> {
-  const conditions: ReturnType<typeof sql>[] = [];
+  const conditions: Sql[] = [];
 
   if (params.minAmount) {
     conditions.push(sql`${Events.columns.amount} >= ${params.minAmount}`);
@@ -25,16 +25,19 @@ async function getEvents(params: GetEventsParams): Promise<EventModel[]> {
     conditions.push(sql`${Events.columns.status} = ${params.status}`);
   }
 
-  const where =
-    conditions.length ? sql`WHERE ${joinSql(conditions, "AND")}` : sql``;
+  // Use sql.join() to combine WHERE conditions with AND
+  const whereClause =
+    conditions.length > 0 ? sql` WHERE ${sql.join(conditions, "AND")}` : sql``;
 
-  const query = sql`
-  SELECT * 
-  FROM ${Events} 
-  ${where} 
-  ORDER BY ${Events.columns.event_time} DESC 
-  LIMIT ${params.limit ?? 100} 
-  OFFSET ${params.offset ?? 0}`;
+  // Use sql.raw() for static SQL keywords (ORDER BY direction)
+  const orderDirection = sql.raw("DESC");
+
+  // Use Sql.append() to build query incrementally
+  const query = sql`SELECT * FROM ${Events}`
+    .append(whereClause)
+    .append(sql` ORDER BY ${Events.columns.event_time} ${orderDirection}`)
+    .append(sql` LIMIT ${params.limit ?? 100}`)
+    .append(sql` OFFSET ${params.offset ?? 0}`);
 
   return await executeQuery<EventModel>(query);
 }

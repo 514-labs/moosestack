@@ -1,25 +1,4 @@
-import { sql, Sql } from "@514labs/moose-lib";
 import type { IValidation } from "typia";
-
-/**
- * Create raw SQL (literal string, no parameterization).
- */
-function raw(text: string): Sql {
-  return new Sql([text], []);
-}
-
-/**
- * Join an array of SQL fragments with a separator.
- */
-export function joinSql(fragments: Sql[], separator: string = ","): Sql {
-  if (fragments.length === 0) return sql``;
-  if (fragments.length === 1) return fragments[0];
-
-  const sep = raw(separator.includes(" ") ? separator : ` ${separator} `);
-  return fragments
-    .slice(1)
-    .reduce((acc, frag) => sql`${acc}${sep}${frag}`, fragments[0]);
-}
 
 /**
  * Frontend-friendly validation error structure.
