@@ -11,8 +11,8 @@ import {
   getEventsMetrics,
   getEventsByStatus,
   getEventsTimeseries,
+  runEventsQuery,
   eventsModel,
-  db,
 } from "moose";
 
 // =============================================================================
@@ -112,9 +112,9 @@ export async function getEventsOverTimeAction(
  * Execute dynamic query using the QueryModel.
  * Used by the report builder for user-configurable queries.
  */
-export async function executeEventsQuery(params: unknown) {
-  const client = await db();
-  type ModelRequest = typeof eventsModel.$inferRequest;
-  const results = await eventsModel.query(params as ModelRequest, client);
+export async function executeEventsQuery(
+  params: typeof eventsModel.$inferRequest,
+) {
+  const results = await runEventsQuery(params);
   return results;
 }

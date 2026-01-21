@@ -122,7 +122,6 @@ export function DashboardMetricCards({
                 value={cfg.format ? cfg.format(value) : value}
                 icon={cfg.icon}
                 description={cfg.description}
-                isPositive={value > 0}
               />
             );
           })}

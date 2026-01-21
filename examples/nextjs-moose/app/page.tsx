@@ -40,9 +40,6 @@ function DashboardContent() {
           data={eventsByStatus}
           chartConfig={statusChartConfig}
           title="Events by Status"
-          icon={
-            <ChartLine className="size-4 sm:size-[18px] text-muted-foreground" />
-          }
           centerValue={metrics?.totalEvents ?? 0}
           centerLabel="Total Events"
         />
