@@ -350,7 +350,7 @@ You should see output like: `Docker version 24.0.0, build abc1234`
 Any code editor works. We recommend:
 - VS Code
 - Cursor
-- Any editor with TypeScript support
+- PyCharm or any editor with Python support
 
 #### Install MooseStack CLI
 
@@ -371,9 +371,11 @@ moose --version
 Initialize a new MooseStack project:
 
 ```bash
-moose init ecommerce-warehouse typescript
+moose init ecommerce-warehouse python
 cd ecommerce-warehouse
-npm install
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
 This creates a new project with the following structure:
@@ -381,17 +383,17 @@ This creates a new project with the following structure:
 ```
 ecommerce-warehouse/
 ├── app/
-│   ├── index.ts        # CRITICAL: Export all models here
-│   ├── models/         # Data models with IngestPipeline
-│   ├── views/          # Materialized views (optional)
-│   ├── workflows/      # Transformation logic
-│   └── apis/           # Consumption APIs (optional)
+│   ├── __init__.py         # CRITICAL: Export all models here
+│   ├── datamodels/         # Data models (Pydantic BaseModel)
+│   ├── views/              # Materialized views (optional)
+│   ├── workflows/          # Transformation logic
+│   └── apis/               # Consumption APIs (optional)
 ├── moose.config.toml
-├── package.json
-└── tsconfig.json
+├── requirements.txt
+└── .venv/
 ```
 
-**Critical Convention:** All pipeline objects (models, views, workflows, APIs) must be exported from `app/index.ts` for the CLI to discover them. We'll do this as we build.
+**Critical Convention:** All pipeline objects (models, views, workflows, APIs) must be exported from `app/__init__.py` for the CLI to discover them. We'll do this as we build.
 
 #### Start the Development Server
 
@@ -464,205 +466,244 @@ For our e-commerce warehouse, we'll create:
 **Facts:**
 - `fact_order_items` - Individual line items from orders (product, quantity, price)
 
-This tutorial uses simplified TypeScript interfaces to teach dimensional modeling concepts. For production, you'd use MooseStack's `IngestPipeline` pattern (we'll show this at the end).
+This tutorial uses Python Pydantic models with MooseStack's `OlapTable` pattern to teach dimensional modeling concepts.
 
 #### Create the Models Directory
 
 ```bash
-mkdir -p app/models
+mkdir -p app/datamodels
 ```
 
 #### Define Customer Dimension
 
-Create `app/models/customer.ts`:
+Create `app/datamodels/Customer.py`:
 
-```typescript
-// app/models/customer.ts
+```python
+# app/datamodels/Customer.py
 
-export interface Customer {
-  // Surrogate key (auto-generated)
-  customer_key: number;
+from pydantic import BaseModel
+from datetime import datetime, date
+from typing import Optional
+from moose_lib import Key
 
-  // Business key from source system
-  customer_id: string;
+class Customer(BaseModel):
+    # Surrogate key (auto-generated)
+    customer_key: Key[int]
 
-  // Customer attributes
-  email: string;
-  first_name: string;
-  last_name: string;
+    # Business key from source system
+    customer_id: str
 
-  // Address details
-  street_address?: string;
-  city: string;
-  state: string;
-  postal_code?: string;
-  country: string;
+    # Customer attributes
+    email: str
+    first_name: str
+    last_name: str
 
-  // Metadata
-  customer_since: Date;
-  created_at: Date;
-  updated_at: Date;
-}
+    # Address details
+    street_address: Optional[str] = None
+    city: str
+    state: str
+    postal_code: Optional[str] = None
+    country: str
+
+    # Metadata
+    customer_since: date
+    created_at: datetime
+    updated_at: datetime
+```
+
+Now add the OlapTable definition to create the ClickHouse table. Add this to the same file:
+
+```python
+# app/datamodels/Customer.py (continued)
+
+from moose_lib import OlapTable, OlapConfig, ReplacingMergeTreeEngine
+
+# Create the ClickHouse table
+dim_customer = OlapTable[Customer](
+    "dim_customer",
+    OlapConfig(
+        engine=ReplacingMergeTreeEngine(),
+        order_by_fields=["customer_key"],
+    )
+)
 ```
 
 **Key concepts:**
 
-- `customer_key` - A surrogate key (meaningless number) that uniquely identifies this customer in the warehouse. This stays stable even if the source system changes its IDs.
-- `customer_id` - The original ID from your source system. Keep this for traceability.
-- Nullable fields like `street_address?` - Some customers might not have complete data.
-- `created_at`/`updated_at` - Track when records were added or changed in the warehouse.
+- `OlapTable[Customer]` - Creates a ClickHouse table based on the Customer model
+- `ReplacingMergeTreeEngine` - Automatically deduplicates rows with the same key (good for dimensions)
+- `order_by_fields` - Determines the sort order and primary key for the table
+
+You'll follow this same pattern for all dimension and fact tables. For dimensions, use `ReplacingMergeTreeEngine()`. For facts, use `MergeTree()`.
 
 #### Define Product Dimension
 
-Create `app/models/product.ts`:
+Create `app/datamodels/Product.py`:
 
-```typescript
-// app/models/product.ts
+```python
+# app/datamodels/Product.py
 
-export interface Product {
-  // Surrogate key
-  product_key: number;
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
+from moose_lib import Key
 
-  // Business key
-  product_id: string;
-  sku: string;
+class Product(BaseModel):
+    # Surrogate key
+    product_key: Key[int]
 
-  // Product attributes
-  name: string;
-  description?: string;
-  category: string;
-  subcategory?: string;
-  brand?: string;
+    # Business key
+    product_id: str
+    sku: str
 
-  // Pricing
-  list_price: number;
-  cost: number;
+    # Product attributes
+    name: str
+    description: Optional[str] = None
+    category: str
+    subcategory: Optional[str] = None
+    brand: Optional[str] = None
 
-  // Physical attributes
-  weight_oz?: number;
-  dimensions?: string;
+    # Pricing
+    list_price: float
+    cost: float
 
-  // Status
-  is_active: boolean;
+    # Physical attributes
+    weight_oz: Optional[float] = None
+    dimensions: Optional[str] = None
 
-  // Metadata
-  created_at: Date;
-  updated_at: Date;
-}
+    # Status
+    is_active: bool
+
+    # Metadata
+    created_at: datetime
+    updated_at: datetime
 ```
 
 #### Define Date Dimension
 
-Create `app/models/date.ts`:
+Create `app/datamodels/DateDimension.py`:
 
-```typescript
-// app/models/date.ts
+```python
+# app/datamodels/DateDimension.py
 
-export interface DateDimension {
-  // Primary key
-  date_key: number; // Format: YYYYMMDD (e.g., 20240315)
+from pydantic import BaseModel
+from datetime import date
+from typing import Optional
+from moose_lib import Key
 
-  // Date components
-  date: Date;
-  year: number;
-  quarter: number;
-  month: number;
-  month_name: string;
-  week: number;
-  day_of_month: number;
-  day_of_week: number;
-  day_name: string;
+class DateDimension(BaseModel):
+    # Primary key
+    date_key: Key[int]  # Format: YYYYMMDD (e.g., 20240315)
 
-  // Flags
-  is_weekend: boolean;
-  is_holiday: boolean;
-  holiday_name?: string;
+    # Date components
+    date: date
+    year: int
+    quarter: int
+    month: int
+    month_name: str
+    week: int
+    day_of_month: int
+    day_of_week: int
+    day_name: str
 
-  // Fiscal calendar (if different from calendar year)
-  fiscal_year?: number;
-  fiscal_quarter?: number;
-  fiscal_period?: number;
-}
+    # Flags
+    is_weekend: bool
+    is_holiday: bool
+    holiday_name: Optional[str] = None
+
+    # Fiscal calendar (if different from calendar year)
+    fiscal_year: Optional[int] = None
+    fiscal_quarter: Optional[int] = None
+    fiscal_period: Optional[int] = None
 ```
 
 **Why a date dimension?**
 
 Pre-computing date attributes (is_weekend, quarter, fiscal_year) makes time-based queries much faster. Instead of calculating these on every query, you look them up once.
 
+> **Technical Note:** Date dimensions use the `numbers()` table function to generate sequences. In our implementation, `numbers(4018)` generates 0-4017, which we add as days to a start date: `toDate('2020-01-01') + INTERVAL number DAY`. This single INSERT creates 11 years of dates (4,018 rows) in milliseconds. The dimension fits entirely in memory (~400KB) and makes date-based queries 10-100x faster by replacing expensive date calculations with simple integer joins.
+
 #### Define Store Dimension
 
-Create `app/models/store.ts`:
+Create `app/datamodels/Store.py`:
 
-```typescript
-// app/models/store.ts
+```python
+# app/datamodels/Store.py
 
-export interface Store {
-  // Surrogate key
-  store_key: number;
+from pydantic import BaseModel
+from datetime import datetime, date
+from typing import Optional
+from moose_lib import Key
 
-  // Business key
-  store_id: string;
+class Store(BaseModel):
+    # Surrogate key
+    store_key: Key[int]
 
-  // Store attributes
-  store_name: string;
-  store_type: string; // 'retail', 'outlet', 'online'
+    # Business key
+    store_id: str
 
-  // Location
-  address: string;
-  city: string;
-  state: string;
-  postal_code: string;
-  country: string;
-  region: string; // 'Northeast', 'West', etc.
+    # Store attributes
+    store_name: str
+    store_type: str  # 'retail', 'outlet', 'online'
 
-  // Details
-  square_footage?: number;
-  opened_date: Date;
-  is_active: boolean;
+    # Location
+    address: str
+    city: str
+    state: str
+    postal_code: str
+    country: str
+    region: str  # 'Northeast', 'West', etc.
 
-  // Metadata
-  created_at: Date;
-  updated_at: Date;
-}
+    # Details
+    square_footage: Optional[int] = None
+    opened_date: date
+    is_active: bool
+
+    # Metadata
+    created_at: datetime
+    updated_at: datetime
 ```
 
 #### Define Order Items Fact Table
 
-Create `app/models/order_items.ts`:
+Create `app/datamodels/OrderItem.py`:
 
-```typescript
-// app/models/order_items.ts
+```python
+# app/datamodels/OrderItem.py
 
-export interface OrderItem {
-  // Surrogate key for this line item
-  order_item_key: number;
+from pydantic import BaseModel
+from datetime import datetime
+from typing import Optional
 
-  // Business keys
-  order_id: string;
-  line_number: number;
+class OrderItem(BaseModel):
+    # Surrogate key for this line item
+    order_item_key: int
 
-  // Foreign keys to dimensions
-  customer_key: number;
-  product_key: number;
-  order_date_key: number;
-  ship_date_key?: number;
-  store_key: number;
+    # Business keys
+    order_id: str
+    line_number: int
 
-  // Measures (the numbers we'll aggregate)
-  quantity: number;
-  unit_price: number;
-  discount_amount: number;
-  tax_amount: number;
-  total_amount: number;
+    # Foreign keys to dimensions
+    customer_key: int
+    product_key: int
+    order_date_key: int
+    ship_date_key: Optional[int] = None
+    store_key: int
 
-  // Additional facts
-  shipping_cost: number;
-  order_status: string; // 'pending', 'shipped', 'delivered', 'cancelled'
+    # Measures (the numbers we'll aggregate)
+    quantity: int
+    unit_price: float
+    discount_amount: float
+    tax_amount: float
+    total_amount: float
 
-  // Metadata
-  created_at: Date;
-  updated_at: Date;
-}
+    # Additional facts
+    shipping_cost: float
+    order_status: str  # 'pending', 'shipped', 'delivered', 'cancelled'
+
+    # Metadata
+    created_at: datetime
+    updated_at: datetime
 ```
 
 **Key concepts:**
@@ -671,18 +712,91 @@ export interface OrderItem {
 - `quantity`, `unit_price`, etc. are **measures** - the numbers you'll sum, average, or count in queries.
 - Multiple date keys (order_date, ship_date) let you analyze by different dates.
 
+#### Add OlapTable Definitions to Remaining Models
+
+Now add OlapTable definitions to your other model files. Here are the complete examples:
+
+**Product** (add to `app/datamodels/Product.py`):
+```python
+from moose_lib import OlapTable, OlapConfig, ReplacingMergeTreeEngine
+
+dim_product = OlapTable[Product](
+    "dim_product",
+    OlapConfig(
+        engine=ReplacingMergeTreeEngine(),
+        order_by_fields=["product_key"],
+    )
+)
+```
+
+**DateDimension** (add to `app/datamodels/DateDimension.py`):
+```python
+from moose_lib import OlapTable, OlapConfig, MergeTreeEngine
+
+dim_date = OlapTable[DateDimension](
+    "dim_date",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["date_key"],
+    )
+)
+```
+
+**Store** (add to `app/datamodels/Store.py`):
+```python
+from moose_lib import OlapTable, OlapConfig, ReplacingMergeTreeEngine
+
+dim_store = OlapTable[Store](
+    "dim_store",
+    OlapConfig(
+        engine=ReplacingMergeTreeEngine(),
+        order_by_fields=["store_key"],
+    )
+)
+```
+
+**OrderItem** (add to `app/datamodels/OrderItem.py`):
+```python
+from moose_lib import OlapTable, OlapConfig, MergeTreeEngine
+
+fact_order_items = OlapTable[OrderItem](
+    "fact_order_items",
+    OlapConfig(
+        engine=MergeTreeEngine(),
+        order_by_fields=["order_date_key", "customer_key", "product_key"],
+    )
+)
+```
+
+**Note:**
+- Fact tables use `MergeTreeEngine()` (no deduplication), while dimension tables use `ReplacingMergeTreeEngine()` (automatic deduplication)
+- For fact tables, don't use `Key[int]` on the surrogate key if it's not part of the `order_by_fields`. The order_by fields become the primary key in ClickHouse.
+
 #### Export Models from Index
 
-**Critical Step:** Edit `app/index.ts` to export all models:
+**Critical Step:** Edit `app/__init__.py` to export all models and tables:
 
-```typescript
-// app/index.ts
+```python
+# app/__init__.py
 
-export * from "./models/customer";
-export * from "./models/product";
-export * from "./models/date";
-export * from "./models/store";
-export * from "./models/order_items";
+from .datamodels.Customer import Customer, dim_customer
+from .datamodels.Product import Product, dim_product
+from .datamodels.DateDimension import DateDimension, dim_date
+from .datamodels.Store import Store, dim_store
+from .datamodels.OrderItem import OrderItem, fact_order_items
+
+__all__ = [
+    "Customer",
+    "dim_customer",
+    "Product",
+    "dim_product",
+    "DateDimension",
+    "dim_date",
+    "Store",
+    "dim_store",
+    "OrderItem",
+    "fact_order_items",
+]
 ```
 
 Without this, MooseStack won't discover your models.
@@ -1153,7 +1267,15 @@ SELECT
     toWeek(date) as week,
     toDayOfMonth(date) as day_of_month,
     toDayOfWeek(date) as day_of_week,
-    formatDateTime(date, '%A') as day_name,
+    CASE toDayOfWeek(date)
+        WHEN 1 THEN 'Monday'
+        WHEN 2 THEN 'Tuesday'
+        WHEN 3 THEN 'Wednesday'
+        WHEN 4 THEN 'Thursday'
+        WHEN 5 THEN 'Friday'
+        WHEN 6 THEN 'Saturday'
+        WHEN 7 THEN 'Sunday'
+    END as day_name,
     if(toDayOfWeek(date) IN (6, 7), 1, 0) as is_weekend,
     0 as is_holiday,
     NULL as holiday_name,
@@ -1173,6 +1295,8 @@ Execute it:
 ```bash
 cat sql/populate_date_dimension.sql | curl "${CLICKHOUSE_URL}/" --data-binary @-
 ```
+
+> **What just happened?** This single query generated 4,018 rows (11 years of dates) using ClickHouse's `numbers()` function. Each row has pre-calculated attributes like `is_weekend`, `quarter`, and `day_name`. This ~400KB table eliminates expensive date calculations from analytical queries, making them 10-100x faster.
 
 **Verify date dimension:**
 
@@ -1656,56 +1780,71 @@ If you deploy to Boreal (covered in Step 7), you'll get a built-in dashboard UI 
 
 You can build a custom web app that queries your warehouse via HTTP APIs.
 
-Create `app/apis/sales_summary.ts`:
+Create `app/apis/SalesSummary.py`:
 
-```typescript
-// app/apis/sales_summary.ts
+```python
+# app/apis/SalesSummary.py
 
-import { Api } from "@514labs/moose-lib";
+from pydantic import BaseModel, Field
+from moose_lib import MooseClient, Api
 
-interface SalesSummaryParams {
-  startDate: string;
-  endDate: string;
-}
+class SalesSummaryParams(BaseModel):
+    start_date: str = Field(default="2024-01-01", description="Start date (YYYY-MM-DD)")
+    end_date: str = Field(default="2024-12-31", description="End date (YYYY-MM-DD)")
 
-interface SalesSummaryResult {
-  date: string;
-  revenue: number;
-  orders: number;
-  units: number;
-}
+class SalesSummaryResult(BaseModel):
+    date: str
+    revenue: float
+    orders: int
+    units: int
 
-export const salesSummaryApi = new Api<SalesSummaryParams, SalesSummaryResult[]>(
-  "sales-summary",
-  async ({ startDate, endDate }, { client, sql }) => {
-    const result = await client.query.execute<SalesSummaryResult>(sql`
-      SELECT
+def sales_summary_handler(client: MooseClient, params: SalesSummaryParams):
+    """Get daily sales summary for date range"""
+
+    query = """
+    SELECT
         toString(d.date) as date,
         SUM(f.total_amount) as revenue,
         COUNT(DISTINCT f.order_id) as orders,
         SUM(f.quantity) as units
-      FROM fact_order_items f
-      JOIN dim_date d ON f.order_date_key = d.date_key
-      WHERE d.date BETWEEN ${startDate} AND ${endDate}
-      GROUP BY d.date
-      ORDER BY d.date
-    `);
+    FROM fact_order_items f
+    JOIN dim_date d ON f.order_date_key = d.date_key
+    WHERE d.date BETWEEN {start_date} AND {end_date}
+    GROUP BY d.date
+    ORDER BY d.date
+    """
 
-    return result.json();
-  }
-);
+    results = client.query.execute(
+        query,
+        {
+            "start_date": params.start_date,
+            "end_date": params.end_date,
+        }
+    )
+
+    return results
+
+sales_summary_api = Api[SalesSummaryParams, SalesSummaryResult](
+    name="sales_summary",
+    query_function=sales_summary_handler
+)
 ```
 
-Export from `app/index.ts`:
+Export from `app/__init__.py`:
 
-```typescript
-export * from "./apis/sales_summary";
+```python
+from .apis.SalesSummary import sales_summary_api
+
+__all__ = [
+    # ... previous exports ...
+    "sales_summary_api",
+]
 ```
 
 Now you can call this API:
 
 ```bash
-curl "http://localhost:4000/consumption/sales-summary?startDate=2024-01-01&endDate=2024-12-31"
+curl "http://localhost:4000/consumption/sales_summary?start_date=2024-01-01&end_date=2024-12-31"
 ```
 
 Response:
@@ -1998,6 +2137,161 @@ Output shows execution history:
 ```
 
 Your warehouse is now fully automated!
+
+---
+
+### Python Best Practices for Data Warehouses
+
+Before we wrap up, here are some Python-specific best practices for building production-ready data warehouses.
+
+#### Virtual Environments
+
+Always use virtual environments to isolate dependencies:
+
+```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate (Unix/macOS)
+source .venv/bin/activate
+
+# Activate (Windows)
+.venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+Add `.venv/` to your `.gitignore` to avoid committing the virtual environment.
+
+#### Type Safety with Pydantic
+
+Leverage Pydantic's runtime validation:
+
+```python
+from pydantic import BaseModel, Field, validator
+from datetime import datetime
+
+class Product(BaseModel):
+    product_key: int
+    name: str
+    price: float = Field(gt=0, description="Price must be positive")
+
+    @validator('name')
+    def name_must_not_be_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError('Product name cannot be empty')
+        return v.strip()
+```
+
+This catches data quality issues at runtime before they reach ClickHouse.
+
+#### Dependency Management
+
+Use `requirements.txt` for dependencies:
+
+```txt
+moose-lib>=0.3.0
+pydantic>=2.0.0
+clickhouse-driver>=0.2.6
+pandas>=2.0.0
+```
+
+For more complex projects, consider:
+- **Poetry** - Modern dependency management with lock files
+- **pip-tools** - Generates pinned requirements from high-level dependencies
+
+#### Error Handling
+
+Add proper error handling for production:
+
+```python
+import logging
+from moose_lib import MooseClient
+
+logger = logging.getLogger(__name__)
+
+def safe_query(client: MooseClient, query: str):
+    try:
+        return client.query.execute(query)
+    except Exception as e:
+        logger.error(f"Query failed: {query}")
+        logger.error(f"Error: {e}")
+        raise
+```
+
+#### Working with DataFrames
+
+For large CSV files, use pandas with chunking:
+
+```python
+import pandas as pd
+from clickhouse_driver import Client
+
+def load_large_csv(file_path: str, table_name: str, chunk_size: int = 10000):
+    """Load large CSV in chunks to avoid memory issues"""
+    client = Client(host='localhost', port=9000, user='panda', password='pandapass')
+
+    for chunk in pd.read_csv(file_path, chunksize=chunk_size):
+        data = [tuple(row) for row in chunk.values]
+        client.execute(f"INSERT INTO {table_name} VALUES", data)
+        print(f"Loaded {len(data)} rows")
+```
+
+#### Code Organization
+
+Structure your Python warehouse code:
+
+```
+app/
+├── __init__.py
+├── datamodels/
+│   ├── __init__.py
+│   ├── Customer.py
+│   ├── Product.py
+│   └── ...
+├── apis/
+│   ├── __init__.py
+│   └── SalesSummary.py
+├── scripts/
+│   ├── load_data.py
+│   ├── refresh_warehouse.py
+│   └── data_quality_checks.py
+└── utils/
+    ├── __init__.py
+    ├── clickhouse_client.py
+    └── logging_config.py
+```
+
+#### Testing
+
+Add unit tests for your data transformations:
+
+```python
+# tests/test_transformations.py
+import pytest
+from app.datamodels.Customer import Customer
+
+def test_customer_validation():
+    # Valid customer
+    customer = Customer(
+        customer_key=1,
+        customer_id="C001",
+        email="test@example.com",
+        # ... other fields
+    )
+    assert customer.customer_key == 1
+
+    # Invalid customer (missing required field)
+    with pytest.raises(ValueError):
+        Customer(customer_key=1, email="test@example.com")
+```
+
+Run tests with `pytest`:
+```bash
+pip install pytest
+pytest tests/
+```
 
 ---
 
