@@ -42,9 +42,19 @@ pub const CLI_DEV_CLICKHOUSE_VOLUME_DIR_CONFIG_USERS: &str = "clickhouse/configs
 pub const CLI_DEV_TEMPORAL_DYNAMIC_CONFIG_DIR: &str = "temporal/dynamicconfig";
 
 pub const SCHEMAS_DIR: &str = "datamodels";
+
+/// Directory name for streaming functions (for backwards compatibility)
+/// Currently unused but retained for potential migration tooling
 pub const FUNCTIONS_DIR: &str = "functions";
+
+/// Directory name for blocks (for backwards compatibility)
+/// Currently unused but retained for potential migration tooling
 pub const BLOCKS_DIR: &str = "blocks";
+
+/// Directory name for consumption APIs (for backwards compatibility)
+/// Currently unused but retained for potential migration tooling
 pub const CONSUMPTION_DIR: &str = "apis";
+
 pub const VSCODE_DIR: &str = ".vscode";
 pub const SAMPLE_STREAMING_FUNCTION_SOURCE: &str = "Foo";
 pub const SAMPLE_STREAMING_FUNCTION_DEST: &str = "Bar";
@@ -56,16 +66,27 @@ pub const TEMPORAL_CONTAINER_NAME: &str = "temporal";
 pub const REDPANDA_HOSTS: [&str; 2] = ["redpanda", "localhost"];
 
 pub const APP_DIR: &str = "app";
+
+/// Standard application directory layout (for backwards compatibility)
+/// Currently unused but retained for potential migration tooling and documentation
 pub const APP_DIR_LAYOUT: [&str; 4] = [SCHEMAS_DIR, FUNCTIONS_DIR, BLOCKS_DIR, CONSUMPTION_DIR];
 
 pub const GITIGNORE: &str = ".gitignore";
 
-// These two constants are for the old convention of nested directories
-// we will not be renaming them
+/// TypeScript flow file name from old nested directory convention
+/// Currently unused but retained for backwards compatibility with legacy projects
 pub const TS_FLOW_FILE: &str = "flow.ts";
+
+/// Python flow file name from old nested directory convention
+/// Currently unused but retained for backwards compatibility with legacy projects
 pub const PY_FLOW_FILE: &str = "flow.py";
 
+/// TypeScript blocks file name (for backwards compatibility)
+/// Currently unused but retained for potential migration tooling
 pub const TS_BLOCKS_FILE: &str = "Bar.ts";
+
+/// Python blocks file name (for backwards compatibility)
+/// Currently unused but retained for potential migration tooling
 pub const PY_BLOCKS_FILE: &str = "Bar.py";
 
 pub const TS_API_FILE: &str = "bar.ts";

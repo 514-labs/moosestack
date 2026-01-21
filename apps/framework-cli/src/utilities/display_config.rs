@@ -68,7 +68,8 @@ pub struct DisplayConfig {
     /// or when output is redirected to files.
     pub no_ansi: bool,
 
-    /// When true, prepend HH:MM:SS.mmm timestamps to all output lines.
+    /// When true, prepend ISO 8601 timestamps to all output lines
+    /// (e.g., "2024-01-15T10:30:45.123Z").
     /// Useful for debugging and correlating events across different runs.
     pub show_timestamps: bool,
 
@@ -218,6 +219,9 @@ mod tests {
         update_display_config(config);
         let loaded = load_display_config();
         assert_eq!(*loaded, config);
+
+        // Cleanup: restore default config to prevent test leakage
+        update_display_config(DisplayConfig::default());
     }
 
     #[test]
@@ -244,5 +248,8 @@ mod tests {
         assert!(!config2.no_ansi);
         assert!(config2.show_timestamps);
         assert!(config2.show_timing);
+
+        // Cleanup: restore default config to prevent test leakage
+        update_display_config(DisplayConfig::default());
     }
 }

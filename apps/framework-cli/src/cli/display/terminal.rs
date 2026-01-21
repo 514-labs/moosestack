@@ -183,13 +183,13 @@ impl StyledText {
 /// styled text with proper alignment and formatting. The action text is
 /// right-aligned in a fixed-width column for visual consistency.
 ///
-/// Display configuration (ANSI codes, timestamps) is automatically retrieved
-/// from the global display configuration.
-///
 /// # Arguments
 ///
 /// * `styled_text` - The styled text configuration for the action portion
 /// * `message` - The main message content to display
+/// * `no_ansi` - If true, disable ANSI color codes and formatting
+/// * `show_timestamps` - If true, prepend ISO 8601 timestamps to output
+/// * `quiet_stdout` - If true, redirect output to stderr to keep stdout clean
 ///
 /// # Returns
 ///
