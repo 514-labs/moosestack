@@ -340,6 +340,7 @@ fn validate_table_databases_and_clusters(
             }
             SerializableOlapOperation::CreateMaterializedView { .. }
             | SerializableOlapOperation::DropMaterializedView { .. }
+            | SerializableOlapOperation::AlterMaterializedViewRefresh { .. }
             | SerializableOlapOperation::CreateView { .. }
             | SerializableOlapOperation::DropView { .. } => {
                 // Moose does not have cluster support for MV/View, skip validation

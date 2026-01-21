@@ -134,8 +134,88 @@ fn normalize_source_tables(tables: &[String], default_database: &str) -> HashSet
         .collect()
 }
 
+/// Represents what changed between two MaterializedViews.
+/// Used to determine whether ALTER REFRESH can be used instead of DROP/CREATE.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterializedViewDiff {
+    /// True if the SELECT SQL changed
+    pub select_changed: bool,
+    /// True if the target table changed
+    pub target_changed: bool,
+    /// True if the kind changed (incremental <-> refreshable)
+    pub kind_changed: bool,
+    /// True if only the refresh config changed (interval, offset, randomize, depends_on, append)
+    pub refresh_config_changed: bool,
+    /// True if source tables changed (for incremental MVs)
+    pub source_tables_changed: bool,
+}
+
+impl MaterializedViewDiff {
+    /// Returns true if only refresh config changed (can use ALTER TABLE MODIFY REFRESH)
+    pub fn can_alter(&self) -> bool {
+        !self.select_changed
+            && !self.target_changed
+            && !self.kind_changed
+            && !self.source_tables_changed
+            && self.refresh_config_changed
+    }
+
+    /// Returns true if any structural change requires DROP/CREATE
+    pub fn requires_recreate(&self) -> bool {
+        self.select_changed
+            || self.target_changed
+            || self.kind_changed
+            || self.source_tables_changed
+    }
+}
+
+/// Computes the diff between two MaterializedViews.
+/// Used to determine what operations are needed for an update.
+pub fn materialized_view_diff(
+    old: &MaterializedView,
+    new: &MaterializedView,
+    default_database: &str,
+) -> MaterializedViewDiff {
+    // Check if the kind changed (incremental <-> refreshable)
+    // Kind changed if one has refresh_config and the other doesn't
+    let kind_changed = old.is_refreshable() != new.is_refreshable();
+
+    // Check if SELECT SQL changed
+    let select_changed = !sql_is_equivalent(&old.select_sql, &new.select_sql, default_database);
+
+    // Check if target table changed
+    let target_changed = normalize_table_name(&old.target_table, default_database)
+        != normalize_table_name(&new.target_table, default_database)
+        || normalize_database(&old.target_database, default_database)
+            != normalize_database(&new.target_database, default_database);
+
+    // Check if source tables changed.
+    // Source tables track data lineage for both incremental and refreshable MVs.
+    let source_tables_changed = if !kind_changed {
+        let sources_old = normalize_source_tables(old.get_source_tables(), default_database);
+        let sources_new = normalize_source_tables(new.get_source_tables(), default_database);
+        sources_old != sources_new
+    } else {
+        false // Kind change supersedes source table comparison
+    };
+
+    // Check if refresh config changed (only for refreshable -> refreshable)
+    let refresh_config_changed = match (&old.refresh_config, &new.refresh_config) {
+        (Some(old_config), Some(new_config)) => old_config != new_config,
+        _ => false,
+    };
+
+    MaterializedViewDiff {
+        select_changed,
+        target_changed,
+        kind_changed,
+        refresh_config_changed,
+        source_tables_changed,
+    }
+}
+
 /// Checks if two MaterializedViews are semantically equivalent.
-/// Compares target table, source tables (order-independent), and normalized SELECT SQL.
+/// Compares target table, source tables (order-independent), normalized SELECT SQL, and kind.
 /// Uses default_database to normalize `None` database references.
 ///
 /// Note: `life_cycle` is intentionally excluded — it is Moose metadata and does not
@@ -172,11 +252,25 @@ pub fn materialized_views_are_equivalent(
         return false;
     }
 
-    // Compare source tables (order-independent via HashSet)
+    // Compare kinds (incremental vs refreshable)
+    // Kind differs if one has refresh_config and the other doesn't
+    if mv1.is_refreshable() != mv2.is_refreshable() {
+        return false;
+    }
+
+    // Compare source tables (for both incremental and refreshable MVs).
+    // Source tables track data lineage - what tables the SELECT reads from.
     let sources1 = normalize_source_tables(&mv1.source_tables, default_database);
     let sources2 = normalize_source_tables(&mv2.source_tables, default_database);
     if sources1 != sources2 {
         return false;
+    }
+
+    // For refreshable MVs, compare refresh config
+    if let (Some(config1), Some(config2)) = (&mv1.refresh_config, &mv2.refresh_config) {
+        if config1 != config2 {
+            return false;
+        }
     }
 
     // Compare SELECT SQL (must be pre-normalized via ClickHouse + Rust db prefix stripping)
@@ -1729,6 +1823,7 @@ mod tests {
             source_tables: vec!["source".to_string()],
             metadata: None,
             life_cycle: crate::framework::core::partial_infrastructure_map::LifeCycle::FullyManaged,
+            refresh_config: None, // Incremental MV
         };
 
         let mv2 = MaterializedView {
@@ -1740,6 +1835,7 @@ mod tests {
             source_tables: vec!["source".to_string()],
             metadata: None,
             life_cycle: crate::framework::core::partial_infrastructure_map::LifeCycle::FullyManaged,
+            refresh_config: None, // Incremental MV
         };
 
         assert!(

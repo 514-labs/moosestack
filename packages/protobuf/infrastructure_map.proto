@@ -240,8 +240,50 @@ message View {
   optional Metadata metadata = 4;
 }
 
+// Duration for refresh intervals (stored as seconds)
+message RefreshDuration {
+  uint64 seconds = 1;
+}
+
+// Refresh interval specification for refreshable MVs
+message RefreshInterval {
+  oneof interval_type {
+    RefreshDuration every = 1;  // REFRESH EVERY - periodic refresh
+    RefreshDuration after = 2;  // REFRESH AFTER - refresh after interval since last
+  }
+}
+
+// Configuration for refreshable materialized views
+message RefreshableConfig {
+  RefreshInterval interval = 1;
+  optional RefreshDuration offset = 2;
+  optional RefreshDuration randomize = 3;
+  repeated string depends_on = 4;
+  bool append = 5;
+}
+
+// Configuration for incremental (trigger-based) materialized views.
+// This is now an empty marker type - source tables are on select_query.source_tables
+// for BOTH incremental and refreshable MVs. The field is kept for wire format compatibility.
+message IncrementalConfig {
+  // Deprecated: source_tables are now on select_query.source_tables
+  // Kept for backward compatibility with existing serialized data.
+  message SourceTable {
+    string name = 1;
+  }
+  repeated SourceTable source_tables = 1 [deprecated = true];
+}
+
+// MV kind discriminator
+message MaterializedViewKind {
+  oneof kind {
+    IncrementalConfig incremental = 1;
+    RefreshableConfig refreshable = 2;
+  }
+}
+
 // ClickHouse Materialized View that writes transformed data to a target table.
-// MVs run the SELECT query on insert and persist results.
+// MVs can be either incremental (triggered on insert) or refreshable (scheduled).
 message MaterializedView {
   // Name of the materialized view
   string name = 1;
@@ -255,6 +297,8 @@ message MaterializedView {
   optional Metadata metadata = 5;
   // Lifecycle management policy for the materialized view
   LifeCycle life_cycle = 6;
+  // MV kind: incremental or refreshable (new in v2)
+  MaterializedViewKind kind = 7;
 }
 
 message TopicToTableSyncProcess {
