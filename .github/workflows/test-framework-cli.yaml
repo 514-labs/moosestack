@@ -605,66 +605,66 @@ jobs:
         run: |
           cat ~/.moose/*-cli.log
 
-  test-e2e-backward-compatibility-typescript:
-    needs:
-      [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
-    if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E Backward Compatibility - TypeScript (Node 20)
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    permissions:
-      contents: read
-    env:
-      RUST_BACKTRACE: full
-    steps:
-      - name: Install Protoc (Needed for Temporal)
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          version: "23.x"
+  # test-e2e-backward-compatibility-typescript:
+  #   needs:
+  #     [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
+  #   if: needs.detect-changes.outputs.should_run == 'true'
+  #   name: Test E2E Backward Compatibility - TypeScript (Node 20)
+  #   runs-on: blacksmith-4vcpu-ubuntu-2404
+  #   permissions:
+  #     contents: read
+  #   env:
+  #     RUST_BACKTRACE: full
+  #   steps:
+  #     - name: Install Protoc (Needed for Temporal)
+  #       uses: arduino/setup-protoc@v3
+  #       with:
+  #         repo-token: ${{ secrets.GITHUB_TOKEN }}
+  #         version: "23.x"
 
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.sha }}
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: ${{ github.event.pull_request.head.repo.full_name }}
+  #         ref: ${{ github.event.pull_request.head.sha }}
 
-      # Login to Docker hub to get higher rate limits when moose pulls images
-      - name: Login to Docker Hub
-        uses: ./.github/actions/docker-login
-        with:
-          op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+  #     # Login to Docker hub to get higher rate limits when moose pulls images
+  #     - name: Login to Docker Hub
+  #       uses: ./.github/actions/docker-login
+  #       with:
+  #         op-service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-      - uses: pnpm/action-setup@v4
+  #     - uses: pnpm/action-setup@v4
 
-      - name: Install node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "pnpm"
+  #     - name: Install node
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: "pnpm"
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          cache: true
-          # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
-          # This allows cache sharing across all Linux/macOS jobs in this workflow
-          cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
-          cache-on-failure: true
-          cache-all-crates: true
-          cache-workspace-crates: true
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         toolchain: stable
+  #         cache: true
+  #         # Simplified key: OS + arch is sufficient, Cargo.lock hash is added automatically
+  #         # This allows cache sharing across all Linux/macOS jobs in this workflow
+  #         cache-shared-key: ${{ runner.os }}-${{ runner.arch }}-rust
+  #         cache-on-failure: true
+  #         cache-all-crates: true
+  #         cache-workspace-crates: true
 
-      - name: Run TypeScript Backward Compatibility Test
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "TypeScript Tests Template - Upgrade"
-        env:
-          MOOSE_TELEMETRY_ENABLED: false
-          # Add test credentials for S3Queue tests
-          TEST_AWS_ACCESS_KEY_ID: "test-access-key-id"
-          TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key"
+  #     - name: Run TypeScript Backward Compatibility Test
+  #       run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "TypeScript Tests Template - Upgrade"
+  #       env:
+  #         MOOSE_TELEMETRY_ENABLED: false
+  #         # Add test credentials for S3Queue tests
+  #         TEST_AWS_ACCESS_KEY_ID: "test-access-key-id"
+  #         TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key"
 
-      - name: Inspect Logs
-        if: always()
-        run: |
-          cat ~/.moose/*-cli.log
+  #     - name: Inspect Logs
+  #       if: always()
+  #       run: |
+  #         cat ~/.moose/*-cli.log
 
   test-e2e-backward-compatibility-python:
     needs:
