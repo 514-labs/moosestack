@@ -15,10 +15,10 @@ interface GetEventsParams {
 async function getEvents(params: GetEventsParams): Promise<EventModel[]> {
   const conditions: Sql[] = [];
 
-  if (params.minAmount) {
+  if (params.minAmount !== undefined) {
     conditions.push(sql`${Events.columns.amount} >= ${params.minAmount}`);
   }
-  if (params.maxAmount) {
+  if (params.maxAmount !== undefined) {
     conditions.push(sql`${Events.columns.amount} <= ${params.maxAmount}`);
   }
   if (params.status) {
