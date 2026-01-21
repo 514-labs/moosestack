@@ -146,7 +146,7 @@ class KafkaTopicConfig:
 
 def load_streaming_function(
     function_file_dir: str, function_file_name: str
-) -> tuple[type, Callable]:
+) -> tuple[type, list[tuple[Callable, None]]]:
     """
     Load a DMV1 (legacy) streaming function from a Python module.
 
@@ -155,9 +155,9 @@ def load_streaming_function(
         function_file_name: Name of the module file without .py extension
 
     Returns:
-        Tuple of (input_type, run_function) where:
+        Tuple of (input_type, transformation_functions) where:
             - input_type is the type annotation of the run function's input parameter
-            - run_function is the actual transformation function
+            - transformation_functions is a list containing the transformation function wrapped as a tuple with None (no DLQ for DMV1)
 
     Raises:
         SystemExit: If module import fails or if multiple/no streaming functions found
@@ -199,7 +199,8 @@ def load_streaming_function(
         list(streaming_function_run.__annotations__.keys())[0]
     ]
 
-    return run_input_type, streaming_function_run
+    # Wrap the single DMV1 function in a list with None for DLQ to match DMV2 format
+    return run_input_type, [(streaming_function_run, None)]
 
 
 def load_streaming_function_dmv2(

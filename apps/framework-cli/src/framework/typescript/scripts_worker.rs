@@ -108,7 +108,17 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
                 );
                 let _guard = span.enter();
                 match log_data.level.as_str() {
-                    "error" => tracing::error!("{}", log_data.message),
+                    "error" => {
+                        tracing::error!("{}", log_data.message);
+                        // Show error in CLI UI for visibility
+                        show_message_wrapper(
+                            MessageType::Error,
+                            Message {
+                                action: "Workflow".to_string(),
+                                details: log_data.message.clone(),
+                            },
+                        );
+                    }
                     "warn" => tracing::warn!("{}", log_data.message),
                     "debug" => tracing::debug!("{}", log_data.message),
                     _ => tracing::info!("{}", log_data.message),

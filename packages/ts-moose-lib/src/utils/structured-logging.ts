@@ -2,10 +2,10 @@ import * as util from "util";
 import { AsyncLocalStorage } from "async_hooks";
 
 /**
- * Safely serializes a value to a string, handling circular references and BigInt.
+ * Safely serializes a value to a string, handling circular references, BigInt, and Symbols.
  *
- * This function attempts JSON.stringify first, then falls back to util.inspect
- * for values that cannot be serialized (circular references, BigInt, etc.).
+ * This function attempts JSON.stringify first for objects, then falls back to util.inspect
+ * for values that cannot be serialized (circular references, BigInt, Symbols, etc.).
  *
  * @param arg - The value to serialize (can be any type)
  * @returns A string representation of the value
@@ -19,7 +19,9 @@ export function safeStringify(arg: unknown): string {
       return util.inspect(arg, { depth: 2, breakLength: Infinity });
     }
   }
-  return String(arg);
+  // Use util.inspect for all non-object types to handle Symbols, functions, etc.
+  // String(Symbol()) throws TypeError, but util.inspect handles it correctly
+  return util.inspect(arg);
 }
 
 /**
