@@ -3026,6 +3026,7 @@ name = "moose-cli"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "assert_cmd",
  "assert_fs",
  "async-recursion",

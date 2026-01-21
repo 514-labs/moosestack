@@ -1,3 +1,11 @@
+//! Constants and configuration used throughout the CLI application.
+//!
+//! This module contains application-wide constants including file names,
+//! directory paths, and other configuration values.
+//!
+//! For display-related configuration (ANSI colors, timestamps, timing),
+//! see the [`crate::utilities::display_config`] module.
+
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -34,6 +42,9 @@ pub const CLI_DEV_CLICKHOUSE_VOLUME_DIR_CONFIG_USERS: &str = "clickhouse/configs
 pub const CLI_DEV_TEMPORAL_DYNAMIC_CONFIG_DIR: &str = "temporal/dynamicconfig";
 
 pub const SCHEMAS_DIR: &str = "datamodels";
+pub const FUNCTIONS_DIR: &str = "functions";
+pub const BLOCKS_DIR: &str = "blocks";
+pub const CONSUMPTION_DIR: &str = "apis";
 pub const VSCODE_DIR: &str = ".vscode";
 pub const SAMPLE_STREAMING_FUNCTION_SOURCE: &str = "Foo";
 pub const SAMPLE_STREAMING_FUNCTION_DEST: &str = "Bar";
@@ -45,8 +56,17 @@ pub const TEMPORAL_CONTAINER_NAME: &str = "temporal";
 pub const REDPANDA_HOSTS: [&str; 2] = ["redpanda", "localhost"];
 
 pub const APP_DIR: &str = "app";
+pub const APP_DIR_LAYOUT: [&str; 4] = [SCHEMAS_DIR, FUNCTIONS_DIR, BLOCKS_DIR, CONSUMPTION_DIR];
 
 pub const GITIGNORE: &str = ".gitignore";
+
+// These two constants are for the old convention of nested directories
+// we will not be renaming them
+pub const TS_FLOW_FILE: &str = "flow.ts";
+pub const PY_FLOW_FILE: &str = "flow.py";
+
+pub const TS_BLOCKS_FILE: &str = "Bar.ts";
+pub const PY_BLOCKS_FILE: &str = "Bar.py";
 
 pub const TS_API_FILE: &str = "bar.ts";
 pub const PY_API_FILE: &str = "bar.py";

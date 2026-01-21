@@ -4,6 +4,7 @@ pub mod auth;
 pub mod capture;
 pub mod constants;
 pub mod decode_object;
+pub mod display_config;
 pub mod docker;
 pub mod dotenv;
 pub mod git;

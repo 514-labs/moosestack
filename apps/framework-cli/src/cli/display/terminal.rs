@@ -183,11 +183,13 @@ impl StyledText {
 /// styled text with proper alignment and formatting. The action text is
 /// right-aligned in a fixed-width column for visual consistency.
 ///
+/// Display configuration (ANSI codes, timestamps) is automatically retrieved
+/// from the global display configuration.
+///
 /// # Arguments
 ///
 /// * `styled_text` - The styled text configuration for the action portion
 /// * `message` - The main message content to display
-/// * `no_ansi` - If true, disable ANSI color codes and formatting
 ///
 /// # Returns
 ///
@@ -203,7 +205,7 @@ impl StyledText {
 /// ```rust
 /// # use crate::cli::display::terminal::{StyledText, write_styled_line};
 /// let styled = StyledText::new("Success".to_string()).green().bold();
-/// write_styled_line(&styled, "Operation completed successfully", false)?;
+/// write_styled_line(&styled, "Operation completed successfully")?;
 /// # Ok::<(), std::io::Error>(())
 /// ```
 /// Internal helper that writes a styled action line to any writer.
