@@ -1195,6 +1195,37 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
       });
       if (config.isTestsVariant) {
+        it("should verify sql helpers (join, raw, append) work correctly (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // The sql-helpers-test API queries BarAggregatedMV which was populated by the generator workflow
+          // in the previous test. It exercises sql.join(), sql.raw(), and Sql.append() from moose-lib.
+          await verifyConsumptionApi("sql-helpers-test?minDay=1&maxDay=31", [
+            {
+              // The API selects dayOfMonth and totalRows from BarAggregated
+              dayOfMonth: "placeholder",
+              totalRows: "placeholder",
+            },
+          ]);
+
+          // Also test with includeTimestamp=true to verify sql.raw("NOW()") works
+          await withRetries(async () => {
+            const response = await fetch(
+              `${SERVER_CONFIG.url}/api/sql-helpers-test?minDay=1&maxDay=31&includeTimestamp=true`,
+            );
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(
+                `sql-helpers-test with includeTimestamp failed: ${response.status}: ${text}`,
+              );
+            }
+            const json = (await response.json()) as any[];
+            expect(json).to.be.an("array").that.is.not.empty;
+            // When includeTimestamp=true, the response should include query_time from NOW()
+            expect(json[0]).to.have.property("query_time");
+          });
+        });
+
         it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
           const id = randomUUID();
           await withRetries(
