@@ -191,6 +191,7 @@ export function generateLlmToc(): string {
     "",
     "This is a table of contents for the MooseStack documentation.",
     "Each link points to the LLM-friendly markdown version of that page.",
+    "Append `?lang=typescript` or `?lang=python` to any link for language-specific content.",
     "",
   ];
 
