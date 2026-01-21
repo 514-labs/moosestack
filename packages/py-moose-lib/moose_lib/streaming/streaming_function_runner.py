@@ -17,6 +17,7 @@ import argparse
 import builtins
 import contextvars
 import dataclasses
+import os
 import traceback
 from datetime import datetime, timezone
 from importlib import import_module
@@ -62,12 +63,12 @@ _original_print = builtins.print
 
 # Structured print wrapper that respects kwargs and uses contextvars
 def _structured_print(
-    *args: Any,
+    *args: object,
     sep: str = " ",
     end: str = "\n",
     file: Optional[TextIO] = None,
     flush: bool = False,
-    **kwargs: Any,
+    **kwargs: object,
 ) -> None:
     """Print wrapper that emits structured logs when in a function context."""
     function_name = _function_context.get()
@@ -195,9 +196,8 @@ def load_streaming_function(
     streaming_function_run = streaming_function_def.run
 
     # get run input type that doesn't rely on the name of the input parameter
-    run_input_type = streaming_function_run.__annotations__[
-        list(streaming_function_run.__annotations__.keys())[0]
-    ]
+    first_param = next(iter(streaming_function_run.__annotations__))
+    run_input_type = streaming_function_run.__annotations__[first_param]
 
     # Wrap the single DMV1 function in a list with None for DLQ to match DMV2 format
     return run_input_type, [(streaming_function_run, None)]
@@ -518,9 +518,19 @@ def main():
 
     def process_messages():
         try:
-            streaming_function_input_type, streaming_function_callables = (
-                load_streaming_function(function_file_dir, function_file_name)
-            )
+            # Check if we should use compiled (DMV1) mode or registry (DMV2) mode
+            # This matches the TypeScript shouldUseCompiled() logic
+            use_compiled = os.environ.get("MOOSE_USE_COMPILED") == "true"
+            if use_compiled:
+                # DMV1: Load legacy streaming function from file
+                streaming_function_input_type, streaming_function_callables = (
+                    load_streaming_function(function_file_dir, function_file_name)
+                )
+            else:
+                # DMV2: Load from registry with DLQ support
+                streaming_function_input_type, streaming_function_callables = (
+                    load_streaming_function_dmv2(function_file_dir, function_file_name)
+                )
 
             needs_producer = target_topic is not None or any(
                 pair[1] is not None for pair in streaming_function_callables

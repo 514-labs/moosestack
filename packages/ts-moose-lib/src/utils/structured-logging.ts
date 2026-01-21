@@ -2,16 +2,23 @@ import * as util from "util";
 import { AsyncLocalStorage } from "async_hooks";
 
 /**
- * Safely serializes a value to a string, handling circular references, BigInt, and Symbols.
+ * Safely serializes a value to a string, handling circular references, BigInt, Symbols, and Error objects.
  *
- * This function attempts JSON.stringify first for objects, then falls back to util.inspect
- * for values that cannot be serialized (circular references, BigInt, Symbols, etc.).
+ * This function:
+ * - Preserves Error objects (message and stack) via util.inspect
+ * - Attempts JSON.stringify for plain objects, then falls back to util.inspect
+ * - Uses util.inspect for non-object types (Symbols, functions, etc.)
  *
  * @param arg - The value to serialize (can be any type)
  * @returns A string representation of the value
  */
 export function safeStringify(arg: unknown): string {
   if (typeof arg === "object" && arg !== null) {
+    // Special-case Error objects: JSON.stringify(new Error("x")) returns "{}"
+    // Use util.inspect to preserve message and stack trace
+    if (arg instanceof Error) {
+      return util.inspect(arg, { depth: 2, breakLength: Infinity });
+    }
     try {
       return JSON.stringify(arg);
     } catch (e) {

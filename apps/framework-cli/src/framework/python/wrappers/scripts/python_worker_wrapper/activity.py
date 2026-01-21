@@ -144,8 +144,12 @@ def _validate_input_data(input_data: dict | None, task) -> any:
 
 
 async def _execute_task_function(
-    task, input_data, executor, task_state: dict, task_identifier: str
-) -> any:
+    task: Any,
+    input_data: Any,
+    executor: concurrent.futures.Executor,
+    task_state: dict,
+    task_identifier: str,
+) -> Any:
     """Execute the task function with a single context parameter.
 
     Supports both async and sync handlers via a thread executor for sync ones.
@@ -242,7 +246,7 @@ async def _execute_task(
         try:
             # Create task identifier for logging
             task_identifier = (
-                f"{execution_input.dmv2_workflow_name}/{execution_input.task_name}"
+                f"{execution_input.workflow_name}/{execution_input.task_name}"
             )
 
             # Execute the task function

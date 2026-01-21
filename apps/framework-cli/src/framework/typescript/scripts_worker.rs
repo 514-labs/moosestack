@@ -3,7 +3,7 @@ use crate::project::{Project, ProjectFileError};
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, info_span, warn};
 
 use super::bin;
 
@@ -100,7 +100,7 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         while let Ok(Some(line)) = stderr_reader.next_line().await {
             // Try to parse as structured log from Node.js workflow/task
             if let Some(log_data) = crate::cli::logger::parse_structured_log(&line, "task_name") {
-                let span = tracing::info_span!(
+                let span = info_span!(
                     "workflow_task_log",
                     context = crate::cli::logger::context::RUNTIME,
                     resource_type = crate::cli::logger::resource_type::TASK,
@@ -109,7 +109,7 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
                 let _guard = span.enter();
                 match log_data.level.as_str() {
                     "error" => {
-                        tracing::error!("{}", log_data.message);
+                        error!("{}", log_data.message);
                         // Show error in CLI UI for visibility
                         show_message_wrapper(
                             MessageType::Error,
@@ -119,9 +119,9 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
                             },
                         );
                     }
-                    "warn" => tracing::warn!("{}", log_data.message),
-                    "debug" => tracing::debug!("{}", log_data.message),
-                    _ => tracing::info!("{}", log_data.message),
+                    "warn" => warn!("{}", log_data.message),
+                    "debug" => debug!("{}", log_data.message),
+                    _ => info!("{}", log_data.message),
                 }
                 continue;
             }
