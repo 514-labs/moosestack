@@ -11,14 +11,14 @@ use crate::cli::display::{
 use crate::cli::settings::Settings;
 use crate::framework::languages::SupportedLanguages;
 use crate::project::Project;
-use crate::utilities::constants::{CLI_PROJECT_INTERNAL_DIR, SHOW_TIMING};
+use crate::utilities::constants::CLI_PROJECT_INTERNAL_DIR;
+use crate::utilities::display_config::load_display_config;
 use crate::utilities::package_managers::{
     check_local_pnpm_version_warning, detect_pnpm_deploy_mode, find_pnpm_workspace_root,
     legacy_deploy_terminal_message, legacy_deploy_warning_message, PnpmDeployMode,
 };
 use crate::{cli::routines::util::ensure_docker_running, utilities::docker::DockerClient};
 use lazy_static::lazy_static;
-use std::sync::atomic::Ordering;
 
 pub fn run_local_infrastructure(
     project: &Project,
@@ -131,7 +131,7 @@ pub fn run_containers(project: &Project, docker_client: &DockerClient) -> anyhow
             "Starting local infrastructure",
             "Local infrastructure started successfully",
             || docker_client.start_containers(project),
-            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+            !project.is_production && !load_display_config().show_timing,
         )
     })
 }

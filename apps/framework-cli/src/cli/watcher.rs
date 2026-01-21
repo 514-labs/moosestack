@@ -341,9 +341,8 @@ async fn watch(
                             Ok(())
                         },
                         {
-                            use crate::utilities::constants::SHOW_TIMING;
-                            use std::sync::atomic::Ordering;
-                            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed)
+                            use crate::utilities::display_config::load_display_config;
+                            !project.is_production && !load_display_config().show_timing
                         },
                     )
                     .await;
