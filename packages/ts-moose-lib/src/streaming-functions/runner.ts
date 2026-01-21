@@ -38,11 +38,6 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
-import {
-  getSourceDir,
-  shouldUseCompiled,
-  loadModule,
-} from "../compiler-config";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -573,49 +568,6 @@ const sendMessageMetrics = (logger: Logger, metrics: Metrics) => {
   setTimeout(() => sendMessageMetrics(logger, metrics), 1000);
 };
 
-/**
- * Dynamically loads a streaming function from a file path
- *
- * @param args - The streaming function arguments containing the function file path
- * @returns The default export of the streaming function module
- * @throws Will throw and log an error if the function file cannot be loaded
- * @example
- * ```ts
- * const fn = loadStreamingFunctionPrecompiled({functionFilePath: './transform.js'});
- * const result = await fn(data);
- * ```
- */
-async function loadStreamingFunctionPrecompiled(functionFilePath: string) {
-  let streamingFunctionImport: { default: StreamingFunction };
-  try {
-    // Check if we should use compiled code
-    const useCompiled = shouldUseCompiled();
-    const sourceDir = getSourceDir();
-
-    // Adjust path for compiled mode
-    let actualPath = functionFilePath;
-    if (useCompiled) {
-      // Replace source directory path with compiled directory path
-      // Example: /app/path/app/functions/x.ts -> /app/path/.moose/compiled/app/functions/x.js
-      // Use string replacement instead of RegExp to avoid ReDoS risk
-      const sourceDirPattern = `/${sourceDir}/`;
-      actualPath = functionFilePath
-        .replace(sourceDirPattern, `/.moose/compiled/${sourceDir}/`)
-        .replace(/\.ts$/, ".js");
-      // Use dynamic loader that handles both CJS and ESM
-      streamingFunctionImport = await loadModule(actualPath);
-    } else {
-      // In development mode, remove extension for require()
-      const pathWithoutExt = actualPath.replace(/\.(ts|js)$/, "");
-      streamingFunctionImport = require(pathWithoutExt);
-    }
-  } catch (e) {
-    cliLog({ action: "Function", message: `${e}`, message_type: "Error" });
-    throw e;
-  }
-  return streamingFunctionImport.default;
-}
-
 async function loadStreamingFunction(
   sourceTopic: TopicConfig,
   targetTopic?: TopicConfig,
@@ -709,25 +661,16 @@ const startConsumer = async (
   // We preload the function to not have to load it for each message
   // Note: Config types use 'any' as generics because they handle various
   // data model types determined at runtime, not compile time
-  let streamingFunctions: [
-    StreamingFunction,
-    TransformConfig<any> | ConsumerConfig<any>,
-  ][];
-  let fieldMutations: FieldMutations | undefined;
-
-  if (!shouldUseCompiled()) {
-    const result = await loadStreamingFunction(
-      args.sourceTopic,
-      args.targetTopic,
-    );
-    streamingFunctions = result.functions;
-    fieldMutations = result.fieldMutations;
-  } else {
-    streamingFunctions = [
-      [await loadStreamingFunctionPrecompiled(args.functionFilePath), {}],
-    ];
-    fieldMutations = undefined;
-  }
+  // Since dmv1 was removed, always use loadStreamingFunction which loads
+  // transforms from the registry (populated via addTransform() calls).
+  // The loadIndex() inside getStreamingFunctions() handles compiled vs
+  // non-compiled mode internally.
+  const result = await loadStreamingFunction(
+    args.sourceTopic,
+    args.targetTopic,
+  );
+  const streamingFunctions = result.functions;
+  const fieldMutations = result.fieldMutations;
 
   await consumer.subscribe({
     topics: [args.sourceTopic.name], // Use full topic name for Kafka operations
