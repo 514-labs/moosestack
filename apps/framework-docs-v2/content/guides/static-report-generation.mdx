@@ -34,9 +34,9 @@ We've organized this guide for different audiences:
 
 - Node.js 18+ installed
 - Docker Desktop installed and running
+- pnpm installed (`npm install -g pnpm`)
 - Basic familiarity with TypeScript and SQL
 - Terminal access
-- ~40 minutes for hands-on work
 
 ### Verify Your Environment
 
@@ -170,8 +170,10 @@ Create a new Moose project using the TypeScript template:
 ```bash
 moose init sales-reports --language typescript
 cd sales-reports
-npm install
+pnpm install
 ```
+
+> **Important:** Moose projects use pnpm workspaces. If you don't have pnpm installed, run `npm install -g pnpm` first. Using `npm install` will fail with `EUNSUPPORTEDPROTOCOL` errors.
 
 ### Step 3: Start Development Server
 
@@ -226,7 +228,7 @@ import { IngestPipeline } from "@514labs/moose-lib";
 
 // Define the data model - matches store POS export format
 export interface SalesTransaction {
-  // Transaction identifier
+  // Unique identifier
   transactionId: string;  // e.g., "TXN-W001-20250115-0001"
 
   // Timestamp - the star of time-series analytics
@@ -249,16 +251,20 @@ export interface SalesTransaction {
   totalAmount: number;
 }
 
-// Create a complete ingestion pipeline with one declaration
+// IMPORTANT: Always include the type parameter <SalesTransaction> - it's required
+// for the compiler plugin to generate the correct schema
 export const salesPipeline = new IngestPipeline<SalesTransaction>("sales", {
   ingestApi: true,
   stream: true,
   table: {
     // Time-first ordering for efficient range queries
+    // The first field becomes the primary key in ClickHouse
     orderByFields: ["saleTimestamp", "transactionId"],
   }
 });
 ```
+
+> **Critical:** The `IngestPipeline` must include the type parameter (e.g., `IngestPipeline<SalesTransaction>`). Without it, you'll get the error: "Supply the type param T so that the schema is inserted by the compiler plugin."
 
 This single declaration creates three things automatically:
 - A **ClickHouse table** matching your interface
@@ -341,8 +347,8 @@ In production, stores upload CSV or JSON files rather than calling APIs directly
 ### Step 1: Install Dependencies
 
 ```bash
-npm install papaparse date-fns
-npm install -D @types/papaparse
+pnpm add papaparse date-fns
+pnpm add -D @types/papaparse
 ```
 
 ### Step 2: Create File Loader Script
@@ -851,8 +857,8 @@ Now let's transform the JSON report data into a professional PDF document that s
 ### Step 1: Install pdfmake
 
 ```bash
-npm install pdfmake
-npm install -D @types/pdfmake
+pnpm add pdfmake
+pnpm add -D @types/pdfmake
 ```
 
 ### Step 2: Create PDF Export Script
@@ -1498,6 +1504,18 @@ use_ssl = false
 
 #### Setup Issues
 
+**EUNSUPPORTEDPROTOCOL workspace:\* error:**
+
+Use `pnpm install` instead of `npm install`. Moose uses pnpm workspaces.
+
+**Supply the type param T error:**
+
+Ensure `IngestPipeline` includes the type parameter: `new IngestPipeline<SalesTransaction>(...)`. Without it, the compiler plugin cannot generate the correct schema.
+
+**Primary key must be prefix of sorting key:**
+
+The first field in `orderByFields` becomes the primary key. Don't use `Key<T>` if you want a different ordering.
+
 **Port 4000 in use:**
 
 ```bash
@@ -1656,7 +1674,7 @@ If queries take more than 100ms, check:
 
 3. Verify pdfmake is installed:
    ```bash
-   npm list pdfmake
+   pnpm list pdfmake
    ```
 
 **PDF is empty or malformed:**
