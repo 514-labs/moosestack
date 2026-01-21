@@ -11,7 +11,7 @@ import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, Tabs, Tabs
 
 ## Overview
 
-Materialized views are write-time transformations in ClickHouse. A static `SELECT` populates a destination table from one or more sources. You query the destination like any other table. The `MaterializedView` class wraps [ClickHouse `MATERIALIZED VIEW`](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-materialized-view) and keeps the `SELECT` explicit. When you edit the destination schema in code and update the `SELECT` accordingly, Moose applies the corresponding DDL, orders dependent updates, and backfills as needed, so the pipeline stays consistent as you iterate.
+Materialized views are write-time transformations in ClickHouse. A static `SELECT` populates a destination table from one or more sources. You query the destination like any other table. The `MaterializedView` class wraps [ClickHouse `MATERIALIZED VIEW`](https://clickhouse.com/docs/en/sql-reference/statements/create/view/#create-materialized-view) and keeps the `SELECT` explicit. When you edit the destination schema in code and update the `SELECT` accordingly, Moose applies the corresponding DDL, orders dependent updates, and backfills in dev mode, so the pipeline stays consistent as you iterate.
 
 <BulletPointsCard title="Materialized Views: ClickHouse vs. Other Databases" bulletStyle="number" compact bullets={[
     "Requires two parts: a SELECT transformation and a destination table schema",
@@ -27,7 +27,7 @@ compact
 bullets={[
     "Generates and applies destination table DDL when you update the schema in code",
     "Applies DDL in dependency order across views and tables",
-    "Backfills or rewires when the SELECT changes",
+    "Backfills in dev mode when the SELECT changes",
     "Hot‑reloads the view and destination table locally and keeps APIs in sync"
 ]}
 />
@@ -630,7 +630,9 @@ Go to the [Advanced: Writing SELECT statements to Aggregated tables](#writing-se
 
 ## Backfill Destination Tables
 
-When the MaterializedView is created, Moose backfills the destination once by running your `SELECT` (so you start with a fully populated table).
+In dev mode, when a MaterializedView is created or updated, Moose automatically backfills the destination table by running your `SELECT`.
+
+In production, backfill is not automatic to avoid duplicate data if new rows arrive during the backfill. See [Backfill new Materialized Views](/guides/performant-dashboards#backfill-new-materialized-views) for details.
 
 <Callout type="info" title="S3Queue sources are not backfilled" compact>
 Materialized views that source from S3Queue tables are **not backfilled** automatically. S3Queue tables only process new files added to S3 after the table is created - there is no historical data to backfill from. The MV will start populating as new files arrive in S3.
