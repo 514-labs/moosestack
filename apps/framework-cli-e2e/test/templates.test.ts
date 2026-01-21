@@ -1210,7 +1210,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
           // Also test with includeTimestamp=true to verify sql.raw("NOW()") works
           const response = await fetch(
-            `${SERVER_CONFIG.url}/consumption/sql-helpers-test?minDay=1&maxDay=31&includeTimestamp=true`,
+            `${SERVER_CONFIG.url}/api/sql-helpers-test?minDay=1&maxDay=31&includeTimestamp=true`,
           );
           if (!response.ok) {
             const text = await response.text();

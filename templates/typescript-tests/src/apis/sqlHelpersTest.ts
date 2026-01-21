@@ -6,10 +6,8 @@ import { BarAggregatedMV } from "../views/barAggregated";
  */
 
 interface QueryParams {
-  columns?: string[];
   minDay?: number;
   maxDay?: number;
-  orderBy?: string;
   includeTimestamp?: boolean;
 }
 
@@ -20,7 +18,7 @@ interface ResponseData {
 export const SqlHelpersTestApi = new Api<QueryParams, ResponseData[]>(
   "sql-helpers-test",
   async (params, { client, sql }) => {
-    const { columns, minDay, maxDay, orderBy, includeTimestamp } = params;
+    const { minDay, maxDay, includeTimestamp } = params;
 
     const BA = BarAggregatedMV.targetTable;
     // Test sql.join() - join column names

@@ -105,7 +105,7 @@ export class Sql {
 
   constructor(
     rawStrings: readonly string[],
-    rawValues: readonly (RawValue | Column | OlapTable<any> | View)[],
+    rawValues: readonly (RawValue | Column | OlapTable<any> | View | Sql)[],
   ) {
     if (rawStrings.length - 1 !== rawValues.length) {
       if (rawStrings.length === 0) {
@@ -120,7 +120,7 @@ export class Sql {
     }
 
     const valuesLength = rawValues.reduce<number>(
-      (len: number, value: RawValue | Column | OlapTable<any> | View) =>
+      (len: number, value: RawValue | Column | OlapTable<any> | View | Sql) =>
         len +
         (instanceofSql(value) ? value.values.length
         : isColumn(value) || isTable(value) || isView(value) ? 0
