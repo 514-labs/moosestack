@@ -6,7 +6,7 @@
 //!
 //! # Usage
 //!
-//! ```rust,no_run
+//! ```rust
 //! use crate::cli::display::timing::{with_timing, with_timing_async};
 //!
 //! // Synchronous operation
@@ -47,7 +47,7 @@ use std::time::Instant;
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust
 /// use crate::cli::display::timing::with_timing;
 ///
 /// let result = with_timing("Database Query", || {
@@ -92,7 +92,7 @@ where
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust
 /// use crate::cli::display::timing::with_timing_async;
 ///
 /// let result = with_timing_async("API Call", async {
