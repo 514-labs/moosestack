@@ -490,6 +490,34 @@ class SqlResourceConfig(BaseModel):
     metadata: Optional[dict] = None
 
 
+class RefreshIntervalJson(BaseModel):
+    """Internal representation of a refresh interval for serialization.
+
+    Matches Rust's RefreshInterval enum with serde(tag = "type").
+    """
+
+    model_config = model_config
+
+    type: Literal["every", "after"]
+    interval: int  # Interval in seconds
+
+
+class RefreshConfigJson(BaseModel):
+    """Internal representation of refresh config for serialization.
+
+    Only present for refreshable MVs. Incremental MVs have refresh_config = None.
+    Matches Rust's RefreshableConfig struct.
+    """
+
+    model_config = model_config
+
+    interval: RefreshIntervalJson
+    offset: Optional[int] = None  # Offset in seconds
+    randomize: Optional[int] = None  # Randomize window in seconds
+    depends_on: Optional[List[str]] = None
+    append: Optional[bool] = None
+
+
 class MaterializedViewJson(BaseModel):
     """Internal representation of a structured Materialized View for serialization.
 
@@ -500,7 +528,8 @@ class MaterializedViewJson(BaseModel):
         source_tables: Names of source tables the SELECT reads from.
         target_table: Name of the target table where data is written.
         target_database: Optional database for the target table.
-        metadata: Optional metadata for the materialized view (e.g., description, source file).
+        metadata: Optional metadata for the materialized view.
+        refresh_config: Refresh config for refreshable MVs. None = incremental MV.
     """
 
     model_config = model_config
@@ -512,6 +541,7 @@ class MaterializedViewJson(BaseModel):
     target_table: str
     target_database: Optional[str] = None
     metadata: Optional[dict] = None
+    refresh_config: Optional[RefreshConfigJson] = None
 
 
 class ViewJson(BaseModel):
@@ -564,6 +594,47 @@ class InfrastructureMap(BaseModel):
     materialized_views: dict[str, MaterializedViewJson]
     views: dict[str, ViewJson]
     unloaded_files: list[str] = []
+
+
+import re
+
+
+def _parse_interval_to_seconds(interval: str) -> int:
+    """Parse an interval string like '1 hour', '30 minutes', '2 days' to seconds.
+
+    Supports: seconds, second, minutes, minute, hours, hour, days, day
+
+    Args:
+        interval: Interval string like '1 hour', '30 minutes', etc.
+
+    Returns:
+        The interval in seconds.
+
+    Raises:
+        ValueError: If the interval format is invalid.
+    """
+    match = re.match(
+        r"^(\d+)\s*(second|seconds|minute|minutes|hour|hours|day|days)$",
+        interval.strip(),
+        re.IGNORECASE,
+    )
+    if not match:
+        raise ValueError(
+            f'Invalid interval format: "{interval}". '
+            'Expected format like "1 hour", "30 minutes", etc.'
+        )
+    value = int(match.group(1))
+    unit = match.group(2).lower()
+    if unit in ("second", "seconds"):
+        return value
+    elif unit in ("minute", "minutes"):
+        return value * 60
+    elif unit in ("hour", "hours"):
+        return value * 3600
+    elif unit in ("day", "days"):
+        return value * 86400
+    else:
+        raise ValueError(f"Unknown interval unit: {unit}")
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -1133,6 +1204,35 @@ def to_infra_map() -> dict:
 
     # Serialize materialized views with structured data
     for name, mv in get_materialized_views().items():
+        # Convert refresh_config to JSON format (only for refreshable MVs)
+        refresh_config_json: Optional[RefreshConfigJson] = None
+
+        if mv.refresh_config is not None:
+            refresh_config_json = RefreshConfigJson(
+                interval=RefreshIntervalJson(
+                    type=mv.refresh_config.interval.type,
+                    interval=_parse_interval_to_seconds(
+                        mv.refresh_config.interval.interval
+                    ),
+                ),
+                offset=(
+                    _parse_interval_to_seconds(mv.refresh_config.offset)
+                    if mv.refresh_config.offset
+                    else None
+                ),
+                randomize=(
+                    _parse_interval_to_seconds(mv.refresh_config.randomize)
+                    if mv.refresh_config.randomize
+                    else None
+                ),
+                depends_on=(
+                    mv.refresh_config.depends_on
+                    if mv.refresh_config.depends_on
+                    else None
+                ),
+                append=mv.refresh_config.append if mv.refresh_config.append else None,
+            )
+
         materialized_views[name] = MaterializedViewJson(
             name=mv.name,
             select_sql=mv.select_sql,
@@ -1140,6 +1240,7 @@ def to_infra_map() -> dict:
             target_table=mv.target_table.name,
             target_database=getattr(mv.target_table.config, "database", None),
             metadata=getattr(mv, "metadata", None),
+            refresh_config=refresh_config_json,
         )
 
     # Serialize custom views with structured data

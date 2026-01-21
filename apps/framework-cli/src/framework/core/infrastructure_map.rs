@@ -2773,6 +2773,8 @@ impl InfrastructureMap {
             target_table: parsed.target_table,
             target_database: parsed.target_database,
             metadata,
+            // Legacy MVs from SqlResource are always incremental (no refresh_config)
+            refresh_config: None,
         })
     }
 
