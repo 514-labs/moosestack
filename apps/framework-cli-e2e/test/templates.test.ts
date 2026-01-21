@@ -1209,19 +1209,21 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           ]);
 
           // Also test with includeTimestamp=true to verify sql.raw("NOW()") works
-          const response = await fetch(
-            `${SERVER_CONFIG.url}/api/sql-helpers-test?minDay=1&maxDay=31&includeTimestamp=true`,
-          );
-          if (!response.ok) {
-            const text = await response.text();
-            throw new Error(
-              `sql-helpers-test with includeTimestamp failed: ${response.status}: ${text}`,
+          await withRetries(async () => {
+            const response = await fetch(
+              `${SERVER_CONFIG.url}/api/sql-helpers-test?minDay=1&maxDay=31&includeTimestamp=true`,
             );
-          }
-          const json = (await response.json()) as any[];
-          expect(json).to.be.an("array").that.is.not.empty;
-          // When includeTimestamp=true, the response should include query_time from NOW()
-          expect(json[0]).to.have.property("query_time");
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(
+                `sql-helpers-test with includeTimestamp failed: ${response.status}: ${text}`,
+              );
+            }
+            const json = (await response.json()) as any[];
+            expect(json).to.be.an("array").that.is.not.empty;
+            // When includeTimestamp=true, the response should include query_time from NOW()
+            expect(json[0]).to.have.property("query_time");
+          });
         });
 
         it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
