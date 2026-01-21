@@ -114,12 +114,15 @@
 
         try {
           const res = await fetch(path);
-          const json = await res.json();
-
           resultStatus.textContent = res.status + " " + res.statusText;
           resultStatus.className =
             "result-status " + (res.ok ? "success" : "error");
-          resultBody.textContent = JSON.stringify(json, null, 2);
+          try {
+            const json = await res.json();
+            resultBody.textContent = JSON.stringify(json, null, 2);
+          } catch {
+            resultBody.textContent = await res.text();
+          }
         } catch (err) {
           resultStatus.textContent = "Error";
           resultStatus.className = "result-status error";

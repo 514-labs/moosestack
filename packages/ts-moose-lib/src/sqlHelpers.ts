@@ -65,7 +65,7 @@ const isColumn = (
 export interface SqlTemplateTag {
   (
     strings: readonly string[],
-    ...values: readonly (RawValue | Column | OlapTable<any>)[]
+    ...values: readonly (RawValue | Column | OlapTable<any> | View)[]
   ): Sql;
 
   /**

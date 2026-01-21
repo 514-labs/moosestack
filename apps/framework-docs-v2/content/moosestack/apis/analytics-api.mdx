@@ -752,6 +752,7 @@ Only use `sql.raw()` with trusted, static values. Never pass user input directly
 Chain SQL fragments together to build queries step by step:
 
 ```ts filename="SqlAppendExample.ts" copy
+import { Sql } from "@514labs/moose-lib";
 import { UserTable } from "./UserTable";
 
 interface QueryParams {
