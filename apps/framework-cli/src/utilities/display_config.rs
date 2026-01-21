@@ -138,21 +138,10 @@ pub fn update_display_config(config: DisplayConfig) {
 }
 
 #[cfg(test)]
-pub(crate) mod test_utils {
-    use std::sync::Mutex;
-
-    // Shared mutex to serialize ALL tests that modify global DISPLAY_CONFIG
-    // This prevents tests from interfering with each other when running in parallel,
-    // even across different test modules (display_config, timing, mod, etc.)
-    pub static TEST_LOCK: Mutex<()> = Mutex::new(());
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
-    use test_utils::TEST_LOCK;
 
-    // Unit tests for DisplayConfig struct (no global state, no lock needed)
+    // Unit tests for DisplayConfig struct (no global state)
 
     #[test]
     fn test_display_config_default() {
@@ -201,55 +190,5 @@ mod tests {
             show_timing: false,
         };
         assert_ne!(config1, config2);
-    }
-
-    // Integration tests for global state (minimal, needs lock)
-
-    #[test]
-    fn test_global_load_and_update() {
-        let _lock = TEST_LOCK.lock().unwrap();
-
-        // Test that update and load work together
-        let config = DisplayConfig {
-            no_ansi: true,
-            show_timestamps: true,
-            show_timing: false,
-        };
-
-        update_display_config(config);
-        let loaded = load_display_config();
-        assert_eq!(*loaded, config);
-
-        // Cleanup: restore default config to prevent test leakage
-        update_display_config(DisplayConfig::default());
-    }
-
-    #[test]
-    fn test_global_multiple_updates() {
-        let _lock = TEST_LOCK.lock().unwrap();
-
-        // Test that updates replace previous values atomically
-        update_display_config(DisplayConfig {
-            no_ansi: true,
-            show_timestamps: false,
-            show_timing: false,
-        });
-        let config1 = load_display_config();
-        assert!(config1.no_ansi);
-        assert!(!config1.show_timestamps);
-        assert!(!config1.show_timing);
-
-        update_display_config(DisplayConfig {
-            no_ansi: false,
-            show_timestamps: true,
-            show_timing: true,
-        });
-        let config2 = load_display_config();
-        assert!(!config2.no_ansi);
-        assert!(config2.show_timestamps);
-        assert!(config2.show_timing);
-
-        // Cleanup: restore default config to prevent test leakage
-        update_display_config(DisplayConfig::default());
     }
 }

@@ -124,26 +124,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utilities::display_config::{
-        test_utils::TEST_LOCK, update_display_config, DisplayConfig,
-    };
 
     #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
     async fn test_timing_functions_return_values() {
-        let _lock = TEST_LOCK.lock().unwrap();
-
-        update_display_config(DisplayConfig {
-            no_ansi: false,
-            show_timestamps: false,
-            show_timing: false,
-        });
-
-        // Test sync version
+        // Test sync version - ensures wrapper doesn't alter return values
         let result_sync = with_timing("Test", || 42);
         assert_eq!(result_sync, 42);
 
-        // Test async version
+        // Test async version - ensures wrapper doesn't alter return values
         let result_async = with_timing_async("Test", async { 42 }).await;
         assert_eq!(result_async, 42);
     }
