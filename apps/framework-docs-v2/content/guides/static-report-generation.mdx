@@ -71,7 +71,7 @@ tail -f ~/.moose/$(date +%Y-%m-%d)-cli.log
 
 ### Apex Retail daily sales consolidation
 
-You're a data engineer at Apex Retail, a chain with 12 stores across 4 regions. Each night, store POS systems export the day's sales as CSV or JSON files.
+You're a data engineer at Apex Retail, a chain with 12 stores across 4 regions. Each night, store POS (point-of-sale) systems export the day's sales as CSV or JSON files.
 
 **The current process:** An analyst downloads files from each store, copies data into Excel, and emails a summary to regional managers. Takes 2 hours every morning. When the analyst is sick, reports don't go out.
 
@@ -200,9 +200,9 @@ If checks fail, wait 20-30 seconds for containers to initialize. First startup d
 | Service | Port | Description |
 |---------|------|-------------|
 | HTTP Server | 4000 | API endpoints |
-| ClickHouse | 18123 | Columnar database |
-| Redpanda | 19092 | Kafka-compatible streaming |
-| Temporal | 8080 | Workflow orchestration |
+| ClickHouse | 18123 | Columnar database for analytics |
+| Redpanda | 19092 | Message queue for data streaming (Kafka-compatible) |
+| Temporal | 8080 | Scheduled task runner |
 
 All in Docker. No cloud accounts needed.
 
@@ -283,11 +283,7 @@ Check the `moose dev` terminal for:
 
 If not visible, check that the file saved and look for TypeScript errors.
 
-From one interface, Moose:
-1. Inferred the ClickHouse schema
-2. Created the table with time-first ordering
-3. Set up the Redpanda topic
-4. Generated the REST endpoint with validation
+From that one interface, Moose inferred the ClickHouse schema, created the table with time-first ordering, set up a Redpanda topic, and generated a REST endpoint with validation.
 
 ### Step 6: Test ingestion
 
@@ -308,13 +304,11 @@ curl -X POST http://localhost:4000/ingest/sales \
   }'
 ```
 
-A successful response returns `{"success": true}`.
+Returns `{"success": true}`.
 
-**What Just Happened:** You sent a single transaction that simulates a customer buying 2 items at the West region's Store W001. The data flowed through Redpanda and landed in ClickHouse—all auto-provisioned from your TypeScript interface.
+The data flows through Redpanda into ClickHouse.
 
-Verify data landed by querying ClickHouse directly:
-
-> **Note:** The credentials `panda`/`pandapass` are local development defaults configured by `moose dev`. Never use these in production—configure secure credentials in your deployment environment.
+Verify in ClickHouse (credentials are dev defaults, don't use in production):
 
 ```bash
 curl -s "http://localhost:18123/?user=panda&password=pandapass" \
@@ -656,11 +650,7 @@ curl -s "http://localhost:18123/?user=panda&password=pandapass" \
 
 Should show both `sales` and `DailySalesSummary`.
 
-What this does:
-1. Triggers on INSERT to `sales`
-2. Groups transactions by day, collapsing millions of rows into one per day/region/category
-3. Stores results in `DailySalesSummary`
-4. Requires GROUP BY when querying (MVs aggregate per-batch)
+On each INSERT to `sales`, the materialized view (MV) runs and groups transactions by day, collapsing potentially millions of rows into one per day/region/category. Results land in `DailySalesSummary`. Since MVs aggregate per-batch, you need GROUP BY when querying.
 
 **Performance difference:**
 
@@ -669,7 +659,7 @@ What this does:
 | Raw transactions (1 year) | ~10M | 2-10 sec |
 | Daily summaries (1 year) | ~1,500 | 10-50 ms |
 
-100x faster by aggregating at insert time.
+That's 100x faster because aggregation happens once at insert time, not on every query.
 
 ### Step 4: Query aggregated data
 
@@ -789,14 +779,9 @@ export * from "./views/DailySalesSummary";
 export * from "./apis/salesReport";
 ```
 
-This creates:
-1. REST endpoint at `/consumption/sales-report`
-2. Query parameters: `startDate`, `endDate`, optional `region`
-3. Queries the materialized view (fast)
-4. Parameterized SQL (no injection)
-5. Typed JSON response
+Creates a REST endpoint at `/consumption/sales-report` with `startDate`, `endDate`, and optional `region` parameters. Queries the MV (fast), uses parameterized SQL (no injection), returns typed JSON.
 
-Single source of truth for report data. PDF generator, dashboards, everything uses this endpoint.
+PDF generator and dashboards both hit this endpoint.
 
 ### Step 3: Test
 
@@ -823,7 +808,7 @@ pnpm add pdfmake
 pnpm add -D @types/pdfmake
 ```
 
-> **Note:** This guide uses pdfmake 0.3.x which requires Node.js 20 LTS or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
+> **Note:** This guide uses pdfmake 0.3.x which requires Node.js 20 LTS (Long Term Support) or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
 
 ### Step 2: Create PDF generator
 
@@ -1172,7 +1157,7 @@ Traditional: scheduled job (cron, Airflow) aggregates data hourly/daily.
 Raw Data → [Wait for schedule] → Batch Job → Aggregated Table
 ```
 
-Problems: stale data, rescanning, failures leave gaps, scaling complexity.
+Problems: data goes stale between runs, batch job rescans everything, failures leave gaps until next run, scaling means bigger windows or incremental logic.
 
 **ClickHouse MVs:**
 
@@ -1185,7 +1170,7 @@ Raw Data → [INSERT triggers MV] → Aggregated Table (immediate)
 3. Results go into `DailySalesSummary`
 4. Synchronous: MV updated by the time INSERT returns
 
-Benefits: always current, no batch infra, scales with writes, failures don't corrupt.
+Data stays current, no separate batch system to manage, scales with write volume, and a failed INSERT doesn't leave the MV in a bad state.
 
 ### Batch aggregation
 
@@ -1264,19 +1249,19 @@ CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API
 
 | Component | What it does |
 |-----------|--------------|
-| `SalesTransaction` model | Type-safe schema, auto-provisions ClickHouse |
+| `SalesTransaction` model | Type-safe schema, creates ClickHouse table |
 | File loader | Parses CSV/JSON, sends to ingest API |
 | `DailySalesSummary` MV | Pre-aggregates at insert time |
-| `sales-report` API | Parameterized date-range queries |
+| `sales-report` API | Date-range queries with filters |
 | PDF generator | JSON to formatted PDF |
 
 ### Before vs after
 
 **Before:** Analyst downloads 12 CSVs, copies to Excel, writes formulas, formats Word doc, emails PDF. 2+ hours daily. Breaks when analyst is out.
 
-**After:** POS uploads to API, ClickHouse aggregates, API serves any date range, PDF generates in <1 second. 24/7. Git history for everything.
+**After:** POS uploads to API, ClickHouse aggregates, API serves any date range, PDF generates in under a second. Runs unattended. Git tracks every change.
 
-**Impact:** 500+ analyst hours/year freed. No delayed reports. Consistent numbers. Instant historical queries. Same code for 12 or 1,200 stores.
+In this scenario, that's around 500 hours of manual Excel work eliminated (2 hours/day × 250 days). Your actual savings depend on your current process. The code is deterministic, so the same inputs produce the same outputs. And since it's just querying a database, adding more stores doesn't change how long reports take to generate.
 
 ### Performance
 
@@ -1429,7 +1414,7 @@ docker ps | grep clickhouse
 
 #### Data
 
-**CSV date parsing fails:** Use ISO 8601.
+**CSV date parsing fails:** Use ISO 8601 format (`YYYY-MM-DDTHH:MM:SSZ`).
 
 | Wrong Format | Correct Format |
 |--------------|----------------|
