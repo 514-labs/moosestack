@@ -1,9 +1,9 @@
-<a href="https://docs.fiveonefour.com/moose/"><img src="https://raw.githubusercontent.com/514-labs/moose/main/logo-m-light.png" alt="moose logo" height="100px"></a>
+<a href="https://docs.fiveonefour.com/moosestack/"><img src="https://raw.githubusercontent.com/514-labs/moose/main/logo-m-light.png" alt="moose logo" height="100px"></a>
 
 [![Made by Fiveonefour](https://img.shields.io/badge/MADE%20BY-Fiveonefour-black.svg)](https://www.fiveonefour.com)
 [![NPM Version](https://img.shields.io/npm/v/%40514labs%2Fmoose-cli?logo=npm)](https://www.npmjs.com/package/@514labs/moose-cli?activeTab=readme)
 [![MooseStack Community](https://img.shields.io/badge/Slack-MooseStack_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
-[![Docs](https://img.shields.io/badge/Quickstart-Docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
+[![Docs](https://img.shields.io/badge/Quickstart-Docs-blue.svg)](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 [![MIT license](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 # MooseStack
@@ -27,17 +27,17 @@ MooseStack is designed for:
 
 ## MooseStack Modules
 
-- [Moose **OLAP**](https://docs.fiveonefour.com/moose/olap): Manage ClickHouse tables, materialized views, and migrations in code.
-- [Moose **Streaming**](https://docs.fiveonefour.com/moose/streaming): Real‑time ingest buffers and streaming transformation functions with Kafka/Redpanda.
-- [Moose **Workflows**](https://docs.fiveonefour.com/moose/workflows): ETL pipelines and tasks with Temporal.
-- [Moose **APIs**](https://docs.fiveonefour.com/moose/apis): Type‑safe ingestion and query endpoints with auto‑generated OpenAPI docs.
-- MooseStack Tooling: [Moose **Deploy**](https://docs.fiveonefour.com/moose/deploying), [Moose **Migrate**](https://docs.fiveonefour.com/moose/migrate), [Moose **Observability**](https://docs.fiveonefour.com/moose/metrics)
+- [Moose **OLAP**](https://docs.fiveonefour.com/moosestack/olap): Manage ClickHouse tables, materialized views, and migrations in code.
+- [Moose **Streaming**](https://docs.fiveonefour.com/moosestack/streaming): Real‑time ingest buffers and streaming transformation functions with Kafka/Redpanda.
+- [Moose **Workflows**](https://docs.fiveonefour.com/moosestack/workflows): ETL pipelines and tasks with Temporal.
+- [Moose **APIs**](https://docs.fiveonefour.com/moosestack/apis): Type‑safe ingestion and query endpoints with auto‑generated OpenAPI docs.
+- MooseStack Tooling: [Moose **Deploy**](https://docs.fiveonefour.com/moosestack/deploying), [Moose **Migrate**](https://docs.fiveonefour.com/moosestack/migrate), [Moose **Observability**](https://docs.fiveonefour.com/moosestack/metrics)
 
 ## Quickstart
 
-Also available in the Docs: [5-minute Quickstart](https://docs.fiveonefour.com/moose/getting-started/quickstart)
+Also available in the Docs: [5-minute Quickstart](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 
-Already running Clickhouse: [Getting Started with Existing Clickhouse](https://docs.fiveonefour.com/moose/getting-started/from-clickhouse)
+Already running Clickhouse: [Getting Started with Existing Clickhouse](https://docs.fiveonefour.com/moosestack/getting-started/from-clickhouse)
 
 ### Install the CLI
 
@@ -73,7 +73,7 @@ The easiest way to deploy your MooseStack Applications is to use [Boreal](https:
 
 ## Deploy Yourself
 
-MooseStack is open source and can be self-hosted. If you're only using MooseOLAP, you can use the Moose library in your app for schema management, migrations, and typed queries on your ClickHouse database without deploying the Moose runtime. For detailed self-hosting instructions, see our [deployment documentation](https://docs.fiveonefour.com/moose/deploying).
+MooseStack is open source and can be self-hosted. If you're only using MooseOLAP, you can use the Moose library in your app for schema management, migrations, and typed queries on your ClickHouse database without deploying the Moose runtime. For detailed self-hosting instructions, see our [deployment documentation](https://docs.fiveonefour.com/moosestack/deploying).
 
 ## Examples
 
@@ -148,9 +148,9 @@ consumption_api = ConsumptionApi[RequestParams, DataModel]("get-api-route", quer
 
 ## Docs
 
-- [Overview](https://docs.fiveonefour.com/moose)
-- [5-min Quickstart](https://docs.fiveonefour.com/moose/getting-started/quickstart)
-- [Quickstart with Existing Clickhouse](https://docs.fiveonefour.com/moose/getting-started/from-clickhouse)
+- [Overview](https://docs.fiveonefour.com/moosestack)
+- [5-min Quickstart](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
+- [Quickstart with Existing Clickhouse](https://docs.fiveonefour.com/moosestack/getting-started/from-clickhouse)
 
 ## Built on
 
@@ -176,7 +176,7 @@ For detailed setup instructions and troubleshooting, see [Docker Setup Documenta
 
 ## Contributing
 
-We welcome contributions! See the [contribution guidelines](https://github.com/514-labs/moose/blob/main/CONTRIBUTING.md).
+We welcome contributions! See the [contribution guidelines](https://github.com/514-labs/moosestack/blob/main/CONTRIBUTING.md).
 
 ## License
 
