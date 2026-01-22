@@ -24,23 +24,33 @@ function formatTableReference(table: OlapTable<any> | View): string {
 // ============================================================================
 
 /**
+ * Supported time units for refresh intervals.
+ * Maps directly to ClickHouse interval units.
+ */
+export type TimeUnit = "second" | "minute" | "hour" | "day" | "week";
+
+/**
  * Refresh interval using EVERY mode - periodic refresh at fixed times.
- * Example: { type: "every", interval: "1 hour" } => REFRESH EVERY 1 HOUR
+ * Example: { type: "every", value: 1, unit: "hour" } => REFRESH EVERY 1 HOUR
  */
 export interface RefreshIntervalEvery {
   type: "every";
-  /** Interval string like "1 hour", "30 minutes", "1 day" */
-  interval: string;
+  /** The numeric value of the interval */
+  value: number;
+  /** The time unit for the interval */
+  unit: TimeUnit;
 }
 
 /**
  * Refresh interval using AFTER mode - refresh after interval since last refresh.
- * Example: { type: "after", interval: "30 minutes" } => REFRESH AFTER 30 MINUTES
+ * Example: { type: "after", value: 30, unit: "minute" } => REFRESH AFTER 30 MINUTE
  */
 export interface RefreshIntervalAfter {
   type: "after";
-  /** Interval string like "1 hour", "30 minutes", "1 day" */
-  interval: string;
+  /** The numeric value of the interval */
+  value: number;
+  /** The time unit for the interval */
+  unit: TimeUnit;
 }
 
 /**
@@ -49,18 +59,43 @@ export interface RefreshIntervalAfter {
 export type RefreshInterval = RefreshIntervalEvery | RefreshIntervalAfter;
 
 /**
+ * A duration specified as value + unit.
+ * Used for offset and randomize configurations.
+ */
+export interface Duration {
+  /** The numeric value */
+  value: number;
+  /** The time unit */
+  unit: TimeUnit;
+}
+
+/**
  * Configuration for refreshable (scheduled) materialized views.
  *
  * Refreshable MVs run on a schedule (REFRESH EVERY/AFTER) rather than
  * being triggered by inserts to source tables.
+ *
+ * @example
+ * ```typescript
+ * const mv = new MaterializedView<Stats>({
+ *   materializedViewName: "hourly_stats_mv",
+ *   selectStatement: "SELECT count(*) as cnt FROM events",
+ *   selectTables: [eventsTable],
+ *   targetTable: { name: "hourly_stats" },
+ *   refreshConfig: {
+ *     interval: { type: "every", value: 1, unit: "hour" },
+ *     offset: { value: 5, unit: "minute" },
+ *   },
+ * });
+ * ```
  */
 export interface RefreshConfig {
   /** The refresh interval (EVERY or AFTER) */
   interval: RefreshInterval;
-  /** Optional offset from interval start, e.g., "5 minutes" */
-  offset?: string;
-  /** Optional randomization window, e.g., "10 seconds" */
-  randomize?: string;
+  /** Optional offset from interval start */
+  offset?: Duration;
+  /** Optional randomization window */
+  randomize?: Duration;
   /** Names of other MVs this one depends on */
   dependsOn?: string[];
   /** Use APPEND mode instead of full refresh */

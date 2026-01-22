@@ -595,36 +595,29 @@ interface ViewJson {
 }
 
 /**
- * Parse an interval string like "1 hour", "30 minutes", "2 days" to seconds.
- * Supports: seconds, second, minutes, minute, hours, hour, days, day
+ * Seconds per time unit lookup table.
+ * Used to convert structured Duration/RefreshInterval to seconds.
  */
-function parseIntervalToSeconds(interval: string): number {
-  const match = interval
-    .trim()
-    .match(/^(\d+)\s*(second|seconds|minute|minutes|hour|hours|day|days)$/i);
-  if (!match) {
+const UNIT_TO_SECONDS: Record<string, number> = {
+  second: 1,
+  minute: 60,
+  hour: 3600,
+  day: 86400,
+  week: 604800,
+};
+
+/**
+ * Convert a Duration (value + unit) to seconds.
+ * This is a simple lookup - no string parsing needed.
+ */
+function durationToSeconds(duration: { value: number; unit: string }): number {
+  const multiplier = UNIT_TO_SECONDS[duration.unit];
+  if (multiplier === undefined) {
     throw new Error(
-      `Invalid interval format: "${interval}". Expected format like "1 hour", "30 minutes", etc.`,
+      `Unknown time unit: "${duration.unit}". Supported units: ${Object.keys(UNIT_TO_SECONDS).join(", ")}`,
     );
   }
-  const value = parseInt(match[1], 10);
-  const unit = match[2].toLowerCase();
-  switch (unit) {
-    case "second":
-    case "seconds":
-      return value;
-    case "minute":
-    case "minutes":
-      return value * 60;
-    case "hour":
-    case "hours":
-      return value * 3600;
-    case "day":
-    case "days":
-      return value * 86400;
-    default:
-      throw new Error(`Unknown interval unit: ${unit}`);
-  }
+  return duration.value * multiplier;
 }
 
 /**
@@ -1288,15 +1281,15 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       refreshConfigJson = {
         interval: {
           type: mv.refreshConfig.interval.type,
-          interval: parseIntervalToSeconds(mv.refreshConfig.interval.interval),
+          interval: durationToSeconds(mv.refreshConfig.interval),
         },
         offset:
           mv.refreshConfig.offset ?
-            parseIntervalToSeconds(mv.refreshConfig.offset)
+            durationToSeconds(mv.refreshConfig.offset)
           : undefined,
         randomize:
           mv.refreshConfig.randomize ?
-            parseIntervalToSeconds(mv.refreshConfig.randomize)
+            durationToSeconds(mv.refreshConfig.randomize)
           : undefined,
         dependsOn: mv.refreshConfig.dependsOn,
         append: mv.refreshConfig.append,
