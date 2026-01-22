@@ -7,14 +7,13 @@ import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { MarkdownMenu } from "@/components/markdown-menu";
 
-// Force static generation despite searchParams access
+// Force static generation for optimal performance
 export const dynamic = "force-static";
 
 interface PageProps {
   params: Promise<{
     slug: string[];
   }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateStaticParams() {
@@ -76,7 +75,7 @@ export async function generateMetadata({
   }
 }
 
-export default async function DocPage({ params, searchParams }: PageProps) {
+export default async function DocPage({ params }: PageProps) {
   const resolvedParams = await params;
   const slugArray = resolvedParams.slug;
 

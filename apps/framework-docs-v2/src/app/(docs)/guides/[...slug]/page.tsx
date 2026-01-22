@@ -20,7 +20,6 @@ interface PageProps {
   params: Promise<{
     slug: string[];
   }>;
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
 export async function generateStaticParams() {
@@ -78,9 +77,8 @@ export async function generateMetadata({
   }
 }
 
-export default async function GuidePage({ params, searchParams }: PageProps) {
+export default async function GuidePage({ params }: PageProps) {
   const resolvedParams = await params;
-  const resolvedSearchParams = await searchParams;
   const slugArray = resolvedParams.slug;
 
   // Handle empty slug array (shouldn't happen with [...slug] but be safe)
