@@ -10,12 +10,7 @@ const createWithVercelToolbar = require("@vercel/toolbar/plugins/next");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Based on the provided documentation, cacheComponents is a root-level option
-  cacheComponents: true,
-
-  experimental: {
-    // Removing dynamicIO as it caused an error and might be implied or renamed
-  },
+  experimental: {},
 
   reactStrictMode: true,
   pageExtensions: ["js", "jsx", "ts", "tsx", "md", "mdx"],

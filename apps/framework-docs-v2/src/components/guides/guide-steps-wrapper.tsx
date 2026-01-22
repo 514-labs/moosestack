@@ -1,6 +1,7 @@
-import { Suspense } from "react";
+"use client";
+
+import { type ReactNode, useState, useCallback } from "react";
 import { GuideStepsNav } from "./guide-steps-nav";
-import { StepContent } from "./step-content";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -10,87 +11,57 @@ interface GuideStepsWrapperProps {
     stepNumber: number;
     title: string;
   }>;
-  stepsWithContent: Array<{
+  /** Pre-rendered step content as React nodes, keyed by step slug */
+  renderedSteps: Array<{
     slug: string;
-    stepNumber: number;
-    title: string;
-    content: string | null;
-    isMDX: boolean;
+    content: ReactNode;
   }>;
   currentSlug: string;
 }
 
-async function StepContentWrapper({
-  content,
-  isMDX,
-  slug,
-  index,
-}: {
-  content: string;
-  isMDX: boolean;
-  slug: string;
-  index: number;
-}) {
-  return (
-    <div
-      key={slug}
-      data-step-index={index}
-      className={`step-content ${index === 0 ? "block" : "hidden"}`}
-    >
-      <StepContent content={content} isMDX={isMDX} />
-    </div>
-  );
-}
-
 export function GuideStepsWrapper({
   steps,
-  stepsWithContent,
+  renderedSteps,
   currentSlug,
 }: GuideStepsWrapperProps) {
-  // Render all step content with Suspense for async MDX rendering
-  const renderedSteps = stepsWithContent.map((step, index) => {
-    if (!step.content) return null;
-    return (
-      <Suspense
-        key={step.slug}
-        fallback={
-          <div
-            data-step-index={index}
-            className={`step-content ${index === 0 ? "block" : "hidden"}`}
-          >
-            <div className="text-muted-foreground">Loading step content...</div>
-          </div>
-        }
-      >
-        <StepContentWrapper
-          content={step.content}
-          isMDX={step.isMDX}
-          slug={step.slug}
-          index={index}
-        />
-      </Suspense>
-    );
-  });
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+
+  const handleStepChange = useCallback((index: number) => {
+    setCurrentStepIndex(index);
+  }, []);
+
+  const currentStep = steps[currentStepIndex];
 
   return (
     <div id="guide-steps" className="mt-12 w-full">
-      <GuideStepsNav steps={steps} currentSlug={currentSlug} />
+      <GuideStepsNav
+        steps={steps}
+        currentSlug={currentSlug}
+        onStepChange={handleStepChange}
+      />
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Badge variant="secondary" className="step-card-badge">
-                {steps[0]?.stepNumber || 1}
-              </Badge>
-              <CardTitle className="step-card-title">
-                {steps[0]?.title || "Step 1"}
-              </CardTitle>
+              <Badge variant="secondary">{currentStep?.stepNumber || 1}</Badge>
+              <CardTitle>{currentStep?.title || "Step 1"}</CardTitle>
             </div>
-            <div id="step-nav-buttons-container" className="flex gap-2"></div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="step-content-container">{renderedSteps}</div>
+          <div className="step-content-container">
+            {renderedSteps.map((step, index) => (
+              <div
+                key={step.slug}
+                data-step-index={index}
+                className={index === currentStepIndex ? "block" : "hidden"}
+              >
+                <div className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+                  {step.content}
+                </div>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
     </div>

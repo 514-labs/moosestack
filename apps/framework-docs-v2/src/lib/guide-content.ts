@@ -41,9 +41,6 @@ export async function getCachedGuideSteps(
   slug: string,
   params: Record<string, string>,
 ): Promise<GuideStep[]> {
-  "use cache";
-  cacheLife("max");
-
   const manifest = await parseGuideManifest(slug);
   if (!manifest) {
     return [];
