@@ -434,7 +434,7 @@ async function loadFile(filePath: string): Promise<void> {
 // CLI execution
 const filePath = process.argv[2];
 if (!filePath) {
-  console.error("Usage: npx ts-node scripts/load-file.ts <path-to-file>");
+  console.error("Usage: pnpm exec ts-node scripts/load-file.ts <path-to-file>");
   process.exit(1);
 }
 
@@ -468,10 +468,10 @@ Empty `customerId` = no loyalty card.
 ```bash
 mkdir -p sample-data
 # Create the CSV file above, then:
-npx ts-node scripts/load-file.ts sample-data/west-store-001.csv
+pnpm exec ts-node scripts/load-file.ts sample-data/west-store-001.csv
 ```
 
-> **Tip:** In pnpm workspaces, `pnpm exec ts-node` is more reliable than `npx ts-node`. You can also add a script to `package.json`: `"load-file": "ts-node scripts/load-file.ts"` and run `pnpm run load-file sample-data/west-store-001.csv`.
+> **Tip:** You can also add a script to `package.json`: `"load-file": "ts-node scripts/load-file.ts"` and run `pnpm run load-file sample-data/west-store-001.csv`.
 
 Output:
 ```
@@ -1134,7 +1134,7 @@ curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDat
 If the API returns valid JSON (not an empty `[]`), generate the PDF:
 
 ```bash
-npx ts-node scripts/generate-pdf-report.ts 2025-01-15 2025-01-15 january-15-report.pdf
+pnpm exec ts-node scripts/generate-pdf-report.ts 2025-01-15 2025-01-15 january-15-report.pdf
 ```
 
 Expected output:
