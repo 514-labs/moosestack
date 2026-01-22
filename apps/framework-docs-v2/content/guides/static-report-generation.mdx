@@ -170,15 +170,29 @@ Moose uses pnpm workspaces. `npm install` won't work.
 
 ### Step 3: Start dev server
 
+**Open a new terminal window** (or terminal tab) and run:
+
 ```bash
+cd sales-reports
 moose dev
 ```
 
-API server starts on http://localhost:4000. Keep this terminal open.
+> **Important:** `moose dev` runs continuously and doesn't exit. Keep this terminal open for the entire tutorial. You'll run all other commands (curl, scripts, etc.) in a separate terminal.
 
 The dev server auto-reloads on file changes. First run may auto-upgrade the CLI to match moose-lib version.
 
+#### Wait for services to start
+
+**First startup takes 2-5 minutes** while Docker images download. Subsequent starts are faster (10-30 seconds).
+
+Watch the terminal for these indicators that services are ready:
+- `✓ ClickHouse is ready`
+- `✓ Redpanda is ready`
+- `HTTP server started on port 4000`
+
 #### Verify services
+
+In your **other terminal**, test the services:
 
 ```bash
 # Test the API server
@@ -193,7 +207,9 @@ curl http://localhost:18123/ping
 
 Should return `Ok.`
 
-If checks fail, wait 20-30 seconds for containers to initialize. First startup downloads Docker images and takes longer.
+If checks fail, wait another 20-30 seconds. Common startup issues:
+- **Connection refused:** Services still initializing—wait longer
+- **Docker errors:** Ensure Docker Desktop is running (check menu bar icon on Mac)
 
 **What started:**
 
@@ -325,8 +341,10 @@ Stores upload CSV or JSON files rather than calling APIs directly. Here's a file
 
 ```bash
 pnpm add papaparse date-fns
-pnpm add -D @types/papaparse
+pnpm add -D @types/papaparse ts-node
 ```
+
+`ts-node` lets you run TypeScript files directly without compiling first.
 
 ### Step 2: Create file loader
 
@@ -789,6 +807,31 @@ PDF generator and dashboards both hit this endpoint.
 curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-01&endDate=2025-01-31"
 ```
 
+A successful response returns JSON like this:
+
+```json
+[
+  {
+    "saleDate": "2025-01-15",
+    "region": "West",
+    "productCategory": "Electronics",
+    "transactionCount": 3,
+    "totalQuantity": 4,
+    "totalRevenue": 1349.96
+  },
+  {
+    "saleDate": "2025-01-15",
+    "region": "West",
+    "productCategory": "Clothing",
+    "transactionCount": 2,
+    "totalQuantity": 4,
+    "totalRevenue": 139.96
+  }
+]
+```
+
+If you get an empty array `[]`, verify data was ingested in Part 3 and the date range matches your data.
+
 Filter by region:
 
 ```bash
@@ -1088,13 +1131,21 @@ With `moose dev` running, first verify the API returns data:
 curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15"
 ```
 
-If the API returns valid JSON, generate the PDF:
+If the API returns valid JSON (not an empty `[]`), generate the PDF:
 
 ```bash
 npx ts-node scripts/generate-pdf-report.ts 2025-01-15 2025-01-15 january-15-report.pdf
 ```
 
-> **Tip:** Always test the API with `curl` before running the PDF generator. The PDF generator has limited error messages if the API fails.
+Expected output:
+
+```
+Fetching report data from 2025-01-15 to 2025-01-15...
+Generating PDF with 5 data rows...
+PDF report saved to january-15-report.pdf
+```
+
+> **Tip:** Always test the API with `curl` before running the PDF generator. If you see "No data found" or the script hangs, verify the API returns data for your date range.
 
 ### Step 4: Verify
 
