@@ -259,11 +259,15 @@ message RefreshableConfig {
 }
 
 // Configuration for incremental (trigger-based) materialized views.
-// This is now an empty marker type - source tables are on select_query.source_tables
-// for BOTH incremental and refreshable MVs. The field is kept for wire format compatibility.
+// Incremental MVs execute their SELECT on every insert to source tables.
+//
+// Note: Source tables are stored in select_query.source_tables for BOTH
+// incremental and refreshable MVs. This provides consistent data lineage
+// tracking - for incremental MVs these tables trigger the MV, for refreshable
+// MVs they represent what tables are read during scheduled refresh.
 message IncrementalConfig {
-  // Deprecated: source_tables are now on select_query.source_tables
-  // Kept for backward compatibility with existing serialized data.
+  // Legacy field - source_tables are now in select_query.source_tables.
+  // Kept for backward wire compatibility. Do not use for new code.
   message SourceTable {
     string name = 1;
   }
