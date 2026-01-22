@@ -8,7 +8,8 @@ import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { MarkdownMenu } from "@/components/markdown-menu";
 
-// export const dynamic = "force-dynamic";
+// Force static generation despite searchParams access
+export const dynamic = "force-static";
 
 interface PageProps {
   params: Promise<{

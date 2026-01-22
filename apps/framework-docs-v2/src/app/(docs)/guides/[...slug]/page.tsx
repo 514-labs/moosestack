@@ -14,6 +14,9 @@ import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { MarkdownMenu } from "@/components/markdown-menu";
 
+// Force static generation despite searchParams access
+export const dynamic = "force-static";
+
 interface PageProps {
   params: Promise<{
     slug: string[];
