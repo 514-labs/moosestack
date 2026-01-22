@@ -41,7 +41,7 @@ use crate::framework::core::infrastructure_map::{InfraChanges, OlapChange, Table
 use crate::framework::versions::Version;
 use crate::metrics::Metrics;
 use crate::utilities::auth::{get_claims, validate_jwt};
-use crate::utilities::constants::SHOW_TIMING;
+use crate::utilities::display_config::load_display_config;
 
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
 use crate::framework::typescript::bin::CliMessage;
@@ -2899,7 +2899,7 @@ async fn shutdown(
                 let mut process_registry = process_registry.write().await;
                 process_registry.stop().await
             },
-            !project.is_production && !SHOW_TIMING.load(Ordering::Relaxed),
+            !project.is_production && !load_display_config().show_timing,
         )
         .await
     })
@@ -2960,7 +2960,7 @@ async fn shutdown(
                 "Stopping workflows",
                 "Workflows stopped",
                 async { terminate_all_workflows(project).await },
-                !SHOW_TIMING.load(Ordering::Relaxed),
+                !load_display_config().show_timing,
             )
             .await
         })
@@ -3025,7 +3025,7 @@ async fn shutdown(
                     || {
                         let _ = docker.stop_containers(project);
                     },
-                    !SHOW_TIMING.load(Ordering::Relaxed),
+                    !load_display_config().show_timing,
                 )
             });
 

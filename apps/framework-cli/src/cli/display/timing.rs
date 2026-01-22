@@ -20,21 +20,20 @@
 //! }).await;
 //! ```
 //!
-//! When the SHOW_TIMING flag is enabled, these wrappers will display:
+//! When `DisplayConfig.show_timing` is enabled (via the --timing CLI flag), these wrappers will display:
 //! ```text
 //! Planning finished in 234ms
 //! Execution finished in 2.3s
 //! ```
 
 use crate::cli::display::{Message, MessageType};
-use crate::utilities::constants::SHOW_TIMING;
+use crate::utilities::display_config::load_display_config;
 use std::future::Future;
-use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 /// Wraps a synchronous operation with timing information.
 ///
-/// If SHOW_TIMING is enabled, displays the elapsed time after completion
+/// If `DisplayConfig.show_timing` is enabled (via --timing CLI flag), displays the elapsed time after completion
 /// using the show_message! macro with Info type.
 ///
 /// # Arguments
@@ -64,7 +63,7 @@ where
     let start = Instant::now();
     let result = f();
 
-    if SHOW_TIMING.load(Ordering::Relaxed) {
+    if load_display_config().show_timing {
         let elapsed = start.elapsed();
         show_message!(MessageType::Info, {
             Message {
@@ -79,7 +78,7 @@ where
 
 /// Wraps an asynchronous operation with timing information.
 ///
-/// If SHOW_TIMING is enabled, displays the elapsed time after completion.
+/// If `DisplayConfig.show_timing` is enabled (via --timing CLI flag), displays the elapsed time after completion.
 /// This is the async version of `with_timing`.
 ///
 /// # Arguments
@@ -109,7 +108,7 @@ where
     let start = Instant::now();
     let result = f.await;
 
-    if SHOW_TIMING.load(Ordering::Relaxed) {
+    if load_display_config().show_timing {
         let elapsed = start.elapsed();
         show_message!(MessageType::Info, {
             Message {
@@ -126,17 +125,14 @@ where
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_with_timing_returns_value() {
-        SHOW_TIMING.store(false, Ordering::Relaxed);
-        let result = with_timing("Test", || 42);
-        assert_eq!(result, 42);
-    }
-
     #[tokio::test]
-    async fn test_with_timing_async_returns_value() {
-        SHOW_TIMING.store(false, Ordering::Relaxed);
-        let result = with_timing_async("Test", async { 42 }).await;
-        assert_eq!(result, 42);
+    async fn test_timing_functions_return_values() {
+        // Test sync version - ensures wrapper doesn't alter return values
+        let result_sync = with_timing("Test", || 42);
+        assert_eq!(result_sync, 42);
+
+        // Test async version - ensures wrapper doesn't alter return values
+        let result_async = with_timing_async("Test", async { 42 }).await;
+        assert_eq!(result_async, 42);
     }
 }
