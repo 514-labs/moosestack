@@ -338,6 +338,7 @@ export * from "./apis/test";
       env: {
         ...process.env,
         MOOSE_LOGGER__STRUCTURED_LOGS: "true", // Enable structured logging
+        MOOSE_LOGGER__FORMAT: "Json", // Output logs in JSON format for parsing
         RUST_LOG: "debug",
       },
       stdio: ["ignore", "pipe", "pipe"],
