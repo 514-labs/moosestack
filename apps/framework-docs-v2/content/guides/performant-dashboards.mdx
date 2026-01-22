@@ -1146,25 +1146,18 @@ export BOREAL_CONNECTION_STRING=PASTE_THE_HTTPS_URL_FROM_BOREAL_HERE
 
 This section walks through migrating an existing, OLTP-backed dashboard/report to an OLAP-backed implementation (ClickHouse + MooseStack) **without changing how the frontend talks to the backend**.
 
-The recommended approach of this guide allows you to keep:
+The approach in this guide is to swap out the *query + storage layer* (ClickHouse) while keeping the rest of your application the same: routing, auth, request/response contracts, and frontend behavior.
 
-- The existing request/response contracts  
-- The existing report modeling layer (Dataset Definitions)  
-- The backend's dynamic dataset querying behavior (select/filter/sort/paginate)  
+You’ll implement **new OLAP query handlers** in your MooseStack project—one per dashboard component/report you migrate. Then, in your existing application backend, you’ll repoint the endpoint to call the new OLAP handler instead of the original OLTP implementation.
 
-The primary change is where the data comes from (ClickHouse tables/materialized views) and how the SQL is executed (ClickHouse instead of MSSQL).
+This is designed to be done with AI: you give your copilot the right context and example data for your "golden case" inputs and expected outputs, and it produces the translation and a plan, and you verify correctness at each step—so you get AI speed without scattering one-off ClickHouse SQL across your codebase.
 
-To keep migrations both safe and fast, follow this three-phase pattern:
+This guide follows a three-phase migration pattern:
 
-1. **Parity (correctness)**: reproduce existing API behavior on ClickHouse by translating the underlying OLTP query logic into ClickHouse SQL (without query helpers)  
+1. **Parity (correctness)**: reproduce existing API behavior on ClickHouse by translating the underlying OLTP query logic into ClickHouse SQL  
 2. **Optimize (OLAP best practices)**: shift OLTP-style read patterns (joins/reshaping/stored-procedure-like logic) to write time using Materialized Views  
 3. **Serve (stable interface)**: repoint your Query Layer `QueryModel` at MV-backed serving tables, so handlers stay thin and dashboards stay fast  
 
-**Handoff markers:**
-
-- **Stop after Phase 1** until your golden cases match.
-- **Stop extending read-time SQL** once parity is proven; switch to MV design.
-- **Only introduce Query Layer** after you have clean serving tables (raw or MV-backed).
 
 ### Choose the component you want to migrate
 
@@ -1175,11 +1168,9 @@ For this guide, we’ll use an e-commerce order fulfillment report:
 - Dataset: `OrderFulfillment`  
 - Purpose: Track order processing metrics by merchant and time period  
 
-### AI-assisted workflow (recommended)
+### Assemble the context for your AI copilot
 
 This workflow uses the starter kit in `examples/dashboard-migration/` to keep your “context pack” and prompt consistent across migrations.
-
-#### You do: assemble the context pack
 
 1. Copy the starter kit into your project (creates `context/migrations/`):
 
@@ -1195,21 +1186,18 @@ cp context/migrations/component-context-pack-template.md context/migrations/COMP
 
 3. Fill out `context/migrations/COMPONENT_NAME.md` with:
 
-- **Contract**: request/response schema, auth/tenancy rules, 2–5 representative example requests  
-- **OLTP implementation**: frontend caller + backend handler + any stored procedures/views it relies on  
-- **Verification**: golden input→expected output cases, test data access, known edge cases  
+- **The existing API contract**, including the API route name/path and request/response schema (OpenAPI, TypeScript types, JSON schema). 
+- *Data for test cases*: 2-5 representative example API requests and their expected responses for the most important use cases that you want to validate against. If you can, copy paste the JSON request/response payloads directly into the file.
+- **Current OLTP implementation (what you’re replacing)**: links/file paths to the frontend caller + backend handler, plus any supporting SQL artifacts it relies on (tables/views/stored procedures)
 
-#### You do: paste the prompt
+4. Prompt your copilot to translate the component using the context pack.
 
-Open `context/migrations/prompt.md`, replace placeholders, and paste it into your copilot. Make sure it references your filled file via `@context/migrations/COMPONENT_NAME.md`.
+The starter prompts you added to your project includes a prompt template that you can copy and paste into your copilot. It is located at `context/migrations/prompt.md`. Replace placeholders with the file path of the component-specific context file you created in step 3, and paste it into your copilot. Make sure it references your filled file via `@context/migrations/COMPONENT_NAME.md`.
 
 **Important:** don’t paste the prompt until the context pack is filled out. The copilot should treat `@context/migrations/COMPONENT_NAME.md` as the source of truth.
 
 If you want a more detailed copilot workflow (refinement loop + testing patterns), see [Appendix: Copilot workflow for parity migrations](#appendix-copilot-workflow-for-parity-migrations).
 
-#### Copilot does: produces a plan
-
-The prompt should result in a plan that follows the same three-phase pattern: parity SQL → Materialized Views optimization → Query Layer serving.
 
 ## Parity translation (OLTP query logic → ClickHouse SQL)
 
