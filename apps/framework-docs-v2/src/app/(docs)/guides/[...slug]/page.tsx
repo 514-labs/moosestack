@@ -6,17 +6,15 @@ import {
   discoverStepFiles,
 } from "@/lib/content";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
-import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
+import { parseGuideManifest } from "@/lib/guide-content";
 import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
 import { showCopyAsMarkdown, showLinearIntegration } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { GuideStepsWrapper } from "@/components/guides/guide-steps-wrapper";
+import { LazyStepContent } from "@/components/guides/lazy-step-content";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { MarkdownMenu } from "@/components/markdown-menu";
-
-// export const dynamic = "force-dynamic";
 
 interface PageProps {
   params: Promise<{
@@ -95,7 +93,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   let content;
   try {
     content = await parseMarkdownContent(slug);
-  } catch (error) {
+  } catch {
     notFound();
   }
 
@@ -115,51 +113,8 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
 
   if (guideManifest) {
     // DYNAMIC GUIDE LOGIC
-
-    // Flatten search params to Record<string, string> for our cache function
-    const queryParams: Record<string, string> = {};
-    Object.entries(resolvedSearchParams).forEach(([key, value]) => {
-      if (typeof value === "string") {
-        queryParams[key] = value;
-      } else if (Array.isArray(value) && value.length > 0 && value[0]) {
-        // Take first value if array
-        queryParams[key] = value[0];
-      }
-    });
-
-    // Fetch steps here (cached function)
-    const steps = await getCachedGuideSteps(slug, queryParams);
-
-    // Pre-render MDX content on the server
-    const renderedSteps = await Promise.all(
-      steps
-        .filter((step) => step.content)
-        .map(async (step) => ({
-          slug: step.slug,
-          content:
-            step.isMDX ?
-              <MDXRenderer source={step.content!} />
-            : <div dangerouslySetInnerHTML={{ __html: step.content! }} />,
-        })),
-    );
-
-    const allHeadings = [...content.headings];
-    if (steps.length > 0) {
-      // Add steps as headings in TOC, avoiding duplicates
-      const existingIds = new Set(allHeadings.map((h) => h.id));
-      steps.forEach((step) => {
-        const stepId = `step-${step.stepNumber}`;
-        // Only add if ID doesn't already exist
-        if (!existingIds.has(stepId)) {
-          allHeadings.push({
-            level: 2,
-            text: `${step.stepNumber}. ${step.title}`,
-            id: stepId,
-          });
-          existingIds.add(stepId);
-        }
-      });
-    }
+    // Dynamic guides show a form first, steps load based on user selection
+    // No steps are pre-rendered - they load when user makes selections
 
     return (
       <>
@@ -171,7 +126,10 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
                 content={
                   content.isMDX ?
                     cleanContent(
-                      filterLanguageContent(content.content, langParam),
+                      filterLanguageContent(
+                        content.content,
+                        langParam as string | undefined,
+                      ),
                     )
                   : content.content
                 }
@@ -186,20 +144,12 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
 
           <DynamicGuideBuilder manifest={guideManifest} />
 
-          {steps.length > 0 ?
-            <GuideStepsWrapper
-              steps={steps.map(({ content, isMDX, ...step }) => step)}
-              renderedSteps={renderedSteps}
-              currentSlug={slug}
-            />
-          : <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
-              No steps found for this configuration. Please try different
-              options.
-            </div>
-          }
+          <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
+            Select options above to see the guide steps.
+          </div>
         </div>
         <TOCNav
-          headings={allHeadings}
+          headings={content.headings}
           helpfulLinks={content.frontMatter.helpfulLinks}
           showLinearIntegration={showLinear}
         />
@@ -207,13 +157,14 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     );
   }
 
-  // STATIC GUIDE LOGIC (Fallback)
+  // STATIC GUIDE LOGIC
+  // All step content is pre-rendered at build time for instant display
 
   // Discover step files for this starting point page
   const steps = discoverStepFiles(slug);
 
-  // Load step content server-side and pre-render MDX
-  const renderedSteps = await Promise.all(
+  // Pre-render all step content at build time
+  const allRenderedSteps = await Promise.all(
     steps.map(async (step) => {
       try {
         const stepContent = await parseMarkdownContent(step.slug);
@@ -226,13 +177,18 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
         };
       } catch (error) {
         console.error(`Failed to load step ${step.slug}:`, error);
-        return {
-          slug: step.slug,
-          content: null,
-        };
+        return null;
       }
     }),
-  ).then((results) => results.filter((step) => step.content !== null));
+  );
+
+  // Filter out failed steps
+  const renderedSteps = allRenderedSteps.filter(
+    (step): step is NonNullable<typeof step> => step !== null,
+  );
+
+  // Get the first step content for immediate display
+  const firstStepContent = renderedSteps[0]?.content ?? null;
 
   // Combine page headings with step headings for TOC
   const allHeadings = [...content.headings];
@@ -263,7 +219,10 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
               content={
                 content.isMDX ?
                   cleanContent(
-                    filterLanguageContent(content.content, langParam),
+                    filterLanguageContent(
+                      content.content,
+                      langParam as string | undefined,
+                    ),
                   )
                 : content.content
               }
@@ -275,10 +234,11 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
         </article>
-        {steps.length > 0 && (
-          <GuideStepsWrapper
+        {steps.length > 0 && firstStepContent && (
+          <LazyStepContent
             steps={steps}
-            renderedSteps={renderedSteps}
+            firstStepContent={firstStepContent}
+            preRenderedSteps={renderedSteps}
             currentSlug={slug}
           />
         )}

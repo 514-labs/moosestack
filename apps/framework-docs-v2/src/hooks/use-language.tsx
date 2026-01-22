@@ -6,7 +6,6 @@ import React, {
   useEffect,
   useState,
   useCallback,
-  useRef,
   useTransition,
 } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
@@ -33,10 +32,10 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [isPending, startTransition] = useTransition();
-  const hasBootstrapped = useRef(false);
+  const [_isPending, startTransition] = useTransition();
 
   // Get language from URL params first, then localStorage, then default
+  // This runs on initial render without causing navigation
   const getInitialLanguage = useCallback((): Language => {
     // Check URL params first
     const urlLang = searchParams?.get("lang");
@@ -44,7 +43,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
       return urlLang;
     }
 
-    // Check localStorage
+    // Check localStorage (only on client)
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
       if (stored === "typescript" || stored === "python") {
@@ -57,7 +56,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
 
   const [language, setLanguageState] = useState<Language>(getInitialLanguage);
 
-  // Sync with URL params when they change
+  // Sync state with URL params when they change (but don't modify URL)
   useEffect(() => {
     const urlLang = searchParams?.get("lang");
     if (urlLang === "typescript" || urlLang === "python") {
@@ -65,31 +64,17 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
     }
   }, [searchParams]);
 
-  // Bootstrap URL with language from localStorage on mount if not in URL
-  // Only run once per mount, using startTransition to avoid blocking UI
+  // Sync state with localStorage on mount (without modifying URL)
+  // This ensures the UI reflects stored preference even if URL lacks lang param
   useEffect(() => {
-    if (hasBootstrapped.current) return;
-
     const urlLang = searchParams?.get("lang");
     if (!urlLang && typeof window !== "undefined") {
-      hasBootstrapped.current = true;
       const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-      const langToSet =
-        stored === "typescript" || stored === "python" ?
-          stored
-        : DEFAULT_LANGUAGE;
-
-      // Use startTransition to avoid blocking UI during URL update
-      startTransition(() => {
-        const params = new URLSearchParams(searchParams?.toString() || "");
-        params.set("lang", langToSet);
-        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-      });
-    } else if (urlLang) {
-      // URL already has lang param, mark as bootstrapped
-      hasBootstrapped.current = true;
+      if (stored === "typescript" || stored === "python") {
+        setLanguageState(stored);
+      }
     }
-  }, [pathname, router, searchParams]);
+  }, [searchParams]);
 
   const setLanguage = useCallback(
     (lang: Language) => {
@@ -108,7 +93,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
         router.push(`${pathname}?${params.toString()}`, { scroll: false });
       });
     },
-    [pathname, router, searchParams],
+    [pathname, router, searchParams, startTransition],
   );
 
   return (
