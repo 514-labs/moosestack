@@ -3,39 +3,132 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Fastify + Typescript App</title>
-    <style>
-      body {
-        font-family: Georgia, "Times New Roman", Times, serif;
-      }
-    </style>
+    <title>Fastify + Moose API Explorer</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <h1>Welcome to Fastify + Typescript App 🔥</h1>
-    <h2>API Documentation</h2>
-    <div id="app"></div>
+    <div class="container">
+      <h1>Fastify + Moose API Explorer</h1>
+      <p class="subtitle">Click a query to execute it</p>
+
+      <h2>Events Queries</h2>
+      <div class="queries" id="queries"></div>
+
+      <div class="result-panel" id="result-panel" style="display: none">
+        <div class="result-header">
+          <span class="result-url" id="result-url"></span>
+          <span class="result-status" id="result-status"></span>
+        </div>
+        <div class="result-body">
+          <pre id="result-body"></pre>
+        </div>
+      </div>
+    </div>
 
     <script>
-      let html = "";
-      const routes = [
+      const queries = [
         {
-          name: "ClickHouse Recent Events",
-          path: "/api/v1/clickhouse/recent",
+          path: "/api/v1/clickhouse/events",
+          desc: "All events (default)",
+        },
+        {
+          path: "/api/v1/clickhouse/events?limit=5",
+          desc: "Limit to 5 results",
+        },
+        {
+          path: "/api/v1/clickhouse/events?status=active",
+          desc: "Filter by status = active",
+        },
+        {
+          path: "/api/v1/clickhouse/events?status=completed",
+          desc: "Filter by status = completed",
+        },
+        {
+          path: "/api/v1/clickhouse/events?status=inactive",
+          desc: "Filter by status = inactive",
+        },
+        {
+          path: "/api/v1/clickhouse/events?minAmount=100",
+          desc: "Filter by amount >= 100",
+        },
+        {
+          path: "/api/v1/clickhouse/events?maxAmount=50",
+          desc: "Filter by amount <= 50",
+        },
+        {
+          path: "/api/v1/clickhouse/events?minAmount=50&maxAmount=200",
+          desc: "Filter by amount between 50-200",
+        },
+        {
+          path: "/api/v1/clickhouse/events?status=active&minAmount=100&limit=10",
+          desc: "Combined: active, amount >= 100, limit 10",
+        },
+        {
+          path: "/api/v1/clickhouse/events?limit=10&offset=5",
+          desc: "Pagination: limit 10, offset 5",
+        },
+        {
+          path: "/api/v1/clickhouse/events?limit=0",
+          desc: "Invalid: limit must be >= 1 (expect 400)",
+        },
+        {
+          path: "/api/v1/clickhouse/events?limit=999",
+          desc: "Invalid: limit must be <= 100 (expect 400)",
+        },
+        {
+          path: "/api/v1/clickhouse/events?status=unknown",
+          desc: "Invalid: status must be active/completed/inactive (expect 400)",
         },
       ];
 
-      async function initApp() {
-        for (const route of routes) {
-          const response = await fetch(route.path);
-          const json = await response.json();
-          html += `<h3>${route.name}</h3>
-                    <a href="${route.path}">${route.path}</a>
-                    <pre>${JSON.stringify(json)}</pre>`;
-        }
-        document.getElementById("app").innerHTML = html;
-      }
+      const queriesEl = document.getElementById("queries");
+      const resultPanel = document.getElementById("result-panel");
+      const resultUrl = document.getElementById("result-url");
+      const resultStatus = document.getElementById("result-status");
+      const resultBody = document.getElementById("result-body");
 
-      initApp();
+      let activeBtn = null;
+
+      queries.forEach((q) => {
+        const btn = document.createElement("button");
+        btn.className = "query-btn";
+        btn.innerHTML = `
+          <span class="query-method">GET</span>
+          <span class="query-path">${q.path}</span>
+          <span class="query-desc">${q.desc}</span>
+        `;
+        btn.onclick = () => runQuery(q.path, btn);
+        queriesEl.appendChild(btn);
+      });
+
+      async function runQuery(path, btn) {
+        if (activeBtn) activeBtn.classList.remove("active");
+        btn.classList.add("active");
+        activeBtn = btn;
+
+        resultPanel.style.display = "block";
+        resultUrl.textContent = path;
+        resultStatus.textContent = "loading...";
+        resultStatus.className = "result-status";
+        resultBody.innerHTML = '<span class="loading">Fetching...</span>';
+
+        try {
+          const res = await fetch(path);
+          resultStatus.textContent = res.status + " " + res.statusText;
+          resultStatus.className =
+            "result-status " + (res.ok ? "success" : "error");
+          try {
+            const json = await res.json();
+            resultBody.textContent = JSON.stringify(json, null, 2);
+          } catch {
+            resultBody.textContent = await res.text();
+          }
+        } catch (err) {
+          resultStatus.textContent = "Error";
+          resultStatus.className = "result-status error";
+          resultBody.textContent = err.message;
+        }
+      }
     </script>
   </body>
 </html>

@@ -694,6 +694,106 @@ Static type checking ensures you only reference columns that actually exist.
 
 ### Advanced Query Patterns
 
+#### SQL Template Helpers
+
+The `sql` template tag provides helper methods for building dynamic queries safely:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+##### Combine SQL Fragments
+
+Join an array of `Sql` fragments with a separator. Spaces are automatically added around separators that don't include them:
+
+```ts filename="SqlJoinExample.ts" copy
+import { UserTable } from "./UserTable";
+
+const cols = UserTable.columns;
+
+// Join column references
+const selectColumns = sql.join([
+  sql`${cols.id}`,
+  sql`${cols.name}`,
+  sql`${cols.email}`
+], ",");
+// Result: `id`, `name`, `email`
+
+// Join WHERE conditions with AND
+const conditions = [
+  sql`${cols.age} >= ${18}`,
+  sql`${cols.status} = ${"active"}`
+];
+const whereClause = sql.join(conditions, "AND");
+// Result: `age` >= 18 AND `status` = 'active'
+```
+
+##### Insert Raw SQL
+
+Insert raw SQL strings without parameterization. Use for SQL keywords, functions, or static values that can't be parameterized:
+
+```ts filename="SqlRawExample.ts" copy
+// SQL functions
+const timestamp = sql.raw("NOW()");
+const query = sql`SELECT *, ${timestamp} as query_time FROM ${UserTable}`;
+// Result: SELECT *, NOW() as query_time FROM `users`
+
+// Sort direction
+const direction = sql.raw("DESC");
+const sortedQuery = sql`SELECT * FROM ${UserTable} ORDER BY created_at ${direction}`;
+// Result: SELECT * FROM `users` ORDER BY created_at DESC
+```
+
+<Callout type="warning">
+Only use `sql.raw()` with trusted, static values. Never pass user input directly to `sql.raw()` as it bypasses SQL injection protection.
+</Callout>
+
+##### Build Queries Incrementally
+
+Chain SQL fragments together to build queries step by step:
+
+```ts filename="SqlAppendExample.ts" copy
+import { Sql } from "@514labs/moose-lib";
+import { UserTable } from "./UserTable";
+
+interface QueryParams {
+  minAge?: number;
+  status?: string;
+  limit?: number;
+}
+
+const buildQuery = ({ minAge, status, limit = 100 }: QueryParams, { sql }) => {
+  // Start with base query
+  let query = sql`SELECT * FROM ${UserTable}`;
+
+  // Build conditions
+  const conditions: Sql[] = [];
+  if (minAge !== undefined) {
+    conditions.push(sql`age >= ${minAge}`);
+  }
+  if (status) {
+    conditions.push(sql`status = ${status}`);
+  }
+
+  // Append WHERE clause if conditions exist
+  if (conditions.length > 0) {
+    query = query.append(sql` WHERE ${sql.join(conditions, "AND")}`);
+  }
+
+  // Append ORDER BY and LIMIT
+  query = query
+    .append(sql` ORDER BY created_at ${sql.raw("DESC")}`)
+    .append(sql` LIMIT ${limit}`);
+
+  return query;
+};
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+Python APIs use parameter binding with the `execute` method. See the examples below for building dynamic queries safely.
+  </LanguageTabContent>
+</LanguageTabs>
+
 #### Dynamic Column & Table Selection
 
 <LanguageTabs>
@@ -788,11 +888,14 @@ UserTable = OlapTable[UserSchema]("users")
 
 #### Conditional `WHERE` Clauses
 
-Build `WHERE` clauses based on provided parameters:
+Build `WHERE` clauses based on provided parameters using `sql.join()` and `Sql.append()`:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
 ```ts filename="ConditionalColumns.ts" copy
+import { Sql } from "@514labs/moose-lib";
+import { UserTable } from "./UserTable";
+
 interface FilterParams {
   minAge?: number;
   status?: "active" | "inactive";
@@ -800,7 +903,7 @@ interface FilterParams {
 }
 
 const buildQuery = ({ minAge, status, searchText }: FilterParams, { sql }) => {
-  let conditions = [];
+  const conditions: Sql[] = [];
   
   if (minAge !== undefined) {
     conditions.push(sql`age >= ${minAge}`);
@@ -815,15 +918,15 @@ const buildQuery = ({ minAge, status, searchText }: FilterParams, { sql }) => {
   }
   
   // Build the full query with conditional WHERE clause
-  let query = sql`SELECT * FROM ${userTable}`;
+  let query = sql`SELECT * FROM ${UserTable}`;
   
   if (conditions.length > 0) {
-    // Join conditions with AND operator
-    let whereClause = conditions.join(' AND ');
-    query = sql`${query} WHERE ${whereClause}`;
+    // Use sql.join() to combine conditions with AND
+    query = query.append(sql` WHERE ${sql.join(conditions, "AND")}`);
   }
   
-  query = sql`${query} ORDER BY created_at DESC`;
+  // Use append() to add ORDER BY clause
+  query = query.append(sql` ORDER BY created_at ${sql.raw("DESC")}`);
   return query;
 };
 ```
