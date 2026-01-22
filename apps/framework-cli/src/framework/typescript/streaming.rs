@@ -44,24 +44,24 @@ pub fn run(
         args
     );
 
-    if kafka_config.sasl_username.is_some() {
+    if let Some(username) = &kafka_config.sasl_username {
         args.push("--sasl-username");
-        args.push(kafka_config.sasl_username.as_ref().unwrap());
+        args.push(username);
     }
 
-    if kafka_config.sasl_password.is_some() {
+    if let Some(password) = &kafka_config.sasl_password {
         args.push("--sasl-password");
-        args.push(kafka_config.sasl_password.as_ref().unwrap());
+        args.push(password);
     }
 
-    if kafka_config.sasl_mechanism.is_some() {
+    if let Some(mechanism) = &kafka_config.sasl_mechanism {
         args.push("--sasl-mechanism");
-        args.push(kafka_config.sasl_mechanism.as_ref().unwrap());
+        args.push(mechanism);
     }
 
-    if kafka_config.security_protocol.is_some() {
+    if let Some(protocol) = &kafka_config.security_protocol {
         args.push("--security-protocol");
-        args.push(kafka_config.security_protocol.as_ref().unwrap());
+        args.push(protocol);
     }
 
     if project.log_payloads {
