@@ -130,6 +130,19 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     // Fetch steps here (cached function)
     const steps = await getCachedGuideSteps(slug, queryParams);
 
+    // Pre-render MDX content on the server
+    const renderedSteps = await Promise.all(
+      steps
+        .filter((step) => step.content)
+        .map(async (step) => ({
+          slug: step.slug,
+          content:
+            step.isMDX ?
+              <MDXRenderer source={step.content!} />
+            : <div dangerouslySetInnerHTML={{ __html: step.content! }} />,
+        })),
+    );
+
     const allHeadings = [...content.headings];
     if (steps.length > 0) {
       // Add steps as headings in TOC, avoiding duplicates
@@ -176,7 +189,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
           {steps.length > 0 ?
             <GuideStepsWrapper
               steps={steps.map(({ content, isMDX, ...step }) => step)}
-              stepsWithContent={steps}
+              renderedSteps={renderedSteps}
               currentSlug={slug}
             />
           : <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
@@ -200,25 +213,26 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   const steps = discoverStepFiles(slug);
 
   // Load step content server-side and pre-render MDX
-  const stepsWithContent = await Promise.all(
+  const renderedSteps = await Promise.all(
     steps.map(async (step) => {
       try {
         const stepContent = await parseMarkdownContent(step.slug);
         return {
-          ...step,
-          content: stepContent.content,
-          isMDX: stepContent.isMDX ?? false,
+          slug: step.slug,
+          content:
+            stepContent.isMDX ?
+              <MDXRenderer source={stepContent.content} />
+            : <div dangerouslySetInnerHTML={{ __html: stepContent.content }} />,
         };
       } catch (error) {
         console.error(`Failed to load step ${step.slug}:`, error);
         return {
-          ...step,
+          slug: step.slug,
           content: null,
-          isMDX: false,
         };
       }
     }),
-  );
+  ).then((results) => results.filter((step) => step.content !== null));
 
   // Combine page headings with step headings for TOC
   const allHeadings = [...content.headings];
@@ -263,10 +277,8 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
         </article>
         {steps.length > 0 && (
           <GuideStepsWrapper
-            steps={stepsWithContent.map(
-              ({ content: _, isMDX: __, ...step }) => step,
-            )}
-            stepsWithContent={stepsWithContent}
+            steps={steps}
+            renderedSteps={renderedSteps}
             currentSlug={slug}
           />
         )}
