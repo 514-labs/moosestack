@@ -1183,7 +1183,7 @@ SummingMergeTree auto-combines during background merges, but GROUP BY is still s
 
 | Strategy | When | Example |
 |----------|------|---------|
-| Raw queries | Ad-hoc, <1M rows | Debugging |
+| Raw queries | Ad-hoc, &lt;1M rows | Debugging |
 | Materialized view | Repeated queries, predictable patterns | Dashboards |
 | Pre-aggregated API | External consumers | PDF reports |
 
@@ -1241,7 +1241,7 @@ CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API
 
 **Before:** Analyst downloads 12 CSVs, copies to Excel, writes formulas, formats Word doc, emails PDF. 2+ hours daily. Breaks when analyst is out.
 
-**After:** POS uploads to API, ClickHouse aggregates, API serves any date range, PDF generates in <1 second. 24/7. Git history for everything.
+**After:** POS uploads to API, ClickHouse aggregates, API serves any date range, PDF generates in &lt;1 second. 24/7. Git history for everything.
 
 **Impact:** 500+ analyst hours/year freed. No delayed reports. Consistent numbers. Instant historical queries. Same code for 12 or 1,200 stores.
 
@@ -1250,8 +1250,8 @@ CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API
 | Operation | Row DB | Moose + ClickHouse |
 |-----------|--------|-------------------|
 | Transaction scan | Seconds-minutes | Milliseconds |
-| Daily aggregation | 10-30+ sec | <100ms |
-| Report generation | Minutes | <1 sec |
+| Daily aggregation | 10-30+ sec | &lt;100ms |
+| Report generation | Minutes | &lt;1 sec |
 
 ### Next steps
 

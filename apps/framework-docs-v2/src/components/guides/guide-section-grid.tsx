@@ -1,5 +1,3 @@
-"use client";
-
 import type { SerializableGuideSection } from "@/config/navigation";
 import { getGuideIcon } from "./guide-icons";
 import { GuideCard } from "./guide-card";
@@ -8,6 +6,10 @@ interface GuideSectionGridProps {
   sections: SerializableGuideSection[];
 }
 
+/**
+ * GuideSectionGrid - Server component for rendering guide sections
+ * No client-side hooks needed - all data is pre-computed server-side
+ */
 export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
   if (sections.length === 0) {
     return null;

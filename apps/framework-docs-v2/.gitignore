@@ -39,3 +39,7 @@ next-env.d.ts
 
 # search index (generated at build time)
 /.search-index
+
+# generated files (created during prebuild)
+/generated
+/public/nav

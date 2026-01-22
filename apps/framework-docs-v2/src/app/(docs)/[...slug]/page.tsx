@@ -3,13 +3,13 @@ import type { Metadata } from "next";
 import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
-import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { MarkdownMenu } from "@/components/markdown-menu";
 
-// export const dynamic = "force-dynamic";
+// Force static generation despite searchParams access
+export const dynamic = "force-static";
 
 interface PageProps {
   params: Promise<{
@@ -107,7 +107,8 @@ export default async function DocPage({ params, searchParams }: PageProps) {
     : undefined,
   );
 
-  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  // Copy button is always enabled - it's a client component that works with static pages
+  const showCopyButton = true;
   const resolvedSearchParams = await searchParams;
   const langParam = resolvedSearchParams?.lang;
 

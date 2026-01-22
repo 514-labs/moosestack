@@ -1,9 +1,5 @@
-"use client";
-
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { IconBook, type IconProps } from "@tabler/icons-react";
-import { useLanguage } from "@/hooks/use-language";
 
 interface GuideCardProps {
   title: string;
@@ -12,24 +8,20 @@ interface GuideCardProps {
   icon?: React.ComponentType<IconProps>;
 }
 
+/**
+ * GuideCard - Server component for guide navigation cards
+ * Uses static hrefs for optimal prefetching and no client-side hydration delays
+ */
 export function GuideCard({
   title,
   description,
   href,
   icon: Icon,
 }: GuideCardProps) {
-  const searchParams = useSearchParams();
-  const { language } = useLanguage();
-
-  const buildUrl = () => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("lang", language);
-    return `${href}?${params.toString()}`;
-  };
-
   return (
     <Link
-      href={buildUrl()}
+      href={href}
+      prefetch={true}
       className="group relative flex flex-col gap-6 rounded-xl border border-border/50 bg-card p-8 transition-all hover:border-primary/30 hover:bg-accent/50 cursor-pointer"
     >
       {Icon && (
