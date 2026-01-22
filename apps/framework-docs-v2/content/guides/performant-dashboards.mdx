@@ -1223,10 +1223,9 @@ The priority is **correctness**, not OLAP optimization.
 
 ### Phase 2: Performance optimization
 
-At this point in the migration, you have a report that is functionally correct but still not where you want it performance-wise. 
-While a common pattern in OLTP is to rely on “read-time orchestration”: just-in-time joins, layered CTE chains, and stored-procedure-like logic to reshape data for each request.
+At this point, you likely have a parity query that’s correct—but still too expensive to run on every dashboard request.
 
-This means that when you translate the OLTP query 1:1 to ClickHouse SQL, you will likely end up with a long CTE chain, complex joins, and stored-procedure-like logic, like this:
+That’s because OLTP query logic often relies on “read-time orchestration” (just-in-time joins, layered CTE chains, stored-procedure-like reshaping). A 1:1 ClickHouse translation usually preserves that shape, like this:
 
 ```sql
 WITH UserMerchants AS (
@@ -1257,16 +1256,11 @@ FROM AggregatedMetrics
 ORDER BY merchant_name;
 ```
 
-In OLAP, this “read-time orchestration” is an antipattern; every dashboard refresh forces ClickHouse to redo the same joins, reshaping, and aggregations from scratch, even when users are just changing filters, sorts, or time ranges. As usage grows (more users, more refreshes, more slices), you pay that full computation cost repeatedly—leading to spiky latency, poor concurrency, and expensive queries.
+In OLAP, this “read-time orchestration” is an antipattern: every dashboard refresh forces ClickHouse to redo the same joins, reshaping, and aggregations from scratch—even when users are only changing filters, sorts, or time ranges.
 
-ClickHouse’s best practices are designed to avoid procedural, stored-procedure-like pipelines at read time. Instead, you use declarative transforms, materialized views, and external orchestration to keep serving queries simple and predictable. See ClickHouse’s guidance here: [`Stored procedures and query parameters in ClickHouse`](https://clickhouse.com/docs/guides/developer/stored-procedures-and-prepared-statements).
+ClickHouse best practices avoid stored-procedure-like pipelines at read time, and instead shift the reusable work to write time (using Materialized Views) whenever possible. See ClickHouse’s guidance here: [`Stored procedures and query parameters in ClickHouse`](https://clickhouse.com/docs/guides/developer/stored-procedures-and-prepared-statements).
 
-The goal is to turn the query above into a **serving-ready table**: promote the reusable joins/reshaping/derived fields into a [Materialized View](/moosestack/olap/model-materialized-view) (write time), then keep the Query Layer focused on request-driven slicing (filters, breakdowns, sorting, pagination) over that serving table.
-
-The optimization pattern in this guide is:
-
-1. **Move transformations/joins upstream to write time** using Materialized Views (serving-ready tables)  
-2. **Use the Query Layer as the final interface** for dashboard slicing/grouping/sorting/pagination over those serving tables  
+So Phase 2 is about turning the parity query into a **serving-ready table**: promote the reusable joins/reshaping/derived fields into a [Materialized View](/moosestack/olap/model-materialized-view), then keep request-time logic focused on slicing/sorting/pagination over that serving table.
 
 ### You do
 
@@ -1306,9 +1300,12 @@ Once those checks pass, you’re ready for the next step: point your Query Layer
 
 ### Phase 3: Serve the Materialized View to your frontend
 
-Once your MV produces a serving-ready table (with joins/reshaping moved upstream), you’re ready to introduce the Query Layer.
+Once your MV produces a serving-ready table (with joins/reshaping moved upstream), you need an interface to serve that table to your dashboard.
 
-The [Moose Query Layer](https://github.com/514-labs/query-layer) is a set of query helpers you copy into your project. It lets you define a `QueryModel`—a stable, type-safe “semantic contract” over your serving table—so your handler stops embedding complex, raw SQL and instead focuses on wiring: parse request → build query → return results.
+You can do this in two ways:
+
+1. **Dynamic raw SQL string composition in each API handler**: build the SQL in each API handler at request time (dynamic `WHERE` / `GROUP BY` / `ORDER BY` / pagination) over the serving table.
+2. **Use the [Query Layer](https://github.com/514-labs/query-layer)**: define a typed model for how the serving table should be queried (what can be selected, grouped by, filtered by, sorted by, and paginated by) and reuse the same query-building logic across handlers. Because the MV pushed joins/reshaping to write time, the Query Layer can serve fast, flexible dashboard queries without reintroducing complex SQL string composition in every endpoint.
 
 For example, if your Materialized View writes into a serving table like `OrderFulfillmentServing` (flattened merchant fields, precomputed counters, etc.), your `QueryModel` might look like this:
 
@@ -1341,8 +1338,6 @@ export const orderFulfillmentModel = defineQueryModel({
   sortable: ["merchantName", "totalOrders", "fulfillmentRate", "timestamp"] as const,
 });
 ```
-
-This is the “final layer” pattern: **Materialized Views shape the data**, and the **Query Layer serves it** to the dashboard through a consistent dimensions/metrics/filters API.
 
 ### Add the Query Layer to your project
 
