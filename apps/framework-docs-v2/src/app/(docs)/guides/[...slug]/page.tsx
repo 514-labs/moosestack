@@ -158,37 +158,25 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   }
 
   // STATIC GUIDE LOGIC
-  // All step content is pre-rendered at build time for instant display
+  // Only render the first step initially for fast page loads
+  // Other steps are loaded client-side on demand
 
   // Discover step files for this starting point page
   const steps = discoverStepFiles(slug);
 
-  // Pre-render all step content at build time
-  const allRenderedSteps = await Promise.all(
-    steps.map(async (step) => {
-      try {
-        const stepContent = await parseMarkdownContent(step.slug);
-        return {
-          slug: step.slug,
-          content:
-            stepContent.isMDX ?
-              <MDXRenderer source={stepContent.content} />
-            : <div dangerouslySetInnerHTML={{ __html: stepContent.content }} />,
-        };
-      } catch (error) {
-        console.error(`Failed to load step ${step.slug}:`, error);
-        return null;
-      }
-    }),
-  );
-
-  // Filter out failed steps
-  const renderedSteps = allRenderedSteps.filter(
-    (step): step is NonNullable<typeof step> => step !== null,
-  );
-
-  // Get the first step content for immediate display
-  const firstStepContent = renderedSteps[0]?.content ?? null;
+  // Only pre-render the first step for fast initial display
+  let firstStepContent: React.ReactNode = null;
+  if (steps.length > 0 && steps[0]) {
+    try {
+      const firstStepData = await parseMarkdownContent(steps[0].slug);
+      firstStepContent =
+        firstStepData.isMDX ?
+          <MDXRenderer source={firstStepData.content} />
+        : <div dangerouslySetInnerHTML={{ __html: firstStepData.content }} />;
+    } catch (error) {
+      console.error(`Failed to load first step ${steps[0].slug}:`, error);
+    }
+  }
 
   // Combine page headings with step headings for TOC
   const allHeadings = [...content.headings];
@@ -238,7 +226,6 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
           <LazyStepContent
             steps={steps}
             firstStepContent={firstStepContent}
-            preRenderedSteps={renderedSteps}
             currentSlug={slug}
           />
         )}

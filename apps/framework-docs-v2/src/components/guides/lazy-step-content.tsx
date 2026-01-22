@@ -24,8 +24,8 @@ interface LazyStepContentProps {
 /**
  * LazyStepContent - Optimized step content display with lazy loading
  *
- * For static guides: All content is pre-rendered but only visible step is shown
- * For dynamic guides: First step is pre-rendered, others loaded on demand
+ * For static guides: First step is pre-rendered, others loaded on demand via API
+ * For dynamic guides: Steps loaded on demand
  */
 export function LazyStepContent({
   steps,
@@ -59,17 +59,43 @@ export function LazyStepContent({
         return;
       }
 
-      // For dynamic loading (when preRenderedSteps is not provided)
-      // This is a placeholder - in a full implementation, you'd fetch via API
-      setIsLoading(true);
+      // Get the step info for the requested index
+      const step = steps[index];
+      if (!step) return;
 
-      // Simulate loading delay for now - in production, replace with actual API call
-      // The content should already be in preRenderedSteps for static guides
-      setTimeout(() => {
+      // Fetch step content from API
+      setIsLoading(true);
+      try {
+        const response = await fetch(
+          `/api/guide-step?slug=${encodeURIComponent(step.slug)}`,
+        );
+        if (!response.ok) {
+          throw new Error("Failed to fetch step content");
+        }
+        const data = await response.json();
+
+        // Create content from HTML
+        const content = (
+          <div
+            className="prose prose-slate dark:prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: data.html }}
+          />
+        );
+
+        setLoadedSteps((prev) => new Map(prev).set(index, content));
+      } catch (error) {
+        console.error("Failed to load step:", error);
+        setLoadedSteps((prev) =>
+          new Map(prev).set(
+            index,
+            <div className="text-red-500">Failed to load step content</div>,
+          ),
+        );
+      } finally {
         setIsLoading(false);
-      }, 100);
+      }
     },
-    [loadedSteps],
+    [loadedSteps, steps],
   );
 
   const currentStep = steps[currentStepIndex];
