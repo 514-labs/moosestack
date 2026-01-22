@@ -27,7 +27,7 @@ Different starting points depending on what you need:
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 20+ (required for pdfmake 0.3)
 - Docker Desktop running
 - pnpm (`npm install -g pnpm`)
 - Basic TypeScript and SQL knowledge
@@ -37,7 +37,7 @@ Different starting points depending on what you need:
 Before starting, confirm your tools are ready:
 
 ```bash
-node --version   # Should be v18.x.x or higher
+node --version   # Should be v20.x.x or higher
 ```
 
 ```bash
@@ -46,6 +46,24 @@ docker info > /dev/null 2>&1 && echo "Docker is running" || echo "Docker is NOT 
 ```
 
 If Docker isn't running, start Docker Desktop before proceeding.
+
+### Tips for success
+
+**Keep `moose dev` running throughout the tutorial.** Use a dedicated terminal tab or window. If you accidentally close it, run `moose dev` again from the project directory.
+
+**First startup takes longer.** Docker images download on first run (2-5 minutes depending on connection). Subsequent starts are much faster.
+
+**Services need time to initialize.** After creating new APIs or views, wait 20-30 seconds before testing. Watch the `moose dev` terminal for compilation messages.
+
+**File watching is automatic.** Save a file and the system rebuilds—no manual restart needed. Type errors block startup, so fix them before proceeding.
+
+**Logs are invaluable for debugging.** All logs are stored in `~/.moose/YYYY-MM-DD-cli.log`. Watch in real-time:
+
+```bash
+tail -f ~/.moose/$(date +%Y-%m-%d)-cli.log
+```
+
+**Verify data at each stage.** Don't assume it worked—validate with queries. Test APIs with `curl` before running scripts that depend on them.
 
 ---
 
@@ -175,15 +193,20 @@ curl http://localhost:18123/ping
 
 Should return `Ok.`
 
-If checks fail, wait 10-15 seconds for containers to initialize.
+If checks fail, wait 20-30 seconds for containers to initialize. First startup downloads Docker images and takes longer.
 
 **What started:**
-- ClickHouse (18123) - columnar database
-- Redpanda (19092) - Kafka-compatible streaming
-- Temporal (8080) - workflow orchestration
-- HTTP Server (4000) - API endpoints
+
+| Service | Port | Description |
+|---------|------|-------------|
+| HTTP Server | 4000 | API endpoints |
+| ClickHouse | 18123 | Columnar database |
+| Redpanda | 19092 | Kafka-compatible streaming |
+| Temporal | 8080 | Workflow orchestration |
 
 All in Docker. No cloud accounts needed.
+
+> **Tip:** ClickHouse has a web UI at http://localhost:18123/play for running queries interactively—useful for debugging.
 
 ### Step 4: Define data model
 
@@ -244,6 +267,8 @@ Update `app/index.ts`:
 ```typescript
 export * from "./ingest/SalesTransaction";
 ```
+
+> **Important:** Every new model, view, or API must be exported from `app/index.ts`. Forgetting this is a common mistake—without the export, tables and endpoints won't be created, and there won't be any errors in the logs.
 
 #### Verify
 
@@ -434,6 +459,8 @@ mkdir -p sample-data
 npx ts-node scripts/load-file.ts sample-data/west-store-001.csv
 ```
 
+> **Tip:** In pnpm workspaces, `pnpm exec ts-node` is more reliable than `npx ts-node`. You can also add a script to `package.json`: `"load-file": "ts-node scripts/load-file.ts"` and run `pnpm run load-file sample-data/west-store-001.csv`.
+
 Output:
 ```
 Parsed 10 records from sample-data/west-store-001.csv
@@ -446,6 +473,8 @@ Verify:
 curl -s "http://localhost:18123/?user=panda&password=pandapass" \
   -d "SELECT count() FROM local.sales"
 ```
+
+> **Note:** Running the file loader multiple times creates duplicate records—ClickHouse doesn't enforce unique constraints. To start fresh, stop `moose dev` and run `docker volume prune`.
 
 ### Step 5: Add validation (recommended)
 
@@ -794,18 +823,21 @@ pnpm add pdfmake
 pnpm add -D @types/pdfmake
 ```
 
+> **Note:** This guide uses pdfmake 0.3.x which requires Node.js 20 LTS or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
+
 ### Step 2: Create PDF generator
 
 Create `scripts/generate-pdf-report.ts`:
 
 ```typescript
+import { TDocumentDefinitions } from "pdfmake/interfaces";
+
 // Use require for pdfmake as it doesn't have proper ESM exports
-const PdfPrinter = require("pdfmake/js/Printer").default;
-import { TDocumentDefinitions, TFontDictionary } from "pdfmake/interfaces";
-import * as fs from "fs";
+const pdfmake = require("pdfmake");
 
 // Use standard PDF fonts (no external files needed)
-const fonts: TFontDictionary = {
+// Note: In pdfmake 0.3, these are built-in standard fonts
+const fonts = {
   Roboto: {
     normal: "Helvetica",
     bold: "Helvetica-Bold",
@@ -813,6 +845,9 @@ const fonts: TFontDictionary = {
     bolditalics: "Helvetica-BoldOblique",
   },
 };
+
+// Register fonts with pdfmake (required for pdfmake 0.3)
+pdfmake.addFonts(fonts);
 
 // Report data interface (matches API response)
 interface SalesReportRow {
@@ -882,7 +917,6 @@ async function generatePdf(
   reportDate: string,
   outputPath: string
 ): Promise<void> {
-  const printer = new PdfPrinter(fonts);
 
   // Calculate totals
   const totalRevenue = data.reduce((sum, row) => sum + row.totalRevenue, 0);
@@ -1026,21 +1060,12 @@ async function generatePdf(
     pageMargins: [40, 40, 40, 60],
   };
 
-  // Note: createPdfKitDocument is SYNCHRONOUS - do not use await here.
-  // It returns a PDFKit.PDFDocument stream object immediately.
-  const pdfDoc = printer.createPdfKitDocument(docDefinition);
+  // Create PDF using pdfmake 0.3 API
+  const pdf = pdfmake.createPdf(docDefinition);
 
-  // Return a promise that resolves when the PDF is written
-  return new Promise<void>((resolve, reject) => {
-    const stream = fs.createWriteStream(outputPath);
-    stream.on("finish", () => {
-      console.log(`PDF report saved to ${outputPath}`);
-      resolve();
-    });
-    stream.on("error", reject);
-    pdfDoc.pipe(stream);
-    pdfDoc.end();
-  });
+  // Use the promise-based write() method (pdfmake 0.3+)
+  await pdf.write(outputPath);
+  console.log(`PDF report saved to ${outputPath}`);
 }
 
 // Main execution
@@ -1072,15 +1097,23 @@ main();
 
 ### Step 3: Generate report
 
-With `moose dev` running:
+With `moose dev` running, first verify the API returns data:
+
+```bash
+curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15"
+```
+
+If the API returns valid JSON, generate the PDF:
 
 ```bash
 npx ts-node scripts/generate-pdf-report.ts 2025-01-15 2025-01-15 january-15-report.pdf
 ```
 
+> **Tip:** Always test the API with `curl` before running the PDF generator. The PDF generator has limited error messages if the API fails.
+
 ### Step 4: Verify
 
-Open `january-15-report.pdf`. Contains:
+**Actually open the PDF file** to verify formatting and data accuracy—the console output won't show layout issues. The PDF should contain:
 - Header with company name and date range
 - Executive summary (revenue, transactions)
 - Revenue by region with percentages
@@ -1357,21 +1390,26 @@ use_ssl = false
 
 **EUNSUPPORTEDPROTOCOL:** Use `pnpm install`, not `npm install`.
 
+**pnpm build warnings:** You'll see "Ignored build scripts" warnings—these are safe to ignore. They're security warnings about packages that want to run build scripts.
+
 **Supply the type param T:** Add type parameter: `new IngestPipeline<SalesTransaction>(...)`.
 
 **Primary key must be prefix of sorting key:** First field in `orderByFields` becomes primary key.
 
-**Port 4000 in use:**
+**Port 4000 or 18123 in use:**
 
 ```bash
-# Find what's using port 4000
+# Find what's using the port
 lsof -i :4000
+lsof -i :18123
 
 # Kill the process if needed
 kill -9 <PID>
 ```
 
-**ClickHouse connection refused:** Wait 10-15 seconds for containers. Verify:
+Stop other Moose projects before starting a new one.
+
+**ClickHouse connection refused:** Wait 20-30 seconds for containers (longer on first startup). Verify:
 
 ```bash
 curl http://localhost:18123/ping
@@ -1383,9 +1421,11 @@ Check Docker:
 docker ps | grep clickhouse
 ```
 
-**Docker not starting:** Run `docker info`. On Mac/Windows, check Docker Desktop is running.
+**Docker not starting:** Run `docker info`. On Mac/Windows, check Docker Desktop is running (menu bar icon). If Docker stops mid-tutorial, all services fail with "connection refused" errors.
 
-**Model not detected:** Check file saved, export in `app/index.ts`, TypeScript errors in terminal.
+**Model not detected:** Check file saved, export in `app/index.ts`, TypeScript errors in terminal. Type errors block the dev server from processing changes.
+
+**TypeScript errors blocking startup:** The `moose dev` terminal shows compilation errors. Fix all errors before proceeding—the system won't process new models or APIs until code compiles.
 
 #### Data
 
@@ -1443,9 +1483,27 @@ GROUP BY saleDate, region
 
 #### PDF
 
-**Not generating:** Check API accessible, fetch errors in output, pdfmake installed.
+**Not generating:** Check API accessible, fetch errors in output, pdfmake installed. PDF generation should complete in under 2 seconds—if it hangs, the API is probably not responding.
 
 **Empty/malformed:** Check API response has data, date range has transactions.
+
+**Test the API first:**
+
+```bash
+curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDate=2025-01-15"
+```
+
+If this returns empty `[]`, verify data was ingested and the date range is correct.
+
+#### Cleanup
+
+**Stopping the dev server:** Press `Ctrl+C` in the `moose dev` terminal. Docker containers stop automatically.
+
+**Starting over completely:** Stop `moose dev`, delete the project directory, and run `moose init` again.
+
+**Reset data but keep code:** Stop `moose dev`, then run `docker volume prune` to clear all data.
+
+**Data persists across restarts:** If you stop and restart `moose dev`, your ingested data is still there—it's stored in Docker volumes.
 
 ### Resources
 
