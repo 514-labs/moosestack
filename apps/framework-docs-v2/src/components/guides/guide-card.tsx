@@ -2,21 +2,37 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { IconBook, type IconProps } from "@tabler/icons-react";
 import { useLanguage } from "@/hooks/use-language";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { GuidePreview } from "./guide-preview";
+
+type PreviewVariant =
+  | "chat"
+  | "performance"
+  | "dashboards"
+  | "migrations"
+  | "cdp"
+  | "production";
 
 interface GuideCardProps {
   title: string;
   description?: string;
   href: string;
-  icon?: React.ComponentType<IconProps>;
+  previewVariant?: PreviewVariant;
+  previewImageIndexFile?: string;
+  languages?: string[];
+  tags?: string[];
 }
 
 export function GuideCard({
   title,
   description,
   href,
-  icon: Icon,
+  previewVariant,
+  previewImageIndexFile,
+  languages,
+  tags,
 }: GuideCardProps) {
   const searchParams = useSearchParams();
   const { language } = useLanguage();
@@ -27,28 +43,52 @@ export function GuideCard({
     return `${href}?${params.toString()}`;
   };
 
+  // Map language codes to display names
+  const languageDisplayNames: Record<string, string> = {
+    typescript: "TypeScript",
+    python: "Python",
+  };
+
+  // Combine languages and tags for badge display
+  const badges = [
+    ...(languages?.map((lang) => languageDisplayNames[lang] || lang) || []),
+    ...(tags || []),
+  ];
+
   return (
     <Link
       href={buildUrl()}
-      className="group relative flex flex-col gap-6 rounded-xl border border-border/50 bg-card p-8 transition-all hover:border-primary/30 hover:bg-accent/50 cursor-pointer"
+      className="group relative flex items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors cursor-pointer"
     >
-      {Icon && (
-        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-muted">
-          <Icon className="h-10 w-10 text-foreground" strokeWidth={1.5} />
-        </div>
-      )}
-      <div className="flex flex-col gap-4">
-        <h3 className="text-2xl font-semibold text-foreground">{title}</h3>
+      <GuidePreview
+        variant={previewVariant}
+        imagePath={previewImageIndexFile}
+        title={title}
+      />
+      <div className="flex flex-1 flex-col gap-2">
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+        {badges.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {badges.map((badge) => (
+              <Badge
+                key={badge}
+                variant="outline"
+                className="bg-neutral-800 border-neutral-700 text-white"
+              >
+                {badge}
+              </Badge>
+            ))}
+          </div>
+        )}
         {description && (
-          <p className="text-base text-muted-foreground leading-relaxed">
+          <p className="text-sm text-muted-foreground leading-relaxed">
             {description}
           </p>
         )}
       </div>
-      <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors group-hover:bg-accent w-fit">
-        <IconBook className="h-4 w-4" strokeWidth={2} />
-        Start Guide
-      </div>
+      <Button variant="default" className="shrink-0 pointer-events-none">
+        Read
+      </Button>
     </Link>
   );
 }
