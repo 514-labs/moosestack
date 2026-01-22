@@ -7,7 +7,6 @@ import {
 } from "@/lib/content";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { parseGuideManifest } from "@/lib/guide-content";
-import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
@@ -21,7 +20,6 @@ interface PageProps {
   params: Promise<{
     slug: string[];
   }>;
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
 export async function generateStaticParams() {
@@ -79,9 +77,8 @@ export async function generateMetadata({
   }
 }
 
-export default async function GuidePage({ params, searchParams }: PageProps) {
+export default async function GuidePage({ params }: PageProps) {
   const resolvedParams = await params;
-  const resolvedSearchParams = await searchParams;
   const slugArray = resolvedParams.slug;
 
   // Handle empty slug array (shouldn't happen with [...slug] but be safe)
@@ -108,7 +105,6 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   // Copy button is always enabled - it's a client component that works with static pages
   const showCopyButton = true;
   const showLinear = false; // Can be enabled via environment variable if needed
-  const langParam = resolvedSearchParams?.lang;
 
   // Check if this is a dynamic guide by checking for guide.toml
   const guideManifest = await parseGuideManifest(slug);
@@ -125,16 +121,8 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
             <DocBreadcrumbs items={breadcrumbs} />
             {showCopyButton && (
               <MarkdownMenu
-                content={
-                  content.isMDX ?
-                    cleanContent(
-                      filterLanguageContent(
-                        content.content,
-                        langParam as string | undefined,
-                      ),
-                    )
-                  : content.content
-                }
+                content={content.content}
+                isMDX={content.isMDX ?? false}
               />
             )}
           </div>
@@ -214,16 +202,8 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
           <DocBreadcrumbs items={breadcrumbs} />
           {showCopyButton && (
             <MarkdownMenu
-              content={
-                content.isMDX ?
-                  cleanContent(
-                    filterLanguageContent(
-                      content.content,
-                      langParam as string | undefined,
-                    ),
-                  )
-                : content.content
-              }
+              content={content.content}
+              isMDX={content.isMDX ?? false}
             />
           )}
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   IconCopy,
@@ -15,16 +15,28 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useLanguage } from "@/hooks/use-language";
+import { cleanContent, filterLanguageContent } from "@/lib/content-filters";
 
 interface MarkdownMenuProps {
   content: string;
+  isMDX: boolean;
 }
 
-export function MarkdownMenu({ content }: MarkdownMenuProps) {
+export function MarkdownMenu({ content, isMDX }: MarkdownMenuProps) {
   const [copied, setCopied] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { language } = useLanguage();
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Filter content client-side based on user's current language preference
+  const filteredContent = useMemo(() => {
+    if (!isMDX) {
+      return content;
+    }
+    return cleanContent(filterLanguageContent(content, language));
+  }, [content, language, isMDX]);
 
   useEffect(() => {
     return () => {
@@ -41,7 +53,7 @@ export function MarkdownMenu({ content }: MarkdownMenuProps) {
     }
 
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(filteredContent);
       setCopied(true);
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
