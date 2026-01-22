@@ -48,12 +48,8 @@ short_description = "Deploy an AI chat app that can query your data"
 command = "moose generate hash-token --json"
 outputs = [
   { env_var = "MCP_API_KEY", json_path = "api_key_hash" },
-  { env_var = "MCP_API_TOKEN", json_path = "bearer_token" }
+  { env_var = "MCP_API_TOKEN", json_path = "bearer_token" },
 ]
 
 # Env vars user must provide
 [[boreal.env_vars]]
-name = "ANTHROPIC_API_KEY"
-label = "Anthropic API Key"
-secret = true
-required = true
