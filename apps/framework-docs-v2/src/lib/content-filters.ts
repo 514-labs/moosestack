@@ -49,6 +49,14 @@ export function filterLanguageContent(
 export function cleanContent(content: string): string {
   let cleaned = content;
 
+  // Step 1: Extract and mask fenced code blocks to protect them from cleaning
+  const codeFences: string[] = [];
+  cleaned = cleaned.replace(/```[\s\S]*?```/g, (match) => {
+    const index = codeFences.length;
+    codeFences.push(match);
+    return `__CODE_FENCE_${index}__`;
+  });
+
   // Remove MDX module-level imports/exports (before first heading)
   const firstHeadingMatch = cleaned.match(/^#+ /m);
   if (firstHeadingMatch && firstHeadingMatch.index !== undefined) {
@@ -81,6 +89,11 @@ export function cleanContent(content: string): string {
   cleaned = cleaned.replace(/^[ \t]+$/gm, "");
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
   cleaned = cleaned.trim();
+
+  // Step 2: Restore fenced code blocks
+  cleaned = cleaned.replace(/__CODE_FENCE_(\d+)__/g, (_, index) => {
+    return codeFences[parseInt(index, 10)] || "";
+  });
 
   return cleaned;
 }
