@@ -1,11 +1,15 @@
-interface GuidePreviewProps {
-  variant?:
-    | "chat"
-    | "performance"
-    | "dashboards"
-    | "migrations"
-    | "cdp"
-    | "production";
+import Image from "next/image";
+
+export type PreviewVariant =
+  | "chat"
+  | "performance"
+  | "dashboards"
+  | "migrations"
+  | "cdp"
+  | "production";
+
+export interface GuidePreviewProps {
+  variant?: PreviewVariant;
   imagePath?: string;
   title: string;
 }
@@ -15,11 +19,7 @@ export function GuidePreview({ variant, imagePath, title }: GuidePreviewProps) {
   if (imagePath) {
     return (
       <div className="relative w-48 h-32 shrink-0 overflow-hidden rounded-lg border border-border bg-gradient-to-b from-muted/50 to-background">
-        <img
-          src={imagePath}
-          alt={title}
-          className="w-full h-full object-cover"
-        />
+        <Image src={imagePath} alt={title} fill className="object-cover" />
       </div>
     );
   }

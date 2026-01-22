@@ -1,5 +1,6 @@
 import type { SerializableGuideSection } from "@/config/navigation";
 import { GuideCard } from "./guide-card";
+import type { PreviewVariant } from "./guide-preview";
 
 interface GuideSectionGridProps {
   sections: SerializableGuideSection[];
@@ -29,7 +30,7 @@ export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
                     title={guide.title}
                     description={guide.description}
                     href={`/${guide.slug}`}
-                    previewVariant={guide.previewVariant as any}
+                    previewVariant={guide.previewVariant as PreviewVariant}
                     previewImageIndexFile={guide.previewImageIndexFile}
                     languages={guide.languages}
                     tags={guide.tags}

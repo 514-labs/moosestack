@@ -11,7 +11,7 @@ export interface FrontMatter {
   }>;
   previewVariant?: string;
   previewImageIndexFile?: string;
-  languages?: string[];
+  languages?: Language[];
   tags?: string[];
 }
 
