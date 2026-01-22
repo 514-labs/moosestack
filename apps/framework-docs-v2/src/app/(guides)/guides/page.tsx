@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { IconBrandSlack } from "@tabler/icons-react";
-import { getVisibleGuideSections } from "@/config/navigation";
+import {
+  getVisibleGuideSections,
+  type SerializableGuideSection,
+} from "@/config/navigation";
 import { GuidesComingSoon } from "@/components/guides/coming-soon";
 import { GuideSectionGrid } from "@/components/guides/guide-section-grid";
 import { Button } from "@/components/ui/button";
 import { getNavVariant } from "@/lib/nav-variant";
+import { parseMarkdownContent } from "@/lib/content";
 
 export const metadata: Metadata = {
   title: "Guides | MooseStack Documentation",
@@ -13,7 +17,7 @@ export const metadata: Metadata = {
     "A complex blueprint to walk a developer or team of developers through how to deliver a solution using fiveonefour products (and external dependencies).",
 };
 
-export default function GuidesPage() {
+export default async function GuidesPage() {
   // Use build-time variant instead of runtime flags
   const variant = getNavVariant();
   const showDraft = variant === "draft" || variant === "full";
@@ -25,7 +29,37 @@ export default function GuidesPage() {
     showBetaGuides: showBeta,
   });
 
-  const hasVisibleGuides = sections.length > 0;
+  // Load frontmatter for each guide to get preview data, languages, and tags
+  const sectionsWithFrontmatter: SerializableGuideSection[] = await Promise.all(
+    sections.map(async (section) => {
+      const itemsWithFrontmatter = await Promise.all(
+        section.items.map(async (guide) => {
+          try {
+            const content = await parseMarkdownContent(guide.slug);
+            return {
+              ...guide,
+              previewVariant: content.frontMatter.previewVariant,
+              previewImageIndexFile: content.frontMatter.previewImageIndexFile,
+              languages: content.frontMatter.languages,
+              tags: content.frontMatter.tags,
+            };
+          } catch (error) {
+            console.error(
+              `Failed to load frontmatter for ${guide.slug}:`,
+              error,
+            );
+            return guide;
+          }
+        }),
+      );
+      return {
+        ...section,
+        items: itemsWithFrontmatter,
+      };
+    }),
+  );
+
+  const hasVisibleGuides = sectionsWithFrontmatter.length > 0;
 
   if (!hasVisibleGuides) {
     return <GuidesComingSoon />;
@@ -43,7 +77,7 @@ export default function GuidesPage() {
       </div>
 
       {/* Guides sections */}
-      <GuideSectionGrid sections={sections} />
+      <GuideSectionGrid sections={sectionsWithFrontmatter} />
 
       {/* More section */}
       <div className="flex flex-col gap-6 mt-4">
