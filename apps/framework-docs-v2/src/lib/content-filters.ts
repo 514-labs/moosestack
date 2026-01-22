@@ -18,10 +18,11 @@ function normalizeLanguageParam(
   return "typescript";
 }
 
-/** Build regex to match <LanguageTabContent value="..."> blocks */
+/** Build regex to match <LanguageTabContent value="..."> blocks with flexible prop order and quote style */
 function buildLanguageTabRegex(language: string) {
+  // Use lookahead to find value attribute anywhere in the tag with either single or double quotes
   return new RegExp(
-    `<LanguageTabContent\\s+value="${language}"[^>]*>([\\s\\S]*?)</LanguageTabContent>`,
+    `<LanguageTabContent\\b(?=[^>]*value=['"]${language}['"])[^>]*>([\\s\\S]*?)</LanguageTabContent>`,
     "gi",
   );
 }
