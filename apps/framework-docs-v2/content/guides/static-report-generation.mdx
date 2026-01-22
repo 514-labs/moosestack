@@ -1252,7 +1252,7 @@ SummingMergeTree auto-combines during background merges, but GROUP BY is still s
 
 | Strategy | When | Example |
 |----------|------|---------|
-| Raw queries | Ad-hoc, <1M rows | Debugging |
+| Raw queries | Ad-hoc, &lt;1M rows | Debugging |
 | Materialized view | Repeated queries, predictable patterns | Dashboards |
 | Pre-aggregated API | External consumers | PDF reports |
 
@@ -1319,8 +1319,8 @@ In this scenario, that's around 500 hours of manual Excel work eliminated (2 hou
 | Operation | Row DB | Moose + ClickHouse |
 |-----------|--------|-------------------|
 | Transaction scan | Seconds-minutes | Milliseconds |
-| Daily aggregation | 10-30+ sec | <100ms |
-| Report generation | Minutes | <1 sec |
+| Daily aggregation | 10-30+ sec | &lt;100ms |
+| Report generation | Minutes | &lt;1 sec |
 
 ### Next steps
 

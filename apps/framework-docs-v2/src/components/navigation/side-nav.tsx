@@ -39,8 +39,75 @@ interface SideNavProps {
   flags?: NavFilterFlags;
 }
 
+// Context to share navigation state without prop drilling hooks
+interface NavContextValue {
+  pathname: string;
+  baseHref: string; // Pre-computed href base with lang param
+  activeDescendants: Set<string>; // Pre-computed set of all active descendant slugs
+}
+
+const NavContext = React.createContext<NavContextValue | null>(null);
+
+function useNavContext() {
+  const context = React.useContext(NavContext);
+  if (!context) {
+    throw new Error("useNavContext must be used within NavContext.Provider");
+  }
+  return context;
+}
+
+// Pre-compute all active descendant slugs for the entire tree
+function computeActiveDescendants(
+  items: NavItem[],
+  pathname: string,
+): Set<string> {
+  const activeSet = new Set<string>();
+
+  function findActiveAndMarkAncestors(
+    navItems: NavItem[],
+    ancestors: string[],
+  ): boolean {
+    let hasActiveChild = false;
+
+    for (const item of navItems) {
+      if (item.type === "page") {
+        const isActive = pathname === `/${item.slug}`;
+        let childHasActive = false;
+
+        if (item.children) {
+          childHasActive = findActiveAndMarkAncestors(item.children, [
+            ...ancestors,
+            item.slug,
+          ]);
+        }
+
+        if (isActive || childHasActive) {
+          hasActiveChild = true;
+          // Mark all ancestors as having active descendants
+          for (const ancestor of ancestors) {
+            activeSet.add(ancestor);
+          }
+          if (childHasActive) {
+            activeSet.add(item.slug);
+          }
+        }
+      } else if (item.type === "section" && item.items) {
+        if (findActiveAndMarkAncestors(item.items, ancestors)) {
+          hasActiveChild = true;
+        }
+      }
+    }
+
+    return hasActiveChild;
+  }
+
+  findActiveAndMarkAncestors(items, []);
+  return activeSet;
+}
+
 export function SideNav({ items, flags }: SideNavProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { language } = useLanguage();
 
   // Determine active section and get its navigation config
@@ -62,33 +129,47 @@ export function SideNav({ items, flags }: SideNavProps) {
     return languageFilteredItems;
   }, [languageFilteredItems, flags]);
 
-  // Group items: pages that appear between separators should be in the same SidebarGroup
-  const renderNavItems = () => {
+  // Pre-compute base href with lang param (done once, not per item)
+  const baseHref = React.useMemo(() => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.set("lang", language);
+    return `?${params.toString()}`;
+  }, [searchParams, language]);
+
+  // Pre-compute all active descendants for the entire tree
+  const activeDescendants = React.useMemo(
+    () => computeActiveDescendants(filteredItems, pathname),
+    [filteredItems, pathname],
+  );
+
+  // Memoize context value to prevent unnecessary re-renders
+  const navContextValue = React.useMemo(
+    () => ({ pathname, baseHref, activeDescendants }),
+    [pathname, baseHref, activeDescendants],
+  );
+
+  // Memoize the rendered nav items
+  const renderedNavItems = React.useMemo(() => {
     const elements: React.ReactNode[] = [];
-    let currentGroup: NavItem[] = [];
+    let currentGroup: NavPage[] = [];
     let currentLabel: string | null = null;
 
     const flushGroup = () => {
       if (currentGroup.length > 0) {
-        const pages = currentGroup.filter(
-          (item): item is NavPage => item.type === "page",
+        elements.push(
+          <SidebarGroup key={`group-${elements.length}`}>
+            {currentLabel && (
+              <SidebarGroupLabel className="text-xs text-muted-foreground py-1.5">
+                {currentLabel}
+              </SidebarGroupLabel>
+            )}
+            <SidebarMenu>
+              {currentGroup.map((page) => (
+                <MemoizedNavItemComponent key={page.slug} item={page} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>,
         );
-        if (pages.length > 0) {
-          elements.push(
-            <SidebarGroup key={`group-${elements.length}`}>
-              {currentLabel && (
-                <SidebarGroupLabel className="text-xs text-muted-foreground py-1.5">
-                  {currentLabel}
-                </SidebarGroupLabel>
-              )}
-              <SidebarMenu>
-                {pages.map((page) => (
-                  <NavItemComponent key={page.slug} item={page} />
-                ))}
-              </SidebarMenu>
-            </SidebarGroup>,
-          );
-        }
         currentGroup = [];
         currentLabel = null;
       }
@@ -97,7 +178,6 @@ export function SideNav({ items, flags }: SideNavProps) {
     filteredItems.forEach((item, index) => {
       if (item.type === "separator") {
         flushGroup();
-        // Separators are skipped - only flush the group for proper grouping
       } else if (item.type === "label") {
         flushGroup();
         currentLabel = item.title;
@@ -115,7 +195,10 @@ export function SideNav({ items, flags }: SideNavProps) {
               {item.items.map((pageItem) => {
                 if (pageItem.type === "page") {
                   return (
-                    <NavItemComponent key={pageItem.slug} item={pageItem} />
+                    <MemoizedNavItemComponent
+                      key={pageItem.slug}
+                      item={pageItem}
+                    />
                   );
                 }
                 return null;
@@ -128,68 +211,51 @@ export function SideNav({ items, flags }: SideNavProps) {
 
     flushGroup();
     return elements;
-  };
+  }, [filteredItems]);
 
   return (
-    <Sidebar
-      className="top-[--header-height] !h-[calc(100svh-var(--header-height))]"
-      collapsible="icon"
-      variant="sidebar"
-    >
-      <SidebarContent className="pt-6 lg:pt-8 pl-2">
-        {renderNavItems()}
-      </SidebarContent>
-    </Sidebar>
+    <NavContext.Provider value={navContextValue}>
+      <Sidebar
+        className="top-[--header-height] !h-[calc(100svh-var(--header-height))]"
+        collapsible="icon"
+        variant="sidebar"
+      >
+        <SidebarContent className="pt-6 lg:pt-8 pl-2">
+          {renderedNavItems}
+        </SidebarContent>
+      </Sidebar>
+    </NavContext.Provider>
   );
 }
 
-function NavItemComponent({ item }: { item: NavPage }) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const { language } = useLanguage();
+interface NavItemComponentProps {
+  item: NavPage;
+}
 
-  const href = (() => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("lang", language);
-    return `/${item.slug}?${params.toString()}`;
-  })();
+function NavItemComponent({ item }: NavItemComponentProps) {
+  const { pathname, baseHref, activeDescendants } = useNavContext();
 
+  // Use pre-computed href base
+  const href = `/${item.slug}${baseHref}`;
   const isActive = pathname === `/${item.slug}`;
   const hasChildren = item.children && item.children.length > 0;
 
-  // Recursively check if any descendant is active
-  const hasActiveDescendant = React.useMemo(() => {
-    if (!hasChildren) return false;
-
-    const checkDescendant = (children: NavItem[]): boolean => {
-      return children.some((child) => {
-        if (child.type === "page") {
-          if (pathname === `/${child.slug}`) return true;
-          if (child.children) return checkDescendant(child.children);
-        }
-        return false;
-      });
-    };
-
-    return checkDescendant(item.children!);
-  }, [hasChildren, item.children, pathname]);
+  // Use pre-computed active descendants
+  const hasActiveDescendant = activeDescendants.has(item.slug);
 
   const defaultOpen = isActive || hasActiveDescendant;
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
 
   // Update open state when active state changes
   React.useEffect(() => {
-    setIsOpen(isActive || hasActiveDescendant);
+    if (isActive || hasActiveDescendant) {
+      setIsOpen(true);
+    }
   }, [isActive, hasActiveDescendant]);
 
   if (hasChildren) {
     return (
-      <Collapsible
-        key={item.slug}
-        asChild
-        open={isOpen}
-        onOpenChange={setIsOpen}
-      >
+      <Collapsible asChild open={isOpen} onOpenChange={setIsOpen}>
         <SidebarMenuItem>
           <SidebarMenuButton asChild tooltip={item.title} isActive={isActive}>
             <Link href={href}>
@@ -208,12 +274,7 @@ function NavItemComponent({ item }: { item: NavPage }) {
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <SidebarMenuSub>
-                  {renderNavChildren(
-                    item.children,
-                    pathname,
-                    searchParams,
-                    language,
-                  )}
+                  <MemoizedNavChildren items={item.children} />
                 </SidebarMenuSub>
               </CollapsibleContent>
             </>
@@ -236,42 +297,29 @@ function NavItemComponent({ item }: { item: NavPage }) {
   );
 }
 
-function NestedNavItemComponent({
-  item,
-  pathname,
-  searchParams,
-  language,
-}: {
+// Memoize to prevent re-renders when parent context changes but item props are same
+const MemoizedNavItemComponent = React.memo(NavItemComponent);
+
+interface NestedNavItemComponentProps {
   item: NavPage;
-  pathname: string;
-  searchParams: URLSearchParams;
-  language: string;
-}) {
+}
+
+function NestedNavItemComponent({ item }: NestedNavItemComponentProps) {
+  const { pathname, baseHref, activeDescendants } = useNavContext();
+
   const childHasChildren = item.children && item.children.length > 0;
-  const childHref = (() => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("lang", language);
-    return `/${item.slug}?${params.toString()}`;
-  })();
+  const childHref = `/${item.slug}${baseHref}`;
   const childIsActive = pathname === `/${item.slug}`;
 
-  // Recursively check if any descendant is active
-  const checkDescendant = (children: NavItem[]): boolean => {
-    return children.some((c) => {
-      if (c.type === "page") {
-        if (pathname === `/${c.slug}`) return true;
-        if (c.children) return checkDescendant(c.children);
-      }
-      return false;
-    });
-  };
-  const hasActiveDescendant =
-    childHasChildren ? checkDescendant(item.children!) : false;
+  // Use pre-computed active descendants
+  const hasActiveDescendant = activeDescendants.has(item.slug);
   const defaultOpen = childIsActive || hasActiveDescendant;
   const [isOpen, setIsOpen] = React.useState(defaultOpen);
 
   React.useEffect(() => {
-    setIsOpen(childIsActive || hasActiveDescendant);
+    if (childIsActive || hasActiveDescendant) {
+      setIsOpen(true);
+    }
   }, [childIsActive, hasActiveDescendant]);
 
   if (childHasChildren) {
@@ -296,12 +344,7 @@ function NestedNavItemComponent({
           </CollapsibleTrigger>
           <CollapsibleContent>
             <SidebarMenuSub>
-              {renderNavChildren(
-                item.children!,
-                pathname,
-                searchParams,
-                language,
-              )}
+              <MemoizedNavChildren items={item.children!} />
             </SidebarMenuSub>
           </CollapsibleContent>
         </SidebarMenuSubItem>
@@ -321,16 +364,17 @@ function NestedNavItemComponent({
   );
 }
 
-function renderNavChildren(
-  children: NavItem[],
-  pathname: string,
-  searchParams: URLSearchParams,
-  language: string,
-): React.ReactNode[] {
+const MemoizedNestedNavItemComponent = React.memo(NestedNavItemComponent);
+
+interface NavChildrenProps {
+  items: NavItem[];
+}
+
+function NavChildren({ items }: NavChildrenProps) {
   const elements: React.ReactNode[] = [];
   let isFirstLabel = true;
 
-  children.forEach((child, index) => {
+  items.forEach((child, index) => {
     if (child.type === "label") {
       elements.push(
         <SidebarMenuSubLabel key={`label-${index}`} isFirst={isFirstLabel}>
@@ -343,16 +387,12 @@ function renderNavChildren(
       return;
     } else if (child.type === "page") {
       elements.push(
-        <NestedNavItemComponent
-          key={child.slug}
-          item={child}
-          pathname={pathname}
-          searchParams={searchParams}
-          language={language}
-        />,
+        <MemoizedNestedNavItemComponent key={child.slug} item={child} />,
       );
     }
   });
 
-  return elements;
+  return <>{elements}</>;
 }
+
+const MemoizedNavChildren = React.memo(NavChildren);

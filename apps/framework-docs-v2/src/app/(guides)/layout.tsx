@@ -1,16 +1,11 @@
 import type { ReactNode } from "react";
-import { headers } from "next/headers";
 import { AnalyticsProvider } from "@/components/analytics-provider";
 
 interface GuidesLayoutProps {
   children: ReactNode;
 }
 
-export default async function GuidesLayout({ children }: GuidesLayoutProps) {
-  // Access headers() to mark this layout as dynamic, which allows Date.now() usage
-  // in the flags SDK without triggering Next.js static generation errors
-  await headers();
-
+export default function GuidesLayout({ children }: GuidesLayoutProps) {
   return (
     <AnalyticsProvider>
       <div className="flex flex-1">

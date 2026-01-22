@@ -60,8 +60,6 @@ interface MDXRendererProps {
 }
 
 export async function MDXRenderer({ source }: MDXRendererProps) {
-  "use cache";
-
   // Preprocess content to ensure proper spacing around code blocks
   // This prevents hydration errors from invalid HTML nesting
   const processedSource = ensureCodeBlockSpacing(source);
