@@ -1165,7 +1165,7 @@ moose logs | grep -i cdc
 
 | Feature | CDC (Real-time) | Batch (CSV/PostgreSQL) |
 |---------|-----------------|------------------------|
-| **Latency** | <60 seconds | Hours to days |
+| **Latency** | `<60 seconds` | Hours to days |
 | **Efficiency** | Delta only | Full table scan |
 | **Complexity** | Higher setup | Simpler |
 | **Use Case** | Real-time dashboards | Historical analysis |
@@ -1179,7 +1179,7 @@ moose logs | grep -i cdc
 
 **When to use Batch**:
 - Historical data migration
-- Small tables (<100k rows)
+- Small tables (`<100k rows`)
 - Daily/weekly refresh is sufficient
 - Simple ETL requirements
 
@@ -2664,7 +2664,7 @@ ClickHouse Table (EKKO)
 ```
 
 **Benefits**:
-- Real-time sync (<60 seconds)
+- Real-time sync (`<60 seconds`)
 - No polling or full table scans
 - Automatic schema discovery
 - Built-in error handling and retry
