@@ -486,7 +486,7 @@ curl -s "http://localhost:18123/?user=panda&password=pandapass" \
   -d "SELECT count() FROM local.sales"
 ```
 
-> **Note:** Running the file loader multiple times creates duplicate records—ClickHouse doesn't enforce unique constraints. To start fresh, stop `moose dev` and run `docker volume prune`.
+> **Note:** Running the file loader multiple times creates duplicate records—ClickHouse doesn't enforce unique constraints. To start fresh, stop `moose dev` and remove the project's Docker volumes. **Caution:** `docker volume prune` deletes *all* unused volumes on your machine. Instead, use `docker volume ls` to list volumes, identify the ones for your project (typically containing `clickhouse` or `redpanda`), and remove them selectively with `docker volume rm <volume_name>`.
 
 ### Step 5: Add validation (recommended)
 
@@ -851,7 +851,7 @@ pnpm add pdfmake
 pnpm add -D @types/pdfmake
 ```
 
-> **Note:** This guide uses pdfmake 0.3.x which requires Node.js 20 LTS (Long Term Support) or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
+> **Note:** This guide uses pdfmake 0.3.x which requires Node.js 20 LTS (Long-Term Support) or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
 
 ### Step 2: Create PDF generator
 
@@ -1537,7 +1537,7 @@ If this returns empty `[]`, verify data was ingested and the date range is corre
 
 **Starting over completely:** Stop `moose dev`, delete the project directory, and run `moose init` again.
 
-**Reset data but keep code:** Stop `moose dev`, then run `docker volume prune` to clear all data.
+**Reset data but keep code:** Stop `moose dev`, then remove the project's Docker volumes. **Caution:** `docker volume prune` deletes *all* unused volumes on your machine—not just this project's. Use `docker volume ls` to list volumes, identify yours (typically containing `clickhouse` or `redpanda`), and remove them with `docker volume rm <volume_name>`.
 
 **Data persists across restarts:** If you stop and restart `moose dev`, your ingested data is still there—it's stored in Docker volumes.
 
