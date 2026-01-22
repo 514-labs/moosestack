@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
-import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
@@ -107,7 +106,8 @@ export default async function DocPage({ params, searchParams }: PageProps) {
     : undefined,
   );
 
-  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
+  // Use build-time flags instead of runtime PostHog checks
+  const showCopyButton = false; // Can be enabled via environment variable if needed
   const resolvedSearchParams = await searchParams;
   const langParam = resolvedSearchParams?.lang;
 

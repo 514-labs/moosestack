@@ -1,0 +1,2328 @@
+{
+  "variant": "base",
+  "flags": {
+    "showDataSourcesPage": false,
+    "showDraftGuides": false,
+    "showBetaGuides": false
+  },
+  "sections": {
+    "moosestack": {
+      "typescript": [
+        {
+          "type": "page",
+          "slug": "moosestack/index",
+          "title": "Overview",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Build a New App"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/getting-started/quickstart",
+          "title": "5 Minute Quickstart",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "templates",
+          "title": "Browse Templates",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "external": true
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/getting-started/from-clickhouse",
+          "icon": {},
+          "title": "Existing ClickHouse",
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Add to Existing App"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/getting-started/existing-app/next-js",
+          "title": "Next.js",
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/getting-started/existing-app/fastify",
+          "title": "Fastify",
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Fundamentals"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/runtime",
+          "title": "Moose Runtime",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/moosedev-mcp",
+          "title": "MooseDev MCP",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/data-modeling",
+          "title": "Data Modeling",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Moose Modules"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/olap",
+          "title": "Moose OLAP",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "label",
+              "title": "Data Modeling"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/model-table",
+              "title": "Tables",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/model-view",
+              "title": "Views",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/model-materialized-view",
+              "title": "Materialized Views",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/materialized-columns",
+              "title": "Materialized Columns",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "External Data & Introspection"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/external-tables",
+              "title": "External Tables",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/db-pull",
+              "title": "Introspecting Tables",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Data Access"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/insert-data",
+              "title": "Inserting Data",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/read-data",
+              "title": "Reading Data",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Performance & Optimization"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/schema-optimization",
+              "title": "Schema Optimization",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/indexes",
+              "title": "Secondary & Data-skipping Indexes",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/ttl",
+              "title": "TTL (Time-to-Live)",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/schema-versioning",
+              "title": "Schema Versioning",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/streaming",
+          "title": "Moose Streaming",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "label",
+              "title": "Manage Streams"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/create-stream",
+              "title": "Create Streams",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/sync-to-table",
+              "title": "Sync to OLAP",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/dead-letter-queues",
+              "title": "Dead Letter Queues",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Functions"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/consumer-functions",
+              "title": "Consumer Functions",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/transform-functions",
+              "title": "Transformation Functions",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Writing to Streams"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/from-your-code",
+              "title": "From Your Code",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/schema-registry",
+              "title": "Schema Registry",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/connect-cdc",
+              "title": "From CDC Services",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/workflows",
+          "title": "Moose Workflows",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/define-workflow",
+              "title": "Define Workflows",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/schedule-workflow",
+              "title": "Scheduling",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/trigger-workflow",
+              "title": "Triggers",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/retries-and-timeouts",
+              "title": "Retries and Timeouts",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/cancel-workflow",
+              "title": "Cancelling Running Workflows",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/apis",
+          "title": "Moose APIs & Web Apps",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Native APIs"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/ingest-api",
+              "title": "Ingest API",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/analytics-api",
+              "title": "Analytics API",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/trigger-api",
+              "title": "Workflow Trigger",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/admin-api",
+              "title": "Admin APIs",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/auth",
+              "title": "Authentication",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Use Your Web Framework"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/app-api-frameworks",
+              "title": "Overview",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/app-api-frameworks/express",
+              "title": "Express",
+              "languages": ["typescript"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/app-api-frameworks/fastify",
+              "title": "Fastify",
+              "languages": ["typescript"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/app-api-frameworks/koa",
+              "title": "Koa",
+              "languages": ["typescript"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/app-api-frameworks/raw-nodejs",
+              "title": "Raw Node.js",
+              "languages": ["typescript"]
+            }
+          ]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Deployment & Lifecycle"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/migrate",
+          "title": "Moose Migrate",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "label",
+              "title": "Migration Modes"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/automatic",
+              "title": "Automatic Migrations",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/planned-migrations",
+              "title": "Planned Migrations",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/plan-format",
+              "title": "Plan Reference",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Executing Migrations"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/apply-planned-migrations-cli",
+              "title": "moose migrate (CLI)",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/apply-planned-migrations-service",
+              "title": "moose prod (Runtime)",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Lifecycle Management"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/lifecycle-fully-managed",
+              "title": "Fully Managed",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/lifecycle-deletion-protected",
+              "title": "Deletion Protected",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/lifecycle-externally-managed",
+              "title": "Externally Managed",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Advanced Topics"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/failed-migrations",
+              "title": "Failed Migrations",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/deploying",
+          "title": "Moose Deploy",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/packaging-moose-for-deployment",
+              "title": "Packaging Moose for deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/preparing-clickhouse-redpanda",
+              "title": "Preparing Infrastructure",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/configuring-moose-for-cloud",
+              "title": "Cloud Configuration",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/deploying-on-kubernetes",
+              "title": "Kubernetes Deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/deploying-on-ecs",
+              "title": "AWS ECS Deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/deploying-on-an-offline-server",
+              "title": "Offline Deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/deploying-with-docker-compose",
+              "title": "Docker Compose Deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/monitoring",
+              "title": "Monitoring (moved)",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Reference"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/reference",
+          "title": "API Reference",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/data-types",
+          "title": "Data Types",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/strings",
+              "title": "Strings",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/low-cardinality",
+              "title": "LowCardinality",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/integers",
+              "title": "Integers",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/floats",
+              "title": "Floats",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/decimals",
+              "title": "Decimals",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/booleans",
+              "title": "Booleans",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/datetime",
+              "title": "Date & Time",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/network",
+              "title": "Network",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/arrays",
+              "title": "Arrays",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/maps",
+              "title": "Maps",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/nested",
+              "title": "Nested",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/tuples",
+              "title": "Tuples",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/enums",
+              "title": "Enums",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/geometry",
+              "title": "Geometry",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/json",
+              "title": "JSON",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/nullable",
+              "title": "Nullable",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/aggregates",
+              "title": "Aggregates",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/engines",
+          "title": "Table Engines",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/engines/merge-tree",
+              "title": "MergeTree",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/engines/replacing-merge-tree",
+              "title": "ReplacingMergeTree",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/engines/aggregating-merge-tree",
+              "title": "AggregatingMergeTree",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/engines/summing-merge-tree",
+              "title": "SummingMergeTree",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/engines/replicated",
+              "title": "Replicated Engines",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/moose-cli",
+          "title": "CLI",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/configuration",
+          "title": "Configuration",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "label",
+              "title": "Core Settings"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/project-settings",
+              "title": "Project Settings",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/typescript",
+              "title": "TypeScript",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/telemetry",
+              "title": "Telemetry",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/git",
+              "title": "Git",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/features",
+              "title": "Features",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/migrations",
+              "title": "Migrations",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Infrastructure"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/clickhouse",
+              "title": "ClickHouse",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/redpanda",
+              "title": "Redpanda",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/redis",
+              "title": "Redis",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/temporal",
+              "title": "Temporal",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/http-server",
+              "title": "HTTP Server",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/state-storage",
+              "title": "State Storage",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Security"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/jwt",
+              "title": "JWT",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/admin-api",
+              "title": "Admin API",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Development"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/dev-environment",
+              "title": "Dev Environment",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/metrics",
+          "title": "Observability Metrics",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/help",
+          "title": "Help",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/help/troubleshooting",
+              "title": "Troubleshooting",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/help/minimum-requirements",
+              "title": "Minimum Requirements",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/release-notes",
+          "title": "Release Notes",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2026-01-16",
+              "title": "January 16, 2026",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2026-01-09",
+              "title": "January 9, 2026",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-12-22",
+              "title": "December 22, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-12-15",
+              "title": "December 15, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-12-05",
+              "title": "December 5, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-11-22",
+              "title": "November 22, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-11-14",
+              "title": "November 14, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-11-07",
+              "title": "November 7, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-11-01",
+              "title": "November 1, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-10-24",
+              "title": "October 24, 2025",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Contribution"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/contribution/documentation",
+          "title": "Documentation",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/contribution/framework",
+          "title": "Framework",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        }
+      ],
+      "python": [
+        {
+          "type": "page",
+          "slug": "moosestack/index",
+          "title": "Overview",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Build a New App"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/getting-started/quickstart",
+          "title": "5 Minute Quickstart",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "templates",
+          "title": "Browse Templates",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "external": true
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/getting-started/from-clickhouse",
+          "icon": {},
+          "title": "Existing ClickHouse",
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Add to Existing App"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/getting-started/existing-app/next-js",
+          "title": "Next.js",
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/getting-started/existing-app/fastify",
+          "title": "Fastify",
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Fundamentals"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/runtime",
+          "title": "Moose Runtime",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/moosedev-mcp",
+          "title": "MooseDev MCP",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/data-modeling",
+          "title": "Data Modeling",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Moose Modules"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/olap",
+          "title": "Moose OLAP",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "label",
+              "title": "Data Modeling"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/model-table",
+              "title": "Tables",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/model-view",
+              "title": "Views",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/model-materialized-view",
+              "title": "Materialized Views",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/materialized-columns",
+              "title": "Materialized Columns",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "External Data & Introspection"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/external-tables",
+              "title": "External Tables",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/db-pull",
+              "title": "Introspecting Tables",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Data Access"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/insert-data",
+              "title": "Inserting Data",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/read-data",
+              "title": "Reading Data",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Performance & Optimization"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/schema-optimization",
+              "title": "Schema Optimization",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/indexes",
+              "title": "Secondary & Data-skipping Indexes",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/ttl",
+              "title": "TTL (Time-to-Live)",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/olap/schema-versioning",
+              "title": "Schema Versioning",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/streaming",
+          "title": "Moose Streaming",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "label",
+              "title": "Manage Streams"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/create-stream",
+              "title": "Create Streams",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/sync-to-table",
+              "title": "Sync to OLAP",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/dead-letter-queues",
+              "title": "Dead Letter Queues",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Functions"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/consumer-functions",
+              "title": "Consumer Functions",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/transform-functions",
+              "title": "Transformation Functions",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Writing to Streams"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/from-your-code",
+              "title": "From Your Code",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/schema-registry",
+              "title": "Schema Registry",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/streaming/connect-cdc",
+              "title": "From CDC Services",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/workflows",
+          "title": "Moose Workflows",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/define-workflow",
+              "title": "Define Workflows",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/schedule-workflow",
+              "title": "Scheduling",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/trigger-workflow",
+              "title": "Triggers",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/retries-and-timeouts",
+              "title": "Retries and Timeouts",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/workflows/cancel-workflow",
+              "title": "Cancelling Running Workflows",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/apis",
+          "title": "Moose APIs & Web Apps",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Native APIs"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/ingest-api",
+              "title": "Ingest API",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/analytics-api",
+              "title": "Analytics API",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/trigger-api",
+              "title": "Workflow Trigger",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/admin-api",
+              "title": "Admin APIs",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/apis/auth",
+              "title": "Authentication",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Use Your Web Framework"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/app-api-frameworks",
+              "title": "Overview",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/app-api-frameworks/fastapi",
+              "title": "FastAPI",
+              "languages": ["python"]
+            }
+          ]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Deployment & Lifecycle"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/migrate",
+          "title": "Moose Migrate",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "label",
+              "title": "Migration Modes"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/automatic",
+              "title": "Automatic Migrations",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/planned-migrations",
+              "title": "Planned Migrations",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/plan-format",
+              "title": "Plan Reference",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Executing Migrations"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/apply-planned-migrations-cli",
+              "title": "moose migrate (CLI)",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/apply-planned-migrations-service",
+              "title": "moose prod (Runtime)",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Lifecycle Management"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/lifecycle-fully-managed",
+              "title": "Fully Managed",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/lifecycle-deletion-protected",
+              "title": "Deletion Protected",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/lifecycle-externally-managed",
+              "title": "Externally Managed",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Advanced Topics"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/migrate/failed-migrations",
+              "title": "Failed Migrations",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/deploying",
+          "title": "Moose Deploy",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/packaging-moose-for-deployment",
+              "title": "Packaging Moose for deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/preparing-clickhouse-redpanda",
+              "title": "Preparing Infrastructure",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/configuring-moose-for-cloud",
+              "title": "Cloud Configuration",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/deploying-on-kubernetes",
+              "title": "Kubernetes Deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/deploying-on-ecs",
+              "title": "AWS ECS Deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/deploying-on-an-offline-server",
+              "title": "Offline Deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/deploying-with-docker-compose",
+              "title": "Docker Compose Deployment",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/deploying/monitoring",
+              "title": "Monitoring (moved)",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Reference"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/reference",
+          "title": "API Reference",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/data-types",
+          "title": "Data Types",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/strings",
+              "title": "Strings",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/low-cardinality",
+              "title": "LowCardinality",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/integers",
+              "title": "Integers",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/floats",
+              "title": "Floats",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/decimals",
+              "title": "Decimals",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/booleans",
+              "title": "Booleans",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/datetime",
+              "title": "Date & Time",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/network",
+              "title": "Network",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/arrays",
+              "title": "Arrays",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/maps",
+              "title": "Maps",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/nested",
+              "title": "Nested",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/tuples",
+              "title": "Tuples",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/enums",
+              "title": "Enums",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/geometry",
+              "title": "Geometry",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/json",
+              "title": "JSON",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/nullable",
+              "title": "Nullable",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/data-types/aggregates",
+              "title": "Aggregates",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/engines",
+          "title": "Table Engines",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/engines/merge-tree",
+              "title": "MergeTree",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/engines/replacing-merge-tree",
+              "title": "ReplacingMergeTree",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/engines/aggregating-merge-tree",
+              "title": "AggregatingMergeTree",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/engines/summing-merge-tree",
+              "title": "SummingMergeTree",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/engines/replicated",
+              "title": "Replicated Engines",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/moose-cli",
+          "title": "CLI",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/configuration",
+          "title": "Configuration",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "label",
+              "title": "Core Settings"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/project-settings",
+              "title": "Project Settings",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/typescript",
+              "title": "TypeScript",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/telemetry",
+              "title": "Telemetry",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/git",
+              "title": "Git",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/features",
+              "title": "Features",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/migrations",
+              "title": "Migrations",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Infrastructure"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/clickhouse",
+              "title": "ClickHouse",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/redpanda",
+              "title": "Redpanda",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/redis",
+              "title": "Redis",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/temporal",
+              "title": "Temporal",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/http-server",
+              "title": "HTTP Server",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/state-storage",
+              "title": "State Storage",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Security"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/jwt",
+              "title": "JWT",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/admin-api",
+              "title": "Admin API",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "label",
+              "title": "Development"
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/configuration/dev-environment",
+              "title": "Dev Environment",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/metrics",
+          "title": "Observability Metrics",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/help",
+          "title": "Help",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/help/troubleshooting",
+              "title": "Troubleshooting",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/help/minimum-requirements",
+              "title": "Minimum Requirements",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/release-notes",
+          "title": "Release Notes",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2026-01-16",
+              "title": "January 16, 2026",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2026-01-09",
+              "title": "January 9, 2026",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-12-22",
+              "title": "December 22, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-12-15",
+              "title": "December 15, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-12-05",
+              "title": "December 5, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-11-22",
+              "title": "November 22, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-11-14",
+              "title": "November 14, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-11-07",
+              "title": "November 7, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-11-01",
+              "title": "November 1, 2025",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "moosestack/release-notes/2025-10-24",
+              "title": "October 24, 2025",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Contribution"
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/contribution/documentation",
+          "title": "Documentation",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "moosestack/contribution/framework",
+          "title": "Framework",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        }
+      ]
+    },
+    "hosting": {
+      "typescript": [
+        {
+          "type": "page",
+          "slug": "hosting/overview",
+          "title": "Overview",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "hosting/getting-started",
+          "title": "Getting Started",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Deployment"
+        },
+        {
+          "type": "page",
+          "slug": "hosting/deployment",
+          "title": "Deployment Guide",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        }
+      ],
+      "python": [
+        {
+          "type": "page",
+          "slug": "hosting/overview",
+          "title": "Overview",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "hosting/getting-started",
+          "title": "Getting Started",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "separator"
+        },
+        {
+          "type": "label",
+          "title": "Deployment"
+        },
+        {
+          "type": "page",
+          "slug": "hosting/deployment",
+          "title": "Deployment Guide",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        }
+      ]
+    },
+    "ai": {
+      "typescript": [
+        {
+          "type": "page",
+          "slug": "ai/index",
+          "title": "Introduction",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "ai/getting-started",
+          "title": "Getting Started",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "ai/getting-started/claude",
+              "title": "Claude Desktop",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/getting-started/cursor",
+              "title": "Cursor",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/getting-started/windsurf",
+              "title": "Windsurf",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/getting-started/vs-code",
+              "title": "VS Code",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/getting-started/other-clients",
+              "title": "Other Clients",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "ai/guides",
+          "title": "Guides",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "ai/guides/clickhouse-chat",
+              "title": "AI Chat with ClickHouse",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/guides/clickhouse-proj",
+              "title": "AI analytics engineering from your ClickHouse",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/guides/from-template",
+              "title": "AI powered OLAP templates",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "ai/reference",
+          "title": "Reference",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "ai/reference/cli-reference",
+              "title": "CLI reference",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/reference/tool-reference",
+              "title": "Tools reference",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/reference/mcp-json-reference",
+              "title": "MCP.json reference",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "ai/data-collection-policy",
+          "title": "Data collection policy",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "ai/demos",
+          "title": "Demos",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "ai/demos/ingest",
+              "title": "Ingest",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/model-data",
+              "title": "Model Data",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/mvs",
+              "title": "Materialized Views",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/dlqs",
+              "title": "Dead Letter Queues",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/egress",
+              "title": "Egress",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/context",
+              "title": "Context",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        }
+      ],
+      "python": [
+        {
+          "type": "page",
+          "slug": "ai/index",
+          "title": "Introduction",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "ai/getting-started",
+          "title": "Getting Started",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "ai/getting-started/claude",
+              "title": "Claude Desktop",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/getting-started/cursor",
+              "title": "Cursor",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/getting-started/windsurf",
+              "title": "Windsurf",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/getting-started/vs-code",
+              "title": "VS Code",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/getting-started/other-clients",
+              "title": "Other Clients",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "ai/guides",
+          "title": "Guides",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "ai/guides/clickhouse-chat",
+              "title": "AI Chat with ClickHouse",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/guides/clickhouse-proj",
+              "title": "AI analytics engineering from your ClickHouse",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/guides/from-template",
+              "title": "AI powered OLAP templates",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "ai/reference",
+          "title": "Reference",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "ai/reference/cli-reference",
+              "title": "CLI reference",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/reference/tool-reference",
+              "title": "Tools reference",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/reference/mcp-json-reference",
+              "title": "MCP.json reference",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        },
+        {
+          "type": "page",
+          "slug": "ai/data-collection-policy",
+          "title": "Data collection policy",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "ai/demos",
+          "title": "Demos",
+          "icon": {},
+          "languages": ["typescript", "python"],
+          "children": [
+            {
+              "type": "page",
+              "slug": "ai/demos/ingest",
+              "title": "Ingest",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/model-data",
+              "title": "Model Data",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/mvs",
+              "title": "Materialized Views",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/dlqs",
+              "title": "Dead Letter Queues",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/egress",
+              "title": "Egress",
+              "languages": ["typescript", "python"]
+            },
+            {
+              "type": "page",
+              "slug": "ai/demos/context",
+              "title": "Context",
+              "languages": ["typescript", "python"]
+            }
+          ]
+        }
+      ]
+    },
+    "guides": {
+      "typescript": [
+        {
+          "type": "page",
+          "slug": "guides/performant-dashboards",
+          "title": "Improving the Performance of Your Dashboards",
+          "description": "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "guides/chat-in-your-app",
+          "title": "Chat in your app",
+          "description": "Build a data-aware chat on top of your ClickHouse database with Next.js and MooseStack.",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        }
+      ],
+      "python": [
+        {
+          "type": "page",
+          "slug": "guides/performant-dashboards",
+          "title": "Improving the Performance of Your Dashboards",
+          "description": "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        },
+        {
+          "type": "page",
+          "slug": "guides/chat-in-your-app",
+          "title": "Chat in your app",
+          "description": "Build a data-aware chat on top of your ClickHouse database with Next.js and MooseStack.",
+          "icon": {},
+          "languages": ["typescript", "python"]
+        }
+      ]
+    },
+    "templates": {
+      "typescript": [],
+      "python": []
+    }
+  }
+}

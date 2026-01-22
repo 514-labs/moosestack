@@ -8,11 +8,9 @@ import {
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 import { parseGuideManifest } from "@/lib/guide-content";
 import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
-import { showCopyAsMarkdown, showLinearIntegration } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { LazyStepContent } from "@/components/guides/lazy-step-content";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { MarkdownMenu } from "@/components/markdown-menu";
 
@@ -104,8 +102,9 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     : undefined,
   );
 
-  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
-  const showLinear = await showLinearIntegration().catch(() => false);
+  // Use build-time flags instead of runtime PostHog checks
+  const showCopyButton = false; // Can be enabled via environment variable if needed
+  const showLinear = false; // Can be enabled via environment variable if needed
   const langParam = resolvedSearchParams?.lang;
 
   // Check if this is a dynamic guide by checking for guide.toml
@@ -158,23 +157,31 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   }
 
   // STATIC GUIDE LOGIC
-  // Only render the first step initially for fast page loads
-  // Other steps are loaded client-side on demand
+  // Pre-render ALL steps at build time for full static generation
 
   // Discover step files for this starting point page
   const steps = discoverStepFiles(slug);
 
-  // Only pre-render the first step for fast initial display
-  let firstStepContent: React.ReactNode = null;
-  if (steps.length > 0 && steps[0]) {
+  // Pre-render ALL steps (not just the first one)
+  const allStepContents: Array<{
+    stepNumber: number;
+    title: string;
+    content: React.ReactNode;
+  }> = [];
+
+  for (const step of steps) {
     try {
-      const firstStepData = await parseMarkdownContent(steps[0].slug);
-      firstStepContent =
-        firstStepData.isMDX ?
-          <MDXRenderer source={firstStepData.content} />
-        : <div dangerouslySetInnerHTML={{ __html: firstStepData.content }} />;
+      const stepData = await parseMarkdownContent(step.slug);
+      allStepContents.push({
+        stepNumber: step.stepNumber,
+        title: step.title,
+        content:
+          stepData.isMDX ?
+            <MDXRenderer source={stepData.content} />
+          : <div dangerouslySetInnerHTML={{ __html: stepData.content }} />,
+      });
     } catch (error) {
-      console.error(`Failed to load first step ${steps[0].slug}:`, error);
+      console.error(`Failed to load step ${step.slug}:`, error);
     }
   }
 
@@ -222,13 +229,19 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
         </article>
-        {steps.length > 0 && firstStepContent && (
-          <LazyStepContent
-            steps={steps}
-            firstStepContent={firstStepContent}
-            currentSlug={slug}
-          />
-        )}
+        {allStepContents.length > 0 &&
+          allStepContents.map((step) => (
+            <article
+              key={`step-${step.stepNumber}`}
+              id={`step-${step.stepNumber}`}
+              className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 scroll-mt-20"
+            >
+              <h2>
+                {step.stepNumber}. {step.title}
+              </h2>
+              {step.content}
+            </article>
+          ))}
       </div>
       <TOCNav
         headings={allHeadings}
