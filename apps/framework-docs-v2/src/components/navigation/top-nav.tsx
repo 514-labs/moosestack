@@ -135,7 +135,7 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:flex-1 md:items-center md:justify-between">
-            <nav className="flex items-center gap-2">
+            <nav className="flex items-center gap-2 overflow-hidden">
               {navItems.map((item, index) => {
                 const isActive =
                   item.isActive ?
@@ -146,6 +146,7 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
                     key={`${item.section}-${index}`}
                     variant={isActive ? "secondary" : "ghost"}
                     asChild
+                    className="shrink-0 min-w-fit"
                   >
                     <Link
                       href={item.external ? item.href : buildUrl(item.href)}

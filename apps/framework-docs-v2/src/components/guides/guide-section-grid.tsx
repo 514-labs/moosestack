@@ -1,6 +1,6 @@
 import type { SerializableGuideSection } from "@/config/navigation";
-import { getGuideIcon } from "./guide-icons";
 import { GuideCard } from "./guide-card";
+import type { PreviewVariant } from "./guide-preview";
 
 interface GuideSectionGridProps {
   sections: SerializableGuideSection[];
@@ -16,25 +16,29 @@ export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
   }
 
   return (
-    <div className="space-y-10">
-      {sections.map((section, index) => (
-        <div key={section.title ?? `uncategorized-${index}`}>
-          {section.title && (
-            <h2 className="text-xl font-semibold mb-4 text-foreground">
-              {section.title}
-            </h2>
-          )}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {section.items.map((guide) => {
-              const IconComponent = getGuideIcon(guide.iconName);
+    <div className="space-y-8">
+      {sections.map((section) => (
+        <div key={section.title}>
+          <h2 className="text-xl font-semibold mb-4 text-foreground">
+            {section.title}
+          </h2>
+          <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+            {section.items.map((guide, index) => {
               return (
-                <GuideCard
-                  key={guide.slug}
-                  title={guide.title}
-                  description={guide.description}
-                  href={`/${guide.slug}`}
-                  icon={IconComponent}
-                />
+                <div key={guide.slug}>
+                  <GuideCard
+                    title={guide.title}
+                    description={guide.description}
+                    href={`/${guide.slug}`}
+                    previewVariant={guide.previewVariant as PreviewVariant}
+                    previewImageIndexFile={guide.previewImageIndexFile}
+                    languages={guide.languages}
+                    tags={guide.tags}
+                  />
+                  {index < section.items.length - 1 && (
+                    <div className="border-b border-border/50" />
+                  )}
+                </div>
               );
             })}
           </div>
