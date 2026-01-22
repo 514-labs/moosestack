@@ -107,8 +107,8 @@ export default async function DocPage({ params, searchParams }: PageProps) {
     : undefined,
   );
 
-  // Use build-time flags instead of runtime PostHog checks
-  const showCopyButton = false; // Can be enabled via environment variable if needed
+  // Copy button is always enabled - it's a client component that works with static pages
+  const showCopyButton = true;
   const resolvedSearchParams = await searchParams;
   const langParam = resolvedSearchParams?.lang;
 

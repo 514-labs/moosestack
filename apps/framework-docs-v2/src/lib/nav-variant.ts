@@ -33,10 +33,3 @@ export function getNavVariant(): NavVariant {
 
   return "full";
 }
-
-/**
- * Get the path to the navigation variant JSON file
- */
-export function getNavVariantPath(variant: NavVariant): string {
-  return `/nav/${variant}.json`;
-}

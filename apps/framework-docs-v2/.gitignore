@@ -42,3 +42,4 @@ next-env.d.ts
 
 # generated files (created during prebuild)
 /generated
+/public/nav

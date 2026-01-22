@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "tsx scripts/generate-nav-variants.ts && tsx scripts/validate-includes.ts && tsx scripts/generate-sitemap-excludes.ts",
+    "prebuild": "tsx scripts/validate-includes.ts && tsx scripts/generate-sitemap-excludes.ts",
     "build": "next build && pnpm run index:search",
     "postbuild": "next-sitemap",
     "generate:search-content": "tsx scripts/generate-search-index.ts",
