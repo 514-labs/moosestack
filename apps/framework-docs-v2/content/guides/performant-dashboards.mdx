@@ -5,9 +5,135 @@ previewVariant: "dashboards"
 languages: ["typescript"]
 ---
 
-import { FileTree } from "@/components/mdx";
+import { FileTree, CTACards, CTACard, Callout, BulletPointsCard } from "@/components/mdx";
 
 # Improving the Performance of Your Dashboards
+
+<Callout type="info" title="TL;DR">
+* Slow dashboards are usually an architecture problem, not a charting problem.  
+* If you run OLAP-style queries on your OLTP database, performance (and reliability) eventually degrades.  
+* You can get 10–100x faster dashboards by moving analytics to ClickHouse incrementally—without rewriting your frontend.
+
+This guide will:
+
+1. Help you recognize when OLTP has become your analytics bottleneck  
+2. Show an incremental path to move analytical workloads to OLAP best practices  
+3. Walk through shipping the change end-to-end with MooseStack + ClickHouse
+</Callout>
+
+<CTACards columns={3}>
+  <CTACard
+    title="Overview"
+    description="Business context, warning signs, and what success looks like"
+    ctaLink="#overview"
+    ctaLabel="Read first"
+    Icon="Eye"
+  />
+  <CTACard
+    title="Tutorial"
+    description="Step-by-step: port dashboard logic to ClickHouse via MooseStack"
+    ctaLink="#tutorial"
+    ctaLabel="Start building"
+    Icon="Rocket"
+  />
+  <CTACard
+    title="Setup"
+    description="Get your local dev environment ready"
+    ctaLink="#setting-up-your-development-environment"
+    ctaLabel="Prepare"
+    Icon="Wrench"
+  />
+</CTACards>
+
+## Overview
+
+### What this guide is for
+
+This guide is for product engineering teams that already have customer-facing dashboards/reports in production, where:
+
+<BulletPointsCard
+  title="Common symptoms"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Charts/metrics take >5s to load",
+      description: "Your users are staring at loading spinners."
+    },
+    {
+      title: "Small report changes are expensive",
+      description: "Updates are risky enough that they stay stuck in the backlog."
+    },
+    {
+      title: "Reporting traffic overwhelms production OLTP",
+      description: "Analytics queries cause collateral damage to core app workflows."
+    }
+  ]}
+/>
+
+In most cases, the root cause is that you’re running analytical query patterns (group by / aggregations / wide scans / joins) on the same transactional database that powers the rest of your application.
+
+This guide lays out a step-by-step path to move those analytical workloads to OLAP using best practices, **without redesigning your product or rewriting your frontend**.
+
+### Why your business needs to solve this
+
+Customer-facing analytics stops being optional once users depend on it to understand their behavior, progress, or outcomes. When dashboards are slow or unreliable, engagement drops.
+
+<Callout type="info" title="Case study: F45’s LionHeart experience">
+LionHeart is where F45’s most engaged members track workout performance and progress. As usage and data volume increased, the original setup—running analytics directly on the core transactional database—became a bottleneck. Reports were shipped to users as static images of charts. There was no interactivity, and improving the experience carried too much risk to justify prioritization. The team wanted dynamic, interactive dashboards for years, but the existing architecture kept the work stuck in the backlog.
+
+F45 migrated the LionHeart analytics backend to an OLAP-based architecture using the Fiveonefour stack in a matter of weeks. The mobile app moved from static chart images to fast, interactive visualizations. This led to tangible improvements in the bottom line metrics: [70% increase in user satisfaction, and over 1 full star increase in the F45 App Store rating](https://www.fiveonefour.com/blog/case-study-f45).
+
+</Callout>
+
+### Why you haven’t solved it yet
+
+Normally teams don’t start with OLAP because it’s rational to delay it:
+
+<BulletPointsCard
+  title="Why teams delay adopting OLAP (and why it makes sense early on)"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "The OLTP path is the highest-ROI path—at first",
+      description: "Early on, the transactional workload is mission-critical and easiest to justify optimizing."
+    },
+    {
+      title: "Performance doesn’t degrade right away",
+      description: "OLTP-backed analytics can look “fine” until data volume and concurrency cross a threshold (often ~10M rows)."
+    },
+    {
+      title: "Shipping the first version is fastest on existing infrastructure",
+      description: "The quickest path to value is usually building reporting directly on the systems you already run and understand."
+    },
+    {
+      title: "A second database is a real operational commitment",
+      description: "Adding OLAP introduces new reliability, cost, security, and ownership concerns—not just a new query engine."
+    },
+    {
+      title: "Most OLAP stacks weren’t built for modern software engineering workflows",
+      description: "Tooling can feel data-engineering-native, slowing adoption when the builders are primarily software engineering teams building on a application stack (e.g., Next.js, React, Ruby on Rails, etc.)."
+    }
+  ]}
+/>
+
+This is why its common to push OLTP database migrations until it becomes a real business risk. The issue is timing. OLAP migrations are non-trivial and routinely take months. If you wait too long and/or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning.
+
+### When to pull the trigger
+
+You should seriously consider this shift once the warning signs appear in day-to-day product and engineering work. It usually starts small: dashboards feel a bit laggy, then noticeably slow as data grows. Users want more filters, breakdowns, or longer time ranges, but engineering can’t safely ship improvements because even small changes could jeopardize core transactional workloads the rest of your product depends on. Before long, customers complain about load times, and those complaints surface in retention metrics, support tickets, and sales calls. Throwing more hardware at the problem either isn’t possible or is prohibitively expensive; even when feasible, this approach only buys temporary relief. The underlying issue is certain to resurface.
+
+### What this guide proposes
+
+This guide outlines an incremental path for delivering **10–100x faster** dashboard load times without putting your core product at risk: move expensive analytical queries from your existing, mission critical transactional database to a purpose built analytical database **without changing your existing frontend UI or business logic**.
+
+This approach slots right into how your engineering teams already operate. Changes are written in TypeScript, live in the same codebase as the rest of the application, and move through the same version-controlled review and release process. Everything can be validated in staging environments before shipping to production. Compared to a full stack refactor or a data-team-led migration, this approach gets to production faster, with less risk, and provides a controlled way to scale analytics over time.
+
+### What success looks like
+
+When this works, the impact is immediate for both product and engineering. As data volume and usage grow, dashboards stay fast and predictable instead of degrading over time. Analytical workloads no longer compete with core transactional traffic, so the rest of your application runs more reliably. Engineering can ship new dashboards, metrics, and breakdowns as routine product work, not risky, backlog-bound projects. With performance and reliability handled, teams can ship rich, interactive data experiences across the product at low incremental cost and drive measurable improvements in engagement, retention, and revenue upside.
+
+
+## Tutorial
 
 This guide assumes that you have a dashboard or report up and running, and that you wish to improve the performance of your dashboard by leveraging OLAP best practices. It will guide you through:
 
@@ -78,7 +204,7 @@ moose-cli init . typescript
 
 #### Step 2: Update your PNPM workspace configuration
 
-Edit your root `pnpm-workspace.yaml` to include the moose directory:
+Edit your root `pnpm-workspace.yaml` to include the `moosestack` directory:
 
 ```yaml
 packages:
@@ -120,23 +246,12 @@ Edit `moosestack/package.json` to set it up as a workspace package:
 }
 ```
 
-#### Step 4: Add convenience scripts to your root package.json
+#### Step 4: Add the `pnpm` configuration to your root package.json
 
-Edit your root `package.json` to add MooseStack scripts and `pnpmOnlyBuiltDependencies`:
+Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (this ensures required native/built dependencies are handled correctly by PNPM):
 
 ```json
 {
-  "scripts": {
-    "dev": "next dev",                              // Your app dev server
-    "dev:moose": "pnpm -C moosestack run dev",      // MooseStack dev server
-    "moose": "pnpm -C moosestack run moose",        // MooseStack CLI
-    "build": "next build",                          // Your app build
-    "build:moose": "pnpm -C moosestack run build"   // MooseStack build
-  },
-  "dependencies": {
-    "moosestack": "workspace:*",  // Reference the moosestack workspace package
-    // ... your other dependencies
-  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "@confluentinc/kafka-javascript",
@@ -146,69 +261,21 @@ Edit your root `package.json` to add MooseStack scripts and `pnpmOnlyBuiltDepend
 }
 ```
 
-#### Step 5: Install dependencies
-
-From your monorepo root:
-
-```shell
-pnpm install
-```
-
-### Resulting Project Structure
-
-Your monorepo will have the following structure:
-
-<FileTree>
-  <FileTree.Folder name="your-monorepo">
-    <FileTree.Folder name="app" />
-    <FileTree.Folder name="components" />
-    <FileTree.Folder name="moosestack">
-      <FileTree.Folder name="src">
-        <FileTree.Folder name="cdc" />
-        <FileTree.Folder name="models" />
-        <FileTree.Folder name="queries" />
-      </FileTree.Folder>
-      <FileTree.File name="moose.config.toml" />
-      <FileTree.File name="package.json" />
-      <FileTree.File name="tsconfig.json" />
-    </FileTree.Folder>
-    <FileTree.Folder name="public" />
-    <FileTree.File name="pnpm-workspace.yaml" />
-    <FileTree.File name="package.json" />
-    <FileTree.File name="pnpm-lock.yaml" />
-  </FileTree.Folder>
-</FileTree>
-
 ## Run your Moose Development Server
 
 Ensure Docker Desktop is running first.  
 
-{/* image 1 */}
+![Docker Desktop](/public/docker-desktop.png)
 
-### If you followed Option A (cloned existing repo):
 
-Navigate to the MooseStack project directory (it contains the `moose.config.toml` file):
+Navigate to the your MooseStack project directory and run the development server:
 
 ```shell
-cd moosestack-service  # or wherever your moose project is
+cd moosestack  # or wherever your moose project is
 pnpm install
 moose dev
 ```
 
-### If you followed Option B (monorepo setup):
-
-From your monorepo root, you can run MooseStack using the convenience script:
-
-```shell
-pnpm dev:moose
-```
-
-Or navigate to the `moosestack` directory:
-
-```shell
-cd moosestack
-pnpm run dev
-```
 
 If the development server runs correctly, you'll see a list of the available API endpoints print:
 
@@ -225,28 +292,11 @@ If the development server runs correctly, you'll see a list of the available API
   GET     /ready                                             Readiness check endpoint
 ...
 
-  Ingestion Routes:
-  METHOD  ENDPOINT                                           DESCRIPTION
-  ------  --------                                           -----------
-  POST    /ingest/DebeziumChangeEvent                        Ingest data to DebeziumChangeEvent (vlatest)
-
-  Consumption Routes:
-  METHOD  ENDPOINT                                           DESCRIPTION
-  ------  --------                                           -----------
-  GET     /api/example-api/v1                                Consumption API endpoint
-...
-
-  WebApp Routes:
-  METHOD  ENDPOINT                                           DESCRIPTION
-  ------  --------                                           -----------
-  *       /dataset                                           Express WebApp endpoint
-  *       /tools                                             Express WebApp endpoint
-
 ```
 
 And your local services will be running in Docker containers:  
 
-{/* image1 */}
+![Docker Services](/public/docker-services.png)
 
 ## Setting up developer / agent supporting services
 
@@ -1094,354 +1144,104 @@ export BOREAL_CONNECTION_STRING=PASTE_THE_HTTPS_URL_FROM_BOREAL_HERE
 
 ## Improving dashboard performance by replicating components in MooseStack
 
-Your analytical components in your frontend can be made drastically more performant with Fiveonefour. In order to accomplish this, you need to migrate dashboard reports from the existing transactional-backed implementation to an analytical-backed implementation (using the Fiveonefour stack) without changing how the frontend talks to the backend. The recommended approach of this guide allows you to keep:
+This section walks through migrating an existing, OLTP-backed dashboard/report to an OLAP-backed implementation (ClickHouse + MooseStack) **without changing how the frontend talks to the backend**.
 
-* the existing request/response contracts  
-* the existing report modeling layer (Dataset Definitions)  
-* the backend's dynamic dataset querying behavior (select/filter/sort/paginate)
-
-The primary change is where the data comes from (analytical database tables/materialized views) and how the SQL is executed (ClickHouse).
-
-Your analytical components in your frontend can be made drastically more performant with Fiveonefour. In order to accomplish this, you need to migrate dashboard reports from the existing transactional-backed implementation to an analytical-backed implementation (using the Fiveonefour stack) without changing how the frontend talks to the backend.
-
-The recommended approach allows you to keep:
+The recommended approach of this guide allows you to keep:
 
 - The existing request/response contracts  
 - The existing report modeling layer (Dataset Definitions)  
-- The backend's dynamic dataset querying behavior (select/filter/sort/paginate)
+- The backend's dynamic dataset querying behavior (select/filter/sort/paginate)  
 
 The primary change is where the data comes from (ClickHouse tables/materialized views) and how the SQL is executed (ClickHouse instead of MSSQL).
 
-## Pattern: Translating Dataset Queries to OLAP
+To keep migrations both safe and fast, follow this three-phase pattern:
 
-A dataset definition is the shared model used by both the frontend and backend to define the expected operations for a dataset, including:
+1. **Parity (correctness)**: reproduce existing API behavior on ClickHouse by translating the underlying OLTP query logic into ClickHouse SQL (without query helpers)  
+2. **Optimize (OLAP best practices)**: shift OLTP-style read patterns (joins/reshaping/stored-procedure-like logic) to write time using Materialized Views  
+3. **Serve (stable interface)**: repoint your Query Layer `QueryModel` at MV-backed serving tables, so handlers stay thin and dashboards stay fast  
 
-- The source table(s)  
-- Allowable/selectable columns and metrics  
-- How the selected columns should be grouped  
-- Allowed filters (and how they map to SQL)  
-- Sorting rules  
-- Pagination rules  
-- Any special computed fields or joins required
+**Handoff markers:**
 
-Since each dataset definition has its own distinct API handler, we want to ensure that we do not hand-write the same dynamic SQL in every handler. Instead, this approach implements a shared set of "query helpers" (`utils/query-helpers.ts`) that you can use to convert the dataset definition model and the runtime API request payload into ClickHouse SQL.
+- **Stop after Phase 1** until your golden cases match.
+- **Stop extending read-time SQL** once parity is proven; switch to MV design.
+- **Only introduce Query Layer** after you have clean serving tables (raw or MV-backed).
 
-### What Gets Reused vs. What Is Report-Specific
+### Choose the component you want to migrate
 
-The query helpers (`query-helpers.ts`) allow you to reuse common SQL building logic for each dataset:
+Pick a specific dashboard component or report to migrate. You’ll create one context pack per component.
 
-- Which fields to SELECT  
-- Filter parsing (WHERE clause generation)  
-- Sorting logic (ORDER BY generation)  
-- Pagination logic (LIMIT/OFFSET generation)  
-- Response shaping (columns, records, counts, warnings/failures)  
-- Runtime validation (validation of requested columns/filters/sorts against the definition)
+For this guide, we’ll use an e-commerce order fulfillment report:
 
-For each distinct dataset, you define a thin adapter (called a `ParamMap`) that declares the mapping between the frontend dataset definition model and the corresponding column names (or SQL expressions for derived metrics) in the ClickHouse tables/materialized views that contain the data.
+- Dataset: `OrderFulfillment`  
+- Purpose: Track order processing metrics by merchant and time period  
 
-### Query Helpers Architecture
+### AI-assisted workflow (recommended)
 
-The shared query helpers used in this guide are not yet part of `main`.
+This workflow uses the starter kit in `examples/dashboard-migration/` to keep your “context pack” and prompt consistent across migrations.
 
-They currently live on the `query-helpers` branch, but you do not need to switch branches to use them.
+#### You do: assemble the context pack
 
-Instead, simply **copy the relevant folders from the `query-helpers` branch into your current working branch**. Specifically:
+1. Copy the starter kit into your project (creates `context/migrations/`):
 
-* `moosestack/src/utils/query-helpers.ts`  
-* `moosestack/src/utils/USAGE.md`
-
-Once copied, the helpers can be used directly in your existing branch, and all examples below assume those files are present locally.
-
-These helpers are still evolving, which is why they haven't been merged into `main` yet. Until then, copying them into your branch is the intended workflow.
-
-The `query-helpers.ts` module provides a three-layer architecture:
-
-#### Layer 1: Validation
-
-This layer allows you to easily create a runtime validator based on the incoming request payload for the dataset handler:
-
-```ts
-import { PaginationParams, assertValidOrThrow } from "./query-helpers";
-import typia from "typia";
-
-interface MyDatasetParams extends PaginationParams {
-  merchantId?: number;
-  orderStatus?: string;
-}
-
-const validator = typia.createValidate<MyDatasetParams>();
-const validated = assertValidOrThrow(validator(params));
-```
-
-#### Layer 2: Param-to-Column Mapping
-
-This layer allows you to map the parameter names in the incoming request payload to the corresponding column names in the ClickHouse tables/materialized views. This mapping is then used to build the ClickHouse SQL for the dataset handler, using the validated request payload.
-
-```ts
-import { createParamMap } from "./query-helpers";
-
-const orderMetricsParamMap = createParamMap<OrderFilters, OrderMetricsRow, OrderField>(OrderMetricsTable, {
-  filters: {
-    days: { column: "days" },
-    merchantIds: { column: "merchant_id", operator: "in" },
-  },
-  fields: {
-    MerchantName: { column: "merchant_name", alias: "MerchantName" },
-    FulfillmentRate: {
-      toSql: () => sql`round(100 * sum(fulfilled_orders) / nullIf(sum(total_orders), 0), 2)`,
-      alias: "Fulfillment Rate (%)",
-      isAggregate: true, // Triggers automatic GROUP BY
-    },
-  },
-  defaultSelect: ["merchant_name", "order_status"],
-  defaultOrderBy: [{ column: "merchant_name", direction: "ASC" }],
-});
-```
-
-#### Layer 3: SQL Generation
-
-This layer allows you to generate the complete ClickHouse SQL for the dataset handler, using the validated request payload and the `ParamMap` configuration.
-
-**Option A: Simple queries** \- Generate complete SQL with `toQuerySql`:
-
-```ts
-import { toQuerySql } from "./query-helpers";
-
-const intent = orderMetricsParamMap.toIntent({
-  fields: ["MerchantName", "FulfillmentRate"],
-  filters: { days: 30 },
-  pagination: { limit: 100, offset: 0 },
-});
-
-const query = toQuerySql(OrderMetricsTable, intent);
-const result = await client.query.execute(query);
-```
-
-**Option B: Complex queries** \- For cases where you need to build a more complex query with multiple CTEs, JOINs, or other custom logic, you can use the individual converters for each part of the query:
-
-```ts
-import { toSelectSql, toWhereSql, toOrderBySql, toGroupBySql } from "./query-helpers";
-
-const selectClause = toSelectSql(OrderMetricsTable, intent.select);
-const whereClause = toWhereSql(OrderMetricsTable, intent.where);
-const groupByClause = toGroupBySql(intent.groupBy);
-const orderByClause = toOrderBySql(intent.orderBy);
-
-// Compose custom query with CTEs
-const customQuery = sql`
-  WITH MerchantOrders AS (${getMerchantOrdersQuery(merchantNames)})
-  SELECT ${selectClause}
-  FROM ${OrderMetricsTable}
-  WHERE ${whereClause}
-  ${groupByClause}
-  ${orderByClause}
-  LIMIT ${intent.pagination.limit}
-`;
-```
-
-Because query generation is centralized in the shared helpers, every dataset handler starts from the same contract: a standard dataset definition plus the incoming API request (filters, ordering, pagination, etc.). That helper emits consistent SQL fragments, which means new handlers don't need to re-implement boilerplate logic like `ORDER BY`, filter parsing, or paging rules. They only supply the dataset-specific mapping and let the mapper and helpers do the rest.
-
-In practice, you can translate datasets manually one at a time using this pattern. But once the structure and conventions are clear, this is also a strong candidate for automation—AI copilots can reliably generate the required mappings, queries, and glue code when given the right context and constraints.
-
-### Approach: Using AI to automate the translation 
-
-For each dataset translation, the AI should produce the same set of artifacts:
-
-* OLAP query (or required materialized views) that matches the existing OLTP-backed API results  
-* dataset adapter/mapping for the "query compiler" helper function  
-* thin handler wiring it into the existing endpoint surface  
-* a parity test plan (inputs \+ expected outputs) to validate correctness
-
-The general concept of the approach is this:
-
-1. Provide the AI with all the upfront context it needs  
-2. Provide the AI with strict guidelines to meet the acceptance criteria above  
-3. Enable the AI to plan and implement potential solutions  
-4. Provide the AI with context to understand the success/failure of implementations and iterate from there
-
-In this case, we recommend providing the AI access to the following main sources of context: 
-
-* Context about the business logic and expected structure of each report input \+ output  
-  * The frontend code for the component  
-  * The backend API code and/or documentation of the API   
-  * The SQL powering that component (including stored procedures, database views and other intermediating steps)  
-  * Sample API payloads and returns, and sample data payloads presented to the front end  
-* Context to enable checking the *accuracy* of the business logic  
-  * Source data: the data in the local database seeded in the step above, and optionally access to the production database  
-  * Expected output for the given source data, generated by the current/transactional system  (to be compared against the output generated by the new analytical system for the same source data)
-
-For this particular example, you would provide context similar to a specification document that details the business requirements, expected input/output schemas, and sample test data. Test data can be manually extracted from the frontend or generated from the existing system.
-
-In previous implementations, expected output (to validate accuracy) arrived later, so it was used only to validate the AI-generated endpoints. If you have this data upfront, include it in the main context document so it can inform the reasoning process, not just the final validation.
-
-### Select the component you want to work against:
-
-Choose a specific dashboard component or report to migrate. For this example, let's use an e-commerce order fulfillment dashboard:
-
-- Dataset: `OrderFulfillment`   
-- Purpose: Track order processing metrics by merchant and time period
-
-### Set up your copilot 
-
-Select **Plan mode** (selected near the model selector in the chat pane), and **choose an advanced reasoning model** of your choice (like Claude Opus 4.5, GPT Codex 5.1 Max or GPT 5.2).
-
-{/* image */}
-
-### Initiate plan creation
-
-This plan refers the agent to the chosen component, the context files, and ensures that the patterns that are used in the project are followed. This is a prompt that we have had success with, but please feel free to modify to your chosen style of prompting.
-
-This prompt refers the agent to the existing project structure, to the test data in the local database, to be able to test against remote data, and to the specification document containing business logic and test data.
-
-Note, to find the base URL of the production deployment, used in the prompt, [see above](#finding-your-connection-string-in-boreal).
-
-```
-Task: implement dataset "OrderFulfillment" for the dataset API endpoint.
-The MSSQL used in the original system, the input payload and the expected output are in the specification document for this component. I want you to test the system and the endpoint (curl the endpoint). Iterate on the query until it is correct. If you need to use cascading queries to emulate materialized views that will later be implemented as part of testing, do so.
-
-Use the query-helpers patterns from:
-@moosestack/src/utils/query-helpers.ts
-@moosestack/src/utils/USAGE.md
-
-Reference existing handlers in your project for the implementation pattern.
-
-Use the MCP to test that the objects you are creating are being validly created (note, there is about a one minute reload from changing files to the local dev server updating, so wait). The local database has been seeded with data for testing. You can also use `moose query` from moosestack/ to query the development database.
-
-Test the endpoint against this route:
-Method: POST
-Endpoint: /dataset
-Description: Express WebApp endpoint
-
-The base URL is:
-https://default:<PASSWORD>@<HOST>:8443/<DATABASE_NAME>
-
-This will allow you to test the ClickHouse queries against production data.
-
-Make sure that all of your queries return data before even starting to implement MooseStack code. Once the query is working, then work on implementing in code. Show me each test at each step.
-```
-
-This will generate a plan, using the relevant context.
-
-{/* image */}
-
-See example generated plan in the [appendix](#sample-plan). 
-
-### Refining the Plan
-
-The following steps can help refine the generated plan.
-
-Check if stored procedures referenced in the plan have already been implemented.
-
-For example, the generated plan might refer to `getUserPermissions`:
-
-```
-1. **User Permissions**: The MSSQL query uses `getUserPermissions` stored procedure. For initial implementation, we may need to:
-```
-
-You can list these in the follow up prompt for best results:
-
-```
-Analyse the MooseStack project to see if the referenced stored procedures are already implemented: getUserPermissions
-```
-
-If they haven't been implemented, it is likely that they need to be implemented as a materialized view:
-
-```
-Add implementation of that to the plan (you will likely have to create a materialized view)
-```
-
-For an abundance of caution, ensure again that you've highlighted the test criteria:
-
-```
-Ensure that the output is EXACTLY as defined in the document. Ensure this is adhered to. 
-```
-
-### Generating documentation
-
-Add documentation tasks you want the agent to produce alongside the implementation, e.g.
-
-```
-Generate OpenAPI spec for the created endpoints
-```
-
-```
-Add a README summarizing endpoints and data lineage
-Include example curl requests + sample responses, schema diagrams / entity summary (if relevant), and a "how to test locally" section
-```
-
-```
-Add inline JSDoc for handlers, params, and response shapes
-```
-
-### Running the plan
-
-Once you are satisfied with the plan, hit `Build`. This will experiment with SQL queries, build up materialized views and implement the new endpoint.  
-      
-{/* image */}
-
-You will likely be asked for various permissions along the way, including for MCP tool use to check work against local data, and curl commands to check work against the remote database.
-
-Example of tool-use in the process of implementing the plan:
-
-### Manual testing
-
-You can ask the LLM to generate curl commands that you can use to test the generated API endpoints:
-
-```
-Generate curl commands to test this new endpoint
-```
-
-Which returns:
-
-**Command:**
 ```shell
-curl -X POST http://localhost:4000/dataset \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <YOUR_API_TOKEN>" \
-  -d '{
-    "datasetId": "<YOUR_DATASET_GUID>",
-    "parameters": {
-      "limit": "10",
-      "offset": "0",
-      "orderby": "MerchantName Asc"
-    }
-  }' | jq '.'
+pnpm dlx tiged 514-labs/moosestack/examples/dashboard-migration context/migrations
 ```
 
-You can iterate on this curl command to test against known data values.
+2. Duplicate the context pack template for your component:
 
-### Copilot assisted testing
-
-You can also instruct the agent to take the success criteria defined in the specification document and create a test suite, showing you the results. It is best practice to audit and get comfortable with the test suite and the output to ensure that it covers actual usage.
-
-```
-Generate a test script that iterates through the generated API, with the test cases defined in the specification document
+```shell
+cp context/migrations/component-context-pack-template.md context/migrations/COMPONENT_NAME.md
 ```
 
-Which generates a test script with multiple test cases, testing general API functionality like security, pagination, etc., as well as tests for input and output schemas, and exact input and output data for known values, e.g.: 
+3. Fill out `context/migrations/COMPONENT_NAME.md` with:
 
-```
-Test cases: 
+- **Contract**: request/response schema, auth/tenancy rules, 2–5 representative example requests  
+- **OLTP implementation**: frontend caller + backend handler + any stored procedures/views it relies on  
+- **Verification**: golden input→expected output cases, test data access, known edge cases  
 
-✅ Basic request with default parameters (limit 10, offset 0, ascending)
-✅ Request with limit 5
-✅ Request with offset (pagination - offset 10)
-✅ Request with descending order
-✅ Request with cacheId
-✅ Request with security filter (merchant)
-✅ Request with parameter.datasource parameter
-✅ Request with orderby leading space (edge case)
-✅ Exact structure validation (validates response structure matches document)
-✅ Exact value validation (validates first 10 records match document exactly)
-```
+#### You do: paste the prompt
+
+Open `context/migrations/prompt.md`, replace placeholders, and paste it into your copilot. Make sure it references your filled file via `@context/migrations/COMPONENT_NAME.md`.
+
+**Important:** don’t paste the prompt until the context pack is filled out. The copilot should treat `@context/migrations/COMPONENT_NAME.md` as the source of truth.
+
+If you want a more detailed copilot workflow (refinement loop + testing patterns), see [Appendix: Copilot workflow for parity migrations](#appendix-copilot-workflow-for-parity-migrations).
+
+#### Copilot does: produces a plan
+
+The prompt should result in a plan that follows the same three-phase pattern: parity SQL → Materialized Views optimization → Query Layer serving.
+
+## Parity translation (OLTP query logic → ClickHouse SQL)
+
+### What’s happening (concept)
+
+In this phase, you translate the existing OLTP-backed query logic (joins, CTE chains, stored-procedure-like reshaping) into ClickHouse SQL so you can validate that the output matches the existing API exactly.
+
+The priority is **correctness**, not OLAP optimization.
+
+### You do
+
+- Run the existing system for a set of golden requests and capture the expected responses (your “golden cases”).
+- Give your copilot the right context (contract + OLTP handler/SQL + golden cases) so it can generate the parity SQL.
+- Run the copilot’s generated ClickHouse SQL against your test data (typically a local ClickHouse seeded via `moose seed`) and compare the output to your golden cases.
+
+### Copilot does
+
+- Proposes parity SQL (possibly as a sequence of queries/CTEs).
+- Suggests exactly how to test it (e.g., a `moose query` command) and what output to copy back into the chat. (see [Seeding your local database from prod with `moose seed`](#seeding-your-local-database-from-prod-with-moose-seed))
+- Iterates based on your test results: you run the query, paste the output/diffs, and the copilot refines the SQL until the golden cases match.
+
+### You verify
+
+- All golden cases match (exact match unless a tolerance is explicitly documented).
+- The parity query returns data for each case and respects auth/tenancy constraints.
 
 ## From translated report query to performance optimization
 
-At this point in the migration, you typically have a report that is functionally correct but still not where you want it performance-wise.
+At this point in the migration, you have a report that is functionally correct but still not where you want it performance-wise. 
+While a common pattern in OLTP is to rely on “read-time orchestration”: just-in-time joins, layered CTE chains, and stored-procedure-like logic to reshape data for each request.
 
-Continuing the order fulfillment dataset example from the previous section, the original transactional implementation often relies on layered logic: permission filtering, joins across multiple tables, and derived metrics computed on the fly.
-
-A simplified version of that original logic might look like this:
+This means that when you translate the OLTP query 1:1 to ClickHouse SQL, you will likely end up with a long CTE chain, complex joins, and stored-procedure-like logic, like this:
 
 ```sql
 WITH UserMerchants AS (
@@ -1472,88 +1272,119 @@ FROM AggregatedMetrics
 ORDER BY merchant_name;
 ```
 
-When migrating this dataset to ClickHouse using MooseStack, the first step is to translate this logic directly and wire it into a dataset handler using the shared query helpers. At this stage, the priority is parity: matching the existing API behavior and results exactly.
+In OLAP, this “read-time orchestration” is an antipattern; every dashboard refresh forces ClickHouse to redo the same joins, reshaping, and aggregations from scratch, even when users are just changing filters, sorts, or time ranges. As usage grows (more users, more refreshes, more slices), you pay that full computation cost repeatedly—leading to spiky latency, poor concurrency, and expensive queries.
 
-However, notice what's happening here:
+ClickHouse’s best practices are designed to avoid procedural, stored-procedure-like pipelines at read time. Instead, you use declarative transforms, materialized views, and external orchestration to keep serving queries simple and predictable. See ClickHouse’s guidance here: [`Stored procedures and query parameters in ClickHouse`](https://clickhouse.com/docs/guides/developer/stored-procedures-and-prepared-statements).
 
-* Multiple CTEs progressively reshape the data  
-* Business logic (fulfillment rate calculation) is recomputed every request  
-* Joins and aggregations are repeated for every dashboard load  
-* The final handler query is doing *far more work* than filtering and paging
+The goal is to turn the query above into a **serving-ready table**: promote the reusable joins/reshaping/derived fields into a [Materialized View](/moosestack/olap/model-materialized-view) (write time), then keep the Query Layer focused on request-driven slicing (filters, breakdowns, sorting, pagination) over that serving table.
 
-At low traffic, this may be acceptable. At production scale, where the same underlying dataset is queried frequently with different filters or sort orders, it becomes the dominant performance bottleneck.
+The optimization pattern in this guide is:
 
-This is the inflection point where you stop asking:
+1. **Move transformations/joins upstream to write time** using Materialized Views (serving-ready tables)  
+2. **Use the Query Layer as the final interface** for dashboard slicing/grouping/sorting/pagination over those serving tables  
 
-> "How do I translate this query?"
+### You do
 
-and start asking:
+- Identify the OLTP “read-time orchestration” patterns in the parity query (joins, layered CTE reshaping, stored-procedure-like pipelines).
+- Prompt your copilot to propose what must move to write time ([Materialized Views](/moosestack/olap/model-materialized-view)) versus what stays flexible at query time.
 
-> "Which parts of this query should only be computed once?"
+### Copilot does
 
-That's where Materialized Views come in.
+- Proposes MV(s) + backing table schema(s) that shift joins/reshaping/derived fields to write time.
+- Updates the parity approach so the serving query becomes a thin slice over serving-ready tables.
 
-### Working with Materialized Views
+### You verify
 
-Materialized Views (MVs) are the primary mechanism for turning a *correct* report migration into a *fast* one.
+- The optimized path still passes golden cases.
+- The serving query is materially simpler (fewer joins/CTEs at read time) and measurably faster.
 
-When migrating a dashboard or report from a transactional system to MooseStack, the first goal is functional parity: reproduce the same results using ClickHouse without changing frontend request/response contracts. In practice, this often starts with a direct translation of the original SQL. This sometimes involves long CTE chains, complex joins, window functions, or layered business logic that was previously executed at read time.
+### Implementing the Materialized Views (MVs) and serving table(s)
 
-If the translated query is correct but still complex or expensive to run per request, that is the signal to introduce a Materialized View.
-
-The core idea is to shift expensive computation from read time to insert time:
-
-If your final dataset query depends on multiple CTEs or significant data reshaping before the final `SELECT`, consider moving that logic into a Materialized View so it is computed once as data arrives, rather than on every API request.
+Now you’ll implement the [Materialized Views](/moosestack/olap/model-materialized-view) and serving table(s) your copilot proposed. This is the step that turns a “correct but expensive” parity query into a stable, fast serving surface for the Query Layer.
 
 In MooseStack, Materialized Views allow you to precompute joins, aggregations, and derived fields and persist the results in a physical table. Your API handlers then query these precomputed tables instead of executing the full, complex query at request time. This keeps dataset handlers thin and predictable, and makes performance largely independent of query complexity.
 
-### When to introduce a Materialized View during a migration
+#### Create the MV + serving table
 
-You should strongly consider adding an MV if the migrated query includes one or more of the following:
+- Define the **serving table schema** (the flattened / serving-ready shape your handler will read from).
+- Define the **Materialized View** that writes into that serving table (the MV `SELECT` should perform the joins/reshaping/derived fields you want to move to write time).
+- Save and watch `moose dev` logs until the MV and its backing table are created/updated successfully.
 
-* Multiple CTEs that progressively filter, join, or reshape data  
-* Repeated joins across large fact tables  
-* Window functions, ranking, sessionization, or de-duplication logic  
-* Derived metrics that are reused across datasets or dashboard components  
-* Logic that is identical across many requests but recomputed every time
+#### Validate the MV before moving on
 
-In these cases, Materialized Views act as a boundary between data preparation and data serving.
+- **Data is flowing**: new inserts populate the serving table (or you’ve run a backfill if you need historical parity).
+- **Row counts look sane**: use `moose query` to compare counts between source tables and the serving table for a known time window.
+- **Spot-check results**: run a few representative queries against the serving table and confirm key fields/aggregates match your expectations.
+- **Golden cases still pass**: update your handler to read from the serving table (even with temporary SQL) and confirm the golden responses match end-to-end.
 
-### Adding a column to a Materialized View
+Once those checks pass, you’re ready for the next step: point your Query Layer `QueryModel` at the serving table so the handler stays thin.
 
-This is the most common change you'll make. Typical reasons include:
+### Point the Query Layer at the serving table
 
-- exposing a new field required by a dataset definition  
-- supporting a new filter, grouping, or sort option  
-- pushing more precomputation logic upstream for better performance
+Once your MV produces a serving-ready table (with joins/reshaping moved upstream), you’re ready to introduce the Query Layer.
 
-To do this correctly, follow these steps:
+The [Moose Query Layer](https://github.com/514-labs/query-layer) is a set of query helpers you copy into your project. It lets you define a `QueryModel`—a stable, type-safe “semantic contract” over your serving table—so your handler stops embedding complex, raw SQL and instead focuses on wiring: parse request → build query → return results.
 
-#### Step 1: Add the column to the MV schema
+For example, if your Materialized View writes into a serving table like `OrderFulfillmentServing` (flattened merchant fields, precomputed counters, etc.), your `QueryModel` might look like this:
 
-Locate the Materialized View definition in your MooseStack project. Each MV explicitly defines its output schema.
+```ts
+import { defineQueryModel } from "../query-layer";
+import { OrderFulfillmentServing } from "../models";
+import { sql } from "@514labs/moose-lib";
 
-Add the new column to the schema with the correct ClickHouse type. Use the type of the final computed value, not the raw source column.
+export const orderFulfillmentModel = defineQueryModel({
+  table: OrderFulfillmentServing,
 
-Because the MV's backing table is already typed from this schema, saving the file will automatically apply the schema change locally.
+  dimensions: {
+    merchantName: { column: "merchant_name" },
+    day: { expression: sql`toDate(${OrderFulfillmentServing.columns.created_at})`, as: "day" },
+  },
 
-Once saved, watch the `moose dev` logs. You should see the backing table updated with an additive column change.
+  metrics: {
+    totalOrders: { agg: sql`sum(${OrderFulfillmentServing.columns.total_orders})` },
+    fulfilledOrders: { agg: sql`sum(${OrderFulfillmentServing.columns.fulfilled_orders})` },
+    fulfillmentRate: {
+      agg: sql`round(100 * sum(${OrderFulfillmentServing.columns.fulfilled_orders}) / nullIf(sum(${OrderFulfillmentServing.columns.total_orders}), 0), 2)`,
+    },
+  },
 
-#### Step 2: Update the SQL query to produce the new column
+  filters: {
+    merchantId: { column: "merchant_id", operators: ["eq", "in"] as const },
+    timestamp: { column: "created_at", operators: ["gte", "lte"] as const },
+  },
 
-After adding the column to the schema, you will likely see an error. This is expected. 
+  sortable: ["merchantName", "totalOrders", "fulfillmentRate", "timestamp"] as const,
+});
+```
 
-At this point, the backing table expects the new column, but the MV's `SELECT` statement does not yet produce it.
+This is the “final layer” pattern: **Materialized Views shape the data**, and the **Query Layer serves it** to the dashboard through a consistent dimensions/metrics/filters API.
 
-Edit the SQL query defining the Materialized View and ensure that:
+### Add the Query Layer to your project
 
-- the new column appears in the `SELECT` list  
-- any required joins, expressions, or aggregations are added  
-- the output column name (or alias) matches the schema exactly
+From your MooseStack project directory, copy the Query Layer starter kit into `src/query-layer`:
 
-Once the SQL is updated and saved, the error should resolve and the MV will resume populating normally for new data.
+```bash
+pnpm dlx tiged 514-labs/query-layer/src src/query-layer
+```
 
-Note that only new data will begin populating the new column. Existing rows in the MV are unchanged until you explicitly backfill (covered later in this guide).
+### Define a `QueryModel` for your serving table
+
+To customize the example above for your own migration:
+
+- **Swap the table**: replace `OrderFulfillmentServing` with *your* MV-backed serving table (the table your MV writes into).
+- **Update the surface area**:
+  - `dimensions`: the group-by fields you want to expose (columns or computed expressions)
+  - `metrics`: the aggregates your dashboard needs
+  - `filters`: the allowed slice fields + operators
+  - `sortable`: the allowed sort fields
+- **Repoint the handler**: update your dataset handler to use your `QueryModel` (and re-run golden cases end-to-end).
+
+If you want more detail on Query Layer capabilities and APIs, refer to the dedicated repo: [Moose Query Layer](https://github.com/514-labs/query-layer).
+
+
+## Running your frontend locally
+
+With your local dev server running, you can connect the rest of your application to your new analytical query in the local moose dev server using token authentication. Once connected, you can see data in your frontend and test the whole application without having to go through any cloud deployment.
 
 ## Push to remote github
 
@@ -1561,9 +1392,6 @@ Add the files you created above (or just the functional files if you don't want 
 
 This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR. 
 
-## Running your frontend locally
-
-One suggested pattern for accelerating iterations and end-to-end testing is to run your entire stack locally. This includes your frontend, backend / gateway API, and your moose dev server. You can connect the rest of your application to your new analytical APIs in the local moose dev server using token authentication. Once connected, you can see data in your frontend and test the whole application without having to go through any cloud deployment.
 # Going to production
 
 This section will guide you through the process of applying your local changes to production:
@@ -1782,6 +1610,94 @@ If the count is non-zero (and roughly matches what you expect), the backfill is 
 
 Only backfill the MVs introduced in this change. Avoid reprocessing older MVs unless you intentionally want to rebuild them.
 # Appendixes
+
+## Appendix: Copilot workflow for parity migrations
+
+### Set up your copilot
+
+Select **Plan mode** (selected near the model selector in the chat pane), and **choose an advanced reasoning model** of your choice (like Claude Opus 4.5, GPT Codex 5.1 Max or GPT 5.2).
+
+{/* image */}
+
+
+### Generating documentation
+
+Add documentation tasks you want the agent to produce alongside the implementation, e.g.
+
+```
+Generate OpenAPI spec for the created endpoints
+```
+
+```
+Add a README summarizing endpoints and data lineage
+Include example curl requests + sample responses, schema diagrams / entity summary (if relevant), and a "how to test locally" section
+```
+
+```
+Add inline JSDoc for handlers, params, and response shapes
+```
+
+### Running the plan
+
+Once you are satisfied with the plan, hit `Build`. This will experiment with SQL queries, build up materialized views and implement the new endpoint.
+
+{/* image */}
+
+You will likely be asked for various permissions along the way, including for MCP tool use to check work against local data, and curl commands to check work against the remote database.
+
+Example of tool-use in the process of implementing the plan:
+
+### Manual testing
+
+You can ask the LLM to generate curl commands that you can use to test the generated API endpoints:
+
+```
+Generate curl commands to test this new endpoint
+```
+
+Which returns:
+
+**Command:**
+```shell
+curl -X POST http://localhost:4000/dataset \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <YOUR_API_TOKEN>" \
+  -d '{
+    "datasetId": "<YOUR_DATASET_GUID>",
+    "parameters": {
+      "limit": "10",
+      "offset": "0",
+      "orderby": "MerchantName Asc"
+    }
+  }' | jq '.'
+```
+
+You can iterate on this curl command to test against known data values.
+
+### Copilot assisted testing
+
+You can also instruct the agent to take the success criteria defined in the specification document and create a test suite, showing you the results. It is best practice to audit and get comfortable with the test suite and the output to ensure that it covers actual usage.
+
+```
+Generate a test script that iterates through the generated API, with the test cases defined in the specification document
+```
+
+Which generates a test script with multiple test cases, testing general API functionality like security, pagination, etc., as well as tests for input and output schemas, and exact input and output data for known values, e.g.:
+
+```
+Test cases:
+
+✅ Basic request with default parameters (limit 10, offset 0, ascending)
+✅ Request with limit 5
+✅ Request with offset (pagination - offset 10)
+✅ Request with descending order
+✅ Request with cacheId
+✅ Request with security filter (merchant)
+✅ Request with parameter.datasource parameter
+✅ Request with orderby leading space (edge case)
+✅ Exact structure validation (validates response structure matches document)
+✅ Exact value validation (validates first 10 records match document exactly)
+```
 
 ## WSL: Setting up a WSL2 Linux instance to run MooseStack on Windows
 
