@@ -1196,10 +1196,9 @@ The starter prompts you added to your project includes a prompt template that yo
 
 If you want a more detailed copilot workflow (refinement loop + testing patterns), see [Appendix: Copilot workflow for parity migrations](#appendix-copilot-workflow-for-parity-migrations).
 
+## Run the playbook with your AI copilot
 
-## Parity translation (OLTP query logic → ClickHouse SQL)
-
-### What’s happening (concept)
+### Phase 1: Parity translation (OLTP query logic → ClickHouse SQL)
 
 In this phase, you translate the existing OLTP-backed query logic (joins, CTE chains, stored-procedure-like reshaping) into ClickHouse SQL so you can validate that the output matches the existing API exactly.
 
@@ -1222,7 +1221,7 @@ The priority is **correctness**, not OLAP optimization.
 - All golden cases match (exact match unless a tolerance is explicitly documented).
 - The parity query returns data for each case and respects auth/tenancy constraints.
 
-## From translated report query to performance optimization
+### Phase 2: Performance optimization
 
 At this point in the migration, you have a report that is functionally correct but still not where you want it performance-wise. 
 While a common pattern in OLTP is to rely on “read-time orchestration”: just-in-time joins, layered CTE chains, and stored-procedure-like logic to reshape data for each request.
@@ -1305,7 +1304,7 @@ In MooseStack, Materialized Views allow you to precompute joins, aggregations, a
 
 Once those checks pass, you’re ready for the next step: point your Query Layer `QueryModel` at the serving table so the handler stays thin.
 
-### Point the Query Layer at the serving table
+### Phase 3: Serve the Materialized View to your frontend
 
 Once your MV produces a serving-ready table (with joins/reshaping moved upstream), you’re ready to introduce the Query Layer.
 
