@@ -859,11 +859,11 @@ jobs:
         run: |
           cat ~/.moose/*-cli.log
 
-  test-e2e-structured-logging:
+  test-e2e-otlp-export:
     needs:
       [detect-changes, check, test-cli, test-ts-moose-lib, test-py-moose-lib]
     if: needs.detect-changes.outputs.should_run == 'true'
-    name: Test E2E Structured Logging (TypeScript)
+    name: Test E2E OTLP Log Export (TypeScript)
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
@@ -905,8 +905,8 @@ jobs:
           cache-all-crates: true
           cache-workspace-crates: true
 
-      - name: Run Structured Logging E2E Tests
-        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "Structured Logging"
+      - name: Run OTLP Export E2E Tests
+        run: pnpm install --frozen-lockfile && pnpm --filter=framework-cli-e2e run test -- --grep "OTLP"
         env:
           MOOSE_TELEMETRY_ENABLED: false
 
@@ -977,7 +977,7 @@ jobs:
         test-e2e-backward-compatibility-python,
         test-e2e-cluster-typescript,
         test-e2e-cluster-python,
-        test-e2e-structured-logging,
+        test-e2e-otlp-export,
         lints,
       ]
     if: always()
@@ -1009,7 +1009,7 @@ jobs:
              [[ "${{ needs.test-e2e-backward-compatibility-python.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-cluster-typescript.result }}" == "failure" ]] || \
              [[ "${{ needs.test-e2e-cluster-python.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-e2e-structured-logging.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-e2e-otlp-export.result }}" == "failure" ]] || \
              [[ "${{ needs.lints.result }}" == "failure" ]]; then
             echo "One or more required jobs failed"
             exit 1
@@ -1027,7 +1027,7 @@ jobs:
              [[ "${{ needs.test-e2e-backward-compatibility-python.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-cluster-typescript.result }}" == "success" ]] && \
              [[ "${{ needs.test-e2e-cluster-python.result }}" == "success" ]] && \
-             [[ "${{ needs.test-e2e-structured-logging.result }}" == "success" ]] && \
+             [[ "${{ needs.test-e2e-otlp-export.result }}" == "success" ]] && \
              [[ "${{ needs.lints.result }}" == "success" ]]; then
             echo "All required jobs succeeded"
             exit 0
