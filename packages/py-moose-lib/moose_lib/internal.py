@@ -607,45 +607,38 @@ class InfrastructureMap(BaseModel):
     unloaded_files: list[str] = []
 
 
-import re
+# Seconds per time unit lookup table
+_UNIT_TO_SECONDS = {
+    "second": 1,
+    "minute": 60,
+    "hour": 3600,
+    "day": 86400,
+    "week": 604800,
+}
 
 
-def _parse_interval_to_seconds(interval: str) -> int:
-    """Parse an interval string like '1 hour', '30 minutes', '2 days' to seconds.
+def _duration_to_seconds(value: int, unit: str) -> int:
+    """Convert a duration (value + unit) to seconds.
 
-    Supports: seconds, second, minutes, minute, hours, hour, days, day
+    This is a simple lookup - no string parsing needed.
 
     Args:
-        interval: Interval string like '1 hour', '30 minutes', etc.
+        value: The numeric value of the duration.
+        unit: The time unit ('second', 'minute', 'hour', 'day', 'week').
 
     Returns:
-        The interval in seconds.
+        The duration in seconds.
 
     Raises:
-        ValueError: If the interval format is invalid.
+        ValueError: If the unit is not recognized.
     """
-    match = re.match(
-        r"^(\d+)\s*(second|seconds|minute|minutes|hour|hours|day|days)$",
-        interval.strip(),
-        re.IGNORECASE,
-    )
-    if not match:
+    multiplier = _UNIT_TO_SECONDS.get(unit)
+    if multiplier is None:
         raise ValueError(
-            f'Invalid interval format: "{interval}". '
-            'Expected format like "1 hour", "30 minutes", etc.'
+            f'Unknown time unit: "{unit}". '
+            f"Supported units: {', '.join(_UNIT_TO_SECONDS.keys())}"
         )
-    value = int(match.group(1))
-    unit = match.group(2).lower()
-    if unit in ("second", "seconds"):
-        return value
-    elif unit in ("minute", "minutes"):
-        return value * 60
-    elif unit in ("hour", "hours"):
-        return value * 3600
-    elif unit in ("day", "days"):
-        return value * 86400
-    else:
-        raise ValueError(f"Unknown interval unit: {unit}")
+    return value * multiplier
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -1230,17 +1223,24 @@ def to_infra_map() -> dict:
             refresh_config_json = RefreshConfigJson(
                 interval=RefreshIntervalJson(
                     type=mv.refresh_config.interval.type,
-                    interval=_parse_interval_to_seconds(
-                        mv.refresh_config.interval.interval
+                    interval=_duration_to_seconds(
+                        mv.refresh_config.interval.value,
+                        mv.refresh_config.interval.unit,
                     ),
                 ),
                 offset=(
-                    _parse_interval_to_seconds(mv.refresh_config.offset)
+                    _duration_to_seconds(
+                        mv.refresh_config.offset.value,
+                        mv.refresh_config.offset.unit,
+                    )
                     if mv.refresh_config.offset
                     else None
                 ),
                 randomize=(
-                    _parse_interval_to_seconds(mv.refresh_config.randomize)
+                    _duration_to_seconds(
+                        mv.refresh_config.randomize.value,
+                        mv.refresh_config.randomize.unit,
+                    )
                     if mv.refresh_config.randomize
                     else None
                 ),

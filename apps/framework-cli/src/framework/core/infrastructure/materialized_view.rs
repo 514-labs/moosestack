@@ -448,11 +448,11 @@ impl MaterializedView {
 
     /// Format seconds as a ClickHouse interval string (e.g., "1 HOUR", "30 MINUTE")
     fn format_seconds(secs: u64) -> String {
-        if secs % 86400 == 0 && secs >= 86400 {
+        if secs.is_multiple_of(86400) && secs >= 86400 {
             format!("{} DAY", secs / 86400)
-        } else if secs % 3600 == 0 && secs >= 3600 {
+        } else if secs.is_multiple_of(3600) && secs >= 3600 {
             format!("{} HOUR", secs / 3600)
-        } else if secs % 60 == 0 && secs >= 60 {
+        } else if secs.is_multiple_of(60) && secs >= 60 {
             format!("{} MINUTE", secs / 60)
         } else {
             format!("{} SECOND", secs)

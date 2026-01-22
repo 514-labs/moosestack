@@ -35,16 +35,21 @@ def _format_table_reference(table: Union[OlapTable, View]) -> str:
 # Refresh Configuration Types for Refreshable Materialized Views
 # ============================================================================
 
+# Supported time units for refresh intervals
+TimeUnit = Literal["second", "minute", "hour", "day", "week"]
+
 
 @dataclass
 class RefreshIntervalEvery:
     """
     Refresh interval using EVERY mode - periodic refresh at fixed times.
-    Example: RefreshIntervalEvery("1 hour") => REFRESH EVERY 1 HOUR
+    Example: RefreshIntervalEvery(1, "hour") => REFRESH EVERY 1 HOUR
     """
 
-    interval: str
-    """Interval string like '1 hour', '30 minutes', '1 day'"""
+    value: int
+    """The numeric value of the interval"""
+    unit: TimeUnit
+    """The time unit for the interval"""
     type: Literal["every"] = "every"
 
 
@@ -52,15 +57,30 @@ class RefreshIntervalEvery:
 class RefreshIntervalAfter:
     """
     Refresh interval using AFTER mode - refresh after interval since last refresh.
-    Example: RefreshIntervalAfter("30 minutes") => REFRESH AFTER 30 MINUTES
+    Example: RefreshIntervalAfter(30, "minute") => REFRESH AFTER 30 MINUTE
     """
 
-    interval: str
-    """Interval string like '1 hour', '30 minutes', '1 day'"""
+    value: int
+    """The numeric value of the interval"""
+    unit: TimeUnit
+    """The time unit for the interval"""
     type: Literal["after"] = "after"
 
 
 RefreshInterval = Union[RefreshIntervalEvery, RefreshIntervalAfter]
+
+
+@dataclass
+class Duration:
+    """
+    A duration specified as value + unit.
+    Used for offset and randomize configurations.
+    """
+
+    value: int
+    """The numeric value"""
+    unit: TimeUnit
+    """The time unit"""
 
 
 @dataclass
@@ -70,14 +90,20 @@ class RefreshConfig:
 
     Refreshable MVs run on a schedule (REFRESH EVERY/AFTER) rather than
     being triggered by inserts to source tables.
+
+    Example:
+        >>> config = RefreshConfig(
+        ...     interval=RefreshIntervalEvery(1, "hour"),
+        ...     offset=Duration(5, "minute"),
+        ... )
     """
 
     interval: RefreshInterval
     """The refresh interval (EVERY or AFTER)"""
-    offset: Optional[str] = None
-    """Optional offset from interval start, e.g., '5 minutes'"""
-    randomize: Optional[str] = None
-    """Optional randomization window, e.g., '10 seconds'"""
+    offset: Optional[Duration] = None
+    """Optional offset from interval start"""
+    randomize: Optional[Duration] = None
+    """Optional randomization window"""
     depends_on: List[str] = field(default_factory=list)
     """Names of other MVs this one depends on"""
     append: bool = False
