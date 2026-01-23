@@ -1,5 +1,6 @@
 "use client";
 
+import type React from "react";
 import {
   DashboardProvider,
   FilterBar,
@@ -52,7 +53,7 @@ function DashboardContent() {
 // Page
 // =============================================================================
 
-export default function DashboardPage() {
+export default function DashboardPage(): React.JSX.Element {
   return (
     <DashboardProvider>
       <div className="p-6">

@@ -12,9 +12,11 @@ import type {
   FilterInputTypeHint,
   FilterParams,
 } from "@/moose/src/query-layer";
+import type { FieldOption } from "@/components/inputs/types";
 
 // Re-export for convenience
 export type { FilterOperator, QueryRequest, FilterParams };
+export type { FieldOption };
 
 // Alias for backwards compatibility
 export type FilterInputType = FilterInputTypeHint;
@@ -22,21 +24,6 @@ export type FilterInputType = FilterInputTypeHint;
 // =============================================================================
 // Core Field Types
 // =============================================================================
-
-/**
- * Field option for dimensions and metrics.
- * Used in selectors and results display.
- */
-export interface FieldOption {
-  /** Unique identifier */
-  id: string;
-  /** Display label */
-  label: string;
-  /** Optional description/tooltip */
-  description?: string;
-  /** Data key in query results (if different from id, e.g., snake_case vs camelCase) */
-  dataKey?: string;
-}
 
 /**
  * Generic field metadata with typed ID.
@@ -71,7 +58,7 @@ export interface FilterMeta<TFilterName extends string = string> {
   /** Tooltip description */
   description?: string;
   /** Allowed operators for this filter */
-  operators: readonly string[];
+  operators: readonly FilterOperator[];
   /** Input type hint (for UI rendering) */
   inputType: FilterInputType;
   /** Options for select/multiselect inputs */

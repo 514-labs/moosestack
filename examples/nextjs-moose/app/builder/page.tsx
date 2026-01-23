@@ -1,4 +1,8 @@
 import { prepareModel } from "@/components/report-builder";
+import {
+  type FilterValue,
+  type QueryRequest,
+} from "@/components/report-builder";
 import { eventsModel } from "moose";
 import { ReportBuilderPage } from "@/components/report-builder-page";
 import { executeEventsQuery } from "@/app/actions";
@@ -22,7 +26,11 @@ const model = prepareModel(eventsModel, {
   },
 });
 
-const defaults = {
+const defaults: {
+  dimensions: (keyof NonNullable<typeof eventsModel.dimensions> & string)[];
+  metrics: (keyof NonNullable<typeof eventsModel.metrics> & string)[];
+  filters: Record<string, FilterValue>;
+} = {
   dimensions: ["status"],
   metrics: ["totalEvents", "totalAmount"],
   filters: {},
@@ -42,7 +50,11 @@ export default function BuilderPage() {
         {/* Pass model and execute function to client component */}
         <ReportBuilderPage
           model={model}
-          executeQuery={executeEventsQuery}
+          executeQuery={
+            executeEventsQuery as unknown as (
+              params: QueryRequest,
+            ) => Promise<unknown[]>
+          }
           defaults={defaults}
         />
       </div>

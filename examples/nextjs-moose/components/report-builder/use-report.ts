@@ -242,8 +242,9 @@ export function useReport(options: UseReportOptions): UseReportReturn {
   });
 
   const executeQuery = React.useCallback(() => {
-    refetch();
-  }, [refetch]);
+    if (!canQuery) return;
+    void refetch();
+  }, [canQuery, refetch]);
 
   // ---------------------------------------------------------------------------
   // Return

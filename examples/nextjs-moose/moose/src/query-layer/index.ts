@@ -71,7 +71,7 @@ export type {
   OperatorValueType,
 } from "./types";
 
-export { deriveInputTypeFromDataType } from "./types";
+export { deriveInputTypeFromDataType } from "./utils";
 
 // =============================================================================
 // Fluent Query Builder (Optional)

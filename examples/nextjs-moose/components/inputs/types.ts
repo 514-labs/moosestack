@@ -24,12 +24,18 @@ export interface FieldOption<TId extends string = string> {
   description?: string;
   /** Optional data key if different from id (e.g., snake_case vs camelCase) */
   dataKey?: string;
+  /** Optional formatting hint for rendering values */
+  format?: "number" | "currency" | "percentage";
 }
 
 /**
  * Get date range for a preset.
  */
 export function getDateRangeForPreset(preset: DatePreset): DateRange {
+  if (preset === "custom") {
+    throw new Error("Custom preset requires an explicit date range");
+  }
+
   const today = new Date();
   const end = today.toISOString().split("T")[0];
 

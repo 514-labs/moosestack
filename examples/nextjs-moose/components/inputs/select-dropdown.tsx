@@ -44,7 +44,7 @@ export function SelectDropdown<TId extends string>({
   disabled = false,
   className,
   width = "w-[180px]",
-}: SelectDropdownProps<TId>) {
+}: SelectDropdownProps<TId>): React.JSX.Element {
   const selectId = React.useId();
 
   // Find the selected option to display its label
@@ -61,18 +61,15 @@ export function SelectDropdown<TId extends string>({
         </Label>
       )}
       <Select
-        value={value}
+        value={value ?? null}
         onValueChange={(newValue) => {
-          if (newValue !== null) {
-            onChange(newValue as TId);
-          }
+          if (newValue === null) return;
+          onChange(newValue as TId);
         }}
         disabled={disabled}
       >
         <SelectTrigger id={selectId} className={width}>
-          <SelectValue>
-            {selectedOption ? selectedOption.label : placeholder}
-          </SelectValue>
+          <SelectValue>{selectedOption?.label ?? placeholder}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>

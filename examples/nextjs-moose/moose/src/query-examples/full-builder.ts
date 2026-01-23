@@ -1,8 +1,12 @@
 import { eventsModel } from "./model";
 import { executeQuery } from "../client";
 
-export async function runEventsQuery(params: typeof eventsModel.$inferRequest) {
+export type EventsQueryResult = typeof eventsModel.$inferResult;
+export type EventsQueryRequest = typeof eventsModel.$inferRequest;
+
+export async function runEventsQuery(
+  params: EventsQueryRequest,
+): Promise<EventsQueryResult[]> {
   const query = eventsModel.toSql(params);
-  const results = await executeQuery(query);
-  return results;
+  return await executeQuery<EventsQueryResult>(query);
 }

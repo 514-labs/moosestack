@@ -45,7 +45,7 @@ type FilterValueType<T> =
  *   .dimensions(["status"])
  *   .metrics(["totalEvents", "totalAmount"])
  *   .filter("status", "eq", "active")
- *   .sort("totalAmount", "DESC")
+ *   .orderBy(["totalAmount", "DESC"])
  *   .limit(10)
  *   .execute(client.query);
  */
@@ -75,12 +75,6 @@ export interface QueryBuilder<
   /** Set metrics to include in query */
   metrics(
     fields: TMetrics[],
-  ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
-
-  /** Set sort field and direction */
-  sort(
-    field: TSortable,
-    dir?: SortDir,
   ): QueryBuilder<TMetrics, TDimensions, TFilters, TSortable, TResult, TTable>;
 
   /** Set multi-column sort */
@@ -133,7 +127,7 @@ export interface QueryBuilder<
  *   .dimensions(["status"])
  *   .metrics(["totalEvents", "totalAmount"])
  *   .filter("status", "eq", "active")
- *   .sort("totalAmount", "DESC")
+ *   .orderBy(["totalAmount", "DESC"])
  *   .limit(10)
  *   .execute(client.query);
  */
@@ -166,8 +160,6 @@ export function buildQuery<
     dimensions?: Array<Names<TDimensions>>;
     metrics?: Array<Names<TMetrics>>;
     orderBy?: Array<[TSortable, SortDir]>;
-    sortBy?: TSortable;
-    sortDir?: SortDir;
     limit?: number;
     page?: number;
     offset?: number;
@@ -186,8 +178,6 @@ export function buildQuery<
       dimensions: state.dimensions,
       metrics: state.metrics,
       orderBy: state.orderBy,
-      sortBy: state.sortBy,
-      sortDir: state.sortDir,
       limit: state.limit,
       page: state.page,
       offset: state.offset,
@@ -225,12 +215,6 @@ export function buildQuery<
       return builder;
     },
 
-    sort(field, dir = "DESC") {
-      state.sortBy = field;
-      state.sortDir = dir;
-      return builder;
-    },
-
     orderBy(...orders) {
       state.orderBy = orders;
       return builder;
@@ -243,11 +227,13 @@ export function buildQuery<
 
     page(n) {
       state.page = n;
+      state.offset = undefined;
       return builder;
     },
 
     offset(n) {
       state.offset = n;
+      state.page = undefined;
       return builder;
     },
 

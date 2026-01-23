@@ -7,7 +7,7 @@
  * Must be used within DashboardProvider.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { useDashboardFilters } from "./dashboard-provider";
 import {
   getMetrics,
@@ -39,7 +39,9 @@ function computeBucket(startDate: string, endDate: string): BucketSize {
   const diffDays = Math.ceil(
     Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
   );
-  return diffDays <= 2 ? "day" : "month";
+  if (diffDays <= 2) return "hour";
+  if (diffDays <= 120) return "day";
+  return "month";
 }
 
 // =============================================================================
@@ -49,7 +51,9 @@ function computeBucket(startDate: string, endDate: string): BucketSize {
 /**
  * Fetch dashboard metrics using global filters.
  */
-export function useMetrics() {
+export function useMetrics(): UseQueryResult<
+  Awaited<ReturnType<typeof getMetrics>>
+> {
   const { filters } = useDashboardFilters();
   const { startDate, endDate } = filters;
 
@@ -63,7 +67,9 @@ export function useMetrics() {
 /**
  * Fetch events by status using global filters.
  */
-export function useEventsByStatus() {
+export function useEventsByStatus(): UseQueryResult<
+  Awaited<ReturnType<typeof getEventsByStatusAction>>
+> {
   const { filters } = useDashboardFilters();
   const { startDate, endDate } = filters;
 
@@ -78,7 +84,9 @@ export function useEventsByStatus() {
  * Fetch timeseries data using global filters.
  * @param bucket - Optional bucket size override. Defaults to auto-computed from date range.
  */
-export function useTimeseries(bucket?: BucketSize) {
+export function useTimeseries(
+  bucket?: BucketSize,
+): UseQueryResult<Awaited<ReturnType<typeof getEventsOverTimeAction>>> {
   const { filters } = useDashboardFilters();
   const { startDate, endDate } = filters;
 

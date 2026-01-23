@@ -60,12 +60,20 @@ export function DateRangeInput({
   className,
   inputWidth = "w-[160px]",
 }: DateRangeInputProps) {
+  const normalizedPresets = React.useMemo<PresetOption<DatePreset>[]>(
+    () =>
+      presets.some((preset) => preset.value === "custom") ? presets : (
+        [...presets, { label: "Custom", value: "custom" as DatePreset }]
+      ),
+    [presets],
+  );
+
   const [selectedPreset, setSelectedPreset] =
     React.useState<DatePreset>("custom");
 
   // Detect if current range matches a preset
   React.useEffect(() => {
-    for (const preset of presets) {
+    for (const preset of normalizedPresets) {
       if (preset.value === "custom") continue;
       const range = getDateRangeForPreset(preset.value);
       if (range.start === startDate && range.end === endDate) {
@@ -74,9 +82,10 @@ export function DateRangeInput({
       }
     }
     setSelectedPreset("custom");
-  }, [startDate, endDate, presets]);
+  }, [startDate, endDate, normalizedPresets]);
 
-  const handlePresetChange = (preset: DatePreset) => {
+  const handlePresetChange = (preset: DatePreset | null) => {
+    if (preset === null) return;
     setSelectedPreset(preset);
 
     if (preset === "custom") {
@@ -124,7 +133,7 @@ export function DateRangeInput({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  {presets.map((preset) => (
+                  {normalizedPresets.map((preset) => (
                     <SelectItem key={preset.value} value={preset.value}>
                       {preset.label}
                     </SelectItem>

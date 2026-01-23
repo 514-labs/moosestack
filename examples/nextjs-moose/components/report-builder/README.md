@@ -14,7 +14,7 @@ It's designed to work with any QueryModel instance, providing a clean separation
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Next.js Page                              │
 │                    (Server Component)                            │
@@ -42,7 +42,7 @@ It's designed to work with any QueryModel instance, providing a clean separation
 
 ## File Structure
 
-```
+```text
 components/
 ├── report-builder/
 │   ├── index.ts              # Barrel exports
@@ -51,13 +51,7 @@ components/
 │   ├── results-table.tsx     # Results table component
 │   └── README.md             # This documentation
 
-app/
-├── reports/
-│   └── 04/
-│       ├── page.tsx          # Page with ReportBuilder
-│       └── actions.ts        # Server Action for statsModel
 ```
-
 ## Usage Pattern
 
 ### Step 1: Create a Server Action

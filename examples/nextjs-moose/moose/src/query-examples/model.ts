@@ -9,7 +9,10 @@ export const eventsModel = defineQueryModel({
   // Key names are used as SQL aliases automatically (no `as` needed)
   dimensions: {
     status: { column: "status" },
-    hour: { expression: sql`toHour(${Events.columns.event_time})`, as: "time" },
+    hour: {
+      expression: sql`toStartOfHour(${Events.columns.event_time})`,
+      as: "time",
+    },
     day: { expression: sql`toDate(${Events.columns.event_time})`, as: "time" },
     month: {
       expression: sql`toStartOfMonth(${Events.columns.event_time})`,
@@ -38,6 +41,6 @@ export const eventsModel = defineQueryModel({
   },
 
   // Sortable fields use the key names (camelCase)
-  sortable: ["totalAmount", "totalEvents", "avgAmount", "timestamp"] as const,
+  sortable: ["totalAmount", "totalEvents", "avgAmount"] as const,
   defaults: {},
 });

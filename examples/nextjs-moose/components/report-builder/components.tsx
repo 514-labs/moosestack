@@ -40,25 +40,34 @@ export interface DimensionChipsProps {
   label?: string;
 }
 
-/**
- * Chip-based dimension selector.
- * Click chips to toggle dimensions on/off.
- */
-export function DimensionChips({
+interface ChipSelectorProps {
+  options: FieldOption[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  className?: string;
+  showIcon?: boolean;
+  label: string;
+  icon: React.ReactNode;
+  iconBgClass: string;
+  iconClass: string;
+}
+
+function ChipSelector({
   options,
   selected,
   onToggle,
   className,
   showIcon = true,
-  label = "Breakdown",
-}: DimensionChipsProps) {
+  label,
+  icon,
+  iconBgClass,
+  iconClass,
+}: ChipSelectorProps): React.JSX.Element {
   return (
     <div className={className}>
       <div className="flex items-center gap-2 mb-2">
         {showIcon && (
-          <div className="p-1 rounded bg-chart-3/10">
-            <LayoutGrid className="size-3.5 text-chart-3" />
-          </div>
+          <div className={cn("p-1 rounded", iconBgClass)}>{icon}</div>
         )}
         <Label className="text-sm font-medium">{label}</Label>
       </div>
@@ -66,13 +75,12 @@ export function DimensionChips({
         multiple={true}
         value={selected}
         onValueChange={(values) => {
-          // Find which one changed and toggle it
           const added = values.find((v) => !selected.includes(v));
           const removed = selected.find((s) => !values.includes(s));
           if (added) onToggle(added);
           else if (removed) onToggle(removed);
         }}
-        className="flex flex-wrap gap-1"
+        className={cn("flex flex-wrap gap-1", iconClass)}
       >
         {options.map((option) => (
           <ToggleGroupItem
@@ -86,6 +94,33 @@ export function DimensionChips({
         ))}
       </ToggleGroup>
     </div>
+  );
+}
+
+/**
+ * Chip-based dimension selector.
+ * Click chips to toggle dimensions on/off.
+ */
+export function DimensionChips({
+  options,
+  selected,
+  onToggle,
+  className,
+  showIcon = true,
+  label = "Breakdown",
+}: DimensionChipsProps) {
+  return (
+    <ChipSelector
+      options={options}
+      selected={selected}
+      onToggle={onToggle}
+      className={className}
+      showIcon={showIcon}
+      label={label}
+      icon={<LayoutGrid className="size-3.5 text-chart-3" />}
+      iconBgClass="bg-chart-3/10"
+      iconClass=""
+    />
   );
 }
 
@@ -121,38 +156,17 @@ export function MetricChips({
   label = "Metrics",
 }: MetricChipsProps) {
   return (
-    <div className={className}>
-      <div className="flex items-center gap-2 mb-2">
-        {showIcon && (
-          <div className="p-1 rounded bg-chart-1/10">
-            <BarChart3 className="size-3.5 text-chart-1" />
-          </div>
-        )}
-        <Label className="text-sm font-medium">{label}</Label>
-      </div>
-      <ToggleGroup
-        multiple={true}
-        value={selected}
-        onValueChange={(values) => {
-          const added = values.find((v) => !selected.includes(v));
-          const removed = selected.find((s) => !values.includes(s));
-          if (added) onToggle(added);
-          else if (removed) onToggle(removed);
-        }}
-        className="flex flex-wrap gap-1"
-      >
-        {options.map((option) => (
-          <ToggleGroupItem
-            key={option.id}
-            value={option.id}
-            title={option.description}
-            className="px-2 py-1 text-sm font-medium rounded-md border hover:bg-muted"
-          >
-            {option.label}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
-    </div>
+    <ChipSelector
+      options={options}
+      selected={selected}
+      onToggle={onToggle}
+      className={className}
+      showIcon={showIcon}
+      label={label}
+      icon={<BarChart3 className="size-3.5 text-chart-1" />}
+      iconBgClass="bg-chart-1/10"
+      iconClass=""
+    />
   );
 }
 
@@ -288,7 +302,7 @@ export function FilterRow({
           />
         );
 
-      case "select":
+      case "select": {
         const selectOptions = filter.options ?? [];
         return (
           <SelectDropdown
@@ -301,6 +315,7 @@ export function FilterRow({
             placeholder="Select..."
           />
         );
+      }
 
       case "text":
       default:
@@ -450,24 +465,30 @@ export function SimpleResultsTable({
 
   // Build column info
   const columns = [...dimensions, ...metrics];
-  const getLabel = (id: string) => {
+  const getFieldOption = (id: string): FieldOption | undefined => {
     const dim = model.dimensions.find((d) => d.id === id);
-    if (dim) return dim.label;
+    if (dim) return dim;
     const metric = model.metrics.find((m) => m.id === id);
-    if (metric) return metric.label;
-    return id;
+    return metric;
   };
-  const getDataKey = (id: string) => {
-    const dim = model.dimensions.find((d) => d.id === id);
-    if (dim?.dataKey) return dim.dataKey;
-    const metric = model.metrics.find((m) => m.id === id);
-    if (metric?.dataKey) return metric.dataKey;
-    return id;
-  };
+  const getLabel = (id: string) => getFieldOption(id)?.label ?? id;
+  const getDataKey = (id: string) => getFieldOption(id)?.dataKey ?? id;
 
   const formatValue = (key: string, value: unknown): string => {
     if (value === null || value === undefined) return "—";
     if (typeof value === "number") {
+      const format = getFieldOption(key)?.format;
+      if (format === "percentage") {
+        return `${(value * 100).toFixed(1)}%`;
+      }
+      if (format === "currency") {
+        return `$${value.toLocaleString()}`;
+      }
+      if (format === "number") {
+        return value.toLocaleString();
+      }
+
+      // Backwards compatible fallback (heuristic) if no metadata is provided.
       if (key.toLowerCase().includes("ratio")) {
         return `${(value * 100).toFixed(1)}%`;
       }

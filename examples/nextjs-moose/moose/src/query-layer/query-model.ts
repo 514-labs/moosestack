@@ -25,6 +25,7 @@ import {
   like,
   ilike,
   inList,
+  notIn,
   between,
   isNull,
   isNotNull,
@@ -48,8 +49,8 @@ import {
   type QueryRequest,
   type QueryParts,
   type FilterParams,
-  deriveInputTypeFromDataType,
 } from "./types";
+import { deriveInputTypeFromDataType } from "./utils";
 
 // =============================================================================
 // Internal Types (not exported)
@@ -95,8 +96,6 @@ type ResolvedQuerySpec<
   select?: Array<TMetrics | TDimensions>;
   groupBy?: TDimensions[];
   orderBy?: Array<[TSortable, SortDir]>;
-  sortBy?: TSortable;
-  sortDir?: SortDir;
   limit?: number;
   page?: number;
   offset?: number;
@@ -489,7 +488,7 @@ export function defineQueryModel<
       case "in":
         return inList(col, (value as SqlValue[]).map(t));
       case "notIn":
-        return inList(col, (value as SqlValue[]).map(t));
+        return notIn(col, (value as SqlValue[]).map(t));
       case "between": {
         const [low, high] = value as [SqlValue, SqlValue];
         return between(col, t(low), t(high));
@@ -547,8 +546,6 @@ export function defineQueryModel<
 
     if (spec.orderBy && spec.orderBy.length > 0) {
       orderBySpec = spec.orderBy;
-    } else if (spec.sortBy) {
-      orderBySpec = [[spec.sortBy, spec.sortDir ?? "DESC"]];
     } else {
       orderBySpec = defaults.orderBy;
     }
@@ -561,17 +558,29 @@ export function defineQueryModel<
       }
     }
 
-    const parts = orderBySpec.map(([field, dir]) => {
-      const fieldDef = normalizedFields[field];
-      if (!fieldDef) return empty;
-      const col =
-        fieldDef.expression ??
-        (fieldDef.column ? sql`${fieldDef.column}` : empty);
-      if (isEmpty(col)) return empty;
-      return sql`${col} ${raw(dir)}`;
-    });
+    const parts = orderBySpec
+      .map(([field, dir]) => {
+        if (dir !== "ASC" && dir !== "DESC") {
+          throw new Error(`Invalid sort direction '${dir}'`);
+        }
 
-    return sql`ORDER BY ${join(parts)}`;
+        const fieldDef = normalizedFields[field];
+        if (!fieldDef) return empty;
+
+        const alias = fieldDef.as ?? fieldDef.alias ?? String(field);
+        const col =
+          fieldDef.expression ??
+          (fieldDef.column ? sql`${fieldDef.column}` : empty);
+
+        // For aggregate metrics, ORDER BY the SELECT alias.
+        const orderExpr = fieldDef.agg ? raw(alias) : col;
+        if (isEmpty(orderExpr)) return empty;
+
+        return sql`${orderExpr} ${raw(dir)}`;
+      })
+      .filter((p) => !isEmpty(p));
+
+    return parts.length > 0 ? sql`ORDER BY ${join(parts)}` : empty;
   }
 
   function resolveQuerySpec(
@@ -600,8 +609,6 @@ export function defineQueryModel<
       groupBy,
       filters: request.filters,
       orderBy: request.orderBy,
-      sortBy: request.sortBy,
-      sortDir: request.sortDir,
       limit: request.limit,
       page: request.page,
       offset: request.offset,
@@ -621,8 +628,14 @@ export function defineQueryModel<
     if (!groupByFields || groupByFields.length === 0) return empty;
 
     const groupExprs = groupByFields.map((fieldName) => {
+      if (!dimensionNamesSet.has(fieldName)) {
+        throw new Error(`Field '${fieldName}' is not a valid dimension`);
+      }
+
       const field = normalizedFields[fieldName];
-      if (!field) return raw(fieldName);
+      if (!field) {
+        throw new Error(`Field '${fieldName}' is not a valid dimension`);
+      }
       if (field.column) return sql`${field.column}`;
       if (field.expression) return field.expression;
       return raw(fieldName);
@@ -643,8 +656,11 @@ export function defineQueryModel<
     const spec = resolveQuerySpec(request);
 
     const limitVal = Math.min(spec.limit ?? defaults.limit ?? 100, maxLimit);
-    const offsetVal =
-      spec.page != null ? spec.page * limitVal : (spec.offset ?? 0);
+    const offsetVal = spec.offset ?? (spec.page ?? 0) * limitVal;
+    const pagination =
+      spec.offset != null ?
+        sql`LIMIT ${limitVal} OFFSET ${offsetVal}`
+      : paginate(limitVal, spec.page ?? 0);
 
     const selectedFields = spec.select ?? Object.keys(normalizedFields);
     const selectedDimensions = selectedFields.filter((f) =>
@@ -676,7 +692,7 @@ export function defineQueryModel<
       where: whereClause,
       groupBy: groupByPart,
       orderBy: orderByPart,
-      pagination: paginate(limitVal, Math.floor(offsetVal / limitVal)),
+      pagination,
       limit: sql`LIMIT ${limitVal}`,
       offset: offsetVal > 0 ? sql`OFFSET ${offsetVal}` : empty,
     };

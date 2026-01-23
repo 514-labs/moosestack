@@ -20,7 +20,7 @@ export function ChartWidget({
   children,
   headerRight,
   className,
-}: ChartWidgetProps) {
+}: ChartWidgetProps): React.JSX.Element {
   return (
     <div
       className={cn(

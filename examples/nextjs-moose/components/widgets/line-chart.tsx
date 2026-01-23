@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { TrendingUp } from "lucide-react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import {
   ChartContainer,
@@ -49,7 +48,6 @@ export interface LineChartProps {
   xKey?: string;
   yKey?: string;
   chartConfig?: ChartConfig;
-  icon?: React.ReactNode;
   headerRight?: React.ReactNode;
   height?: number;
   className?: string;
@@ -70,7 +68,6 @@ export function LineChartComponent({
   xKey = "time",
   yKey = "count",
   chartConfig = defaultChartConfig,
-  icon,
   headerRight,
   height = 350,
   className,

@@ -51,12 +51,12 @@ export async function getEventsByStatusOld(
     filter(Events.columns.event_time, "lte", endDate),
   );
 
-  const results = await executeQuery<{ status: string; amount: number }>(
+  const results = await executeQuery<{ status: string; count: number }>(
     sql`SELECT lower(${Events.columns.status}) as status, COUNT(*) as count FROM ${Events} ${whereClause} GROUP BY status`,
   );
 
   return results.map((row) => ({
     name: row.status,
-    value: row.amount,
+    value: row.count,
   }));
 }

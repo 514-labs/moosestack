@@ -115,6 +115,7 @@ export function DashboardMetricCards({
         <MetricRow key={rowIndex}>
           {row.map(([key, value]) => {
             const cfg = config[key as keyof MetricsResult];
+            if (!cfg) return null;
             return (
               <MetricCard
                 key={key}

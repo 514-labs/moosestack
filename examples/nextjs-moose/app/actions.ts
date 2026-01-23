@@ -114,7 +114,6 @@ export async function getEventsOverTimeAction(
  */
 export async function executeEventsQuery(
   params: typeof eventsModel.$inferRequest,
-) {
-  const results = await runEventsQuery(params);
-  return results;
+): Promise<Awaited<ReturnType<typeof runEventsQuery>>> {
+  return runEventsQuery(params);
 }

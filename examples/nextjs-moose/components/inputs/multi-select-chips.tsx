@@ -35,10 +35,20 @@ export function MultiSelectChips<TId extends string>({
   variant = "primary",
   disabled = false,
   className,
+  minSelections = 0,
+  maxSelections,
 }: MultiSelectChipsProps<TId>) {
   const handleValueChange = (value: string[]) => {
     // ToggleGroup returns string[], but we need TId[]
     const newSelected = value as TId[];
+
+    if (maxSelections != null && newSelected.length > maxSelections) {
+      return;
+    }
+    if (newSelected.length < minSelections) {
+      return;
+    }
+
     onChange(newSelected);
   };
 

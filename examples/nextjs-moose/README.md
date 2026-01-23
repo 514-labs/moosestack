@@ -15,7 +15,7 @@ This example demonstrates **Step 2** of the "two-step migration pattern" from th
 
 ## Architecture (Conceptual)
 
-```
+```text
 ┌─────────────┐    ┌─────────┐    ┌────────────┐    ┌─────────────┐    ┌───────────┐
 │  OLTP DB    │───▶│   CDC   │───▶│ ClickHouse │───▶│   Query     │───▶│   React   │
 │ (Postgres)  │    │         │       Tables/MVs│    │   Layer     │    │ Dashboard │
@@ -23,14 +23,14 @@ This example demonstrates **Step 2** of the "two-step migration pattern" from th
                                         │                  │
                                   Write-time          Read-time
                                   transforms          selection
-                                  (pre-joined,        sorting, paginatiom
+                                  (pre-joined,        sorting, pagination
                                    pre-aggregated)         ▲
                                                            │
                                                     THIS DEMO FOCUSES HERE
 ```
 
-OLTP dashboards compute joins at read time. 
-OLAP dashboards pre-compute joins at write time via Materialized Views, then use a thin query layer to select/filter/sort the pre-computed data. 
+OLTP dashboards compute joins at read time.
+OLAP dashboards pre-compute joins at write time via Materialized Views, then use a thin query layer to select/filter/sort the pre-computed data.
 
 ## Core Concepts
 

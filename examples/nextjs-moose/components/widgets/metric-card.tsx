@@ -18,7 +18,7 @@ export function MetricCard({
   value,
   description,
   icon: Icon,
-}: MetricCardProps) {
+}: MetricCardProps): React.JSX.Element {
   const formatted =
     typeof value === "number" ?
       new Intl.NumberFormat("en-US").format(value)
@@ -49,7 +49,10 @@ export interface MetricRowProps {
   className?: string;
 }
 
-export function MetricRow({ children, className }: MetricRowProps) {
+export function MetricRow({
+  children,
+  className,
+}: MetricRowProps): React.JSX.Element {
   const items = React.Children.toArray(children);
 
   return (
@@ -84,7 +87,7 @@ export interface MetricCardsContainerProps {
 export function MetricCardsContainer({
   children,
   className,
-}: MetricCardsContainerProps) {
+}: MetricCardsContainerProps): React.JSX.Element {
   const rows = React.Children.toArray(children);
 
   return (
