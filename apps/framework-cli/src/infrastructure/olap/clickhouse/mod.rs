@@ -2696,6 +2696,14 @@ static MATERIALIZED_VIEW_TO_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
         .expect("MATERIALIZED_VIEW_TO_PATTERN regex should compile")
 });
 
+static MATERIALIZED_VIEW_REFRESH_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    // Pattern to extract REFRESH clause from CREATE MATERIALIZED VIEW
+    // Matches: REFRESH EVERY/AFTER <interval> [OFFSET ...] [RANDOMIZE ...] [DEPENDS ON ...] [APPEND]
+    // The clause ends at TO or at column definitions (parenthesis)
+    regex::Regex::new(r"(?i)(REFRESH\s+(?:EVERY|AFTER)\s+[^(]+?)(?:\s+TO\s+|\s*\()")
+        .expect("MATERIALIZED_VIEW_REFRESH_PATTERN regex should compile")
+});
+
 /// Reconstructs a SqlResource from a materialized view's CREATE statement
 ///
 /// # Arguments
@@ -2726,6 +2734,12 @@ fn reconstruct_sql_resource_from_mv(
             ))
         })?;
 
+    // Extract REFRESH clause if present (for refreshable MVs)
+    let refresh_clause = MATERIALIZED_VIEW_REFRESH_PATTERN
+        .captures(&create_query)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().trim().to_string());
+
     // Extract pushes_data_to (target table for MV)
     let (target_base_name, _version) = extract_version_from_table_name(&target_table);
     let (target_db, target_name_only) = split_qualified_name(&target_base_name);
@@ -2744,11 +2758,18 @@ fn reconstruct_sql_resource_from_mv(
         id: target_qualified_id,
     }];
 
-    // Reconstruct with MV-specific CREATE statement
-    let setup_raw = format!(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
-        name, target_table, as_select
-    );
+    // Reconstruct with MV-specific CREATE statement, preserving REFRESH clause if present
+    let setup_raw = if let Some(refresh) = refresh_clause {
+        format!(
+            "CREATE MATERIALIZED VIEW IF NOT EXISTS {} {} TO {} AS {}",
+            name, refresh, target_table, as_select
+        )
+    } else {
+        format!(
+            "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
+            name, target_table, as_select
+        )
+    };
 
     reconstruct_sql_resource_common(
         name,

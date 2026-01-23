@@ -39,7 +39,10 @@ import {
 } from "./sdk/stream";
 import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
-import { MaterializedView } from "./sdk/materializedView";
+import {
+  MaterializedView,
+  RefreshableMaterializedView,
+} from "./sdk/materializedView";
 import { View } from "./sdk/view";
 import {
   getSourceDir,
@@ -143,7 +146,10 @@ const moose_internal = {
   sqlResources: new Map<string, SqlResource>(),
   workflows: new Map<string, Workflow>(),
   webApps: new Map<string, WebApp>(),
-  materializedViews: new Map<string, MaterializedView<any>>(),
+  materializedViews: new Map<
+    string,
+    MaterializedView<any> | RefreshableMaterializedView<any>
+  >(),
   views: new Map<string, View>(),
 };
 /**
