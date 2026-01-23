@@ -1802,9 +1802,9 @@ pub async fn run_query(
 /// - Identifier quoting and casing
 /// - Expression formatting
 ///
-/// The default database prefix is stripped from the result to allow comparison
-/// between user SQL (which may omit the database) and ClickHouse's stored SQL
-/// (which includes the fully qualified database prefix).
+/// The formatted SQL is then passed through the AST normalizer to strip the
+/// default database prefix in an identifier-aware way. This avoids unsafe
+/// string replacement inside literals or comments.
 ///
 /// # Arguments
 /// * `configured_client` - The configured ClickHouse client
@@ -1833,18 +1833,13 @@ pub async fn normalize_sql_via_clickhouse(
 ) -> Result<String, OlapChangesError> {
     let client = &configured_client.client;
 
-    // Use formatQuerySingleLine to normalize the SQL, then strip the default database prefix
-    // We use concat() to build the prefix pattern dynamically
-    let query = r#"SELECT replaceAll(
-        formatQuerySingleLine(?),
-        concat(?, '.'),
-        ''
-    ) AS normalized"#;
+    // Use formatQuerySingleLine to normalize the SQL, then strip default DB prefixes
+    // using the AST-based normalizer (identifier-aware).
+    let query = "SELECT formatQuerySingleLine(?) AS normalized";
 
     let mut cursor = client
         .query(query)
         .bind(sql)
-        .bind(default_database)
         .fetch::<NormalizedSqlRow>()
         .map_err(|e| {
             debug!("Error normalizing SQL via ClickHouse: {}", e);
@@ -1852,7 +1847,10 @@ pub async fn normalize_sql_via_clickhouse(
         })?;
 
     match cursor.next().await {
-        Ok(Some(row)) => Ok(row.normalized.trim().to_string()),
+        Ok(Some(row)) => Ok(normalize_sql_for_comparison(
+            row.normalized.trim(),
+            default_database,
+        )),
         Ok(None) => Err(OlapChangesError::DatabaseError(
             "No result from formatQuerySingleLine".to_string(),
         )),

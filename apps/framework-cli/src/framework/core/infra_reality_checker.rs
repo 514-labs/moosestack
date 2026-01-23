@@ -675,7 +675,7 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
                         debug!("Failed to normalize desired SQL for MV '{}': {:?}", id, e);
                         desired.select_sql.clone()
                     });
-                tracing::info!(
+                debug!(
                     "MV '{}' SQL comparison - actual_normalized: {} | desired_normalized: {}",
                     id,
                     actual_sql_normalized.replace('\n', " "),

@@ -14,7 +14,7 @@
 /// The resulting plan is then used by the execution module to apply the changes.
 use crate::framework::core::infra_reality_checker::{InfraRealityChecker, RealityCheckError};
 use crate::framework::core::infrastructure_map::{
-    Change, InfraChanges, InfrastructureMap, OlapChange, TableChange,
+    Change, FilteredChange, InfraChanges, InfrastructureMap, OlapChange, TableChange,
 };
 use crate::framework::core::state_storage::StateStorage;
 use crate::infrastructure::olap::clickhouse;
@@ -53,18 +53,21 @@ pub enum PlanningError {
     Other(#[from] anyhow::Error),
 }
 
-/// Normalizes SQL in all materialized views and views within an infrastructure map.
+/// Creates a copy of an infrastructure map with normalized SQL in all materialized views and views.
 /// Uses ClickHouse's native `formatQuerySingleLine()` for accurate normalization.
-/// This ensures consistent comparison regardless of whether SQL came from user code
-/// or was previously stored after ClickHouse reformatting.
-async fn normalize_infra_map_sql<T: OlapOperations + Sync>(
-    infra_map: &mut InfrastructureMap,
+///
+/// This returns a NEW map for comparison purposes only - the original map should be
+/// preserved for storage, since storing normalized SQL would break if ClickHouse
+/// changes its `formatQuerySingleLine` behavior in future versions.
+async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
+    infra_map: &InfrastructureMap,
     olap_client: &T,
-) {
+) -> InfrastructureMap {
+    let mut normalized_map = infra_map.clone();
     let default_database = infra_map.default_database.clone();
 
     // Normalize materialized view SQL
-    for (name, mv) in infra_map.materialized_views.iter_mut() {
+    for (name, mv) in normalized_map.materialized_views.iter_mut() {
         match olap_client
             .normalize_sql(&mv.select_sql, &default_database)
             .await
@@ -83,7 +86,7 @@ async fn normalize_infra_map_sql<T: OlapOperations + Sync>(
     }
 
     // Normalize view SQL
-    for (name, view) in infra_map.views.iter_mut() {
+    for (name, view) in normalized_map.views.iter_mut() {
         match olap_client
             .normalize_sql(&view.select_sql, &default_database)
             .await
@@ -100,6 +103,147 @@ async fn normalize_infra_map_sql<T: OlapOperations + Sync>(
             }
         }
     }
+
+    normalized_map
+}
+
+fn rehydrate_olap_change(
+    change: OlapChange,
+    reconciled_map: &InfrastructureMap,
+    target_map: &InfrastructureMap,
+) -> OlapChange {
+    match change {
+        OlapChange::MaterializedView(change) => {
+            let rehydrated = match change {
+                Change::Added(mv) => {
+                    let mv = *mv;
+                    let name = mv.name.clone();
+                    let rehydrated = target_map
+                        .materialized_views
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or(mv);
+                    Change::Added(Box::new(rehydrated))
+                }
+                Change::Removed(mv) => {
+                    let mv = *mv;
+                    let name = mv.name.clone();
+                    let rehydrated = reconciled_map
+                        .materialized_views
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or(mv);
+                    Change::Removed(Box::new(rehydrated))
+                }
+                Change::Updated { before, after } => {
+                    let before = *before;
+                    let after = *after;
+                    let before_name = before.name.clone();
+                    let after_name = after.name.clone();
+                    let rehydrated_before = reconciled_map
+                        .materialized_views
+                        .get(&before_name)
+                        .cloned()
+                        .unwrap_or(before);
+                    let rehydrated_after = target_map
+                        .materialized_views
+                        .get(&after_name)
+                        .cloned()
+                        .unwrap_or(after);
+                    Change::Updated {
+                        before: Box::new(rehydrated_before),
+                        after: Box::new(rehydrated_after),
+                    }
+                }
+            };
+            OlapChange::MaterializedView(rehydrated)
+        }
+        OlapChange::View(change) => {
+            let rehydrated = match change {
+                Change::Added(view) => {
+                    let view = *view;
+                    let name = view.name.clone();
+                    let rehydrated = target_map.views.get(&name).cloned().unwrap_or(view);
+                    Change::Added(Box::new(rehydrated))
+                }
+                Change::Removed(view) => {
+                    let view = *view;
+                    let name = view.name.clone();
+                    let rehydrated = reconciled_map.views.get(&name).cloned().unwrap_or(view);
+                    Change::Removed(Box::new(rehydrated))
+                }
+                Change::Updated { before, after } => {
+                    let before = *before;
+                    let after = *after;
+                    let before_name = before.name.clone();
+                    let after_name = after.name.clone();
+                    let rehydrated_before = reconciled_map
+                        .views
+                        .get(&before_name)
+                        .cloned()
+                        .unwrap_or(before);
+                    let rehydrated_after =
+                        target_map.views.get(&after_name).cloned().unwrap_or(after);
+                    Change::Updated {
+                        before: Box::new(rehydrated_before),
+                        after: Box::new(rehydrated_after),
+                    }
+                }
+            };
+            OlapChange::View(rehydrated)
+        }
+        OlapChange::PopulateMaterializedView {
+            view_name,
+            target_table,
+            target_database,
+            select_statement,
+            source_tables,
+            should_truncate,
+        } => {
+            if let Some(mv) = target_map.materialized_views.get(&view_name) {
+                OlapChange::PopulateMaterializedView {
+                    view_name,
+                    target_table: mv.target_table.clone(),
+                    target_database: mv.target_database.clone(),
+                    select_statement: mv.select_sql.clone(),
+                    source_tables: mv.source_tables.clone(),
+                    should_truncate,
+                }
+            } else {
+                OlapChange::PopulateMaterializedView {
+                    view_name,
+                    target_table,
+                    target_database,
+                    select_statement,
+                    source_tables,
+                    should_truncate,
+                }
+            }
+        }
+        _ => change,
+    }
+}
+
+fn rehydrate_changes_with_original_sql(
+    changes: InfraChanges,
+    reconciled_map: &InfrastructureMap,
+    target_map: &InfrastructureMap,
+) -> InfraChanges {
+    let mut rehydrated = changes;
+    rehydrated.olap_changes = rehydrated
+        .olap_changes
+        .into_iter()
+        .map(|change| rehydrate_olap_change(change, reconciled_map, target_map))
+        .collect();
+    rehydrated.filtered_olap_changes = rehydrated
+        .filtered_olap_changes
+        .into_iter()
+        .map(|filtered| FilteredChange {
+            change: rehydrate_olap_change(filtered.change, reconciled_map, target_map),
+            reason: filtered.reason,
+        })
+        .collect();
+    rehydrated
 }
 
 /// Reconciles an infrastructure map with the actual state from the database.
@@ -678,7 +822,7 @@ pub async fn plan_changes(
     project: &Project,
 ) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
     // Load target state from project code
-    let mut target_infra_map = load_target_infrastructure(project).await?;
+    let target_infra_map = load_target_infrastructure(project).await?;
 
     // Load and reconcile current state
     let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
@@ -696,7 +840,7 @@ pub async fn plan_changes(
         .collect();
     let target_view_ids: HashSet<String> = target_infra_map.views.keys().cloned().collect();
 
-    let mut reconciled_map = load_reconciled_infrastructure(
+    let reconciled_map = load_reconciled_infrastructure(
         project,
         state_storage,
         olap_client,
@@ -707,14 +851,17 @@ pub async fn plan_changes(
     )
     .await?;
 
-    // Normalize SQL in both maps before diffing to handle ClickHouse reformatting.
-    // This ensures consistent comparison regardless of whether SQL came from user code
-    // (e.g., "100.0") or was previously stored after ClickHouse reformatting (e.g., "100.").
+    // Normalize SQL in both maps for comparison only (don't mutate originals).
+    // We normalize at comparison time rather than storing normalized SQL because
+    // ClickHouse's formatQuerySingleLine behavior could change between versions.
+    // The original user SQL is preserved in target_infra_map for storage.
     let normalization_client = clickhouse::create_client(project.clickhouse_config.clone());
-    normalize_infra_map_sql(&mut reconciled_map, &normalization_client).await;
-    normalize_infra_map_sql(&mut target_infra_map, &normalization_client).await;
+    let reconciled_normalized =
+        normalize_infra_map_for_comparison(&reconciled_map, &normalization_client).await;
+    let target_normalized =
+        normalize_infra_map_for_comparison(&target_infra_map, &normalization_client).await;
 
-    // Use the reconciled map for diffing with ClickHouse-specific strategy
+    // Use the normalized maps for diffing with ClickHouse-specific strategy
     // Pass ignore_ops so the diff can normalize tables internally for comparison
     // while using original tables for the actual change operations
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
@@ -724,16 +871,19 @@ pub async fn plan_changes(
         &[]
     };
 
-    let changes = reconciled_map.diff_with_table_strategy(
-        &target_infra_map,
+    let changes = reconciled_normalized.diff_with_table_strategy(
+        &target_normalized,
         &clickhouse_strategy,
         true,
         project.is_production,
         ignore_ops,
     );
+    let changes = rehydrate_changes_with_original_sql(changes, &reconciled_map, &target_infra_map);
 
+    // Store the ORIGINAL target_infra_map (with user's SQL), not the normalized version.
+    // This preserves the user's original SQL in storage.
     let plan = InfraPlan {
-        target_infra_map: target_infra_map.clone(),
+        target_infra_map,
         changes,
     };
 
