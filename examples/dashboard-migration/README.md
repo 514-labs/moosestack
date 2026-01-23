@@ -1,4 +1,3 @@
-
 # Dashboard Migration: Context Pack + Prompt
 
 This folder is the **canonical starter kit** for doing an AI-assisted dashboard migration from OLTP → ClickHouse (MooseStack).
