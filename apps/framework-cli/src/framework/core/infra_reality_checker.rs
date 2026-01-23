@@ -99,12 +99,6 @@ impl InfraDiscrepancies {
     }
 }
 
-/// Checks if two SQL strings are semantically equivalent.
-/// Uses AST-based normalization to handle:
-/// - Whitespace differences (newlines, tabs, multiple spaces)
-/// - Database prefix differences (e.g., `local.Table` vs `Table`)
-/// - Identifier quoting differences (e.g., `` `column` `` vs `column`)
-/// - Keyword casing differences
 /// Normalizes a database reference for comparison.
 /// Treats `None` as equivalent to `Some(default_database)`.
 fn normalize_database(db: &Option<String>, default_database: &str) -> String {

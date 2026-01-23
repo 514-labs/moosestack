@@ -59,7 +59,10 @@ pub enum PlanningError {
 /// This returns a NEW map for comparison purposes only - the original map should be
 /// preserved for storage, since storing normalized SQL would break if ClickHouse
 /// changes its `formatQuerySingleLine` behavior in future versions.
-async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
+///
+/// IMPORTANT: This function must be called on both maps before using `diff_with_table_strategy`
+/// to ensure correct comparison of MV/View SQL.
+pub async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
     infra_map: &InfrastructureMap,
     olap_client: &T,
 ) -> InfrastructureMap {
