@@ -30,7 +30,7 @@ import requests
 import threading
 import time
 from collections.abc import Callable
-from typing import Optional, Any, TextIO
+from typing import Optional, Any
 
 from moose_lib.dmv2 import get_streams, DeadLetterModel
 from moose_lib import cli_log, CliLogData, DeadLetterQueue
@@ -40,6 +40,7 @@ from moose_lib.commons import (
     get_kafka_consumer,
     get_kafka_producer,
 )
+from moose_lib.structured_logging import create_structured_print_wrapper
 
 # Force stdout to be unbuffered
 sys.stdout = io.TextIOWrapper(
@@ -57,44 +58,8 @@ _function_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVa
     "function_context", default=None
 )
 
-# Store original print for restoration
-_original_print = builtins.print
-
-
-# Structured print wrapper that respects kwargs and uses contextvars
-def _structured_print(
-    *args: object,
-    sep: str = " ",
-    end: str = "\n",
-    file: Optional[TextIO] = None,
-    flush: bool = False,
-    **kwargs: object,
-) -> None:
-    """Print wrapper that emits structured logs when in a function context."""
-    function_name = _function_context.get()
-
-    if function_name and file in (None, sys.stderr, sys.stdout):
-        # We're in a streaming function context - emit structured log to stderr
-        message = sep.join(str(arg) for arg in args)
-        structured_log = json.dumps(
-            {
-                "__moose_structured_log__": True,
-                "level": "info",
-                "message": message,
-                "function_name": function_name,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-        sys.stderr.write(structured_log + "\n")
-        if flush:
-            sys.stderr.flush()
-    else:
-        # Not in function context or custom file specified - use original print
-        _original_print(*args, sep=sep, end=end, file=file, flush=flush, **kwargs)
-
-
 # Replace global print with structured wrapper at module load
-builtins.print = _structured_print
+builtins.print = create_structured_print_wrapper(_function_context, "function_name")
 
 
 @dataclasses.dataclass

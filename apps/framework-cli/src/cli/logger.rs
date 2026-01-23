@@ -885,6 +885,10 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
 /// structured logs (JSON with `__moose_structured_log__` marker) and regular
 /// stderr output.
 ///
+/// This is a convenience wrapper around [`spawn_stderr_structured_logger_with_ui`]
+/// that does not display errors in the CLI UI. Use this when errors should only
+/// be logged, not shown to the user.
+///
 /// ## Parameters
 ///
 /// - `stderr`: The child process stderr stream to read from
@@ -909,11 +913,56 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
 ///     );
 /// }
 /// ```
+#[allow(dead_code)]
 pub fn spawn_stderr_structured_logger(
     stderr: tokio::process::ChildStderr,
     resource_name_field: &'static str,
     resource_type: &'static str,
 ) -> tokio::task::JoinHandle<()> {
+    spawn_stderr_structured_logger_with_ui(stderr, resource_name_field, resource_type, None)
+}
+
+/// Spawns an async task to read stderr and parse structured logs with optional UI display.
+///
+/// This is an extended version of `spawn_stderr_structured_logger` that optionally
+/// displays errors in the CLI UI for user visibility. Use this when errors from
+/// child processes should be prominently shown to the user.
+///
+/// ## Parameters
+///
+/// - `stderr`: The child process stderr stream to read from
+/// - `resource_name_field`: The JSON field name for the resource (e.g., "function_name", "api_name", "task_name")
+/// - `resource_type`: The resource type constant (e.g., "transform", "consumption_api", "task")
+/// - `ui_action`: Optional action name for UI display (e.g., "Streaming", "API"). When `Some`,
+///   errors will be shown in the CLI UI with this action label.
+///
+/// ## Returns
+///
+/// Returns a `JoinHandle` for the spawned task, which can be awaited to ensure
+/// the stderr processing completes.
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// use crate::cli::logger;
+///
+/// if let Some(stderr) = child.stderr.take() {
+///     // Show streaming function errors in CLI UI
+///     logger::spawn_stderr_structured_logger_with_ui(
+///         stderr,
+///         "function_name",
+///         logger::resource_type::TRANSFORM,
+///         Some("Streaming"),
+///     );
+/// }
+/// ```
+pub fn spawn_stderr_structured_logger_with_ui(
+    stderr: tokio::process::ChildStderr,
+    resource_name_field: &'static str,
+    resource_type: &'static str,
+    ui_action: Option<&'static str>,
+) -> tokio::task::JoinHandle<()> {
+    use crate::cli::display::{show_message_wrapper, Message, MessageType};
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tracing::error;
 
@@ -929,7 +978,19 @@ pub fn spawn_stderr_structured_logger(
                 );
                 let _guard = span.enter();
                 match log_data.level.as_str() {
-                    "error" => tracing::error!("{}", log_data.message),
+                    "error" => {
+                        tracing::error!("{}", log_data.message);
+                        // Show error in CLI UI if ui_action is configured
+                        if let Some(action) = ui_action {
+                            show_message_wrapper(
+                                MessageType::Error,
+                                Message {
+                                    action: action.to_string(),
+                                    details: log_data.message.clone(),
+                                },
+                            );
+                        }
+                    }
                     "warn" => tracing::warn!("{}", log_data.message),
                     "debug" => tracing::debug!("{}", log_data.message),
                     _ => tracing::info!("{}", log_data.message),
@@ -938,6 +999,16 @@ pub fn spawn_stderr_structured_logger(
             }
             // Fall back to regular error logging if not a structured log
             error!("{}", line);
+            // Also show non-structured stderr in UI if configured
+            if let Some(action) = ui_action {
+                show_message_wrapper(
+                    MessageType::Error,
+                    Message {
+                        action: action.to_string(),
+                        details: line.to_string(),
+                    },
+                );
+            }
         }
     })
 }

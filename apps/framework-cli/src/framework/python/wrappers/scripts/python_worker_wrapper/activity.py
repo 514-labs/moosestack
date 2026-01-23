@@ -2,14 +2,13 @@ from temporalio import activity
 from dataclasses import dataclass
 from moose_lib.dmv2 import get_workflow
 from moose_lib.dmv2.workflow import TaskContext
+from moose_lib.structured_logging import create_structured_print_wrapper
 from collections.abc import Callable
-from typing import Optional, Any, TextIO
+from typing import Optional, Any
 import asyncio
 import builtins
 import contextvars
-from datetime import datetime, timezone
 import json
-import sys
 import traceback
 import concurrent.futures
 
@@ -22,47 +21,8 @@ _task_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     "task_context", default=None
 )
 
-# Store original print for restoration
-_original_print = builtins.print
-
-
-# Structured print wrapper that respects kwargs and uses contextvars
-def _structured_print(
-    *args: Any,
-    sep: str = " ",
-    end: str = "\n",
-    file: Optional[TextIO] = None,
-    flush: bool = False,
-    **kwargs: Any,
-) -> None:
-    """Print wrapper that emits structured logs when in a task context."""
-    task_name = _task_context.get()
-
-    if task_name and file in (None, sys.stderr, sys.stdout):
-        # We're in a task context - emit structured log to stderr
-        message = sep.join(str(arg) for arg in args)
-        structured_log = json.dumps(
-            {
-                "__moose_structured_log__": True,
-                "level": "info",
-                "message": message,
-                "task_name": task_name,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-        sys.stderr.write(structured_log + "\n")
-        if flush:
-            # Flush immediately to ensure logs appear in real-time for debugging.
-            # This is intentional despite performance implications, as Temporal
-            # task logs are critical for troubleshooting workflow issues.
-            sys.stderr.flush()
-    else:
-        # Not in task context or custom file specified - use original print
-        _original_print(*args, sep=sep, end=end, file=file, flush=flush, **kwargs)
-
-
 # Replace global print with structured wrapper at module load
-builtins.print = _structured_print
+builtins.print = create_structured_print_wrapper(_task_context, "task_name")
 
 
 @dataclass

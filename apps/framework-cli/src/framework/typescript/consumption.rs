@@ -117,11 +117,12 @@ pub fn run(
         }
     });
 
-    // Spawn structured logger for stderr
-    crate::cli::logger::spawn_stderr_structured_logger(
+    // Spawn structured logger for stderr with UI display for errors
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
         stderr,
         "api_name",
         crate::cli::logger::resource_type::CONSUMPTION_API,
+        Some("API"),
     );
 
     Ok(consumption_process)

@@ -77,11 +77,12 @@ pub fn run(
         }
     });
 
-    // Spawn structured logger for stderr
-    crate::cli::logger::spawn_stderr_structured_logger(
+    // Spawn structured logger for stderr with UI display for errors
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
         stderr,
         "function_name",
         crate::cli::logger::resource_type::TRANSFORM,
+        Some("Streaming"),
     );
 
     Ok(streaming_function_process)
