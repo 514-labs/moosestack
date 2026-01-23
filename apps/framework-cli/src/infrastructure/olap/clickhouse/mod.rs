@@ -2598,7 +2598,19 @@ impl OlapOperations for ConfiguredDBClient {
         sql: &str,
         default_database: &str,
     ) -> Result<String, OlapChangesError> {
-        normalize_sql_via_clickhouse(self, sql, default_database).await
+        match normalize_sql_via_clickhouse(self, sql, default_database).await {
+            Ok(normalized) => Ok(normalized),
+            Err(e) => {
+                tracing::debug!(
+                    "ClickHouse normalization failed, falling back to Rust normalizer: {:?}",
+                    e
+                );
+                Ok(sql_parser::normalize_sql_for_comparison(
+                    sql,
+                    default_database,
+                ))
+            }
+        }
     }
 }
 
