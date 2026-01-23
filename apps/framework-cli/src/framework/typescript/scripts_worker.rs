@@ -3,7 +3,7 @@ use crate::project::{Project, ProjectFileError};
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
-use tracing::{debug, error, info, info_span, warn};
+use tracing::{debug, error, info, warn};
 
 use super::bin;
 
@@ -48,7 +48,6 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         .expect("Scripts process did not have a handle to stderr");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -96,46 +95,13 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            // Try to parse as structured log from Node.js workflow/task
-            if let Some(log_data) = crate::cli::logger::parse_structured_log(&line, "task_name") {
-                let span = info_span!(
-                    "workflow_task_log",
-                    context = crate::cli::logger::context::RUNTIME,
-                    resource_type = crate::cli::logger::resource_type::TASK,
-                    resource_name = %log_data.resource_name,
-                );
-                let _guard = span.enter();
-                match log_data.level.as_str() {
-                    "error" => {
-                        error!("{}", log_data.message);
-                        // Show error in CLI UI for visibility
-                        show_message_wrapper(
-                            MessageType::Error,
-                            Message {
-                                action: "Workflow".to_string(),
-                                details: log_data.message.clone(),
-                            },
-                        );
-                    }
-                    "warn" => warn!("{}", log_data.message),
-                    "debug" => debug!("{}", log_data.message),
-                    _ => info!("{}", log_data.message),
-                }
-                continue;
-            }
-            // Fall back to regular error logging if not a structured log
-            error!("{}", line);
-            show_message_wrapper(
-                MessageType::Error,
-                Message {
-                    action: "Workflow".to_string(),
-                    details: line.to_string(),
-                },
-            );
-        }
-    });
+    // Spawn stderr handler with UI display for errors using the centralized helper
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
+        stderr,
+        "task_name",
+        crate::cli::logger::resource_type::TASK,
+        Some("Workflow"),
+    );
 
     Ok(scripts_process)
 }

@@ -23,7 +23,7 @@ import * as fs from "fs";
 import * as path from "path";
 import axios from "axios";
 
-import { TIMEOUTS, SERVER_CONFIG } from "./constants";
+import { TIMEOUTS } from "./constants";
 import {
   waitForServerStart,
   createTempTestDirectory,
@@ -199,10 +199,12 @@ export * from "./apis/otlp-test";
 
     // Wait for server to be ready
     const serverBaseUrl = `http://localhost:${moosePort}`;
+    // Generate startup message dynamically using the actual port (not the default 4000)
+    const startupMessage = `Your local development server is running at: http://localhost:${moosePort}/ingest`;
     await waitForServerStart(
       mooseProcess,
       TIMEOUTS.SERVER_STARTUP_MS,
-      SERVER_CONFIG.startupMessage,
+      startupMessage,
       serverBaseUrl,
       { logger: testLogger },
     );

@@ -290,9 +290,9 @@ export class OtlpMockServer {
     const rec = record as any; // Allow snake_case access
     const attributes = this.parseAttributes(rec.attributes || []);
 
-    // Extract body as string (handle both camelCase and snake_case)
+    // Extract body as string
     let body = "";
-    const bodyValue = rec.body || rec.body;
+    const bodyValue = rec.body;
     if (bodyValue) {
       const strValue = bodyValue.stringValue || bodyValue.string_value;
       if (strValue) {

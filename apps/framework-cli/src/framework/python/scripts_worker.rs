@@ -121,48 +121,13 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         }
     });
 
-    // Spawn stderr handler with UI display for errors
-    let mut stderr_reader = BufReader::new(stderr).lines();
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            // Try to parse as structured log from Python workflow/task
-            if let Some(log_data) = crate::cli::logger::parse_structured_log(&line, "task_name") {
-                let span = tracing::info_span!(
-                    "workflow_task_log",
-                    context = crate::cli::logger::context::RUNTIME,
-                    resource_type = crate::cli::logger::resource_type::TASK,
-                    resource_name = %log_data.resource_name,
-                );
-                let _guard = span.enter();
-                match log_data.level.as_str() {
-                    "error" => {
-                        tracing::error!("{}", log_data.message);
-                        // Show error in CLI UI for visibility
-                        show_message_wrapper(
-                            MessageType::Error,
-                            Message {
-                                action: "Workflow".to_string(),
-                                details: log_data.message.clone(),
-                            },
-                        );
-                    }
-                    "warn" => tracing::warn!("{}", log_data.message),
-                    "debug" => tracing::debug!("{}", log_data.message),
-                    _ => tracing::info!("{}", log_data.message),
-                }
-                continue;
-            }
-            // Fall back to regular error logging if not a structured log
-            error!("{}", line);
-            show_message_wrapper(
-                MessageType::Error,
-                Message {
-                    action: "Workflow".to_string(),
-                    details: line.to_string(),
-                },
-            );
-        }
-    });
+    // Spawn stderr handler with UI display for errors using the centralized helper
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
+        stderr,
+        "task_name",
+        crate::cli::logger::resource_type::TASK,
+        Some("Workflow"),
+    );
 
     Ok(worker_process)
 }

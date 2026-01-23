@@ -17,6 +17,7 @@ import argparse
 import builtins
 import contextvars
 import dataclasses
+import inspect
 import os
 import traceback
 from datetime import datetime, timezone
@@ -160,9 +161,21 @@ def load_streaming_function(
     # get the run function
     streaming_function_run = streaming_function_def.run
 
-    # get run input type that doesn't rely on the name of the input parameter
-    first_param = next(iter(streaming_function_run.__annotations__))
-    run_input_type = streaming_function_run.__annotations__[first_param]
+    # Get the input type using inspect.signature() to avoid picking up 'return' annotation
+    # from __annotations__ dict iteration (dict order isn't guaranteed to be parameters-first)
+    sig = inspect.signature(streaming_function_run)
+    param_names = list(sig.parameters.keys())
+    if not param_names:
+        cli_log(
+            CliLogData(
+                action="Function",
+                message="Streaming function has no parameters",
+                message_type="Error",
+            )
+        )
+        sys.exit(1)
+    first_param = param_names[0]
+    run_input_type = sig.parameters[first_param].annotation
 
     # Wrap the single DMV1 function in a list with None for DLQ to match DMV2 format
     return run_input_type, [(streaming_function_run, None)]

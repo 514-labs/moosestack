@@ -15,7 +15,8 @@ import contextvars
 import json
 import sys
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, TextIO
+from collections.abc import Callable
+from typing import Optional, TextIO
 
 # Store original print for all wrappers to use
 _original_print = builtins.print
@@ -50,12 +51,12 @@ def create_structured_print_wrapper(
     """
 
     def structured_print(
-        *args: Any,
+        *args: object,
         sep: str = " ",
         end: str = "\n",
         file: Optional[TextIO] = None,
         flush: bool = False,
-        **kwargs: Any,
+        **kwargs: object,
     ) -> None:
         """Print wrapper that emits structured logs when in context."""
         context_value = context_var.get()
