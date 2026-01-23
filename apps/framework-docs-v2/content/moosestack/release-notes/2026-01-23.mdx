@@ -9,8 +9,6 @@ import { Callout } from "@/components/mdx";
 
 <Callout type="info" title="Highlights">
 * **Breaking:** Remove Data Model v2 feature flag - now default behavior
-* **New:** Add Vercel deployment support for TypeScript MCP template
-* **New:** Template gallery with deployment wizard
 </Callout>
 
 
@@ -21,12 +19,10 @@ import { Callout } from "@/components/mdx";
 - **Remove Data Model v2 feature flag - now default behavior** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
   The dmv2 feature flag has been removed and Data Model v2 is now the default and only supported data modeling approach. Projects using the old data model system will need to migrate to the new format. This simplifies the framework by removing legacy code paths and ensures all users benefit from the improved data modeling capabilities.
 
-- **Enforce Node.js 20-24 requirement across all TypeScript packages** ([@onelesd](https://github.com/onelesd))
-  Updated Node.js version requirements to enforce versions 20-24 across all TypeScript packages and templates. This ensures compatibility with modern Node.js features and security updates. Users must upgrade to Node.js 20 or higher to use Moose projects.
+- **Enforce Officially Supported Node.js 20-24 requirement across all TypeScript packages** ([@onelesd](https://github.com/onelesd))
+  Updated Node.js version requirements to enforce versions 20-24 across all TypeScript packages and templates. This ensures compatibility with modern Node.js features and security updates. Users must use Node.js 20 to 24 to use Moose projects.
 
 ### New Features
-- **Add Vercel deployment support for TypeScript MCP template** ([@onelesd](https://github.com/onelesd))
-  Users can now deploy their TypeScript MCP projects directly to Vercel with a single click. The template includes pre-configured build settings and required environment variables (Anthropic API key, MCP server URL, and authentication token) for seamless deployment.
 
 - **Enhanced SQL template tag with join, raw, and append helpers** ([@okane16](https://github.com/okane16))
   Added new helper methods to the sql template tag for building dynamic queries: sql.join() for combining SQL fragments with separators, sql.raw() for inserting raw SQL strings, and Sql.append() for chaining query parts together. These helpers make it easier to build complex, conditional queries while maintaining type safety and SQL injection protection.
@@ -215,7 +211,6 @@ import { Callout } from "@/components/mdx";
 
 ### Bug Fixes
 - Fix rustls panic in framework CLI: Fixed a panic issue in the moose CLI caused by a reqwest dependency upgrade. The CLI now uses native-tls instead of rustls to prevent crashes during HTTP operations, ensuring more reliable CLI functionality. ([@LucioFranco](https://github.com/LucioFranco))
-- Fix TypeScript MCP template configuration for Anthropic API key: Fixed the TypeScript MCP template to properly handle Anthropic API key configuration. The template no longer incorrectly requires users to provide the Anthropic API key as an environment variable during setup, streamlining the deployment process for AI chat applications. ([@onelesd](https://github.com/onelesd))
 - Fix streaming function loading bug with precompiled TypeScript: Fixed a bug where streaming functions would fail to load properly when using precompiled TypeScript code. This ensures streaming functions work correctly in all deployment scenarios, preventing runtime errors that could break data processing pipelines. ([@LucioFranco](https://github.com/LucioFranco))
 - Fix MDX compilation error in static report generation guide: Fixed documentation compilation issues in the static report generation guide that were preventing proper rendering of the documentation site. Users can now access the complete guide without formatting errors. ([@514Ben](https://github.com/514Ben))
 - Fix inline code blocks rendering in documentation: Fixed rendering issues with inline code blocks in the documentation site. Inline code snippets like `npm install` and `moose dev` now display properly within text flow, improving readability of code examples and commands throughout the docs. ([@callicles](https://github.com/callicles))
@@ -227,10 +222,6 @@ import { Callout } from "@/components/mdx";
 ## 🐻 Boreal
 
 ### New Features
-- **Template gallery with deployment wizard** ([@onelesd](https://github.com/onelesd))
-  Added a new template gallery that allows users to quickly deploy pre-configured MooseStack applications. Users can browse available templates, configure deployment settings through a guided wizard, and deploy projects directly from templates with GitHub integration. This streamlines the project creation process and provides ready-to-use examples for common use cases.
-  
-  📸 *[Screenshot needed: Added a new template gallery that allows users to quickly deploy pre-configured MooseStack applications. Users can browse available templates, configure deployment settings through a guided wizard, and deploy projects directly from templates with GitHub integration. This streamlines the project creation process and provides ready-to-use examples for common use cases.]*
 
 - **Enhanced logs page with clickable details panel and improved filter search** ([@groy-514](https://github.com/groy-514))
   Added a new details panel that opens when clicking on log entries, showing comprehensive log information including message, attributes, service details, and trace IDs. Also implemented a working search filter for the logs filters panel, making it easier to find specific filter options. The details panel is resizable and includes copy buttons for easy data extraction.
@@ -344,3 +335,4 @@ import { Callout } from "@/components/mdx";
 - Fix branch deployment issues with long names: Fixed an issue where branches with long organization, project, or branch names could fail to deploy properly. Branch deployments now work reliably regardless of name length by ensuring generated identifiers stay within system limits. ([@LucioFranco](https://github.com/LucioFranco))
 
 
+- Fix branch deployment issues with long names: Fixed an issue where branches with long organization, project, or branch names could fail to deploy properly. Branch deployments now work reliably regardless of name length by ensuring generated identifiers stay within system limits. ([@LucioFranco](https://github.com/LucioFranco))
