@@ -1,0 +1,346 @@
+---
+title: January 23, 2026
+description: Release notes for January 23, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# January 23, 2026
+
+<Callout type="info" title="Highlights">
+* **Breaking:** Remove Data Model v2 feature flag - now default behavior
+* **New:** Add Vercel deployment support for TypeScript MCP template
+* **New:** Template gallery with deployment wizard
+</Callout>
+
+
+
+## 🦌 Moose
+
+### ⚠️ Breaking Changes
+- **Remove Data Model v2 feature flag - now default behavior**
+  The dmv2 feature flag has been removed and Data Model v2 is now the default and only supported data modeling approach. Projects using the old data model system will need to migrate to the new format. This simplifies the framework by removing legacy code paths and ensures all users benefit from the improved data modeling capabilities.
+
+- **Enforce Node.js 20-24 requirement across all TypeScript packages**
+  Updated Node.js version requirements to enforce versions 20-24 across all TypeScript packages and templates. This ensures compatibility with modern Node.js features and security updates. Users must upgrade to Node.js 20 or higher to use Moose projects.
+
+### New Features
+- **Add Vercel deployment support for TypeScript MCP template**
+  Users can now deploy their TypeScript MCP projects directly to Vercel with a single click. The template includes pre-configured build settings and required environment variables (Anthropic API key, MCP server URL, and authentication token) for seamless deployment.
+
+- **Enhanced SQL template tag with join, raw, and append helpers**
+  Added new helper methods to the sql template tag for building dynamic queries: sql.join() for combining SQL fragments with separators, sql.raw() for inserting raw SQL strings, and Sql.append() for chaining query parts together. These helpers make it easier to build complex, conditional queries while maintaining type safety and SQL injection protection.
+
+  **Building dynamic queries with SQL template helpers**
+  ```typescript
+  import { sql, Sql } from "@514labs/moose-lib";
+  import { UserTable } from "./models/UserTable";
+  
+  interface UserFilters {
+    minAge?: number;
+    status?: "active" | "inactive";
+    searchTerm?: string;
+    includeTimestamp?: boolean;
+  }
+  
+  export const buildUserQuery = ({ minAge, status, searchTerm, includeTimestamp }: UserFilters) => {
+    // Start with base columns
+    const baseColumns = [
+      sql`${UserTable.columns.id}`,
+      sql`${UserTable.columns.name}`,
+      sql`${UserTable.columns.email}`,
+      sql`${UserTable.columns.age}`
+    ];
+  
+    // Add timestamp if requested using sql.raw()
+    const selectColumns = includeTimestamp 
+      ? [...baseColumns, sql`${sql.raw("NOW()")} as query_time`]
+      : baseColumns;
+  
+    // Build WHERE conditions dynamically
+    const conditions: Sql[] = [];
+    
+    if (minAge !== undefined) {
+      conditions.push(sql`${UserTable.columns.age} >= ${minAge}`);
+    }
+    
+    if (status) {
+      conditions.push(sql`${UserTable.columns.status} = ${status}`);
+    }
+    
+    if (searchTerm) {
+      conditions.push(sql`${UserTable.columns.name} ILIKE ${`%${searchTerm}%`}`);
+    }
+  
+    // Start building the query with sql.join() for columns
+    let query = sql`SELECT ${sql.join(selectColumns, ",")} FROM ${UserTable}`;
+  
+    // Add WHERE clause if conditions exist using sql.join() and append()
+    if (conditions.length > 0) {
+      query = query.append(sql` WHERE ${sql.join(conditions, "AND")}`);
+    }
+  
+    // Chain additional clauses with append()
+    return query
+      .append(sql` ORDER BY ${UserTable.columns.created_at} ${sql.raw("DESC")}`)
+      .append(sql` LIMIT ${100}`);
+  };
+  ```
+  
+  This example shows how to use the new SQL template helpers (sql.join, sql.raw, and Sql.append) to build dynamic queries safely. It demonstrates combining column selections, building conditional WHERE clauses, and chaining query parts together while maintaining type safety.
+
+- **Add row count reporting to moose seed command**
+  The `moose seed clickhouse` command now automatically reports row counts after seeding operations, showing how many rows were successfully seeded for each table. Users can disable this with `--report=false` if needed. This helps verify that seeding completed successfully without requiring manual queries.
+
+  **Seeding ClickHouse data with automatic row count reporting**
+  ```bash
+  # Seed data from remote ClickHouse with automatic row count reporting
+  moose seed clickhouse --connection-string "clickhouse://user:pass@remote-host:9000/production_db"
+  
+  # Expected output:
+  # Seeded 'local_db' from 'production_db'
+  # Copied 50000 rows from users table
+  # Copied 125000 rows from events table
+  # Copied 25000 rows from orders table
+  #
+  # Row counts after seeding:
+  #   events: 125000 rows
+  #   users: 50000 rows
+  #   orders: 25000 rows
+  #
+  # You can validate the seed manually (e.g., for tables in non-default databases):
+  #   $ moose query "SELECT count(*) FROM <table>"
+  
+  # Seed specific table with row count verification
+  moose seed clickhouse --table users --limit 1000
+  
+  # Disable row count reporting for faster seeding
+  moose seed clickhouse --all --report=false
+  
+  # Seed with custom ordering and verification
+  moose seed clickhouse --order-by "created_at DESC" --limit 10000
+  ```
+  
+  Shows how to use the enhanced moose seed command with automatic row count reporting. The command now displays how many rows were successfully seeded for each table, helping users verify seeding completed correctly without manual queries.
+
+- **Add LLM-optimized documentation endpoints for AI agents**
+  Added new markdown endpoints that make MooseStack documentation easily accessible to AI agents and LLMs. Users can now append `.md` to any documentation URL to get clean markdown content, and the root `/llm.md` endpoint provides a table of contents for discovery. Also enhanced the documentation UI with a "Copy Page" dropdown menu that lets users copy page content as markdown or open the markdown endpoint directly.
+  
+  📸 *[Screenshot needed: Added new markdown endpoints that make MooseStack documentation easily accessible to AI agents and LLMs. Users can now append `.md` to any documentation URL to get clean markdown content, and the root `/llm.md` endpoint provides a table of contents for discovery. Also enhanced the documentation UI with a "Copy Page" dropdown menu that lets users copy page content as markdown or open the markdown endpoint directly.]*
+
+- **Add January 16, 2026 release notes with new features and improvements**
+  Published comprehensive release notes documenting new features including structured JSON logging with span support, View support in SQL interpolator, file watcher ignore patterns configuration, CDP Analytics example application, workflow task completion callbacks, and various bug fixes and improvements across Moose and Boreal products.
+
+- **Released new guides section with improved layout and Slack community link**
+  The guides section has been redesigned with a new layout, improved guide cards showing descriptions, and a community section linking to the MooseStack Slack workspace. Two new guides are now available: "Improving the Performance of Your Dashboards" and "Chat in your app".
+  
+  📸 *[Screenshot needed: The guides section has been redesigned with a new layout, improved guide cards showing descriptions, and a community section linking to the MooseStack Slack workspace. Two new guides are now available: "Improving the Performance of Your Dashboards" and "Chat in your app".]*
+
+- **Add comprehensive documentation for SAP HANA CDC pipeline**
+  Added complete documentation for the SAP HANA CDC to ClickHouse pipeline, including installation guides, configuration instructions, troubleshooting tips, and getting started tutorials. Users can now easily set up and configure real-time data synchronization from SAP HANA to ClickHouse with clear step-by-step instructions.
+
+- **Add support for SAP HANA views in CDC pipeline**
+  Users can now include SAP HANA database views (not just tables) in their CDC pipelines. The system automatically detects views and handles them appropriately - creating triggers only for tables while still allowing data ingestion from views. This expands the types of SAP HANA objects that can be monitored and synced.
+
+- **Add SAP HANA CDC connector and ClickHouse pipeline**
+  Added a new Change Data Capture (CDC) connector for SAP HANA databases that enables real-time streaming of database changes. Includes a complete pipeline to sync SAP HANA changes to ClickHouse with support for INSERT, UPDATE, and DELETE operations. Users can now capture and stream database changes in real-time from SAP HANA to their data infrastructure.
+
+  **SAP HANA CDC to ClickHouse streaming pipeline**
+  ```python
+  import os
+  from sap_hana_cdc import SAPHanaCDCConnector, SAPHanaCDCConfig
+  from moose_lib import Moose
+  
+  # Initialize Moose application
+  app = Moose()
+  
+  # Configure SAP HANA CDC connector
+  config = SAPHanaCDCConfig(
+      host=os.getenv("SAP_HANA_HOST"),
+      port=30015,
+      user=os.getenv("SAP_HANA_USERNAME"),
+      password=os.getenv("SAP_HANA_PASSWORD"),
+      source_schema="SALES",
+      cdc_schema="SALES",
+      tables=["CUSTOMERS", "ORDERS", "PRODUCTS"],  # Monitor specific tables
+      client_id="moose_pipeline"
+  )
+  
+  # Create CDC connector
+  cdc_connector = SAPHanaCDCConnector.build_from_config(config)
+  
+  # Initialize CDC infrastructure (run once)
+  cdc_connector.init_cdc()
+  
+  @app.streaming_function
+  def process_sap_hana_changes():
+      """Stream SAP HANA changes to ClickHouse in real-time"""
+      
+      # Get latest changes from SAP HANA
+      changes = cdc_connector.get_changes(limit=1000)
+      
+      for change in changes.changes:
+          # Process each change event
+          event_data = {
+              "table_name": change.table_name,
+              "change_type": change.change_type,  # INSERT, UPDATE, DELETE
+              "transaction_id": change.transaction_id,
+              "timestamp": change.timestamp,
+              "data": change.data,  # JSON data of the changed record
+              "old_data": change.old_data if change.change_type == "UPDATE" else None
+          }
+          
+          # Send to ClickHouse via Moose streaming pipeline
+          app.produce("sap_hana_changes", event_data)
+  
+  # Run the streaming pipeline
+  if __name__ == "__main__":
+      app.run()
+  ```
+  
+  This example shows how to set up a real-time data pipeline that captures changes from SAP HANA using the new CDC connector and streams them to ClickHouse through MooseStack. The pipeline monitors specific tables and processes INSERT, UPDATE, and DELETE operations as they occur.
+
+### Improvements
+- Updated static report generation guide for Node.js 20+ and pdfmake 0.3: Updated the static report generation tutorial to require Node.js 20+ (needed for pdfmake 0.3) and modernized the PDF generation code to use the new pdfmake 0.3 API. Added comprehensive troubleshooting tips, clearer service startup instructions, and better error handling guidance to improve the developer experience when following the tutorial.
+- Improved documentation copy functionality with language filtering: Enhanced the documentation copy button to intelligently filter content based on your selected programming language (TypeScript or Python). When copying documentation content, it now automatically removes code examples and explanations for the language you're not using, giving you cleaner, more relevant content for your workflow.
+- Updated static report generation guide to use pnpm: The static report generation tutorial now uses pnpm instead of npm for package management, aligning with MooseStack's workspace requirements. Users following the guide will now have the correct setup instructions and avoid installation issues.
+- Enhanced static report generation guide with detailed usage paths and validation: Significantly improved the static report generation documentation with audience-specific learning paths, environment verification steps, data validation examples, and comprehensive troubleshooting. Added detailed business case explanations, architecture diagrams, and step-by-step verification commands to help users successfully implement automated reporting pipelines.
+- Clarify materialized view backfill behavior in dev vs production modes: Updated documentation to clarify that materialized view backfills happen automatically in dev mode but require manual action in production to avoid data duplication. This helps users understand when to expect automatic backfills and when they need to handle backfills manually.
+- Improved LLM documentation endpoints with full URLs and language parameter guidance: Updated documentation to show complete URLs for LLM-friendly markdown endpoints and added guidance about language-specific content parameters. This makes it easier for AI assistants and developers to discover and use the correct documentation URLs.
+- Enhanced Chat in Your App guide with better structure and visual components: Significantly improved the Chat in Your App guide with better organization, visual components like callouts and CTA cards, clearer navigation, and more structured content sections. The guide now provides better guidance for evaluating, building, and implementing chat-over-data features in applications.
+- Faster TypeScript application startup through precompilation: TypeScript applications now start significantly faster by precompiling TypeScript code during the build process instead of compiling at runtime. This eliminates ts-node overhead and improves worker startup times, making development and production deployments more responsive.
+- Enhanced static report generation guide with complete hands-on tutorial: Expanded the static report generation guide from a basic outline to a comprehensive 40-minute tutorial. Users can now follow step-by-step instructions to build a complete data pipeline including CSV/JSON ingestion, ClickHouse time-series analytics, materialized views, and PDF report generation. The guide includes real-world retail scenario, sample data, and working code examples.
+- Improved documentation with better file tree visualization and code formatting: Enhanced documentation guides with interactive file tree components replacing plain text directory structures, improved code block formatting with proper shell syntax highlighting, and better visual presentation of project structures. Makes it easier for users to understand project organization and follow setup instructions.
+- Updated guides page description for better clarity: Improved the description on the guides page to better explain that guides provide comprehensive walkthroughs for common application use cases using realtime analytical infrastructure, making it clearer what users can expect from the documentation.
+
+### Bug Fixes
+- Fix rustls panic in framework CLI: Fixed a panic issue in the moose CLI caused by a reqwest dependency upgrade. The CLI now uses native-tls instead of rustls to prevent crashes during HTTP operations, ensuring more reliable CLI functionality.
+- Fix TypeScript MCP template configuration for Anthropic API key: Fixed the TypeScript MCP template to properly handle Anthropic API key configuration. The template no longer incorrectly requires users to provide the Anthropic API key as an environment variable during setup, streamlining the deployment process for AI chat applications.
+- Fix streaming function loading bug with precompiled TypeScript: Fixed a bug where streaming functions would fail to load properly when using precompiled TypeScript code. This ensures streaming functions work correctly in all deployment scenarios, preventing runtime errors that could break data processing pipelines.
+- Fix MDX compilation error in static report generation guide: Fixed documentation compilation issues in the static report generation guide that were preventing proper rendering of the documentation site. Users can now access the complete guide without formatting errors.
+- Fix inline code blocks rendering in documentation: Fixed rendering issues with inline code blocks in the documentation site. Inline code snippets like `npm install` and `moose dev` now display properly within text flow, improving readability of code examples and commands throughout the docs.
+- Fix console errors on documentation guide pages: Fixed console errors that were appearing when viewing documentation guide pages. The errors were caused by invalid HTML nesting when code blocks weren't properly spaced in markdown content. This improves the browsing experience and eliminates distracting error messages in the browser console.
+- Fix documentation rendering error in performant dashboards guide: Fixed a rendering issue in the performant dashboards documentation guide caused by incorrect HTML comment syntax. The guide now displays properly without rendering errors.
+- Fix SAP HANA CDC connector metadata structure: Fixed the metadata structure for the SAP HANA CDC connector to ensure proper registration and discovery in the connector registry. This resolves issues with connector configuration and makes the SAP HANA CDC connector properly available for users to configure and use for real-time change data capture from SAP HANA databases.
+- Fix deployment namespace detection for BYOC Temporal: Fixed an issue where deployment namespace checks were too strict, causing deployment failures in BYOC (Bring Your Own Cloud) environments. This ensures more reliable deployments when using custom Temporal configurations.
+
+## 🐻 Boreal
+
+### New Features
+- **Template gallery with deployment wizard**
+  Added a new template gallery that allows users to quickly deploy pre-configured MooseStack applications. Users can browse available templates, configure deployment settings through a guided wizard, and deploy projects directly from templates with GitHub integration. This streamlines the project creation process and provides ready-to-use examples for common use cases.
+  
+  📸 *[Screenshot needed: Added a new template gallery that allows users to quickly deploy pre-configured MooseStack applications. Users can browse available templates, configure deployment settings through a guided wizard, and deploy projects directly from templates with GitHub integration. This streamlines the project creation process and provides ready-to-use examples for common use cases.]*
+
+- **Enhanced logs page with clickable details panel and improved filter search**
+  Added a new details panel that opens when clicking on log entries, showing comprehensive log information including message, attributes, service details, and trace IDs. Also implemented a working search filter for the logs filters panel, making it easier to find specific filter options. The details panel is resizable and includes copy buttons for easy data extraction.
+  
+  📸 *[Screenshot needed: Added a new details panel that opens when clicking on log entries, showing comprehensive log information including message, attributes, service details, and trace IDs. Also implemented a working search filter for the logs filters panel, making it easier to find specific filter options. The details panel is resizable and includes copy buttons for easy data extraction.]*
+
+- **Enhanced logs filtering with search, severity levels, and timestamp ranges**
+  Added comprehensive filtering capabilities to the logs dashboard including text search across log messages, OpenTelemetry severity level filtering (TRACE, DEBUG, INFO, WARN, ERROR, FATAL), and timestamp range selection. Fixed issues with filter application to ensure all filters work reliably. Users can now quickly find specific logs using multiple filter criteria simultaneously.
+  
+  📸 *[Screenshot needed: Added comprehensive filtering capabilities to the logs dashboard including text search across log messages, OpenTelemetry severity level filtering (TRACE, DEBUG, INFO, WARN, ERROR, FATAL), and timestamp range selection. Fixed issues with filter application to ensure all filters work reliably. Users can now quickly find specific logs using multiple filter criteria simultaneously.]*
+
+- **New logs viewer with virtual table and improved filtering**
+  Added a new logs viewing experience with a virtual table for better performance when browsing large log datasets. The new viewer includes infinite scrolling, improved filtering by log attributes, and a search functionality. Users can now efficiently navigate through logs with faster rendering and more responsive interactions.
+  
+  📸 *[Screenshot needed: Added a new logs viewing experience with a virtual table for better performance when browsing large log datasets. The new viewer includes infinite scrolling, improved filtering by log attributes, and a search functionality. Users can now efficiently navigate through logs with faster rendering and more responsive interactions.]*
+
+- **Logs page filters now dynamically load based on actual log data**
+  The logs page filters are now populated dynamically based on the actual log data available for the selected time range and project. Instead of showing static filter options, the system now queries the log data to determine which filter categories and values are actually present, providing a more accurate and relevant filtering experience.
+  
+  📸 *[Screenshot needed: The logs page filters are now populated dynamically based on the actual log data available for the selected time range and project. Instead of showing static filter options, the system now queries the log data to determine which filter categories and values are actually present, providing a more accurate and relevant filtering experience.]*
+
+- **Add log filtering and querying capabilities to telemetry dashboard**
+  Users can now filter and query logs in the telemetry dashboard using log attributes, time ranges, and project/branch/deployment filters. This includes the ability to get available filter options and paginate through log results with custom sorting.
+  
+  📸 *[Screenshot needed: Users can now filter and query logs in the telemetry dashboard using log attributes, time ranges, and project/branch/deployment filters. This includes the ability to get available filter options and paginate through log results with custom sorting.]*
+
+- **Add OpenTelemetry logs ingestion for improved observability**
+  Added support for ingesting OpenTelemetry (OTLP) logs in the hosting telemetry system. This enables better log collection and observability for applications, allowing users to send standardized telemetry data that gets processed and stored for monitoring and debugging purposes. The feature includes proper log transformation, storage optimization, and load testing capabilities.
+
+  **Setting up OTLP logs ingestion with transformation**
+  ```typescript
+  import { IngestApi, Stream, OlapTable } from "@514labs/moose-lib";
+  
+  // Define the OTLP logs structure for ingestion
+  interface OTLPLogsRaw {
+    resourceLogs: Array<{
+      resource?: {
+        attributes?: Array<{
+          key: string;
+          value: {
+            stringValue?: string;
+            intValue?: string;
+            doubleValue?: number;
+            boolValue?: boolean;
+          };
+        }>;
+      };
+      scopeLogs?: Array<{
+        scope?: { name?: string; version?: string };
+        logRecords?: Array<{
+          timeUnixNano?: string;
+          severityNumber?: number;
+          severityText?: string;
+          body?: { stringValue?: string };
+          attributes?: Array<{
+            key: string;
+            value: { stringValue?: string };
+          }>;
+          traceId?: string;
+          spanId?: string;
+        }>;
+      }>;
+    }>;
+  }
+  
+  // Create the ingest stream for OTLP logs
+  export const otlpLogsStream = new Stream<OTLPLogsRaw>("openTelemetryLogsInputStream");
+  
+  // Set up the ingest API endpoint
+  export const otlpLogsIngestApi = new IngestApi<OTLPLogsRaw>("openTelemetryLogs", {
+    destination: otlpLogsStream,
+    version: "0.0",
+  });
+  
+  // Transform OTLP logs to your application's log format
+  otlpLogsStream.addTransform(myAppLogsStream, (otlpLogs: OTLPLogsRaw) => {
+    return otlpLogs.resourceLogs.flatMap(resourceLog => 
+      resourceLog.scopeLogs?.flatMap(scopeLog =>
+        scopeLog.logRecords?.map(record => ({
+          timestamp: new Date(Number(record.timeUnixNano) / 1_000_000),
+          level: record.severityText || "INFO",
+          message: record.body?.stringValue || "",
+          service: resourceLog.resource?.attributes?.find(
+            attr => attr.key === "service.name"
+          )?.value.stringValue || "unknown",
+          traceId: record.traceId || "",
+        }))
+      ) || []
+    ).filter(Boolean);
+  }, { version: "0.0" });
+  ```
+  
+  This example shows how to set up OpenTelemetry logs ingestion in a MooseStack application. It creates an ingest API endpoint that accepts OTLP logs and transforms them into a structured format for storage and analysis.
+
+- **New filtering system for logs page with URL state management**
+  Added a comprehensive filtering system to the logs page that allows users to filter logs by severity level (Info, Warning, Error, Debug) and other criteria. Filters are now persisted in the URL, making it easy to share filtered log views and maintain filter state when navigating. The filter panel includes search functionality, collapsible categories, and a reset option for better usability.
+  
+  📸 *[Screenshot needed: Added a comprehensive filtering system to the logs page that allows users to filter logs by severity level (Info, Warning, Error, Debug) and other criteria. Filters are now persisted in the URL, making it easy to share filtered log views and maintain filter state when navigating. The filter panel includes search functionality, collapsible categories, and a reset option for better usability.]*
+
+- **New logs page with filtering and search capabilities**
+  Added a new logs page that allows users to view, filter, and search through application logs. The page includes a collapsible filter sidebar, timestamp filtering, search functionality, and a virtualized table for efficient display of large log datasets. Users can now easily monitor and troubleshoot their applications through this comprehensive logs interface.
+  
+  📸 *[Screenshot needed: Added a new logs page that allows users to view, filter, and search through application logs. The page includes a collapsible filter sidebar, timestamp filtering, search functionality, and a virtualized table for efficient display of large log datasets. Users can now easily monitor and troubleshoot their applications through this comprehensive logs interface.]*
+
+### Improvements
+- Improved log level display and filter scrolling in logs viewer: Enhanced the logs viewer with cleaner log level visualization using colored indicators instead of text labels, reducing visual noise. The filter sidebar now has independent scrolling, making it easier to navigate through filter options when viewing large numbers of logs. Log levels are now ordered by severity (Error, Warn, Info, Debug, Trace) for better usability.
+- Enhanced logs viewer with improved filtering and JSON visualization: Improved the logs viewing experience with better filtering capabilities, JSON visualization for complex log attributes, and enhanced UI interactions. Users can now more easily explore and understand their log data with collapsible filter categories and structured data display.
+- Theme preferences now sync across subdomains: Theme selection (light/dark mode) is now preserved when navigating between different Boreal subdomains. Users no longer need to re-select their preferred theme when switching between the main dashboard and preview environments.
+
+### Bug Fixes
+- Fix branch deployment issues with long names: Fixed an issue where branches with long organization, project, or branch names could fail to deploy properly. Branch deployments now work reliably regardless of name length by ensuring generated identifiers stay within system limits.
+
+
