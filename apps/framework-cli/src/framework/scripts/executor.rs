@@ -1,17 +1,16 @@
 use anyhow::Result;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tracing::info;
 
-use super::{config::WorkflowConfig, Workflow};
+use super::config::WorkflowConfig;
 use crate::framework::{
     languages::SupportedLanguages,
     scripts::utils::{parse_schedule, parse_timeout_to_seconds, TemporalExecutionError},
 };
 use crate::infrastructure::orchestration::temporal::TemporalConfig;
 use crate::infrastructure::orchestration::temporal_client::TemporalClientManager;
-use crate::project::Project;
 use crate::utilities::constants::{
     MOOSE_CLI_NAME, PYTHON_TASK_QUEUE, TYPESCRIPT_TASK_QUEUE, WORKFLOW_TYPE,
 };
@@ -23,9 +22,7 @@ use temporal_sdk_core::protos::temporal::api::enums::v1::{
 };
 
 use temporal_sdk_core::protos::temporal::api::taskqueue::v1::TaskQueue;
-use temporal_sdk_core::protos::temporal::api::workflowservice::v1::{
-    ListWorkflowExecutionsRequest, StartWorkflowExecutionRequest,
-};
+use temporal_sdk_core::protos::temporal::api::workflowservice::v1::StartWorkflowExecutionRequest;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorkflowExecutionError {
@@ -113,92 +110,6 @@ async fn execute_workflow_for_language(
         workflow_id,
         run_id,
     })
-}
-
-/// Automatically starts all workflows that have a schedule configured.
-///
-/// # Assumptions:
-/// - Can only start workflows that don't require input parameters, as there's no way
-///   to determine what the input parameters should be at startup time.
-/// - Workflows must have a non-empty schedule string in their config.toml
-///
-/// # Arguments
-/// * `project` - The project configuration containing workflow settings and paths
-///
-/// # Returns
-/// * `Result<(), WorkflowExecutionError>` - Success or an error if workflow startup fails
-pub(crate) async fn execute_scheduled_workflows(
-    project: &Project,
-    workflows: &HashMap<String, Workflow>,
-) {
-    if !project.features.workflows {
-        info!("Workflows are not enabled for this project. Not auto-starting scheduled workflows");
-        return;
-    }
-
-    info!("Auto-start workflows found {} workflows", workflows.len());
-
-    let running_workflows = list_running_workflows(project).await;
-    info!("Found {} running workflow IDs", running_workflows.len());
-
-    for workflow in workflows.values() {
-        if workflow.config.schedule.is_empty() {
-            continue;
-        }
-
-        if running_workflows.contains(&workflow.name) {
-            info!(
-                "Workflow {} is already running. Skipping auto-start",
-                workflow.name
-            );
-            continue;
-        }
-
-        match workflow.start(&project.temporal_config, None).await {
-            Ok(_) => info!("Auto-started workflow: {}", workflow.name),
-            Err(e) => tracing::error!("Failed to auto-start workflow {}: {}", workflow.name, e),
-        }
-    }
-}
-
-async fn list_running_workflows(project: &Project) -> HashSet<String> {
-    let client_manager = match TemporalClientManager::new_validate(&project.temporal_config, true) {
-        Ok(manager) => manager,
-        Err(e) => {
-            tracing::error!("Failed to create Temporal client manager: {}", e);
-            return HashSet::new();
-        }
-    };
-    let namespace = project.temporal_config.get_temporal_namespace();
-
-    let request = ListWorkflowExecutionsRequest {
-        namespace: namespace.clone(),
-        page_size: 1000,
-        query: "ExecutionStatus = 'Running'".to_string(),
-        ..Default::default()
-    };
-
-    match client_manager
-        .execute(|mut client| async move {
-            client
-                .list_workflow_executions(request)
-                .await
-                .map_err(|e| anyhow::Error::msg(e.to_string()))
-        })
-        .await
-    {
-        Ok(response) => response
-            .into_inner()
-            .executions
-            .into_iter()
-            .filter_map(|execution| execution.execution)
-            .map(|execution_info| execution_info.workflow_id)
-            .collect(),
-        Err(e) => {
-            tracing::error!("Failed to list running workflows: {}", e);
-            HashSet::new()
-        }
-    }
 }
 
 fn create_workflow_execution_request(
