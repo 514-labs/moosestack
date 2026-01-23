@@ -24,9 +24,7 @@ use crate::{
         infrastructure::view::View,
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
-    infrastructure::olap::{
-        clickhouse::sql_parser::normalize_sql_for_comparison, OlapChangesError, OlapOperations,
-    },
+    infrastructure::olap::{OlapChangesError, OlapOperations},
     project::Project,
 };
 use serde::{Deserialize, Serialize};
@@ -107,15 +105,6 @@ impl InfraDiscrepancies {
 /// - Database prefix differences (e.g., `local.Table` vs `Table`)
 /// - Identifier quoting differences (e.g., `` `column` `` vs `column`)
 /// - Keyword casing differences
-///
-/// This is needed because ClickHouse reformats SQL when storing it
-/// (e.g., puts everything on one line, adds database prefixes, adds backticks).
-fn sql_is_equivalent(sql1: &str, sql2: &str, default_database: &str) -> bool {
-    let normalized1 = normalize_sql_for_comparison(sql1, default_database);
-    let normalized2 = normalize_sql_for_comparison(sql2, default_database);
-    normalized1 == normalized2
-}
-
 /// Normalizes a database reference for comparison.
 /// Treats `None` as equivalent to `Some(default_database)`.
 fn normalize_database(db: &Option<String>, default_database: &str) -> String {
@@ -192,8 +181,8 @@ pub fn materialized_views_are_equivalent(
         return false;
     }
 
-    // Compare SELECT SQL (normalized)
-    sql_is_equivalent(&mv1.select_sql, &mv2.select_sql, default_database)
+    // Compare SELECT SQL (must be pre-normalized via ClickHouse + Rust db prefix stripping)
+    mv1.select_sql == mv2.select_sql
 }
 
 /// Checks if two Views are semantically equivalent.
@@ -219,8 +208,8 @@ pub fn views_are_equivalent(v1: &View, v2: &View, default_database: &str) -> boo
         return false;
     }
 
-    // Compare SELECT SQL (normalized)
-    sql_is_equivalent(&v1.select_sql, &v2.select_sql, default_database)
+    // Compare SELECT SQL (must be pre-normalized via ClickHouse + Rust db prefix stripping)
+    v1.select_sql == v2.select_sql
 }
 
 /// The Infrastructure Reality Checker compares actual infrastructure state with the infrastructure map.
@@ -1716,24 +1705,15 @@ mod tests {
     }
 
     #[test]
-    fn test_materialized_views_are_equivalent_with_backticks() {
+    fn test_materialized_views_are_equivalent_pre_normalized() {
         use crate::framework::core::infrastructure::materialized_view::MaterializedView;
 
         let default_db = "mydb";
 
-        // MV from SDK (with backticks)
-        let mv_sdk = MaterializedView {
-            name: "test_mv".to_string(),
-            database: None,
-            target_table: "`events`".to_string(),
-            target_database: None,
-            select_sql: "SELECT * FROM `source`".to_string(),
-            source_tables: vec!["`source`".to_string()],
-            metadata: None,
-        };
-
-        // MV from migrated SQL (without backticks, as SQL parser strips them)
-        let mv_migrated = MaterializedView {
+        // In production, both MVs are pre-normalized via ClickHouse's formatQuerySingleLine
+        // + Rust's normalize_sql_for_comparison before comparison.
+        // This test verifies that pre-normalized MVs compare correctly.
+        let mv1 = MaterializedView {
             name: "test_mv".to_string(),
             database: None,
             target_table: "events".to_string(),
@@ -1743,30 +1723,32 @@ mod tests {
             metadata: None,
         };
 
-        // These should be equivalent despite backtick differences
+        let mv2 = MaterializedView {
+            name: "test_mv".to_string(),
+            database: None,
+            target_table: "events".to_string(),
+            target_database: None,
+            select_sql: "SELECT * FROM source".to_string(),
+            source_tables: vec!["source".to_string()],
+            metadata: None,
+        };
+
         assert!(
-            materialized_views_are_equivalent(&mv_sdk, &mv_migrated, default_db),
-            "MVs should be equivalent despite backtick differences"
+            materialized_views_are_equivalent(&mv1, &mv2, default_db),
+            "Pre-normalized MVs should be equivalent"
         );
     }
 
     #[test]
-    fn test_views_are_equivalent_with_backticks() {
+    fn test_views_are_equivalent_pre_normalized() {
         use crate::framework::core::infrastructure::view::View;
 
         let default_db = "mydb";
 
-        // View from SDK (with backticks)
-        let view_sdk = View {
-            name: "test_view".to_string(),
-            database: None,
-            select_sql: "SELECT * FROM `source`".to_string(),
-            source_tables: vec!["`source`".to_string()],
-            metadata: None,
-        };
-
-        // View from migrated SQL (without backticks)
-        let view_migrated = View {
+        // In production, both Views are pre-normalized via ClickHouse's formatQuerySingleLine
+        // + Rust's normalize_sql_for_comparison before comparison.
+        // This test verifies that pre-normalized Views compare correctly.
+        let view1 = View {
             name: "test_view".to_string(),
             database: None,
             select_sql: "SELECT * FROM source".to_string(),
@@ -1774,10 +1756,17 @@ mod tests {
             metadata: None,
         };
 
-        // These should be equivalent despite backtick differences
+        let view2 = View {
+            name: "test_view".to_string(),
+            database: None,
+            select_sql: "SELECT * FROM source".to_string(),
+            source_tables: vec!["source".to_string()],
+            metadata: None,
+        };
+
         assert!(
-            views_are_equivalent(&view_sdk, &view_migrated, default_db),
-            "Views should be equivalent despite backtick differences"
+            views_are_equivalent(&view1, &view2, default_db),
+            "Pre-normalized Views should be equivalent"
         );
     }
 }
