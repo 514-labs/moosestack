@@ -29,69 +29,35 @@ import { Callout } from "@/components/mdx";
   **Dynamic query building with SQL template helpers**
 
   ```typescript
-  import { sql, Sql } from "@514labs/moose-lib";
+  import { sql, type Sql } from "@514labs/moose-lib";
   import { UserTable } from "./models/UserTable";
 
-  interface UserFilters {
+  export function buildUserQuery(filters: {
     minAge?: number;
     status?: "active" | "inactive";
-    searchTerm?: string;
-    includeTimestamp?: boolean;
-  }
-
-  export const buildUserQuery = ({
-    minAge,
-    status,
-    searchTerm,
-    includeTimestamp,
-  }: UserFilters) => {
-    // Start with base columns
-    const baseColumns = [
+  }) {
+    const columns = [
       sql`${UserTable.columns.id}`,
-      sql`${UserTable.columns.name}`,
       sql`${UserTable.columns.email}`,
-      sql`${UserTable.columns.age}`,
+      sql`${sql.raw("NOW()")} AS query_time`,
     ];
 
-    // Add timestamp if requested using sql.raw()
-    const selectColumns =
-      includeTimestamp ?
-        [...baseColumns, sql`${sql.raw("NOW()")} as query_time`]
-      : baseColumns;
+    const where: Sql[] = [];
+    if (filters.minAge !== undefined)
+      where.push(sql`${UserTable.columns.age} >= ${filters.minAge}`);
+    if (filters.status)
+      where.push(sql`${UserTable.columns.status} = ${filters.status}`);
 
-    // Build WHERE conditions dynamically
-    const conditions: Sql[] = [];
+    let query = sql`SELECT ${sql.join(columns, ", ")} FROM ${UserTable}`;
+    if (where.length) query = query.append(sql` WHERE ${sql.join(where, " AND ")}`);
 
-    if (minAge !== undefined) {
-      conditions.push(sql`${UserTable.columns.age} >= ${minAge}`);
-    }
-
-    if (status) {
-      conditions.push(sql`${UserTable.columns.status} = ${status}`);
-    }
-
-    if (searchTerm) {
-      conditions.push(
-        sql`${UserTable.columns.name} ILIKE ${`%${searchTerm}%`}`,
-      );
-    }
-
-    // Start building the query with sql.join() for columns
-    let query = sql`SELECT ${sql.join(selectColumns, ",")} FROM ${UserTable}`;
-
-    // Add WHERE clause if conditions exist using sql.join() and append()
-    if (conditions.length > 0) {
-      query = query.append(sql` WHERE ${sql.join(conditions, "AND")}`);
-    }
-
-    // Chain additional clauses with append()
-    return query
-      .append(sql` ORDER BY ${UserTable.columns.created_at} ${sql.raw("DESC")}`)
-      .append(sql` LIMIT ${100}`);
-  };
+    return query.append(
+      sql` ORDER BY ${UserTable.columns.created_at} ${sql.raw("DESC")} LIMIT ${100}`,
+    );
+  }
   ```
 
-  This example demonstrates building dynamic SQL queries using the new sql template helpers: sql.join() to combine column lists and WHERE conditions, sql.raw() to insert SQL functions like NOW(), and Sql.append() to chain query parts together incrementally.
+  This example demonstrates building dynamic SQL queries using the new sql template helpers: `sql.join()` to combine column lists and WHERE conditions, `sql.raw()` to insert SQL like `NOW()`, and `Sql.append()` to chain query parts together incrementally.
 
 - **Add row count reporting to moose seed command** ([@oatsandsugar](https://github.com/oatsandsugar))
   The `moose seed clickhouse` command now automatically reports row counts after seeding operations, showing how many rows were successfully seeded for each table. Users can disable this with `--report=false` if needed. This helps verify that seeding completed successfully without requiring manual queries.
