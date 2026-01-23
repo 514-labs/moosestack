@@ -6,7 +6,7 @@
 use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
 use sqlparser::ast::{
     CreateTableOptions, Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, SetExpr,
-    SqlOption, Statement, TableFactor, TableWithJoins, ToSql, VisitMut, VisitorMut,
+    SqlOption, Statement, TableFactor, TableWithJoins, ToSql, Value, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::keywords::Keyword;
@@ -664,6 +664,31 @@ impl<'a> VisitorMut for Normalizer<'a> {
                     ident.value = ident.value.replace('`', "");
                 }
             }
+            Expr::Value(value_with_span) => {
+                // Normalize numeric literals: "100." -> "100.0"
+                if let Value::Number(ref mut num_str, _long) = value_with_span.value {
+                    // If number ends with '.' (like "100."), append "0"
+                    if num_str.ends_with('.') {
+                        num_str.push('0');
+                    }
+                }
+            }
+            Expr::Nested(inner) => {
+                // Unwrap unnecessary parentheses around simple expressions.
+                // This handles cases where ClickHouse adds parens like "(sum(x) * 100.0)"
+                // but user code has "sum(x) * 100.0" without parens.
+                // We unwrap if the inner expression is a binary op, function, or literal.
+                let should_unwrap = matches!(
+                    inner.as_ref(),
+                    Expr::BinaryOp { .. }
+                        | Expr::Function(_)
+                        | Expr::Value(_)
+                        | Expr::Identifier(_)
+                );
+                if should_unwrap {
+                    *expr = inner.as_ref().clone();
+                }
+            }
             _ => {}
         }
         ControlFlow::Continue(())
@@ -755,11 +780,26 @@ pub fn normalize_sql_for_comparison(sql: &str, default_database: &str) -> String
     intermediate.trim().to_string()
 }
 
+/// Regex pattern to match REFRESH clause in CREATE MATERIALIZED VIEW statements.
+/// This matches REFRESH EVERY/AFTER with optional OFFSET, RANDOMIZE, DEPENDS ON, and APPEND.
+/// The clause appears between the view name and the TO clause.
+/// Pattern: ` REFRESH ... TO ` is replaced with ` TO ` to strip the REFRESH clause.
+static REFRESH_CLAUSE_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\s+REFRESH\s+(?:EVERY|AFTER)\s+.*?\s+TO\s+")
+        .expect("REFRESH_CLAUSE_PATTERN regex should compile")
+});
+
 pub fn parse_create_materialized_view(
     sql: &str,
 ) -> Result<MaterializedViewStatement, SqlParseError> {
+    // Strip REFRESH clause before parsing since sqlparser doesn't support it.
+    // The REFRESH clause appears between the view name and TO clause:
+    // CREATE MATERIALIZED VIEW name REFRESH EVERY 1 HOUR TO target AS SELECT...
+    // We replace " REFRESH ... TO " with " TO " so sqlparser can parse the statement.
+    let sql_without_refresh = REFRESH_CLAUSE_PATTERN.replace(sql, " TO ").to_string();
+
     let dialect = ClickHouseDialect {};
-    let ast = Parser::parse_sql(&dialect, sql)?;
+    let ast = Parser::parse_sql(&dialect, &sql_without_refresh)?;
 
     if ast.len() != 1 {
         return Err(SqlParseError::NotMaterializedView);
