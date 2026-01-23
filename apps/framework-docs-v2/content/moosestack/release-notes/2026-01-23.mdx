@@ -94,39 +94,15 @@ import { Callout } from "@/components/mdx";
   This example demonstrates building dynamic SQL queries using the new sql template helpers: sql.join() to combine column lists and WHERE conditions, sql.raw() to insert SQL functions like NOW(), and Sql.append() to chain query parts together incrementally.
 
 - **Add row count reporting to moose seed command** ([@oatsandsugar](https://github.com/oatsandsugar))
-  The `moose seed clickhouse` command now automatically reports row counts after seeding operations, showing how many rows were successfully seeded for each table. Users can disable this with `--report=false` if needed. This helps verify that seeding completed successfully without requiring manual queries.
-
-  **Seeding ClickHouse data with automatic row count reporting**
+  The `moose seed clickhouse` command now automatically reports row counts after seeding. Disable with `--report=false`.
 
   ```bash
-  # Seed data from remote ClickHouse with automatic row count reporting
-  moose seed clickhouse --connection-string "clickhouse://user:pass@remote-host:9000/production_db"
-
-  # Expected output:
-  # Seeded 'local_db' from 'production_db'
-  # Copied 50000 rows from users table
-  # Copied 125000 rows from events table
-  # Copied 25000 rows from orders table
-  #
-  # Row counts after seeding:
-  #   events: 125000 rows
-  #   users: 50000 rows
-  #   orders: 25000 rows
-  #
-  # You can validate the seed manually (e.g., for tables in non-default databases):
-  #   $ moose query "SELECT count(*) FROM <table>"
-
-  # Seed specific table with row count verification
-  moose seed clickhouse --table users --limit 1000
-
-  # Disable row count reporting for faster seeding
-  moose seed clickhouse --all --report=false
-
-  # Seed with custom ordering and verification
-  moose seed clickhouse --order-by "created_at DESC" --limit 10000
+  $ moose seed clickhouse --connection-string "clickhouse://user:pass@host:9000/db"
+  Seeded 'local_db' from 'db'
+  Row counts after seeding:
+    events: 125000 rows
+    users: 50000 rows
   ```
-
-  Shows how to use the enhanced moose seed command with automatic row count reporting. The command now displays how many rows were successfully seeded for each table, helping users verify seeding completed correctly without manual queries.
 
 - **Add LLM-optimized documentation endpoints for AI agents** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
   Added new markdown endpoints that make MooseStack documentation easily accessible to AI agents and LLMs. Users can now append `.md` to any documentation URL to get clean markdown content, and the root `/llm.md` endpoint provides a table of contents for discovery. Also enhanced the documentation UI with a "Copy Page" dropdown menu that lets users copy page content as markdown or open the markdown endpoint directly.
@@ -214,7 +190,7 @@ import { Callout } from "@/components/mdx";
 - Enhanced static report generation guide with detailed usage paths and validation: Significantly improved the static report generation documentation with audience-specific learning paths, environment verification steps, data validation examples, and troubleshooting guidance. Added detailed business context explaining ROI and comparison with other approaches. Users can now choose their learning path (business focus, hands-on, or concepts-first) and follow more comprehensive setup instructions with validation checks. ([@cjus](https://github.com/cjus))
 - Clarify materialized view backfill behavior in dev vs production modes: Updated documentation to clarify that materialized view backfills happen automatically in dev mode but require manual action in production to avoid data duplication. This helps users understand when to expect automatic backfills and when they need to handle backfills manually. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
 - Improved LLM documentation endpoints with full URLs and language parameter guidance: Updated documentation to show complete URLs for LLM-friendly markdown endpoints and added guidance about language-specific content parameters. This makes it easier for AI assistants and LLMs to discover and fetch MooseStack documentation programmatically. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
-- Enhanced Chat in Your App guide with better structure and visual components: Significantly improved the Chat in Your App guide with better organization, visual components like callouts and CTA cards, clearer navigation, and more structured content sections. The guide now provides better guidance for evaluating, building, and implementing chat-over-data features in applications. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Updated Chat in Your App guide with better structure and visual components. ([@oatsandsugar](https://github.com/oatsandsugar))
 - Faster TypeScript application startup through precompilation: TypeScript applications now start significantly faster by precompiling TypeScript code during the build process instead of compiling at runtime. This eliminates ts-node overhead and improves worker startup times, making development and production deployments more responsive. ([@LucioFranco](https://github.com/LucioFranco))
 - Enhanced static report generation guide with complete hands-on tutorial: Expanded the static report generation guide from a basic outline to a comprehensive 40-minute tutorial. Users can now follow step-by-step instructions to build a complete data pipeline including CSV/JSON ingestion, ClickHouse time-series analytics, materialized views, and PDF report generation. The guide includes real-world retail scenario, sample data, and working code examples. ([@cjus](https://github.com/cjus))
 - Improved documentation with better file tree visualization and code formatting: Enhanced documentation guides with interactive file tree components replacing plain text directory structures, improved code block formatting with proper shell syntax highlighting, and better visual presentation of project structures. Makes it easier for users to understand project organization and follow setup instructions. ([@callicles](https://github.com/callicles))
