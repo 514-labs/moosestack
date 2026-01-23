@@ -5,10 +5,12 @@ description: Automate report generation with MooseStack workflows
 
 # Static Report Generation
 
-This guide walks through automating report generation with MooseStack. You'll build a data pipeline from file ingestion to PDF export, using ClickHouse for fast time-series queries.
+This guide covers building data-intensive static reports—from understanding when they're the right choice to hands-on implementation with Moose and ClickHouse.
 
 ## What you'll learn
 
+- Why static reports remain essential despite interactive dashboards
+- Business use cases: compliance, data monetization, analyst workflows
 - Define type-safe data models that auto-provision infrastructure
 - Ingest CSV and JSON files into ClickHouse
 - Create materialized views for pre-aggregated analytics
@@ -19,11 +21,11 @@ This guide walks through automating report generation with MooseStack. You'll bu
 
 Different starting points depending on what you need:
 
-**Operations teams:** Read Part 1 for the business case, skim Parts 2-6 to see what's involved, then hand off to developers.
+**Business leaders and operations teams:** Read Parts 1-2 for the business case and use cases. Skim Part 3 for a concrete example, then hand off to developers.
 
-**Developers:** Skip to Part 2 and start building. Part 1 has business context if you need it later.
+**Developers:** Skip to Part 4 and start building. Parts 1-2 have business context if you need it later.
 
-**Data engineers evaluating this approach:** Part 1 covers the business case, Parts 2-6 are the implementation, Part 7 explains the underlying concepts.
+**Data engineers evaluating this approach:** Parts 1-2 cover the business case, Part 3 is a concrete scenario, Parts 4-8 are implementation, Part 9 explains the underlying concepts.
 
 ## Prerequisites
 
@@ -67,7 +69,122 @@ tail -f ~/.moose/$(date +%Y-%m-%d)-cli.log
 
 ---
 
-## Part 1: The scenario
+## Part 1: What are static reports?
+
+Static reports are pre-generated snapshots of data, delivered as fixed artifacts—most commonly PDF or Excel files, though CSV exports and dashboard views are also common formats.
+
+These reports capture what the data looked like at a specific moment in time, with a defined and unchanging scope, metric logic, and layout. Once generated, a static report remains frozen until it is explicitly regenerated.
+
+### Key characteristics
+
+- Pre-generated snapshots delivered as fixed artifacts (PDF, Excel, CSV)
+- Capture point-in-time data with defined, unchanging scope and metric logic
+- Provide a stable, frozen reference preferred by many stakeholders over interactive dashboards
+- Support auditability, sign-off workflows, and compliance requirements
+- Act as portable handoff layers for departments like Finance, Operations, and Compliance
+
+### Why static reports matter
+
+Despite the proliferation of interactive dashboards and real-time analytics tools, static reports remain essential to business operations:
+
+| Reason | Business Value |
+|--------|----------------|
+| Stable reference points | Stakeholders prefer frozen documents they can review, annotate, and archive rather than dashboards that show different numbers each time |
+| Reduced version confusion | When everyone references the same PDF from the same date, there's no ambiguity about which numbers are being discussed |
+| Compliance and auditability | Regulatory requirements often mandate immutable records that can be retrieved and verified years later |
+| Universal accessibility | Not everyone has system access—many stakeholders need a PDF they can email or an Excel file they can manipulate offline |
+| Period-close reliability | Financial close processes depend on definitive snapshots that won't change after sign-off |
+
+---
+
+## Part 2: Business use cases
+
+Understanding where static reports create value helps organizations prioritize their data infrastructure investments.
+
+### Selling data assets to third parties
+
+Static reports enable revenue generation through data monetization:
+
+**Data archival and retrieval:**
+- Medical patient record retrieval for healthcare providers and researchers
+- Mortgage records and refinancing documentation for financial institutions
+- Historical transaction records for audits and legal proceedings
+
+**Data broker services:**
+- Medical research records for pharmaceutical companies and academic institutions
+- Vehicle history reports (CarFax-style) for automotive transactions
+- Credit history reports for lending decisions
+- Purchase history for marketing and customer analytics
+- Real estate transaction history for property valuations
+
+### Compliance and regulated reporting
+
+For organizations in regulated industries, static reports provide critical capabilities:
+
+- Immutable, versioned records that support approval workflows and retention policies
+- External sharing capabilities without requiring system access
+- Reproducibility through stored run metadata including dataset version, query parameters, pipeline run timestamp, and result hash
+- Easy cross-department distribution while maintaining audit trails
+
+### Analyst workflows
+
+Many analysts and business users prefer working with exported data rather than interactive dashboards:
+
+- Exporting curated datasets (not raw data) into Excel or Google Sheets
+- Faster pivot table creation and data exploration
+- Reconciliation workflows comparing multiple data sources
+- Annotation and commentary that lives alongside the data
+
+### Automations and operational handoffs
+
+Static reports serve as predictable, machine-readable inputs to downstream processes:
+
+- Email-to-ticket systems that process report contents
+- Slack integrations that distribute key metrics
+- RPA (Robotic Process Automation) tools that consume standardized formats
+- System migrations enabling side-by-side comparison between old and new systems
+
+### Understanding the challenges
+
+Before investing in static report generation capabilities, understand the technical challenges:
+
+| Challenge | Impact |
+|-----------|--------|
+| Data discovery | Teams spend hours finding duplicates, missing fields, and inconsistent definitions before reports can be generated |
+| Data cleaning | Format inconsistencies, NULL handling, and duplicate entities cause report errors |
+| Multiple formats | Same logical data arrives in different structures from different sources |
+| Validation and trust | Without structured UAT and golden records, errors reach executives or regulators |
+| Timing and orchestration | Reports generated before data is complete deliver flawed results |
+
+### Evaluating solutions
+
+When evaluating static report generation solutions, consider:
+
+| Capability | What to Look For |
+|------------|------------------|
+| Data quality | Automated profiling, duplicate detection, validation rules |
+| Format support | Native handling of Excel, PDF, CSV, JSON, XML |
+| Audit trail | Complete lineage from source to report with timestamps |
+| Scalability | OLAP-based processing for large datasets |
+| Orchestration | Dependency management, freshness checks, retry logic |
+| Self-service | User-friendly export interfaces with consistent formatting |
+
+### Why Moose for static reports?
+
+Moose addresses these challenges with a developer-first approach:
+
+| Traditional Approach | With Moose |
+|---------------------|------------|
+| Manual ClickHouse setup | Data model → auto infrastructure |
+| Custom ingestion code | Auto-generated `/ingest` API |
+| Hand-written DDL | Type-safe schema from TypeScript |
+| Slow iteration cycles | Hot reload, local-first development |
+| Manual API boilerplate | Type-safe Consumption APIs |
+| Risky production changes | Lifecycle management prevents accidents |
+
+---
+
+## Part 3: The scenario
 
 ### Apex Retail daily sales consolidation
 
@@ -144,7 +261,7 @@ flowchart LR
 
 ---
 
-## Part 2: Setup and data model
+## Part 4: Setup and data model
 
 ### Step 1: Install Moose CLI
 
@@ -333,7 +450,7 @@ curl -s "http://localhost:18123/?user=panda&password=pandapass" \
 
 ---
 
-## Part 3: File ingestion
+## Part 5: File ingestion
 
 Stores upload CSV or JSON files rather than calling APIs directly. Here's a file loader.
 
@@ -593,7 +710,7 @@ For production, reject entire files with errors rather than partial loads.
 
 ---
 
-## Part 4: Time-series aggregation
+## Part 6: Time-series aggregation
 
 Create a materialized view that pre-aggregates daily summaries.
 
@@ -710,7 +827,7 @@ curl -s "http://localhost:18123/?user=panda&password=pandapass" -d "
 
 ---
 
-## Part 5: Report API
+## Part 7: Report API
 
 Build a consumption API with parameterized date ranges.
 
@@ -840,7 +957,7 @@ curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDat
 
 ---
 
-## Part 6: PDF export
+## Part 8: PDF export
 
 Transform JSON into PDF.
 
@@ -1160,7 +1277,7 @@ PDF generates from pre-aggregated data, so it's fast regardless of raw transacti
 
 ---
 
-## Part 7: How it works
+## Part 9: How it works
 
 ### Why ClickHouse is fast
 
