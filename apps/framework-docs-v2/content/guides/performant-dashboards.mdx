@@ -1,6 +1,6 @@
 ---
 title: Improving the Performance of Your Dashboards
-description: Learn how to build blazing-fast dashboards using MooseStack and ClickHouse
+description: Build fast dashboards using MooseStack and ClickHouse
 previewVariant: "dashboards"
 languages: ["typescript"]
 ---
@@ -10,14 +10,14 @@ import { CTACards, CTACard, Callout, BulletPointsCard } from "@/components/mdx";
 # Improving the Performance of Your Dashboards
 
 <Callout type="info" title="TL;DR">
-* Slow dashboards are usually an architecture problem, not a charting problem.  
-* If you run OLAP-style queries on your OLTP database, performance (and reliability) eventually degrades.  
-* You can get 10–100x faster dashboards by moving analytics to ClickHouse incrementally—without rewriting your frontend.
+* Slow dashboards are usually a database architecture problem, not a frontend or charting library problem.
+* Running analytical queries (aggregations, wide scans, complex joins) on your transactional database degrades performance and reliability. Users wait for data, your core app slows, and you risk downtime during peak usage.
+* Moving analytics to ClickHouse incrementally yields 10–100x faster dashboards (10x for simple aggregations, 50-100x for complex joins and time-series queries). Complex reports load in under a second without rewriting your frontend.
 
 This guide will:
 
-1. Help you recognize when OLTP has become your analytics bottleneck  
-2. Show an incremental path to move analytical workloads to OLAP best practices  
+1. Help you recognize when OLTP has become your analytics bottleneck
+2. Show an incremental path to move analytical workloads to OLAP
 3. Walk through shipping the change end-to-end with MooseStack + ClickHouse
 </Callout>
 
@@ -42,19 +42,19 @@ This guide will:
 
 ### What this guide is for
 
-This guide is for product engineering teams that already have customer-facing dashboards/reports in production, where:
+This guide is for you if you already have customer-facing dashboards or reports in production, and you're experiencing:
 
 <BulletPointsCard
   title="Common symptoms"
   bulletStyle="bullet"
   bullets={[
     {
-      title: "Charts/metrics take >5s to load",
-      description: "Your users are staring at loading spinners."
+      title: "Charts/metrics take 5+ seconds to load",
+      description: "Users stare at spinners past the 3-second attention threshold, causing them to lose focus, abandon tasks, or complain about a slow product."
     },
     {
       title: "Small report changes are expensive",
-      description: "Updates are risky enough that they stay stuck in the backlog."
+      description: "Updates are risky enough to stay stuck in the backlog, so analytics features stagnate."
     },
     {
       title: "Reporting traffic overwhelms production OLTP",
@@ -63,36 +63,37 @@ This guide is for product engineering teams that already have customer-facing da
   ]}
 />
 
-In most cases, the root cause is that you’re running analytical query patterns (group by / aggregations / wide scans / joins) on the same transactional database that powers the rest of your application.
+The root cause is usually analytical queries running on your transactional database. These queries—aggregations, wide table scans, complex joins—compete with the transactional workloads that power the rest of your application.
 
-This guide lays out a step-by-step path to move those analytical workloads to OLAP using best practices, **without redesigning your product or rewriting your frontend**.
+This guide lays out a step-by-step path to move those analytical workloads to OLAP, **without redesigning your product or rewriting your frontend**.
 
-### Why your business needs to solve this
+### Why this matters
 
-Customer-facing analytics stops being optional once users depend on it to understand their behavior, progress, or outcomes. When dashboards are slow or unreliable, engagement drops.
+Customer-facing analytics becomes mission-critical once users depend on it to understand their behavior, progress, or outcomes. Slow or unreliable dashboards drive down engagement: lower retention, higher churn, and direct revenue impact as users stop trusting your product for insights.
 
-<Callout type="info" title="Case study: F45’s LionHeart experience">
-LionHeart is where F45’s most engaged members track workout performance and progress. As usage and data volume increased, the original setup—running analytics directly on the core transactional database—became a bottleneck. Reports were shipped to users as static images of charts. There was no interactivity, and improving the experience carried too much risk to justify prioritization. The team wanted dynamic, interactive dashboards for years, but the existing architecture kept the work stuck in the backlog.
+<Callout type="info" title="Case study: F45's LionHeart experience">
+LionHeart is where F45's most engaged members track workout performance and progress. Their original OLTP-backed implementation meant they had to ship reports as static images rather than interactive charts.
 
-F45 migrated the LionHeart analytics backend to an OLAP-based architecture using the Fiveonefour stack in a matter of weeks. The mobile app moved from static chart images to fast, interactive visualizations. This led to tangible improvements in the bottom line metrics: [70% increase in user satisfaction, and over 1 full star increase in the F45 App Store rating](https://www.fiveonefour.com/blog/case-study-f45).
+After migrating the analytics backend to an OLAP architecture (Fiveonefour stack), LionHeart shipped fast, interactive dashboards in weeks:
 
+- **Outcome:** [70% increase in user satisfaction, and over 1 full star increase in the F45 App Store rating](https://www.fiveonefour.com/blog/case-study-f45)
 </Callout>
 
 ### Why you haven’t solved it yet
 
-Normally teams don’t start with OLAP because it’s rational to delay it:
+Most teams don't start with OLAP. Delaying is often the right call early on:
 
 <BulletPointsCard
   title="Why teams delay adopting OLAP (and why it makes sense early on)"
   bulletStyle="bullet"
   bullets={[
     {
-      title: "The OLTP path is the highest-ROI path—at first",
-      description: "Early on, the transactional workload is mission-critical and easiest to justify optimizing."
+      title: "The OLTP path is the highest-ROI path early on",
+      description: "When you're under 1M rows or serving <100 concurrent users, the transactional workload is mission-critical and easiest to justify optimizing."
     },
     {
-      title: "Performance doesn’t degrade right away",
-      description: "OLTP-backed analytics can look “fine” until data volume and concurrency cross a threshold (often ~10M rows)."
+      title: "Performance doesn't degrade right away",
+      description: "OLTP-backed analytics can look \"fine\" until data volume and concurrency cross a threshold (typically 10-50M rows, depending on query complexity and concurrent users)."
     },
     {
       title: "Shipping the first version is fastest on existing infrastructure",
@@ -109,57 +110,73 @@ Normally teams don’t start with OLAP because it’s rational to delay it:
   ]}
 />
 
-This is why it's common to push OLTP database migrations until it becomes a real business risk. The issue is timing. OLAP migrations are non-trivial and routinely take months. If you wait too long and/or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning.
+This is why it's common to delay adopting OLAP until it becomes a real business risk. The issue is timing. OLAP migrations are non-trivial and typically take 3-6 months with traditional data engineering tooling. If you wait too long or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning.
 
 ### When to pull the trigger
 
-You should seriously consider this shift once the warning signs appear in day-to-day product and engineering work. It usually starts small: dashboards feel a bit laggy, then noticeably slow as data grows. Users want more filters, breakdowns, or longer time ranges, but engineering can’t safely ship improvements because even small changes could jeopardize core transactional workloads the rest of your product depends on. Before long, customers complain about load times, and those complaints surface in retention metrics, support tickets, and sales calls. Throwing more hardware at the problem either isn’t possible or is prohibitively expensive; even when feasible, this approach only buys temporary relief. The underlying issue is certain to resurface.
+Consider this shift once warning signs appear in your day-to-day product and engineering work.
+
+It usually starts small: dashboards feel a bit laggy, then noticeably slow as data grows. Users want more filters, breakdowns, or longer time ranges. But engineering can't safely ship these improvements—even small changes could jeopardize the core transactional workloads the rest of your product depends on.
+
+Before long, customers complain about load times. Those complaints surface in retention metrics, support tickets, and sales calls.
+
+Throwing more hardware at the problem either isn't possible or is prohibitively expensive. Even when feasible, this approach only buys temporary relief. The underlying issue is certain to resurface.
 
 ### What this guide proposes
 
-This guide outlines an incremental path for delivering **10–100x faster** dashboard load times without putting your core product at risk: move expensive analytical queries from your existing, mission-critical transactional database to a purpose-built analytical database **without changing your existing frontend UI or business logic**.
+This guide outlines an incremental path for delivering 10–100x faster dashboard load times without putting your core product at risk.
 
-This approach slots right into how your engineering teams already operate. Changes are written in TypeScript, live in the same codebase as the rest of the application, and move through the same version-controlled review and release process. Everything can be validated in staging environments before shipping to production. Compared to a full-stack refactor or a data-team-led migration, this approach gets to production faster, with less risk, and provides a controlled way to scale analytics over time.
+The core idea: move expensive analytical queries from your existing transactional database to a purpose-built analytical database (ClickHouse) without changing your existing frontend UI or business logic.
+
+This approach fits your existing engineering workflow. Changes are TypeScript, live in the same codebase, and move through your normal review and release process—which means your team doesn't need to learn new tools or hand off ownership to a separate data team. Everything can be validated in staging environments before shipping to production, so you can move fast without breaking things.
+
+Compared to a full-stack refactor or a data-team-led migration, this approach ships your first migrated dashboard in 2-4 weeks (vs 3-6 months), carries minimal risk to your production systems, and lets you scale analytics incrementally as your data grows.
 
 ### What success looks like
 
-When this works, the impact is immediate for both product and engineering. As data volume and usage grow, dashboards stay fast and predictable instead of degrading over time. Analytical workloads no longer compete with core transactional traffic, so the rest of your application runs more reliably. Engineering can ship new dashboards, metrics, and breakdowns as routine product work, not risky, backlog-bound projects. With performance and reliability handled, teams can ship rich, interactive data experiences across the product at low incremental cost and drive measurable improvements in engagement, retention, and revenue upside.
+When this works, the impact is immediate for both product and engineering.
+
+As data volume and usage grow, dashboards stay fast and predictable instead of degrading over time. Analytical workloads no longer compete with core transactional traffic, so the rest of your application runs more reliably.
+
+Engineering can ship new dashboards, metrics, and breakdowns as routine product work—not risky, backlog-bound projects. This unblocks your product roadmap: the analytics features that used to take 2-4 weeks or sit in backlog limbo now ship in 1-3 days, letting you respond to customer requests and competitive pressure faster.
 
 
 ## Tutorial
 
-This guide assumes that you have a dashboard or report up and running, and that you wish to improve the performance of your dashboard by leveraging OLAP best practices. It will guide you through:
+This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices. You'll work through:
 
-1. getting your local dev environment up and running to work on this problem,   
-2. the local development experience of taking the business logic you have powering your frontend dashboards / reports and porting them over to MooseStack / ClickHouse  
-3. shipping your changes to production on Boreal Cloud
+1. Setting up your local dev environment
+2. Migrating your dashboard business logic from OLTP to MooseStack/ClickHouse
+3. Shipping your changes to production on Boreal Cloud
 
-This guide proposes a AI copilot-centric approach for doing this, but each of these steps can be done manually as well. This guide also assumes that you have Visual Studio Code as your IDE, [configured with Github Copilot](https://code.visualstudio.com/docs/copilot/setup) as your coding assistant. 
+**AI copilot (optional but recommended):** We use an AI copilot to accelerate the migration—it handles complex query translations and helps you iterate faster. However, you can complete every step manually if you prefer. The examples use Visual Studio Code [configured with Github Copilot](https://code.visualstudio.com/docs/copilot/setup), but any AI-enabled editor (Claude Code, Cursor, Windsurf, etc.) will work. Without an AI copilot, expect to spend more time writing and debugging SQL manually.
 
-This guide is written for a TypeScript developer. If you are interested in a Python guide, let us know!
+**Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
 
-# Setting up your development environment
+### Setting up your development environment
 
-This section will guide you through: 
+In this section, you'll:
 
-* Installing MooseStack and its dependencies  
-* Initiating or cloning your MooseStack project  
-* Setting up developer / agent supporting services (MCP \+ Language Server)  
-* Seeding your development environment with sample data 
+* Install MooseStack and its dependencies
+* Initialize or clone your MooseStack project
+* Set up developer and AI agent tools (MCP + Language Server)
+* Seed your development environment with sample data 
 
-## Installing MooseStack
+#### Installing MooseStack
 
-### Prerequisites:
+**Prerequisites**
 
-* Node.js 20+: [https://nodejs.org/en/download](https://nodejs.org/en/download)   
-* Docker Desktop: [https://docs.docker.com/desktop/](https://docs.docker.com/desktop/)   
-* MacOS, Linux, or WSL 2+ with Windows
+Before installing MooseStack, ensure you have:
 
-### Installing on Windows:
+* **Node.js 20+**: MooseStack requires Node.js version 20 or higher. [Download here](https://nodejs.org/en/download) if you don't have it installed. Check your version with `node --version`.
 
-[See appendix for instructions on setting up WSL2](#wsl:-setting-up-a-wsl2-linux-instance-to-run-moosestack-on-windows) if you do not already have a Linux box running on your windows machine.
+* **Docker Desktop**: MooseStack uses Docker to run ClickHouse, Redpanda, and other infrastructure locally. [Download Docker Desktop](https://docs.docker.com/desktop/) if you don't have it. After installing, make sure Docker Desktop is running before proceeding.
 
-### Install MooseStack:
+* **MacOS, Linux, or WSL 2+ on Windows**: MooseStack runs on Unix-based systems.
+  - **Windows users**: You'll need WSL 2 (Windows Subsystem for Linux). [See the appendix](#wsl-setting-up-a-wsl2-linux-instance-to-run-moosestack-on-windows) for complete WSL 2 setup instructions if you don't have it configured yet.
+  - **MacOS/Linux users**: You're all set—skip to the next step.
+
+**Install MooseStack**
 
 ```shell
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
@@ -167,11 +184,11 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 
 **Make sure to restart your terminal after installing MooseStack.**
 
-## Initialize or clone your MooseStack project locally
+#### Initialize or clone your MooseStack project locally
 
 You have two options for setting up your MooseStack project:
 
-### Option A: Clone an existing repository
+**Option A: Clone an existing repository**
 
 If you already have a repository with MooseStack configured:
 
@@ -181,11 +198,11 @@ cd <your-project>
 pnpm install
 ```
 
-### Option B: Add MooseStack to an existing PNPM monorepo
+**Option B: Add MooseStack to an existing PNPM monorepo**
 
 If you have an existing PNPM monorepo (e.g., a Next.js app) and want to add MooseStack:
 
-#### Step 1: Initialize MooseStack in a subdirectory
+**Step 1: Initialize MooseStack in a subdirectory**
 
 From your monorepo root:
 
@@ -195,7 +212,7 @@ cd moosestack
 moose-cli init . typescript
 ```
 
-#### Step 2: Update your PNPM workspace configuration
+**Step 2: Update your PNPM workspace configuration**
 
 Edit your root `pnpm-workspace.yaml` to include the `moosestack` directory:
 
@@ -205,7 +222,7 @@ packages:
   - moosestack                # MooseStack project
 ```
 
-#### Step 3: Configure the MooseStack package
+**Step 3: Configure the MooseStack package**
 
 Edit `moosestack/package.json` to set it up as a workspace package:
 
@@ -239,7 +256,7 @@ Edit `moosestack/package.json` to set it up as a workspace package:
 }
 ```
 
-#### Step 4: Add the `pnpm` configuration to your root package.json
+**Step 4: Add the `pnpm` configuration to your root package.json**
 
 Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (this ensures required native/built dependencies are handled correctly by PNPM):
 
@@ -254,7 +271,7 @@ Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (t
 }
 ```
 
-## Run your Moose Development Server
+#### Run your Moose Development Server
 
 Ensure Docker Desktop is running first.  
 
@@ -291,14 +308,14 @@ And your local services will be running in Docker containers:
 
 ![Docker Services](/docker-services.png)
 
-## Setting up developer / agent supporting services
+#### Setting up developer / agent supporting services
 
-This subsection will run a couple of services that can help you and your copilots / agents work with the MooseStack project:
+These services let your AI copilot query your local database, inspect infrastructure, and validate SQL directly:
 
-1. The [Moose Dev MCP server](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript): The Moose development server includes a built-in Model Context Protocol (MCP) server that enables AI agents and IDEs to interact directly with your local development infrastructure. This allows you to use natural language to query data, inspect logs, explore infrastructure, and debug your Moose project. In particular, tools like `get_infra_map`, `query_olap`, and `get_logs` will be useful in accelerating your path through this guide.   
-2. [The Language Server (LSP) for MooseStack Typescript](https://github.com/514-labs/moosestack-lsp), which allows the IDE to validate the SQL written within MooseStack objects for correctness. (Coming soon, see appendix).
+1. **[Moose Dev MCP server](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript)**: Lets your AI copilot query your local ClickHouse database, inspect logs, and explore infrastructure using natural language. Your copilot can verify query results, debug issues, and validate migrations without you copying/pasting commands.
+2. **[Language Server (LSP) for MooseStack TypeScript](https://github.com/514-labs/moosestack-lsp)**: Validates SQL syntax within your MooseStack code in real-time, catching errors before you run queries. (Coming soon, see appendix).
 
-### Moose Dev MCP setup
+**Moose Dev MCP setup**
 
 To install the Moose Dev MCP with VS Code 1.102+, add this to your project's `.vscode/mcp.json` or User Settings:
 
@@ -318,9 +335,13 @@ Confirm the server is running and integrated with VSCode by running `MCP: List S
 * For other options to install with VSCode, see [the VSCode docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers#_add-an-mcp-server).  
 * For installation instructions for other IDEs / AI coding assistants, like Claude Code, Windsurf, and Cursor, see the [MooseStack docs](https://docs-v2-git-vscode-mcp-docs.preview.boreal.cloud/moosestack/moosedev-mcp?lang=typescript).
 
-# CDC guide 
+### Change data capture (CDC)
 
-This section walks you through how to set up your MSSQL database to integrate with Debezium for change data capture. Before you start, make sure you have the following credentials for your database:
+For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production MSSQL database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
+
+This section walks you through setting up CDC using Debezium.
+
+Before you start, gather the following credentials for your MSSQL database:
 
 - Host  
 - Port  
@@ -328,15 +349,15 @@ This section walks you through how to set up your MSSQL database to integrate wi
 - Password  
 - DB Name
 
-This setup comprises 3 main steps:
+You'll complete 3 main steps:
 
-1. Configure MSSQL Server for CDC  
-2. Configure ingestion pipelines to land CDC events into ClickHouse tables (via MooseStack)  
+1. Configure MSSQL Server for CDC
+2. Configure ingestion pipelines to land CDC events into ClickHouse tables (via MooseStack)
 3. Deploy Debezium Server to your environment
 
-### CDC Architecture:
+#### How CDC works
 
-The following example shows how CDC tracks changes to a `customers` table:
+Here's how CDC tracks changes to a `customers` table:
 
 1\. **App executes:**        `UPDATE dbo.customers SET status='active' WHERE customer_id=123`  
 2\. **Transaction Log:**     Log record written (LSN: 00000042:00000123:0001, BEFORE: 'inactive', AFTER: 'active')  
@@ -345,13 +366,13 @@ The following example shows how CDC tracks changes to a `customers` table:
 5\. **Debezium:**            Polls tracking table, creates JSON: `{"op":"u", "before":{...}, "after":{"status":"active"}}`  
 6\. **HTTP Sink:**           Receives POST with change event payload
 
-## MSSQL Server CDC Configuration:
+#### MSSQL Server CDC Configuration
 
-You'll need to first make sure your MSSQL Server is properly configured to work with Debezium.
+First, make sure your MSSQL Server is properly configured to work with Debezium.
 
-### Step 0: Powershell SQL Query Command
+**Step 0: PowerShell SQL query command**
 
-Useful for executing commands throughout this guide.
+You'll use this PowerShell command pattern throughout this guide to execute SQL commands against your MSSQL database.
 
 **Command:**
 ```powershell
@@ -370,7 +391,7 @@ SELECT 1;
 "@
 ```
 
-### Step 1: Test Database Connection
+**Step 1: Test Database Connection**
 
 Verify connectivity to the SQL Server instance.
 
@@ -386,7 +407,7 @@ Column1
       1
 ```
 
-### Step 2: Enable CDC at the Database Level
+**Step 2: Enable CDC at the Database Level**
 
 This enables CDC infrastructure on the database (creates the `cdc` schema, system tables, and jobs).
 
@@ -400,7 +421,7 @@ EXEC sys.sp_cdc_enable_db;
 Command(s) completed successfully.
 ```
 
-### Step 3: Validate CDC System Tables Exist
+**Step 3: Validate CDC System Tables Exist**
 
 Check that CDC system tables exist after enabling CDC.
 
@@ -440,11 +461,11 @@ CDC System Tables:
 | `cdc.index_columns` | Stores index column information for tables with net changes support |
 | `cdc.lsn_time_mapping` | Maps LSN values to commit timestamps (for time-based queries) |
 
-### Step 4: Enable CDC at the Table Level
+**Step 4: Enable CDC at the Table Level**
 
 Enable CDC for each table you want to track. The command differs based on whether the table has a primary key.
 
-#### Option A: Table with Primary Key
+**Option A: Table with Primary Key**
 
 **Command:**
 ```sql
@@ -461,7 +482,7 @@ Job 'cdc.dbo_customers_capture' started successfully.
 Job 'cdc.dbo_customers_cleanup' started successfully.
 ```
 
-#### Option B: Table without Primary Key
+**Option B: Table without Primary Key**
 
 **Command:**
 ```sql
@@ -480,7 +501,7 @@ Job 'cdc.dbo_TableName_cleanup' started successfully.
 
 **Note:** Above commands generate the CDC tracking table with the format: `cdc.<schema>_<table>_CT`
 
-### Step 5: Verifying Tables with CDC Enabled
+**Step 5: Verifying Tables with CDC Enabled**
 
 Verify which tables now have CDC enabled.
 
@@ -505,7 +526,7 @@ dbo          order_items
 dbo          products
 ```
 
-### Step 6: Verify SQL Server Agent is Running
+**Step 6: Verify SQL Server Agent is Running**
 
 Confirm that SQL Server Agent is running (required for CDC to function).
 
@@ -528,7 +549,7 @@ If the service is not running, start it with:
 EXEC xp_servicecontrol 'START', 'SQLServerAGENT';
 ```
 
-### Step 7: Verify CDC Jobs
+**Step 7: Verify CDC Jobs**
 
 Verify that CDC capture and cleanup jobs were created.
 
@@ -564,7 +585,7 @@ threshold        : 5000
 - **Capture job**: Continuously monitors transaction log for changes
 - **Cleanup job**: Periodically removes old CDC data (retention = 4320 minutes = 3 days)
 
-#### Example: CDC Tracking Table Schema
+**Example: CDC Tracking Table Schema**
 
 Source Table (E-commerce customers table):
 
@@ -599,9 +620,9 @@ CREATE TABLE cdc.dbo_customers_CT (
 );
 ```
 
-## CDC via Pushing to Moose Ingest API
+#### CDC via Pushing to Moose Ingest API
 
-This section describes the CDC architecture used in our demo environment, where network constraints prevent Debezium from connecting directly to Kafka. In environments without these constraints, CDC can be configured to stream changes directly from Debezium into Kafka topics instead.
+This section describes the CDC architecture used when Debezium cannot connect directly to Kafka (for example, due to firewall rules, network segmentation, or cloud provider restrictions). If your Debezium instance can reach Kafka directly, you can configure CDC to stream changes directly into Kafka topics instead of using the HTTP ingest pattern shown here.
 
 In this architecture, all changes from your MSSQL database tables are captured using Debezium and sent to a single, Moose-managed Kafka (or Redpanda) Stream via a Moose-managed HTTP Ingest API endpoint *(there is no per-table endpoint or per-table ingest stream at this stage)*.
 
@@ -619,7 +640,7 @@ To summarize, the high level data flow is:
 * Streaming function → table-specific streams  
 * Table-specific streams → ClickHouse tables
 
-### Step 0: Prerequisites
+**Step 0: Prerequisites**
 
 Before continuing, confirm:
 
@@ -630,7 +651,7 @@ Before continuing, confirm:
 
 If CDC is not enabled yet, complete the **MSSQL Server CDC Configuration** section first.
 
-### Step 1: Add a Moose Ingest API Endpoint for CDC Events
+**Step 1: Add a Moose Ingest API Endpoint for CDC Events**
 
 This endpoint will receive CDC events from Debezium. 
 
@@ -732,7 +753,7 @@ export const DebeziumChangeEventIngestApi = new IngestApi<DebeziumEventEnvelope>
 );
 ```
 
-### Step 2: Map Source Tables to Moose Streams
+**Step 2: Map Source Tables to Moose Streams**
 
 Before implementing the streaming function, define an explicit mapping between MSSQL source table names and their corresponding Moose Streams.
 
@@ -754,7 +775,7 @@ export const TABLE_STREAM_MAP: Record<string, any> = {
 
 This mapping is what makes the fan-out deterministic and ensures each source table's changes flow through the correct stream and into the correct ClickHouse table.
 
-### Step 3: Add Streaming Function to the API Endpoint
+**Step 3: Add Streaming Function to the API Endpoint**
 
 This function acts as our fanout point.
 
@@ -841,7 +862,7 @@ export default async function processDebeziumEvent(envelope: DebeziumEventEnvelo
 DebeziumChangeEventStream.addConsumer(processDebeziumEvent);
 ```
 
-## Deploy Debezium Server via K8s Manifests
+#### Deploy Debezium Server via K8s Manifests
 
 Placeholders to replace:
 
@@ -849,7 +870,7 @@ Placeholders to replace:
 * `<YOUR_HTTP_SINK_URL>` - your HTTP sink endpoint URL (required)  
 * `<YOUR_MSSQL_PASSWORD>` - your MS SQL SA password (required)
 
-### Step 0: Namespace
+**Step 0: Namespace**
 
 `kubectl apply -f namespace.yaml`
 
@@ -865,7 +886,7 @@ metadata:
     app: debezium-kafka-connect
 ```
 
-### Step 1: Config Map
+**Step 1: Config Map**
 
 `kubectl apply -f configmap.yaml`
 
@@ -948,7 +969,7 @@ data:
     quarkus.log.console.json=false
 ```
 
-### Step 2: Secret
+**Step 2: Secret**
 
 `kubectl apply -f secret.yaml`
 
@@ -966,7 +987,7 @@ stringData:
   MSSQL_SA_PASSWORD: "<YOUR_MSSQL_PASSWORD>"
 ```
 
-### Step 3: Stateful Set
+**Step 3: Stateful Set**
 
 `kubectl apply -f statefulset.yaml`
 
@@ -1056,7 +1077,7 @@ spec:
             storage: 50Gi
 ```
 
-### Step 4: Service
+**Step 4: Service**
 
 `kubectl apply -f service.yaml`
 
@@ -1080,42 +1101,42 @@ spec:
   type: ClusterIP
 ```
 
-# Local development and testing
+### Local development and testing
 
-This section will guide you through the process of selecting a dashboard/report component to be improved, through:
+In this section, you'll select a dashboard or report component to migrate, then:
 
-* Creating a development branch locally (which will also be used by Boreal for branch preview environments)  
-* Setting up CDC for the supporting tables (guide coming soon)  
-* Setting up local context for use in developments  
-  * Seeding your local development environment from the production database  
-  * Bringing other context into the local environment  
-* Creating, iterating on and testing the replication of dashboard elements in MooseStack
+* Create a development branch (also used by Boreal for preview environments)
+* Set up CDC for the supporting tables (guide coming soon)
+* Set up local context for development:
+  * Seed your local environment from production
+  * Bring in other necessary context
+* Create, iterate on, and test the migrated dashboard elements in MooseStack
 
-## Create a branch
+#### Create a branch
 
-A branch is used not just for managing your code versioning, but also for spinning up "preview branches" in Boreal.
+Branches manage code versioning and spin up "preview branches" in Boreal.
 
 ```bash
 git checkout -b <new-branch-name>
 ```
 
-## Seeding your local database from prod with `moose seed`
+#### Seeding your local database from prod with `moose seed`
 
-[You can seed your local development environment with the `moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse).
+To validate that your migrated queries return correct results, you need realistic production data locally. The [`moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse) pulls data from your production ClickHouse database so you can test against real data patterns, edge cases, and volumes.
 
 **Command:**
 ```shell
 moose seed clickhouse --connection-string <BOREAL_CONNECTION_STRING> --limit 100
 ```
 
-You can set the limit to whatever amount of data you want to bring locally, or, alternatively, you can copy all the data from remote to local (be careful with this approach):
+You can adjust the `--limit` value based on how much data you need for testing. Start with 100-1000 rows to keep things fast. If you need your full production dataset locally, you can copy all data using `--all` (note: this can take hours for large datasets and requires disk space equivalent to your production database size):
 
 **Command:**
 ```shell
 moose seed clickhouse --connection-string <BOREAL_CONNECTION_STRING> --all
 ```
 
-### Finding your connection string in Boreal
+**Finding your connection string in Boreal**
 
 `BOREAL_CONNECTION_STRING` is your connection string to a remote/cloud database. In Boreal, you can find that here:  
 {/* image  */}
@@ -1135,24 +1156,24 @@ echo 'BOREAL_CONNECTION_STRING="PASTE_THE_HTTPS_URL_FROM_BOREAL_HERE"' >> .env.l
 export BOREAL_CONNECTION_STRING=PASTE_THE_HTTPS_URL_FROM_BOREAL_HERE
 ```
 
-## Improving dashboard performance by replicating components in MooseStack
+### Improving dashboard performance by replicating components in MooseStack
 
-This section walks through migrating an existing, OLTP-backed dashboard/report to an OLAP-backed implementation (ClickHouse + MooseStack) **without changing how the frontend talks to the backend**.
+In this section, you'll migrate an existing OLTP-backed dashboard or report to an OLAP-backed implementation (ClickHouse + MooseStack) **without changing how the frontend talks to the backend**.
 
 The approach in this guide is to swap out the *query + storage layer* (ClickHouse) while keeping the rest of your application the same: routing, auth, request/response contracts, and frontend behavior.
 
 You’ll implement **new OLAP query handlers** in your MooseStack project—one per dashboard component/report you migrate. Then, in your existing application backend, you’ll repoint the endpoint to call the new OLAP handler instead of the original OLTP implementation.
 
-This is designed to be done with AI: you give your copilot the right context and example data for your "golden case" inputs and expected outputs, and it produces the translation and a plan, and you verify correctness at each step—so you get AI speed without scattering one-off ClickHouse SQL across your codebase.
+AI copilots excel at this type of migration because they can translate complex OLTP queries (often stored procedures with nested CTEs and joins) into equivalent ClickHouse SQL while preserving exact output. You provide the copilot with your existing query logic and example request/response pairs ("golden cases"), it generates the ClickHouse translation and optimization plan, and you verify correctness at each step. This gives you AI speed without scattering one-off SQL strings across your codebase.
 
 This guide follows a three-phase migration pattern:
 
-1. **Parity (correctness)**: reproduce existing API behavior on ClickHouse by translating the underlying OLTP query logic into ClickHouse SQL  
-2. **Optimize (OLAP best practices)**: shift OLTP-style read patterns (joins/reshaping/stored-procedure-like logic) to write time using Materialized Views  
-3. **Serve (stable interface)**: repoint your Query Layer `QueryModel` at MV-backed serving tables, so handlers stay thin and dashboards stay fast  
+1. **Parity (correctness)**: Reproduce existing API behavior on ClickHouse by translating your OLTP query logic into ClickHouse SQL. This validates correctness before optimizing, so you can ship a working replacement immediately if needed.
+2. **Optimize (OLAP best practices)**: Move expensive operations (joins, reshaping, stored-procedure-like logic) from query time (when users request data) to write time (when data arrives) using Materialized Views. This is where you unlock the 10-100x performance gains—dashboards that took 10-15 seconds now return in 100-500ms.
+3. **Serve (stable interface)**: Point your Query Layer at the pre-computed serving tables, so API handlers stay thin and dashboards stay fast. This makes future changes easy—adding filters, breakdowns, or new metrics becomes routine product work instead of risky database rewrites.  
 
 
-### Choose the component you want to migrate
+#### Choose the component you want to migrate
 
 Pick a specific dashboard component or report to migrate. You’ll create one context pack per component.
 
@@ -1161,9 +1182,9 @@ For this guide, we’ll use an e-commerce order fulfillment report:
 - Dataset: `OrderFulfillment`  
 - Purpose: Track order processing metrics by merchant and time period  
 
-### Assemble the context for your AI copilot
+#### Assemble the context for your AI copilot
 
-This workflow uses the starter kit in `examples/dashboard-migration/` to keep your “context pack” and prompt consistent across migrations.
+This workflow uses the starter kit in `examples/dashboard-migration/` to keep your "context pack" and prompt consistent across migrations. Every component migration follows the same process, the copilot gets all the information it needs upfront, and you avoid repetitive back-and-forth.
 
 1. Copy the starter kit into your project (creates `context/migrations/`):
 
@@ -1191,36 +1212,36 @@ The starter prompts you added to your project includes a prompt template that yo
 
 If you want a more detailed copilot workflow (refinement loop + testing patterns), see [Appendix: Copilot workflow for parity migrations](#appendix-copilot-workflow-for-parity-migrations).
 
-## Run the playbook with your AI copilot
+#### Run the playbook with your AI copilot
 
-### Phase 1: Parity translation (OLTP query logic → ClickHouse SQL)
+#### Phase 1: Parity translation (OLTP query logic → ClickHouse SQL)
 
 In this phase, you translate the existing OLTP-backed query logic (joins, CTE chains, stored-procedure-like reshaping) into ClickHouse SQL so you can validate that the output matches the existing API exactly.
 
-The priority is **correctness**, not OLAP optimization.
+The priority is **correctness**, not OLAP optimization. Getting a working, correct translation first means you have a rollback-ready implementation if you need to ship urgently—and it gives you a solid foundation for optimization without risking correctness.
 
-### You do
+**You do**
 
 - Run the existing system for a set of golden requests and capture the expected responses (your “golden cases”).
 - Give your copilot the right context (contract + OLTP handler/SQL + golden cases) so it can generate the parity SQL.
 - Run the copilot’s generated ClickHouse SQL against your test data (typically a local ClickHouse seeded via `moose seed`) and compare the output to your golden cases.
 
-### Copilot does
+**Copilot does**
 
 - Proposes parity SQL (possibly as a sequence of queries/CTEs).
 - Suggests exactly how to test it (e.g., a `moose query` command) and what output to copy back into the chat. (see [Seeding your local database from prod with `moose seed`](#seeding-your-local-database-from-prod-with-moose-seed))
 - Iterates based on your test results: you run the query, paste the output/diffs, and the copilot refines the SQL until the golden cases match.
 
-### You verify
+**You verify**
 
 - All golden cases match (exact match unless a tolerance is explicitly documented).
 - The parity query returns data for each case and respects auth/tenancy constraints.
 
-### Phase 2: Performance optimization
+#### Phase 2: Performance optimization
 
 At this point, you likely have a parity query that’s correct—but still too expensive to run on every dashboard request.
 
-That’s because OLTP query logic often relies on “read-time orchestration” (just-in-time joins, layered CTE chains, stored-procedure-like reshaping). A 1:1 ClickHouse translation usually preserves that shape, like this:
+That's because OLTP query logic typically does all the heavy lifting at query time—joins, CTE chains, and stored-procedure-like reshaping all happen when the user requests data. A 1:1 ClickHouse translation usually preserves that pattern, like this:
 
 ```sql
 WITH UserMerchants AS (
@@ -1251,56 +1272,56 @@ FROM AggregatedMetrics
 ORDER BY merchant_name;
 ```
 
-In OLAP, this “read-time orchestration” is an antipattern: every dashboard refresh forces ClickHouse to redo the same joins, reshaping, and aggregations from scratch—even when users are only changing filters, sorts, or time ranges.
+In OLAP, this pattern is inefficient: every dashboard refresh forces ClickHouse to redo the same joins, reshaping, and aggregations from scratch—even when users are only changing filters, sorts, or time ranges.
 
 ClickHouse best practices avoid stored-procedure-like pipelines at read time, and instead shift the reusable work to write time (using Materialized Views) whenever possible. See ClickHouse’s guidance here: [`Stored procedures and query parameters in ClickHouse`](https://clickhouse.com/docs/guides/developer/stored-procedures-and-prepared-statements).
 
-So Phase 2 is about turning the parity query into a **serving-ready table**: promote the reusable joins/reshaping/derived fields into a [Materialized View](/moosestack/olap/model-materialized-view), then keep request-time logic focused on slicing/sorting/pagination over that serving table.
+So Phase 2 is about turning the parity query into a **serving-ready table**: promote the reusable joins/reshaping/derived fields into a [Materialized View](/moosestack/olap/model-materialized-view), then keep request-time logic focused on slicing/sorting/pagination over that serving table. This shift from "compute on read" to "compute on write" is where the performance gains come from.
 
-### You do
+**You do**
 
-- Identify the OLTP “read-time orchestration” patterns in the parity query (joins, layered CTE reshaping, stored-procedure-like pipelines).
-- Prompt your copilot to propose what must move to write time ([Materialized Views](/moosestack/olap/model-materialized-view)) versus what stays flexible at query time.
+- Identify the expensive operations in the parity query (joins, layered CTEs, stored-procedure-like pipelines).
+- Prompt your copilot to propose which operations should move to write time ([Materialized Views](/moosestack/olap/model-materialized-view)) versus which should stay flexible at query time.
 
-### Copilot does
+**Copilot does**
 
 - Proposes MV(s) + backing table schema(s) that shift joins/reshaping/derived fields to write time.
 - Updates the parity approach so the serving query becomes a thin slice over serving-ready tables.
 
-### You verify
+**You verify**
 
 - The optimized path still passes golden cases.
-- The serving query is materially simpler (fewer joins/CTEs at read time) and measurably faster.
+- The serving query is simpler (50-90% fewer lines of SQL, 0-2 joins instead of 5+) and 10-100x faster.
 
-### Implementing the Materialized Views (MVs) and serving table(s)
+#### Implementing the Materialized Views (MVs) and serving table(s)
 
 Now you'll implement the [Materialized Views](/moosestack/olap/model-materialized-view) and serving table(s) your copilot proposed. This is the step that turns a "correct but expensive" parity query into a stable, fast-serving surface for the Query Layer.
 
-In MooseStack, Materialized Views allow you to precompute joins, aggregations, and derived fields and persist the results in a physical table. Your API handlers then query these precomputed tables instead of executing the full, complex query at request time. This keeps dataset handlers thin and predictable, and makes performance largely independent of query complexity.
+In MooseStack, Materialized Views precompute joins, aggregations, and derived fields as data arrives, persisting results in a physical table. Your API handlers query these precomputed tables instead of executing complex queries at request time. Dashboard performance stays fast and predictable regardless of filters, breakdowns, or time ranges. Once the MV is in place, adding new dashboard features becomes trivial because the expensive work is already done.
 
-#### Create the MV + serving table
+**Create the MV + serving table**
 
 - Define the **serving table schema** (the flattened / serving-ready shape your handler will read from).
 - Define the **Materialized View** that writes into that serving table (the MV `SELECT` should perform the joins/reshaping/derived fields you want to move to write time).
 - Save and watch `moose dev` logs until the MV and its backing table are created/updated successfully.
 
-#### Validate the MV before moving on
+**Validate the MV before moving on**
 
-- **Data is flowing**: new inserts populate the serving table (or you’ve run a backfill if you need historical parity).
-- **Row counts look sane**: use `moose query` to compare counts between source tables and the serving table for a known time window.
-- **Spot-check results**: run a few representative queries against the serving table and confirm key fields/aggregates match your expectations.
-- **Golden cases still pass**: update your handler to read from the serving table (even with temporary SQL) and confirm the golden responses match end-to-end.
+- **Data is flowing**: new inserts populate the serving table (or you've run a backfill if you need historical parity).
+- **Row counts look sane**: use `moose query` to compare counts between source tables and the serving table for a known time window (expect exact match or document any known discrepancies).
+- **Spot-check results**: run 3-5 representative queries against the serving table and confirm key fields/aggregates match your expectations.
+- **Golden cases still pass**: update your handler to read from the serving table (even with temporary SQL) and confirm all golden test responses match end-to-end.
 
 Once those checks pass, you’re ready for the next step: point your Query Layer `QueryModel` at the serving table so the handler stays thin.
 
-### Phase 3: Serve the Materialized View to your frontend
+#### Phase 3: Serve the Materialized View to your frontend
 
 Once your MV produces a serving-ready table (with joins/reshaping moved upstream), you need an interface to serve that table to your dashboard.
 
 You can do this in two ways:
 
-1. **Dynamic raw SQL string composition in each API handler**: build the SQL in each API handler at request time (dynamic `WHERE` / `GROUP BY` / `ORDER BY` / pagination) over the serving table.
-2. **Use the [Query Layer](https://github.com/514-labs/query-layer)**: define a typed model for how the serving table should be queried (what can be selected, grouped by, filtered by, sorted by, and paginated by) and reuse the same query-building logic across handlers. Because the MV pushed joins/reshaping to write time, the Query Layer can serve fast, flexible dashboard queries without reintroducing complex SQL string composition in every endpoint.
+1. **Dynamic raw SQL string composition in each API handler**: Build the SQL in each API handler at request time (dynamic `WHERE` / `GROUP BY` / `ORDER BY` / pagination) over the serving table. This works but means repetitive SQL code and higher risk of SQL injection or query errors.
+2. **Use the [Query Layer](https://github.com/514-labs/query-layer)** (recommended): Define a typed model once for how the serving table should be queried, then reuse the same query-building logic across handlers. This eliminates repetitive SQL string composition, provides type safety, and makes adding new filters or metrics trivial—just update the model, and all endpoints get the new capability automatically.
 
 For example, if your Materialized View writes into a serving table like `OrderFulfillmentServing` (flattened merchant fields, precomputed counters, etc.), your `QueryModel` might look like this:
 
@@ -1334,7 +1355,7 @@ export const orderFulfillmentModel = defineQueryModel({
 });
 ```
 
-### Add the Query Layer to your project
+#### Add the Query Layer to your project
 
 From your MooseStack project directory, copy the Query Layer starter kit into `src/query-layer`:
 
@@ -1342,7 +1363,7 @@ From your MooseStack project directory, copy the Query Layer starter kit into `s
 pnpm dlx tiged 514-labs/query-layer/src src/query-layer
 ```
 
-### Define a `QueryModel` for your serving table
+#### Define a `QueryModel` for your serving table
 
 To customize the example above for your own migration:
 
@@ -1357,27 +1378,27 @@ To customize the example above for your own migration:
 If you want more detail on Query Layer capabilities and APIs, refer to the dedicated repo: [Moose Query Layer](https://github.com/514-labs/query-layer).
 
 
-## Running your frontend locally
+### Running your frontend locally
 
-With your local dev server running, you can connect the rest of your application to your new analytical query in the local moose dev server using token authentication. Once connected, you can see data in your frontend and test the whole application without having to go through any cloud deployment.
+With your local dev server running, you can connect your frontend application to your new analytical queries using token authentication. This lets you test the complete user experience—dashboards, filters, error states—before deploying to production.
 
-## Push to remote github
+### Push to remote GitHub
 
 Add the files you created above (or just the functional files if you don't want to commit your test scripts) and push to your version control. Create a Pull Request.
 
 This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR. 
 
-# Going to production
+### Going to production
 
-This section will guide you through the process of applying your local changes to production:
+In this section, you'll apply your local changes to production:
 
 1. Join Boreal
-2. Committing a branch and deploying a preview branch
-3. Testing the preview branch
-4. Pushing to production
-5. Back-filling materialized views
+2. Commit your branch and deploy a preview environment
+3. Test the preview branch
+4. Push to production
+5. Backfill materialized views
 
-## Join Boreal
+#### Join Boreal
 
 (Skip this step if you already have completed Boreal onboarding.)
 
@@ -1389,7 +1410,7 @@ To deploy changes to production, you need access to [Boreal](http://boreal.cloud
 
 Once you've joined the correct organization, you should be able to see the project in Boreal and proceed with your production rollout.
 
-## Generate a Migration Plan
+#### Generate a Migration Plan
 
 Return to your IDE and confirm the following before moving on:
 
@@ -1397,7 +1418,7 @@ Return to your IDE and confirm the following before moving on:
 * `moose dev` starts without errors
 * All relevant APIs return the expected results
 
-If all three checks pass, then you're ready for the final pre-production step: ensuring your changes can be deployed without breaking anything in production. To do this, you'll [generate and review a migration plan](https://docs.fiveonefour.com/moosestack/migrate/planned-migrations?lang=python).
+If all three checks pass, you're ready for the final pre-production step: ensuring your changes can deploy without breaking production. The migration plan shows exactly which database tables and views will be created, modified, or deleted. Review it to catch destructive changes (like accidental table drops) before they cause data loss.
 
 Open your terminal (ensure you `cd` to your MooseStack project root). Then run:
 
@@ -1413,7 +1434,7 @@ moose generate migration --save --url <BOREAL_HOST> --token <BOREAL_ADMIN_API_BE
 
 After successfully running `moose generate migration` with the correct `--url` and `--token`, a new `/migrations` directory should appear at the root of your MooseStack project. Open the `plan.yaml` file in that directory and review it carefully.
 
-## Migration plan review
+#### Migration plan review
 
 [Review the migration plan to confirm which SQL resources will be created or modified](https://docs.fiveonefour.com/moosestack/migrate/plan-format?). Make sure it matches exactly what you intend to ship. As a rule of thumb:
 
@@ -1421,7 +1442,7 @@ After successfully running `moose generate migration` with the correct `--url` a
 * Carefully review schema changes to existing tables
 * Avoid deleting existing tables at all costs
 
-### Look for new tables and materialized views
+**Look for new tables and materialized views**
 
 This is expected when optimizing queries. Any new materialized view should result in:
 
@@ -1430,7 +1451,7 @@ This is expected when optimizing queries. Any new materialized view should resul
 
 Seeing both confirms the Materialized View is being added cleanly and additively. For every new Materialized View in your branch, there should be exactly one `CreateTable` and one `SqlResource` defining it.
 
-### Watch closely for column changes
+**Watch closely for column changes**
 
 [Column-level changes](https://docs.fiveonefour.com/moosestack/migrate/plan-format#column-operations) are uncommon. If you encounter them:
 
@@ -1444,7 +1465,7 @@ There are a [small number of cases where column changes are expected:](https://d
 
 Outside of these cases, column-level changes should be treated with caution, especially [`DropTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#droptablecolumn) or [`ModifyTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#modifytablecolumn) operations. These changes are strongly discouraged. Instead, stick to strictly additive migrations. Undo the delete or modification in your `OlapTable` object, and introduce a new column instead.
 
-### Sanity-check for `DropTable` operations
+**Sanity-check for `DropTable` operations**
 
 If you see any [`DropTable` operations](https://docs.fiveonefour.com/moosestack/migrate/plan-format?lang=python#droptable), proceed with extreme caution and review your changes carefully. They may indicate that an `OlapTable` or `MaterializedView` object defined in the codebase (and currently used in production) is being deleted, which can result in irreversible data loss if applied unintentionally.
 
@@ -1452,11 +1473,11 @@ If the plan shows changes you did not anticipate, stop and resolve that before p
 
 Once the plan looks correct, you're ready to continue with preview and production rollout.
 
-## Open a Pull Request and Inspect the Preview Environment
+#### Open a Pull Request and Inspect the Preview Environment
 
 Commit your changes, push them to a new branch, and open a pull request targeting `main`.
 
-Once the PR is open, Boreal automatically deploys an isolated preview (staging) environment for the branch. Your code and the generated `plan.yaml` are applied to a staging database forked from production, so changes are created exactly as they would be in prod.
+Once the PR is open, Boreal automatically deploys an isolated preview (staging) environment for the branch. Your code and the generated `plan.yaml` are applied to a staging database forked from production. Validate that your migration works correctly with production data volume, schema, and edge cases before touching your live environment.
 
 Confirm that **boreal-cloud bot** appears in the PR comments.
 
@@ -1475,13 +1496,13 @@ In the **boreal-cloud bot** comment, you'll see a table. Click the link in the *
 
 From here, you'll inspect the database state and validate that the resources created by your migration plan match what you reviewed and expected before proceeding.
 
-## Connect to the Staging Database
+#### Connect to the Staging Database
 
 In this step, you'll query the staging ClickHouse database directly using ClickHouse's HTTPS interface.
 
 First, get the database HTTPS connection string from Boreal using the same steps you followed earlier. Make sure the Boreal dashboard is set to your feature branch, not `main`. You can confirm this by checking the branch selector in the left sidebar of the project dashboard.
 
-### Set the staging connection string locally
+**Set the staging connection string locally**
 
 Create a temporary environment variable for your staging database URL:
 
@@ -1492,7 +1513,7 @@ export STAGING_DB=<your-staging-db-connection>
 
 You can now safely use `$STAGING_DB` to run queries against the staging database via `curl`.
 
-### Inspect Staging Database Tables
+**Inspect Staging Database Tables**
 
 In a terminal, run:
 
@@ -1527,19 +1548,19 @@ If the list of tables does not match what you reviewed in the migration plan, st
 
 Do not merge until the preview environment reflects exactly the database resources and behavior you expect to see in production.
 
-## Merge PR to Deploy to Prod
+#### Merge PR to Deploy to Prod
 
 If everything lines up as you expect, you're ready to merge!
 
 Merge your PR and now do the same thing: click the Boreal bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
 
-## Backfill new Materialized Views
+#### Backfill new Materialized Views
 
-If your migration introduces any new Materialized Views, they will start populating only for new incoming data. To apply them to historical data, you must explicitly backfill them from existing ClickHouse tables.
+If your migration introduces new Materialized Views, they populate only for new incoming data. Your dashboards will show incomplete or empty results for historical time ranges until you backfill. To make historical data available immediately, explicitly backfill the MVs from existing ClickHouse tables.
 
 This step uses the same HTTPS + `curl` workflow as before, but targets the production (`main`) database and performs a write operation to apply the backfill.
 
-### Identify which materialized views need a backfill
+**Identify which materialized views need a backfill**
 
 Open the migration `plan.yml` you just shipped and find the new materialized views you created (look for the `CREATE MATERIALIZED VIEW` statements in `SqlResource`).
 
@@ -1548,7 +1569,7 @@ For each one, note two things:
 * the materialized view name
 * the backing table name it writes `TO`
 
-### Run the backfill (one MV at a time)
+**Run the backfill (one MV at a time)**
 
 Backfilling is done by inserting historical rows into the MV's backing table using the same `SELECT` logic used by the view.
 
@@ -1566,7 +1587,7 @@ curl -sS \
 
 Use the exact `SELECT` statement from the `CREATE MATERIALIZED VIEW` definition (or the underlying `SELECT` you used when building it) and paste it in place of `SELECT ...`.
 
-### Confirm the backfill worked
+**Confirm the backfill worked**
 
 After each backfill, sanity check that the backing table now has rows:
 
@@ -1581,21 +1602,21 @@ curl -sS \
 
 If the count is non-zero (and roughly matches what you expect), the backfill is complete.
 
-### Repeat for each new MV you added
+**Repeat for each new MV you added**
 
 Only backfill the MVs introduced in this change. Avoid reprocessing older MVs unless you intentionally want to rebuild them.
-# Appendixes
+## Appendices
 
-## Appendix: Copilot workflow for parity migrations
+### Appendix: Copilot workflow for parity migrations
 
-### Set up your copilot
+#### Set up your copilot
 
 Select **Plan mode** (selected near the model selector in the chat pane), and **choose an advanced reasoning model** of your choice (like Claude Opus 4.5, GPT Codex 5.1 Max or GPT 5.2).
 
 {/* image */}
 
 
-### Generating documentation
+#### Generating documentation
 
 Add documentation tasks you want the agent to produce alongside the implementation, e.g.
 
@@ -1612,7 +1633,7 @@ Include example curl requests + sample responses, schema diagrams / entity summa
 Add inline JSDoc for handlers, params, and response shapes
 ```
 
-### Running the plan
+#### Running the plan
 
 Once you are satisfied with the plan, hit `Build`. This will experiment with SQL queries, build up materialized views and implement the new endpoint.
 
@@ -1620,9 +1641,9 @@ Once you are satisfied with the plan, hit `Build`. This will experiment with SQL
 
 You will likely be asked for various permissions along the way, including for MCP tool use to check work against local data, and curl commands to check work against the remote database.
 
-Example of tool-use in the process of implementing the plan:
+Example of tool-use while implementing the plan:
 
-### Manual testing
+#### Manual testing
 
 You can ask the LLM to generate curl commands that you can use to test the generated API endpoints:
 
@@ -1649,9 +1670,9 @@ curl -X POST http://localhost:4000/dataset \
 
 You can iterate on this curl command to test against known data values.
 
-### Copilot-assisted testing
+#### Copilot-assisted testing
 
-You can also instruct the agent to take the success criteria defined in the specification document and create a test suite, showing you the results. It is best practice to audit and get comfortable with the test suite and the output to ensure that it covers actual usage.
+You can also instruct the agent to take the success criteria defined in the specification document and create a test suite, showing you the results. Audit the test suite and output to confirm it covers actual usage.
 
 ```
 Generate a test script that iterates through the generated API, with the test cases defined in the specification document
@@ -1674,18 +1695,18 @@ Test cases:
 ✅ Exact value validation (validates first 10 records match document exactly)
 ```
 
-## WSL: Setting up a WSL2 Linux instance to run MooseStack on Windows
+### WSL: Setting up a WSL2 Linux instance to run MooseStack on Windows
 
-### Prerequisites
+#### Prerequisites
 
 * **Windows 10 or 11:** Ensure you are running Windows 10 version 2004 (build 19041) or later, or Windows 11 [\[1\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=Prerequisites).
 * **Hardware virtualization:** WSL2 requires a 64-bit processor with virtualization support (e.g. VT-x/AMD-V) enabled in your BIOS, and at least 4 GB of RAM to run Docker [\[2\]](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers#:~:text=%2A%2064,SLAT). Make sure virtualization is turned on in your system BIOS settings.
 * **Internet access:** The setup will download Linux and various packages (Node.js, Docker, etc.), so an internet connection is required.
-* **Disk space:** Have a few gigabytes of free disk space for the Linux filesystem and Docker images.
+* **Disk space:** Have at least 10-20 GB of free disk space for the Linux filesystem and Docker images.
 * **Docker Desktop:** We will use Docker Desktop for Windows (with WSL2 integration) to run MooseStack's containers. You can download and configure it during the steps below.
 * *(Optional)* **Windows Terminal:** It's recommended to install Windows Terminal for a better command-line experience (multiple tabs, copy/paste, etc.) [\[3\]](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl#:~:text=Windows%20Terminal), though you can use any terminal you prefer.
 
-### Step 1: Enable WSL 2 and Install Ubuntu Linux
+#### Step 1: Enable WSL 2 and Install Ubuntu Linux
 
 1. **Enable WSL 2:** Open PowerShell as Administrator (right-click Start menu, choose PowerShell (Admin)). Run the following command to enable the Windows Subsystem for Linux and install its components:
 
@@ -1704,7 +1725,7 @@ wsl --install
 
 4. **Verify WSL installation:** Once setup is complete, you should see a Linux terminal prompt (e.g. something like `username@DESKTOP-XYZ:~$`). At this point, you have a Ubuntu WSL instance running. You can check that it's using WSL version 2 by opening a PowerShell/Command Prompt (not the Ubuntu shell) and running `wsl -l -v`. It should list your Ubuntu distro with version "2". If it says version "1", upgrade it with `wsl --set-version Ubuntu 2`.
 
-### Step 2: Update Linux Packages
+#### Step 2: Update Linux Packages
 
 Now that Ubuntu is running in WSL, update its package lists and upgrade installed packages:
 
@@ -1719,7 +1740,7 @@ sudo apt update && sudo apt upgrade -y
 
 * **(Optional) Install basic tools:** You may want to install some common utilities. For example, you can run `sudo apt install -y build-essential curl git` to ensure you have compilers and Git available. This is not strictly required for MooseStack, but can be useful for general development.
 
-### Step 3: Install and Configure Docker (WSL Integration)
+#### Step 3: Install and Configure Docker (WSL Integration)
 
 MooseStack uses Docker containers under the hood for components like ClickHouse (database), Redpanda (streaming), etc. On Windows, the recommended way to run Docker with WSL2 is via **Docker Desktop** [\[9\]](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers#:~:text=containers%20by%20setting%20up%20Docker,Subsystem%20for%20Linux%2C%20version%202)
 
@@ -1754,13 +1775,13 @@ The hello-world container should download and run, printing a "Hello from Docker
 
 **Troubleshooting:** If `docker run hello-world` fails, ensure Docker Desktop is running and that WSL integration is enabled for your distro. In some cases, you might need to install the Docker CLI tools inside WSL, but Docker Desktop usually handles that by exposing the `docker` command in WSL [\[10\]](https://stackoverflow.com/questions/70449927/how-can-i-access-wsl2-which-is-used-by-docker-desktop#:~:text=Docker%20Desktop%20,tab%20in%20Settings). Also verify that your Ubuntu WSL is set to version 2 (as Docker won't work with WSL1).
 
-### Step 4: Proceed with MooseStack requirements and installation
+#### Step 4: Proceed with MooseStack requirements and installation
 
 You now have a working Ubuntu instance on your windows machine with Docker installed. You can proceed to install MooseStack and its requirements (Node.js 20+ and/or Python 3.12+) as if you were installing on a regular linux machine. Just make sure to install from the Linux terminal prompt in the Ubuntu instance.
 
-## Expected CDC Impact
+### Expected CDC Impact
 
-### Storage Impact
+#### Storage Impact
 
 Primarily driven by change volume (rows changed / day) and retention period
 
@@ -1770,7 +1791,7 @@ Primarily driven by change volume (rows changed / day) and retention period
 | Retention | Default 3 days, then auto-purged |
 | Transaction log | May grow if capture job lags |
 
-### CPU Impact
+#### CPU Impact
 
 Primarily driven by change rate (changes / sec) and the number of CDC enabled tables
 
@@ -1780,7 +1801,7 @@ Primarily driven by change rate (changes / sec) and the number of CDC enabled ta
 | Multiple tables | Low-moderate (well within normal) |
 | Polling interval (e.g. 2-min) | Negligible (just reads) |
 
-### I/O Impact
+#### I/O Impact
 
 Primarily driven by write volume to tracking tables and transaction log read rate
 
@@ -1790,7 +1811,7 @@ Primarily driven by write volume to tracking tables and transaction log read rat
 | Tracking table writes | Low additional write I/O |
 | Debezium queries (periodic) | Minimal - batched reads |
 
-### Memory Impact
+#### Memory Impact
 
 Primarily driven by the number of CDC-enabled tables and their row size
 
@@ -1799,7 +1820,7 @@ Primarily driven by the number of CDC-enabled tables and their row size
 | Capture job buffers | Low, measured in MB |
 | Tracking table indexes | Proportional to change volume |
 
-## Moose Language Server
+### Moose Language Server
 
 The [Moose LSP for Typescript](https://github.com/514-labs/moosestack-lsp) is an experimental feature available for early access. It enables SQL validation and syntax highlighting for `sql` strings in Typescript objects in your Moose project. It currently has known limitations around nested SQL and SQL fragments that will be incorrectly highlighted as errors. If you would like access to experiment with this feature, let us know!
 
@@ -1808,7 +1829,7 @@ Beta distributions in IDE extension marketplaces (installation/access not guaran
 * vscode: [https://marketplace.visualstudio.com/items?itemName=514-labs.moosestack-lsp](https://marketplace.visualstudio.com/items?itemName=514-labs.moosestack-lsp)
 * cursor: [https://open-vsx.org/extension/514-labs/moosestack-lsp](https://open-vsx.org/extension/514-labs/moosestack-lsp)
 
-## Manually seeding local dev
+### Manually seeding local dev
 
 Prompt your copilot to seed your local database from each remote table:
 
@@ -1842,7 +1863,7 @@ Steps:
 Implement as a single bash script.
 ```
 
-## Sample Plan
+### Sample Plan
 
 This is an example of a plan generated by an AI copilot for implementing a dataset API endpoint. Use this as a reference for the level of detail and structure your own AI-generated plans should have.
 
