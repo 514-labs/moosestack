@@ -32,7 +32,7 @@ interface CheckboxGroupProps {
 // Context to share checkbox state with child components
 interface CheckboxGroupContextValue {
   checkedValues: string[];
-  groupId: string | undefined;
+  groupId: string;
 }
 
 const CheckboxGroupContext = createContext<CheckboxGroupContextValue | null>(
@@ -80,7 +80,7 @@ function CheckboxGroupInner({
   const groupId = id || `checkbox-${label.toLowerCase().replace(/\s+/g, "-")}`;
 
   return (
-    <CheckboxGroupContext.Provider value={{ checkedValues, groupId: id }}>
+    <CheckboxGroupContext.Provider value={{ checkedValues, groupId }}>
       <div className={cn("flex flex-col gap-3", className)}>
         <Label className="text-sm font-medium text-foreground">{label}</Label>
         <div className="flex flex-col gap-2">

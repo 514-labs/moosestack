@@ -4,6 +4,31 @@ import { useState, useEffect, useCallback } from "react";
 
 const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 
+// Custom event name for same-page state updates
+export const INTERACTIVE_STATE_CHANGE_EVENT = "moose-interactive-state-change";
+
+// Custom event detail type
+export interface InteractiveStateChangeDetail {
+  key: string;
+  value: unknown;
+}
+
+/**
+ * Dispatch a custom event for same-page state synchronization.
+ * This replaces the need for polling in ConditionalContent.
+ */
+function dispatchStateChange(key: string, value: unknown): void {
+  if (typeof window === "undefined") return;
+
+  const event = new CustomEvent<InteractiveStateChangeDetail>(
+    INTERACTIVE_STATE_CHANGE_EVENT,
+    {
+      detail: { key, value },
+    },
+  );
+  window.dispatchEvent(event);
+}
+
 /**
  * Custom hook for persistent state with localStorage support.
  * Provides automatic sync across components using the same key.
@@ -46,6 +71,8 @@ export function usePersistedState<T>(
 
     try {
       localStorage.setItem(storageKey, JSON.stringify(value));
+      // Dispatch custom event for same-page synchronization
+      dispatchStateChange(storageKey, value);
     } catch {
       // Ignore storage errors (quota exceeded, etc.)
     }

@@ -66,6 +66,24 @@ import { rehypeCodeMeta } from "@/lib/rehype-code-meta";
 import { rehypeRestoreCodeMeta } from "@/lib/rehype-restore-code-meta";
 import { ensureCodeBlockSpacing } from "@/lib/remark-code-block-spacing";
 
+// Module-level component wiring (hoisted to avoid per-render allocations)
+// Create FileTree with nested components
+const FileTreeWithSubcomponents = Object.assign(FileTree, {
+  Folder: FileTreeFolder,
+  File: FileTreeFile,
+});
+
+// Create interactive components with nested sub-components
+const CheckboxGroupWithSubcomponents = Object.assign(CheckboxGroup, {
+  Content: CheckboxGroupContent,
+});
+const NumberedAccordionWithSubcomponents = Object.assign(NumberedAccordion, {
+  Item: NumberedAccordionItem,
+});
+const TabbedCodeWithSubcomponents = Object.assign(TabbedCode, {
+  Content: TabbedCodeContent,
+});
+
 interface MDXRendererProps {
   source: string;
 }
@@ -74,23 +92,6 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
   // Preprocess content to ensure proper spacing around code blocks
   // This prevents hydration errors from invalid HTML nesting
   const processedSource = ensureCodeBlockSpacing(source);
-
-  // Create FileTree with nested components
-  const FileTreeWithSubcomponents = Object.assign(FileTree, {
-    Folder: FileTreeFolder,
-    File: FileTreeFile,
-  });
-
-  // Create interactive components with nested sub-components
-  const CheckboxGroupWithSubcomponents = Object.assign(CheckboxGroup, {
-    Content: CheckboxGroupContent,
-  });
-  const NumberedAccordionWithSubcomponents = Object.assign(NumberedAccordion, {
-    Item: NumberedAccordionItem,
-  });
-  const TabbedCodeWithSubcomponents = Object.assign(TabbedCode, {
-    Content: TabbedCodeContent,
-  });
 
   // SourceCodeLink component for linking to GitHub source code
   const SourceCodeLink = ({

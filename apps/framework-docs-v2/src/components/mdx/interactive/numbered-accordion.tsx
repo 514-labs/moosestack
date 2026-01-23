@@ -9,6 +9,10 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import {
+  INTERACTIVE_STATE_CHANGE_EVENT,
+  type InteractiveStateChangeDetail,
+} from "./use-persisted-state";
 
 const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 
@@ -100,26 +104,38 @@ function NumberedAccordionInner({
     // Initial read
     readStoredValues();
 
-    // Listen for storage changes (from same page or other tabs)
+    // Listen for storage changes from other tabs
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === storageKey) {
-        readStoredValues();
+        // Reset to empty if key was removed, otherwise read the new value
+        if (event.newValue === null) {
+          setControlledVisibleItems([]);
+        } else {
+          readStoredValues();
+        }
       }
     };
 
-    // Listen for custom events (for same-page updates)
-    const handleCustomChange = () => {
-      readStoredValues();
+    // Listen for same-page state changes via custom event
+    const handleStateChange = (event: Event) => {
+      const customEvent = event as CustomEvent<InteractiveStateChangeDetail>;
+      if (customEvent.detail?.key === storageKey) {
+        const value = customEvent.detail.value;
+        if (Array.isArray(value)) {
+          setControlledVisibleItems(value as string[]);
+        }
+      }
     };
 
     window.addEventListener("storage", handleStorageChange);
-
-    // Poll for changes since storage events don't fire on same page
-    const pollInterval = setInterval(readStoredValues, 100);
+    window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
-      clearInterval(pollInterval);
+      window.removeEventListener(
+        INTERACTIVE_STATE_CHANGE_EVENT,
+        handleStateChange,
+      );
     };
   }, [controlledBy]);
 

@@ -3,6 +3,10 @@
 import { Suspense, ReactNode, useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import {
+  INTERACTIVE_STATE_CHANGE_EVENT,
+  type InteractiveStateChangeDetail,
+} from "./use-persisted-state";
 
 const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 
@@ -64,7 +68,7 @@ function TabbedCodeInner({
       // Ignore parsing errors
     }
 
-    // Listen for changes from other components
+    // Listen for changes from other tabs
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === storageKey && event.newValue !== null) {
         try {
@@ -78,8 +82,30 @@ function TabbedCodeInner({
       }
     };
 
+    // Listen for same-page state changes via custom event
+    const handleStateChange = (event: Event) => {
+      const customEvent = event as CustomEvent<InteractiveStateChangeDetail>;
+      if (customEvent.detail?.key === storageKey) {
+        const value = customEvent.detail.value;
+        if (
+          typeof value === "string" &&
+          variants.some((v) => v.value === value)
+        ) {
+          setActiveTab(value);
+        }
+      }
+    };
+
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(
+        INTERACTIVE_STATE_CHANGE_EVENT,
+        handleStateChange,
+      );
+    };
   }, [syncKey, variants]);
 
   const handleTabChange = (value: string) => {
@@ -90,6 +116,14 @@ function TabbedCodeInner({
       const storageKey = `${STORAGE_KEY_PREFIX}-tabbed-${syncKey}`;
       try {
         localStorage.setItem(storageKey, JSON.stringify(value));
+        // Dispatch custom event for same-page synchronization
+        const event = new CustomEvent<InteractiveStateChangeDetail>(
+          INTERACTIVE_STATE_CHANGE_EVENT,
+          {
+            detail: { key: storageKey, value },
+          },
+        );
+        window.dispatchEvent(event);
       } catch {
         // Ignore storage errors
       }
