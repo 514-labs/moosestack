@@ -1582,6 +1582,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            workflow_changes: vec![],
             filtered_olap_changes: vec![],
         };
 
@@ -1602,6 +1603,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            workflow_changes: vec![],
             filtered_olap_changes: vec![],
         };
 
@@ -1620,6 +1622,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            workflow_changes: vec![],
             filtered_olap_changes: vec![],
         };
 
