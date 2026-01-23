@@ -1277,11 +1277,10 @@ const loadIndex = async () => {
   // providing automatic fallback to ts-node if compilation wasn't run.
   const useCompiled = shouldUseCompiled();
 
-  const registry = getMooseInternal();
-
   // In dev mode, clear registry and require.cache to support hot reloading.
   // In production (compiled mode), skip clearing - code doesn't change.
   if (!useCompiled) {
+    const registry = getMooseInternal();
     registry.tables.clear();
     registry.streams.clear();
     registry.ingestApis.clear();
