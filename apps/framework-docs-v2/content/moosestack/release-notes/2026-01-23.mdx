@@ -18,8 +18,12 @@ import { Callout } from "@/components/mdx";
 - **Remove Data Model v2 feature flag - now default behavior** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
   The dmv2 feature flag has been removed and Data Model v2 is now the default and only supported data modeling approach. Projects using the old data model system will need to migrate to the new format. This simplifies the framework by removing legacy code paths and ensures all users benefit from the improved data modeling capabilities.
 
+  Docs: [Data Modeling](/moosestack/data-modeling)
+
 - **Enforce Officially Supported Node.js 20-24 requirement across all TypeScript packages** ([@onelesd](https://github.com/onelesd))
   Updated Node.js version requirements to enforce versions 20-24 across all TypeScript packages and templates. This ensures compatibility with modern Node.js features and security updates. Users must use Node.js 20 to 24 to use Moose projects.
+
+  Docs: [Minimum Requirements](/moosestack/help/minimum-requirements)
 
 ### New Features
 
@@ -93,6 +97,8 @@ import { Callout } from "@/components/mdx";
 
   This example demonstrates building dynamic SQL queries using the new sql template helpers: sql.join() to combine column lists and WHERE conditions, sql.raw() to insert SQL functions like NOW(), and Sql.append() to chain query parts together incrementally.
 
+  Docs: [SQL Template Helpers](/moosestack/apis/analytics-api#sql-template-helpers)
+
 - **Add row count reporting to moose seed command** ([@oatsandsugar](https://github.com/oatsandsugar))
   The `moose seed clickhouse` command now automatically reports row counts after seeding. Disable with `--report=false`.
 
@@ -104,10 +110,14 @@ import { Callout } from "@/components/mdx";
     users: 50000 rows
   ```
 
+  Docs: [Seed (ClickHouse)](/moosestack/moose-cli#seed-clickhouse)
+
 - **Add LLM-optimized documentation endpoints for AI agents** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
   Added new markdown endpoints that make MooseStack documentation easily accessible to AI agents and LLMs. Users can now append `.md` to any documentation URL to get clean markdown content, and the root `/llm.md` endpoint provides a table of contents for discovery. Also enhanced the documentation UI with a "Copy Page" dropdown menu that lets users copy page content as markdown or open the markdown endpoint directly.
 
   ![Copy Page dropdown menu](/moosestack/release-notes/2026-01-23/copy-page-dropdown.png)
+
+  Docs: [LLM-Optimized Documentation Feeds](/moosestack/moosedev-mcp#llm-optimized-documentation-feeds)
 
 - **Add January 16, 2026 release notes with new features and improvements** ([@groy-514](https://github.com/groy-514))
   Published comprehensive release notes documenting new features including structured JSON logging with span support, View support in SQL interpolator, file watcher ignore patterns configuration, CDP Analytics example application, workflow task completion callbacks, and various bug fixes and improvements across Moose and Boreal products.
@@ -115,80 +125,19 @@ import { Callout } from "@/components/mdx";
 - **Released new guides section with improved layout and Slack community link** ([@callicles](https://github.com/callicles))
   The guides section has been redesigned with a new layout, improved guide cards showing descriptions, and a community section linking to the MooseStack Slack workspace. Two new guides are now available: "Improving the Performance of Your Dashboards" and "Chat in your app".
 
-- **Add comprehensive documentation for SAP HANA CDC pipeline** ([@514Ben](https://github.com/514Ben))
-  Added complete documentation for the SAP HANA CDC to ClickHouse pipeline, including installation guides, configuration instructions, troubleshooting tips, and getting started tutorials. Users can now easily set up and configure real-time data synchronization from SAP HANA to ClickHouse with clear step-by-step instructions.
+  📸 _[Screenshot needed: The guides section has been redesigned with a new layout, improved guide cards showing descriptions, and a community section linking to the MooseStack Slack workspace. Two new guides are now available: "Improving the Performance of Your Dashboards" and "Chat in your app".]_
 
-- **Add support for SAP HANA views in CDC pipeline** ([@514Ben](https://github.com/514Ben))
-  Users can now include SAP HANA database views (not just tables) in their CDC pipelines. The system automatically detects views and handles them appropriately - creating triggers only for tables while still allowing data ingestion from views. This expands the types of SAP HANA objects that can be monitored and synced.
-
-- **Add SAP HANA CDC connector and ClickHouse pipeline** ([@514Ben](https://github.com/514Ben))
-  Added a new Change Data Capture (CDC) connector for SAP HANA databases that enables real-time streaming of database changes. Includes a complete pipeline to sync SAP HANA changes to ClickHouse with support for INSERT, UPDATE, and DELETE operations. Users can now capture and stream database changes in real-time from SAP HANA to their data infrastructure.
-
-  **SAP HANA CDC to ClickHouse streaming pipeline**
-
-  ```python
-  import os
-  from sap_hana_cdc import SAPHanaCDCConnector, SAPHanaCDCConfig
-  from moose_lib import Moose
-
-  # Initialize Moose application
-  app = Moose()
-
-  # Configure SAP HANA CDC connector
-  config = SAPHanaCDCConfig(
-      host=os.getenv("SAP_HANA_HOST"),
-      port=30015,
-      user=os.getenv("SAP_HANA_USERNAME"),
-      password=os.getenv("SAP_HANA_PASSWORD"),
-      source_schema="SALES",
-      cdc_schema="SALES",
-      tables=["CUSTOMERS", "ORDERS", "PRODUCTS"],  # Monitor specific tables
-      client_id="moose_pipeline"
-  )
-
-  # Create CDC connector
-  cdc_connector = SAPHanaCDCConnector.build_from_config(config)
-
-  # Initialize CDC infrastructure (run once)
-  cdc_connector.init_cdc()
-
-  @app.streaming_function
-  def process_sap_hana_changes():
-      """Stream SAP HANA changes to ClickHouse in real-time"""
-
-      # Get latest changes from SAP HANA
-      changes = cdc_connector.get_changes(limit=1000)
-
-      for change in changes.changes:
-          # Process each change event
-          event_data = {
-              "table_name": change.table_name,
-              "change_type": change.change_type,  # INSERT, UPDATE, DELETE
-              "transaction_id": change.transaction_id,
-              "timestamp": change.timestamp,
-              "data": change.data,  # JSON data of the changed record
-              "old_data": change.old_data if change.change_type == "UPDATE" else None
-          }
-
-          # Send to ClickHouse via Moose streaming pipeline
-          app.produce("sap_hana_changes", event_data)
-
-  # Run the streaming pipeline
-  if __name__ == "__main__":
-      app.run()
-  ```
-
-  This example shows how to set up a real-time data pipeline that captures changes from SAP HANA using the new CDC connector and streams them to ClickHouse through MooseStack. The pipeline monitors specific tables and processes INSERT, UPDATE, and DELETE operations as they occur.
+  Docs: [Guides](/guides) | [Performant Dashboards](/guides/applications/performant-dashboards) | [Chat in Your App](/guides/applications/in-app-chat-analytics)
 
 ### Improvements
 
-- Updated static report generation guide for Node.js 20+ and pdfmake 0.3: Updated the static report generation tutorial to require Node.js 20+ (needed for pdfmake 0.3) and modernized the PDF generation code to use the new pdfmake 0.3 API. Added comprehensive troubleshooting tips, clearer service startup instructions, and better error handling guidance to improve the developer experience when following the tutorial. ([@cjus](https://github.com/cjus))
+- Updated static report generation guide for Node.js 20+ and pdfmake 0.3: Updated the static report generation tutorial to require Node.js 20+ (needed for pdfmake 0.3) and modernized the PDF generation code to use the new pdfmake 0.3 API. Added comprehensive troubleshooting tips, clearer service startup instructions, and better error handling guidance to improve the developer experience when following the tutorial. Docs: [Automated Reports Guide](/guides/applications/automated-reports) ([@cjus](https://github.com/cjus))
 - Improved documentation copy functionality with language filtering: Enhanced the documentation copy button to intelligently filter content based on your selected programming language (TypeScript or Python). When copying documentation content, it now automatically removes code examples and explanations for the language you're not using, giving you cleaner, more relevant content for your workflow. ([@tg339](https://github.com/tg339))
 - Updated static report generation guide to use pnpm: The static report generation tutorial now uses pnpm instead of npm for package management, aligning with MooseStack's workspace requirements. Users following the guide will now have the correct setup instructions and avoid installation issues. ([@cjus](https://github.com/cjus))
 - Enhanced static report generation guide with detailed usage paths and validation: Significantly improved the static report generation documentation with audience-specific learning paths, environment verification steps, data validation examples, and troubleshooting guidance. Added detailed business context explaining ROI and comparison with other approaches. Users can now choose their learning path (business focus, hands-on, or concepts-first) and follow more comprehensive setup instructions with validation checks. ([@cjus](https://github.com/cjus))
-- Clarify materialized view backfill behavior in dev vs production modes: Updated documentation to clarify that materialized view backfills happen automatically in dev mode but require manual action in production to avoid data duplication. This helps users understand when to expect automatic backfills and when they need to handle backfills manually. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
-- Improved LLM documentation endpoints with full URLs and language parameter guidance: Updated documentation to show complete URLs for LLM-friendly markdown endpoints and added guidance about language-specific content parameters. This makes it easier for AI assistants and LLMs to discover and fetch MooseStack documentation programmatically. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
-- Updated Chat in Your App guide with better structure and visual components. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Clarify materialized view backfill behavior in dev vs production modes: Updated documentation to clarify that materialized view backfills happen automatically in dev mode but require manual action in production to avoid data duplication. This helps users understand when to expect automatic backfills and when they need to handle backfills manually. Docs: [Materialized Views - Backfill](/moosestack/olap/model-materialized-view#backfill-destination-tables) ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+- Improved LLM documentation endpoints with full URLs and language parameter guidance: Updated documentation to show complete URLs for LLM-friendly markdown endpoints and added guidance about language-specific content parameters. This makes it easier for AI assistants and LLMs to discover and fetch MooseStack documentation programmatically. Docs: [LLM-Optimized Documentation Feeds](/moosestack/moosedev-mcp#llm-optimized-documentation-feeds) ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+- Updated Chat in Your App guide with better structure and visual components. Docs: [Chat in Your App Guide](/guides/applications/in-app-chat-analytics) ([@oatsandsugar](https://github.com/oatsandsugar))
 - Faster TypeScript application startup through precompilation: TypeScript applications now start significantly faster by precompiling TypeScript code during the build process instead of compiling at runtime. This eliminates ts-node overhead and improves worker startup times, making development and production deployments more responsive. ([@LucioFranco](https://github.com/LucioFranco))
 - Enhanced static report generation guide with complete hands-on tutorial: Expanded the static report generation guide from a basic outline to a comprehensive 40-minute tutorial. Users can now follow step-by-step instructions to build a complete data pipeline including CSV/JSON ingestion, ClickHouse time-series analytics, materialized views, and PDF report generation. The guide includes real-world retail scenario, sample data, and working code examples. ([@cjus](https://github.com/cjus))
 - Improved documentation with better file tree visualization and code formatting: Enhanced documentation guides with interactive file tree components replacing plain text directory structures, improved code block formatting with proper shell syntax highlighting, and better visual presentation of project structures. Makes it easier for users to understand project organization and follow setup instructions. ([@callicles](https://github.com/callicles))
