@@ -51,12 +51,20 @@ function SelectFieldInner({
 }: SelectFieldProps) {
   const [internalValue, setInternalValue] = usePersistedState<string>(
     id,
-    defaultValue || options[0]?.value || "",
+    defaultValue ?? options[0]?.value ?? "",
     persist,
   );
 
-  // Use controlled value if provided, otherwise use internal state
-  const currentValue = controlledValue ?? internalValue;
+  // Validate that the internal value exists in options (in case options changed)
+  const validOptionValues = options.map((o) => o.value);
+  const isValidInternalValue = validOptionValues.includes(internalValue);
+  const validatedInternalValue =
+    isValidInternalValue ? internalValue : (
+      (defaultValue ?? options[0]?.value ?? "")
+    );
+
+  // Use controlled value if provided, otherwise use validated internal state
+  const currentValue = controlledValue ?? validatedInternalValue;
 
   const handleChange = (newValue: string) => {
     if (controlledValue === undefined) {

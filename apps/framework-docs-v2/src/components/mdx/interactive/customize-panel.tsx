@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import React, { ReactNode } from "react";
 import {
   Card,
   CardHeader,
@@ -45,7 +45,7 @@ export function CustomizePanel({
   description,
   children,
   className,
-}: CustomizePanelProps) {
+}: CustomizePanelProps): React.JSX.Element {
   return (
     <Card
       className={cn(

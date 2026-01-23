@@ -1,6 +1,10 @@
 "use client";
 
 import { Suspense, ReactNode, useState, useEffect } from "react";
+import {
+  INTERACTIVE_STATE_CHANGE_EVENT,
+  type InteractiveStateChangeDetail,
+} from "./use-persisted-state";
 
 const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 
@@ -51,18 +55,33 @@ function ConditionalContentInner({
     // Listen for storage changes from other tabs
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === storageKey) {
-        readStoredValue();
+        // Reset to null if key was removed, otherwise read the new value
+        if (event.newValue === null) {
+          setCurrentValue(null);
+        } else {
+          readStoredValue();
+        }
       }
     };
 
     window.addEventListener("storage", handleStorageChange);
 
-    // Poll for same-page updates (storage events don't fire on same page)
-    const pollInterval = setInterval(readStoredValue, 100);
+    // Listen for same-page state changes via custom event
+    const handleStateChange = (event: Event) => {
+      const customEvent = event as CustomEvent<InteractiveStateChangeDetail>;
+      if (customEvent.detail?.key === storageKey) {
+        setCurrentValue(customEvent.detail.value as string | string[] | null);
+      }
+    };
+
+    window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
-      clearInterval(pollInterval);
+      window.removeEventListener(
+        INTERACTIVE_STATE_CHANGE_EVENT,
+        handleStateChange,
+      );
     };
   }, [whenId]);
 

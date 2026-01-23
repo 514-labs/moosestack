@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import React, { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 interface CustomizeGridProps {
@@ -40,7 +40,7 @@ export function CustomizeGrid({
   children,
   columns = 2,
   className,
-}: CustomizeGridProps) {
+}: CustomizeGridProps): React.JSX.Element {
   return (
     <div className={cn("grid gap-4", columnClasses[columns], className)}>
       {children}
