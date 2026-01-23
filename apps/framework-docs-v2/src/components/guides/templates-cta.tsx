@@ -8,7 +8,7 @@ export function TemplatesCTA() {
         <h3 className="text-xl font-semibold text-foreground">
           Try Our Templates
         </h3>
-        <p className="text-sm text-muted-foreground">1 Click Starter kits</p>
+        <p className="text-sm text-muted-foreground">1-click starter kits</p>
       </div>
       <Button variant="secondary" asChild className="w-fit">
         <Link href="/templates">Learn More</Link>

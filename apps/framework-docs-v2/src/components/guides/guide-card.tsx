@@ -44,13 +44,16 @@ export function GuideCard({
     <Link
       href={href}
       prefetch={true}
-      className="group relative flex items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors cursor-pointer"
+      className="group relative flex flex-col md:flex-row md:items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors cursor-pointer"
     >
+      {/* Preview: Full width header on mobile, left media on desktop */}
       <GuidePreview
         variant={previewVariant}
         imagePath={previewImageIndexFile}
         title={title}
       />
+
+      {/* Content: Full width on mobile, flex-1 on desktop */}
       <div className="flex flex-1 flex-col gap-2">
         <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         {badges.length > 0 && (
@@ -71,8 +74,20 @@ export function GuideCard({
             {description}
           </p>
         )}
+
+        {/* Button: Inline on mobile, separate on desktop */}
+        <div className="md:hidden mt-2">
+          <Button variant="default" className="pointer-events-none">
+            Read
+          </Button>
+        </div>
       </div>
-      <Button variant="default" className="shrink-0 pointer-events-none">
+
+      {/* Button: Side-aligned on desktop only */}
+      <Button
+        variant="default"
+        className="hidden md:block shrink-0 pointer-events-none"
+      >
         Read
       </Button>
     </Link>

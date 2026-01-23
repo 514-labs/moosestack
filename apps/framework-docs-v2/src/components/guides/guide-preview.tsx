@@ -18,7 +18,7 @@ export function GuidePreview({ variant, imagePath, title }: GuidePreviewProps) {
   // If image path provided, use it
   if (imagePath) {
     return (
-      <div className="relative w-48 h-[108px] shrink-0 overflow-hidden rounded-md border border-neutral-700">
+      <div className="relative w-full h-[200px] md:w-48 md:h-[108px] shrink-0 overflow-hidden rounded-md border border-neutral-700">
         <Image src={imagePath} alt={title} fill className="object-cover" />
       </div>
     );
@@ -59,8 +59,8 @@ export function GuidePreview({ variant, imagePath, title }: GuidePreviewProps) {
       case "dashboards":
         return (
           <div className="w-full h-full flex flex-col gap-2.5 p-3">
-            {/* Top row: 3 equal cards (lighter) */}
-            <div className="flex gap-2.5 h-8">
+            {/* Top row: 3 equal cards (lighter) - taller on mobile */}
+            <div className="flex gap-2.5 h-[55%] md:h-8">
               <div className="flex-1 border border-neutral-500 rounded mix-blend-luminosity"></div>
               <div className="flex-1 border border-neutral-500 rounded mix-blend-luminosity"></div>
               <div className="flex-1 border border-neutral-500 rounded mix-blend-luminosity"></div>
@@ -113,7 +113,7 @@ export function GuidePreview({ variant, imagePath, title }: GuidePreviewProps) {
   };
 
   return (
-    <div className="relative w-48 h-[108px] shrink-0 overflow-hidden rounded-md border border-neutral-700 bg-neutral-900">
+    <div className="relative w-full h-[200px] md:w-48 md:h-[108px] shrink-0 overflow-hidden rounded-md border border-neutral-700 bg-neutral-900">
       {renderSkeleton()}
     </div>
   );
