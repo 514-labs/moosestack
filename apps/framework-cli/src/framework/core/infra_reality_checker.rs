@@ -4,6 +4,8 @@
 /// with the documented infrastructure map. It helps identify discrepancies between
 /// what exists in reality and what is documented in the infrastructure map.
 ///
+/// SQL normalization uses ClickHouse's native formatQuerySingleLine for accurate comparison.
+///
 /// The module includes:
 /// - A reality checker that queries the actual infrastructure state
 /// - Structures to represent discrepancies between reality and documentation
@@ -292,7 +294,7 @@ pub fn find_table_from_infra_map(
     fallback_match
 }
 
-impl<T: OlapOperations> InfraRealityChecker<T> {
+impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
     /// Creates a new InfraRealityChecker with the provided OLAP client.
     ///
     /// # Arguments
@@ -651,11 +653,50 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         );
 
         // Find mismatched MVs (exist in both but differ)
+        // Normalize SQL at the edge using ClickHouse's native formatting
         let mut mismatched_materialized_views = Vec::new();
         for (id, desired) in &infra_map.materialized_views {
             if let Some(actual) = actual_materialized_views.get(id) {
-                if !materialized_views_are_equivalent(actual, desired, &infra_map.default_database)
-                {
+                debug!("Normalizing SQL for MV '{}' comparison", id);
+                // Normalize both SQLs via ClickHouse for accurate comparison
+                let actual_sql_normalized = self
+                    .olap_client
+                    .normalize_sql(&actual.select_sql, &infra_map.default_database)
+                    .await
+                    .unwrap_or_else(|e| {
+                        debug!("Failed to normalize actual SQL for MV '{}': {:?}", id, e);
+                        actual.select_sql.clone()
+                    });
+                let desired_sql_normalized = self
+                    .olap_client
+                    .normalize_sql(&desired.select_sql, &infra_map.default_database)
+                    .await
+                    .unwrap_or_else(|e| {
+                        debug!("Failed to normalize desired SQL for MV '{}': {:?}", id, e);
+                        desired.select_sql.clone()
+                    });
+                tracing::info!(
+                    "MV '{}' SQL comparison - actual_normalized: {} | desired_normalized: {}",
+                    id,
+                    actual_sql_normalized.replace('\n', " "),
+                    desired_sql_normalized.replace('\n', " ")
+                );
+
+                // Create copies with normalized SQL for comparison
+                let actual_normalized = MaterializedView {
+                    select_sql: actual_sql_normalized,
+                    ..actual.clone()
+                };
+                let desired_normalized = MaterializedView {
+                    select_sql: desired_sql_normalized,
+                    ..desired.clone()
+                };
+
+                if !materialized_views_are_equivalent(
+                    &actual_normalized,
+                    &desired_normalized,
+                    &infra_map.default_database,
+                ) {
                     debug!("Found mismatch in materialized view: {}", id);
                     mismatched_materialized_views.push(OlapChange::MaterializedView(
                         Change::Updated {
@@ -707,10 +748,37 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         );
 
         // Find mismatched views (exist in both but differ)
+        // Normalize SQL at the edge using ClickHouse's native formatting
         let mut mismatched_views = Vec::new();
         for (id, desired) in &infra_map.views {
             if let Some(actual) = actual_views.get(id) {
-                if !views_are_equivalent(actual, desired, &infra_map.default_database) {
+                // Normalize both SQLs via ClickHouse for accurate comparison
+                let actual_sql_normalized = self
+                    .olap_client
+                    .normalize_sql(&actual.select_sql, &infra_map.default_database)
+                    .await
+                    .unwrap_or_else(|_| actual.select_sql.clone());
+                let desired_sql_normalized = self
+                    .olap_client
+                    .normalize_sql(&desired.select_sql, &infra_map.default_database)
+                    .await
+                    .unwrap_or_else(|_| desired.select_sql.clone());
+
+                // Create copies with normalized SQL for comparison
+                let actual_normalized = View {
+                    select_sql: actual_sql_normalized,
+                    ..actual.clone()
+                };
+                let desired_normalized = View {
+                    select_sql: desired_sql_normalized,
+                    ..desired.clone()
+                };
+
+                if !views_are_equivalent(
+                    &actual_normalized,
+                    &desired_normalized,
+                    &infra_map.default_database,
+                ) {
                     debug!("Found mismatch in view: {}", id);
                     mismatched_views.push(OlapChange::View(Change::Updated {
                         before: Box::new(actual.clone()),

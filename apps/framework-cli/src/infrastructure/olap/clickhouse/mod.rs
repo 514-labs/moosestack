@@ -1794,6 +1794,78 @@ pub async fn run_query(
     client.query(query).execute().await
 }
 
+/// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.
+///
+/// This function sends the SQL to ClickHouse for normalization, which handles:
+/// - Numeric literal formatting (`100.0` → `100.`)
+/// - Operator parenthesization (`a * b / c` → `(a * b) / c`)
+/// - Identifier quoting and casing
+/// - Expression formatting
+///
+/// The default database prefix is stripped from the result to allow comparison
+/// between user SQL (which may omit the database) and ClickHouse's stored SQL
+/// (which includes the fully qualified database prefix).
+///
+/// # Arguments
+/// * `configured_client` - The configured ClickHouse client
+/// * `sql` - The SQL string to normalize
+/// * `default_database` - The default database name to strip from the result
+///
+/// # Returns
+/// * `Ok(String)` - The normalized SQL with default database prefix stripped
+/// * `Err(OlapChangesError)` - If the ClickHouse query fails
+///
+/// # Example
+/// ```rust
+/// let normalized = normalize_sql_via_clickhouse(&client, "SELECT a * 100.0 FROM t", "local").await?;
+/// // Returns: "SELECT (a * 100.) FROM t"
+/// ```
+/// Row type for normalized SQL query result
+#[derive(clickhouse::Row, serde::Deserialize)]
+struct NormalizedSqlRow {
+    normalized: String,
+}
+
+pub async fn normalize_sql_via_clickhouse(
+    configured_client: &ConfiguredDBClient,
+    sql: &str,
+    default_database: &str,
+) -> Result<String, OlapChangesError> {
+    let client = &configured_client.client;
+
+    // Use formatQuerySingleLine to normalize the SQL, then strip the default database prefix
+    // We use concat() to build the prefix pattern dynamically
+    let query = r#"SELECT replaceAll(
+        formatQuerySingleLine(?),
+        concat(?, '.'),
+        ''
+    ) AS normalized"#;
+
+    let mut cursor = client
+        .query(query)
+        .bind(sql)
+        .bind(default_database)
+        .fetch::<NormalizedSqlRow>()
+        .map_err(|e| {
+            debug!("Error normalizing SQL via ClickHouse: {}", e);
+            OlapChangesError::DatabaseError(format!("Failed to normalize SQL: {}", e))
+        })?;
+
+    match cursor.next().await {
+        Ok(Some(row)) => Ok(row.normalized.trim().to_string()),
+        Ok(None) => Err(OlapChangesError::DatabaseError(
+            "No result from formatQuerySingleLine".to_string(),
+        )),
+        Err(e) => {
+            debug!("Error fetching normalized SQL: {}", e);
+            Err(OlapChangesError::DatabaseError(format!(
+                "Failed to fetch normalized SQL: {}",
+                e
+            )))
+        }
+    }
+}
+
 /// Checks if the ClickHouse database is ready for operations
 ///
 /// # Arguments
@@ -2513,6 +2585,22 @@ impl OlapOperations for ConfiguredDBClient {
             sql_resources.len()
         );
         Ok(sql_resources)
+    }
+
+    /// Normalizes SQL using ClickHouse's native formatQuerySingleLine function.
+    ///
+    /// This provides accurate SQL normalization that handles:
+    /// - Numeric literal formatting (`100.0` → `100.`)
+    /// - Operator parenthesization (`a * b / c` → `(a * b) / c`)
+    /// - Identifier quoting and casing
+    ///
+    /// Falls back to Rust-based normalization if the ClickHouse query fails.
+    async fn normalize_sql(
+        &self,
+        sql: &str,
+        default_database: &str,
+    ) -> Result<String, OlapChangesError> {
+        normalize_sql_via_clickhouse(self, sql, default_database).await
     }
 }
 
