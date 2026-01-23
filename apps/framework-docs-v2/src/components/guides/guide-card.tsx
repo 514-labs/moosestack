@@ -62,7 +62,7 @@ export function GuideCard({
               <Badge
                 key={`${badge.type}-${badge.label}`}
                 variant="outline"
-                className="bg-muted border-neutral-700 text-foreground"
+                className="bg-muted border-neutral-300 dark:border-neutral-700 text-foreground"
               >
                 {badge.label}
               </Badge>
