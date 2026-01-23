@@ -19,7 +19,7 @@ import {
   SimpleResultsTable,
   type ReportModel,
   type QueryRequest,
-  FilterValue,
+  type FilterValue,
 } from "@/components/report-builder";
 
 interface ReportBuilderPageProps {

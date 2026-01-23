@@ -16,7 +16,11 @@ export function EventsOverTimeChart() {
   return (
     <LineChart
       title="Events over time"
-      description={`Total count of events grouped by ${bucket}`}
+      description={
+        bucket === "auto" ?
+          "Total count of events (auto-bucketed)"
+        : `Total count of events grouped by ${bucket}`
+      }
       data={data ?? []}
       className="lg:col-span-2"
       height={350}

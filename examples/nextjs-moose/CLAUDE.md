@@ -14,7 +14,7 @@ This demonstrates **Step 2** of the two-step OLAP migration pattern:
 
 ## Architecture Overview
 
-```
+```text
 Data Flow:
 OLTP → CDC → ClickHouse → Materialized Views → Query Layer → API Routes → React Components
 
@@ -257,8 +257,8 @@ pnpm dev
 ```
 
 URLs:
-- Dashboard: http://localhost:3000
-- Report Builder: http://localhost:3000/builder
+- Dashboard: <http://localhost:3000>
+- Report Builder: <http://localhost:3000/builder>
 
 ## Limitations
 

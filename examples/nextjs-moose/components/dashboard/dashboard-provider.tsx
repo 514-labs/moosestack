@@ -46,7 +46,8 @@ const DashboardContext = React.createContext<DashboardContextValue | null>(
 // =============================================================================
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
-  const { start: defaultStart, end: defaultEnd } = getDefaultDateRange();
+  const [{ start: defaultStart, end: defaultEnd }] =
+    React.useState(getDefaultDateRange);
 
   const [filters, setFilters] = React.useState<DashboardFilters>({
     startDate: defaultStart,

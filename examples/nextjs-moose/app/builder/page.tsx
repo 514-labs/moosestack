@@ -7,6 +7,11 @@ import { eventsModel } from "moose";
 import { ReportBuilderPage } from "@/components/report-builder-page";
 import { executeEventsQuery } from "@/app/actions";
 
+// Adapter to align executeEventsQuery with ReportBuilderPage expectations
+async function executeQueryAdapter(params: QueryRequest): Promise<unknown[]> {
+  return executeEventsQuery(params as typeof eventsModel.$inferRequest);
+}
+
 // Prepare the model for the client (one simple function call)
 const model = prepareModel(eventsModel, {
   // Filter overrides (only needed for select options)
@@ -50,11 +55,7 @@ export default function BuilderPage() {
         {/* Pass model and execute function to client component */}
         <ReportBuilderPage
           model={model}
-          executeQuery={
-            executeEventsQuery as unknown as (
-              params: QueryRequest,
-            ) => Promise<unknown[]>
-          }
+          executeQuery={executeQueryAdapter}
           defaults={defaults}
         />
       </div>

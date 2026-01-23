@@ -62,7 +62,7 @@ import { deriveInputTypeFromDataType } from "./utils";
  * @internal
  */
 interface FieldDef {
-  column?: ColRef<any>;
+  column?: ColRef<unknown>;
   expression?: Sql;
   agg?: Sql;
   as?: string;

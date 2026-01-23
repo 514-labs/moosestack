@@ -33,7 +33,7 @@ interface MetricConfig {
   title: string;
   icon: LucideIcon;
   description?: string;
-  format?: (value: number) => string | number;
+  format?: (value: number | null) => string | number;
 }
 
 const metricConfigs: Record<keyof MetricsResult, MetricConfig> = {
@@ -45,27 +45,31 @@ const metricConfigs: Record<keyof MetricsResult, MetricConfig> = {
   totalAmount: {
     title: "Total Amount",
     icon: DollarSignIcon,
-    format: (v) => `$${v.toLocaleString()}`,
+    format: (v) =>
+      v === null || v === undefined ? "—" : `$${v.toLocaleString()}`,
   },
   avgAmount: {
     title: "Average Amount",
     icon: CalculatorIcon,
-    format: (v) => `$${v.toFixed(2)}`,
+    format: (v) => (v === null || v === undefined ? "—" : `$${v.toFixed(2)}`),
   },
   minAmount: {
     title: "Min Amount",
     icon: TrendingDownIcon,
-    format: (v) => `$${v.toLocaleString()}`,
+    format: (v) =>
+      v === null || v === undefined ? "—" : `$${v.toLocaleString()}`,
   },
   maxAmount: {
     title: "Max Amount",
     icon: TrendingUpIcon,
-    format: (v) => `$${v.toLocaleString()}`,
+    format: (v) =>
+      v === null || v === undefined ? "—" : `$${v.toLocaleString()}`,
   },
   highValueRatio: {
     title: "High Value Ratio",
     icon: PercentIcon,
-    format: (v) => `${(v * 100).toFixed(1)}%`,
+    format: (v) =>
+      v === null || v === undefined ? "—" : `${(v * 100).toFixed(1)}%`,
   },
 };
 
@@ -88,14 +92,15 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export function DashboardMetricCards({
   columns = 3,
   config = metricConfigs,
-}: DashboardMetricCardsProps = {}) {
+}: DashboardMetricCardsProps = {}): React.JSX.Element {
+  const safeColumns = Math.max(1, Math.floor(columns));
   const { data: metrics, isLoading } = useMetrics();
 
   if (isLoading || !metrics) {
     return (
       <MetricCardsContainer>
         <MetricRow>
-          {Array.from({ length: columns }).map((_, i) => (
+          {Array.from({ length: safeColumns }).map((_, i) => (
             <div key={i} className="animate-pulse space-y-3">
               <div className="h-4 w-20 bg-muted rounded" />
               <div className="h-8 w-32 bg-muted rounded" />
@@ -107,7 +112,7 @@ export function DashboardMetricCards({
   }
 
   const metricEntries = Object.entries(metrics);
-  const rows = chunk(metricEntries, columns);
+  const rows = chunk(metricEntries, safeColumns);
 
   return (
     <MetricCardsContainer>

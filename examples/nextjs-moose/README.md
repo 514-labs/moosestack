@@ -209,7 +209,7 @@ pnpm dev
 
 The key insight: **Client components never touch ClickHouse directly**. They call server actions, which call moose query functions, which use the query model to build type-safe SQL.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ FRONTEND (React)                                                              │
 │                                                                               │

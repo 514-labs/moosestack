@@ -520,23 +520,33 @@ export function SimpleResultsTable({
           </tr>
         </thead>
         <tbody>
-          {(data as Record<string, unknown>[]).map((row, i) => (
-            <tr key={i} className="border-t hover:bg-muted/30">
-              {columns.map((col) => (
-                <td
-                  key={col}
-                  className={cn(
-                    "px-4 py-3 text-sm",
-                    metrics.includes(col) ?
-                      "text-right font-mono tabular-nums"
-                    : "font-medium",
-                  )}
-                >
-                  {formatValue(col, row[getDataKey(col)])}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {(data as Record<string, unknown>[]).map((row, i) => {
+            // Create a stable key from dimension values, fallback to index
+            const rowKey =
+              dimensions.length > 0 ?
+                dimensions
+                  .map((d) => String(row[getDataKey(d)] ?? ""))
+                  .join("-") || `row-${i}`
+              : `row-${i}`;
+
+            return (
+              <tr key={rowKey} className="border-t hover:bg-muted/30">
+                {columns.map((col) => (
+                  <td
+                    key={col}
+                    className={cn(
+                      "px-4 py-3 text-sm",
+                      metrics.includes(col) ?
+                        "text-right font-mono tabular-nums"
+                      : "font-medium",
+                    )}
+                  >
+                    {formatValue(col, row[getDataKey(col)])}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

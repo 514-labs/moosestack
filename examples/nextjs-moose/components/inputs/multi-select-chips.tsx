@@ -62,11 +62,18 @@ export function MultiSelectChips<TId extends string>({
       className={cn("flex flex-wrap", className)}
     >
       {options.map((option) => {
+        const isSelected = selected.includes(option.id);
+        const isDisabled =
+          disabled ||
+          (maxSelections != null &&
+            selected.length >= maxSelections &&
+            !isSelected);
+
         return (
           <ToggleGroupItem
             key={option.id}
             value={option.id}
-            disabled={disabled}
+            disabled={isDisabled}
             title={option.description}
             className={cn(
               "px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200",

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { DateRangeInput } from "@/components/inputs";
 import { useDashboardFilters } from "./dashboard-provider";
+import { cn } from "@/lib/utils";
 
 export interface FilterBarProps {
   className?: string;
@@ -17,10 +18,10 @@ export function FilterBar({ className, showPresets = true }: FilterBarProps) {
 
   return (
     <div
-      className={
-        className ??
-        "flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4"
-      }
+      className={cn(
+        "flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4",
+        className,
+      )}
     >
       <DateRangeInput
         startDate={filters.startDate}

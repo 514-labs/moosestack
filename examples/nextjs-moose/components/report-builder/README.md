@@ -52,6 +52,7 @@ components/
 │   └── README.md             # This documentation
 
 ```
+
 ## Usage Pattern
 
 ### Step 1: Create a Server Action

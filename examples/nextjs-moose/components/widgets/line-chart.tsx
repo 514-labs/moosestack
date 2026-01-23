@@ -71,11 +71,12 @@ export function LineChartComponent({
   headerRight,
   height = 350,
   className,
-  formatXAxis = (value) => new Date(value).toLocaleDateString(),
+  formatXAxis = (value) =>
+    new Date(value).toLocaleDateString(undefined, { timeZone: "UTC" }),
   showTimeBucket = false,
   timeBucket,
   onTimeBucketChange,
-}: LineChartProps) {
+}: LineChartProps): React.JSX.Element {
   const [internalBucket, setInternalBucket] =
     React.useState<TimeBucketOption>("auto");
 
