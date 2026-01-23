@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { IconBrandSlack } from "@tabler/icons-react";
-import { showDraftGuides, showBetaGuides } from "@/flags";
 import { getVisibleGuideSections } from "@/config/navigation";
 import { GuidesComingSoon } from "@/components/guides/coming-soon";
 import { GuideSectionGrid } from "@/components/guides/guide-section-grid";
+import { getNavVariant } from "@/lib/nav-variant";
 
 export const metadata: Metadata = {
   title: "Guides | MooseStack Documentation",
@@ -12,14 +12,13 @@ export const metadata: Metadata = {
     "A complex blueprint to walk a developer or team of developers through how to deliver a solution using fiveonefour products (and external dependencies).",
 };
 
-export default async function GuidesPage() {
-  // Check which guide levels should be shown
-  const [showDraft, showBeta] = await Promise.all([
-    showDraftGuides().catch(() => false),
-    showBetaGuides().catch(() => false),
-  ]);
+export default function GuidesPage() {
+  // Use build-time variant instead of runtime flags
+  const variant = getNavVariant();
+  const showDraft = variant === "draft" || variant === "full";
+  const showBeta = variant === "beta" || variant === "full";
 
-  // Get visible guide sections based on flags
+  // Get visible guide sections based on variant
   const sections = getVisibleGuideSections({
     showDraftGuides: showDraft,
     showBetaGuides: showBeta,

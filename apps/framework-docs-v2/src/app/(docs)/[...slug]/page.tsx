@@ -2,20 +2,18 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getAllSlugs, parseMarkdownContent } from "@/lib/content";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
-import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
-import { showCopyAsMarkdown } from "@/flags";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { MarkdownMenu } from "@/components/markdown-menu";
 
-// export const dynamic = "force-dynamic";
+// Force static generation for optimal performance
+export const dynamic = "force-static";
 
 interface PageProps {
   params: Promise<{
     slug: string[];
   }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateStaticParams() {
@@ -77,7 +75,7 @@ export async function generateMetadata({
   }
 }
 
-export default async function DocPage({ params, searchParams }: PageProps) {
+export default async function DocPage({ params }: PageProps) {
   const resolvedParams = await params;
   const slugArray = resolvedParams.slug;
 
@@ -107,9 +105,8 @@ export default async function DocPage({ params, searchParams }: PageProps) {
     : undefined,
   );
 
-  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
-  const resolvedSearchParams = await searchParams;
-  const langParam = resolvedSearchParams?.lang;
+  // Copy button is always enabled - it's a client component that works with static pages
+  const showCopyButton = true;
 
   return (
     <>
@@ -118,13 +115,8 @@ export default async function DocPage({ params, searchParams }: PageProps) {
           <DocBreadcrumbs items={breadcrumbs} />
           {showCopyButton && (
             <MarkdownMenu
-              content={
-                content.isMDX ?
-                  cleanContent(
-                    filterLanguageContent(content.content, langParam),
-                  )
-                : content.content
-              }
+              content={content.content}
+              isMDX={content.isMDX ?? false}
             />
           )}
         </div>
