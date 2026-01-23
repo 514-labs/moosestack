@@ -1,5 +1,7 @@
 import argparse
 import asyncio
+import builtins
+import contextvars
 import dataclasses
 import json
 import os
@@ -31,8 +33,17 @@ import jwt
 from clickhouse_connect import get_client
 
 from moose_lib.commons import EnhancedJSONEncoder
+from moose_lib.structured_logging import create_structured_print_wrapper
 
 from consumption_wrapper.utils import create_temporal_connection
+
+# Context variable to track API name without mutating globals
+_api_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "api_context", default=None
+)
+
+# Replace global print with structured wrapper at module load
+builtins.print = create_structured_print_wrapper(_api_context, "api_name")
 
 parser = argparse.ArgumentParser(description="Run Consumption Server")
 parser.add_argument("clickhouse_db", type=str, help="Clickhouse database name")
@@ -356,7 +367,11 @@ def handler_with_client(moose_client):
                     if jwt_payload is not None:
                         args.append(jwt_payload)
                     print(f"[API] | Executing API: {user_api.name}")
-                    response = user_api.query_function(*args)
+                    _api_context.set(user_api.name)
+                    try:
+                        response = user_api.query_function(*args)
+                    finally:
+                        _api_context.set(None)
                     # Convert Pydantic model to dict before JSON serialization
                     if isinstance(response, BaseModel):
                         response = response.model_dump_json()

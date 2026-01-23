@@ -14,10 +14,7 @@ import {
   shouldUseCompiled,
   loadModule,
 } from "../compiler-config";
-import {
-  safeStringify,
-  createStructuredConsoleWrapper,
-} from "../utils/structured-logging";
+import { createStructuredConsoleWrapper } from "../utils/structured-logging";
 
 interface ClickhouseConfig {
   database: string;

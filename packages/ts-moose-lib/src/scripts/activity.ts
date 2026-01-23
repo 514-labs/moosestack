@@ -4,10 +4,7 @@ import { isCancellation } from "@temporalio/workflow";
 import { Task, Workflow } from "../dmv2";
 import { getWorkflows, getTaskForWorkflow } from "../dmv2/internal";
 import { jsonDateReviver } from "../utilities/json";
-import {
-  safeStringify,
-  createStructuredConsoleWrapper,
-} from "../utils/structured-logging";
+import { createStructuredConsoleWrapper } from "../utils/structured-logging";
 
 // AsyncLocalStorage to track task context without mutating globals
 const taskContextStorage = new AsyncLocalStorage<{ taskName: string }>();
