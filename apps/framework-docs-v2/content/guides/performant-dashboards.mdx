@@ -5,7 +5,7 @@ previewVariant: "dashboards"
 languages: ["typescript"]
 ---
 
-import { FileTree, CTACards, CTACard, Callout, BulletPointsCard } from "@/components/mdx";
+import { CTACards, CTACard, Callout, BulletPointsCard } from "@/components/mdx";
 
 # Improving the Performance of Your Dashboards
 
@@ -21,7 +21,7 @@ This guide will:
 3. Walk through shipping the change end-to-end with MooseStack + ClickHouse
 </Callout>
 
-<CTACards columns={3}>
+<CTACards columns={2}>
   <CTACard
     title="Overview"
     description="Business context, warning signs, and what success looks like"
@@ -36,13 +36,6 @@ This guide will:
     ctaLabel="Start building"
     Icon="Rocket"
   />
-  <CTACard
-    title="Setup"
-    description="Get your local dev environment ready"
-    ctaLink="#setting-up-your-development-environment"
-    ctaLabel="Prepare"
-    Icon="Wrench"
-  />
 </CTACards>
 
 ## Overview
@@ -53,7 +46,7 @@ This guide is for product engineering teams that already have customer-facing da
 
 <BulletPointsCard
   title="Common symptoms"
-  bulletStyle="check"
+  bulletStyle="bullet"
   bullets={[
     {
       title: "Charts/metrics take >5s to load",
@@ -91,7 +84,7 @@ Normally teams don’t start with OLAP because it’s rational to delay it:
 
 <BulletPointsCard
   title="Why teams delay adopting OLAP (and why it makes sense early on)"
-  bulletStyle="check"
+  bulletStyle="bullet"
   bullets={[
     {
       title: "The OLTP path is the highest-ROI path—at first",
@@ -116,7 +109,7 @@ Normally teams don’t start with OLAP because it’s rational to delay it:
   ]}
 />
 
-This is why its common to push OLTP database migrations until it becomes a real business risk. The issue is timing. OLAP migrations are non-trivial and routinely take months. If you wait too long and/or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning.
+This is why it's common to push OLTP database migrations until it becomes a real business risk. The issue is timing. OLAP migrations are non-trivial and routinely take months. If you wait too long and/or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning.
 
 ### When to pull the trigger
 
@@ -124,9 +117,9 @@ You should seriously consider this shift once the warning signs appear in day-to
 
 ### What this guide proposes
 
-This guide outlines an incremental path for delivering **10–100x faster** dashboard load times without putting your core product at risk: move expensive analytical queries from your existing, mission critical transactional database to a purpose built analytical database **without changing your existing frontend UI or business logic**.
+This guide outlines an incremental path for delivering **10–100x faster** dashboard load times without putting your core product at risk: move expensive analytical queries from your existing, mission-critical transactional database to a purpose-built analytical database **without changing your existing frontend UI or business logic**.
 
-This approach slots right into how your engineering teams already operate. Changes are written in TypeScript, live in the same codebase as the rest of the application, and move through the same version-controlled review and release process. Everything can be validated in staging environments before shipping to production. Compared to a full stack refactor or a data-team-led migration, this approach gets to production faster, with less risk, and provides a controlled way to scale analytics over time.
+This approach slots right into how your engineering teams already operate. Changes are written in TypeScript, live in the same codebase as the rest of the application, and move through the same version-controlled review and release process. Everything can be validated in staging environments before shipping to production. Compared to a full-stack refactor or a data-team-led migration, this approach gets to production faster, with less risk, and provides a controlled way to scale analytics over time.
 
 ### What success looks like
 
@@ -265,10 +258,10 @@ Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (t
 
 Ensure Docker Desktop is running first.  
 
-![Docker Desktop](/public/docker-desktop.png)
+![Docker Desktop](/docker-desktop.png)
 
 
-Navigate to the your MooseStack project directory and run the development server:
+Navigate to your MooseStack project directory and run the development server:
 
 ```shell
 cd moosestack  # or wherever your moose project is
@@ -296,7 +289,7 @@ If the development server runs correctly, you'll see a list of the available API
 
 And your local services will be running in Docker containers:  
 
-![Docker Services](/public/docker-services.png)
+![Docker Services](/docker-services.png)
 
 ## Setting up developer / agent supporting services
 
@@ -1281,7 +1274,7 @@ So Phase 2 is about turning the parity query into a **serving-ready table**: pro
 
 ### Implementing the Materialized Views (MVs) and serving table(s)
 
-Now you’ll implement the [Materialized Views](/moosestack/olap/model-materialized-view) and serving table(s) your copilot proposed. This is the step that turns a “correct but expensive” parity query into a stable, fast serving surface for the Query Layer.
+Now you'll implement the [Materialized Views](/moosestack/olap/model-materialized-view) and serving table(s) your copilot proposed. This is the step that turns a "correct but expensive" parity query into a stable, fast-serving surface for the Query Layer.
 
 In MooseStack, Materialized Views allow you to precompute joins, aggregations, and derived fields and persist the results in a physical table. Your API handlers then query these precomputed tables instead of executing the full, complex query at request time. This keeps dataset handlers thin and predictable, and makes performance largely independent of query complexity.
 
@@ -1656,7 +1649,7 @@ curl -X POST http://localhost:4000/dataset \
 
 You can iterate on this curl command to test against known data values.
 
-### Copilot assisted testing
+### Copilot-assisted testing
 
 You can also instruct the agent to take the success criteria defined in the specification document and create a test suite, showing you the results. It is best practice to audit and get comfortable with the test suite and the output to ensure that it covers actual usage.
 
