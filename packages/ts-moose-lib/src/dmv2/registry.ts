@@ -14,7 +14,10 @@ import { Api } from "./sdk/consumptionApi";
 import { SqlResource } from "./sdk/sqlResource";
 import { Workflow } from "./sdk/workflow";
 import { WebApp } from "./sdk/webApp";
-import { MaterializedView } from "./sdk/materializedView";
+import {
+  MaterializedView,
+  RefreshableMaterializedView,
+} from "./sdk/materializedView";
 import { View } from "./sdk/view";
 import { getMooseInternal } from "./internal";
 
@@ -177,21 +180,24 @@ export function getWebApp(name: string): WebApp | undefined {
 }
 
 /**
- * Get all registered materialized views.
- * @returns A Map of MV name to MaterializedView instance
+ * Get all registered materialized views (both incremental and refreshable).
+ * @returns A Map of MV name to MaterializedView or RefreshableMaterializedView instance
  */
-export function getMaterializedViews(): Map<string, MaterializedView<any>> {
+export function getMaterializedViews(): Map<
+  string,
+  MaterializedView<any> | RefreshableMaterializedView<any>
+> {
   return getMooseInternal().materializedViews;
 }
 
 /**
  * Get a registered materialized view by name.
  * @param name - The name of the materialized view
- * @returns The MaterializedView instance or undefined if not found
+ * @returns The MaterializedView or RefreshableMaterializedView instance, or undefined if not found
  */
 export function getMaterializedView(
   name: string,
-): MaterializedView<any> | undefined {
+): MaterializedView<any> | RefreshableMaterializedView<any> | undefined {
   return getMooseInternal().materializedViews.get(name);
 }
 
