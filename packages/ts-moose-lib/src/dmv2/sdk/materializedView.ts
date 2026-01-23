@@ -72,12 +72,9 @@ export interface Duration {
 /**
  * Configuration for refreshable (scheduled) materialized views.
  *
- * Refreshable MVs run on a schedule (REFRESH EVERY/AFTER) rather than
- * being triggered by inserts to source tables.
- *
  * @example
  * ```typescript
- * const mv = new MaterializedView<Stats>({
+ * const mv = new RefreshableMaterializedView<Stats>({
  *   materializedViewName: "hourly_stats_mv",
  *   selectStatement: "SELECT count(*) as cnt FROM events",
  *   selectTables: [eventsTable],
@@ -96,35 +93,46 @@ export interface RefreshConfig {
   offset?: Duration;
   /** Optional randomization window */
   randomize?: Duration;
-  /** Names of other MVs this one depends on */
-  dependsOn?: string[];
+  /**
+   * Other refreshable MVs this one depends on (will wait for them to refresh first).
+   * Only accepts RefreshableMaterializedView objects - ensures type safety.
+   */
+  dependsOn?: RefreshableMaterializedView<any>[];
   /** Use APPEND mode instead of full refresh */
   append?: boolean;
 }
 
+/**
+ * Internal representation of RefreshConfig with dependsOn converted to string names.
+ * @internal
+ */
+export interface ResolvedRefreshConfig {
+  interval: RefreshInterval;
+  offset?: Duration;
+  randomize?: Duration;
+  /** Names of other MVs this one depends on (already resolved to strings) */
+  dependsOn?: string[];
+  append?: boolean;
+}
+
 // ============================================================================
-// MaterializedView Configuration
+// Incremental MaterializedView Configuration and Class
 // ============================================================================
 
 /**
- * Configuration options for creating a Materialized View.
+ * Configuration options for creating an incremental Materialized View.
  *
- * Two types of materialized views are supported:
- * - **Incremental**: Triggered on every insert to source tables (when refreshConfig is NOT set)
- * - **Refreshable**: Runs on a schedule (when refreshConfig IS set)
+ * Incremental MVs are triggered on every insert to source tables.
  *
- * @template T The data type of the records stored in the target table of the materialized view.
+ * @template T The data type of the records stored in the target table.
  */
 export interface MaterializedViewConfig<T> {
-  /** The SQL SELECT statement or `Sql` object defining the data to be materialized. Dynamic SQL (with parameters) is not allowed here. */
+  /** The SQL SELECT statement or `Sql` object defining the data to be materialized. */
   selectStatement: string | Sql;
 
   /**
    * The source tables/views that the SELECT statement reads from.
-   * Required for ALL materialized views.
-   *
-   * - For incremental MVs: these tables trigger the MV on insert
-   * - For refreshable MVs: these tables are read during scheduled refresh (data lineage)
+   * These tables trigger the MV on insert.
    */
   selectTables: (OlapTable<any> | View)[];
 
@@ -134,66 +142,47 @@ export interface MaterializedViewConfig<T> {
   /**
    * The target table where transformed data is written.
    * Can be an existing OlapTable or inline configuration to create one.
-   *
-   * Preferred over the deprecated tableName/engine/orderByFields fields.
    */
   targetTable?:
     | OlapTable<T>
     | {
-        /** The name for the underlying target OlapTable that stores the materialized data. */
+        /** The name for the underlying target OlapTable. */
         name: string;
         /**
          * ClickHouse engine for the target table (e.g., ReplacingMergeTree).
          * Defaults to MergeTree.
-         *
-         * Note: Custom engines are only supported for incremental MVs.
-         * Refreshable MVs must use the default MergeTree engine.
          */
         engine?: ClickHouseEngines;
-        /** Optional ordering fields for the target table. Crucial if using ReplacingMergeTree. */
+        /** Optional ordering fields for the target table. */
         orderByFields?: (keyof T & string)[];
       };
 
   /**
    * @deprecated Use targetTable instead.
-   * The name for the underlying target OlapTable that stores the materialized data.
    */
   tableName?: string;
 
   /**
    * @deprecated Use targetTable instead.
-   * Optional ClickHouse engine for the target table (e.g., ReplacingMergeTree). Defaults to MergeTree.
    */
   engine?: ClickHouseEngines;
 
   /**
    * @deprecated Use targetTable instead.
-   * Optional ordering fields for the target table. Crucial if using ReplacingMergeTree.
    */
   orderByFields?: (keyof T & string)[];
 
-  /**
-   * Configuration for refreshable (scheduled) materialized views.
-   *
-   * - If set: The MV runs on a schedule (REFRESH EVERY/AFTER)
-   * - If not set: The MV is incremental (triggered by inserts to selectTables)
-   *
-   * Note: Refreshable MVs cannot use custom engines on the target table.
-   */
-  refreshConfig?: RefreshConfig;
-
-  /** Optional metadata for the materialized view (e.g., description, source file). */
+  /** Optional metadata for the materialized view. */
   metadata?: { [key: string]: any };
 }
 
 /**
- * Represents a Materialized View in ClickHouse.
+ * Represents an incremental Materialized View in ClickHouse.
  *
- * Two types are supported:
- * - **Incremental**: Triggered on inserts to source tables (refreshConfig not set)
- * - **Refreshable**: Runs on a schedule (refreshConfig is set)
+ * Incremental MVs are triggered on every insert to source tables.
+ * For scheduled/refreshable MVs, use `RefreshableMaterializedView` instead.
  *
- * @template TargetTable The data type of the records stored in the underlying target OlapTable.
+ * @template TargetTable The data type of the records stored in the target table.
  */
 export class MaterializedView<TargetTable> {
   /** @internal */
@@ -215,14 +204,13 @@ export class MaterializedView<TargetTable> {
   metadata: { [key: string]: any };
 
   /**
-   * The refresh configuration if this is a refreshable MV.
-   * If undefined, this is an incremental MV.
+   * Always undefined for incremental MVs.
    * @internal
    */
-  refreshConfig?: RefreshConfig;
+  refreshConfig?: undefined;
 
   /**
-   * Creates a new MaterializedView instance.
+   * Creates a new incremental MaterializedView instance.
    *
    * @param options Configuration options for the materialized view.
    */
@@ -260,9 +248,6 @@ export class MaterializedView<TargetTable> {
     }
 
     // Resolve target table configuration
-    // Support both new (targetTable) and deprecated (tableName/engine/orderByFields) approaches
-    const isRefreshable = options.refreshConfig !== undefined;
-    let targetTableEngine: ClickHouseEngines | undefined;
     let targetTable: OlapTable<TargetTable>;
 
     if (options.targetTable !== undefined && options.tableName !== undefined) {
@@ -273,13 +258,8 @@ export class MaterializedView<TargetTable> {
     }
 
     if (options.targetTable instanceof OlapTable) {
-      // Using existing OlapTable directly
       targetTable = options.targetTable;
-      const config = targetTable.config as { engine?: ClickHouseEngines };
-      targetTableEngine = config.engine;
     } else if (options.targetTable) {
-      // Using inline targetTable config (preferred)
-      targetTableEngine = options.targetTable.engine;
       targetTable = new OlapTable(
         options.targetTable.name,
         {
@@ -290,8 +270,6 @@ export class MaterializedView<TargetTable> {
         targetColumns,
       );
     } else if (options.tableName) {
-      // Using deprecated tableName/engine/orderByFields
-      targetTableEngine = options.engine;
       targetTable = new OlapTable(
         options.tableName,
         {
@@ -310,19 +288,6 @@ export class MaterializedView<TargetTable> {
       );
     }
 
-    // Validate: refreshable MVs cannot use custom engines
-    if (
-      isRefreshable &&
-      targetTableEngine !== undefined &&
-      targetTableEngine !== ClickHouseEngines.MergeTree
-    ) {
-      throw new Error(
-        "Refreshable materialized views cannot use custom engines. " +
-          `Found engine '${targetTableEngine}' but refreshable MVs only support MergeTree. ` +
-          "Remove the 'engine' option or remove 'refreshConfig' to create an incremental MV.",
-      );
-    }
-
     if (targetTable.name === options.materializedViewName) {
       throw new Error(
         "Materialized view name cannot be the same as the target table name.",
@@ -332,14 +297,14 @@ export class MaterializedView<TargetTable> {
     this.name = options.materializedViewName;
     this.targetTable = targetTable;
     this.selectSql = selectStatement;
-    this.refreshConfig = options.refreshConfig;
+    this.refreshConfig = undefined;
 
     // Set sourceTables from the selectTables configuration
     this.sourceTables = options.selectTables.map((t) =>
       formatTableReference(t),
     );
 
-    // Initialize metadata, preserving user-provided metadata if any
+    // Initialize metadata
     this.metadata = options.metadata ? { ...options.metadata } : {};
 
     // Capture source file from stack trace if not already provided
@@ -360,23 +325,235 @@ export class MaterializedView<TargetTable> {
   }
 
   /**
-   * Returns true if this is an incremental (trigger-based) materialized view.
+   * Returns true - incremental MVs are always incremental.
    */
   isIncremental(): boolean {
-    return this.refreshConfig === undefined;
+    return true;
   }
 
   /**
-   * Returns true if this is a refreshable (scheduled) materialized view.
+   * Returns false - incremental MVs are never refreshable.
    */
   isRefreshable(): boolean {
-    return this.refreshConfig !== undefined;
+    return false;
+  }
+}
+
+// ============================================================================
+// Refreshable MaterializedView Configuration and Class
+// ============================================================================
+
+/**
+ * Configuration options for creating a Refreshable Materialized View.
+ *
+ * Refreshable MVs run on a schedule (REFRESH EVERY/AFTER) rather than
+ * being triggered by inserts to source tables.
+ *
+ * Note: Refreshable MVs always use MergeTree engine (no custom engine option).
+ *
+ * @template T The data type of the records stored in the target table.
+ */
+export interface RefreshableMaterializedViewConfig<T> {
+  /** The SQL SELECT statement or `Sql` object defining the data to be materialized. */
+  selectStatement: string | Sql;
+
+  /**
+   * The source tables/views that the SELECT statement reads from.
+   * These define the data lineage for the refresh operation.
+   */
+  selectTables: (OlapTable<any> | View)[];
+
+  /** The name for the ClickHouse MATERIALIZED VIEW object itself. */
+  materializedViewName: string;
+
+  /**
+   * The target table where transformed data is written.
+   * Can be an existing OlapTable or inline configuration to create one.
+   *
+   * Note: Custom engines are not supported for refreshable MVs (MergeTree only).
+   */
+  targetTable:
+    | OlapTable<T>
+    | {
+        /** The name for the underlying target OlapTable. */
+        name: string;
+        /** Optional ordering fields for the target table. */
+        orderByFields?: (keyof T & string)[];
+      };
+
+  /**
+   * Configuration for the refresh schedule.
+   * Required for refreshable MVs.
+   */
+  refreshConfig: RefreshConfig;
+
+  /** Optional metadata for the materialized view. */
+  metadata?: { [key: string]: any };
+}
+
+/**
+ * Represents a Refreshable Materialized View in ClickHouse.
+ *
+ * Refreshable MVs run on a schedule (REFRESH EVERY/AFTER) rather than
+ * being triggered by inserts to source tables.
+ *
+ * For incremental/trigger-based MVs, use `MaterializedView` instead.
+ *
+ * @template TargetTable The data type of the records stored in the target table.
+ */
+export class RefreshableMaterializedView<TargetTable> {
+  /** @internal */
+  public readonly kind = "MaterializedView";
+
+  /** The name of the materialized view */
+  name: string;
+
+  /** The target OlapTable instance where the materialized data is stored. */
+  targetTable: OlapTable<TargetTable>;
+
+  /** The SELECT SQL statement */
+  selectSql: string;
+
+  /** Names of source tables that the SELECT reads from */
+  sourceTables: string[];
+
+  /** Optional metadata for the materialized view */
+  metadata: { [key: string]: any };
+
+  /**
+   * The refresh configuration for this refreshable MV.
+   * dependsOn is resolved to string names.
+   * @internal
+   */
+  refreshConfig: ResolvedRefreshConfig;
+
+  /**
+   * Creates a new RefreshableMaterializedView instance.
+   *
+   * @param options Configuration options for the materialized view.
+   */
+  constructor(options: RefreshableMaterializedViewConfig<TargetTable>);
+
+  /** @internal **/
+  constructor(
+    options: RefreshableMaterializedViewConfig<TargetTable>,
+    targetSchema: IJsonSchemaCollection.IV3_1,
+    targetColumns: Column[],
+  );
+  constructor(
+    options: RefreshableMaterializedViewConfig<TargetTable>,
+    targetSchema?: IJsonSchemaCollection.IV3_1,
+    targetColumns?: Column[],
+  ) {
+    // Validate selectStatement
+    let selectStatement = options.selectStatement;
+    if (typeof selectStatement !== "string") {
+      selectStatement = toStaticQuery(selectStatement);
+    }
+
+    if (targetSchema === undefined || targetColumns === undefined) {
+      throw new Error(
+        "Supply the type param T so that the schema is inserted by the compiler plugin.",
+      );
+    }
+
+    // Validate selectTables is provided and not empty
+    if (!options.selectTables || options.selectTables.length === 0) {
+      throw new Error(
+        "RefreshableMaterializedView requires 'selectTables' to be specified with at least one table. " +
+          "These are the tables that your SELECT statement reads from.",
+      );
+    }
+
+    // Resolve target table configuration
+    let targetTable: OlapTable<TargetTable>;
+
+    if (options.targetTable instanceof OlapTable) {
+      targetTable = options.targetTable;
+      // Validate no custom engine on existing OlapTable
+      const config = targetTable.config as { engine?: ClickHouseEngines };
+      if (
+        config.engine !== undefined &&
+        config.engine !== ClickHouseEngines.MergeTree
+      ) {
+        throw new Error(
+          "RefreshableMaterializedView cannot use custom engines. " +
+            `Found engine '${config.engine}' but refreshable MVs only support MergeTree.`,
+        );
+      }
+    } else {
+      targetTable = new OlapTable(
+        options.targetTable.name,
+        {
+          orderByFields: options.targetTable.orderByFields,
+          engine: ClickHouseEngines.MergeTree, // Always MergeTree
+        } as OlapConfig<TargetTable>,
+        targetSchema,
+        targetColumns,
+      );
+    }
+
+    if (targetTable.name === options.materializedViewName) {
+      throw new Error(
+        "Materialized view name cannot be the same as the target table name.",
+      );
+    }
+
+    this.name = options.materializedViewName;
+    this.targetTable = targetTable;
+    this.selectSql = selectStatement;
+
+    // Convert refreshConfig.dependsOn from RefreshableMaterializedView objects to string names
+    this.refreshConfig = {
+      ...options.refreshConfig,
+      dependsOn: options.refreshConfig.dependsOn?.map((dep) => dep.name),
+    };
+
+    // Set sourceTables from the selectTables configuration
+    this.sourceTables = options.selectTables.map((t) =>
+      formatTableReference(t),
+    );
+
+    // Initialize metadata
+    this.metadata = options.metadata ? { ...options.metadata } : {};
+
+    // Capture source file from stack trace if not already provided
+    if (!this.metadata.source) {
+      const stack = new Error().stack;
+      const sourceInfo = getSourceFileFromStack(stack);
+      if (sourceInfo) {
+        this.metadata.source = { file: sourceInfo };
+      }
+    }
+
+    // Register in the materializedViews registry
+    const materializedViews = getMooseInternal().materializedViews;
+    if (!isClientOnlyMode() && materializedViews.has(this.name)) {
+      throw new Error(
+        `RefreshableMaterializedView with name ${this.name} already exists`,
+      );
+    }
+    materializedViews.set(this.name, this);
   }
 
   /**
-   * Returns the refresh configuration if this is a refreshable MV.
+   * Returns false - refreshable MVs are never incremental.
    */
-  getRefreshConfig(): RefreshConfig | undefined {
+  isIncremental(): boolean {
+    return false;
+  }
+
+  /**
+   * Returns true - refreshable MVs are always refreshable.
+   */
+  isRefreshable(): boolean {
+    return true;
+  }
+
+  /**
+   * Returns the refresh configuration.
+   */
+  getRefreshConfig(): ResolvedRefreshConfig {
     return this.refreshConfig;
   }
 }
