@@ -28,6 +28,17 @@ import {
   BreakingChanges,
   TemplatesGridServer,
   CommandSnippet,
+  // Interactive components for dynamic guides
+  SelectField,
+  CheckboxGroup,
+  CheckboxGroupContent,
+  CustomizePanel,
+  CustomizeGrid,
+  NumberedAccordion,
+  NumberedAccordionItem,
+  TabbedCode,
+  TabbedCodeContent,
+  ConditionalContent,
 } from "@/components/mdx";
 import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
@@ -68,6 +79,17 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
   const FileTreeWithSubcomponents = Object.assign(FileTree, {
     Folder: FileTreeFolder,
     File: FileTreeFile,
+  });
+
+  // Create interactive components with nested sub-components
+  const CheckboxGroupWithSubcomponents = Object.assign(CheckboxGroup, {
+    Content: CheckboxGroupContent,
+  });
+  const NumberedAccordionWithSubcomponents = Object.assign(NumberedAccordion, {
+    Item: NumberedAccordionItem,
+  });
+  const TabbedCodeWithSubcomponents = Object.assign(TabbedCode, {
+    Content: TabbedCodeContent,
   });
 
   // SourceCodeLink component for linking to GitHub source code
@@ -139,6 +161,18 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     FileCode: IconFileCode,
     SourceCodeLink,
     Link,
+
+    // Interactive components for dynamic guides
+    SelectField,
+    CheckboxGroup: CheckboxGroupWithSubcomponents,
+    "CheckboxGroup.Content": CheckboxGroupContent,
+    CustomizePanel,
+    CustomizeGrid,
+    NumberedAccordion: NumberedAccordionWithSubcomponents,
+    "NumberedAccordion.Item": NumberedAccordionItem,
+    TabbedCode: TabbedCodeWithSubcomponents,
+    "TabbedCode.Content": TabbedCodeContent,
+    ConditionalContent,
 
     // Code block handling - server-side rendered
     figure: ServerFigure,
