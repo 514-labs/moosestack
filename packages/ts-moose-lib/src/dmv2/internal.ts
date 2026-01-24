@@ -1277,20 +1277,20 @@ const loadIndex = async () => {
   // providing automatic fallback to ts-node if compilation wasn't run.
   const useCompiled = shouldUseCompiled();
 
-  // Clear the registry before loading to support hot reloading
-  const registry = getMooseInternal();
-  registry.tables.clear();
-  registry.streams.clear();
-  registry.ingestApis.clear();
-  registry.apis.clear();
-  registry.sqlResources.clear();
-  registry.workflows.clear();
-  registry.webApps.clear();
-  registry.materializedViews.clear();
-  registry.views.clear();
-
-  // Skip require.cache clearing in compiled mode (no hot reload needed in production)
+  // In dev mode, clear registry and require.cache to support hot reloading.
+  // In production (compiled mode), skip clearing - code doesn't change.
   if (!useCompiled) {
+    const registry = getMooseInternal();
+    registry.tables.clear();
+    registry.streams.clear();
+    registry.ingestApis.clear();
+    registry.apis.clear();
+    registry.sqlResources.clear();
+    registry.workflows.clear();
+    registry.webApps.clear();
+    registry.materializedViews.clear();
+    registry.views.clear();
+
     // Clear require cache for app directory to pick up changes
     const appDir = `${process.cwd()}/${getSourceDir()}`;
     Object.keys(require.cache).forEach((key) => {
