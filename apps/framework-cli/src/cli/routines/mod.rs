@@ -161,6 +161,7 @@ pub mod build;
 pub mod clean;
 pub mod code_generation;
 pub mod dev;
+pub mod dev_tui;
 pub mod docker_packager;
 pub(crate) mod docs;
 pub mod feedback;
@@ -363,6 +364,8 @@ async fn process_pubsub_message(
 /// * `metrics` - Arc wrapped Metrics instance for monitoring
 /// * `redis_client` - Arc and Mutex wrapped RedisClient for caching
 /// * `settings` - Reference to application Settings
+/// * `enable_mcp` - Whether to enable the MCP server
+/// * `enable_tui` - Whether to enable the interactive TUI mode
 ///
 /// # Returns
 /// * `anyhow::Result<()>` - Success or error result
@@ -372,7 +375,21 @@ pub async fn start_development_mode(
     redis_client: Arc<RedisClient>,
     settings: &Settings,
     enable_mcp: bool,
+    enable_tui: bool,
 ) -> anyhow::Result<()> {
+    // TUI mode placeholder - will be implemented in subsequent phases
+    if enable_tui {
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "TUI".to_string(),
+                details: "TUI mode enabled - launching interactive interface...".to_string(),
+            },
+        );
+        // Launch TUI - this will be replaced with actual TUI in Phase 2
+        return dev_tui::run_dev_tui(project, metrics, redis_client, settings, enable_mcp).await;
+    }
+
     display::show_message_wrapper(
         MessageType::Info,
         Message {
@@ -588,6 +605,7 @@ pub async fn start_development_mode(
         settings.clone(),
         processing_coordinator.clone(),
         watcher_shutdown_rx,
+        None, // No TUI resource updates in non-TUI mode
     )?;
 
     // Log MCP server status

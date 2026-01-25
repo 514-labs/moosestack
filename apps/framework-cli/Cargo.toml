@@ -117,6 +117,7 @@ assert_fs = "1.0.13"
 predicates = "3.0.4"
 reqwest = { version = "0.13.1", default-features = false, features = ["blocking", "json", "query", "native-tls"] }
 serial_test = "3.1.1"
+insta = { version = "1.40", features = ["yaml"] }
 
 [build-dependencies]
 protobuf-codegen = "3.7"

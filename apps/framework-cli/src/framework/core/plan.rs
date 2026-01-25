@@ -49,7 +49,7 @@ pub enum PlanningError {
     DmV2Loading(#[from] crate::framework::core::partial_infrastructure_map::DmV2LoadingError),
 
     /// Other unspecified errors
-    #[error("Unknown error")]
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 

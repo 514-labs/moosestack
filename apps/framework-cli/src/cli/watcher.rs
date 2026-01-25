@@ -36,6 +36,9 @@ use tracing::info;
 
 use super::display::{self, with_spinner_completion_async, Message, MessageType};
 use super::processing_coordinator::ProcessingCoordinator;
+use super::routines::dev_tui::resource_panel::{
+    ResourceList, ResourceUpdate, ResourceUpdateSender,
+};
 use super::settings::Settings;
 
 use crate::cli::routines::openapi::openapi;
@@ -197,6 +200,7 @@ impl EventBuckets {
 /// * `settings` - CLI settings configuration
 /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
 /// * `shutdown_rx` - Receiver to listen for shutdown signal
+/// * `resource_update_tx` - Optional channel for sending resource updates to TUI
 #[allow(clippy::too_many_arguments)]
 async fn watch(
     project: Arc<Project>,
@@ -213,6 +217,7 @@ async fn watch(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
     ignore_matcher: Option<Arc<GlobSet>>,
     app_dir: PathBuf,
+    resource_update_tx: Option<ResourceUpdateSender>,
 ) -> Result<(), anyhow::Error> {
     tracing::debug!(
         "Starting file watcher for project: {:?}",
@@ -259,6 +264,11 @@ async fn watch(
                     tracing::debug!("Debounce period elapsed, processing changes");
                     receiver_ack.send_replace(EventBuckets::new(ignore_matcher.clone(), app_dir.clone()));
                     rx.mark_unchanged();
+
+                    // Notify TUI that changes are being applied
+                    if let Some(ref tx) = resource_update_tx {
+                        let _ = tx.send(ResourceUpdate::ApplyingChanges);
+                    }
 
                     // Begin processing - guard will mark complete on drop
                     let _processing_guard = processing_coordinator.begin_processing().await;
@@ -310,11 +320,28 @@ async fn watch(
                                             })
                                             .await?;
 
+                                            // Notify TUI of successful changes with updated resource list
+                                            if let Some(ref tx) = resource_update_tx {
+                                                let resource_list = ResourceList::from_infrastructure_map(
+                                                    &plan_result.target_infra_map
+                                                );
+                                                let _ = tx.send(ResourceUpdate::ChangesApplied {
+                                                    resource_list,
+                                                    changes: Vec::new(), // TODO: Extract changes from plan_result
+                                                });
+                                            }
+
                                             let mut infra_ptr = infrastructure_map.write().await;
                                             *infra_ptr = plan_result.target_infra_map
                                         }
                                         Err(e) => {
                                             let error: anyhow::Error = e.into();
+                                            // Notify TUI of failure
+                                            if let Some(ref tx) = resource_update_tx {
+                                                let _ = tx.send(ResourceUpdate::ChangeFailed(
+                                                    format!("Execution failed: {error}")
+                                                ));
+                                            }
                                             show_message!(MessageType::Error, {
                                                 Message {
                                                     action: "\nFailed".to_string(),
@@ -328,6 +355,12 @@ async fn watch(
                                 }
                                 Err(e) => {
                                     let error: anyhow::Error = e.into();
+                                    // Notify TUI of failure
+                                    if let Some(ref tx) = resource_update_tx {
+                                        let _ = tx.send(ResourceUpdate::ChangeFailed(
+                                            format!("Planning failed: {error}")
+                                        ));
+                                    }
                                     show_message!(MessageType::Error, {
                                         Message {
                                             action: "\nFailed".to_string(),
@@ -355,6 +388,12 @@ async fn watch(
                                 .await;
                         }
                         Err(e) => {
+                            // Notify TUI of failure
+                            if let Some(ref tx) = resource_update_tx {
+                                let _ = tx.send(ResourceUpdate::ChangeFailed(
+                                    format!("Processing failed: {e}")
+                                ));
+                            }
                             show_message!(MessageType::Error, {
                                 Message {
                                     action: "Failed".to_string(),
@@ -396,6 +435,7 @@ impl FileWatcher {
     /// * `settings` - CLI settings configuration
     /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
     /// * `shutdown_rx` - Receiver to listen for shutdown signal
+    /// * `resource_update_tx` - Optional channel for sending resource updates to TUI
     #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
@@ -411,6 +451,7 @@ impl FileWatcher {
         settings: Settings,
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
+        resource_update_tx: Option<ResourceUpdateSender>,
     ) -> Result<(), Error> {
         // Validate ignore patterns early so errors are shown to the user
         let ignore_matcher = project
@@ -443,6 +484,7 @@ impl FileWatcher {
                 shutdown_rx,
                 ignore_matcher,
                 app_dir,
+                resource_update_tx,
             )
             .await
         };
