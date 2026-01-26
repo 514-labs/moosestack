@@ -75,6 +75,7 @@ export const replaceProgram =
     // This works around a ts-patch bug where incremental compilation
     // passes stale transformed source files
     const freshHost = tsInstance.createCompilerHost(compilerOptions, true);
+
     const freshProgram = tsInstance.createProgram(
       rootFileNames,
       compilerOptions,
@@ -104,15 +105,20 @@ export const replaceProgram =
 
     const transformFunction = transform(transformCtx);
 
-    // Get source files from FRESH program
-    const rootSourceFiles = freshProgram
-      .getSourceFiles()
-      .filter((sourceFile) =>
-        rootFileNames.includes(sourceFile.fileName as any),
-      );
+    // Get source files from FRESH program - include all user files, not just root files
+    // This ensures imported files (like models.ts) are also transformed
+    const cwd = process.cwd();
+    const userSourceFiles = freshProgram.getSourceFiles().filter(
+      (sourceFile) =>
+        // relative path, or
+        !sourceFile.fileName.startsWith("/") ||
+        // current directory but not in node_modules
+        (sourceFile.fileName.startsWith(cwd) &&
+          !sourceFile.fileName.startsWith(`${cwd}/node_modules`)),
+    );
 
     const transformedSource = tsInstance.transform(
-      rootSourceFiles,
+      userSourceFiles,
       [transformFunction],
       compilerOptions,
     ).transformed;
