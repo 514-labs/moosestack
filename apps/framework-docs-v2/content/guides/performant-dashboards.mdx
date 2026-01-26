@@ -1101,286 +1101,427 @@ spec:
   type: ClusterIP
 ```
 
-### Local development and testing
+### Migrating a dashboard component to OLAP
 
-In this section, you'll select a dashboard or report component to migrate, then:
+In this section, you'll take an existing dashboard component that's currently served by an OLTP-backed API endpoint and switch it to an OLAP-backed implementation (ClickHouse + MooseStack). Concretely, you'll update the existing backend handler so it reads from the ClickHouse tables you've just built, instead of querying your OLTP database.
 
-* Create a development branch (also used by Boreal for preview environments)
-* Set up CDC for the supporting tables (guide coming soon)
-* Set up local context for development:
-  * Seed your local environment from production
-  * Bring in other necessary context
-* Create, iterate on, and test the migrated dashboard elements in MooseStack
-
-#### Create a branch
-
-Branches manage code versioning and spin up "preview branches" in Boreal.
-
-```bash
-git checkout -b <new-branch-name>
-```
-
-#### Seeding your local database from prod with `moose seed`
-
-To validate that your migrated queries return correct results, you need realistic production data locally. The [`moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse) pulls data from your production ClickHouse database so you can test against real data patterns, edge cases, and volumes.
-
-**Command:**
-```shell
-moose seed clickhouse --connection-string <BOREAL_CONNECTION_STRING> --limit 100
-```
-
-You can adjust the `--limit` value based on how much data you need for testing. Start with 100-1000 rows to keep things fast. If you need your full production dataset locally, you can copy all data using `--all` (note: this can take hours for large datasets and requires disk space equivalent to your production database size):
-
-**Command:**
-```shell
-moose seed clickhouse --connection-string <BOREAL_CONNECTION_STRING> --all
-```
-
-**Finding your connection string in Boreal**
-
-`BOREAL_CONNECTION_STRING` is your connection string to a remote/cloud database. In Boreal, you can find that here:  
-{/* image  */}
-
-{/* image */}  
-Note, there are a few forms of connection string, this query requires `HTTPS URL`.
-
-You can set your Boreal connection string as a local environment variable for ease of use:
-
-**Command:**
-```shell
-echo 'BOREAL_CONNECTION_STRING="PASTE_THE_HTTPS_URL_FROM_BOREAL_HERE"' >> .env.local && set -a && source .env.local && set +a
-```
-
-**Or export directly:**
-```bash
-export BOREAL_CONNECTION_STRING=PASTE_THE_HTTPS_URL_FROM_BOREAL_HERE
-```
-
-### Improving dashboard performance by replicating components in MooseStack
-
-In this section, you'll migrate an existing OLTP-backed dashboard or report to an OLAP-backed implementation (ClickHouse + MooseStack) **without changing how the frontend talks to the backend**.
-
-The approach in this guide is to swap out the *query + storage layer* (ClickHouse) while keeping the rest of your application the same: routing, auth, request/response contracts, and frontend behavior.
-
-You’ll implement **new OLAP query handlers** in your MooseStack project—one per dashboard component/report you migrate. Then, in your existing application backend, you’ll repoint the endpoint to call the new OLAP handler instead of the original OLTP implementation.
-
-AI copilots excel at this type of migration because they can translate complex OLTP queries (often stored procedures with nested CTEs and joins) into equivalent ClickHouse SQL while preserving exact output. You provide the copilot with your existing query logic and example request/response pairs ("golden cases"), it generates the ClickHouse translation and optimization plan, and you verify correctness at each step. This gives you AI speed without scattering one-off SQL strings across your codebase.
+The rest of your application stays the same: routing, auth, request/response contracts, and frontend behavior. For each component you migrate, you'll add a small function in your MooseStack project that builds and runs the ClickHouse query, importing your `OlapTable` objects so column access is type-safe. Then you'll repoint the existing API handler to call that new OLAP function in place of the original OLTP query logic.
 
 This guide follows a three-phase migration pattern:
 
-1. **Parity (correctness)**: Reproduce existing API behavior on ClickHouse by translating your OLTP query logic into ClickHouse SQL. This validates correctness before optimizing, so you can ship a working replacement immediately if needed.
-2. **Optimize (OLAP best practices)**: Move expensive operations (joins, reshaping, stored-procedure-like logic) from query time (when users request data) to write time (when data arrives) using Materialized Views. This is where you unlock the 10-100x performance gains—dashboards that took 10-15 seconds now return in 100-500ms.
-3. **Serve (stable interface)**: Point your Query Layer at the pre-computed serving tables, so API handlers stay thin and dashboards stay fast. This makes future changes easy—adding filters, breakdowns, or new metrics becomes routine product work instead of risky database rewrites.  
+1. **Parity (raw translation)**: Do a direct, SQL-for-SQL translation of your OLTP logic into ClickHouse so the endpoint returns the same result as the original OLTP endpoint. The goal here is correctness, not perfect OLAP code.
+2. **Precompute (make it OLAP-native)**: Refactor that raw query by shifting joins and upfront transformations to Materialized Views and prepared tables. This makes reads cheaper and the model easier to extend.
+3. **Serve (semantic/query layer)**: Layer a query/semantic model over those prepared tables so defining dashboard metrics, group-bys, filters, and other controls becomes clean, reusable, and maintainable, so you don't have to rewrite raw dynamic SQL in every handler.
 
+#### Step 0: Prepare your environment
 
-#### Choose the component you want to migrate
+Before starting the migration, prepare your development environment by seeding your local ClickHouse database with a deterministic slice of production data. You’ll use this data to validate parity during Phase 1.
 
-Pick a specific dashboard component or report to migrate. You’ll create one context pack per component.
-
-For this guide, we’ll use an e-commerce order fulfillment report:
-
-- Dataset: `OrderFulfillment`  
-- Purpose: Track order processing metrics by merchant and time period  
-
-#### Assemble the context for your AI copilot
-
-This workflow uses the starter kit in `examples/dashboard-migration/` to keep your "context pack" and prompt consistent across migrations. Every component migration follows the same process, the copilot gets all the information it needs upfront, and you avoid repetitive back-and-forth.
-
-1. Copy the starter kit into your project (creates `context/migrations/`):
-
+Ensure your dev server is running and accessible:
 ```shell
-pnpm dlx tiged 514-labs/moosestack/examples/dashboard-migration context/migrations
+moose dev
 ```
 
-2. Duplicate the context pack template for your component:
+Run the [`moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse) to pull data from your production ClickHouse database:
 
 ```shell
-cp context/migrations/component-context-pack-template.md context/migrations/COMPONENT_NAME.md
+moose seed clickhouse --connection-string <PRODUCTION_CONNECTION_STRING> --limit 1000
 ```
 
-3. Fill out `context/migrations/COMPONENT_NAME.md` with:
+**Recommended (seed for parity):** seed the specific table(s) your component will query, ordered by recency, with a large-enough limit to cover the time window you’ll test (e.g. “last 7–30 days”).
 
-- **The existing API contract**, including the API route name/path and request/response schema (OpenAPI, TypeScript types, JSON schema). 
-- *Data for test cases*: 2-5 representative example API requests and their expected responses for the most important use cases that you want to validate against. If you can, copy paste the JSON request/response payloads directly into the file.
-- **Current OLTP implementation (what you’re replacing)**: links/file paths to the frontend caller + backend handler, plus any supporting SQL artifacts it relies on (tables/views/stored procedures)
+Run this once per table your endpoint depends on:
 
-4. Prompt your copilot to translate the component using the context pack.
+```shell
+moose seed clickhouse \
+  --connection-string <PRODUCTION_CONNECTION_STRING> \
+  --table <TABLE_NAME> \
+  --order-by '<TIMESTAMP_COLUMN> DESC' \
+  --limit 100000
+```
 
-The starter prompts you added to your project includes a prompt template that you can copy and paste into your copilot. It is located at `context/migrations/prompt.md`. Replace placeholders with the file path of the component-specific context file you created in step 3, and paste it into your copilot. Make sure it references your filled file via `@context/migrations/COMPONENT_NAME.md`.
+If you hit missing-data issues during parity validation, re-run seeding with a larger `--limit` (or seed full tables with `--all`).
 
-**Important:** don’t paste the prompt until the context pack is filled out. The copilot should treat `@context/migrations/COMPONENT_NAME.md` as the source of truth.
+**Strict parity (slowest):** seed full production tables with `--all` (can take hours for large datasets):
 
-If you want a more detailed copilot workflow (refinement loop + testing patterns), see [Appendix: Copilot workflow for parity migrations](#appendix-copilot-workflow-for-parity-migrations).
+```shell
+moose seed clickhouse --connection-string <PRODUCTION_CONNECTION_STRING> --all
+```
 
-#### Run the playbook with your AI copilot
+`PRODUCTION_CONNECTION_STRING` is your connection string to your production ClickHouse database. 
 
-#### Phase 1: Parity translation (OLTP query logic → ClickHouse SQL)
+**Important:** `moose seed clickhouse` uses ClickHouse's HTTPS protocol. Use a HTTPS connection string (e.g., `https://username:password@host:8443/database`).
 
-In this phase, you translate the existing OLTP-backed query logic (joins, CTE chains, stored-procedure-like reshaping) into ClickHouse SQL so you can validate that the output matches the existing API exactly.
+If you already use Boreal, you can locate your connection string in your project overview dashboard. 
 
-The priority is **correctness**, not OLAP optimization. Getting a working, correct translation first means you have a rollback-ready implementation if you need to ship urgently—and it gives you a solid foundation for optimization without risking correctness.
 
-**You do**
+Optionally set it as an environment variable:
 
-- Run the existing system for a set of golden requests and capture the expected responses (your “golden cases”).
-- Give your copilot the right context (contract + OLTP handler/SQL + golden cases) so it can generate the parity SQL.
-- Run the copilot’s generated ClickHouse SQL against your test data (typically a local ClickHouse seeded via `moose seed`) and compare the output to your golden cases.
+```shell
+export MOOSE_SEED_CLICKHOUSE_URL=PASTE_THE_CLICKHOUSE_HTTPS_URL_HERE
+```
 
-**Copilot does**
+Once your local database is seeded, proceed to Step 1.
 
-- Proposes parity SQL (possibly as a sequence of queries/CTEs).
-- Suggests exactly how to test it (e.g., a `moose query` command) and what output to copy back into the chat. (see [Seeding your local database from prod with `moose seed`](#seeding-your-local-database-from-prod-with-moose-seed))
-- Iterates based on your test results: you run the query, paste the output/diffs, and the copilot refines the SQL until the golden cases match.
+#### Step 1: Choose the component to migrate
 
-**You verify**
+Pick a specific dashboard component or report to migrate. You'll work through one component at a time.
 
-- All golden cases match (exact match unless a tolerance is explicitly documented).
-- The parity query returns data for each case and respects auth/tenancy constraints.
+For this guide, we'll use an e-commerce order fulfillment report:
 
-#### Phase 2: Performance optimization
+- Dataset: `OrderFulfillment`
+- Purpose: Track order processing metrics by merchant and time period
 
-At this point, you likely have a parity query that’s correct—but still too expensive to run on every dashboard request.
+→ Once you've identified your component, proceed to Phase 1.
 
-That's because OLTP query logic typically does all the heavy lifting at query time—joins, CTE chains, and stored-procedure-like reshaping all happen when the user requests data. A 1:1 ClickHouse translation usually preserves that pattern, like this:
+---
+
+#### Phase 1: Parity translation (OLTP → ClickHouse SQL)
+
+The goal of this phase is to reproduce your existing API behavior exactly by translating your OLTP query logic into ClickHouse SQL.
+
+<Callout type="tip" title="AI acceleration">
+To complete this phase faster with AI assistance, give your copilot this guide section along with your component details: the API route, existing SQL/stored procedure, and 2-3 example request/response pairs.
+</Callout>
+
+Before you start, make sure you have your local development server running and seeded with sample data from your production ClickHouse database.
+
+##### Step 1: Capture test cases
+
+Because your local ClickHouse is usually seeded with only a slice of production data, your parity checks are only meaningful for requests that fall inside that seeded slice (e.g., “last 7–30 days” if you seeded the most recent rows).
+
+If a test case fails because your local ClickHouse is missing underlying rows, **don’t** treat it as a translation bug—re-run seeding with a larger `--limit` (or `--all`) and try again.
+
+Do this 2-5 times. For each test case, save two files:
+
+- `test-case-N.request.json`: the exact JSON request body you send to the endpoint
+- `test-case-N.response.json`: the exact JSON response body you receive from the endpoint
+
+Save the endpoint path, HTTP method, and required headers once in your context pack (from Step 2). The goal here is to have a request body file you can pass directly to `curl`.
+
+Example request body (`test-case-1.request.json`):
+
+```json
+{
+  "merchantId": "123",
+  "startDate": "2024-01-01",
+  "endDate": "2024-01-31"
+}
+```
+
+Example response body (`test-case-1.response.json`):
+
+```json
+{
+  "REPLACE_ME": "paste the full JSON response body here"
+}
+```
+
+These test cases are your source of truth for validating parity in your ClickHouse-backed implementation. You must return identical responses for every test case recorded.
+
+##### Step 2: Locate the OLTP query logic
+
+Find the SQL query or stored procedure that powers the existing endpoint. This is typically in your backend handler or a database layer. Gather:
+
+- The raw SQL or stored procedure definition
+- Any parameter substitution logic
+- Join conditions and filter clauses
+
+##### Step 3: Translate to ClickHouse SQL
+
+Write a ClickHouse query that produces identical output to the OLTP query. Use the [ClickHouse SQL reference](https://clickhouse.com/docs/en/sql-reference) as you translate.
+
+Important: Preserve the exact output structure and column names as in the OLTP query.
+
+##### Step 4: Compare ClickHouse results to test cases
+
+Run the ClickHouse query against your local database and compare the results to your test cases.
+
+If there are differences:
+- Check column names (case-sensitive in ClickHouse)
+- Check data types (timestamps, decimals)
+- Check sort order (add explicit `ORDER BY` if needed)
+
+Iterate until the diff is empty.
+
+Once all test cases pass, proceed to Phase 2.
+
+#### Phase 2: Performance optimization (Materialized Views)
+
+Phase 1 got you a working “parity query”: it returns the right shape and results, but it’s often not the cleanest or fastest way to query in OLAP.
+
+In this phase, you’ll turn it into two OLAP-native building blocks:
+
+- **A serving table**: a flattened, pre-joined/pre-computed table designed for reads (your API queries this).
+- **A Materialized View (MV)**: write-time logic that continuously populates the serving table from your source tables.
+
+The end state is that your API reads from the serving table with lightweight, request-driven logic (filters, grouping, column selection), and does not have any joins, CTEs, or heavy reshaping logic.
+
+<Callout type="tip" title="AI acceleration">
+To complete this phase faster with AI assistance, give your copilot this guide section along with your working parity query from Phase 1.
+</Callout>
+
+Input: the working ClickHouse parity query from Phase 1.
+
+##### Step 1: Define the serving table schema
+
+Determine the grain of your serving table, meaning what one row represents (for example, one row per `merchant_id` per day).
+
+To model a complex parity query (joins, aggregations, cascading CTEs), use this recipe:
+
+1. **Start from the output contract**: copy the final `SELECT` list from your parity query. Those columns must exist in your serving table.
+2. **Make the grain explicit**: decide what uniquely identifies one row (e.g. `merchant_id` + `day`). This becomes the “primary key” of your serving table.
+3. **Flatten the query into stages**: rewrite CTEs as a sequence of named steps. If the query is large, create **multiple** serving/staging tables (one per major CTE) instead of one giant MV.
+4. **Precompute everything not driven by request parameters**: joins, fixed-grain aggregates, and derived fields belong in MVs. Keep only truly dynamic filters (from the API request) for the final read query.
+5. **Choose `orderByFields` from your grain + access pattern**: start with the grain columns, then add the most common filter/group-by fields.
+
+Example: if your parity query looks like this:
 
 ```sql
-WITH UserMerchants AS (
-  SELECT merchant_id
-  FROM getUserPermissions(:user_id)
-),
-OrdersWithMerchant AS (
-  SELECT
-    o.created_at,
-    m.merchant_name,
-    o.total_orders,
-    o.fulfilled_orders
-  FROM order_metrics o
-  JOIN merchants m ON m.id = o.merchant_id
-  WHERE o.merchant_id IN (SELECT merchant_id FROM UserMerchants)
-),
-AggregatedMetrics AS (
-  SELECT
-    merchant_name,
-    count(*) AS total_orders,
-    sum(fulfilled_orders) AS fulfilled_orders,
-    sum(total_orders) AS total_orders
-  FROM OrdersWithMerchant
-  GROUP BY merchant_name
-)
-SELECT *
-FROM AggregatedMetrics
-ORDER BY merchant_name;
+SELECT
+  merchant_id,
+  merchant_name,
+  day,
+  total_orders,
+  fulfilled_orders,
+  fulfillment_rate
+FROM OrderMetrics om
+JOIN Merchants m ON m.id = om.merchant_id
+WHERE om.merchant_id = {merchantId}
+GROUP BY om.merchant_id, m.merchant_name, toDate(om.created_at)
 ```
 
-In OLAP, this pattern is inefficient: every dashboard refresh forces ClickHouse to redo the same joins, reshaping, and aggregations from scratch—even when users are only changing filters, sorts, or time ranges.
+Then your serving table should contain the final output columns, and `orderByFields` should match the grain (here, `["merchant_id", "day"]`).
+```ts
+// File: moosestack/src/models/OrderFulfillmentServing.model.ts
 
-ClickHouse best practices avoid stored-procedure-like pipelines at read time, and instead shift the reusable work to write time (using Materialized Views) whenever possible. See ClickHouse’s guidance here: [`Stored procedures and query parameters in ClickHouse`](https://clickhouse.com/docs/guides/developer/stored-procedures-and-prepared-statements).
+import { OlapTable, Int64 } from "@514labs/moose-lib";
 
-So Phase 2 is about turning the parity query into a **serving-ready table**: promote the reusable joins/reshaping/derived fields into a [Materialized View](/moosestack/olap/model-materialized-view), then keep request-time logic focused on slicing/sorting/pagination over that serving table. This shift from "compute on read" to "compute on write" is where the performance gains come from.
+interface OrderFulfillmentServing {
+  merchant_id: string;
+  merchant_name: string;
+  day: Date;
+  total_orders: Int64;
+  fulfilled_orders: Int64;
+  fulfillment_rate: number;
+}
+export const OrderFulfillmentServing = new OlapTable<OrderFulfillmentServing>("OrderFulfillmentServing", {
+  orderByFields: ["merchant_id", "day"],
+});
+```
 
-**You do**
+This table will be populated by the Materialized View and becomes the table your API reads from.
 
-- Identify the expensive operations in the parity query (joins, layered CTEs, stored-procedure-like pipelines).
-- Prompt your copilot to propose which operations should move to write time ([Materialized Views](/moosestack/olap/model-materialized-view)) versus which should stay flexible at query time.
 
-**Copilot does**
+##### Step 2: Create the Materialized View
 
-- Proposes MV(s) + backing table schema(s) that shift joins/reshaping/derived fields to write time.
-- Updates the parity approach so the serving query becomes a thin slice over serving-ready tables.
+The Materialized View performs the joins/aggregations from your parity query and writes results to the serving table whenever source data changes.
 
-**You verify**
+```ts
+// File: moosestack/src/views/OrderFulfillmentMV.view.ts
 
-- The optimized path still passes golden cases.
-- The serving query is simpler (50-90% fewer lines of SQL, 0-2 joins instead of 5+) and 10-100x faster.
+import { MaterializedView, sql } from "@514labs/moose-lib";
+import { OrderMetrics } from "../models/OrderMetrics.model";
+import { Merchants } from "../models/Merchants.model";
+import { OrderFulfillmentServing } from "../models/OrderFulfillmentServing.model";
 
-#### Implementing the Materialized Views (MVs) and serving table(s)
+export const OrderFulfillmentMV = new MaterializedView<OrderFulfillmentServing>({
+  selectStatement: sql`
+    SELECT
+      om.merchant_id,
+      m.merchant_name,
+      toDate(om.created_at) AS day,
+      om.total_orders,
+      om.fulfilled_orders,
+      round(100 * om.fulfilled_orders / nullIf(om.total_orders, 0), 2) AS fulfillment_rate
+    FROM ${OrderMetrics} om
+    JOIN ${Merchants} m ON m.id = om.merchant_id
+  `,
+  targetTable: OrderFulfillmentServing,
+  materializedViewName: "OrderFulfillmentMV",
+  selectTables: [OrderMetrics, Merchants],
+});
+```
 
-Now you'll implement the [Materialized Views](/moosestack/olap/model-materialized-view) and serving table(s) your copilot proposed. This is the step that turns a "correct but expensive" parity query into a stable, fast-serving surface for the Query Layer.
+##### Step 3: Verify the MV is created
 
-In MooseStack, Materialized Views precompute joins, aggregations, and derived fields as data arrives, persisting results in a physical table. Your API handlers query these precomputed tables instead of executing complex queries at request time. Dashboard performance stays fast and predictable regardless of filters, breakdowns, or time ranges. Once the MV is in place, adding new dashboard features becomes trivial because the expensive work is already done.
+Save your files and watch the `moose dev` output:
 
-**Create the MV + serving table**
+```
+[INFO] Created table: OrderFulfillmentServing
+[INFO] Created materialized view: OrderFulfillmentMV
+```
 
-- Define the **serving table schema** (the flattened / serving-ready shape your handler will read from).
-- Define the **Materialized View** that writes into that serving table (the MV `SELECT` should perform the joins/reshaping/derived fields you want to move to write time).
-- Save and watch `moose dev` logs until the MV and its backing table are created/updated successfully.
+If you see errors, check:
+- Column names match between SELECT and destination table
+- Data types are compatible
+- Source table exists
 
-**Validate the MV before moving on**
+##### Step 4: Validate data in the serving table
+The `moose dev` server will automatically populate the serving table when you create or update a Materialized View by running the `selectStatement` defined in the Materialized View. It is not necessary to backfill the serving table manually. 
 
-- **Data is flowing**: new inserts populate the serving table (or you've run a backfill if you need historical parity).
-- **Row counts look sane**: use `moose query` to compare counts between source tables and the serving table for a known time window (expect exact match or document any known discrepancies).
-- **Spot-check results**: run 3-5 representative queries against the serving table and confirm key fields/aggregates match your expectations.
-- **Golden cases still pass**: update your handler to read from the serving table (even with temporary SQL) and confirm all golden test responses match end-to-end.
+Use `moose query` to verify the serving table is populated:
 
-Once those checks pass, you’re ready for the next step: point your Query Layer `QueryModel` at the serving table so the handler stays thin.
+```bash
+# Check row count in serving table
+moose query "SELECT count() FROM OrderFulfillmentServing"
+
+# Spot-check a specific merchant
+moose query "SELECT * FROM OrderFulfillmentServing WHERE merchant_id = '123' ORDER BY day DESC LIMIT 5"
+```
+
+At this stage you are only checking that the data is present. Once the Materialized View is created and the serving table is populated, you can proceed to Phase 3. Phase 3 will wire the API to read from the serving table.
 
 #### Phase 3: Serve the Materialized View to your frontend
 
-Once your MV produces a serving-ready table (with joins/reshaping moved upstream), you need an interface to serve that table to your dashboard.
+In this phase, you will expose the serving table via an API endpoint that your frontend can call.
 
-You can do this in two ways:
+<Callout type="tip" title="AI acceleration">
+To complete this phase faster with AI assistance, give your copilot this guide section along with your serving table schema from Phase 2.
+</Callout>
 
-1. **Dynamic raw SQL string composition in each API handler**: Build the SQL in each API handler at request time (dynamic `WHERE` / `GROUP BY` / `ORDER BY` / pagination) over the serving table. This works but means repetitive SQL code and higher risk of SQL injection or query errors.
-2. **Use the [Query Layer](https://github.com/514-labs/query-layer)** (recommended): Define a typed model once for how the serving table should be queried, then reuse the same query-building logic across handlers. This eliminates repetitive SQL string composition, provides type safety, and makes adding new filters or metrics trivial—just update the model, and all endpoints get the new capability automatically.
+In this guide, you’ll use the Query Layer. It’s a small helper library that sits on top of Moose’s `sql` utility and `OlapTable` objects so you can define metrics, group-bys, filters, sorting, and pagination once and reuse them across handlers.
 
-For example, if your Materialized View writes into a serving table like `OrderFulfillmentServing` (flattened merchant fields, precomputed counters, etc.), your `QueryModel` might look like this:
+##### Step 1: Add the Query Layer to your project
+
+Run the following command to copy/paste the Query Layer source code into your project:
+
+```bash
+cd moosestack
+pnpm dlx tiged 514-labs/query-layer/src src/query-layer
+```
+
+##### Step 2: Define a QueryModel for your serving table
+
+Define a QueryModel that exposes the dimensions, metrics, filters, and sortable fields your endpoint needs:
 
 ```ts
-import { defineQueryModel } from "../query-layer";
-import { OrderFulfillmentServing } from "../models";
+// File: moosestack/src/query-models/orderFulfillment.model.ts
+
 import { sql } from "@514labs/moose-lib";
+import { defineQueryModel } from "../query-layer";
+import { OrderFulfillmentServing } from "../models/OrderFulfillmentServing.model";
 
 export const orderFulfillmentModel = defineQueryModel({
   table: OrderFulfillmentServing,
 
+  // Dimensions: fields users can group by
   dimensions: {
     merchantName: { column: "merchant_name" },
-    day: { expression: sql`toDate(${OrderFulfillmentServing.columns.created_at})`, as: "day" },
+    day: { column: "day" },
   },
 
+  // Metrics: aggregations users can request
   metrics: {
-    totalOrders: { agg: sql`sum(${OrderFulfillmentServing.columns.total_orders})` },
-    fulfilledOrders: { agg: sql`sum(${OrderFulfillmentServing.columns.fulfilled_orders})` },
+    totalOrders: { agg: sql`sum(total_orders)` },
+    fulfilledOrders: { agg: sql`sum(fulfilled_orders)` },
     fulfillmentRate: {
-      agg: sql`round(100 * sum(${OrderFulfillmentServing.columns.fulfilled_orders}) / nullIf(sum(${OrderFulfillmentServing.columns.total_orders}), 0), 2)`,
+      agg: sql`round(100 * sum(fulfilled_orders) / nullIf(sum(total_orders), 0), 2)`
     },
   },
 
+  // Filters: fields users can filter on
   filters: {
     merchantId: { column: "merchant_id", operators: ["eq", "in"] as const },
-    timestamp: { column: "created_at", operators: ["gte", "lte"] as const },
+    day: { column: "day", operators: ["gte", "lte"] as const },
   },
 
-  sortable: ["merchantName", "totalOrders", "fulfillmentRate", "timestamp"] as const,
+  // Sortable: fields users can sort by
+  sortable: ["merchantName", "day", "totalOrders", "fulfillmentRate"] as const,
 });
 ```
 
-#### Add the Query Layer to your project
+##### Step 3: Use the QueryModel in your handler
 
-From your MooseStack project directory, copy the Query Layer starter kit into `src/query-layer`:
+Update your existing endpoint handler to build a Query Layer request from your endpoint contract and execute it against ClickHouse:
 
-```bash
-pnpm dlx tiged 514-labs/query-layer/src src/query-layer
+```ts
+// File: moosestack/src/apis/orderFulfillment.api.ts
+
+import { getMooseUtils } from "@514labs/moose-lib";
+import { orderFulfillmentModel } from "../query-models/orderFulfillment.model";
+
+interface OrderFulfillmentRequest {
+  merchantId?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+  orderBy?: "merchantName" | "day" | "totalOrders" | "fulfillmentRate";
+}
+
+export async function getOrderFulfillment(
+  request: OrderFulfillmentRequest,
+) {
+  const { client } = await getMooseUtils();
+
+  return await orderFulfillmentModel.query(
+    {
+      dimensions: ["merchantName", "day"],
+      metrics: ["totalOrders", "fulfilledOrders", "fulfillmentRate"],
+      filters: {
+        ...(request.merchantId && { merchantId: { eq: request.merchantId } }),
+        ...(request.startDate && { day: { gte: request.startDate } }),
+        ...(request.endDate && { day: { lte: request.endDate } }),
+      },
+      sortBy: request.orderBy ?? "merchantName",
+      sortDir: "ASC",
+      limit: request.limit ?? 100,
+      offset: request.offset ?? 0,
+    },
+    client.query,
+  );
+}
 ```
 
-#### Define a `QueryModel` for your serving table
+##### Step 4: Test the endpoint locally with Phase 1 test cases
 
-To customize the example above for your own migration:
+Rewire your existing API endpoint to call the new function from Step 3. Make sure to import the function from the `moosestack` package.
 
-- **Swap the table**: replace `OrderFulfillmentServing` with *your* MV-backed serving table (the table your MV writes into).
-- **Update the surface area**:
-  - `dimensions`: the group-by fields you want to expose (columns or computed expressions)
-  - `metrics`: the aggregates your dashboard needs
-  - `filters`: the allowed slice fields + operators
-  - `sortable`: the allowed sort fields
-- **Repoint the handler**: update your dataset handler to use your `QueryModel` (and re-run golden cases end-to-end).
+```ts
+// File: moosestack/src/apis/orderFulfillment.api.ts
 
-If you want more detail on Query Layer capabilities and APIs, refer to the dedicated repo: [Moose Query Layer](https://github.com/514-labs/query-layer).
+import { getOrderFulfillment } from "moosestack";
+// ... existing code ...
 
+  const clickhouseResult = await getOrderFulfillment(request);
 
-### Running your frontend locally
+  // Replace this with how your existing API endpoint returns the response
+  return {
+    ...existingResponse,
+    data: clickhouseResult, // Now returns your ClickHouse results
+  };
+```
 
-With your local dev server running, you can connect your frontend application to your new analytical queries using token authentication. This lets you test the complete user experience—dashboards, filters, error states—before deploying to production.
+Now send a `curl` request to that endpoint using a saved Phase 1 test case request, and save the response:
+
+```bash
+# Test with a test case request
+curl -X POST http://localhost:4000/api/order-fulfillment \
+  -H "Content-Type: application/json" \
+  -d @test-case-1.request.json \
+  | jq -S '.' > localhost-result.json
+```
+
+Compare the response to your original test case response body:
+
+```bash
+diff <(jq -S '.' test-case-1.response.json) <(jq -S '.' localhost-result.json)
+```
+
+The output must match your original test cases exactly.
+
+##### Step 5: Verify performance improvement
+
+Measure response time for your heaviest test case (replace `test-case-heaviest.json` with the file you want to benchmark):
+
+```bash
+time curl -s -X POST http://localhost:4000/api/order-fulfillment \
+  -H "Content-Type: application/json" \
+  -d @test-case-heaviest.request.json
+```
+
+Verify the response time is significantly improved compared to the original OLTP query.
 
 ### Push to remote GitHub
 
