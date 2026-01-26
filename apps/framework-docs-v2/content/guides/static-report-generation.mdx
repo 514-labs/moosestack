@@ -1596,29 +1596,39 @@ LIMIT 5;
 <FileTree>
   <FileTree.Folder name="sales-reports" defaultOpen>
     <FileTree.Folder name="app" defaultOpen>
-      <FileTree.File name="index.ts" comment="Export all modules" />
+      <FileTree.File name="index.ts" />
       <FileTree.Folder name="ingest">
-        <FileTree.File name="SalesTransaction.ts" comment="IngestPipeline definition" />
+        <FileTree.File name="SalesTransaction.ts" />
       </FileTree.Folder>
       <FileTree.Folder name="views">
-        <FileTree.File name="DailySalesSummary.ts" comment="MaterializedView" />
+        <FileTree.File name="DailySalesSummary.ts" />
       </FileTree.Folder>
       <FileTree.Folder name="apis">
-        <FileTree.File name="salesReport.ts" comment="Consumption API" />
+        <FileTree.File name="salesReport.ts" />
       </FileTree.Folder>
     </FileTree.Folder>
     <FileTree.Folder name="scripts">
-      <FileTree.File name="load-file.ts" comment="CSV/JSON file loader" />
-      <FileTree.File name="generate-pdf-report.ts" comment="PDF generator" />
+      <FileTree.File name="load-file.ts" />
+      <FileTree.File name="generate-pdf-report.ts" />
     </FileTree.Folder>
     <FileTree.Folder name="sample-data">
-      <FileTree.File name="west-store-001.csv" comment="Sample transactions" />
+      <FileTree.File name="west-store-001.csv" />
     </FileTree.Folder>
     <FileTree.File name="moose.config.toml" />
     <FileTree.File name="package.json" />
     <FileTree.File name="tsconfig.json" />
   </FileTree.Folder>
 </FileTree>
+
+| File | Purpose |
+|------|---------|
+| `app/index.ts` | Export all modules |
+| `app/ingest/SalesTransaction.ts` | IngestPipeline definition |
+| `app/views/DailySalesSummary.ts` | MaterializedView |
+| `app/apis/salesReport.ts` | Consumption API |
+| `scripts/load-file.ts` | CSV/JSON file loader |
+| `scripts/generate-pdf-report.ts` | PDF generator |
+| `sample-data/west-store-001.csv` | Sample transactions |
 
 ### Configuration
 
