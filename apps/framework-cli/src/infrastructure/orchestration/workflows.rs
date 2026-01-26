@@ -6,9 +6,9 @@ use crate::project::Project;
 /// Executes workflow changes based on the diff between current and target infrastructure.
 ///
 /// Change handling:
-/// - Added: terminate (handles upgrade) + register if scheduled
+/// - Added: terminate + register if scheduled
 /// - Removed: terminate
-/// - Updated (config changed): terminate + register if scheduled
+/// - Updated: terminate + register if scheduled
 /// - No change: no action needed
 ///
 /// Shutdown behavior:
@@ -47,6 +47,8 @@ pub async fn execute_changes(
 }
 
 async fn handle_workflow_added(project: &Project, workflow: &Workflow) {
+    terminate(project, workflow.name()).await;
+
     if workflow.config().schedule.is_empty() {
         tracing::info!(
             "Workflow '{}' has no schedule, available for manual trigger only",
@@ -55,7 +57,6 @@ async fn handle_workflow_added(project: &Project, workflow: &Workflow) {
         return;
     }
 
-    terminate(project, workflow.name()).await;
     start(project, workflow).await;
 }
 
