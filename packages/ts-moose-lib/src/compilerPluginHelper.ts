@@ -17,14 +17,15 @@ export const getPatchedHost = (
   return Object.assign(compilerHost, {
     getSourceFile(fileName: string, languageVersion: ts.ScriptTarget) {
       fileName = tsInstance.server.toNormalizedPath(fileName);
+      // Only return cached file if explicitly set by transformer
+      // Don't cache on initial read to allow fresh reads on incremental builds
       if (fileCache.has(fileName)) return fileCache.get(fileName);
 
       const sourceFile = originalGetSourceFile.apply(
         void 0,
         Array.from(arguments) as any,
       );
-      fileCache.set(fileName, sourceFile);
-
+      // Don't cache here - only cache transformed files in replaceProgram
       return sourceFile;
     },
     fileCache,
@@ -43,10 +44,18 @@ export const isMooseFile = (sourceFile: ts.SourceFile): boolean => {
   );
 };
 
+/**
+ * Context passed to transformation functions
+ */
+export interface TransformContext {
+  typeChecker: ts.TypeChecker;
+  program: ts.Program;
+}
+
 export const replaceProgram =
   (
     transform: (
-      typeChecker: ts.TypeChecker,
+      ctx: TransformContext,
     ) => (
       _context: ts.TransformationContext,
     ) => (sourceFile: ts.SourceFile) => ts.SourceFile,
@@ -57,24 +66,53 @@ export const replaceProgram =
     config: PluginConfig,
     { ts: tsInstance }: ProgramTransformerExtras,
   ): ts.Program => {
-    const transformFunction = transform(program.getTypeChecker());
-
     const compilerOptions = program.getCompilerOptions();
-
-    const compilerHost = getPatchedHost(host, tsInstance, compilerOptions);
     const rootFileNames = program
       .getRootFileNames()
       .map(tsInstance.server.toNormalizedPath);
 
+    // Create a FRESH program by reading source files from disk
+    // This works around a ts-patch bug where incremental compilation
+    // passes stale transformed source files
+    const freshHost = tsInstance.createCompilerHost(compilerOptions, true);
+    const freshProgram = tsInstance.createProgram(
+      rootFileNames,
+      compilerOptions,
+      freshHost,
+    );
+
+    // Set versions on fresh source files (required for watch mode builder)
+    const crypto = require("crypto");
+    for (const sf of freshProgram.getSourceFiles()) {
+      if (!(sf as any).version) {
+        const content = sf.getFullText();
+        (sf as any).version = crypto
+          .createHash("sha256")
+          .update(content)
+          .digest("hex");
+      }
+    }
+
+    // Now create the patched host for our output
+    const compilerHost = getPatchedHost(host, tsInstance, compilerOptions);
+
+    // Create transform context with FRESH program
+    const transformCtx: TransformContext = {
+      typeChecker: freshProgram.getTypeChecker(),
+      program: freshProgram,
+    };
+
+    const transformFunction = transform(transformCtx);
+
+    // Get source files from FRESH program
+    const rootSourceFiles = freshProgram
+      .getSourceFiles()
+      .filter((sourceFile) =>
+        rootFileNames.includes(sourceFile.fileName as any),
+      );
+
     const transformedSource = tsInstance.transform(
-      program.getSourceFiles().filter(
-        (sourceFile) =>
-          // relative path, or
-          !sourceFile.fileName.startsWith("/") ||
-          // current directory but not in node_modules
-          (sourceFile.fileName.startsWith(`${process.cwd()}`) &&
-            !sourceFile.fileName.startsWith(`${process.cwd()}/node_modules`)),
-      ),
+      rootSourceFiles,
       [transformFunction],
       compilerOptions,
     ).transformed;
@@ -101,7 +139,11 @@ export const replaceProgram =
         newFile,
         languageVersion,
       );
-      (updatedSourceFile as any).version = (sourceFile as any).version;
+      // Copy version from original - but add suffix to invalidate ts-patch cache
+      // This ensures ts-patch sees transformed files as different versions
+      const originalVersion = (sourceFile as any).version;
+      (updatedSourceFile as any).version =
+        originalVersion ? `${originalVersion}-moose-transformed` : undefined;
       compilerHost.fileCache.set(fileName, updatedSourceFile);
     }
 
@@ -126,6 +168,7 @@ export const sanitizeTypeParameter = (typeNode: TypeNode): ts.ImportTypeNode =>
     false,
   );
 
+// Typia call generators for transformed code
 export const typiaJsonSchemas = (typeNode: TypeNode) =>
   factory.createCallExpression(
     factory.createPropertyAccessExpression(

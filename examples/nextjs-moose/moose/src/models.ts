@@ -10,3 +10,4 @@ export interface EventModel {
 export const Events = new OlapTable<EventModel>("events", {
   orderByFields: ["event_time"],
 });
+// test

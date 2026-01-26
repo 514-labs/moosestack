@@ -4,6 +4,7 @@ import {
   isMooseFile,
   typiaJsonSchemas,
   sanitizeTypeParameter,
+  type TransformContext,
 } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
 import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
@@ -40,13 +41,16 @@ export const isNewMooseResourceWithTypeParam = (
     return false;
   }
 
-  return (
-    // name only
-    (node.arguments?.length === 1 ||
-      // config param
-      node.arguments?.length === 2) &&
-    node.typeArguments?.length === 1
-  );
+  const expectedArgLength = typesToArgsLength.get(typeName)!;
+  const actualArgLength = node.arguments?.length ?? 0;
+
+  // Check if this is an untransformed moose resource
+  // Transformed resources have more arguments (schema, columns, validators, etc.)
+  const isUntransformed =
+    actualArgLength === expectedArgLength - 1 || // name only
+    actualArgLength === expectedArgLength; // name + config
+
+  return isUntransformed && node.typeArguments?.length === 1;
 };
 
 export const parseAsAny = (s: string) =>
@@ -77,6 +81,7 @@ const typiaTypeGuard = (node: ts.NewExpression) => {
 export const transformNewMooseResource = (
   node: ts.NewExpression,
   checker: ts.TypeChecker,
+  ctx?: TransformContext,
 ): ts.Node => {
   const typeName = checker.getSymbolAtLocation(node.expression)!.name;
 
