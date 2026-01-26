@@ -214,6 +214,9 @@ class ScriptWorkflow:
 
         timeout = self._parse_task_timeout(task.config.timeout)
         retries = task.config.retries or 3
+        # Temporal's maximum_attempts = total attempts (initial + retries)
+        # User-facing "retries" = number of retries after initial failure
+        max_attempts = retries + 1
         log.info(
             f"<WF> Executing activity {activity_name} with timeout {timeout} and retries {retries}"
         )
@@ -231,7 +234,7 @@ class ScriptWorkflow:
                     hours=87600
                 ),  # 10 years like TypeScript
                 retry_policy=RetryPolicy(
-                    maximum_attempts=retries,
+                    maximum_attempts=max_attempts,
                 ),
             )
         else:
@@ -244,7 +247,7 @@ class ScriptWorkflow:
                 ),
                 start_to_close_timeout=timeout,
                 retry_policy=RetryPolicy(
-                    maximum_attempts=retries,
+                    maximum_attempts=max_attempts,
                 ),
             )
 

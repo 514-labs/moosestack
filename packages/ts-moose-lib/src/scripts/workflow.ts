@@ -78,6 +78,9 @@ async function handleTask(
   }
 
   const taskRetries = task.config.retries ?? 3;
+  // Temporal's maximumAttempts = total attempts (initial + retries)
+  // User-facing "retries" = number of retries after initial failure
+  const maxAttempts = taskRetries + 1;
 
   const timeoutMessage =
     taskTimeout ? `with timeout ${taskTimeout}` : "with no timeout (unlimited)";
@@ -88,7 +91,7 @@ async function handleTask(
   const activityOptions: ActivityOptions = {
     heartbeatTimeout: "10s",
     retry: {
-      maximumAttempts: taskRetries,
+      maximumAttempts: maxAttempts,
     },
   };
 
