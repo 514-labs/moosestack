@@ -3,19 +3,45 @@ title: Static Report Generation
 description: Automate report generation with MooseStack workflows
 ---
 
+import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+
 # Static Report Generation
 
-This guide covers building data-intensive static reports—from understanding when they're the right choice to hands-on implementation with Moose and ClickHouse.
+<Callout type="info" title="TL;DR">
+* Static reports are pre-generated snapshots (PDF, Excel, CSV) that capture data at a specific point in time
+* They remain essential for compliance, auditability, and stakeholder workflows despite interactive dashboards
+* Moose + ClickHouse provides a developer-first approach: define TypeScript models, get auto-generated infrastructure
 
-## What you'll learn
+This guide will:
+1. Help you understand when static reports are the right choice
+2. Walk through a complete implementation with file ingestion, materialized views, and PDF generation
+3. Explain the underlying concepts so you can adapt the approach to your needs
+</Callout>
 
-- Why static reports remain essential despite interactive dashboards
-- Business use cases: compliance, data monetization, analyst workflows
-- Define type-safe data models that auto-provision infrastructure
-- Ingest CSV and JSON files into ClickHouse
-- Create materialized views for pre-aggregated analytics
-- Build parameterized APIs for report data
-- Generate PDF reports from aggregated data
+<CTACards columns={3}>
+  <CTACard
+    title="Business Context"
+    description="Understand when and why static reports matter"
+    ctaLink="#part-1-what-are-static-reports"
+    ctaLabel="Read first"
+    Icon="Eye"
+  />
+  <CTACard
+    title="The Scenario"
+    description="Apex Retail daily sales consolidation example"
+    ctaLink="#part-3-the-scenario"
+    ctaLabel="See example"
+    Icon="BinaryTree"
+  />
+  <CTACard
+    title="Start Building"
+    description="Setup, data models, ingestion, and PDF export"
+    ctaLink="#part-4-setup-and-data-model"
+    ctaLabel="Build now"
+    Icon="Rocket"
+  />
+</CTACards>
 
 ## How to use this guide
 
@@ -49,8 +75,7 @@ docker info > /dev/null 2>&1 && echo "Docker is running" || echo "Docker is NOT 
 
 If Docker isn't running, start Docker Desktop before proceeding.
 
-### Tips for success
-
+<Callout type="tip" title="Tips for success">
 **Keep `moose dev` running throughout the tutorial.** Use a dedicated terminal tab or window. If you accidentally close it, run `moose dev` again from the project directory.
 
 **First startup takes longer.** Docker images download on first run (2-5 minutes depending on connection). Subsequent starts are much faster.
@@ -66,6 +91,7 @@ tail -f ~/.moose/$(date +%Y-%m-%d)-cli.log
 ```
 
 **Verify data at each stage.** Don't assume it worked—validate with queries. Test APIs with `curl` before running scripts that depend on them.
+</Callout>
 
 ---
 
@@ -75,13 +101,32 @@ Static reports are pre-generated snapshots of data, delivered as fixed artifacts
 
 These reports capture what the data looked like at a specific point in time, with a defined and unchanging scope, metric logic, and layout. Once generated, a static report remains frozen until it is explicitly regenerated.
 
-### Key characteristics
-
-- Pre-generated snapshots delivered as fixed artifacts (PDF, Excel, CSV)
-- Capture point-in-time data with defined, unchanging scope and metric logic
-- Provide a stable, frozen reference preferred by many stakeholders over interactive dashboards
-- Support auditability, sign-off workflows, and compliance requirements
-- Act as portable handoff layers for departments like Finance, Operations, and Compliance
+<BulletPointsCard
+  title="Key characteristics"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Pre-generated snapshots",
+      description: "Delivered as fixed artifacts (PDF, Excel, CSV)"
+    },
+    {
+      title: "Point-in-time capture",
+      description: "Defined, unchanging scope and metric logic"
+    },
+    {
+      title: "Stable reference",
+      description: "Frozen documents preferred by many stakeholders over interactive dashboards"
+    },
+    {
+      title: "Auditability support",
+      description: "Enable sign-off workflows and compliance requirements"
+    },
+    {
+      title: "Portable handoffs",
+      description: "Act as handoff layers for Finance, Operations, and Compliance"
+    }
+  ]}
+/>
 
 ### Why static reports matter
 
@@ -294,7 +339,9 @@ cd sales-reports
 moose dev
 ```
 
-> **Important:** `moose dev` runs continuously and doesn't exit. Keep this terminal open for the entire tutorial. You'll run all other commands (curl, scripts, etc.) in a separate terminal.
+<Callout type="info" title="Important">
+`moose dev` runs continuously and doesn't exit. Keep this terminal open for the entire tutorial. You'll run all other commands (curl, scripts, etc.) in a separate terminal.
+</Callout>
 
 The dev server auto-reloads on file changes. First run may auto-upgrade the CLI to match moose-lib version.
 
@@ -339,7 +386,9 @@ If checks fail, wait another 20-30 seconds. Common startup issues:
 
 All in Docker. No cloud accounts needed.
 
-> **Tip:** ClickHouse has a web UI at http://localhost:18123/play for running queries interactively—useful for debugging.
+<Callout type="tip" title="Debugging tip">
+ClickHouse has a web UI at http://localhost:18123/play for running queries interactively—useful for debugging.
+</Callout>
 
 ### Step 4: Define data model
 
@@ -401,7 +450,9 @@ Update `app/index.ts`:
 export * from "./ingest/SalesTransaction";
 ```
 
-> **Important:** Every new model, view, or API must be exported from `app/index.ts`. Forgetting this is a common mistake—without the export, tables and endpoints won't be created, and there won't be any errors in the logs.
+<Callout type="info" title="Important">
+Every new model, view, or API must be exported from `app/index.ts`. Forgetting this is a common mistake—without the export, tables and endpoints won't be created, and there won't be any errors in the logs.
+</Callout>
 
 #### Verify
 
@@ -588,7 +639,9 @@ mkdir -p sample-data
 pnpm exec ts-node scripts/load-file.ts sample-data/west-store-001.csv
 ```
 
-> **Tip:** You can also add a script to `package.json`: `"load-file": "ts-node scripts/load-file.ts"` and run `pnpm run load-file sample-data/west-store-001.csv`.
+<Callout type="tip" title="Script shortcut">
+You can also add a script to `package.json`: `"load-file": "ts-node scripts/load-file.ts"` and run `pnpm run load-file sample-data/west-store-001.csv`.
+</Callout>
 
 Output:
 ```
@@ -603,12 +656,15 @@ curl -s "http://localhost:18123/?user=panda&password=pandapass" \
   -d "SELECT count() FROM local.sales"
 ```
 
-> **Note:** Running the file loader multiple times creates duplicate records—ClickHouse doesn't enforce unique constraints. To start fresh, stop `moose dev` and remove the project's Docker volumes. **Caution:** `docker volume prune` deletes *all* unused volumes on your machine. Instead, use `docker volume ls` to list volumes, identify the ones for your project (typically containing `clickhouse` or `redpanda`), and remove them selectively with `docker volume rm <volume_name>`.
+<Callout type="info" title="Note on duplicates">
+Running the file loader multiple times creates duplicate records—ClickHouse doesn't enforce unique constraints. To start fresh, stop `moose dev` and remove the project's Docker volumes. **Caution:** `docker volume prune` deletes *all* unused volumes on your machine. Instead, use `docker volume ls` to list volumes, identify the ones for your project (typically containing `clickhouse` or `redpanda`), and remove them selectively with `docker volume rm <volume_name>`.
+</Callout>
 
 ### Step 5: Add validation (recommended)
 
 Production data is messy. Add validation to catch issues early.
 
+<ToggleBlock openText="Show validation code" closeText="Hide validation code">
 Add to `scripts/load-file.ts`:
 
 ```typescript
@@ -707,6 +763,7 @@ function validateRecord(record: SalesTransaction, index: number): ValidationErro
 | Future dates | `> now()` | Skewed analysis |
 
 For production, reject entire files with errors rather than partial loads.
+</ToggleBlock>
 
 ---
 
@@ -968,7 +1025,9 @@ pnpm add pdfmake
 pnpm add -D @types/pdfmake
 ```
 
-> **Note:** This guide uses pdfmake 0.3.x which requires Node.js 20 LTS (Long-Term Support) or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
+<Callout type="info" title="Node.js requirement">
+This guide uses pdfmake 0.3.x which requires Node.js 20 LTS (Long-Term Support) or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
+</Callout>
 
 ### Step 2: Create PDF generator
 
@@ -1262,7 +1321,9 @@ Generating PDF with 5 data rows...
 PDF report saved to january-15-report.pdf
 ```
 
-> **Tip:** Always test the API with `curl` before running the PDF generator. If you see "No data found" or the script hangs, verify the API returns data for your date range.
+<Callout type="tip" title="Test first">
+Always test the API with `curl` before running the PDF generator. If you see "No data found" or the script hangs, verify the API returns data for your date range.
+</Callout>
 
 ### Step 4: Verify
 
@@ -1415,13 +1476,32 @@ Each level 10-30x smaller than the previous.
 CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API → PDF
 ```
 
-| Component | What it does |
-|-----------|--------------|
-| `SalesTransaction` model | Type-safe schema, creates ClickHouse table |
-| File loader | Parses CSV/JSON, sends to ingest API |
-| `DailySalesSummary` MV | Pre-aggregates at insert time |
-| `sales-report` API | Date-range queries with filters |
-| PDF generator | JSON to formatted PDF |
+<BulletPointsCard
+  title="Components"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "SalesTransaction model",
+      description: "Type-safe schema that creates ClickHouse table"
+    },
+    {
+      title: "File loader",
+      description: "Parses CSV/JSON, sends to ingest API"
+    },
+    {
+      title: "DailySalesSummary MV",
+      description: "Pre-aggregates at insert time"
+    },
+    {
+      title: "sales-report API",
+      description: "Date-range queries with filters"
+    },
+    {
+      title: "PDF generator",
+      description: "JSON to formatted PDF"
+    }
+  ]}
+/>
 
 ### Before vs after
 
@@ -1439,13 +1519,32 @@ In this scenario, that's around 500 hours of manual Excel work eliminated (2 hou
 | Daily aggregation | 10-30+ sec | &lt;100ms |
 | Report generation | Minutes | &lt;1 sec |
 
-### Next steps
-
-- Add dimension tables (customer, product, store)
-- Create hourly/weekly/monthly MVs
-- Add Excel export with ExcelJS
-- Schedule delivery with Temporal
-- Deploy to Boreal Cloud
+<BulletPointsCard
+  title="Next steps"
+  bulletStyle="number"
+  bullets={[
+    {
+      title: "Add dimension tables",
+      description: "Customer, product, and store reference data"
+    },
+    {
+      title: "Create additional MVs",
+      description: "Hourly, weekly, and monthly aggregations"
+    },
+    {
+      title: "Add Excel export",
+      description: "Use ExcelJS for spreadsheet output"
+    },
+    {
+      title: "Schedule delivery",
+      description: "Automate with Temporal workflows"
+    },
+    {
+      title: "Deploy to production",
+      description: "Use Boreal Cloud for hosting"
+    }
+  ]}
+/>
 
 ---
 
@@ -1494,25 +1593,32 @@ LIMIT 5;
 
 ### Project structure
 
-```
-sales-reports/
-├── app/
-│   ├── index.ts                    # Export all modules
-│   ├── ingest/
-│   │   └── SalesTransaction.ts     # IngestPipeline definition
-│   ├── views/
-│   │   └── DailySalesSummary.ts    # MaterializedView
-│   └── apis/
-│       └── salesReport.ts          # Consumption API
-├── scripts/
-│   ├── load-file.ts                # CSV/JSON file loader
-│   └── generate-pdf-report.ts      # PDF generator
-├── sample-data/
-│   └── west-store-001.csv          # Sample transactions
-├── moose.config.toml
-├── package.json
-└── tsconfig.json
-```
+<FileTree>
+  <FileTree.Folder name="sales-reports" defaultOpen>
+    <FileTree.Folder name="app" defaultOpen>
+      <FileTree.File name="index.ts" comment="Export all modules" />
+      <FileTree.Folder name="ingest">
+        <FileTree.File name="SalesTransaction.ts" comment="IngestPipeline definition" />
+      </FileTree.Folder>
+      <FileTree.Folder name="views">
+        <FileTree.File name="DailySalesSummary.ts" comment="MaterializedView" />
+      </FileTree.Folder>
+      <FileTree.Folder name="apis">
+        <FileTree.File name="salesReport.ts" comment="Consumption API" />
+      </FileTree.Folder>
+    </FileTree.Folder>
+    <FileTree.Folder name="scripts">
+      <FileTree.File name="load-file.ts" comment="CSV/JSON file loader" />
+      <FileTree.File name="generate-pdf-report.ts" comment="PDF generator" />
+    </FileTree.Folder>
+    <FileTree.Folder name="sample-data">
+      <FileTree.File name="west-store-001.csv" comment="Sample transactions" />
+    </FileTree.Folder>
+    <FileTree.File name="moose.config.toml" />
+    <FileTree.File name="package.json" />
+    <FileTree.File name="tsconfig.json" />
+  </FileTree.Folder>
+</FileTree>
 
 ### Configuration
 
