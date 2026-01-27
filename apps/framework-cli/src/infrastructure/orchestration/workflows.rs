@@ -14,11 +14,7 @@ use crate::project::Project;
 /// Shutdown behavior:
 /// - Workers stop, but workflow definitions and schedules persist in Temporal
 /// - On restart, workers reconnect and resume orchestration
-pub async fn execute_changes(
-    project: &Project,
-    changes: &[WorkflowChange],
-    _infra_map: &crate::framework::core::infrastructure_map::InfrastructureMap,
-) {
+pub async fn execute_changes(project: &Project, changes: &[WorkflowChange]) {
     if !project.features.workflows {
         tracing::info!("Workflows are not enabled, skipping workflow changes");
         return;

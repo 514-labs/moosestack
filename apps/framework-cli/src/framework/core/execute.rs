@@ -138,12 +138,7 @@ pub async fn execute_initial_infra_change(
     )
     .await?;
 
-    workflows::execute_changes(
-        ctx.project,
-        &ctx.plan.changes.workflow_changes,
-        &ctx.plan.target_infra_map,
-    )
-    .await;
+    workflows::execute_changes(ctx.project, &ctx.plan.changes.workflow_changes).await;
 
     Ok(process_registries)
 }
@@ -224,12 +219,7 @@ pub async fn execute_online_change(
     )
     .await?;
 
-    workflows::execute_changes(
-        project,
-        &plan.changes.workflow_changes,
-        &plan.target_infra_map,
-    )
-    .await;
+    workflows::execute_changes(project, &plan.changes.workflow_changes).await;
 
     Ok(())
 }
