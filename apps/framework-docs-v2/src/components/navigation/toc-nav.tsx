@@ -51,12 +51,30 @@ export function TOCNav({
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    let debounceTimeout: NodeJS.Timeout | null = null;
+
     const updateVisibleHeadings = () => {
       const visible = headings.filter((heading) => {
         const el = document.getElementById(heading.id);
         return el !== null;
       });
-      setVisibleHeadings(visible);
+      // Only update state if the visible headings have changed
+      setVisibleHeadings((prev) => {
+        if (
+          prev.length === visible.length &&
+          prev.every((h, i) => h.id === visible[i]?.id)
+        ) {
+          return prev;
+        }
+        return visible;
+      });
+    };
+
+    const debouncedUpdate = () => {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+      debounceTimeout = setTimeout(updateVisibleHeadings, 100);
     };
 
     // Initial check after DOM is ready
@@ -64,7 +82,7 @@ export function TOCNav({
 
     // Watch for DOM changes (ConditionalContent showing/hiding content)
     const observer = new MutationObserver(() => {
-      updateVisibleHeadings();
+      debouncedUpdate();
     });
 
     observer.observe(document.body, {
@@ -72,7 +90,12 @@ export function TOCNav({
       subtree: true,
     });
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+    };
   }, [headings]);
 
   useEffect(() => {
