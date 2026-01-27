@@ -153,22 +153,6 @@ import { Callout } from "@/components/mdx";
 
 ## 🐻 Boreal
 
-### New Features
-
-- **New Logs Page** ([@groy-514](https://github.com/groy-514), [@LucioFranco](https://github.com/LucioFranco))
-  _Moose aware logs built on top of the OpenTelemetry standard_
-
-  Introducing an entirely new logs page powered by MooseStack's new Moose aware logs. Update your MooseStack project to the latest version to enable this new structured log output, which provides rich context about your Moose resources and is visualized in this comprehensive observability interface for viewing, filtering, and analyzing application logs at scale.
-
-  Key capabilities include:
-  - **Filter by Moose resources** to quickly find logs related to specific ingest APIs, streaming functions, consumption APIs, and other Moose primitives
-  - **Comprehensive filtering** by OpenTelemetry severity levels, text search, timestamp ranges, and custom attributes
-  - **Dynamic filter population** based on actual log data in your selected time range and project
-  - **URL-persisted filter state** for easy sharing of filtered log views
-  - **Clickable details panel** showing full log information including message, attributes, service details, and trace IDs with copy functionality
-
-  ![New logs page with Moose resource filters and details panel](/moosestack/release-notes/2026-01-23/new-logs-page.png)
-
 ### Bug Fixes
 
 - Fix branch deployment issues with long names: Fixed an issue where branches with long organization, project, or branch names could fail to deploy properly. Branch deployments now work reliably regardless of name length by ensuring generated identifiers stay within system limits. ([@LucioFranco](https://github.com/LucioFranco))
