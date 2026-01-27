@@ -1,4 +1,4 @@
-import ts, { factory, TypeNode } from "typescript";
+import ts, { factory } from "typescript";
 import path from "path";
 import { PluginConfig, TransformerExtras } from "ts-patch";
 import process from "process";
@@ -116,29 +116,3 @@ export const createTransformer =
   };
 
 export const avoidTypiaNameClash = "____moose____typia";
-
-// Wraps a type parameter with import("@514labs/moose-lib").StripDateIntersection<>
-export const sanitizeTypeParameter = (typeNode: TypeNode): ts.ImportTypeNode =>
-  factory.createImportTypeNode(
-    factory.createLiteralTypeNode(
-      factory.createStringLiteral("@514labs/moose-lib"),
-    ),
-    undefined,
-    factory.createIdentifier("StripDateIntersection"),
-    [typeNode],
-    false,
-  );
-
-// Typia call generators for transformed code (fallback for when direct integration isn't available)
-export const typiaJsonSchemas = (typeNode: TypeNode) =>
-  factory.createCallExpression(
-    factory.createPropertyAccessExpression(
-      factory.createPropertyAccessExpression(
-        factory.createIdentifier(avoidTypiaNameClash),
-        factory.createIdentifier("json"),
-      ),
-      factory.createIdentifier("schemas"),
-    ),
-    [factory.createTupleTypeNode([sanitizeTypeParameter(typeNode)])],
-    [],
-  );

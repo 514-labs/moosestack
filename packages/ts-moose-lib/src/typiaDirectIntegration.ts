@@ -12,6 +12,7 @@ import { ValidateProgrammer } from "typia/lib/programmers/ValidateProgrammer";
 import { IsProgrammer } from "typia/lib/programmers/IsProgrammer";
 import { AssertProgrammer } from "typia/lib/programmers/AssertProgrammer";
 import { JsonSchemasProgrammer } from "typia/lib/programmers/json/JsonSchemasProgrammer";
+import { HttpAssertQueryProgrammer } from "typia/lib/programmers/http/HttpAssertQueryProgrammer";
 import { MetadataCollection } from "typia/lib/factories/MetadataCollection";
 import { MetadataFactory } from "typia/lib/factories/MetadataFactory";
 import { LiteralFactory } from "typia/lib/factories/LiteralFactory";
@@ -139,6 +140,25 @@ export const generateAssertFunction = (
 };
 
 /**
+ * Generates an HTTP assert query function for validating URL query parameters
+ * This is used by the Api class to validate incoming query parameters
+ */
+export const generateHttpAssertQueryFunction = (
+  ctx: TypiaDirectContext,
+  type: ts.Type,
+  typeName?: string,
+): ts.Expression => {
+  const typiaCtx = toTypiaContext(ctx);
+
+  return HttpAssertQueryProgrammer.write({
+    context: typiaCtx,
+    modulo: ctx.modulo,
+    type,
+    name: typeName,
+  });
+};
+
+/**
  * Generates JSON schemas directly using typia's JsonSchemasProgrammer
  */
 export const generateJsonSchemas = (
@@ -178,11 +198,4 @@ export const generateJsonSchemas = (
     LiteralFactory.write(collection),
     ts.factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
   );
-};
-
-/**
- * Gets all import statements that typia's code generation requires
- */
-export const getTypiaImports = (ctx: TypiaDirectContext): ts.Statement[] => {
-  return ctx.importer.toStatements();
 };

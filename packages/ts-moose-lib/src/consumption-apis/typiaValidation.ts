@@ -1,11 +1,11 @@
 import ts, { factory, SyntaxKind } from "typescript";
-import {
-  avoidTypiaNameClash,
-  isMooseFile,
-  typiaJsonSchemas,
-} from "../compilerPluginHelper";
+import { isMooseFile, type TransformContext } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
 import { parseAsAny } from "../dmv2/dataModelMetadata";
+import {
+  generateHttpAssertQueryFunction,
+  generateJsonSchemas,
+} from "../typiaDirectIntegration";
 
 export const isApiV2 = (
   node: ts.Node,
@@ -28,6 +28,7 @@ export const isApiV2 = (
 export const transformApiV2 = (
   node: ts.NewExpression,
   checker: ts.TypeChecker,
+  ctx: TransformContext,
 ): ts.Node => {
   if (!isApiV2(node, checker)) {
     return node;
@@ -37,14 +38,22 @@ export const transformApiV2 = (
     return node;
   }
 
+  const typiaCtx = ctx.typiaContext!;
+
   // Get both type parameters from Api<T, R>
   const typeNode = node.typeArguments[0];
   const responseTypeNode =
     node.typeArguments[1] ||
     factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
 
+  const inputType = checker.getTypeAtLocation(typeNode);
+  const responseType = checker.getTypeAtLocation(responseTypeNode);
+
   // Get the handler function (second argument)
   const handlerFunc = node.arguments[1];
+
+  // Generate the HTTP assert query function directly
+  const assertQueryFunc = generateHttpAssertQueryFunction(typiaCtx, inputType);
 
   // Create a new handler function that includes validation
   const wrappedHandler = factory.createArrowFunction(
@@ -72,7 +81,7 @@ export const transformApiV2 = (
     factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
     factory.createBlock(
       [
-        // const assertGuard = ____moose____typia.http.createAssertQuery<T>()
+        // const assertGuard = <generated http assert query function>
         factory.createVariableStatement(
           undefined,
           factory.createVariableDeclarationList(
@@ -81,17 +90,7 @@ export const transformApiV2 = (
                 factory.createIdentifier("assertGuard"),
                 undefined,
                 undefined,
-                factory.createCallExpression(
-                  factory.createPropertyAccessExpression(
-                    factory.createPropertyAccessExpression(
-                      factory.createIdentifier(avoidTypiaNameClash),
-                      factory.createIdentifier("http"),
-                    ),
-                    factory.createIdentifier("createAssertQuery"),
-                  ),
-                  [typeNode],
-                  [],
-                ),
+                assertQueryFunc,
               ),
             ],
             ts.NodeFlags.Const,
@@ -197,16 +196,15 @@ export const transformApiV2 = (
     ),
   );
 
-  // Create the schema arguments
+  // Generate schemas directly
   const inputSchemaArg =
-    node.arguments.length > 3 ? node.arguments[3] : typiaJsonSchemas(typeNode);
-  const responseSchemaArg = typiaJsonSchemas(responseTypeNode);
+    node.arguments.length > 3 ?
+      node.arguments[3]
+    : generateJsonSchemas(typiaCtx, inputType);
+  const responseSchemaArg = generateJsonSchemas(typiaCtx, responseType);
 
   // Create the columns argument if it doesn't exist
-  const inputColumnsArg = toColumns(
-    checker.getTypeAtLocation(typeNode),
-    checker,
-  );
+  const inputColumnsArg = toColumns(inputType, checker);
 
   // Create the config argument if it doesn't exist
   const configArg =
