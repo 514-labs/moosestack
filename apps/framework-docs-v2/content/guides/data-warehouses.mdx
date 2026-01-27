@@ -925,9 +925,8 @@ If you're running SAP HANA and need real-time data synchronization, you can use 
 - **Scalable**: Handles millions of rows with minimal overhead
 
 #### Prerequisites
-- SAP HANA database with CDC permissions
+- SAP HANA database with CREATE TABLE and CREATE TRIGGER permissions
 - Tables you want to sync (e.g., EKKO, EKPO, LFA1)
-- Redis for CDC state tracking
 - Temporal for workflow orchestration
 
 #### Step 1: Install SAP HANA CDC Pipeline
@@ -966,9 +965,6 @@ SAP_HANA_TABLES=EKKO,EKPO,LFA1,MSEG,MKPF
 # CDC Configuration
 SAP_HANA_CLIENT_ID=my_warehouse
 SAP_HANA_CDC_RETENTION_DAYS=7
-
-# Redis (for CDC state)
-REDIS_URL=redis://127.0.0.1:6379
 ```
 
 **Security Note**: Never commit `.env` files. Add to `.gitignore`.
@@ -1118,7 +1114,6 @@ ClickHouse Tables (ReplacingMergeTree)
 - **CDC Triggers**: Automatically capture changes in SAP HANA
 - **Change Tables**: Store delta changes with operation type (I/U/D)
 - **Moose Workflow**: Temporal-orchestrated sync with retry logic
-- **Redis**: Stores sync watermarks for resume capability
 - **ClickHouse**: ReplacingMergeTree handles upserts automatically
 
 #### Troubleshooting
@@ -1159,7 +1154,6 @@ moose logs | grep -i cdc
 **Resource Usage**:
 - CDC tables in SAP HANA: ~10-20% of source table size
 - Pruning keeps CDC tables small (7 day default)
-- Redis memory: ~1MB per 10,000 rows tracked
 
 #### Comparison: CDC vs Batch Loading
 
