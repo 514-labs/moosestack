@@ -200,7 +200,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22, 24]
+        node-version: [20, 22, 24, 25]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -319,7 +319,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22, 24]
+        node-version: [20, 22, 24, 25]
         package-manager: [npm, pnpm-9, pnpm-10]
         include:
           - package-manager: npm
@@ -406,7 +406,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20, 22, 24]
+        node-version: [20, 22, 24, 25]
         package-manager: [npm]
         include:
           - package-manager: npm
