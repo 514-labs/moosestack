@@ -11,8 +11,8 @@ import { CTACards, CTACard, Callout, BulletPointsCard } from "@/components/mdx";
 
 <Callout type="info" title="TL;DR">
 * Slow dashboards are usually a database architecture problem, not a frontend or charting library problem.
-* Running analytical queries (aggregations, wide scans, complex joins) on your transactional database degrades performance and reliability. Users wait for data, your core app slows, and you risk downtime during peak usage.
-* Moving analytics to ClickHouse incrementally yields 10–100x faster dashboards (10x for simple aggregations, 50-100x for complex joins and time-series queries). Complex reports load in under a second without rewriting your frontend.
+* Running analytical queries (aggregations, wide scans, complex joins) on your transactional database degrades performance and reliability.
+* Moving these analytical queries to ClickHouse yields 10–100x faster dashboards
 
 This guide will:
 
@@ -54,7 +54,7 @@ This guide is for you if you already have customer-facing dashboards or reports 
     },
     {
       title: "Small report changes are expensive",
-      description: "Updates are risky enough to stay stuck in the backlog, so analytics features stagnate."
+      description: "Adding a new report or filter is too risky and complex to build, so engineering prioritizes other features instead."
     },
     {
       title: "Reporting traffic overwhelms production OLTP",
@@ -63,9 +63,9 @@ This guide is for you if you already have customer-facing dashboards or reports 
   ]}
 />
 
-The root cause is usually analytical queries running on your transactional database. These queries—aggregations, wide table scans, complex joins—compete with the transactional workloads that power the rest of your application.
+The root cause is usually analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, which compete with the core transactional workloads that power the rest of your application.
 
-This guide lays out a step-by-step path to move those analytical workloads to OLAP, **without redesigning your product or rewriting your frontend**.
+This guide lays out an step-by-step path to offload those analytical workloads to a purpose-built analytical database (ClickHouse), that can be done incrementally and without needing to rearchitect your existing application.
 
 ### Why this matters
 
@@ -81,10 +81,10 @@ After migrating the analytics backend to an OLAP architecture (Fiveonefour stack
 
 ### Why you haven’t solved it yet
 
-Most teams don't start with OLAP. Delaying is often the right call early on:
+Most teams don't start with a dedicated analytical database (OLAP), and it's often the right call early on.
 
 <BulletPointsCard
-  title="Why teams delay adopting OLAP (and why it makes sense early on)"
+  title="Why teams delay adopting OLAP"
   bulletStyle="bullet"
   bullets={[
     {
@@ -110,27 +110,15 @@ Most teams don't start with OLAP. Delaying is often the right call early on:
   ]}
 />
 
-This is why it's common to delay adopting OLAP until it becomes a real business risk. The issue is timing. OLAP migrations are non-trivial and typically take 3-6 months with traditional data engineering tooling. If you wait too long or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning.
+While its common to delay adopting OLAP, there's an inflection point at which it becomes a real business risk. OLAP migrations are non-trivial and typically take 3-6 months with traditional data engineering tooling. If you wait too long to start and/or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning. 
 
 ### When to pull the trigger
 
-Consider this shift once warning signs appear in your day-to-day product and engineering work.
+You'll know you've hit the inflection point when warning signs start to appear in your day-to-day product and engineering work.
 
-It usually starts small: dashboards feel a bit laggy, then noticeably slow as data grows. Users want more filters, breakdowns, or longer time ranges. But engineering can't safely ship these improvements—even small changes could jeopardize the core transactional workloads the rest of your product depends on.
-
-Before long, customers complain about load times. Those complaints surface in retention metrics, support tickets, and sales calls.
+Users want more metrics, filters, breakdowns, or longer time ranges in their dashboards, but engineering can't deliver these seemingly small changes because they could jeopardize the core transactional workloads the rest of your product depends on. Eventually, customers start to complain about load times, Before long, those complaints surface in retention metrics, support tickets, and sales calls.
 
 Throwing more hardware at the problem either isn't possible or is prohibitively expensive. Even when feasible, this approach only buys temporary relief. The underlying issue is certain to resurface.
-
-### What this guide proposes
-
-This guide outlines an incremental path for delivering 10–100x faster dashboard load times without putting your core product at risk.
-
-The core idea: move expensive analytical queries from your existing transactional database to a purpose-built analytical database (ClickHouse) without changing your existing frontend UI or business logic.
-
-This approach fits your existing engineering workflow. Changes are TypeScript, live in the same codebase, and move through your normal review and release process—which means your team doesn't need to learn new tools or hand off ownership to a separate data team. Everything can be validated in staging environments before shipping to production, so you can move fast without breaking things.
-
-Compared to a full-stack refactor or a data-team-led migration, this approach ships your first migrated dashboard in 2-4 weeks (vs 3-6 months), carries minimal risk to your production systems, and lets you scale analytics incrementally as your data grows.
 
 ### What success looks like
 
