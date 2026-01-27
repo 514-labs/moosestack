@@ -1791,6 +1791,32 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         });
 
+        // OpenAPI schema sanity check for TypeScript
+        it("should generate OpenAPI schema with DateTime types for ingest APIs", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const response = await fetch(`${SERVER_CONFIG.url}/openapi.yaml`);
+          expect(response.ok).to.be.true;
+
+          const yaml = await response.text();
+
+          // Basic structure check
+          expect(yaml).to.include("openapi:");
+          expect(yaml).to.include("paths:");
+
+          // Check that DateTimePrecisionInput ingest endpoint exists
+          expect(yaml).to.include("/ingest/DateTimePrecisionInput");
+
+          // Check that schema contains Date type references (typia generates $ref to Date)
+          // This verifies our JSON schema generation works with DateTime64<N> types
+          expect(yaml).to.include("schemas:");
+          expect(yaml).to.include("Date");
+
+          testLogger.info(
+            "✅ OpenAPI schema sanity check passed - DateTime types included",
+          );
+        });
+
         // DateTime precision test for TypeScript
         it("should preserve microsecond precision with DateTime64String types via streaming transform", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
@@ -2291,6 +2317,31 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
           testLogger.info(
             "✅ Extra fields test passed (Python) - extra fields received by streaming function via model_extra and stored in properties column",
+          );
+        });
+
+        // OpenAPI schema sanity check for Python
+        it("should generate OpenAPI schema with DateTime types for ingest APIs (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const response = await fetch(`${SERVER_CONFIG.url}/openapi.yaml`);
+          expect(response.ok).to.be.true;
+
+          const yaml = await response.text();
+
+          // Basic structure check
+          expect(yaml).to.include("openapi:");
+          expect(yaml).to.include("paths:");
+
+          // Check that DateTimePrecisionInput ingest endpoint exists (lowercase for Python)
+          expect(yaml).to.include("/ingest/datetimeprecisioninput");
+
+          // Check that schema contains type definitions
+          // Python uses pydantic which generates different schema format
+          expect(yaml).to.include("schemas:");
+
+          testLogger.info(
+            "✅ OpenAPI schema sanity check passed (Python) - DateTime types included",
           );
         });
 

@@ -51,42 +51,50 @@ function testIngestPipelineValidation(
     let validationError: string | undefined;
 
     // Use ts.transform to get a real TransformationContext
-    ts.transform(sourceFile, [
-      (transformationContext) => {
-        const typiaContext = createTypiaContext(program, transformationContext);
+    ts.transform(
+      [sourceFile],
+      [
+        (transformationContext) => {
+          return (sf) => {
+            // Create typiaContext with the source file
+            const typiaContext = createTypiaContext(
+              program,
+              transformationContext,
+              sf,
+            );
 
-        const ctx: TransformContext = {
-          typeChecker: checker,
-          program,
-          transformer: transformationContext,
-          typiaContext,
-        };
+            const ctx: TransformContext = {
+              typeChecker: checker,
+              program,
+              transformer: transformationContext,
+              typiaContext,
+            };
 
-        return (sf) => {
-          function visit(node: ts.Node): ts.Node {
-            if (
-              ts.isNewExpression(node) &&
-              ts.isIdentifier(node.expression) &&
-              node.expression.text === "IngestPipeline"
-            ) {
-              try {
-                // This will throw if validation fails
-                transformNewMooseResource(node, checker, ctx);
-              } catch (error) {
-                const errorMessage =
-                  error instanceof Error ? error.message : String(error);
-                // Only capture validation errors (about index signatures)
-                if (errorMessage.includes("index signature")) {
-                  validationError = errorMessage;
+            function visit(node: ts.Node): ts.Node {
+              if (
+                ts.isNewExpression(node) &&
+                ts.isIdentifier(node.expression) &&
+                node.expression.text === "IngestPipeline"
+              ) {
+                try {
+                  // This will throw if validation fails
+                  transformNewMooseResource(node, checker, ctx);
+                } catch (error) {
+                  const errorMessage =
+                    error instanceof Error ? error.message : String(error);
+                  // Only capture validation errors (about index signatures)
+                  if (errorMessage.includes("index signature")) {
+                    validationError = errorMessage;
+                  }
                 }
               }
+              return ts.visitEachChild(node, visit, transformationContext);
             }
-            return ts.visitEachChild(node, visit, transformationContext);
-          }
-          return ts.visitEachChild(sf, visit, transformationContext);
-        };
-      },
-    ]);
+            return ts.visitEachChild(sf, visit, transformationContext);
+          };
+        },
+      ],
+    );
 
     if (validationError) {
       return { success: false, error: validationError };
