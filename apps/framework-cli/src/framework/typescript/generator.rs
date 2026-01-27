@@ -10,7 +10,6 @@ use crate::{
     utilities::{package_managers, system},
 };
 
-use super::templates::TypescriptRenderingError;
 use crate::framework::core::infrastructure::table::{ColumnType, DataEnum, EnumValue, Table};
 
 #[derive(Debug, thiserror::Error)]
@@ -22,7 +21,6 @@ pub enum TypescriptGeneratorError {
         type_name: String,
     },
     FileWritingError(#[from] std::io::Error),
-    RenderingError(#[from] typescript::templates::TypescriptRenderingError),
     ProjectFile(#[from] crate::project::ProjectFileError),
 }
 
@@ -62,10 +60,6 @@ impl TypescriptInterface {
     pub fn var_name(&self) -> String {
         //! Use when an interface is used in a function, it is passed as a variable.
         self.name.to_case(Case::Camel)
-    }
-
-    pub fn create_code(&self) -> Result<String, TypescriptRenderingError> {
-        typescript::templates::render_interface(self)
     }
 
     pub fn enums(&self) -> HashSet<String> {

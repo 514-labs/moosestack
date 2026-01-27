@@ -8,12 +8,7 @@ import {
   isNewMooseResourceWithTypeParam,
   transformNewMooseResource,
 } from "./dmv2/dataModelMetadata";
-import {
-  isCreateApi,
-  isCreateApiV2,
-  transformCreateApi,
-  transformLegacyApi,
-} from "./consumption-apis/typiaValidation";
+import { isApiV2, transformApiV2 } from "./consumption-apis/typiaValidation";
 import { createTypiaContext, getTypiaImports } from "./typiaDirectIntegration";
 
 /**
@@ -39,16 +34,9 @@ const applyTransformation = (
   node: ts.Node,
   ctx: TransformContext,
 ): { transformed: ts.Node; wasTransformed: boolean } => {
-  if (isCreateApi(node, ctx.typeChecker)) {
+  if (isApiV2(node, ctx.typeChecker)) {
     return {
-      transformed: transformLegacyApi(node, ctx.typeChecker),
-      wasTransformed: true,
-    };
-  }
-
-  if (isCreateApiV2(node, ctx.typeChecker)) {
-    return {
-      transformed: transformCreateApi(node, ctx.typeChecker),
+      transformed: transformApiV2(node, ctx.typeChecker),
       wasTransformed: true,
     };
   }
