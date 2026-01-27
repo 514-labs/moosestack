@@ -34,6 +34,12 @@ import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from "@/components/ui/accordion";
 import { IconTerminal, IconFileCode } from "@tabler/icons-react";
 import {
   ServerCodeBlock,
@@ -54,8 +60,6 @@ interface MDXRendererProps {
 }
 
 export async function MDXRenderer({ source }: MDXRendererProps) {
-  "use cache";
-
   // Preprocess content to ensure proper spacing around code blocks
   // This prevents hydration errors from invalid HTML nesting
   const processedSource = ensureCodeBlockSpacing(source);
@@ -127,6 +131,10 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     TabsTrigger,
     TabsContent,
     Badge,
+    Accordion,
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent,
     Terminal: IconTerminal,
     FileCode: IconFileCode,
     SourceCodeLink,

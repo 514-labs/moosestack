@@ -1,6 +1,9 @@
 {
   "name": "ADS-B",
   "version": "0.0",
+  "engines": {
+    "node": ">=20 <25"
+  },
   "scripts": {
     "moose": "moose-cli",
     "build": "moose-cli build --docker",

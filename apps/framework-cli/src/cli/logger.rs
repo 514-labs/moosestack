@@ -94,6 +94,7 @@ use tracing_subscriber::{EnvFilter, Layer};
 use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
 
+use super::otlp;
 use super::settings::user_directory;
 
 // # STRUCTURED LOGGING INSTRUMENTATION GUIDE
@@ -285,7 +286,6 @@ pub mod resource_type {
 
 /// Default date format for log file names: YYYY-MM-DD-cli.log
 pub const DEFAULT_LOG_FILE_FORMAT: &str = "%Y-%m-%d-cli.log";
-
 #[derive(Deserialize, Debug, Clone)]
 pub enum LoggerLevel {
     #[serde(alias = "DEBUG", alias = "debug")]
@@ -338,6 +338,11 @@ pub struct LoggerSettings {
 
     #[serde(default = "default_structured_logs")]
     pub structured_logs: bool,
+
+    /// OTLP gRPC endpoint for structured logs (e.g., "http://localhost:4317")
+    /// When set, exports spans/logs to OTLP collector via gRPC
+    #[serde(default)]
+    pub otlp_endpoint: Option<String>,
 }
 
 fn default_log_file() -> String {
@@ -383,6 +388,7 @@ impl Default for LoggerSettings {
             use_tracing_format: default_use_tracing_format(),
             no_ansi: default_no_ansi(),
             structured_logs: default_structured_logs(),
+            otlp_endpoint: None,
         }
     }
 }
@@ -659,58 +665,21 @@ pub fn setup_logging(settings: &LoggerSettings) {
 
     let session_id = CONTEXT.get(CTX_SESSION_ID).unwrap();
 
-    // Check for P0 structured logs with span support
-    if settings.structured_logs {
-        // P0: JSON format with span fields for Boreal UI
-        setup_structured_logs(settings);
-    } else if settings.use_tracing_format {
+    // Priority 1: OTLP export (if endpoint configured)
+    if let Some(endpoint) = &settings.otlp_endpoint {
+        otlp::setup_otlp_logs(otlp::OtlpLogSettings {
+            endpoint: endpoint.clone(),
+            level_filter: settings.level.to_tracing_level().to_string(),
+        });
+        return;
+    }
+
+    if settings.use_tracing_format {
         // Modern format using tracing built-ins
         setup_modern_format(settings);
     } else {
         // Legacy format matching fern exactly
         setup_legacy_format(settings, session_id);
-    }
-}
-
-/// Setup P0 structured logging with JSON format and span field support.
-///
-/// This format outputs JSON logs with automatic span field inclusion for filtering
-/// in the Boreal UI. Span fields (context, resource_type, resource_name) are
-/// automatically included in the output when functions are instrumented with
-/// #[instrument] attributes.
-fn setup_structured_logs(settings: &LoggerSettings) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(settings.level.to_tracing_level().to_string()));
-
-    if settings.stdout {
-        let json_layer = tracing_subscriber::fmt::layer()
-            .json()
-            .with_current_span(true) // Include current span in output
-            .with_span_list(false) // Disable span hierarchy (performance)
-            .with_target(true) // Include module path
-            .with_file(false) // Don't include file:line (verbose)
-            .with_line_number(false)
-            .with_writer(std::io::stdout);
-
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(json_layer)
-            .init();
-    } else {
-        let file_appender = create_rolling_file_appender(&settings.log_file_date_format);
-        let json_layer = tracing_subscriber::fmt::layer()
-            .json()
-            .with_current_span(true) // Include current span in output
-            .with_span_list(false) // Disable span hierarchy (performance)
-            .with_target(true) // Include module path
-            .with_file(false) // Don't include file:line (verbose)
-            .with_line_number(false)
-            .with_writer(file_appender);
-
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(json_layer)
-            .init();
     }
 }
 
@@ -808,6 +777,13 @@ fn setup_legacy_format(settings: &LoggerSettings, session_id: &str) {
                 .init();
         }
     }
+}
+
+/// Shuts down the OTLP log provider, flushing any remaining logs.
+///
+/// This should be called before the application exits to ensure all logs are exported.
+pub fn shutdown_otlp() {
+    otlp::shutdown_otlp();
 }
 
 #[cfg(test)]

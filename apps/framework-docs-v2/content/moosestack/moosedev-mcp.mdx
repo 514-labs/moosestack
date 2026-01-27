@@ -569,9 +569,22 @@ The MCP server:
 
 ## LLM-Optimized Documentation Feeds
 
-### Context7 for MooseStack Documentation
+### Documentation Index
 
-For general MooseStack documentation and code examples, use Context7 MCP.
+[`https://docs.fiveonefour.com/llm.md`](https://docs.fiveonefour.com/llm.md) returns a table of contents linking to all public pages. LLMs can discover what exists, then fetch only what they need — avoiding context window limits.
+
+### Per-Page Markdown Endpoints
+
+Append `.md` to any doc URL to get clean markdown:
+
+- [`https://docs.fiveonefour.com/moosestack/olap/model-table.md`](https://docs.fiveonefour.com/moosestack/olap/model-table.md) — Defaults to TypeScript
+- [`https://docs.fiveonefour.com/moosestack/olap/model-table.md?lang=python`](https://docs.fiveonefour.com/moosestack/olap/model-table.md?lang=python) — Specific language
+
+Useful for AI agents fetching specific pages on-demand.
+
+### Context7
+
+Context7 indexes MooseStack documentation and code examples, letting LLMs pull context on-demand.
 
 **Setup:** [Install Context7 for your IDE](https://context7.com/docs/overview)
 
@@ -582,6 +595,13 @@ Show me how to create a streaming function in MooseStack using TypeScript. use c
 ```
 
 **Best together:** Context7 provides MooseStack framework documentation, while the Moose MCP server provides access to your local project's data, logs, and infrastructure.
+
+### Copy Page Menu
+
+Every doc page has a **Copy Page** dropdown with two options:
+
+- **Copy as Markdown** — copies clean markdown to your clipboard
+- **Open Markdown** — opens the `.md` endpoint in a new tab
 
 ## Troubleshooting
 

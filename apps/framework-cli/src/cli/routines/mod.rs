@@ -117,8 +117,8 @@ use super::{Message, MessageType};
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::core::plan::plan_changes;
 use crate::framework::core::plan::InfraPlan;
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::framework::core::state_storage::StateStorageBuilder;
+use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::olap::OlapOperations;
@@ -553,7 +553,6 @@ pub async fn start_development_mode(
         api_changes_channel,
         webapp_changes_channel,
         metrics: metrics.clone(),
-        redis_client: &redis_client,
     })
     .await?;
 
@@ -652,6 +651,59 @@ pub async fn start_production_mode(
         },
     );
 
+    // Pre-compile TypeScript with moose plugins for faster startup
+    // This eliminates ts-node overhead in production by using pre-compiled JavaScript
+    if project.language == SupportedLanguages::Typescript {
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "Compiling".to_string(),
+                details: "TypeScript for production...".to_string(),
+            },
+        );
+
+        let compile_result = std::process::Command::new("npx")
+            .arg("moose-tspc")
+            .arg(".moose/compiled")
+            .current_dir(&project.project_location)
+            .env("MOOSE_SOURCE_DIR", &project.source_dir)
+            .output();
+
+        match compile_result {
+            Ok(output) if output.status.success() => {
+                display::show_message_wrapper(
+                    MessageType::Success,
+                    Message {
+                        action: "Compiled".to_string(),
+                        details: "TypeScript successfully".to_string(),
+                    },
+                );
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                warn!("TypeScript compilation failed: {}", stderr);
+                display::show_message_wrapper(
+                    MessageType::Warning,
+                    Message {
+                        action: "Warning".to_string(),
+                        details: "TypeScript compilation failed, falling back to ts-node"
+                            .to_string(),
+                    },
+                );
+            }
+            Err(e) => {
+                warn!("Failed to run moose-tspc: {}", e);
+                display::show_message_wrapper(
+                    MessageType::Warning,
+                    Message {
+                        action: "Warning".to_string(),
+                        details: "moose-tspc not found, falling back to ts-node".to_string(),
+                    },
+                );
+            }
+        }
+    }
+
     if std::env::var("MOOSE_TEST__CRASH").is_ok() {
         panic!("Crashing for testing purposes");
     }
@@ -718,7 +770,6 @@ pub async fn start_production_mode(
         api_changes_channel,
         webapp_changes_channel: webapp_update_channel,
         metrics: metrics.clone(),
-        redis_client: &redis_client,
     })
     .await?;
 
@@ -873,14 +924,8 @@ async fn legacy_remote_plan_logic(
     json: bool,
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
-    let local_infra_map = if project.features.data_model_v2 {
-        debug!("Loading InfrastructureMap from user code (DMV2)");
-        InfrastructureMap::load_from_user_code(project, true).await?
-    } else {
-        debug!("Loading InfrastructureMap from primitives");
-        let primitive_map = PrimitiveMap::load(project).await?;
-        InfrastructureMap::new(project, primitive_map)
-    };
+    debug!("Loading InfrastructureMap from user code");
+    let local_infra_map = InfrastructureMap::load_from_user_code(project, true).await?;
 
     // Use existing implementation
     let target_url = prepend_base_url(base_url.as_deref(), "admin/plan");
@@ -940,7 +985,7 @@ async fn legacy_remote_plan_logic(
             // Output empty plan as JSON
             let temp_plan = InfraPlan {
                 changes: plan_response.changes,
-                target_infra_map: InfrastructureMap::new(project, PrimitiveMap::default()),
+                target_infra_map: InfrastructureMap::empty_from_project(project),
             };
             println!("{}", serde_json::to_string_pretty(&temp_plan)?);
         } else {
@@ -958,7 +1003,7 @@ async fn legacy_remote_plan_logic(
     // Create a temporary InfraPlan to use with the show_changes function
     let temp_plan = InfraPlan {
         changes: plan_response.changes,
-        target_infra_map: InfrastructureMap::new(project, PrimitiveMap::default()),
+        target_infra_map: InfrastructureMap::empty_from_project(project),
     };
 
     if json {

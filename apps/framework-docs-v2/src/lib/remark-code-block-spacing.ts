@@ -12,8 +12,13 @@ export function ensureCodeBlockSpacing(content: string): string {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const prevLine = i > 0 ? lines[i - 1] : "";
-    const nextLine = i < lines.length - 1 ? lines[i + 1] : "";
+    if (line === undefined) {
+      // Skip if line is undefined (shouldn't happen but satisfies TypeScript)
+      continue;
+    }
+
+    const prevLine = i > 0 ? (lines[i - 1] ?? "") : "";
+    const nextLine = i < lines.length - 1 ? (lines[i + 1] ?? "") : "";
 
     // If current line starts a code block and previous line has content (not blank)
     if (line.trim().startsWith("```") && prevLine.trim() !== "") {

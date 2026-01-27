@@ -51,6 +51,11 @@ pub fn run(
         command.env("TS_NODE_COMPILER", "ts-patch/compiler");
     }
 
+    // In production mode, use pre-compiled JavaScript to avoid ts-node overhead
+    if project.is_production {
+        command.env("MOOSE_USE_COMPILED", "true");
+    }
+
     // Set IS_LOADING_INFRA_MAP=true only when loading infrastructure map
     // This allows mooseRuntimeEnv.get() to return markers for later resolution
     // For runtime execution (functions/workflows), it will return actual env var values

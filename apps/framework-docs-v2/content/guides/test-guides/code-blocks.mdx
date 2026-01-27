@@ -2,6 +2,19 @@
 
 This guide tests how code blocks render across different languages and scenarios commonly used in the documentation.
 
+## Inline Code
+
+Inline code should render within the flow of text. For example, you can use `npm install` to install packages, or run `moose dev` to start the development server.
+
+Here are more examples:
+- The `BOREAL_CONNECTION_STRING` environment variable is required
+- Use `const x = 5;` to declare a constant in TypeScript
+- The function `getUserById(id)` returns a user object
+- Import with `import { useState } from 'react'`
+- Database connection: `postgresql://localhost:5432/mydb`
+
+You can also have inline code with special characters like `<Component />` or `array[0]` or `user?.name`.
+
 ## Plain Text (No Language Specification)
 
 Code blocks without a language should render as plain text with no syntax highlighting:
@@ -204,7 +217,7 @@ func main() {
 ## Dockerfile
 
 ```dockerfile
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
