@@ -2337,8 +2337,8 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           expect(yaml).to.include("openapi:");
           expect(yaml).to.include("paths:");
 
-          // Check that DateTimePrecisionInput ingest endpoint exists (lowercase for Python)
-          expect(yaml).to.include("/ingest/datetimeprecisioninput");
+          // Check that DateTimePrecisionInput ingest endpoint exists
+          expect(yaml).to.include("/ingest/DateTimePrecisionInput");
 
           // Check that schema contains type definitions
           // Python uses pydantic which generates different schema format
@@ -2379,6 +2379,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
           // Ingest to DateTimePrecisionInput (which has a transform to Output)
           const response = await fetch(
+            // somehow we accidentally test for case insensitivity in the CLI
             `${SERVER_CONFIG.url}/ingest/datetimeprecisioninput`,
             {
               method: "POST",
