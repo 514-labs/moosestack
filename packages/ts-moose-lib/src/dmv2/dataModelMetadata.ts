@@ -1,11 +1,5 @@
 import ts, { factory } from "typescript";
-import {
-  avoidTypiaNameClash,
-  isMooseFile,
-  typiaJsonSchemas,
-  sanitizeTypeParameter,
-  type TransformContext,
-} from "../compilerPluginHelper";
+import { isMooseFile, type TransformContext } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
 import { IJsonSchemaCollection } from "typia/lib/schemas/json/IJsonSchemaCollection";
 import { dlqSchema } from "./internal";
@@ -72,22 +66,10 @@ export const parseAsAny = (s: string) =>
     factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
   );
 
-const typiaTypeGuard = (node: ts.NewExpression) => {
-  const typeNode = node.typeArguments![0];
-  return factory.createCallExpression(
-    factory.createPropertyAccessExpression(
-      factory.createIdentifier(avoidTypiaNameClash),
-      factory.createIdentifier("createAssert"),
-    ),
-    [sanitizeTypeParameter(typeNode)],
-    [],
-  );
-};
-
 export const transformNewMooseResource = (
   node: ts.NewExpression,
   checker: ts.TypeChecker,
-  ctx?: TransformContext,
+  ctx: TransformContext,
 ): ts.Node => {
   const typeName = checker.getSymbolAtLocation(node.expression)!.name;
 
@@ -147,45 +129,26 @@ export const transformNewMooseResource = (
     );
   }
 
-  // Check if we have the typia context for direct typia integration
-  // This is the shared context from the compiler plugin that accumulates imports
-  const typiaCtx = ctx?.typiaContext;
-  const useDirectTypia = typiaCtx !== undefined;
+  // Get the typia context for direct code generation
+  const typiaCtx = ctx.typiaContext!;
 
   let internalArguments: ts.Expression[];
 
   if (typeName === "DeadLetterQueue") {
     // DeadLetterQueue uses type guard (assert)
-    if (useDirectTypia) {
-      internalArguments = [generateAssertFunction(typiaCtx, typeAtLocation)];
-    } else {
-      internalArguments = [typiaTypeGuard(node)];
-    }
+    internalArguments = [generateAssertFunction(typiaCtx, typeAtLocation)];
   } else {
     // Other resources use JSON schemas + columns
-    if (useDirectTypia) {
-      internalArguments = [
-        generateJsonSchemas(typiaCtx, typeAtLocation),
-        parseAsAny(
-          JSON.stringify(
-            toColumns(typeAtLocation, checker, {
-              allowIndexSignatures,
-            }),
-          ),
+    internalArguments = [
+      generateJsonSchemas(typiaCtx, typeAtLocation),
+      parseAsAny(
+        JSON.stringify(
+          toColumns(typeAtLocation, checker, {
+            allowIndexSignatures,
+          }),
         ),
-      ];
-    } else {
-      internalArguments = [
-        typiaJsonSchemas(typeNode),
-        parseAsAny(
-          JSON.stringify(
-            toColumns(typeAtLocation, checker, {
-              allowIndexSignatures,
-            }),
-          ),
-        ),
-      ];
-    }
+      ),
+    ];
   }
 
   const resourceName = checker.getSymbolAtLocation(node.expression)!.name;
@@ -203,50 +166,27 @@ export const transformNewMooseResource = (
 
   // For OlapTable and IngestPipeline, also inject typia validation functions
   if (resourceName === "OlapTable" || resourceName === "IngestPipeline") {
-    let validatorsObject: ts.Expression;
-
-    if (useDirectTypia) {
-      // Create a single TypiaValidators object with all three validation functions
-      // using direct typia code generation (uses shared typiaCtx for imports)
-      validatorsObject = factory.createObjectLiteralExpression(
-        [
-          factory.createPropertyAssignment(
-            factory.createIdentifier("validate"),
-            wrapValidateFunction(
-              generateValidateFunction(typiaCtx, typeAtLocation),
-            ),
+    // Create a single TypiaValidators object with all three validation functions
+    // using direct typia code generation (uses shared typiaCtx for imports)
+    const validatorsObject = factory.createObjectLiteralExpression(
+      [
+        factory.createPropertyAssignment(
+          factory.createIdentifier("validate"),
+          wrapValidateFunction(
+            generateValidateFunction(typiaCtx, typeAtLocation),
           ),
-          factory.createPropertyAssignment(
-            factory.createIdentifier("assert"),
-            generateAssertFunction(typiaCtx, typeAtLocation),
-          ),
-          factory.createPropertyAssignment(
-            factory.createIdentifier("is"),
-            generateIsFunction(typiaCtx, typeAtLocation),
-          ),
-        ],
-        true,
-      );
-    } else {
-      // Fallback to generating typia function calls
-      validatorsObject = factory.createObjectLiteralExpression(
-        [
-          factory.createPropertyAssignment(
-            factory.createIdentifier("validate"),
-            createTypiaValidator(typeNode),
-          ),
-          factory.createPropertyAssignment(
-            factory.createIdentifier("assert"),
-            createTypiaAssert(typeNode),
-          ),
-          factory.createPropertyAssignment(
-            factory.createIdentifier("is"),
-            createTypiaIs(typeNode),
-          ),
-        ],
-        true,
-      );
-    }
+        ),
+        factory.createPropertyAssignment(
+          factory.createIdentifier("assert"),
+          generateAssertFunction(typiaCtx, typeAtLocation),
+        ),
+        factory.createPropertyAssignment(
+          factory.createIdentifier("is"),
+          generateIsFunction(typiaCtx, typeAtLocation),
+        ),
+      ],
+      true,
+    );
 
     updatedArgs = [...updatedArgs, validatorsObject];
 
@@ -366,142 +306,3 @@ const wrapValidateFunction = (validateFn: ts.Expression): ts.Expression => {
     ),
   );
 };
-
-/**
- * Creates a typia validator function call for the given type
- * e.g., ____moose____typia.createValidate<T>()
- */
-export const createTypiaValidator = (typeNode: ts.TypeNode) => {
-  // Create the typia validator call
-  const typiaValidator = factory.createCallExpression(
-    factory.createPropertyAccessExpression(
-      factory.createIdentifier(avoidTypiaNameClash),
-      factory.createIdentifier("createValidate"),
-    ),
-    [sanitizeTypeParameter(typeNode)],
-    [],
-  );
-
-  // Wrap it to transform the result to match our expected interface
-  // (data: unknown) => {
-  //   const result = typiaValidator(data);
-  //   return {
-  //     success: result.success,
-  //     data: result.success ? result.data : undefined,
-  //     errors: result.success ? undefined : result.errors
-  //   };
-  // }
-  return factory.createArrowFunction(
-    undefined,
-    undefined,
-    [
-      factory.createParameterDeclaration(
-        undefined,
-        undefined,
-        factory.createIdentifier("data"),
-        undefined,
-        factory.createKeywordTypeNode(ts.SyntaxKind.UnknownKeyword),
-        undefined,
-      ),
-    ],
-    undefined,
-    factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-    factory.createBlock(
-      [
-        // const result = typiaValidator(data);
-        factory.createVariableStatement(
-          undefined,
-          factory.createVariableDeclarationList(
-            [
-              factory.createVariableDeclaration(
-                factory.createIdentifier("result"),
-                undefined,
-                undefined,
-                factory.createCallExpression(typiaValidator, undefined, [
-                  factory.createIdentifier("data"),
-                ]),
-              ),
-            ],
-            ts.NodeFlags.Const,
-          ),
-        ),
-        // return { success: result.success, data: result.success ? result.data : undefined, errors: result.success ? undefined : result.errors };
-        factory.createReturnStatement(
-          factory.createObjectLiteralExpression(
-            [
-              factory.createPropertyAssignment(
-                factory.createIdentifier("success"),
-                factory.createPropertyAccessExpression(
-                  factory.createIdentifier("result"),
-                  factory.createIdentifier("success"),
-                ),
-              ),
-              factory.createPropertyAssignment(
-                factory.createIdentifier("data"),
-                factory.createConditionalExpression(
-                  factory.createPropertyAccessExpression(
-                    factory.createIdentifier("result"),
-                    factory.createIdentifier("success"),
-                  ),
-                  factory.createToken(ts.SyntaxKind.QuestionToken),
-                  factory.createPropertyAccessExpression(
-                    factory.createIdentifier("result"),
-                    factory.createIdentifier("data"),
-                  ),
-                  factory.createToken(ts.SyntaxKind.ColonToken),
-                  factory.createIdentifier("undefined"),
-                ),
-              ),
-              factory.createPropertyAssignment(
-                factory.createIdentifier("errors"),
-                factory.createConditionalExpression(
-                  factory.createPropertyAccessExpression(
-                    factory.createIdentifier("result"),
-                    factory.createIdentifier("success"),
-                  ),
-                  factory.createToken(ts.SyntaxKind.QuestionToken),
-                  factory.createIdentifier("undefined"),
-                  factory.createToken(ts.SyntaxKind.ColonToken),
-                  factory.createPropertyAccessExpression(
-                    factory.createIdentifier("result"),
-                    factory.createIdentifier("errors"),
-                  ),
-                ),
-              ),
-            ],
-            true,
-          ),
-        ),
-      ],
-      true,
-    ),
-  );
-};
-
-/**
- * Creates a typia assert function call for the given type
- * e.g., ____moose____typia.createAssert<T>()
- */
-export const createTypiaAssert = (typeNode: ts.TypeNode) =>
-  factory.createCallExpression(
-    factory.createPropertyAccessExpression(
-      factory.createIdentifier(avoidTypiaNameClash),
-      factory.createIdentifier("createAssert"),
-    ),
-    [sanitizeTypeParameter(typeNode)],
-    [],
-  );
-
-/**
- * Creates a typia is function call for the given type
- * e.g., ____moose____typia.createIs<T>()
- */
-export const createTypiaIs = (typeNode: ts.TypeNode) =>
-  factory.createCallExpression(
-    factory.createPropertyAccessExpression(
-      factory.createIdentifier(avoidTypiaNameClash),
-      factory.createIdentifier("createIs"),
-    ),
-    [sanitizeTypeParameter(typeNode)],
-    [],
-  );
