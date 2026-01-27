@@ -1795,7 +1795,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         it("should generate OpenAPI schema with DateTime types for ingest APIs", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-          const response = await fetch(`${SERVER_CONFIG.url}/openapi.yaml`);
+          const response = await fetch(
+            `${SERVER_CONFIG.managementUrl}/openapi.yaml`,
+          );
           expect(response.ok).to.be.true;
 
           const yaml = await response.text();
@@ -2324,7 +2326,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         it("should generate OpenAPI schema with DateTime types for ingest APIs (PY)", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-          const response = await fetch(`${SERVER_CONFIG.url}/openapi.yaml`);
+          const response = await fetch(
+            `${SERVER_CONFIG.managementUrl}/openapi.yaml`,
+          );
           expect(response.ok).to.be.true;
 
           const yaml = await response.text();
