@@ -3471,7 +3471,7 @@ fn api_endpoints_equal_ignore_metadata(a: &ApiEndpoint, b: &ApiEndpoint) -> bool
     a == b
 }
 
-/// Check if two workflow configurations differ
+/// Check if two workflow configurations are equal
 ///
 /// Compares the schedule, retries, and timeout settings between two workflows.
 /// These are the configuration values that affect how Temporal runs the workflow.

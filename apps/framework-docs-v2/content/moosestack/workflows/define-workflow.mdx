@@ -236,3 +236,5 @@ Moose compares your code to the last known state and applies changes automatical
 | **No changes** | Nothing happens — workers reconnect, existing workflows continue |
 
 When Moose stops, workflow definitions and schedules persist in Temporal. On restart, Moose reconnects and resumes orchestration.
+
+Workflow config changes that trigger re-registration: `schedule`, `retries`, and `timeout`. Task config & code changes are picked up automatically when the worker restarts.
