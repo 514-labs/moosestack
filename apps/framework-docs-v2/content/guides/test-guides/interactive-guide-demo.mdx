@@ -1,0 +1,459 @@
+---
+title: Interactive Components Demo
+description: Demonstration of interactive MDX components for dynamic guide customization
+---
+
+# Interactive Components Demo
+
+This page demonstrates the interactive MDX components for creating dynamic, customizable documentation guides. **Try changing the selections below to see the content update dynamically.**
+
+## Dynamic Content with SelectField
+
+Select a language below and watch the content change:
+
+<CustomizePanel title="Choose Your Language" description="The guide content below will update based on your selection.">
+  <CustomizeGrid columns={2}>
+    <SelectField
+      id="demo-language"
+      label="Programming Language"
+      options={[
+        { value: "typescript", label: "TypeScript" },
+        { value: "python", label: "Python" }
+      ]}
+      defaultValue="typescript"
+      persist
+    />
+    <SelectField
+      id="demo-framework"
+      label="Web Framework"
+      options={[
+        { value: "nextjs", label: "Next.js" },
+        { value: "express", label: "Express" },
+        { value: "fastapi", label: "FastAPI" }
+      ]}
+      defaultValue="nextjs"
+      persist
+    />
+  </CustomizeGrid>
+</CustomizePanel>
+
+### Installation Instructions
+
+<ConditionalContent whenId="demo-language" whenValue="typescript">
+<Callout type="info" title="TypeScript Selected">
+You've selected **TypeScript**. Here are your TypeScript-specific instructions:
+</Callout>
+
+```bash
+npm install @514labs/moose-lib typescript
+```
+
+Create your first data model in TypeScript:
+
+```typescript filename="datamodels/UserEvent.ts"
+import { DataModel, Key } from "@514labs/moose-lib";
+
+export interface UserEvent extends DataModel {
+  id: Key<string>;
+  userId: string;
+  eventType: string;
+  timestamp: Date;
+  metadata: Record<string, unknown>;
+}
+```
+</ConditionalContent>
+
+<ConditionalContent whenId="demo-language" whenValue="python">
+<Callout type="info" title="Python Selected">
+You've selected **Python**. Here are your Python-specific instructions:
+</Callout>
+
+```bash
+pip install moose-lib
+```
+
+Create your first data model in Python:
+
+```python filename="datamodels/user_event.py"
+from moose_lib import DataModel, Key
+from datetime import datetime
+from typing import Dict, Any
+
+class UserEvent(DataModel):
+    id: Key[str]
+    user_id: str
+    event_type: str
+    timestamp: datetime
+    metadata: Dict[str, Any]
+```
+</ConditionalContent>
+
+### Framework-Specific Setup
+
+<ConditionalContent whenId="demo-framework" whenValue="nextjs">
+<Callout type="success" title="Next.js Setup">
+Configure your **Next.js** application to work with Moose:
+</Callout>
+
+```typescript filename="app/api/events/route.ts"
+import { NextResponse } from "next/server";
+import { MooseClient } from "@514labs/moose-lib";
+
+const moose = new MooseClient();
+
+export async function POST(request: Request) {
+  const event = await request.json();
+  await moose.ingest("UserEvent", event);
+  return NextResponse.json({ success: true });
+}
+```
+</ConditionalContent>
+
+<ConditionalContent whenId="demo-framework" whenValue="express">
+<Callout type="success" title="Express Setup">
+Configure your **Express** application to work with Moose:
+</Callout>
+
+```typescript filename="routes/events.ts"
+import express from "express";
+import { MooseClient } from "@514labs/moose-lib";
+
+const router = express.Router();
+const moose = new MooseClient();
+
+router.post("/events", async (req, res) => {
+  await moose.ingest("UserEvent", req.body);
+  res.json({ success: true });
+});
+
+export default router;
+```
+</ConditionalContent>
+
+<ConditionalContent whenId="demo-framework" whenValue="fastapi">
+<Callout type="success" title="FastAPI Setup">
+Configure your **FastAPI** application to work with Moose:
+</Callout>
+
+```python filename="routes/events.py"
+from fastapi import APIRouter
+from moose_lib import MooseClient
+from pydantic import BaseModel
+
+router = APIRouter()
+moose = MooseClient()
+
+class EventRequest(BaseModel):
+    user_id: str
+    event_type: str
+    metadata: dict
+
+@router.post("/events")
+async def create_event(event: EventRequest):
+    await moose.ingest("UserEvent", event.dict())
+    return {"success": True}
+```
+</ConditionalContent>
+
+---
+
+## Dynamic Content with CheckboxGroup
+
+Check the boxes below to reveal additional content sections:
+
+<CustomizePanel title="Feature Options" description="Enable features to see their documentation.">
+  <CustomizeGrid columns={2}>
+    <CheckboxGroup
+      id="demo-features"
+      label="Enable Features"
+      options={[
+        { value: "analytics", label: "Analytics Dashboard" },
+        { value: "streaming", label: "Real-time Streaming" },
+        { value: "auth", label: "Authentication" }
+      ]}
+      persist
+    />
+    <CheckboxGroup
+      id="demo-extras"
+      label="Extra Options"
+      options={[
+        { value: "docker", label: "Docker Setup" },
+        { value: "testing", label: "Testing Guide" }
+      ]}
+      persist
+    />
+  </CustomizeGrid>
+</CustomizePanel>
+
+<ConditionalContent whenId="demo-features" whenValue="analytics" match="includes">
+### Analytics Dashboard
+
+<Callout type="info">
+You've enabled the **Analytics Dashboard** feature.
+</Callout>
+
+The analytics dashboard provides real-time insights into your data pipeline:
+
+```typescript filename="app/dashboard/page.tsx"
+import { MooseClient } from "@514labs/moose-lib";
+
+export default async function Dashboard() {
+  const moose = new MooseClient();
+  const stats = await moose.query(`
+    SELECT
+      eventType,
+      COUNT(*) as count,
+      COUNT(DISTINCT userId) as uniqueUsers
+    FROM UserEvent
+    GROUP BY eventType
+  `);
+
+  return <DashboardChart data={stats} />;
+}
+```
+</ConditionalContent>
+
+<ConditionalContent whenId="demo-features" whenValue="streaming" match="includes">
+### Real-time Streaming
+
+<Callout type="info">
+You've enabled the **Real-time Streaming** feature.
+</Callout>
+
+Set up real-time event streaming with WebSockets:
+
+```typescript filename="app/api/stream/route.ts"
+import { MooseClient } from "@514labs/moose-lib";
+
+export async function GET() {
+  const moose = new MooseClient();
+
+  const stream = moose.subscribe("UserEvent", {
+    onEvent: (event) => {
+      console.log("New event:", event);
+    }
+  });
+
+  return new Response(stream);
+}
+```
+</ConditionalContent>
+
+<ConditionalContent whenId="demo-features" whenValue="auth" match="includes">
+### Authentication
+
+<Callout type="info">
+You've enabled the **Authentication** feature.
+</Callout>
+
+Secure your Moose endpoints with authentication:
+
+```typescript filename="middleware.ts"
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { verifyToken } from "./lib/auth";
+
+export async function middleware(request: NextRequest) {
+  const token = request.headers.get("authorization");
+
+  if (!token || !await verifyToken(token)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: "/api/:path*",
+};
+```
+</ConditionalContent>
+
+<ConditionalContent whenId="demo-extras" whenValue="docker" match="includes">
+### Docker Setup
+
+<Callout type="success">
+You've enabled the **Docker Setup** guide.
+</Callout>
+
+Run Moose in a Docker container:
+
+```dockerfile filename="Dockerfile"
+FROM node:20-alpine
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY . .
+RUN npm run build
+
+EXPOSE 4000
+CMD ["npm", "start"]
+```
+
+```yaml filename="docker-compose.yml"
+version: '3.8'
+services:
+  moose:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      - CLICKHOUSE_URL=http://clickhouse:8123
+    depends_on:
+      - clickhouse
+
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    ports:
+      - "8123:8123"
+```
+</ConditionalContent>
+
+<ConditionalContent whenId="demo-extras" whenValue="testing" match="includes">
+### Testing Guide
+
+<Callout type="success">
+You've enabled the **Testing Guide**.
+</Callout>
+
+Write tests for your Moose data models:
+
+```typescript filename="tests/user-event.test.ts"
+import { describe, it, expect } from "vitest";
+import { MooseClient } from "@514labs/moose-lib";
+
+describe("UserEvent", () => {
+  const moose = new MooseClient({ testMode: true });
+
+  it("should ingest events correctly", async () => {
+    const event = {
+      id: "test-1",
+      userId: "user-123",
+      eventType: "click",
+      timestamp: new Date(),
+      metadata: { page: "/home" }
+    };
+
+    await moose.ingest("UserEvent", event);
+
+    const result = await moose.query(
+      "SELECT * FROM UserEvent WHERE id = 'test-1'"
+    );
+    expect(result[0]).toMatchObject(event);
+  });
+});
+```
+</ConditionalContent>
+
+---
+
+## NumberedAccordion with Progress Tracking
+
+Check the steps as you complete them to track your progress:
+
+<CustomizePanel title="Tutorial Progress" description="Check steps to mark them complete and reveal content.">
+  <CheckboxGroup
+    id="tutorial-steps"
+    label="Completed Steps"
+    options={[
+      { value: "step1", label: "Step 1: Project Setup", defaultChecked: true },
+      { value: "step2", label: "Step 2: Data Models" },
+      { value: "step3", label: "Step 3: Deployment" }
+    ]}
+    persist
+  />
+</CustomizePanel>
+
+<NumberedAccordion controlledBy="tutorial-steps" defaultExpanded={["step1"]}>
+  <NumberedAccordion.Item id="step1" number={1} title="Project Setup">
+    This section covers initial project setup.
+
+    ```bash
+    npx create-moose-app my-project
+    cd my-project
+    npm run dev
+    ```
+
+    Your Moose project is now running at `http://localhost:4000`.
+  </NumberedAccordion.Item>
+
+  <NumberedAccordion.Item id="step2" number={2} title="Data Models">
+    Define your data models to structure your pipeline.
+
+    ```typescript filename="datamodels/PageView.ts"
+    import { DataModel, Key } from "@514labs/moose-lib";
+
+    export interface PageView extends DataModel {
+      id: Key<string>;
+      url: string;
+      referrer: string;
+      userAgent: string;
+      timestamp: Date;
+    }
+    ```
+
+    Run `moose generate` to create the ingestion endpoints.
+  </NumberedAccordion.Item>
+
+  <NumberedAccordion.Item id="step3" number={3} title="Deployment">
+    Deploy your Moose application to production.
+
+    ```bash
+    # Build for production
+    npm run build
+
+    # Deploy to your hosting provider
+    moose deploy --env production
+    ```
+
+    Your application is now live and ready to receive events.
+  </NumberedAccordion.Item>
+</NumberedAccordion>
+
+---
+
+## Syntax Reference
+
+### ConditionalContent with SelectField
+
+```mdx
+<SelectField id="language" options={[...]} persist />
+
+<ConditionalContent whenId="language" whenValue="typescript">
+  Content shown when TypeScript is selected...
+</ConditionalContent>
+
+<ConditionalContent whenId="language" whenValue="python">
+  Content shown when Python is selected...
+</ConditionalContent>
+```
+
+### ConditionalContent with CheckboxGroup
+
+```mdx
+<CheckboxGroup id="features" options={[...]} persist />
+
+<ConditionalContent whenId="features" whenValue="analytics" match="includes">
+  Content shown when Analytics checkbox is checked...
+</ConditionalContent>
+```
+
+### NumberedAccordion controlled by CheckboxGroup
+
+```mdx
+<CheckboxGroup id="steps" options={[
+  { value: "step1", label: "Step 1" },
+  { value: "step2", label: "Step 2" }
+]} persist />
+
+<NumberedAccordion controlledBy="steps">
+  <NumberedAccordion.Item id="step1" number={1} title="Step 1">
+    Content for step 1...
+  </NumberedAccordion.Item>
+  <NumberedAccordion.Item id="step2" number={2} title="Step 2">
+    Content for step 2...
+  </NumberedAccordion.Item>
+</NumberedAccordion>
+```

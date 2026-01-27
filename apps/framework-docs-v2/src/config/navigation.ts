@@ -1418,6 +1418,14 @@ const guidesNavigationConfig: NavigationConfig = [
         languages: ["typescript", "python"],
         status: "draft",
       },
+      {
+        type: "page",
+        slug: "guides/test-guides/interactive-guide-demo",
+        title: "Interactive Components Demo",
+        icon: IconFileCode,
+        languages: ["typescript", "python"],
+        status: "draft",
+      },
     ],
   },
 ];
