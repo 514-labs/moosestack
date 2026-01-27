@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::{fmt, path::PathBuf};
 
-use crate::framework::typescript;
 use crate::{
     project::Project,
     utilities::{package_managers, system},
