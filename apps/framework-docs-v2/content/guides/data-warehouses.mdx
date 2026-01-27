@@ -975,12 +975,12 @@ The CDC pipeline automatically introspects SAP HANA tables and generates type-sa
 
 ```bash
 # Generate models for your tables
-python init_cdc.py --recreate-moose-models --tables EKKO,EKPO,LFA1
+python init_cdc.py --generate-models --tables EKKO,EKPO,LFA1
 
 # Example output:
 # Introspecting table EKKO...
 # Introspecting table EKPO...
-# ✅ Models generated in app/ingest/cdc.py
+# ✅ Generated Moose models for 3 tables/views in 'app/ingest/cdc.py'.
 ```
 
 **What this creates**:
@@ -1016,13 +1016,18 @@ class Ekko(BaseModel):
 Create CDC triggers and change tables in SAP HANA:
 
 ```bash
-python init_cdc.py --init-cdc --tables EKKO,EKPO,LFA1
+python init_cdc.py --create-database-triggers --tables EKKO,EKPO,LFA1
 
 # What this does:
 # 1. Creates SAPABAP1_CDC.EKKO_CDC change table
 # 2. Creates trigger on SAPABAP1.EKKO for INSERT/UPDATE/DELETE
 # 3. Initializes tracking metadata
 # 4. Marks table status as NEW for initial load
+```
+
+**Quick Start**: Run both steps 3 and 4 together with:
+```bash
+python init_cdc.py --init-all --tables EKKO,EKPO,LFA1
 ```
 
 **Required SAP HANA permissions**:
