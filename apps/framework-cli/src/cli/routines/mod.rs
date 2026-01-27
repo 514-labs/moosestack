@@ -1149,12 +1149,26 @@ pub async fn remote_plan(
         local_infra_map.api_endpoints.len()
     );
 
+    // Normalize SQL in both maps before diffing to handle ClickHouse reformatting
+    let olap_client =
+        crate::infrastructure::olap::clickhouse::create_client(project.clickhouse_config.clone());
+    let remote_normalized = crate::framework::core::plan::normalize_infra_map_for_comparison(
+        &remote_infra_map,
+        &olap_client,
+    )
+    .await;
+    let local_normalized = crate::framework::core::plan::normalize_infra_map_for_comparison(
+        &local_infra_map,
+        &olap_client,
+    )
+    .await;
+
     // Calculate and display changes using the same strategy as dev/prod
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
 
     // Remote plan always uses production settings: respect_lifecycle=true, is_production=true
-    let changes = remote_infra_map.diff_with_table_strategy(
-        &local_infra_map,
+    let changes = remote_normalized.diff_with_table_strategy(
+        &local_normalized,
         &clickhouse_strategy,
         true, // respect_lifecycle
         true, // is_production
@@ -1280,12 +1294,26 @@ pub async fn remote_gen_migration(
         }
     };
 
+    // Normalize SQL in both maps before diffing to handle ClickHouse reformatting
+    let olap_client =
+        crate::infrastructure::olap::clickhouse::create_client(project.clickhouse_config.clone());
+    let remote_normalized = crate::framework::core::plan::normalize_infra_map_for_comparison(
+        &remote_infra_map,
+        &olap_client,
+    )
+    .await;
+    let local_normalized = crate::framework::core::plan::normalize_infra_map_for_comparison(
+        &local_infra_map,
+        &olap_client,
+    )
+    .await;
+
     // Calculate changes using the same strategy as dev/prod/remote_plan
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
 
     // Migration generation uses production settings: respect_lifecycle=true, is_production=true
-    let changes = remote_infra_map.diff_with_table_strategy(
-        &local_infra_map,
+    let changes = remote_normalized.diff_with_table_strategy(
+        &local_normalized,
         &clickhouse_strategy,
         true, // respect_lifecycle
         true, // is_production
