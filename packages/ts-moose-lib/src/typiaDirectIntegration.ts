@@ -28,6 +28,7 @@ export interface TypiaDirectContext {
   transformer: ts.TransformationContext;
   importer: ImportProgrammer;
   modulo: ts.LeftHandSideExpression;
+  sourceFile: ts.SourceFile;
 }
 
 /**
@@ -52,6 +53,7 @@ const createSyntheticModulo = (): ts.LeftHandSideExpression => {
 export const createTypiaContext = (
   program: ts.Program,
   transformer: ts.TransformationContext,
+  sourceFile: ts.SourceFile,
 ): TypiaDirectContext => {
   const importer = new ImportProgrammer({
     internalPrefix: avoidTypiaNameClash,
@@ -63,6 +65,7 @@ export const createTypiaContext = (
     transformer,
     importer,
     modulo: createSyntheticModulo(),
+    sourceFile,
   };
 };
 
@@ -83,46 +86,6 @@ const toTypiaContext = (ctx: TypiaDirectContext): ITypiaContext => ({
 });
 
 /**
- * Creates a type node wrapped in StripDateIntersection<T>
- * This is needed because typia doesn't understand our Date tag intersections
- * like `Date & ClickHousePrecision<3>` and reports "nonsensible intersection"
- */
-const createStripDateIntersectionTypeNode = (
-  typeNode: ts.TypeNode,
-): ts.TypeNode =>
-  ts.factory.createImportTypeNode(
-    ts.factory.createLiteralTypeNode(
-      ts.factory.createStringLiteral("@514labs/moose-lib"),
-    ),
-    undefined,
-    ts.factory.createIdentifier("StripDateIntersection"),
-    [typeNode],
-    false,
-  );
-
-/**
- * Sanitizes a type by wrapping it in StripDateIntersection<T> and resolving
- * This strips Date intersection tags that typia doesn't understand
- */
-const sanitizeTypeForTypia = (
-  ctx: TypiaDirectContext,
-  type: ts.Type,
-): ts.Type => {
-  // Get a type node for the original type
-  const typeNode = ctx.checker.typeToTypeNode(type, undefined, undefined);
-  if (!typeNode) {
-    return type; // Fall back to original if we can't get a type node
-  }
-
-  // Wrap in StripDateIntersection<T>
-  const wrappedTypeNode = createStripDateIntersectionTypeNode(typeNode);
-
-  // Resolve the wrapped type node back to a type
-  const wrappedType = ctx.checker.getTypeFromTypeNode(wrappedTypeNode);
-  return wrappedType;
-};
-
-/**
  * Generates a validate function directly using typia's ValidateProgrammer
  */
 export const generateValidateFunction = (
@@ -131,12 +94,13 @@ export const generateValidateFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
-  const sanitizedType = sanitizeTypeForTypia(ctx, type);
+  // Don't sanitize for validation - pass original type
+  // Validation works with runtime values, not type metadata
 
   return ValidateProgrammer.write({
     context: typiaCtx,
     modulo: ctx.modulo,
-    type: sanitizedType,
+    type,
     name: typeName,
     config: { equals: false },
   });
@@ -151,12 +115,11 @@ export const generateIsFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
-  const sanitizedType = sanitizeTypeForTypia(ctx, type);
 
   return IsProgrammer.write({
     context: typiaCtx,
     modulo: ctx.modulo,
-    type: sanitizedType,
+    type,
     name: typeName,
     config: { equals: false },
   });
@@ -171,12 +134,11 @@ export const generateAssertFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
-  const sanitizedType = sanitizeTypeForTypia(ctx, type);
 
   return AssertProgrammer.write({
     context: typiaCtx,
     modulo: ctx.modulo,
-    type: sanitizedType,
+    type,
     name: typeName,
     config: { equals: false, guard: false },
   });
@@ -192,43 +154,113 @@ export const generateHttpAssertQueryFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
-  const sanitizedType = sanitizeTypeForTypia(ctx, type);
 
   return HttpAssertQueryProgrammer.write({
     context: typiaCtx,
     modulo: ctx.modulo,
-    type: sanitizedType,
+    type,
     name: typeName,
   });
 };
 
 /**
- * Generates JSON schemas directly using typia's JsonSchemasProgrammer
+ * Our custom ClickHouse type tags use properties starting with "_clickhouse_".
+ * These need to be stripped before JSON schema generation because typia doesn't
+ * recognize them as proper type tags.
+ */
+const isOurCustomTypeTag = (type: ts.Type): boolean => {
+  const symbol = type.getSymbol();
+  if (!symbol) return false;
+
+  // Check if the type has a property starting with "_clickhouse_" or "_LowCardinality"
+  const declarations = symbol.getDeclarations();
+  if (!declarations || declarations.length === 0) return false;
+
+  for (const decl of declarations) {
+    if (ts.isTypeLiteralNode(decl) || ts.isInterfaceDeclaration(decl)) {
+      for (const member of decl.members) {
+        if (
+          ts.isPropertySignature(member) &&
+          member.name &&
+          ts.isIdentifier(member.name)
+        ) {
+          const name = member.name.text;
+          if (
+            name.startsWith("_clickhouse_") ||
+            name === "_LowCardinality" ||
+            name === "typia.tag"
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+};
+
+/**
+ * Strips our custom type tags from an intersection type, returning the base type(s).
+ * For example: `Date & ClickHousePrecision<3>` becomes `Date`
+ */
+const stripCustomTypeTagsFromType = (
+  type: ts.Type,
+  checker: ts.TypeChecker,
+): ts.Type => {
+  if (!type.isIntersection()) {
+    return type;
+  }
+
+  // Filter out our custom type tags
+  const filteredTypes = type.types.filter((t) => !isOurCustomTypeTag(t));
+
+  if (filteredTypes.length === 0) {
+    // All types were custom tags, return original
+    return type;
+  }
+
+  if (filteredTypes.length === 1) {
+    // Only one type left, recursively process it
+    return stripCustomTypeTagsFromType(filteredTypes[0], checker);
+  }
+
+  // Multiple types remaining - this is still an intersection
+  // TypeScript doesn't have a direct API to create intersection types,
+  // so we'll use the first non-tag type
+  return stripCustomTypeTagsFromType(filteredTypes[0], checker);
+};
+
+/**
+ * Generates JSON schemas directly using typia's JsonSchemasProgrammer.
+ *
+ * Uses the same options as CheckerProgrammer (absorb: true, escape: false)
+ * to handle our custom ClickHouse type tags that typia doesn't recognize.
  */
 export const generateJsonSchemas = (
   ctx: TypiaDirectContext,
   type: ts.Type,
 ): ts.Expression => {
-  const sanitizedType = sanitizeTypeForTypia(ctx, type);
+  // Strip our custom type tags from the top-level type
+  const strippedType = stripCustomTypeTagsFromType(type, ctx.checker);
 
-  // Analyze metadata from the type
+  // Use same options as CheckerProgrammer for consistency
+  // Key: escape: false allows intersection handling without errors
   const metadataResult = MetadataFactory.analyze({
     checker: ctx.checker,
     transformer: ctx.transformer,
     options: {
-      absorb: false,
+      absorb: true,
       constant: true,
-      escape: true,
-      validate: JsonSchemasProgrammer.validate,
+      escape: false, // Match CheckerProgrammer - this is key!
     },
     collection: new MetadataCollection({
       replace: MetadataCollection.replace,
     }),
-    type: sanitizedType,
+    type: strippedType,
   });
 
   if (!metadataResult.success) {
-    // Fall back to empty schema on error
+    // Log errors for debugging but don't fail
     console.error("Metadata analysis failed:", metadataResult.errors);
     return ts.factory.createObjectLiteralExpression([]);
   }

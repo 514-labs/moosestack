@@ -35,7 +35,11 @@ const transform =
   (ctx: TransformContext) =>
   (transformationContext: ts.TransformationContext) =>
   (sourceFile: ts.SourceFile): ts.SourceFile => {
-    const typiaContext = createTypiaContext(ctx.program, transformationContext);
+    const typiaContext = createTypiaContext(
+      ctx.program,
+      transformationContext,
+      sourceFile,
+    );
 
     const ctxWithTransformer: TransformContext = {
       ...ctx,
@@ -55,16 +59,16 @@ const transform =
       transformationContext,
     );
 
-    // ImportProgrammer collects imports during transformation; prepend them
-    const imports = typiaContext.importer.toStatements();
-    if (imports.length === 0) {
+    // Add imports from ImportProgrammer (for direct typia integration)
+    const typiaImports = typiaContext.importer.toStatements();
+    if (typiaImports.length === 0) {
       return transformedSourceFile;
     }
 
     return factory.updateSourceFile(
       transformedSourceFile,
       factory.createNodeArray([
-        ...imports,
+        ...typiaImports,
         ...transformedSourceFile.statements,
       ]),
     );
