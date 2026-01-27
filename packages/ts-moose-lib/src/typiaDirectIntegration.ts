@@ -83,6 +83,46 @@ const toTypiaContext = (ctx: TypiaDirectContext): ITypiaContext => ({
 });
 
 /**
+ * Creates a type node wrapped in StripDateIntersection<T>
+ * This is needed because typia doesn't understand our Date tag intersections
+ * like `Date & ClickHousePrecision<3>` and reports "nonsensible intersection"
+ */
+const createStripDateIntersectionTypeNode = (
+  typeNode: ts.TypeNode,
+): ts.TypeNode =>
+  ts.factory.createImportTypeNode(
+    ts.factory.createLiteralTypeNode(
+      ts.factory.createStringLiteral("@514labs/moose-lib"),
+    ),
+    undefined,
+    ts.factory.createIdentifier("StripDateIntersection"),
+    [typeNode],
+    false,
+  );
+
+/**
+ * Sanitizes a type by wrapping it in StripDateIntersection<T> and resolving
+ * This strips Date intersection tags that typia doesn't understand
+ */
+const sanitizeTypeForTypia = (
+  ctx: TypiaDirectContext,
+  type: ts.Type,
+): ts.Type => {
+  // Get a type node for the original type
+  const typeNode = ctx.checker.typeToTypeNode(type, undefined, undefined);
+  if (!typeNode) {
+    return type; // Fall back to original if we can't get a type node
+  }
+
+  // Wrap in StripDateIntersection<T>
+  const wrappedTypeNode = createStripDateIntersectionTypeNode(typeNode);
+
+  // Resolve the wrapped type node back to a type
+  const wrappedType = ctx.checker.getTypeFromTypeNode(wrappedTypeNode);
+  return wrappedType;
+};
+
+/**
  * Generates a validate function directly using typia's ValidateProgrammer
  */
 export const generateValidateFunction = (
@@ -91,11 +131,12 @@ export const generateValidateFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
+  const sanitizedType = sanitizeTypeForTypia(ctx, type);
 
   return ValidateProgrammer.write({
     context: typiaCtx,
     modulo: ctx.modulo,
-    type,
+    type: sanitizedType,
     name: typeName,
     config: { equals: false },
   });
@@ -110,11 +151,12 @@ export const generateIsFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
+  const sanitizedType = sanitizeTypeForTypia(ctx, type);
 
   return IsProgrammer.write({
     context: typiaCtx,
     modulo: ctx.modulo,
-    type,
+    type: sanitizedType,
     name: typeName,
     config: { equals: false },
   });
@@ -129,11 +171,12 @@ export const generateAssertFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
+  const sanitizedType = sanitizeTypeForTypia(ctx, type);
 
   return AssertProgrammer.write({
     context: typiaCtx,
     modulo: ctx.modulo,
-    type,
+    type: sanitizedType,
     name: typeName,
     config: { equals: false, guard: false },
   });
@@ -149,11 +192,12 @@ export const generateHttpAssertQueryFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
+  const sanitizedType = sanitizeTypeForTypia(ctx, type);
 
   return HttpAssertQueryProgrammer.write({
     context: typiaCtx,
     modulo: ctx.modulo,
-    type,
+    type: sanitizedType,
     name: typeName,
   });
 };
@@ -165,6 +209,8 @@ export const generateJsonSchemas = (
   ctx: TypiaDirectContext,
   type: ts.Type,
 ): ts.Expression => {
+  const sanitizedType = sanitizeTypeForTypia(ctx, type);
+
   // Analyze metadata from the type
   const metadataResult = MetadataFactory.analyze({
     checker: ctx.checker,
@@ -178,7 +224,7 @@ export const generateJsonSchemas = (
     collection: new MetadataCollection({
       replace: MetadataCollection.replace,
     }),
-    type,
+    type: sanitizedType,
   });
 
   if (!metadataResult.success) {
