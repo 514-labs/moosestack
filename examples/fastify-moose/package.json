@@ -4,7 +4,7 @@
   "description": "Example repository for embedding MooseStack in a Fastify app",
   "type": "module",
   "engines": {
-    "node": ">=20 <25"
+    "node": ">=20 <26"
   },
   "scripts": {
     "dev": "pnpm dev:fastify",

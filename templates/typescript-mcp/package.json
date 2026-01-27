@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": ">=20 <25"
+    "node": ">=20 <26"
   },
   "scripts": {
     "dev": "pnpm --parallel --stream -r dev",
