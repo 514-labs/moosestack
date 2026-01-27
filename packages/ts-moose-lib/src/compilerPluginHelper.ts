@@ -1,36 +1,8 @@
 import ts, { factory, TypeNode } from "typescript";
 import path from "path";
-import { PluginConfig, ProgramTransformerExtras } from "ts-patch";
+import { PluginConfig, TransformerExtras } from "ts-patch";
 import process from "process";
 import fs from "node:fs";
-
-export const getPatchedHost = (
-  maybeHost: ts.CompilerHost | undefined,
-  tsInstance: typeof ts,
-  compilerOptions: ts.CompilerOptions,
-): ts.CompilerHost & { fileCache: Map<string, ts.SourceFile> } => {
-  const fileCache = new Map();
-  const compilerHost =
-    maybeHost ?? tsInstance.createCompilerHost(compilerOptions, true);
-  const originalGetSourceFile = compilerHost.getSourceFile;
-
-  return Object.assign(compilerHost, {
-    getSourceFile(fileName: string, languageVersion: ts.ScriptTarget) {
-      fileName = tsInstance.server.toNormalizedPath(fileName);
-      // Only return cached file if explicitly set by transformer
-      // Don't cache on initial read to allow fresh reads on incremental builds
-      if (fileCache.has(fileName)) return fileCache.get(fileName);
-
-      const sourceFile = originalGetSourceFile.apply(
-        void 0,
-        Array.from(arguments) as any,
-      );
-      // Don't cache here - only cache transformed files in replaceProgram
-      return sourceFile;
-    },
-    fileCache,
-  });
-};
 
 export const isMooseFile = (sourceFile: ts.SourceFile): boolean => {
   const location: string = path.resolve(sourceFile.fileName);
@@ -44,15 +16,25 @@ export const isMooseFile = (sourceFile: ts.SourceFile): boolean => {
   );
 };
 
+import type { TypiaDirectContext } from "./typiaDirectIntegration";
+
 /**
  * Context passed to transformation functions
  */
 export interface TransformContext {
   typeChecker: ts.TypeChecker;
   program: ts.Program;
+  transformer?: ts.TransformationContext;
+  /** Shared typia context for direct code generation - created per-file */
+  typiaContext?: TypiaDirectContext;
 }
 
-export const replaceProgram =
+/**
+ * Creates a regular TypeScript transformer (not a program transformer).
+ * This is simpler and works better with incremental compilation since
+ * we're not replacing the entire program.
+ */
+export const createTransformer =
   (
     transform: (
       ctx: TransformContext,
@@ -62,102 +44,56 @@ export const replaceProgram =
   ) =>
   (
     program: ts.Program,
-    host: ts.CompilerHost | undefined,
-    config: PluginConfig,
-    { ts: tsInstance }: ProgramTransformerExtras,
-  ): ts.Program => {
-    const compilerOptions = program.getCompilerOptions();
-    const rootFileNames = program
-      .getRootFileNames()
-      .map(tsInstance.server.toNormalizedPath);
-
-    // Create a FRESH program by reading source files from disk
-    // This works around a ts-patch bug where incremental compilation
-    // passes stale transformed source files
-    const freshHost = tsInstance.createCompilerHost(compilerOptions, true);
-
-    const freshProgram = tsInstance.createProgram(
-      rootFileNames,
-      compilerOptions,
-      freshHost,
-    );
-
-    // Set versions on fresh source files (required for watch mode builder)
-    const crypto = require("crypto");
-    for (const sf of freshProgram.getSourceFiles()) {
-      if (!(sf as any).version) {
-        const content = sf.getFullText();
-        (sf as any).version = crypto
-          .createHash("sha256")
-          .update(content)
-          .digest("hex");
-      }
-    }
-
-    // Now create the patched host for our output
-    const compilerHost = getPatchedHost(host, tsInstance, compilerOptions);
-
-    // Create transform context with FRESH program
+    _config: PluginConfig,
+    _extras: TransformerExtras,
+  ): ts.TransformerFactory<ts.SourceFile> => {
+    // Create transform context with the program's type checker
     const transformCtx: TransformContext = {
-      typeChecker: freshProgram.getTypeChecker(),
-      program: freshProgram,
+      typeChecker: program.getTypeChecker(),
+      program,
     };
 
     const transformFunction = transform(transformCtx);
 
-    // Get source files from FRESH program - include all user files, not just root files
-    // This ensures imported files (like models.ts) are also transformed
-    const cwd = process.cwd();
-    const userSourceFiles = freshProgram.getSourceFiles().filter(
-      (sourceFile) =>
-        // relative path, or
-        !sourceFile.fileName.startsWith("/") ||
-        // current directory but not in node_modules
-        (sourceFile.fileName.startsWith(cwd) &&
-          !sourceFile.fileName.startsWith(`${cwd}/node_modules`)),
-    );
+    // Return a transformer factory
+    return (context: ts.TransformationContext) => {
+      return (sourceFile: ts.SourceFile) => {
+        // Skip node_modules and declaration files
+        const cwd = process.cwd();
+        if (
+          sourceFile.isDeclarationFile ||
+          sourceFile.fileName.includes("/node_modules/")
+        ) {
+          return sourceFile;
+        }
 
-    const transformedSource = tsInstance.transform(
-      userSourceFiles,
-      [transformFunction],
-      compilerOptions,
-    ).transformed;
+        // Only transform files in the current project
+        if (
+          sourceFile.fileName.startsWith("/") &&
+          !sourceFile.fileName.startsWith(cwd)
+        ) {
+          return sourceFile;
+        }
 
-    const { printFile } = tsInstance.createPrinter();
-    for (const sourceFile of transformedSource) {
-      const { fileName, languageVersion } = sourceFile;
-      const newFile = printFile(sourceFile);
+        // Apply transformation
+        const result = transformFunction(context)(sourceFile);
 
-      try {
-        const path = fileName.split("/").pop() || fileName;
-        const dir = `${process.cwd()}/.moose/api-compile-step/`;
-        fs.mkdirSync(dir, {
-          recursive: true,
-        });
-        fs.writeFileSync(`${dir}/${path}`, newFile);
-      } catch (e) {
-        // this file is just for debugging purposes
-        // TODO even printing in std err will fail the import process
-      }
+        // Debug: write transformed source to .moose/api-compile-step/
+        try {
+          const printer = ts.createPrinter();
+          const newFile = printer.printFile(result);
+          const fileName =
+            sourceFile.fileName.split("/").pop() || sourceFile.fileName;
+          const dir = `${process.cwd()}/.moose/api-compile-step/`;
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(`${dir}/${fileName}`, newFile);
+        } catch (_e) {
+          // Debug output is optional
+        }
 
-      const updatedSourceFile = tsInstance.createSourceFile(
-        fileName,
-        newFile,
-        languageVersion,
-      );
-      // Copy version from original - but add suffix to invalidate ts-patch cache
-      // This ensures ts-patch sees transformed files as different versions
-      const originalVersion = (sourceFile as any).version;
-      (updatedSourceFile as any).version =
-        originalVersion ? `${originalVersion}-moose-transformed` : undefined;
-      compilerHost.fileCache.set(fileName, updatedSourceFile);
-    }
-
-    return tsInstance.createProgram(
-      rootFileNames,
-      compilerOptions,
-      compilerHost,
-    );
+        return result;
+      };
+    };
   };
 
 export const avoidTypiaNameClash = "____moose____typia";
@@ -174,7 +110,7 @@ export const sanitizeTypeParameter = (typeNode: TypeNode): ts.ImportTypeNode =>
     false,
   );
 
-// Typia call generators for transformed code
+// Typia call generators for transformed code (fallback for when direct integration isn't available)
 export const typiaJsonSchemas = (typeNode: TypeNode) =>
   factory.createCallExpression(
     factory.createPropertyAccessExpression(

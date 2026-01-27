@@ -13,10 +13,8 @@ import path from "path";
 export const MOOSE_COMPILER_PLUGINS = [
   {
     transform: "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js",
-    transformProgram: true,
-  },
-  {
-    transform: "typia/lib/transform",
+    // No longer using transformProgram - direct typia integration eliminates
+    // the need for program replacement and the associated incremental compilation issues
   },
 ] as const;
 

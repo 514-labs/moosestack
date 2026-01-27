@@ -7,8 +7,14 @@ import {
   type TransformContext,
 } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
-import { IJsonSchemaCollection } from "typia/src/schemas/json/IJsonSchemaCollection";
+import { IJsonSchemaCollection } from "typia/lib/schemas/json/IJsonSchemaCollection";
 import { dlqSchema } from "./internal";
+import {
+  generateValidateFunction,
+  generateIsFunction,
+  generateAssertFunction,
+  generateJsonSchemas,
+} from "../typiaDirectIntegration";
 
 const typesToArgsLength = new Map([
   ["OlapTable", 2],
@@ -141,10 +147,35 @@ export const transformNewMooseResource = (
     );
   }
 
-  const internalArguments =
-    typeName === "DeadLetterQueue" ?
-      [typiaTypeGuard(node)]
-    : [
+  // Check if we have the typia context for direct typia integration
+  // This is the shared context from the compiler plugin that accumulates imports
+  const typiaCtx = ctx?.typiaContext;
+  const useDirectTypia = typiaCtx !== undefined;
+
+  let internalArguments: ts.Expression[];
+
+  if (typeName === "DeadLetterQueue") {
+    // DeadLetterQueue uses type guard (assert)
+    if (useDirectTypia) {
+      internalArguments = [generateAssertFunction(typiaCtx, typeAtLocation)];
+    } else {
+      internalArguments = [typiaTypeGuard(node)];
+    }
+  } else {
+    // Other resources use JSON schemas + columns
+    if (useDirectTypia) {
+      internalArguments = [
+        generateJsonSchemas(typiaCtx, typeAtLocation),
+        parseAsAny(
+          JSON.stringify(
+            toColumns(typeAtLocation, checker, {
+              allowIndexSignatures,
+            }),
+          ),
+        ),
+      ];
+    } else {
+      internalArguments = [
         typiaJsonSchemas(typeNode),
         parseAsAny(
           JSON.stringify(
@@ -154,6 +185,9 @@ export const transformNewMooseResource = (
           ),
         ),
       ];
+    }
+  }
+
   const resourceName = checker.getSymbolAtLocation(node.expression)!.name;
 
   const argLength = typesToArgsLength.get(resourceName)!;
@@ -169,24 +203,50 @@ export const transformNewMooseResource = (
 
   // For OlapTable and IngestPipeline, also inject typia validation functions
   if (resourceName === "OlapTable" || resourceName === "IngestPipeline") {
-    // Create a single TypiaValidators object with all three validation functions
-    const validatorsObject = factory.createObjectLiteralExpression(
-      [
-        factory.createPropertyAssignment(
-          factory.createIdentifier("validate"),
-          createTypiaValidator(typeNode),
-        ),
-        factory.createPropertyAssignment(
-          factory.createIdentifier("assert"),
-          createTypiaAssert(typeNode),
-        ),
-        factory.createPropertyAssignment(
-          factory.createIdentifier("is"),
-          createTypiaIs(typeNode),
-        ),
-      ],
-      true,
-    );
+    let validatorsObject: ts.Expression;
+
+    if (useDirectTypia) {
+      // Create a single TypiaValidators object with all three validation functions
+      // using direct typia code generation (uses shared typiaCtx for imports)
+      validatorsObject = factory.createObjectLiteralExpression(
+        [
+          factory.createPropertyAssignment(
+            factory.createIdentifier("validate"),
+            wrapValidateFunction(
+              generateValidateFunction(typiaCtx, typeAtLocation),
+            ),
+          ),
+          factory.createPropertyAssignment(
+            factory.createIdentifier("assert"),
+            generateAssertFunction(typiaCtx, typeAtLocation),
+          ),
+          factory.createPropertyAssignment(
+            factory.createIdentifier("is"),
+            generateIsFunction(typiaCtx, typeAtLocation),
+          ),
+        ],
+        true,
+      );
+    } else {
+      // Fallback to generating typia function calls
+      validatorsObject = factory.createObjectLiteralExpression(
+        [
+          factory.createPropertyAssignment(
+            factory.createIdentifier("validate"),
+            createTypiaValidator(typeNode),
+          ),
+          factory.createPropertyAssignment(
+            factory.createIdentifier("assert"),
+            createTypiaAssert(typeNode),
+          ),
+          factory.createPropertyAssignment(
+            factory.createIdentifier("is"),
+            createTypiaIs(typeNode),
+          ),
+        ],
+        true,
+      );
+    }
 
     updatedArgs = [...updatedArgs, validatorsObject];
 
@@ -214,6 +274,96 @@ export const transformNewMooseResource = (
     node.expression,
     node.typeArguments,
     updatedArgs,
+  );
+};
+
+/**
+ * Wraps a typia validate function to match our expected interface
+ * Transforms typia's IValidation result to our { success, data, errors } format
+ */
+const wrapValidateFunction = (validateFn: ts.Expression): ts.Expression => {
+  return factory.createArrowFunction(
+    undefined,
+    undefined,
+    [
+      factory.createParameterDeclaration(
+        undefined,
+        undefined,
+        factory.createIdentifier("data"),
+        undefined,
+        factory.createKeywordTypeNode(ts.SyntaxKind.UnknownKeyword),
+        undefined,
+      ),
+    ],
+    undefined,
+    factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
+    factory.createBlock(
+      [
+        factory.createVariableStatement(
+          undefined,
+          factory.createVariableDeclarationList(
+            [
+              factory.createVariableDeclaration(
+                factory.createIdentifier("result"),
+                undefined,
+                undefined,
+                factory.createCallExpression(validateFn, undefined, [
+                  factory.createIdentifier("data"),
+                ]),
+              ),
+            ],
+            ts.NodeFlags.Const,
+          ),
+        ),
+        factory.createReturnStatement(
+          factory.createObjectLiteralExpression(
+            [
+              factory.createPropertyAssignment(
+                factory.createIdentifier("success"),
+                factory.createPropertyAccessExpression(
+                  factory.createIdentifier("result"),
+                  factory.createIdentifier("success"),
+                ),
+              ),
+              factory.createPropertyAssignment(
+                factory.createIdentifier("data"),
+                factory.createConditionalExpression(
+                  factory.createPropertyAccessExpression(
+                    factory.createIdentifier("result"),
+                    factory.createIdentifier("success"),
+                  ),
+                  factory.createToken(ts.SyntaxKind.QuestionToken),
+                  factory.createPropertyAccessExpression(
+                    factory.createIdentifier("result"),
+                    factory.createIdentifier("data"),
+                  ),
+                  factory.createToken(ts.SyntaxKind.ColonToken),
+                  factory.createIdentifier("undefined"),
+                ),
+              ),
+              factory.createPropertyAssignment(
+                factory.createIdentifier("errors"),
+                factory.createConditionalExpression(
+                  factory.createPropertyAccessExpression(
+                    factory.createIdentifier("result"),
+                    factory.createIdentifier("success"),
+                  ),
+                  factory.createToken(ts.SyntaxKind.QuestionToken),
+                  factory.createIdentifier("undefined"),
+                  factory.createToken(ts.SyntaxKind.ColonToken),
+                  factory.createPropertyAccessExpression(
+                    factory.createIdentifier("result"),
+                    factory.createIdentifier("errors"),
+                  ),
+                ),
+              ),
+            ],
+            true,
+          ),
+        ),
+      ],
+      true,
+    ),
   );
 };
 
