@@ -17,11 +17,13 @@ export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
 
   return (
     <div className="space-y-8">
-      {sections.map((section) => (
-        <div key={section.title}>
-          <h2 className="text-xl font-semibold mb-4 text-foreground">
-            {section.title}
-          </h2>
+      {sections.map((section, sectionIndex) => (
+        <div key={section.title || `section-${sectionIndex}`}>
+          {section.title && (
+            <h2 className="text-xl font-semibold mb-4 text-foreground">
+              {section.title}
+            </h2>
+          )}
           <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
             {section.items.map((guide, index) => {
               return (

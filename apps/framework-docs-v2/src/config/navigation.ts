@@ -1772,10 +1772,10 @@ export function getVisibleGuideSections(flags: {
     }
   }
 
-  // Add top-level guides as first section (with "Popular" title)
+  // Add top-level guides as first section (no title header)
   if (topLevelGuides.length > 0) {
     sections.push({
-      title: "Popular",
+      title: "",
       items: topLevelGuides,
     });
   }
