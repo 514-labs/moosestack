@@ -184,7 +184,9 @@ fn create_workflow_execution_request(
         // It allows reuse of that workflow ID after the previous run has completed
         workflow_id_reuse_policy: WorkflowIdReusePolicy::AllowDuplicate as i32,
         retry_policy: Some(RetryPolicy {
-            maximum_attempts: params.config.retries as i32,
+            // Temporal's maximum_attempts = total attempts (initial + retries)
+            // User-facing "retries" = number of retries after initial failure
+            maximum_attempts: (params.config.retries + 1) as i32,
             ..Default::default()
         }),
         cron_schedule: parse_schedule(&params.config.schedule),
