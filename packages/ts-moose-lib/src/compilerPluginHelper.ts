@@ -44,9 +44,28 @@ export const createTransformer =
   ) =>
   (
     program: ts.Program,
-    _config: PluginConfig,
-    _extras: TransformerExtras,
+    configOrHost: PluginConfig | ts.CompilerHost | undefined,
+    extrasOrConfig: TransformerExtras | PluginConfig,
+    maybeProgramExtras?: unknown,
   ): ts.TransformerFactory<ts.SourceFile> => {
+    // Detect if called with transformProgram: true (4 args) vs regular transformer (3 args)
+    // transformProgram signature: (program, host, config, extras) => Program
+    // regular signature: (program, config, extras) => TransformerFactory
+    if (maybeProgramExtras !== undefined) {
+      throw new Error(
+        `[moose] Your tsconfig.json has "transformProgram": true for the moose plugin, ` +
+          `but this version requires "transformProgram": false (or remove it entirely).\n\n` +
+          `Update your tsconfig.json plugins section:\n` +
+          `  "plugins": [\n` +
+          `    { "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js" },\n` +
+          `    { "transform": "typia/lib/transform" }\n` +
+          `  ]\n\n` +
+          `Also remove "isolatedModules": true if present (incompatible with type-dependent transformations).`,
+      );
+    }
+
+    const _config = configOrHost as PluginConfig;
+    const _extras = extrasOrConfig as TransformerExtras;
     // Create transform context with the program's type checker
     const transformCtx: TransformContext = {
       typeChecker: program.getTypeChecker(),

@@ -16,6 +16,10 @@ export const MOOSE_COMPILER_PLUGINS = [
     // No longer using transformProgram - direct typia integration eliminates
     // the need for program replacement and the associated incremental compilation issues
   },
+  {
+    // Keep typia plugin for users who use typia directly (not through Moose resources)
+    transform: "typia/lib/transform",
+  },
 ] as const;
 
 // Options required for moose compilation

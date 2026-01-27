@@ -16,6 +16,7 @@ import { MetadataCollection } from "typia/lib/factories/MetadataCollection";
 import { MetadataFactory } from "typia/lib/factories/MetadataFactory";
 import { LiteralFactory } from "typia/lib/factories/LiteralFactory";
 import { ITypiaContext } from "typia/lib/transformers/ITypiaContext";
+import { avoidTypiaNameClash } from "./compilerPluginHelper";
 
 /**
  * Context for direct typia code generation
@@ -52,7 +53,7 @@ export const createTypiaContext = (
   transformer: ts.TransformationContext,
 ): TypiaDirectContext => {
   const importer = new ImportProgrammer({
-    internalPrefix: "typia_transform__",
+    internalPrefix: avoidTypiaNameClash,
   });
 
   return {
