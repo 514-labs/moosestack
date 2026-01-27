@@ -1028,7 +1028,7 @@ Implement both to support the full range of PDF generation use cases.
 
 ### Approach A: Local script
 
-### Step 1: Install pdfmake
+#### Step 1: Install pdfmake
 
 ```bash
 pnpm add pdfmake
@@ -1039,7 +1039,7 @@ pnpm add -D @types/pdfmake
 This guide uses pdfmake 0.3.x which requires Node.js 20 LTS (Long-Term Support) or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
 </Callout>
 
-### Step 2: Create PDF generator
+#### Step 2: Create PDF generator
 
 Create `scripts/generate-pdf-report.ts`:
 
@@ -1309,7 +1309,7 @@ async function main() {
 main();
 ```
 
-### Step 3: Generate report
+#### Step 3: Generate report
 
 With `moose dev` running, first verify the API returns data:
 
@@ -1335,7 +1335,7 @@ PDF report saved to january-15-report.pdf
 Always test the API with `curl` before running the PDF generator. If you see "No data found" or the script hangs, verify the API returns data for your date range.
 </Callout>
 
-### Step 4: Verify
+#### Step 4: Verify
 
 **Actually open the PDF file** to verify formatting and data accuracy—the console output won't show layout issues. The PDF should contain:
 - Header with company name and date range
@@ -1568,6 +1568,14 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     return;
   }
 
+  // Validate date format (YYYY-MM-DD)
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Dates must be in YYYY-MM-DD format" }));
+    return;
+  }
+
   try {
     // Query ClickHouse directly using Moose utilities
     const { client, sql } = await getMooseUtils();
@@ -1662,13 +1670,13 @@ export * from "./apis/salesReportPdf";
 With `moose dev` running, generate a PDF directly via curl:
 
 ```bash
-curl "http://localhost:4000/reports/sales-report-pdf?startDate=2025-01-15&endDate=2025-01-15" > report.pdf
+curl "http://localhost:4000/reports?startDate=2025-01-15&endDate=2025-01-15" > report.pdf
 ```
 
 You can also filter by region:
 
 ```bash
-curl "http://localhost:4000/reports/sales-report-pdf?startDate=2025-01-15&endDate=2025-01-15&region=West" > west-report.pdf
+curl "http://localhost:4000/reports?startDate=2025-01-15&endDate=2025-01-15&region=West" > west-report.pdf
 ```
 
 The endpoint returns:
