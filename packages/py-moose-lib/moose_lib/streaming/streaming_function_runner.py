@@ -14,11 +14,7 @@ The runner handles:
 """
 
 import argparse
-import builtins
-import contextvars
 import dataclasses
-import inspect
-import os
 import traceback
 from datetime import datetime, timezone
 from importlib import import_module
@@ -30,8 +26,7 @@ from kafka import KafkaConsumer, KafkaProducer
 import requests
 import threading
 import time
-from collections.abc import Callable
-from typing import Optional, Any
+from typing import Optional, Callable, Tuple, Any
 
 from moose_lib.dmv2 import get_streams, DeadLetterModel
 from moose_lib import cli_log, CliLogData, DeadLetterQueue
@@ -41,7 +36,6 @@ from moose_lib.commons import (
     get_kafka_consumer,
     get_kafka_producer,
 )
-from moose_lib.structured_logging import create_structured_print_wrapper
 
 # Force stdout to be unbuffered
 sys.stdout = io.TextIOWrapper(
@@ -53,14 +47,6 @@ sys.stdout = io.TextIOWrapper(
 PARTITION_ASSIGNMENT_TIMEOUT_SECONDS = 60
 # Polling interval (seconds) when waiting for partition assignment
 PARTITION_ASSIGNMENT_POLL_INTERVAL_SECONDS = 0.1
-
-# Context variable to track function name without mutating globals
-_function_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "function_context", default=None
-)
-
-# Replace global print with structured wrapper at module load
-builtins.print = create_structured_print_wrapper(_function_context, "function_name")
 
 
 @dataclasses.dataclass
@@ -112,76 +98,6 @@ class KafkaTopicConfig:
 
 
 def load_streaming_function(
-    function_file_dir: str, function_file_name: str
-) -> tuple[type, list[tuple[Callable, None]]]:
-    """
-    Load a DMV1 (legacy) streaming function from a Python module.
-
-    Args:
-        function_file_dir: Directory containing the streaming function module
-        function_file_name: Name of the module file without .py extension
-
-    Returns:
-        Tuple of (input_type, transformation_functions) where:
-            - input_type is the type annotation of the run function's input parameter
-            - transformation_functions is a list containing the transformation function wrapped as a tuple with None (no DLQ for DMV1)
-
-    Raises:
-        SystemExit: If module import fails or if multiple/no streaming functions found
-    """
-    sys.path.append(function_file_dir)
-
-    try:
-        # todo: check the flat naming
-        module = import_module(function_file_name)
-        streaming_function_def = module.StreamingFunction
-    except Exception as e:
-        cli_log(CliLogData(action="Function", message=str(e), message_type="Error"))
-        sys.exit(1)
-
-    # Get all the named flows in the flow file and make sure the flow is of type StreamingFunction
-    streaming_functions = [
-        f for f in dir(module) if isinstance(getattr(module, f), streaming_function_def)
-    ]
-
-    # Make sure that there is only one flow in the file
-    if len(streaming_functions) != 1:
-        cli_log(
-            CliLogData(
-                action="Function",
-                message=f"Expected one streaming function in the file, but got {len(streaming_functions)}",
-                message_type="Error",
-            )
-        )
-        sys.exit(1)
-
-    # get the flow definition
-    streaming_function_def = getattr(module, streaming_functions[0])
-
-    # get the run function
-    streaming_function_run = streaming_function_def.run
-
-    # Get the input type using inspect.signature() to avoid picking up 'return' annotation
-    # from __annotations__ dict iteration (dict order isn't guaranteed to be parameters-first)
-    sig = inspect.signature(streaming_function_run)
-    param_names = list(sig.parameters.keys())
-    if not param_names:
-        cli_log(
-            CliLogData(
-                action="Function",
-                message="Streaming function has no parameters",
-                message_type="Error",
-            )
-        )
-        sys.exit(1)
-    first_param = param_names[0]
-    run_input_type = sig.parameters[first_param].annotation
-
-    # Wrap the single DMV1 function in a list with None for DLQ to match DMV2 format
-    return run_input_type, [(streaming_function_run, None)]
-
-
-def load_streaming_function_dmv2(
     function_file_dir: str, function_file_name: str
 ) -> tuple[type, list[tuple[Callable, Optional[DeadLetterQueue]]]]:
     """
@@ -496,19 +412,9 @@ def main():
 
     def process_messages():
         try:
-            # Check if we should use compiled (DMV1) mode or registry (DMV2) mode
-            # This matches the TypeScript shouldUseCompiled() logic
-            use_compiled = os.environ.get("MOOSE_USE_COMPILED") == "true"
-            if use_compiled:
-                # DMV1: Load legacy streaming function from file
-                streaming_function_input_type, streaming_function_callables = (
-                    load_streaming_function(function_file_dir, function_file_name)
-                )
-            else:
-                # DMV2: Load from registry with DLQ support
-                streaming_function_input_type, streaming_function_callables = (
-                    load_streaming_function_dmv2(function_file_dir, function_file_name)
-                )
+            streaming_function_input_type, streaming_function_callables = (
+                load_streaming_function(function_file_dir, function_file_name)
+            )
 
             needs_producer = target_topic is not None or any(
                 pair[1] is not None for pair in streaming_function_callables
@@ -630,10 +536,6 @@ def main():
                                 streaming_function_callable,
                                 dlq,
                             ) in streaming_function_callables:
-                                # Set context for structured logging via contextvars
-                                # This avoids race conditions from concurrent processing
-                                _function_context.set(log_prefix)
-
                                 try:
                                     output_data = streaming_function_callable(
                                         input_data
@@ -669,9 +571,6 @@ def main():
                                         )
                                     # Skip to the next transformation or message
                                     continue
-                                finally:
-                                    # Clear context
-                                    _function_context.set(None)
 
                                 # For consumers, output_data will be None
                                 if output_data is None:

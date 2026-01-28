@@ -2,12 +2,8 @@ from temporalio import activity
 from dataclasses import dataclass
 from moose_lib.dmv2 import get_workflow
 from moose_lib.dmv2.workflow import TaskContext
-from moose_lib.structured_logging import create_structured_print_wrapper
-from collections.abc import Callable
-from typing import Optional, Any
+from typing import Optional, Callable
 import asyncio
-import builtins
-import contextvars
 import json
 import traceback
 import concurrent.futures
@@ -15,14 +11,6 @@ import concurrent.futures
 from .logging import log
 from .types import WorkflowStepResult
 from .serialization import moose_json_decode
-
-# Context variable to track task name without mutating globals
-_task_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "task_context", default=None
-)
-
-# Replace global print with structured wrapper at module load
-builtins.print = create_structured_print_wrapper(_task_context, "task_name")
 
 
 @dataclass
@@ -103,13 +91,7 @@ def _validate_input_data(input_data: dict | None, task) -> any:
         )
 
 
-async def _execute_task_function(
-    task: Any,
-    input_data: Any,
-    executor: concurrent.futures.Executor,
-    task_state: dict,
-    task_identifier: str,
-) -> Any:
+async def _execute_task_function(task, input_data, executor, task_state: dict) -> any:
     """Execute the task function with a single context parameter.
 
     Supports both async and sync handlers via a thread executor for sync ones.
@@ -117,21 +99,12 @@ async def _execute_task_function(
     task_func = task.config.run
     context = TaskContext(state=task_state, input=input_data)
 
-    # Set context for structured logging via contextvars
-    _task_context.set(task_identifier)
-
-    try:
-        if asyncio.iscoroutinefunction(task_func):
-            return await task_func(context)
-        else:
-            loop = asyncio.get_running_loop()
-            # Copy context to propagate to thread executor
-            ctx = contextvars.copy_context()
-            future = loop.run_in_executor(executor, lambda: ctx.run(task_func, context))
-            return await asyncio.wait_for(future, timeout=None)
-    finally:
-        # Clear context
-        _task_context.set(None)
+    if asyncio.iscoroutinefunction(task_func):
+        return await task_func(context)
+    else:
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(executor, lambda: task_func(context))
+        return await asyncio.wait_for(future, timeout=None)
 
 
 async def _handle_task_cancellation(task, task_name: str, task_state: dict, input_data):
@@ -204,14 +177,9 @@ async def _execute_task(
         activity.heartbeat(f"Starting task: {execution_input.task_name}")
 
         try:
-            # Create task identifier for logging
-            task_identifier = (
-                f"{execution_input.workflow_name}/{execution_input.task_name}"
-            )
-
             # Execute the task function
             result = await _execute_task_function(
-                task, validated_input, executor, shared_task_state, task_identifier
+                task, validated_input, executor, shared_task_state
             )
 
             # Return structured result

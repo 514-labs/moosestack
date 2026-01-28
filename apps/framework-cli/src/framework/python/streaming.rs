@@ -70,6 +70,7 @@ pub fn run(
         .expect("Streaming process did not have a handle to stderr");
 
     let mut stdout_reader = tokio::io::BufReader::new(stdout).lines();
+    let mut stderr_reader = tokio::io::BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -77,13 +78,11 @@ pub fn run(
         }
     });
 
-    // Spawn structured logger for stderr with UI display for errors
-    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
-        stderr,
-        "function_name",
-        crate::cli::logger::resource_type::TRANSFORM,
-        Some("Streaming"),
-    );
+    tokio::spawn(async move {
+        while let Ok(Some(line)) = stderr_reader.next_line().await {
+            tracing::error!("{}", line);
+        }
+    });
 
     Ok(streaming_function_process)
 }
