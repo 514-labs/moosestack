@@ -7,7 +7,6 @@
  * to avoid issues with Node's type stripping in node_modules.
  */
 import ts from "typescript";
-import { OpenApi } from "@samchon/openapi";
 import { ImportProgrammer } from "typia/lib/programmers/ImportProgrammer";
 import { ValidateProgrammer } from "typia/lib/programmers/ValidateProgrammer";
 import { IsProgrammer } from "typia/lib/programmers/IsProgrammer";
@@ -20,6 +19,35 @@ import { LiteralFactory } from "typia/lib/factories/LiteralFactory";
 import { ITypiaContext } from "typia/lib/transformers/ITypiaContext";
 import { IJsonSchemaCollection } from "typia/lib/schemas/json/IJsonSchemaCollection";
 import { avoidTypiaNameClash } from "./compilerPluginHelper";
+
+// Simple type for JSON Schema objects - we use a minimal type instead of
+// importing @samchon/openapi to avoid adding an extra dependency.
+// Based on OpenApi.IJsonSchema which includes:
+// IConstant, IBoolean, IInteger, INumber, IString, IArray, ITuple,
+// IObject, IReference, IOneOf, INull, IUnknown
+type JsonSchema = {
+  type?: string;
+  format?: string;
+  $ref?: string;
+  // IObject
+  properties?: Record<string, JsonSchema>;
+  additionalProperties?: boolean | JsonSchema;
+  required?: string[];
+  // IArray
+  items?: JsonSchema;
+  // ITuple
+  prefixItems?: JsonSchema[];
+  additionalItems?: boolean | JsonSchema;
+  // Union types
+  oneOf?: JsonSchema[];
+  anyOf?: JsonSchema[];
+  allOf?: JsonSchema[];
+  [key: string]: unknown;
+};
+
+type JsonSchemaComponents = {
+  schemas?: Record<string, JsonSchema>;
+};
 
 /**
  * Context for direct typia code generation
@@ -241,7 +269,7 @@ const stripCustomTypeTagsFromType = (
  * Typia outputs Date as an empty object schema with a $ref, but the correct
  * representation is { type: "string", format: "date-time" }.
  */
-const DATE_SCHEMA: OpenApi.IJsonSchema = {
+const DATE_SCHEMA: JsonSchema = {
   type: "string",
   format: "date-time",
 };
@@ -257,64 +285,99 @@ const isClickHouseInternalProperty = (name: string): boolean =>
  * Recursively processes a JSON schema to:
  * 1. Replace $ref to Date with inline { type: "string", format: "date-time" }
  * 2. Remove internal ClickHouse properties from object schemas
+ *
+ * Handles all OpenApi.IJsonSchema variants:
+ * IConstant, IBoolean, IInteger, INumber, IString, IArray, ITuple,
+ * IObject, IReference, IOneOf, INull, IUnknown
  */
-const cleanJsonSchema = (schema: OpenApi.IJsonSchema): OpenApi.IJsonSchema => {
+const cleanJsonSchema = (schema: JsonSchema): JsonSchema => {
   // Handle $ref to Date - replace with inline date-time schema
-  if ("$ref" in schema && schema.$ref === "#/components/schemas/Date") {
+  if (schema.$ref === "#/components/schemas/Date") {
     // Preserve any other properties from the original schema (like description)
     const { $ref, ...rest } = schema;
     return { ...DATE_SCHEMA, ...rest };
   }
 
-  // Handle object schemas - filter out ClickHouse internal properties
-  if ("type" in schema && schema.type === "object" && schema.properties) {
-    const cleanedProperties: Record<string, OpenApi.IJsonSchema> = {};
-    const cleanedRequired: string[] = [];
+  // Handle object schemas (IObject) - filter out ClickHouse internal properties
+  if (schema.type === "object") {
+    const result: JsonSchema = { ...schema };
 
-    for (const [key, value] of Object.entries(schema.properties)) {
-      if (!isClickHouseInternalProperty(key)) {
-        cleanedProperties[key] = cleanJsonSchema(value);
-        if (schema.required?.includes(key)) {
-          cleanedRequired.push(key);
+    // Clean properties
+    if (schema.properties) {
+      const cleanedProperties: Record<string, JsonSchema> = {};
+      const cleanedRequired: string[] = [];
+
+      for (const [key, value] of Object.entries(schema.properties)) {
+        if (!isClickHouseInternalProperty(key)) {
+          cleanedProperties[key] = cleanJsonSchema(value);
+          if (schema.required?.includes(key)) {
+            cleanedRequired.push(key);
+          }
         }
       }
+
+      result.properties = cleanedProperties;
+      result.required =
+        cleanedRequired.length > 0 ? cleanedRequired : undefined;
     }
 
-    return {
-      ...schema,
-      properties: cleanedProperties,
-      required: cleanedRequired.length > 0 ? cleanedRequired : undefined,
-    };
+    // Clean additionalProperties if it's a schema
+    if (
+      schema.additionalProperties &&
+      typeof schema.additionalProperties === "object"
+    ) {
+      result.additionalProperties = cleanJsonSchema(
+        schema.additionalProperties,
+      );
+    }
+
+    return result;
   }
 
-  // Handle arrays
-  if ("type" in schema && schema.type === "array" && schema.items) {
-    return {
-      ...schema,
-      items: cleanJsonSchema(schema.items as OpenApi.IJsonSchema),
-    };
+  // Handle array schemas (IArray)
+  if (schema.type === "array") {
+    const result: JsonSchema = { ...schema };
+
+    // Clean items (IArray.items)
+    if (schema.items) {
+      result.items = cleanJsonSchema(schema.items);
+    }
+
+    // Clean prefixItems (ITuple.prefixItems)
+    if (schema.prefixItems && Array.isArray(schema.prefixItems)) {
+      result.prefixItems = schema.prefixItems.map(cleanJsonSchema);
+    }
+
+    // Clean additionalItems if it's a schema (ITuple.additionalItems)
+    if (schema.additionalItems && typeof schema.additionalItems === "object") {
+      result.additionalItems = cleanJsonSchema(schema.additionalItems);
+    }
+
+    return result;
   }
 
-  // Handle oneOf/anyOf/allOf
-  if ("oneOf" in schema && Array.isArray(schema.oneOf)) {
+  // Handle oneOf/anyOf/allOf (IOneOf and merged types)
+  if (schema.oneOf && Array.isArray(schema.oneOf)) {
     return {
       ...schema,
       oneOf: schema.oneOf.map(cleanJsonSchema),
     };
   }
-  if ("anyOf" in schema && Array.isArray(schema.anyOf)) {
+  if (schema.anyOf && Array.isArray(schema.anyOf)) {
     return {
       ...schema,
       anyOf: schema.anyOf.map(cleanJsonSchema),
     };
   }
-  if ("allOf" in schema && Array.isArray(schema.allOf)) {
+  if (schema.allOf && Array.isArray(schema.allOf)) {
     return {
       ...schema,
       allOf: schema.allOf.map(cleanJsonSchema),
     };
   }
 
+  // Primitive types (IConstant, IBoolean, IInteger, INumber, IString, INull, IUnknown)
+  // don't need recursion - return as-is
   return schema;
 };
 
@@ -327,7 +390,7 @@ const cleanJsonSchemaCollection = <V extends "3.0" | "3.1">(
   collection: IJsonSchemaCollection<V>,
 ): IJsonSchemaCollection<V> => {
   // Clean component schemas
-  const cleanedComponents: OpenApi.IComponents = {
+  const cleanedComponents: JsonSchemaComponents = {
     schemas: {},
   };
 
@@ -339,13 +402,17 @@ const cleanJsonSchemaCollection = <V extends "3.0" | "3.1">(
       if (name === "Date") {
         cleanedComponents.schemas![name] = DATE_SCHEMA;
       } else {
-        cleanedComponents.schemas![name] = cleanJsonSchema(schema);
+        cleanedComponents.schemas![name] = cleanJsonSchema(
+          schema as JsonSchema,
+        );
       }
     }
   }
 
   // Clean top-level schemas
-  const cleanedSchemas = collection.schemas.map(cleanJsonSchema);
+  const cleanedSchemas = collection.schemas.map((s) =>
+    cleanJsonSchema(s as JsonSchema),
+  );
 
   return {
     ...collection,
