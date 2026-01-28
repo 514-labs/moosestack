@@ -63,9 +63,9 @@ This guide is for you if you already have customer-facing dashboards or reports 
   ]}
 />
 
-The root cause is usually analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, which compete with the core transactional workloads that power the rest of your application.
+The root cause of slow dashboards is usually analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, which compete with the core transactional workloads that power the rest of your application.
 
-This guide lays out an step-by-step path to offload those analytical workloads to a purpose-built analytical database (ClickHouse), that can be done incrementally and without needing to rearchitect your existing application.
+This guide lays out a step-by-step path to offload those analytical workloads to a purpose-built analytical database (ClickHouse), that can be done incrementally and without needing to rearchitect your existing application.
 
 ### Why this matters
 
@@ -89,7 +89,7 @@ Most teams don't start with a dedicated analytical database (OLAP), and it's oft
   bullets={[
     {
       title: "The OLTP path is the highest-ROI path early on",
-      description: "When you're under 1M rows or serving <100 concurrent users, the transactional workload is mission-critical and easiest to justify optimizing."
+      description: "Your transactional database already powers your core application workflows. Early on, it can handle analytics queries too, so adding a second database delivers little marginal value."
     },
     {
       title: "Performance doesn't degrade right away",
@@ -110,26 +110,24 @@ Most teams don't start with a dedicated analytical database (OLAP), and it's oft
   ]}
 />
 
-While its common to delay adopting OLAP, there's an inflection point at which it becomes a real business risk. OLAP migrations are non-trivial and typically take 3-6 months with traditional data engineering tooling. If you wait too long to start and/or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning. 
+While it's common to delay adopting OLAP, there's an inflection point at which it becomes a real business risk. OLAP migrations are non-trivial and can take months with traditional data engineering tooling. If you wait too long to start or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning. 
 
 ### When to pull the trigger
 
-You'll know you've hit the inflection point when warning signs start to appear in your day-to-day product and engineering work.
-
-Users want more metrics, filters, breakdowns, or longer time ranges in their dashboards, but engineering can't deliver these seemingly small changes because they could jeopardize the core transactional workloads the rest of your product depends on. Eventually, customers start to complain about load times, Before long, those complaints surface in retention metrics, support tickets, and sales calls.
+Users want more metrics, filters, breakdowns, or longer time ranges in their dashboards. But engineering can't deliver these seemingly small changes without risking the transactional workloads your core product depends on. Load times creep up. Customers complain. Before long, those complaints surface in retention metrics, support tickets, and sales calls.
 
 Throwing more hardware at the problem either isn't possible or is prohibitively expensive. Even when feasible, this approach only buys temporary relief. The underlying issue is certain to resurface.
 
 ### What success looks like
 
-When this works, the impact is immediate for both product and engineering.
+When this works, the impact shows up in both product velocity and system reliability.
 
-As data volume and usage grow, dashboards stay fast and predictable instead of degrading over time. Analytical workloads no longer compete with core transactional traffic, so the rest of your application runs more reliably.
+Dashboards stay fast as data grows, instead of degrading over time. Analytical workloads run on dedicated infrastructure, so your transactional database can focus on what it does best.
 
-Engineering can ship new dashboards, metrics, and breakdowns as routine product work—not risky, backlog-bound projects. This unblocks your product roadmap: the analytics features that used to take 2-4 weeks or sit in backlog limbo now ship in 1-3 days, letting you respond to customer requests and competitive pressure faster.
+Engineering can ship new dashboards, metrics, and breakdowns as routine product work—not risky, backlog-bound projects. Features that used to require careful capacity planning become straightforward additions.
 
 
-## Tutorial
+## Tutorial: Migrate Your Dashboard to ClickHouse
 
 This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices. You'll work through:
 
@@ -137,7 +135,7 @@ This tutorial assumes you already have a dashboard or report running in producti
 2. Migrating your dashboard business logic from OLTP to MooseStack/ClickHouse
 3. Shipping your changes to production on Boreal Cloud
 
-**AI copilot (optional but recommended):** We use an AI copilot to accelerate the migration—it handles complex query translations and helps you iterate faster. However, you can complete every step manually if you prefer. The examples use Visual Studio Code [configured with Github Copilot](https://code.visualstudio.com/docs/copilot/setup), but any AI-enabled editor (Claude Code, Cursor, Windsurf, etc.) will work. Without an AI copilot, expect to spend more time writing and debugging SQL manually.
+**AI copilot (optional but recommended):** We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, Github Copilot, Windsurf, etc.) will work.
 
 **Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
 
@@ -152,43 +150,42 @@ In this section, you'll:
 
 #### Installing MooseStack
 
-**Prerequisites**
-
-Before installing MooseStack, ensure you have:
-
-* **Node.js 20+**: MooseStack requires Node.js version 20 or higher. [Download here](https://nodejs.org/en/download) if you don't have it installed. Check your version with `node --version`.
-
-* **Docker Desktop**: MooseStack uses Docker to run ClickHouse, Redpanda, and other infrastructure locally. [Download Docker Desktop](https://docs.docker.com/desktop/) if you don't have it. After installing, make sure Docker Desktop is running before proceeding.
-
-* **MacOS, Linux, or WSL 2+ on Windows**: MooseStack runs on Unix-based systems.
-  - **Windows users**: You'll need WSL 2 (Windows Subsystem for Linux). [See the appendix](#wsl-setting-up-a-wsl2-linux-instance-to-run-moosestack-on-windows) for complete WSL 2 setup instructions if you don't have it configured yet.
-  - **MacOS/Linux users**: You're all set—skip to the next step.
+<BulletPointsCard
+  title="Prerequisites"
+  bulletStyle="check"
+  compact={true}
+  divider={false}
+  bullets={[
+    {
+      title: "Node.js 20+",
+      description: "Check your version with `node --version`.",
+      link: { text: "Download", href: "https://nodejs.org/en/download", external: true }
+    },
+    {
+      title: "Docker Desktop",
+      description: "For local ClickHouse and Redpanda. Make sure it's running before proceeding.",
+      link: { text: "Download", href: "https://docs.docker.com/desktop/", external: true }
+    },
+    {
+      title: "macOS, Linux, or WSL 2+ on Windows",
+      description: "Windows users: see the appendix for WSL 2 setup instructions."
+    }
+  ]}
+/>
 
 **Install MooseStack**
 
-```shell
+```bash
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ```
 
-**Make sure to restart your terminal after installing MooseStack.**
+<Callout type="info" title="Make sure to restart your terminal after installing MooseStack.">
+MooseStack is installed globally, so you need to restart your terminal to make the `moose` command available.
+</Callout>
 
-#### Initialize or clone your MooseStack project locally
+#### Add MooseStack to your existing application
 
-You have two options for setting up your MooseStack project:
-
-**Option A: Clone an existing repository**
-
-If you already have a repository with MooseStack configured:
-
-```shell
-git clone <YOUR_REPOSITORY_URL>
-cd <your-project>
-pnpm install
-```
-
-**Option B: Add MooseStack to an existing PNPM monorepo**
-
-If you have an existing PNPM monorepo (e.g., a Next.js app) and want to add MooseStack:
+If you have an existing monorepo with your application (e.g., a Next.js frontend with an API backend), you can add MooseStack as a subdirectory:
 
 **Step 1: Initialize MooseStack in a subdirectory**
 
@@ -327,15 +324,7 @@ Confirm the server is running and integrated with VSCode by running `MCP: List S
 
 For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production MSSQL database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
 
-This section walks you through setting up CDC using Debezium.
-
-Before you start, gather the following credentials for your MSSQL database:
-
-- Host  
-- Port  
-- Username  
-- Password  
-- DB Name
+This section walks you through setting up CDC using Debezium. Before you start, make sure you have your MSSQL connection credentials (host, port, username, password, database name).
 
 You'll complete 3 main steps:
 
@@ -356,257 +345,15 @@ Here's how CDC tracks changes to a `customers` table:
 
 #### MSSQL Server CDC Configuration
 
-First, make sure your MSSQL Server is properly configured to work with Debezium.
+Configure your MSSQL Server for CDC before proceeding. For detailed setup instructions, see the [Debezium SQL Server Connector documentation](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#setting-up-sqlserver).
 
-**Step 0: PowerShell SQL query command**
+**Key steps:**
 
-You'll use this PowerShell command pattern throughout this guide to execute SQL commands against your MSSQL database.
+1. Enable CDC at the database level: `EXEC sys.sp_cdc_enable_db;`
+2. Enable CDC on each table you want to track: `EXEC sys.sp_cdc_enable_table @source_schema = N'dbo', @source_name = N'your_table', @role_name = NULL;`
+3. Verify SQL Server Agent is running (required for CDC capture jobs)
 
-**Command:**
-```powershell
-Invoke-Sqlcmd -ServerInstance "$host,$port" -Database "dbName" -Username "username" -Password "<YOUR_PASSWORD>" -TrustServerCertificate -Query $sql
-```
-
-**Single line $sql statement:**
-```powershell
-$sql = "SELECT 1"
-```
-
-**Multiline $sql statement:**
-```powershell
-$sql = @"
-SELECT 1;
-"@
-```
-
-**Step 1: Test Database Connection**
-
-Verify connectivity to the SQL Server instance.
-
-**Command:**
-```sql
-SELECT 1;
-```
-
-**Expected Response:**
-```
-Column1
--------
-      1
-```
-
-**Step 2: Enable CDC at the Database Level**
-
-This enables CDC infrastructure on the database (creates the `cdc` schema, system tables, and jobs).
-
-**Command:**
-```sql
-EXEC sys.sp_cdc_enable_db;
-```
-
-**Expected Response:**
-```
-Command(s) completed successfully.
-```
-
-**Step 3: Validate CDC System Tables Exist**
-
-Check that CDC system tables exist after enabling CDC.
-
-**Command:**
-```sql
--- Check if cdc schema and tables exist
-SELECT 
-    s.name AS SchemaName,
-    t.name AS TableName,
-    t.create_date AS CreatedDate
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-WHERE s.name = 'cdc'
-  AND t.name IN ('change_tables', 'captured_columns', 'ddl_history', 
-                 'index_columns', 'lsn_time_mapping')
-ORDER BY t.name;
-```
-
-**Expected Response:**
-```
-SchemaName   TableName           CreatedDate
------------  ------------------  ----------------------
-cdc          captured_columns    2025-12-16 16:48:50
-cdc          change_tables       2025-12-16 16:48:50
-cdc          ddl_history         2025-12-16 16:48:50
-cdc          index_columns       2025-12-16 16:48:50
-cdc          lsn_time_mapping    2025-12-16 16:48:50
-```
-
-CDC System Tables:
-
-| Table | Purpose |
-| :---- | :---- |
-| `cdc.change_tables` | Registry of all CDC-enabled tables and their capture instances |
-| `cdc.captured_columns` | Lists which columns are being tracked for each capture instance |
-| `cdc.ddl_history` | Records DDL changes (ALTER TABLE, etc.) on CDC-enabled tables |
-| `cdc.index_columns` | Stores index column information for tables with net changes support |
-| `cdc.lsn_time_mapping` | Maps LSN values to commit timestamps (for time-based queries) |
-
-**Step 4: Enable CDC at the Table Level**
-
-Enable CDC for each table you want to track. The command differs based on whether the table has a primary key.
-
-**Option A: Table with Primary Key**
-
-**Command:**
-```sql
-EXEC sys.sp_cdc_enable_table 
-    @source_schema = N'dbo', 
-    @source_name = N'customers',  -- Replace with your table name
-    @role_name = NULL, 
-    @supports_net_changes = 1;    -- Requires primary key
-```
-
-**Expected Response:**
-```
-Job 'cdc.dbo_customers_capture' started successfully.
-Job 'cdc.dbo_customers_cleanup' started successfully.
-```
-
-**Option B: Table without Primary Key**
-
-**Command:**
-```sql
-EXEC sys.sp_cdc_enable_table 
-    @source_schema = N'dbo', 
-    @source_name = N'TableName',  -- Replace with your table name
-    @role_name = NULL, 
-    @supports_net_changes = 0;    -- No primary key exists
-```
-
-**Expected Response:**
-```
-Job 'cdc.dbo_TableName_capture' started successfully.
-Job 'cdc.dbo_TableName_cleanup' started successfully.
-```
-
-**Note:** Above commands generate the CDC tracking table with the format: `cdc.<schema>_<table>_CT`
-
-**Step 5: Verifying Tables with CDC Enabled**
-
-Verify which tables now have CDC enabled.
-
-**Command:**
-```sql
-SELECT 
-    s.name AS SchemaName, 
-    t.name AS TableName 
-FROM sys.tables t 
-JOIN sys.schemas s ON t.schema_id = s.schema_id 
-WHERE t.is_tracked_by_cdc = 1 
-ORDER BY s.name, t.name;
-```
-
-**Expected Response:**
-```
-SchemaName   TableName
------------  ------------
-dbo          customers
-dbo          orders
-dbo          order_items
-dbo          products
-```
-
-**Step 6: Verify SQL Server Agent is Running**
-
-Confirm that SQL Server Agent is running (required for CDC to function).
-
-**Command:**
-```sql
-EXEC xp_servicecontrol 'QueryState', 'SQLServerAGENT';
-```
-
-**Expected Response:**
-```
-Current Service State
----------------------
-Running.
-```
-
-**⚠️ Critical:** SQL Server Agent MUST be running for CDC to capture changes!
-
-If the service is not running, start it with:
-```sql
-EXEC xp_servicecontrol 'START', 'SQLServerAGENT';
-```
-
-**Step 7: Verify CDC Jobs**
-
-Verify that CDC capture and cleanup jobs were created.
-
-**Command:**
-```sql
-EXEC sys.sp_cdc_help_jobs;
-```
-
-**Expected Response:**
-```
-job_id           : 9f9c5160-1bea-4b22-9818-50f16653be9e
-job_type         : capture
-job_name         : cdc.appdb_capture
-maxtrans         : 500
-maxscans         : 10
-continuous       : True
-pollinginterval  : 5
-retention        : 0
-threshold        : 0
-
-job_id           : ee746d5b-9c6d-471c-97e7-757ad9418341
-job_type         : cleanup
-job_name         : cdc.appdb_cleanup
-maxtrans         : 0
-maxscans         : 0
-continuous       : False
-pollinginterval  : 0
-retention        : 4320
-threshold        : 5000
-```
-
-**What this shows:**
-- **Capture job**: Continuously monitors transaction log for changes
-- **Cleanup job**: Periodically removes old CDC data (retention = 4320 minutes = 3 days)
-
-**Example: CDC Tracking Table Schema**
-
-Source Table (E-commerce customers table):
-
-```sql
-CREATE TABLE dbo.customers (
-    customer_id     INT PRIMARY KEY,
-    customer_name   NVARCHAR(100),
-    status          NVARCHAR(20),
-    created_at      DATETIME,
-    updated_at      DATETIME
-);
-```
-
-CDC Tracking Table: `cdc.dbo_customers_CT`
-
-```sql
--- Auto-generated by SQL Server
-CREATE TABLE cdc.dbo_customers_CT (
-    -- CDC System Columns (always present)
-    __$start_lsn        BINARY(10)      NOT NULL,  -- LSN when change committed
-    __$end_lsn          BINARY(10)      NULL,      -- Always NULL (reserved)
-    __$seqval           BINARY(10)      NOT NULL,  -- Sequence within transaction
-    __$operation        INT             NOT NULL,  -- 1=DEL, 2=INS, 3=UPD(before), 4=UPD(after)
-    __$update_mask      VARBINARY(128)  NULL,      -- Bitmask of changed columns
-    
-    -- Your Table Columns (copied from source)
-    customer_id         INT,
-    customer_name       NVARCHAR(100),
-    status              NVARCHAR(20),
-    created_at          DATETIME,
-    updated_at          DATETIME
-);
-```
+Once CDC is configured, proceed to set up the MooseStack ingestion pipeline below
 
 #### CDC via Pushing to Moose Ingest API
 
@@ -850,244 +597,20 @@ export default async function processDebeziumEvent(envelope: DebeziumEventEnvelo
 DebeziumChangeEventStream.addConsumer(processDebeziumEvent);
 ```
 
-#### Deploy Debezium Server via K8s Manifests
+#### Deploy Debezium Server
 
-Placeholders to replace:
+Debezium Server can be deployed using Kubernetes, Docker Compose, or as a standalone service. For deployment options and detailed configuration, see the [Debezium Server documentation](https://debezium.io/documentation/reference/stable/operations/debezium-server.html).
 
-* `<YOUR_DATABASE_NAME>` - your MS SQL database name (required)  
-* `<YOUR_HTTP_SINK_URL>` - your HTTP sink endpoint URL (required)  
-* `<YOUR_MSSQL_PASSWORD>` - your MS SQL SA password (required)
+**Key configuration for MooseStack integration:**
 
-**Step 0: Namespace**
+Your Debezium `application.properties` must include:
+- `debezium.sink.type=http` — Use HTTP sink to send events to Moose
+- `debezium.sink.http.url=<YOUR_MOOSE_INGEST_URL>/ingest/DebeziumChangeEvent` — Your Moose Ingest API endpoint
+- `debezium.source.connector.class=io.debezium.connector.sqlserver.SqlServerConnector` — SQL Server connector
 
-`kubectl apply -f namespace.yaml`
-
-```yaml
-# namespace.yaml
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: poc-debezium
-  labels:
-    name: poc-debezium
-    app: debezium-kafka-connect
-```
-
-**Step 1: Config Map**
-
-`kubectl apply -f configmap.yaml`
-
-```yaml
-# configmap.yaml
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: debezium-server-config
-  namespace: poc-debezium
-data:
-  application.properties: |
-    # Debezium Server Source - MS SQL Server
-    debezium.source.connector.class=io.debezium.connector.sqlserver.SqlServerConnector
-    debezium.source.offset.storage.file.filename=/debezium/data/offsets.dat
-    debezium.source.offset.flush.interval.ms=10000
-
-    # MS SQL Server Connection
-    debezium.source.database.hostname=mssql.poc-mssql.svc.cluster.local
-    debezium.source.database.port=1433
-    debezium.source.database.user=sa
-    debezium.source.database.password=<YOUR_MSSQL_PASSWORD>
-    debezium.source.database.names=<YOUR_DATABASE_NAME>
-    debezium.source.database.encrypt=false
-    debezium.source.database.trustServerCertificate=true
-
-    # Server name - used as namespace for topic names and schema names
-    debezium.source.topic.prefix=mssql
-    debezium.source.database.server.name=mssql-server
-
-    # Table whitelist
-    debezium.source.table.include.list=*
-
-    # Schema history - MS SQL Server CDC requires this
-    # Use file-based schema history
-    debezium.source.schema.history.internal=io.debezium.storage.file.history.FileSchemaHistory
-    debezium.source.schema.history.internal.file.filename=/debezium/data/schema-history.dat
-
-    # Snapshot mode
-    debezium.source.snapshot.mode=schema_only
-
-    # Snapshot optimization - conservative for low-impact CDC
-    debezium.source.snapshot.max.threads=1
-    debezium.source.snapshot.fetch.size=1000
-
-    # Skip schema change events - only emit data changes
-    debezium.source.include.schema.changes=false
-
-    # HTTP Sink Configuration
-    debezium.sink.type=http
-    debezium.sink.http.url=<YOUR_HTTP_SINK_URL>
-    debezium.sink.http.timeout.ms=60000
-
-    # HTTP Sink Retry Settings
-    debezium.sink.http.retries=5
-    debezium.sink.http.retry.interval.ms=3000
-
-    # Connector Error Handling and Retries
-    debezium.source.errors.max.retries=5
-    debezium.source.errors.retry.delay.initial.ms=300
-    debezium.source.errors.retry.delay.max.ms=10000
-
-    # Consumer configuration - conservative for low-impact
-    debezium.source.max.batch.size=2048
-    debezium.source.poll.interval.ms=120000
-
-    # Queue capacity - reduced for lower memory footprint
-    debezium.source.max.queue.size=8192
-    debezium.source.max.queue.size.in.bytes=104857600
-
-    # JSON format configuration
-    debezium.format.key=json
-    debezium.format.value=json
-    debezium.format.value.json.schemas.enable=false
-
-    # Logging
-    quarkus.log.level=INFO
-    quarkus.log.category."io.debezium.server.http".level=DEBUG
-    quarkus.log.console.json=false
-```
-
-**Step 2: Secret**
-
-`kubectl apply -f secret.yaml`
-
-```yaml
-# secret.yaml
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: debezium-secrets
-  namespace: poc-debezium
-type: Opaque
-stringData:
-  # The password for the MS SQL Server 'sa' user
-  MSSQL_SA_PASSWORD: "<YOUR_MSSQL_PASSWORD>"
-```
-
-**Step 3: Stateful Set**
-
-`kubectl apply -f statefulset.yaml`
-
-```yaml
-# statefulset.yaml
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: debezium-server
-  namespace: poc-debezium
-  labels:
-    app: debezium-server
-spec:
-  serviceName: debezium-server
-  replicas: 1
-  selector:
-    matchLabels:
-      app: debezium-server
-  template:
-    metadata:
-      labels:
-        app: debezium-server
-    spec:
-      securityContext:
-        fsGroup: 1001
-        runAsUser: 1001
-        runAsNonRoot: true
-      initContainers:
-        - name: fix-permissions
-          image: busybox:latest
-          command:
-            - sh
-            - -c
-            - chmod -R 777 /debezium/data && chown -R 1001:1001 /debezium/data
-          securityContext:
-            runAsUser: 0
-            runAsNonRoot: false
-          volumeMounts:
-            - name: data
-              mountPath: /debezium/data
-      containers:
-        - name: debezium-server
-          image: quay.io/debezium/server:2.7
-          env:
-            - name: MSSQL_SA_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: debezium-secret
-                  key: MSSQL_SA_PASSWORD
-            - name: JAVA_OPTS
-              value: "-Xms4g -Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
-          volumeMounts:
-            - name: config
-              mountPath: /debezium/conf
-            - name: data
-              mountPath: /debezium/data
-          resources:
-            requests:
-              memory: "4Gi"
-              cpu: "2000m"
-            limits:
-              memory: "4Gi"
-              cpu: "2000m"
-          livenessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - test -e /proc/1/exe
-            initialDelaySeconds: 120
-            periodSeconds: 60
-            timeoutSeconds: 10
-            failureThreshold: 5
-      volumes:
-        - name: config
-          configMap:
-            name: debezium-server-config
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 50Gi
-```
-
-**Step 4: Service**
-
-`kubectl apply -f service.yaml`
-
-```yaml
-# service.yaml
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: debezium-server
-  namespace: poc-debezium
-  labels:
-    app: debezium-server
-spec:
-  selector:
-    app: debezium-server
-  ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
-  type: ClusterIP
-```
+<Callout type="info" title="Example deployment manifests">
+For complete Kubernetes deployment examples with MooseStack, see our [CDC examples repository](https://github.com/514-labs/moose-examples).
+</Callout>
 
 ### Migrating a dashboard component to OLAP
 
@@ -1240,7 +763,7 @@ Phase 1 got you a working “parity query”: it returns the right shape and res
 
 In this phase, you’ll turn it into two OLAP-native building blocks:
 
-- **A serving table**: a flattened, pre-joined/pre-computed table designed for reads (your API queries this).
+- **A serving table**: a flattened, pre-joined, precomputed table designed for reads (your API queries this).
 - **A Materialized View (MV)**: write-time logic that continuously populates the serving table from your source tables.
 
 The end state is that your API reads from the serving table with lightweight, request-driven logic (filters, grouping, column selection), and does not have any joins, CTEs, or heavy reshaping logic.
@@ -1906,7 +1429,7 @@ The hello-world container should download and run, printing a "Hello from Docker
 
 #### Step 4: Proceed with MooseStack requirements and installation
 
-You now have a working Ubuntu instance on your windows machine with Docker installed. You can proceed to install MooseStack and its requirements (Node.js 20+ and/or Python 3.12+) as if you were installing on a regular linux machine. Just make sure to install from the Linux terminal prompt in the Ubuntu instance.
+You now have a working Ubuntu instance on your Windows machine with Docker installed. You can proceed to install MooseStack and its requirements (Node.js 20+ and/or Python 3.12+) as if you were installing on a regular Linux machine. Just make sure to install from the Linux terminal prompt in the Ubuntu instance.
 
 ### Expected CDC Impact
 
