@@ -45,10 +45,6 @@ type JsonSchema = {
   [key: string]: unknown;
 };
 
-type JsonSchemaComponents = {
-  schemas?: Record<string, JsonSchema>;
-};
-
 /**
  * Context for direct typia code generation
  */
@@ -321,9 +317,7 @@ const cleanJsonSchemaCollection = <V extends "3.0" | "3.1">(
   collection: IJsonSchemaCollection<V>,
 ): IJsonSchemaCollection<V> => {
   // Clean component schemas
-  const cleanedComponents: JsonSchemaComponents = {
-    schemas: {},
-  };
+  const cleanedComponentsSchemas: Record<string, JsonSchema> = {};
 
   if (collection.components.schemas) {
     for (const [name, schema] of Object.entries(
@@ -331,11 +325,9 @@ const cleanJsonSchemaCollection = <V extends "3.0" | "3.1">(
     )) {
       // Replace Date schema with proper date-time representation
       if (name === "Date") {
-        cleanedComponents.schemas![name] = DATE_SCHEMA;
+        cleanedComponentsSchemas[name] = DATE_SCHEMA;
       } else {
-        cleanedComponents.schemas![name] = cleanJsonSchema(
-          schema as JsonSchema,
-        );
+        cleanedComponentsSchemas[name] = cleanJsonSchema(schema as JsonSchema);
       }
     }
   }
@@ -347,7 +339,10 @@ const cleanJsonSchemaCollection = <V extends "3.0" | "3.1">(
 
   return {
     ...collection,
-    components: cleanedComponents,
+    components: {
+      ...collection.components,
+      schemas: cleanedComponentsSchemas,
+    },
     schemas: cleanedSchemas,
   } as IJsonSchemaCollection<V>;
 };
