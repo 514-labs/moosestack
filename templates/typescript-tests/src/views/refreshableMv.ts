@@ -1,5 +1,10 @@
 import typia from "typia";
-import { MaterializedView, OlapTable, sql, DateTime } from "@514labs/moose-lib";
+import {
+  RefreshableMaterializedView,
+  MaterializedView,
+  sql,
+  DateTime,
+} from "@514labs/moose-lib";
 import { BarPipeline } from "../ingest/models";
 
 // ============================================================================
@@ -8,40 +13,30 @@ import { BarPipeline } from "../ingest/models";
 // Tests both incremental and refreshable materialized views to ensure the
 // new refresh configuration API works correctly end-to-end.
 
-// Target schema for hourly aggregated stats
-interface HourlyStats {
-  hour: DateTime;
-  totalRows: number & typia.tags.Type<"int64">;
-  avgTextLength: number;
-}
-
-// Target schema for daily stats with refresh
-interface DailyStats {
-  day: string & typia.tags.Format<"date">;
-  rowCount: number & typia.tags.Type<"int64">;
-  maxTextLength: number & typia.tags.Type<"int64">;
-}
-
-// Target schema for weekly rollup
-interface WeeklyRollup {
-  weekStart: string & typia.tags.Format<"date">;
-  totalRecords: number & typia.tags.Type<"int64">;
-}
-
 const barTable = BarPipeline.table!;
+const barColumns = barTable.columns;
 
 // ============================================================================
 // Test 1: Refreshable MV with EVERY interval
 // ============================================================================
 // This MV refreshes every hour, aggregating data from the Bar table
 
-export const HourlyStatsMV = new MaterializedView<HourlyStats>({
+interface HourlyStats {
+  hour: DateTime;
+  totalRows: number & typia.tags.Type<"int64">;
+  avgTextLength: number;
+}
+
+export const HourlyStatsMV = new RefreshableMaterializedView<HourlyStats>({
   materializedViewName: "HourlyStats_MV",
-  targetTable: { name: "HourlyStats" },
+  targetTable: {
+    name: "HourlyStats",
+    orderByFields: ["hour"],
+  },
   selectStatement: sql`SELECT
-    toStartOfHour(${barTable.columns.utcTimestamp}) as hour,
+    toStartOfHour(${barColumns.utcTimestamp}) as hour,
     count(*) as totalRows,
-    avg(${barTable.columns.textLength}) as avgTextLength
+    avg(${barColumns.textLength}) as avgTextLength
   FROM ${barTable}
   GROUP BY hour`,
   selectTables: [barTable],
@@ -56,13 +51,22 @@ export const HourlyStatsMV = new MaterializedView<HourlyStats>({
 // This MV refreshes 30 minutes after the last refresh completed,
 // with a 5-minute offset from the start of the interval
 
-export const DailyStatsMV = new MaterializedView<DailyStats>({
+interface DailyStats {
+  day: string & typia.tags.Format<"date">;
+  rowCount: number & typia.tags.Type<"int64">;
+  maxTextLength: number & typia.tags.Type<"int64">;
+}
+
+export const DailyStatsMV = new RefreshableMaterializedView<DailyStats>({
   materializedViewName: "DailyStats_MV",
-  targetTable: { name: "DailyStats" },
+  targetTable: {
+    name: "DailyStats",
+    orderByFields: ["day"],
+  },
   selectStatement: sql`SELECT
-    toDate(${barTable.columns.utcTimestamp}) as day,
+    toDate(${barColumns.utcTimestamp}) as day,
     count(*) as rowCount,
-    max(${barTable.columns.textLength}) as maxTextLength
+    max(${barColumns.textLength}) as maxTextLength
   FROM ${barTable}
   GROUP BY day`,
   selectTables: [barTable],
@@ -77,18 +81,26 @@ export const DailyStatsMV = new MaterializedView<DailyStats>({
 // ============================================================================
 // This MV depends on DailyStats_MV and uses APPEND mode for incremental updates
 
-export const WeeklyRollupMV = new MaterializedView<WeeklyRollup>({
+interface WeeklyRollup {
+  weekStart: string & typia.tags.Format<"date">;
+  totalRecords: number & typia.tags.Type<"int64">;
+}
+
+export const WeeklyRollupMV = new RefreshableMaterializedView<WeeklyRollup>({
   materializedViewName: "WeeklyRollup_MV",
-  targetTable: { name: "WeeklyRollup" },
+  targetTable: {
+    name: "WeeklyRollup",
+    orderByFields: ["weekStart"],
+  },
   selectStatement: `SELECT
     toMonday(day) as weekStart,
     sum(rowCount) as totalRecords
   FROM DailyStats
   GROUP BY weekStart`,
-  selectTables: [], // Note: source is another MV's target table
+  selectTables: [DailyStatsMV.targetTable],
   refreshConfig: {
     interval: { type: "every", value: 1, unit: "day" },
-    dependsOn: ["DailyStats_MV"],
+    dependsOn: [DailyStatsMV],
     append: true,
   },
 });
@@ -103,26 +115,30 @@ interface RandomizedStats {
   eventCount: number & typia.tags.Type<"int64">;
 }
 
-export const RandomizedStatsMV = new MaterializedView<RandomizedStats>({
-  materializedViewName: "RandomizedStats_MV",
-  targetTable: { name: "RandomizedStats" },
-  selectStatement: sql`SELECT
-    toStartOfMinute(${barTable.columns.utcTimestamp}) as minute,
+export const RandomizedStatsMV =
+  new RefreshableMaterializedView<RandomizedStats>({
+    materializedViewName: "RandomizedStats_MV",
+    targetTable: {
+      name: "RandomizedStats",
+      orderByFields: ["minute"],
+    },
+    selectStatement: sql`SELECT
+    toStartOfMinute(${barColumns.utcTimestamp}) as minute,
     count(*) as eventCount
   FROM ${barTable}
   GROUP BY minute`,
-  selectTables: [barTable],
-  refreshConfig: {
-    interval: { type: "every", value: 5, unit: "minute" },
-    randomize: { value: 30, unit: "second" },
-  },
-});
+    selectTables: [barTable],
+    refreshConfig: {
+      interval: { type: "every", value: 5, unit: "minute" },
+      randomize: { value: 30, unit: "second" },
+    },
+  });
 
 // ============================================================================
 // Test 5: Incremental MV (control - no refreshConfig)
 // ============================================================================
-// This is a traditional incremental MV for comparison - no refreshConfig means
-// it triggers on every insert to the source table
+// This is a traditional incremental MV for comparison - triggers on every
+// insert to the source table (no refreshConfig means incremental behavior)
 
 interface IncrementalStats {
   primaryKey: string;
@@ -132,11 +148,12 @@ interface IncrementalStats {
 
 export const IncrementalStatsMV = new MaterializedView<IncrementalStats>({
   materializedViewName: "IncrementalStats_MV",
-  targetTable: { name: "IncrementalStats" },
+  tableName: "IncrementalStats",
+  orderByFields: ["primaryKey"],
   selectStatement: sql`SELECT
-    ${barTable.columns.primaryKey} as primaryKey,
+    ${barColumns.primaryKey} as primaryKey,
     now() as processedAt,
-    ${barTable.columns.textLength} * ${barTable.columns.textLength} as textLengthSquared
+    ${barColumns.textLength} * ${barColumns.textLength} as textLengthSquared
   FROM ${barTable}`,
   selectTables: [barTable],
   // No refreshConfig = incremental MV
