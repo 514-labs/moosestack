@@ -180,8 +180,8 @@ pub fn materialized_view_diff(
     // Kind changed if one has refresh_config and the other doesn't
     let kind_changed = old.is_refreshable() != new.is_refreshable();
 
-    // Check if SELECT SQL changed
-    let select_changed = !sql_is_equivalent(&old.select_sql, &new.select_sql, default_database);
+    // Check if SELECT SQL changed (SQL must be pre-normalized via ClickHouse)
+    let select_changed = old.select_sql != new.select_sql;
 
     // Check if target table changed
     let target_changed = normalize_table_name(&old.target_table, default_database)
