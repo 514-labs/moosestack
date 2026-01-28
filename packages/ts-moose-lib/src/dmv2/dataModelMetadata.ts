@@ -1,8 +1,6 @@
 import ts, { factory } from "typescript";
 import { isMooseFile, type TransformContext } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
-import { IJsonSchemaCollection } from "typia/lib/schemas/json/IJsonSchemaCollection";
-import { dlqSchema } from "./internal";
 import {
   generateValidateFunction,
   generateIsFunction,
@@ -222,7 +220,6 @@ export const transformNewMooseResource = (
  * Transforms typia's IValidation result to our { success, data, errors } format
  */
 const wrapValidateFunction = (validateFn: ts.Expression): ts.Expression => {
-  // Wrap it to transform the result to match our expected interface
   // (data: unknown) => {
   //   const result = validateFn(data);
   //   return {
