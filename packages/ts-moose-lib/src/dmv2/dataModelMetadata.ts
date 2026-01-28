@@ -133,7 +133,7 @@ export const transformNewMooseResource = (
   }
 
   // Get the typia context for direct code generation
-  const typiaCtx = ctx.typiaContext!;
+  const typiaCtx = ctx.typiaContext;
 
   let internalArguments: ts.Expression[];
 

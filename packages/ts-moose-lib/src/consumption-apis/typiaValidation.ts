@@ -38,7 +38,7 @@ export const transformApiV2 = (
     return node;
   }
 
-  const typiaCtx = ctx.typiaContext!;
+  const typiaCtx = ctx.typiaContext;
 
   // Get both type parameters from Api<T, R>
   const typeNode = node.typeArguments[0];
