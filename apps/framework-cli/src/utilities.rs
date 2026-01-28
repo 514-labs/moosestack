@@ -2,6 +2,7 @@ use std::path::Path;
 
 pub mod auth;
 pub mod capture;
+pub mod ci_detection;
 pub mod constants;
 pub mod decode_object;
 pub mod docker;
