@@ -107,7 +107,10 @@ const toTypiaContext = (ctx: TypiaDirectContext): ITypiaContext => ({
   transformer: ctx.transformer,
   importer: ctx.importer,
   extras: {
-    addDiagnostic: () => 0, // Swallow diagnostics - we handle errors ourselves
+    // Not used by the programmers we call directly (CheckerProgrammer,
+    // HttpAssertQueryProgrammer, JsonSchemasProgrammer) - only used by
+    // FileTransformer which we bypass
+    addDiagnostic: () => 0,
   },
 });
 
