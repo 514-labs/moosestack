@@ -1,35 +1,75 @@
-import { DateFilterProvider } from "@/components/dashboard-date-context";
-import { FilterBar } from "@/components/filter-bar";
-import { DashboardCharts } from "@/components/dashboard-charts";
-import { DashboardStats } from "@/components/dashboard-stats";
-import { ThemeToggle } from "@/components/theme-toggle";
+"use client";
 
-export default function Page() {
+import type React from "react";
+import {
+  DashboardProvider,
+  FilterBar,
+  useEventsByStatus,
+  useMetrics,
+  EventsOverTimeChart,
+  MetricCards,
+} from "@/components/dashboard";
+import { DonutChart } from "@/components/widgets";
+import { type ChartConfig } from "@/components/ui/chart";
+import { ChartLine } from "lucide-react";
+
+// =============================================================================
+// Chart Configuration
+// =============================================================================
+
+const statusChartConfig = {
+  completed: { label: "Completed", color: "var(--chart-1)" },
+  active: { label: "Active", color: "var(--chart-2)" },
+  inactive: { label: "Inactive", color: "var(--chart-3)" },
+} satisfies ChartConfig;
+
+// =============================================================================
+// Dashboard Content
+// =============================================================================
+
+function DashboardContent() {
+  const { data: metrics } = useMetrics();
+  const { data: eventsByStatus = [] } = useEventsByStatus();
+
   return (
-    <DateFilterProvider>
-      <div className="min-h-screen bg-background p-6">
+    <>
+      <MetricCards />
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <EventsOverTimeChart />
+        <DonutChart
+          data={eventsByStatus}
+          chartConfig={statusChartConfig}
+          title="Events by Status"
+          centerValue={metrics?.totalEvents ?? 0}
+          centerLabel="Total Events"
+        />
+      </div>
+    </>
+  );
+}
+
+// =============================================================================
+// Page
+// =============================================================================
+
+export default function DashboardPage(): React.JSX.Element {
+  return (
+    <DashboardProvider>
+      <div className="p-6">
         <div className="mx-auto max-w-7xl space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold">Dashboard</h1>
-              <p className="text-muted-foreground mt-1 text-sm">
-                Overview of your data and metrics
-              </p>
-            </div>
-            <ThemeToggle />
+          <div>
+            <h1 className="text-3xl font-bold">Dashboard</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Overview of your data and metrics
+            </p>
           </div>
 
-          {/* Filter Bar */}
           <FilterBar />
 
-          {/* Stats Grid */}
-          <DashboardStats />
-
-          {/* Charts */}
-          <DashboardCharts />
+          <DashboardContent />
         </div>
       </div>
-    </DateFilterProvider>
+    </DashboardProvider>
   );
 }

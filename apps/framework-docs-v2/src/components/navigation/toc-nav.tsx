@@ -42,9 +42,61 @@ export function TOCNav({
 }: TOCNavProps) {
   const [activeId, setActiveId] = useState<string>("");
   const [scope, setScope] = useState<"initiative" | "project">("initiative");
+  const [visibleHeadings, setVisibleHeadings] = useState<Heading[]>(headings);
   const pathname = usePathname();
   const isGuidePage =
     pathname?.startsWith("/guides/") && pathname !== "/guides";
+
+  // Filter headings based on DOM existence (for ConditionalContent support)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let debounceTimeout: NodeJS.Timeout | null = null;
+
+    const updateVisibleHeadings = () => {
+      const visible = headings.filter((heading) => {
+        const el = document.getElementById(heading.id);
+        return el !== null;
+      });
+      // Only update state if the visible headings have changed
+      setVisibleHeadings((prev) => {
+        if (
+          prev.length === visible.length &&
+          prev.every((h, i) => h.id === visible[i]?.id)
+        ) {
+          return prev;
+        }
+        return visible;
+      });
+    };
+
+    const debouncedUpdate = () => {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+      debounceTimeout = setTimeout(updateVisibleHeadings, 100);
+    };
+
+    // Initial check after DOM is ready
+    updateVisibleHeadings();
+
+    // Watch for DOM changes (ConditionalContent showing/hiding content)
+    const observer = new MutationObserver(() => {
+      debouncedUpdate();
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    return () => {
+      observer.disconnect();
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+    };
+  }, [headings]);
 
   useEffect(() => {
     if (headings.length === 0) return;
@@ -148,18 +200,21 @@ export function TOCNav({
     };
   }, [headings]);
 
-  if (headings.length === 0 && (!helpfulLinks || helpfulLinks.length === 0)) {
+  if (
+    visibleHeadings.length === 0 &&
+    (!helpfulLinks || helpfulLinks.length === 0)
+  ) {
     return null;
   }
 
   return (
     <aside className="fixed top-[--header-height] right-0 z-30 hidden h-[calc(100vh-var(--header-height))] w-64 shrink-0 xl:block pr-2">
       <div className="h-full overflow-y-auto pt-6 lg:pt-10 pb-6 pr-2">
-        {headings.length > 0 && (
+        {visibleHeadings.length > 0 && (
           <div className="mb-6">
             <h4 className="mb-3 text-sm font-semibold">On this page</h4>
             <nav className="space-y-2">
-              {headings.map((heading, index) => (
+              {visibleHeadings.map((heading, index) => (
                 <a
                   key={`${heading.id}-${index}`}
                   href={`#${heading.id}`}

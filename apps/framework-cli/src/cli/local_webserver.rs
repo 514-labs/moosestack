@@ -3615,6 +3615,19 @@ async fn admin_plan_route(
         }
     };
 
+    // Normalize SQL in both maps before diffing to handle ClickHouse reformatting
+    let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
+    let current_normalized = crate::framework::core::plan::normalize_infra_map_for_comparison(
+        &current_infra_map,
+        &olap_client,
+    )
+    .await;
+    let target_normalized = crate::framework::core::plan::normalize_infra_map_for_comparison(
+        &plan_request.infra_map,
+        &olap_client,
+    )
+    .await;
+
     // Calculate the changes between the submitted infrastructure map and the current one
     // Use ClickHouse-specific strategy for table diffing
     let clickhouse_strategy = clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -3623,8 +3636,8 @@ async fn admin_plan_route(
     } else {
         &[]
     };
-    let changes = current_infra_map.diff_with_table_strategy(
-        &plan_request.infra_map,
+    let changes = current_normalized.diff_with_table_strategy(
+        &target_normalized,
         &clickhouse_strategy,
         true,
         project.is_production,
