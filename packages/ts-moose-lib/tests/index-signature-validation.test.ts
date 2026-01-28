@@ -66,7 +66,6 @@ function testIngestPipelineValidation(
             const ctx: TransformContext = {
               typeChecker: checker,
               program,
-              transformer: transformationContext,
               typiaContext,
             };
 

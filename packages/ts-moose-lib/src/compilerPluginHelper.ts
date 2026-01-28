@@ -24,9 +24,8 @@ import type { TypiaDirectContext } from "./typiaDirectIntegration";
 export interface TransformContext {
   typeChecker: ts.TypeChecker;
   program: ts.Program;
-  transformer?: ts.TransformationContext;
   /** Shared typia context for direct code generation - created per-file */
-  typiaContext?: TypiaDirectContext;
+  typiaContext: TypiaDirectContext;
 }
 
 /**
@@ -37,7 +36,8 @@ export interface TransformContext {
 export const createTransformer =
   (
     transform: (
-      ctx: TransformContext,
+      typeChecker: ts.TypeChecker,
+      program: ts.Program,
     ) => (
       _context: ts.TransformationContext,
     ) => (sourceFile: ts.SourceFile) => ts.SourceFile,
@@ -64,12 +64,7 @@ export const createTransformer =
       );
     }
 
-    const transformCtx: TransformContext = {
-      typeChecker: program.getTypeChecker(),
-      program,
-    };
-
-    const transformFunction = transform(transformCtx);
+    const transformFunction = transform(program.getTypeChecker(), program);
 
     // Return a transformer factory
     return (context: ts.TransformationContext) => {

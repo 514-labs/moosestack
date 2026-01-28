@@ -37,26 +37,33 @@ const applyTransformation = (
  * Main transformation function that processes TypeScript source files
  */
 const transform =
-  (ctx: TransformContext) =>
+  (typeChecker: ts.TypeChecker, program: ts.Program) =>
   (transformationContext: ts.TransformationContext) =>
   (sourceFile: ts.SourceFile): ts.SourceFile => {
     compilerLog(
       `\n[CompilerPlugin] ========== Processing file: ${sourceFile.fileName} ==========`,
     );
+    let transformationCount = 0;
     const typiaContext = createTypiaContext(
-      ctx.program,
+      program,
       transformationContext,
       sourceFile,
     );
 
-    const ctxWithTransformer: TransformContext = {
-      ...ctx,
-      transformer: transformationContext,
+    const ctx: TransformContext = {
+      typeChecker,
+      program,
       typiaContext,
     };
 
     const visitNode = (node: ts.Node): ts.Node => {
-      const transformed = applyTransformation(node, ctxWithTransformer);
+      const transformed = applyTransformation(node, ctx);
+      if (transformed !== undefined) {
+        transformationCount++;
+        compilerLog(
+          `[CompilerPlugin] Transformation #${transformationCount} applied at position ${node.pos}`,
+        );
+      }
       const result = transformed ?? node;
       return ts.visitEachChild(result, visitNode, transformationContext);
     };
@@ -65,6 +72,10 @@ const transform =
       sourceFile,
       visitNode,
       transformationContext,
+    );
+
+    compilerLog(
+      `[CompilerPlugin] Total transformations applied: ${transformationCount}`,
     );
 
     // Add imports from ImportProgrammer (for direct typia integration)
