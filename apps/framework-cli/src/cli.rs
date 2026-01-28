@@ -168,10 +168,12 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
                     }));
                 }
 
-                // Ignore all other control/alt key combinations to prevent
-                // accidental character input from shortcuts like Ctrl+V, Ctrl+A, etc.
+                // Ignore control key combinations (Ctrl+V, Ctrl+A, etc.) to prevent
+                // accidental character input. However, allow:
+                // - ALT alone: macOS Option key for special characters
+                // - CTRL+ALT: Windows AltGr for international keyboard characters
                 if key_event.modifiers.contains(KeyModifiers::CONTROL)
-                    || key_event.modifiers.contains(KeyModifiers::ALT)
+                    && !key_event.modifiers.contains(KeyModifiers::ALT)
                 {
                     continue;
                 }
