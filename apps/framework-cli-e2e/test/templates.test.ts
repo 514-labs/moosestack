@@ -1238,13 +1238,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         it("should create refreshable MVs with correct REFRESH configurations (TS)", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
-          // Test 1: HourlyStats_MV - REFRESH EVERY 1 HOUR
+          // Test 1: HourlyStats_MV - REFRESH EVERY 1 HOUR OFFSET 5 MINUTE
           const hourlyResult = await verifyMaterializedViewRefreshConfig(
             "HourlyStats_MV",
             {
               intervalType: "EVERY",
               intervalValue: 1,
               intervalUnit: "HOUR",
+              offset: "5 MINUTE", // OFFSET is valid with EVERY
             },
             "local",
           );
@@ -1254,14 +1255,14 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             );
           }
 
-          // Test 2: DailyStats_MV - REFRESH AFTER 30 MINUTE OFFSET 5 MINUTE
+          // Test 2: DailyStats_MV - REFRESH AFTER 30 MINUTE (no offset - OFFSET only valid with EVERY)
           const dailyResult = await verifyMaterializedViewRefreshConfig(
             "DailyStats_MV",
             {
               intervalType: "AFTER",
               intervalValue: 30,
               intervalUnit: "MINUTE",
-              offset: "5 MINUTE",
+              // Note: No offset - OFFSET is only valid with REFRESH EVERY, not REFRESH AFTER
             },
             "local",
           );

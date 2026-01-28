@@ -421,7 +421,9 @@ impl AtomicOlapOperation {
                 SerializableOlapOperation::AlterMaterializedViewRefresh {
                     name: mv.name.clone(),
                     database: mv.database.clone(),
-                    refresh_sql: mv.to_alter_refresh_sql().unwrap_or_default(),
+                    refresh_sql: mv
+                        .to_alter_refresh_sql()
+                        .expect("AlterMaterializedViewRefresh requires refresh_config"),
                 }
             }
         }

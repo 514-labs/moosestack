@@ -2875,8 +2875,9 @@ impl InfrastructureMap {
 
         // Pattern to match DEPENDS ON <mv_list>
         // MV names can be: mv_name, `mv_name`, database.mv_name, `database`.`mv_name`
+        // The .+? is non-greedy and will match until the suffix pattern matches
         static DEPENDS_ON_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r"(?i)DEPENDS\s+ON\s+([^T]+?)(?:\s+TO\s+|\s+APPEND|\s*$)")
+            Regex::new(r"(?i)DEPENDS\s+ON\s+(.+?)(?:\s+TO\s+|\s+APPEND|\s*$)")
                 .expect("DEPENDS_ON_PATTERN regex should compile")
         });
 
@@ -4470,6 +4471,96 @@ mod tests {
             table_removals, 1,
             "When respect_life_cycle=false, drops should not be blocked"
         );
+    }
+}
+
+#[cfg(test)]
+mod parse_refresh_clause_tests {
+    use super::InfrastructureMap;
+    use crate::framework::core::infrastructure::materialized_view::RefreshInterval;
+
+    #[test]
+    fn test_depends_on_with_names_containing_t() {
+        // This test verifies the fix for the regex bug where [^T]+? would fail
+        // to match MV names containing 't' like "test_mv", "my_table", etc.
+        let sql = "REFRESH EVERY 1 HOUR DEPENDS ON test_mv TO `local`.`target_table`";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(config.depends_on, vec!["test_mv"]);
+    }
+
+    #[test]
+    fn test_depends_on_multiple_mvs_with_t() {
+        let sql = "REFRESH EVERY 1 DAY DEPENDS ON test_mv, my_table, another_one APPEND";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(
+            config.depends_on,
+            vec!["test_mv", "my_table", "another_one"]
+        );
+        assert!(config.append);
+    }
+
+    #[test]
+    fn test_depends_on_with_backticks() {
+        let sql = "REFRESH EVERY 1 HOUR DEPENDS ON `test_mv`, `local`.`table_name` TO target";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        // The database prefix should be stripped
+        assert_eq!(config.depends_on, vec!["test_mv", "table_name"]);
+    }
+
+    #[test]
+    fn test_depends_on_at_end_of_string() {
+        let sql = "REFRESH EVERY 1 HOUR DEPENDS ON DailyStats_MV";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(config.depends_on, vec!["DailyStats_MV"]);
+    }
+
+    #[test]
+    fn test_basic_refresh_every() {
+        let sql = "REFRESH EVERY 1 HOUR";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert!(matches!(
+            config.interval,
+            RefreshInterval::Every { interval: 3600 }
+        ));
+    }
+
+    #[test]
+    fn test_basic_refresh_after() {
+        let sql = "REFRESH AFTER 30 MINUTE";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert!(matches!(
+            config.interval,
+            RefreshInterval::After { interval: 1800 }
+        ));
+    }
+
+    #[test]
+    fn test_offset_only_valid_with_every() {
+        let sql = "REFRESH EVERY 1 HOUR OFFSET 5 MINUTE";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(config.offset, Some(300)); // 5 minutes in seconds
+    }
+
+    #[test]
+    fn test_randomize() {
+        let sql = "REFRESH EVERY 5 MINUTE RANDOMIZE FOR 30 SECOND";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert_eq!(config.randomize, Some(30));
+    }
+
+    #[test]
+    fn test_full_config() {
+        let sql =
+            "REFRESH EVERY 1 DAY OFFSET 1 HOUR RANDOMIZE FOR 5 MINUTE DEPENDS ON mv1, mv2 APPEND";
+        let config = InfrastructureMap::parse_refresh_clause(sql).expect("Should parse");
+        assert!(matches!(
+            config.interval,
+            RefreshInterval::Every { interval: 86400 }
+        ));
+        assert_eq!(config.offset, Some(3600));
+        assert_eq!(config.randomize, Some(300));
+        assert_eq!(config.depends_on, vec!["mv1", "mv2"]);
+        assert!(config.append);
     }
 }
 
