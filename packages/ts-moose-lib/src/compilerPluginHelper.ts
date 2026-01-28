@@ -99,7 +99,7 @@ export const createTransformer =
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(`${dir}/${fileName}`, newFile);
         } catch (_e) {
-          // Debug output is optional
+          // this file is just for debugging purposes
         }
 
         return result;
