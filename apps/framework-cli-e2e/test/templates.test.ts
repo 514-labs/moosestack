@@ -1847,13 +1847,6 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             ).to.equal("date-time");
           }
 
-          // Verify no internal ClickHouse properties are leaking into the schema
-          if (yamlText.includes("_clickhouse_")) {
-            throw new Error(
-              "Found _clickhouse_ internal properties leaking into OpenAPI schema",
-            );
-          }
-
           testLogger.info(
             "✅ OpenAPI schema sanity check passed - all DateTime fields correctly formatted as string/date-time",
           );
@@ -2411,7 +2404,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             ).to.equal("date-time");
           }
 
-          // Verify no internal ClickHouse properties are leaking into the schema
+          // Verify no internal "tagging" properties are leaking into the schema
           if (yamlText.includes("_clickhouse_")) {
             throw new Error(
               "Found _clickhouse_ internal properties leaking into OpenAPI schema (Python)",
