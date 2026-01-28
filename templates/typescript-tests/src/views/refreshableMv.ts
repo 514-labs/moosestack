@@ -17,9 +17,10 @@ const barTable = BarPipeline.table!;
 const barColumns = barTable.columns;
 
 // ============================================================================
-// Test 1: Refreshable MV with EVERY interval
+// Test 1: Refreshable MV with EVERY interval and OFFSET
 // ============================================================================
-// This MV refreshes every hour, aggregating data from the Bar table
+// This MV refreshes every hour with a 5-minute offset, aggregating data from the Bar table.
+// OFFSET is only valid with REFRESH EVERY (not REFRESH AFTER).
 
 interface HourlyStats {
   hour: DateTime;
@@ -42,14 +43,15 @@ export const HourlyStatsMV = new RefreshableMaterializedView<HourlyStats>({
   selectTables: [barTable],
   refreshConfig: {
     interval: { type: "every", value: 1, unit: "hour" },
+    offset: { value: 5, unit: "minute" }, // OFFSET is valid with EVERY
   },
 });
 
 // ============================================================================
-// Test 2: Refreshable MV with AFTER interval and offset
+// Test 2: Refreshable MV with AFTER interval (no offset - OFFSET only valid with EVERY)
 // ============================================================================
-// This MV refreshes 30 minutes after the last refresh completed,
-// with a 5-minute offset from the start of the interval
+// This MV refreshes 30 minutes after the last refresh completed.
+// Note: OFFSET is NOT valid with REFRESH AFTER in ClickHouse, only with REFRESH EVERY.
 
 interface DailyStats {
   day: string & typia.tags.Format<"date">;
@@ -72,7 +74,7 @@ export const DailyStatsMV = new RefreshableMaterializedView<DailyStats>({
   selectTables: [barTable],
   refreshConfig: {
     interval: { type: "after", value: 30, unit: "minute" },
-    offset: { value: 5, unit: "minute" },
+    // Note: No offset here - OFFSET is only valid with REFRESH EVERY, not REFRESH AFTER
   },
 });
 
