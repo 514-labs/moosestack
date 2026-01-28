@@ -3,6 +3,9 @@
 //! Provides consistent status indicators and formatting functions for CLI output.
 //! These are used across all commands to provide a uniform user experience.
 
+// TODO: Remove this once the APIs are used in subsequent PRs
+#![allow(dead_code)]
+
 /// Success status indicator
 pub const STATUS_SUCCESS: &str = "✓";
 
