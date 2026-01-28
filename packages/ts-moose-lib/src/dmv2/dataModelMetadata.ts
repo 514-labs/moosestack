@@ -222,6 +222,15 @@ export const transformNewMooseResource = (
  * Transforms typia's IValidation result to our { success, data, errors } format
  */
 const wrapValidateFunction = (validateFn: ts.Expression): ts.Expression => {
+  // Wrap it to transform the result to match our expected interface
+  // (data: unknown) => {
+  //   const result = validateFn(data);
+  //   return {
+  //     success: result.success,
+  //     data: result.success ? result.data : undefined,
+  //     errors: result.success ? undefined : result.errors
+  //   };
+  // }
   return factory.createArrowFunction(
     undefined,
     undefined,
