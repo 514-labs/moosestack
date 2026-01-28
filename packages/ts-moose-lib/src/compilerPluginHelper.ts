@@ -1,4 +1,4 @@
-import ts, { factory } from "typescript";
+import ts from "typescript";
 import path from "path";
 import { PluginConfig, TransformerExtras } from "ts-patch";
 import process from "process";
@@ -44,8 +44,8 @@ export const createTransformer =
   ) =>
   (
     program: ts.Program,
-    configOrHost: PluginConfig | ts.CompilerHost | undefined,
-    extrasOrConfig: TransformerExtras | PluginConfig,
+    _configOrHost: PluginConfig | ts.CompilerHost | undefined,
+    _extrasOrConfig: TransformerExtras | PluginConfig,
     maybeProgramExtras?: unknown,
   ): ts.TransformerFactory<ts.SourceFile> => {
     // Detect if called with transformProgram: true (4 args) vs regular transformer (3 args)
