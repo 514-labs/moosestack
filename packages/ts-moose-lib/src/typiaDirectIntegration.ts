@@ -380,9 +380,10 @@ export const generateJsonSchemas = (
   });
 
   if (!metadataResult.success) {
-    // Log errors for debugging but don't fail
-    console.error("Metadata analysis failed:", metadataResult.errors);
-    return ts.factory.createObjectLiteralExpression([]);
+    const errors = metadataResult.errors
+      .map((e) => `${e.name}: ${e.messages.join(", ")}`)
+      .join("; ");
+    throw new Error(`Typia metadata analysis failed: ${errors}`);
   }
 
   // Generate the JSON schema collection
