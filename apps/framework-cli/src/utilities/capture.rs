@@ -3,6 +3,7 @@
 //! This module leverages moose to instrument moose. It includes a macro to easily capture data anywhere in the codebase.
 //!
 use crate::cli::settings::Settings;
+use crate::utilities::ci_detection::detect_ci_environment;
 use crate::utilities::constants::{CLI_VERSION, CONTEXT, CTX_SESSION_ID};
 use posthog514client_rs::PostHog514Client;
 use serde::Serialize;
@@ -125,6 +126,13 @@ pub fn capture_usage(
     let flags = collect_cli_flags();
     if !flags.is_empty() {
         context.insert("flags".into(), json!(flags));
+    }
+
+    // Add CI/CD environment information
+    let ci_env = detect_ci_environment();
+    context.insert("is_ci".into(), json!(ci_env.is_ci));
+    if let Some(provider) = ci_env.ci_provider {
+        context.insert("ci_provider".into(), json!(provider));
     }
 
     // Create PostHog client
