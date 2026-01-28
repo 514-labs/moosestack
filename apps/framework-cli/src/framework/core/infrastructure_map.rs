@@ -2880,20 +2880,18 @@ impl InfrastructureMap {
     }
 
     /// Parses a REFRESH clause from a CREATE MATERIALIZED VIEW statement.
-    /// Returns Some(RefreshableConfig) if a REFRESH clause is found, None otherwise.
-    ///
-    /// Supported formats:
-    /// - REFRESH EVERY <n> <unit> (e.g., "REFRESH EVERY 1 MINUTE")
-    /// - REFRESH AFTER <n> <unit> (e.g., "REFRESH AFTER 30 SECOND")
     /// Parses the REFRESH clause from a CREATE MATERIALIZED VIEW statement.
     /// Extracts: interval (EVERY/AFTER), OFFSET, RANDOMIZE, DEPENDS ON, and APPEND.
     ///
-    /// Example SQL patterns:
-    /// - REFRESH EVERY 1 HOUR
-    /// - REFRESH AFTER 30 MINUTE OFFSET 5 MINUTE
-    /// - REFRESH EVERY 1 DAY RANDOMIZE FOR 10 SECOND
-    /// - REFRESH EVERY 1 HOUR DEPENDS ON other_mv
-    /// - REFRESH EVERY 1 DAY DEPENDS ON mv1, mv2 APPEND
+    /// Returns Some(RefreshableConfig) if a REFRESH clause is found, None otherwise.
+    ///
+    /// # Example SQL patterns
+    ///
+    /// - `REFRESH EVERY 1 HOUR`
+    /// - `REFRESH AFTER 30 MINUTE OFFSET 5 MINUTE`
+    /// - `REFRESH EVERY 1 DAY RANDOMIZE FOR 10 SECOND`
+    /// - `REFRESH EVERY 1 HOUR DEPENDS ON other_mv`
+    /// - `REFRESH EVERY 1 DAY DEPENDS ON mv1, mv2 APPEND`
     fn parse_refresh_clause(sql: &str) -> Option<RefreshableConfig> {
         use regex::Regex;
         use std::sync::LazyLock;
