@@ -55,7 +55,7 @@ use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
 use crate::metrics::TelemetryMetadata;
 use crate::project::Project;
-use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
+use crate::utilities::capture::{ActivityType, wait_for_usage_capture};
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
     CLI_VERSION, ENV_CLICKHOUSE_URL, MIGRATION_AFTER_STATE_FILE, MIGRATION_BEFORE_STATE_FILE,
@@ -131,7 +131,7 @@ pub fn prompt_user(
 /// Uses crossterm for terminal manipulation to hide the actual password input.
 pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
     use crossterm::{
-        event::{read, Event, KeyCode, KeyModifiers},
+        event::{Event, KeyCode, KeyModifiers, read},
         terminal::{disable_raw_mode, enable_raw_mode},
     };
     use std::io::{self, Write};
@@ -386,9 +386,8 @@ async fn run_local_infrastructure_with_timeout(
     match timeout(timeout_duration, run_future).await {
         Ok(Ok(result)) => result,
         Ok(Err(e)) => Err(e.into()),
-        Err(_) => {
-            Err(anyhow::anyhow!(
-                "Docker container startup and validation timed out after {} seconds.\n\n\
+        Err(_) => Err(anyhow::anyhow!(
+            "Docker container startup and validation timed out after {} seconds.\n\n\
                 This usually happens when Docker is in an unresponsive state.\n\n\
                 Troubleshooting steps:\n\
                 • Check if Docker is running: `docker info`\n\
@@ -400,10 +399,9 @@ async fn run_local_infrastructure_with_timeout(
                   [dev]\n\
                   infrastructure_timeout_seconds = {}\n\n\
                 For more help, visit: https://docs.moosejs.com/help/troubleshooting",
-                timeout_duration.as_secs(),
-                timeout_duration.as_secs() * 2
-            ))
-        }
+            timeout_duration.as_secs(),
+            timeout_duration.as_secs() * 2
+        )),
     }
 }
 
@@ -437,7 +435,7 @@ pub async fn top_command_handler(
                         return Err(RoutineFailure::error(Message::new(
                             "Unknown".to_string(),
                             format!("language {lang}"),
-                        )))
+                        )));
                     }
                     None => {
                         display::show_message_wrapper(
@@ -533,9 +531,7 @@ pub async fn top_command_handler(
             let success_message = if let Some(connection_string) = normalized_url {
                 format!(
                     "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse --clickhouse-url \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
-                    connection_string,
-                    connection_string,
-                    connection_string
+                    connection_string, connection_string, connection_string
                 )
             } else {
                 format!("\n\n{post_install_message}")
@@ -1416,13 +1412,15 @@ pub async fn top_command_handler(
                     let repo = KeyringSecretRepository;
                     match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
                         Ok(Some(s)) => s,
-                        Ok(None) => return Err(RoutineFailure::error(Message {
-                            action: "DB Pull".to_string(),
-                            details: format!(
-                                "No ClickHouse URL provided. Pass --clickhouse-url, set {} environment variable, or save one during `moose init --from-remote`.",
-                                ENV_CLICKHOUSE_URL
-                            ),
-                        })),
+                        Ok(None) => {
+                            return Err(RoutineFailure::error(Message {
+                                action: "DB Pull".to_string(),
+                                details: format!(
+                                    "No ClickHouse URL provided. Pass --clickhouse-url, set {} environment variable, or save one during `moose init --from-remote`.",
+                                    ENV_CLICKHOUSE_URL
+                                ),
+                            }));
+                        }
                         Err(e) => {
                             return Err(RoutineFailure::error(Message {
                                 action: "DB Pull".to_string(),

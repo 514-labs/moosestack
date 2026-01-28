@@ -1,14 +1,14 @@
 use crate::cli::display::{Message, MessageType};
-use crate::cli::{prompt_password, prompt_user};
 use crate::cli::routines::RoutineFailure;
+use crate::cli::{prompt_password, prompt_user};
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
-use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient};
 use crate::infrastructure::olap::OlapOperations;
+use crate::infrastructure::olap::clickhouse::{ConfiguredDBClient, create_client};
 use crate::project::Project;
 use crate::utilities::constants::{
     PYTHON_EXTERNAL_FILE, PYTHON_MAIN_FILE, TYPESCRIPT_EXTERNAL_FILE, TYPESCRIPT_MAIN_FILE,
