@@ -1,6 +1,6 @@
 use crate::cli::display::{Message, MessageType};
-use crate::cli::{prompt_password, prompt_user};
 use crate::cli::routines::RoutineFailure;
+use crate::cli::{prompt_password, prompt_user};
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
