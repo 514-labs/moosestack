@@ -90,7 +90,10 @@ export interface Duration {
 export interface RefreshConfig {
   /** The refresh interval (EVERY or AFTER) */
   interval: RefreshInterval;
-  /** Optional offset from interval start */
+  /**
+   * Optional offset from interval start.
+   * NOTE: Only valid with REFRESH EVERY, not REFRESH AFTER.
+   */
   offset?: Duration;
   /** Optional randomization window */
   randomize?: Duration;
@@ -506,6 +509,17 @@ export class RefreshableMaterializedView<TargetTable> {
     if (targetTable.name === options.materializedViewName) {
       throw new Error(
         "Materialized view name cannot be the same as the target table name.",
+      );
+    }
+
+    // Validate OFFSET is not used with REFRESH AFTER (only valid with REFRESH EVERY)
+    if (
+      options.refreshConfig.interval.type === "after" &&
+      options.refreshConfig.offset
+    ) {
+      throw new Error(
+        "OFFSET is only valid with REFRESH EVERY, not REFRESH AFTER. " +
+          "Remove the 'offset' option or change the interval type to 'every'.",
       );
     }
 
