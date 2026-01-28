@@ -126,6 +126,85 @@ pub fn prompt_user(
     Ok(result)
 }
 
+/// Prompts user for password input with masked characters (shows * instead of typed chars)
+///
+/// Uses crossterm for terminal manipulation to hide the actual password input.
+pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
+    use crossterm::{
+        event::{read, Event, KeyCode, KeyModifiers},
+        terminal::{disable_raw_mode, enable_raw_mode},
+    };
+    use std::io::{self, Write};
+
+    // Print the prompt
+    print!("{}\n> ", prompt_text);
+    let _ = io::stdout().flush();
+
+    // Enable raw mode to capture individual key presses
+    enable_raw_mode().map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Password".to_string(),
+                details: "Failed to enable terminal raw mode".to_string(),
+            },
+            e,
+        )
+    })?;
+
+    let mut password = String::new();
+
+    loop {
+        match read() {
+            Ok(Event::Key(key_event)) => {
+                // Handle Ctrl+C
+                if key_event.modifiers.contains(KeyModifiers::CONTROL)
+                    && key_event.code == KeyCode::Char('c')
+                {
+                    let _ = disable_raw_mode();
+                    println!();
+                    return Err(RoutineFailure::error(Message {
+                        action: "Password".to_string(),
+                        details: "Input cancelled by user".to_string(),
+                    }));
+                }
+
+                match key_event.code {
+                    KeyCode::Enter => {
+                        let _ = disable_raw_mode();
+                        println!(); // Move to next line after password entry
+                        return Ok(password);
+                    }
+                    KeyCode::Backspace => {
+                        if !password.is_empty() {
+                            password.pop();
+                            // Erase the last asterisk: move back, print space, move back again
+                            print!("\x08 \x08");
+                            let _ = io::stdout().flush();
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        password.push(c);
+                        print!("*"); // Show asterisk instead of actual character
+                        let _ = io::stdout().flush();
+                    }
+                    _ => {} // Ignore other keys
+                }
+            }
+            Ok(_) => {} // Ignore non-key events
+            Err(e) => {
+                let _ = disable_raw_mode();
+                return Err(RoutineFailure::new(
+                    Message {
+                        action: "Password".to_string(),
+                        details: "Failed to read input".to_string(),
+                    },
+                    e,
+                ));
+            }
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
 pub struct Cli {
