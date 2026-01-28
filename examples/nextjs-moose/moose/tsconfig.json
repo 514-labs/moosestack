@@ -5,14 +5,12 @@
     "noEmit": false,
     "declaration": true,
     "declarationMap": true,
-    "isolatedModules": true,
+    "sourceMap": true,
     "strictNullChecks": true,
     "esModuleInterop": true,
     "plugins": [
-      { "transform": "typia/lib/transform" },
       {
-        "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js",
-        "transformProgram": true
+        "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js"
       }
     ]
   },
