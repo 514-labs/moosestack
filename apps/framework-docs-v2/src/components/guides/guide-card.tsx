@@ -1,11 +1,21 @@
 import Link from "next/link";
-import { IconBook, type IconProps } from "@tabler/icons-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { GuidePreview, type PreviewVariant } from "./guide-preview";
+
+const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
+  typescript: "TypeScript",
+  python: "Python",
+};
 
 interface GuideCardProps {
   title: string;
   description?: string;
   href: string;
-  icon?: React.ComponentType<IconProps>;
+  previewVariant?: PreviewVariant;
+  previewImageIndexFile?: string;
+  languages?: string[];
+  tags?: string[];
 }
 
 /**
@@ -16,31 +26,70 @@ export function GuideCard({
   title,
   description,
   href,
-  icon: Icon,
+  previewVariant,
+  previewImageIndexFile,
+  languages,
+  tags,
 }: GuideCardProps) {
+  // Combine languages and tags for badge display
+  const badges = [
+    ...(languages?.map((lang) => ({
+      type: "lang",
+      label: LANGUAGE_DISPLAY_NAMES[lang] || lang,
+    })) || []),
+    ...(tags?.map((tag) => ({ type: "tag", label: tag })) || []),
+  ];
+
   return (
     <Link
       href={href}
       prefetch={true}
-      className="group relative flex flex-col gap-6 rounded-xl border border-border/50 bg-card p-8 transition-all hover:border-primary/30 hover:bg-accent/50 cursor-pointer"
+      className="group relative flex flex-col md:flex-row md:items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors cursor-pointer"
     >
-      {Icon && (
-        <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-muted">
-          <Icon className="h-10 w-10 text-foreground" strokeWidth={1.5} />
-        </div>
-      )}
-      <div className="flex flex-col gap-4">
-        <h3 className="text-2xl font-semibold text-foreground">{title}</h3>
+      {/* Preview: Full width header on mobile, left media on desktop */}
+      <GuidePreview
+        variant={previewVariant}
+        imagePath={previewImageIndexFile}
+        title={title}
+      />
+
+      {/* Content: Full width on mobile, flex-1 on desktop */}
+      <div className="flex flex-1 flex-col gap-2">
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+        {badges.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {badges.map((badge) => (
+              <Badge
+                key={`${badge.type}-${badge.label}`}
+                variant="outline"
+                className="bg-muted border-neutral-300 dark:border-neutral-700 text-foreground"
+              >
+                {badge.label}
+              </Badge>
+            ))}
+          </div>
+        )}
         {description && (
-          <p className="text-base text-muted-foreground leading-relaxed">
+          <p className="text-sm text-muted-foreground leading-relaxed">
             {description}
           </p>
         )}
+
+        {/* Button: Inline on mobile, separate on desktop */}
+        <div className="md:hidden mt-2">
+          <Button variant="default" className="pointer-events-none">
+            Read
+          </Button>
+        </div>
       </div>
-      <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors group-hover:bg-accent w-fit">
-        <IconBook className="h-4 w-4" strokeWidth={2} />
-        Start Guide
-      </div>
+
+      {/* Button: Side-aligned on desktop only */}
+      <Button
+        variant="default"
+        className="hidden md:block shrink-0 pointer-events-none"
+      >
+        Read
+      </Button>
     </Link>
   );
 }

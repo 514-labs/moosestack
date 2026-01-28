@@ -47,3 +47,17 @@ export {
 export { TemplateCard } from "./template-card";
 export { TemplateGrid } from "./template-grid";
 export { TemplatesGridServer } from "./templates-grid-server";
+
+// Interactive components for dynamic guide customization
+export {
+  SelectField,
+  CheckboxGroup,
+  CheckboxGroupContent,
+  CustomizePanel,
+  CustomizeGrid,
+  NumberedAccordion,
+  NumberedAccordionItem,
+  TabbedCode,
+  TabbedCodeContent,
+  ConditionalContent,
+} from "./interactive";

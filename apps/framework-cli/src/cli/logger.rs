@@ -261,7 +261,6 @@ use super::settings::user_directory;
 
 /// Structured logging context constants.
 /// Used in #[instrument(fields(context = ...))]
-#[allow(dead_code)]
 pub mod context {
     pub const RUNTIME: &str = "runtime";
     pub const BOOT: &str = "boot";
@@ -270,7 +269,6 @@ pub mod context {
 
 /// Structured logging resource type constants.
 /// Used in #[instrument(fields(resource_type = ...))]
-#[allow(dead_code)]
 pub mod resource_type {
     pub(crate) const INGEST_API: &str = "ingest_api";
     pub(crate) const CONSUMPTION_API: &str = "consumption_api";
@@ -279,7 +277,6 @@ pub mod resource_type {
     pub(crate) const VIEW: &str = "view";
     pub(crate) const MATERIALIZED_VIEW: &str = "materialized_view";
     pub(crate) const TRANSFORM: &str = "transform";
-    pub(crate) const CONSUMER: &str = "consumer";
     pub(crate) const WORKFLOW: &str = "workflow";
     pub(crate) const TASK: &str = "task";
 }
@@ -878,55 +875,12 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
     })
 }
 
-/// Spawns an async task to read stderr and parse structured logs.
+/// Spawns an async task to read stderr and parse structured logs with optional UI display.
 ///
 /// This helper consolidates the common pattern of reading stderr from child
 /// processes and parsing structured logs with span context. It handles both
 /// structured logs (JSON with `__moose_structured_log__` marker) and regular
-/// stderr output.
-///
-/// This is a convenience wrapper around [`spawn_stderr_structured_logger_with_ui`]
-/// that does not display errors in the CLI UI. Use this when errors should only
-/// be logged, not shown to the user.
-///
-/// ## Parameters
-///
-/// - `stderr`: The child process stderr stream to read from
-/// - `resource_name_field`: The JSON field name for the resource (e.g., "function_name", "api_name", "task_name")
-/// - `resource_type`: The resource type constant (e.g., "transform", "consumption_api", "task")
-///
-/// ## Returns
-///
-/// Returns a `JoinHandle` for the spawned task, which can be awaited to ensure
-/// the stderr processing completes.
-///
-/// ## Example
-///
-/// ```rust,ignore
-/// use crate::cli::logger;
-///
-/// if let Some(stderr) = child.stderr.take() {
-///     logger::spawn_stderr_structured_logger(
-///         stderr,
-///         "function_name",
-///         logger::resource_type::TRANSFORM,
-///     );
-/// }
-/// ```
-#[allow(dead_code)]
-pub fn spawn_stderr_structured_logger(
-    stderr: tokio::process::ChildStderr,
-    resource_name_field: &'static str,
-    resource_type: &'static str,
-) -> tokio::task::JoinHandle<()> {
-    spawn_stderr_structured_logger_with_ui(stderr, resource_name_field, resource_type, None)
-}
-
-/// Spawns an async task to read stderr and parse structured logs with optional UI display.
-///
-/// This is an extended version of `spawn_stderr_structured_logger` that optionally
-/// displays errors in the CLI UI for user visibility. Use this when errors from
-/// child processes should be prominently shown to the user.
+/// stderr output, optionally displaying errors in the CLI UI.
 ///
 /// ## Parameters
 ///
@@ -1182,7 +1136,6 @@ mod tests {
         assert_eq!(resource_type::VIEW, "view");
         assert_eq!(resource_type::MATERIALIZED_VIEW, "materialized_view");
         assert_eq!(resource_type::TRANSFORM, "transform");
-        assert_eq!(resource_type::CONSUMER, "consumer");
         assert_eq!(resource_type::WORKFLOW, "workflow");
         assert_eq!(resource_type::TASK, "task");
     }
