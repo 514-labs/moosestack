@@ -245,6 +245,14 @@ You can. And you're about to prove it.
 
 In the next section, you'll build a complete data warehouse from scratch. You'll see firsthand how columnar storage transforms query performance. You'll experience the satisfaction of running queries in under a second that would take minutes on a traditional database. And you'll have a working system you can adapt for your own data.
 
+Moose supports multiple data ingestion patterns:
+- **Batch loading** from CSV files or operational databases (covered in this guide)
+- **Real-time CDC** from databases like SAP HANA, PostgreSQL, MySQL
+- **Streaming** from Kafka, Redpanda, or other message queues
+- **API ingestion** via HTTP endpoints
+
+This guide focuses on batch loading to get started quickly. For real-time requirements, see the SAP HANA CDC section in Part 2, Step 3.
+
 No theory. No slides. Just hands-on building.
 
 **Let's go.**
@@ -905,6 +913,274 @@ psql -d ecommerce_production -c "\COPY (
 ```
 
 These exports create surrogate keys (customer_key, product_key) and convert dates to the `YYYYMMDD` integer format for the warehouse.
+
+### Option 3: Real-Time CDC from SAP HANA (25-35 min)
+
+If you're running SAP HANA and need real-time data synchronization, you can use Change Data Capture (CDC) to stream changes directly into ClickHouse.
+
+**Why CDC?**
+- **Real-time updates**: Changes appear in ClickHouse within 60 seconds
+- **Efficient**: Only syncs changed data, not full table refreshes
+- **Automated**: Triggers in SAP HANA automatically capture INSERT/UPDATE/DELETE
+- **Scalable**: Handles millions of rows with minimal overhead
+
+#### Prerequisites
+- SAP HANA database with CREATE TABLE and CREATE TRIGGER permissions
+- Tables you want to sync (e.g., EKKO, EKPO, LFA1)
+- Temporal for workflow orchestration
+
+#### Step 1: Install SAP HANA CDC Pipeline
+
+Use the 514 Labs registry to install the production-ready CDC pipeline:
+
+```bash
+cd your-moose-project
+bash -i <(curl https://registry.514.ai/install.sh) --type pipeline sap-hana-cdc-to-clickhouse v1 514-labs python default
+```
+
+This installs:
+- CDC workflow orchestration
+- Model generation utilities
+- Status monitoring API
+- Pruning workflows for data retention
+
+#### Step 2: Configure SAP HANA Connection
+
+Create a `.env` file with your SAP HANA credentials:
+
+```bash
+# SAP HANA Connection
+SAP_HANA_HOST=your-sap-host.example.com
+SAP_HANA_PORT=30015
+SAP_HANA_USERNAME=your_username
+SAP_HANA_PASSWORD=your_password
+
+# Schemas
+SAP_HANA_SOURCE_SCHEMA=SAPABAP1
+SAP_HANA_CDC_SCHEMA=SAPABAP1_CDC
+
+# Tables to sync (comma-separated)
+SAP_HANA_TABLES=EKKO,EKPO,LFA1,MSEG,MKPF
+
+# CDC Configuration
+SAP_HANA_CLIENT_ID=my_warehouse
+SAP_HANA_CDC_RETENTION_DAYS=7
+```
+
+**Security Note**: Never commit `.env` files. Add to `.gitignore`.
+
+#### Step 3: Generate Moose Models
+
+The CDC pipeline automatically introspects SAP HANA tables and generates type-safe Pydantic models:
+
+```bash
+# Generate models for your tables
+python init_cdc.py --generate-models --tables EKKO,EKPO,LFA1
+
+# Example output:
+# Introspecting table EKKO...
+# Introspecting table EKPO...
+# ✅ Generated Moose models for 3 tables/views in 'app/ingest/cdc.py'.
+```
+
+**What this creates**:
+- Pydantic models with SAP HANA type validators
+- Primary key fields marked with `Key[T]`
+- Nullable fields as `Optional[T]`
+- ClickHouse table configurations (ReplacingMergeTree)
+
+**Example generated model**:
+
+```python
+from moose_lib import OlapTable, Key
+from pydantic import BaseModel
+from typing import Optional
+from datetime import date
+
+class Ekko(BaseModel):
+    MANDT: Key[str]      # Client (primary key)
+    EBELN: Key[str]      # Purchasing Document Number (primary key)
+    BUKRS: Optional[str] # Company Code
+    BSTYP: Optional[str] # Purchasing Document Category
+    AEDAT: Optional[date] # Changed On
+    # ... more fields
+
+    __moose_config__ = OlapTable(
+        table_name="EKKO",
+        order_by=["MANDT", "EBELN"]
+    )
+```
+
+#### Step 4: Initialize CDC Infrastructure in SAP HANA
+
+Create CDC triggers and change tables in SAP HANA:
+
+```bash
+python init_cdc.py --create-database-triggers --tables EKKO,EKPO,LFA1
+
+# What this does:
+# 1. Creates SAPABAP1_CDC.EKKO_CDC change table
+# 2. Creates trigger on SAPABAP1.EKKO for INSERT/UPDATE/DELETE
+# 3. Initializes tracking metadata
+# 4. Marks table status as NEW for initial load
+```
+
+**Quick Start**: Run both steps 3 and 4 together with:
+```bash
+python init_cdc.py --init-all --tables EKKO,EKPO,LFA1
+```
+
+**Required SAP HANA permissions**:
+- SELECT on source tables
+- CREATE TABLE in CDC schema
+- CREATE TRIGGER on source tables
+
+#### Step 5: Start the CDC Pipeline
+
+```bash
+# Start Moose dev server (includes CDC workflows)
+moose dev
+```
+
+**Expected behavior**:
+
+1. **Initial Load** (runs once):
+   - Loads all existing data from SAP HANA tables
+   - Processes in 100k row chunks
+   - Inserts into ClickHouse
+   - Marks tables as ACTIVE
+
+2. **Sync Changes** (runs every 60 seconds):
+   - Fetches new changes from CDC tables
+   - Inserts/updates ClickHouse
+   - Updates watermarks
+
+3. **Prune Old Data** (runs daily):
+   - Removes CDC entries older than 7 days
+
+#### Step 6: Monitor CDC Status
+
+Check pipeline health via the status API:
+
+```bash
+curl http://localhost:4000/api/cdc_status | jq
+```
+
+**Example response**:
+```json
+{
+  "client_id": "my_warehouse",
+  "tables": [
+    {
+      "table_name": "EKKO",
+      "status": "ACTIVE",
+      "last_sync": "2026-01-22T14:30:00Z",
+      "rows_synced": 150000,
+      "lag_seconds": 5
+    }
+  ]
+}
+```
+
+#### Step 7: Verify Real-Time Sync
+
+Test the CDC pipeline end-to-end:
+
+```bash
+# 1. Make a change in SAP HANA
+# UPDATE SAPABAP1.EKKO SET AEDAT = CURRENT_DATE WHERE EBELN = '4500000001';
+
+# 2. Wait 60 seconds for sync
+
+# 3. Query ClickHouse to verify
+curl -G "http://localhost:18123" \
+  --data-urlencode "query=SELECT * FROM local.EKKO WHERE EBELN = '4500000001'" \
+  | jq
+
+# 4. Check status API
+curl http://localhost:4000/api/cdc_status | jq '.tables[] | select(.table_name == "EKKO")'
+```
+
+#### Architecture: How SAP HANA CDC Works
+
+```
+SAP HANA Source Tables (SAPABAP1.*)
+         ↓
+CDC Triggers (on INSERT/UPDATE/DELETE)
+         ↓
+CDC Change Tables (SAPABAP1_CDC.*_CDC)
+         ↓
+Moose CDC Workflow (every 60s)
+         ↓
+ClickHouse Tables (ReplacingMergeTree)
+```
+
+**Key Components**:
+- **CDC Triggers**: Automatically capture changes in SAP HANA
+- **Change Tables**: Store delta changes with operation type (I/U/D)
+- **Moose Workflow**: Temporal-orchestrated sync with retry logic
+- **ClickHouse**: ReplacingMergeTree handles upserts automatically
+
+#### Troubleshooting
+
+**Issue: Models not generated**
+```bash
+# Verify SAP HANA connection
+python -c "from sap_hana_cdc import SAPHanaCDCConfig; \
+config = SAPHanaCDCConfig.from_env(prefix='SAP_HANA_'); \
+print(config)"
+```
+
+**Issue: Changes not syncing**
+```bash
+# Check workflow is running
+curl http://localhost:4000/workflows | jq
+
+# View logs
+moose logs | grep -i cdc
+```
+
+**Issue: Permission errors**
+- User needs CREATE TABLE, CREATE TRIGGER permissions
+- Verify with SAP HANA DBA
+
+#### Performance Considerations
+
+**Initial Load**:
+- Large tables (1M+ rows) may take 10-30 minutes
+- Progress logged in `moose logs`
+- Consider filtering tables if not all are needed
+
+**Ongoing Sync**:
+- Sub-minute latency (60 second interval)
+- Scales to thousands of changes per minute
+- Monitor lag with status API
+
+**Resource Usage**:
+- CDC tables in SAP HANA: ~10-20% of source table size
+- Pruning keeps CDC tables small (7 day default)
+
+#### Comparison: CDC vs Batch Loading
+
+| Feature | CDC (Real-time) | Batch (CSV/PostgreSQL) |
+|---------|-----------------|------------------------|
+| **Latency** | `<60 seconds` | Hours to days |
+| **Efficiency** | Delta only | Full table scan |
+| **Complexity** | Higher setup | Simpler |
+| **Use Case** | Real-time dashboards | Historical analysis |
+| **Cost** | Lower data transfer | Higher data transfer |
+
+**When to use CDC**:
+- Need real-time or near-real-time data
+- Large tables with infrequent changes
+- Operational dashboards
+- Event-driven architectures
+
+**When to use Batch**:
+- Historical data migration
+- Small tables (`<100k rows`)
+- Daily/weekly refresh is sufficient
+- Simple ETL requirements
 
 #### Create ClickHouse Tables
 
@@ -2327,6 +2603,75 @@ ORDER BY revenue DESC;
 5. **Sorted data**: Fact table sorted by date_key, makes date filtering extremely fast
 
 **Result: Sub-second query across millions of records**
+
+### Change Data Capture (CDC)
+
+Change Data Capture is a pattern for tracking and propagating data changes from source systems to data warehouses in real-time.
+
+#### How CDC Works
+
+1. **Capture**: Database triggers or transaction logs track changes
+2. **Store**: Changes saved to CDC tables with operation type (INSERT/UPDATE/DELETE)
+3. **Propagate**: CDC workflow fetches changes and applies to target
+4. **Apply**: Target database merges changes (upsert/delete)
+
+#### CDC vs ETL
+
+**Traditional ETL (Extract, Transform, Load)**:
+- Runs on schedule (nightly, hourly)
+- Full table scan or timestamp-based queries
+- High latency (hours to days)
+- Simple but inefficient for large datasets
+
+**CDC Approach**:
+- Triggered by data changes
+- Only changed rows transferred
+- Low latency (seconds to minutes)
+- More complex but efficient
+
+#### Implementation Patterns
+
+**Trigger-Based CDC** (SAP HANA, PostgreSQL):
+- Database triggers capture changes
+- Changes written to separate CDC tables
+- Efficient for moderate change volumes
+
+**Log-Based CDC** (MySQL binlog, PostgreSQL WAL):
+- Reads database transaction logs
+- No overhead on source database
+- Requires log access permissions
+
+**Query-Based CDC** (timestamp columns):
+- Queries for rows modified since last sync
+- Simple but requires timestamp column
+- Can miss deletes
+
+#### SAP HANA CDC Architecture
+
+The SAP HANA CDC pipeline uses trigger-based CDC:
+
+```
+Source Table (EKKO)
+    ↓ [AFTER INSERT/UPDATE/DELETE]
+CDC Trigger
+    ↓
+CDC Table (EKKO_CDC)
+    [operation_type, changed_columns, timestamp]
+    ↓ [Moose Workflow - every 60s]
+ClickHouse Table (EKKO)
+    [ReplacingMergeTree for automatic upserts]
+```
+
+**Benefits**:
+- Real-time sync (`<60 seconds`)
+- No polling or full table scans
+- Automatic schema discovery
+- Built-in error handling and retry
+
+**Trade-offs**:
+- Requires CDC permissions in SAP HANA
+- Additional CDC tables consume storage
+- More complex than batch loading
 
 ### That's All You Need for Now
 
