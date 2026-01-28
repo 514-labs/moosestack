@@ -1577,6 +1577,13 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     return;
   }
 
+  // Validate date order
+  if (startDate > endDate) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "startDate must be before or equal to endDate" }));
+    return;
+  }
+
   try {
     // Query ClickHouse directly using Moose utilities
     const { client, sql } = await getMooseUtils();
