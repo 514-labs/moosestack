@@ -7,13 +7,13 @@
 #![allow(dead_code)]
 
 /// Success status indicator
-pub const STATUS_SUCCESS: &str = "✓";
+pub(crate) const STATUS_SUCCESS: &str = "✓";
 
 /// Warning status indicator
-pub const STATUS_WARNING: &str = "⚠️";
+pub(crate) const STATUS_WARNING: &str = "⚠️";
 
 /// Error status indicator
-pub const STATUS_ERROR: &str = "✗";
+pub(crate) const STATUS_ERROR: &str = "✗";
 
 /// Formats a success status message
 ///
@@ -22,7 +22,7 @@ pub const STATUS_ERROR: &str = "✗";
 /// let msg = format_success("my_table", "created successfully");
 /// // Returns: "✓ my_table: created successfully"
 /// ```
-pub fn format_success(item: &str, message: &str) -> String {
+pub(crate) fn format_success(item: &str, message: &str) -> String {
     format!("{} {}: {}", STATUS_SUCCESS, item, message)
 }
 
@@ -31,10 +31,10 @@ pub fn format_success(item: &str, message: &str) -> String {
 /// # Example
 /// ```
 /// let msg = format_warning("my_table", "schema may differ");
-/// // Returns: "⚠️  my_table: schema may differ"
+/// // Returns: "⚠️ my_table: schema may differ"
 /// ```
-pub fn format_warning(item: &str, message: &str) -> String {
-    format!("{}  {}: {}", STATUS_WARNING, item, message)
+pub(crate) fn format_warning(item: &str, message: &str) -> String {
+    format!("{} {}: {}", STATUS_WARNING, item, message)
 }
 
 /// Formats an error status message
@@ -44,7 +44,7 @@ pub fn format_warning(item: &str, message: &str) -> String {
 /// let msg = format_error("my_table", "failed to create");
 /// // Returns: "✗ my_table: failed to create"
 /// ```
-pub fn format_error(item: &str, message: &str) -> String {
+pub(crate) fn format_error(item: &str, message: &str) -> String {
     format!("{} {}: {}", STATUS_ERROR, item, message)
 }
 
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn test_format_warning() {
         let result = format_warning("table2", "warning message");
-        assert_eq!(result, "⚠️  table2: warning message");
+        assert_eq!(result, "⚠️ table2: warning message");
     }
 
     #[test]
