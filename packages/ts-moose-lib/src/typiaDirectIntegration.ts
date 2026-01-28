@@ -7,6 +7,7 @@
  * to avoid issues with Node's type stripping in node_modules.
  */
 import ts from "typescript";
+import { OpenApi } from "@samchon/openapi";
 import { ImportProgrammer } from "typia/lib/programmers/ImportProgrammer";
 import { ValidateProgrammer } from "typia/lib/programmers/ValidateProgrammer";
 import { IsProgrammer } from "typia/lib/programmers/IsProgrammer";
@@ -17,6 +18,7 @@ import { MetadataCollection } from "typia/lib/factories/MetadataCollection";
 import { MetadataFactory } from "typia/lib/factories/MetadataFactory";
 import { LiteralFactory } from "typia/lib/factories/LiteralFactory";
 import { ITypiaContext } from "typia/lib/transformers/ITypiaContext";
+import { IJsonSchemaCollection } from "typia/lib/schemas/json/IJsonSchemaCollection";
 import { avoidTypiaNameClash } from "./compilerPluginHelper";
 
 /**
@@ -230,11 +232,137 @@ const stripCustomTypeTagsFromType = (
   return stripCustomTypeTagsFromType(filteredTypes[0], checker);
 };
 
+// ============================================================================
+// JSON Schema Post-Processing
+// ============================================================================
+
+/**
+ * The standard JSON Schema representation for Date types.
+ * Typia outputs Date as an empty object schema with a $ref, but the correct
+ * representation is { type: "string", format: "date-time" }.
+ */
+const DATE_SCHEMA: OpenApi.IJsonSchema = {
+  type: "string",
+  format: "date-time",
+};
+
+/**
+ * Checks if a property name is an internal ClickHouse tag that should be
+ * stripped from the JSON schema.
+ */
+const isClickHouseInternalProperty = (name: string): boolean =>
+  name.startsWith("_clickhouse_") || name === "_LowCardinality";
+
+/**
+ * Recursively processes a JSON schema to:
+ * 1. Replace $ref to Date with inline { type: "string", format: "date-time" }
+ * 2. Remove internal ClickHouse properties from object schemas
+ */
+const cleanJsonSchema = (schema: OpenApi.IJsonSchema): OpenApi.IJsonSchema => {
+  // Handle $ref to Date - replace with inline date-time schema
+  if ("$ref" in schema && schema.$ref === "#/components/schemas/Date") {
+    // Preserve any other properties from the original schema (like description)
+    const { $ref, ...rest } = schema;
+    return { ...DATE_SCHEMA, ...rest };
+  }
+
+  // Handle object schemas - filter out ClickHouse internal properties
+  if ("type" in schema && schema.type === "object" && schema.properties) {
+    const cleanedProperties: Record<string, OpenApi.IJsonSchema> = {};
+    const cleanedRequired: string[] = [];
+
+    for (const [key, value] of Object.entries(schema.properties)) {
+      if (!isClickHouseInternalProperty(key)) {
+        cleanedProperties[key] = cleanJsonSchema(value);
+        if (schema.required?.includes(key)) {
+          cleanedRequired.push(key);
+        }
+      }
+    }
+
+    return {
+      ...schema,
+      properties: cleanedProperties,
+      required: cleanedRequired.length > 0 ? cleanedRequired : undefined,
+    };
+  }
+
+  // Handle arrays
+  if ("type" in schema && schema.type === "array" && schema.items) {
+    return {
+      ...schema,
+      items: cleanJsonSchema(schema.items as OpenApi.IJsonSchema),
+    };
+  }
+
+  // Handle oneOf/anyOf/allOf
+  if ("oneOf" in schema && Array.isArray(schema.oneOf)) {
+    return {
+      ...schema,
+      oneOf: schema.oneOf.map(cleanJsonSchema),
+    };
+  }
+  if ("anyOf" in schema && Array.isArray(schema.anyOf)) {
+    return {
+      ...schema,
+      anyOf: schema.anyOf.map(cleanJsonSchema),
+    };
+  }
+  if ("allOf" in schema && Array.isArray(schema.allOf)) {
+    return {
+      ...schema,
+      allOf: schema.allOf.map(cleanJsonSchema),
+    };
+  }
+
+  return schema;
+};
+
+/**
+ * Post-processes a JSON schema collection to clean up Moose-specific artifacts:
+ * 1. Converts Date schemas to { type: "string", format: "date-time" }
+ * 2. Removes internal ClickHouse properties (_clickhouse_*, _LowCardinality)
+ */
+const cleanJsonSchemaCollection = <V extends "3.0" | "3.1">(
+  collection: IJsonSchemaCollection<V>,
+): IJsonSchemaCollection<V> => {
+  // Clean component schemas
+  const cleanedComponents: OpenApi.IComponents = {
+    schemas: {},
+  };
+
+  if (collection.components.schemas) {
+    for (const [name, schema] of Object.entries(
+      collection.components.schemas,
+    )) {
+      // Replace Date schema with proper date-time representation
+      if (name === "Date") {
+        cleanedComponents.schemas![name] = DATE_SCHEMA;
+      } else {
+        cleanedComponents.schemas![name] = cleanJsonSchema(schema);
+      }
+    }
+  }
+
+  // Clean top-level schemas
+  const cleanedSchemas = collection.schemas.map(cleanJsonSchema);
+
+  return {
+    ...collection,
+    components: cleanedComponents,
+    schemas: cleanedSchemas,
+  } as IJsonSchemaCollection<V>;
+};
+
 /**
  * Generates JSON schemas directly using typia's JsonSchemasProgrammer.
  *
  * Uses the same options as CheckerProgrammer (absorb: true, escape: false)
  * to handle our custom ClickHouse type tags that typia doesn't recognize.
+ *
+ * Post-processes the generated schema to:
+ * 1. Convert Date to { type: "string", format: "date-time" }
+ * 2. Strip internal ClickHouse properties (_clickhouse_*, _LowCardinality)
  */
 export const generateJsonSchemas = (
   ctx: TypiaDirectContext,
@@ -266,10 +394,13 @@ export const generateJsonSchemas = (
   }
 
   // Generate the JSON schema collection
-  const collection = JsonSchemasProgrammer.write({
+  const rawCollection = JsonSchemasProgrammer.write({
     version: "3.1",
     metadatas: [metadataResult.data],
   });
+
+  // Post-process to clean up Moose-specific artifacts
+  const collection = cleanJsonSchemaCollection(rawCollection);
 
   // Convert the collection to an AST literal
   return ts.factory.createAsExpression(

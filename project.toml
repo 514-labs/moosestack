@@ -1,9 +1,16 @@
 language = "Typescript"
+source_dir = "src"
+
+[typescript_config]
+# Package manager to use for installing dependencies
+# Options: "npm" (default), "pnpm", "yarn"
+package_manager = "npm"
 
 [redpanda_config]
 broker = "localhost:19092"
 message_timeout_ms = 1000
-retention_ms = 21600000
+retention_ms = 30000
+replication_factor = 1
 
 [clickhouse_config]
 db_name = "local"
@@ -12,20 +19,47 @@ password = "pandapass"
 use_ssl = false
 host = "localhost"
 host_port = 18123
-postgres_port = 9005
-kafka_port = 9092
+native_port = 9000
+additional_databases = ["analytics"]  # Required for NonDefaultDbRecord test (Issue #3101)
 
 [http_server_config]
 host = "localhost"
 port = 4000
+management_port = 5001
 
-[console_config]
-host_port = 3001
+[redis_config]
+url = "redis://127.0.0.1:6379"
+key_prefix = "MS"
+
+[git_config]
+main_branch_name = "main"
+
+[authentication]
+# Test admin API key hash for E2E tests
+# Token: deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef
+admin_api_key = "445fd4696cfc5c49e28995c4aba05de44303a112"
+
+[temporal_config]
+db_user = "temporal"
+db_password = "temporal"
+db_port = 5432
+temporal_port = 7233
+# Uncomment and set to "http" or "https" to force a specific scheme
+# temporal_scheme = "https"
+temporal_version = "1.22.3"
+admin_tools_version = "1.22.3"
+ui_version = "2.21.3"
+ui_port = 8080
+ui_cors_origins = "http://localhost:3000"
+config_path = "config/dynamicconfig/development-sql.yaml"
+postgresql_version = "13"
 
 [supported_old_versions]
-"0.0" = "1fe7b86"
-"0.1" = "005108e"
-"0.2" = "969a0b7"
-"0.3" = "22d9fcb"
-"0.4" = "78ef1df"
-"0.5" = "02ed1a87"
+
+[watcher_config]
+ignore_patterns = []
+
+[features]
+streaming_engine = true
+workflows = true
+apis = true

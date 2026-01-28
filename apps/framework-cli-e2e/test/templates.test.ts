@@ -20,6 +20,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
+import * as yaml from "js-yaml";
 
 // Import constants and utilities
 import {
@@ -1800,22 +1801,61 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           expect(response.ok).to.be.true;
 
-          const yaml = await response.text();
+          const yamlText = await response.text();
+          const spec = yaml.load(yamlText) as any;
 
           // Basic structure check
-          expect(yaml).to.include("openapi:");
-          expect(yaml).to.include("paths:");
+          expect(spec.openapi).to.exist;
+          expect(spec.paths).to.exist;
+          expect(spec.paths["/ingest/DateTimePrecisionInput"]).to.exist;
+          expect(spec.components?.schemas).to.exist;
 
-          // Check that DateTimePrecisionInput ingest endpoint exists
-          expect(yaml).to.include("/ingest/DateTimePrecisionInput");
+          // Verify Date schema is properly formatted as string with date-time format
+          // NOT as an empty object (which was the old buggy behavior)
+          const dateSchema = spec.components.schemas.Date;
+          expect(dateSchema).to.exist;
+          expect(dateSchema.type).to.equal("string");
+          expect(dateSchema.format).to.equal("date-time");
 
-          // Check that schema contains Date type references (typia generates $ref to Date)
-          // This verifies our JSON schema generation works with DateTime64<N> types
-          expect(yaml).to.include("schemas:");
-          expect(yaml).to.include("Date");
+          // Verify DateTimePrecisionTestData schema has proper DateTime field formats
+          const dtSchema = spec.components.schemas.DateTimePrecisionTestData;
+          expect(dtSchema).to.exist;
+          expect(dtSchema.type).to.equal("object");
+
+          const dateTimeFields = [
+            "createdAt",
+            "timestampMs",
+            "timestampUsDate",
+            "timestampUsString",
+            "timestampNs",
+            "createdAtString",
+          ];
+
+          for (const field of dateTimeFields) {
+            const fieldSchema = dtSchema.properties?.[field];
+            expect(
+              fieldSchema,
+              `Field '${field}' should exist in DateTimePrecisionTestData`,
+            ).to.exist;
+            expect(
+              fieldSchema.type,
+              `Field '${field}' should have type: string`,
+            ).to.equal("string");
+            expect(
+              fieldSchema.format,
+              `Field '${field}' should have format: date-time`,
+            ).to.equal("date-time");
+          }
+
+          // Verify no internal ClickHouse properties are leaking into the schema
+          if (yamlText.includes("_clickhouse_")) {
+            throw new Error(
+              "Found _clickhouse_ internal properties leaking into OpenAPI schema",
+            );
+          }
 
           testLogger.info(
-            "✅ OpenAPI schema sanity check passed - DateTime types included",
+            "✅ OpenAPI schema sanity check passed - all DateTime fields correctly formatted as string/date-time",
           );
         });
 
@@ -2331,21 +2371,55 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
           expect(response.ok).to.be.true;
 
-          const yaml = await response.text();
+          const yamlText = await response.text();
+          const spec = yaml.load(yamlText) as any;
 
           // Basic structure check
-          expect(yaml).to.include("openapi:");
-          expect(yaml).to.include("paths:");
+          expect(spec.openapi).to.exist;
+          expect(spec.paths).to.exist;
+          expect(spec.paths["/ingest/DateTimePrecisionInput"]).to.exist;
 
-          // Check that DateTimePrecisionInput ingest endpoint exists
-          expect(yaml).to.include("/ingest/DateTimePrecisionInput");
+          // Python inlines the schema in the path definition (Pydantic generates inline schemas)
+          const pathSchema =
+            spec.paths["/ingest/DateTimePrecisionInput"].post.requestBody
+              .content["application/json"].schema;
+          expect(pathSchema.title).to.equal("DateTimePrecisionTestData");
+          expect(pathSchema.type).to.equal("object");
 
-          // Check that schema contains type definitions
-          // Python uses pydantic which generates different schema format
-          expect(yaml).to.include("schemas:");
+          // Verify each DateTime field has format: date-time
+          // Python uses snake_case field names
+          const dateTimeFields = [
+            "created_at",
+            "timestamp_ms",
+            "timestamp_us",
+            "timestamp_ns",
+          ];
+
+          for (const field of dateTimeFields) {
+            const fieldSchema = pathSchema.properties?.[field];
+            expect(
+              fieldSchema,
+              `Field '${field}' should exist in DateTimePrecisionTestData`,
+            ).to.exist;
+            expect(
+              fieldSchema.type,
+              `Field '${field}' should have type: string`,
+            ).to.equal("string");
+            expect(
+              fieldSchema.format,
+              `Field '${field}' should have format: date-time`,
+            ).to.equal("date-time");
+          }
+
+          // Verify no internal ClickHouse properties are leaking into the schema
+          if (yamlText.includes("_clickhouse_")) {
+            throw new Error(
+              "Found _clickhouse_ internal properties leaking into OpenAPI schema (Python)",
+            );
+          }
 
           testLogger.info(
-            "✅ OpenAPI schema sanity check passed (Python) - DateTime types included",
+            "✅ OpenAPI schema sanity check passed (Python) - all DateTime fields correctly formatted",
           );
         });
 
