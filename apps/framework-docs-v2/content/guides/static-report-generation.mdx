@@ -336,6 +336,10 @@ Moose uses pnpm workspaces. `npm install` won't work.
 
 ### Step 3: Start dev server
 
+<Callout type="warning" title="Stop other Moose projects first">
+If you have other Moose projects running, stop them before continuing. Multiple Moose instances will conflict on ports 4000, 9000, and 18123. Use `docker ps` to check for running containers and stop them if needed.
+</Callout>
+
 **Open a new terminal window** (or terminal tab) and run:
 
 ```bash
@@ -367,7 +371,7 @@ In your **other terminal**, test the services:
 curl http://localhost:4000/health
 ```
 
-Should return `{"status":"ok"}`.
+Should return JSON with `healthy` and `unhealthy` arrays listing service status.
 
 ```bash
 curl http://localhost:18123/ping
@@ -492,7 +496,7 @@ curl -X POST http://localhost:4000/ingest/sales \
   }'
 ```
 
-Returns `{"success": true}`.
+Returns `SUCCESS`.
 
 The data flows through Redpanda into ClickHouse.
 
@@ -1623,7 +1627,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     const result = await client.query.execute<SalesReportRow>(query);
-    const data = await result.json();
+    const data = await result.json() as SalesReportRow[];
 
     if (data.length === 0) {
       res.writeHead(404, { "Content-Type": "application/json" });
@@ -2056,18 +2060,19 @@ use_ssl = false
 
 **Primary key must be prefix of sorting key:** First field in `orderByFields` becomes primary key.
 
-**Port 4000 or 18123 in use:**
+**Port 4000, 9000, or 18123 in use:**
 
 ```bash
 # Find what's using the port
 lsof -i :4000
+lsof -i :9000
 lsof -i :18123
 
 # Kill the process if needed
 kill -9 <PID>
 ```
 
-Stop other Moose projects before starting a new one.
+Stop other Moose projects before starting a new one. Port 9000 is the ClickHouse native port and commonly conflicts with other Moose instances.
 
 **ClickHouse connection refused:** Wait 20-30 seconds for containers (longer on first startup). Verify:
 
@@ -2086,6 +2091,8 @@ docker ps | grep clickhouse
 **Model not detected:** Check file saved, export in `app/index.ts`, TypeScript errors in terminal. Type errors block the dev server from processing changes.
 
 **TypeScript errors blocking startup:** The `moose dev` terminal shows compilation errors. Fix all errors before proceeding—the system won't process new models or APIs until code compiles.
+
+**TypeScript errors persist after fixing code:** If errors continue to appear with stale line numbers after you've fixed the code, restart `moose dev`. The TypeScript compiler may cache compiled code, and a full restart clears the cache.
 
 #### Data
 
