@@ -679,6 +679,163 @@ export const validateSchemasWithDebugging = async (
   return validationResult;
 };
 
+// ============ MATERIALIZED VIEW REFRESH CONFIG UTILITIES ============
+
+/**
+ * Represents the expected refresh configuration for a refreshable MV
+ */
+export interface ExpectedRefreshConfig {
+  /** Expected interval type: "EVERY" or "AFTER" */
+  intervalType: "EVERY" | "AFTER";
+  /** Expected interval value (e.g., 1, 5, 30) */
+  intervalValue: number;
+  /** Expected interval unit (e.g., "HOUR", "MINUTE", "DAY") */
+  intervalUnit: string;
+  /** Optional: Expected offset (e.g., "5 MINUTE") */
+  offset?: string;
+  /** Optional: Expected randomize window (e.g., "30 SECOND") */
+  randomize?: string;
+  /** Optional: Expected DEPENDS ON MV names */
+  dependsOn?: string[];
+  /** Optional: Whether APPEND mode is expected */
+  append?: boolean;
+}
+
+/**
+ * Gets the CREATE statement for a materialized view to inspect refresh config
+ */
+export const getMaterializedViewDDL = async (
+  mvName: string,
+  database?: string,
+): Promise<string> => {
+  const fullMvName = database ? `\`${database}\`.\`${mvName}\`` : mvName;
+  const client = createClient(CLICKHOUSE_CONFIG);
+  try {
+    const result = await client.query({
+      query: `SELECT create_table_query FROM system.tables WHERE database = '${database || "local"}' AND name = '${mvName}'`,
+      format: "JSONEachRow",
+    });
+    const rows: any[] = await result.json();
+    return rows[0]?.create_table_query || "";
+  } finally {
+    await client.close();
+  }
+};
+
+/**
+ * Verifies that a materialized view has the expected refresh configuration
+ */
+export const verifyMaterializedViewRefreshConfig = async (
+  mvName: string,
+  expectedConfig: ExpectedRefreshConfig,
+  database?: string,
+  options: DatabaseOptions = {},
+): Promise<{ valid: boolean; errors: string[]; ddl: string }> => {
+  const log = options.logger ?? dbLogger;
+  const errors: string[] = [];
+
+  const ddl = await getMaterializedViewDDL(mvName, database);
+  log.debug(`MV DDL for ${mvName}`, { ddl });
+
+  if (!ddl) {
+    errors.push(`Materialized view '${mvName}' not found`);
+    return { valid: false, errors, ddl: "" };
+  }
+
+  // Check if it's a refreshable MV (has REFRESH clause)
+  if (!ddl.includes("REFRESH")) {
+    errors.push(
+      `Materialized view '${mvName}' does not have a REFRESH clause (not a refreshable MV)`,
+    );
+    return { valid: false, errors, ddl };
+  }
+
+  // Check interval type (EVERY vs AFTER)
+  const expectedIntervalPattern = `REFRESH ${expectedConfig.intervalType} ${expectedConfig.intervalValue} ${expectedConfig.intervalUnit}`;
+  if (!ddl.includes(expectedIntervalPattern)) {
+    // Try to extract actual interval for better error message
+    const refreshMatch = ddl.match(/REFRESH (EVERY|AFTER) (\d+) (\w+)/);
+    const actual =
+      refreshMatch ?
+        `${refreshMatch[1]} ${refreshMatch[2]} ${refreshMatch[3]}`
+      : "unknown";
+    errors.push(
+      `Interval mismatch for '${mvName}': expected '${expectedConfig.intervalType} ${expectedConfig.intervalValue} ${expectedConfig.intervalUnit}', got '${actual}'`,
+    );
+  }
+
+  // Check OFFSET if expected
+  if (expectedConfig.offset) {
+    if (!ddl.includes(`OFFSET ${expectedConfig.offset}`)) {
+      errors.push(
+        `OFFSET mismatch for '${mvName}': expected 'OFFSET ${expectedConfig.offset}'`,
+      );
+    }
+  }
+
+  // Check RANDOMIZE if expected
+  if (expectedConfig.randomize) {
+    if (!ddl.includes(`RANDOMIZE FOR ${expectedConfig.randomize}`)) {
+      errors.push(
+        `RANDOMIZE mismatch for '${mvName}': expected 'RANDOMIZE FOR ${expectedConfig.randomize}'`,
+      );
+    }
+  }
+
+  // Check DEPENDS ON if expected
+  if (expectedConfig.dependsOn && expectedConfig.dependsOn.length > 0) {
+    for (const dep of expectedConfig.dependsOn) {
+      if (!ddl.includes(`DEPENDS ON`) || !ddl.includes(dep)) {
+        errors.push(
+          `DEPENDS ON mismatch for '${mvName}': expected dependency on '${dep}'`,
+        );
+      }
+    }
+  }
+
+  // Check APPEND mode if expected
+  if (expectedConfig.append === true) {
+    if (!ddl.includes("APPEND")) {
+      errors.push(`APPEND mode expected for '${mvName}' but not found`);
+    }
+  } else if (expectedConfig.append === false) {
+    if (ddl.includes("APPEND")) {
+      errors.push(`APPEND mode not expected for '${mvName}' but was found`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors, ddl };
+};
+
+/**
+ * Verifies that a materialized view is an incremental MV (no REFRESH clause)
+ */
+export const verifyIncrementalMaterializedView = async (
+  mvName: string,
+  database?: string,
+  options: DatabaseOptions = {},
+): Promise<{ valid: boolean; errors: string[]; ddl: string }> => {
+  const log = options.logger ?? dbLogger;
+  const errors: string[] = [];
+
+  const ddl = await getMaterializedViewDDL(mvName, database);
+  log.debug(`MV DDL for ${mvName}`, { ddl });
+
+  if (!ddl) {
+    errors.push(`Materialized view '${mvName}' not found`);
+    return { valid: false, errors, ddl: "" };
+  }
+
+  // Check that it does NOT have a REFRESH clause (incremental MV)
+  if (ddl.includes("REFRESH")) {
+    errors.push(
+      `Materialized view '${mvName}' has a REFRESH clause but expected incremental MV`,
+    );
+  }
+
+  return { valid: errors.length === 0, errors, ddl };
+};
+
 /**
  * Verifies that versioned tables exist in ClickHouse
  */

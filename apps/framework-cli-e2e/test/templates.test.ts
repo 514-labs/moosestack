@@ -64,7 +64,12 @@ import {
 } from "./utils";
 import { triggerWorkflow } from "./utils/workflow-utils";
 import { geoPayloadPy, geoPayloadTs } from "./utils/geo-payload";
-import { verifyTableIndexes, getTableDDL } from "./utils/database-utils";
+import {
+  verifyTableIndexes,
+  getTableDDL,
+  verifyMaterializedViewRefreshConfig,
+  verifyIncrementalMaterializedView,
+} from "./utils/database-utils";
 import { createClient } from "@clickhouse/client";
 
 const testLogger = logger.scope("templates-test");
@@ -1224,6 +1229,89 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             // When includeTimestamp=true, the response should include query_time from NOW()
             expect(json[0]).to.have.property("query_time");
           });
+        });
+
+        it("should create refreshable MVs with correct REFRESH configurations (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test 1: HourlyStats_MV - REFRESH EVERY 1 HOUR
+          const hourlyResult = await verifyMaterializedViewRefreshConfig(
+            "HourlyStats_MV",
+            {
+              intervalType: "EVERY",
+              intervalValue: 1,
+              intervalUnit: "HOUR",
+            },
+            "local",
+          );
+          if (!hourlyResult.valid) {
+            throw new Error(
+              `HourlyStats_MV refresh config validation failed: ${hourlyResult.errors.join(", ")}`,
+            );
+          }
+
+          // Test 2: DailyStats_MV - REFRESH AFTER 30 MINUTE OFFSET 5 MINUTE
+          const dailyResult = await verifyMaterializedViewRefreshConfig(
+            "DailyStats_MV",
+            {
+              intervalType: "AFTER",
+              intervalValue: 30,
+              intervalUnit: "MINUTE",
+              offset: "5 MINUTE",
+            },
+            "local",
+          );
+          if (!dailyResult.valid) {
+            throw new Error(
+              `DailyStats_MV refresh config validation failed: ${dailyResult.errors.join(", ")}`,
+            );
+          }
+
+          // Test 3: WeeklyRollup_MV - REFRESH EVERY 1 DAY DEPENDS ON DailyStats_MV APPEND
+          const weeklyResult = await verifyMaterializedViewRefreshConfig(
+            "WeeklyRollup_MV",
+            {
+              intervalType: "EVERY",
+              intervalValue: 1,
+              intervalUnit: "DAY",
+              dependsOn: ["DailyStats_MV"],
+              append: true,
+            },
+            "local",
+          );
+          if (!weeklyResult.valid) {
+            throw new Error(
+              `WeeklyRollup_MV refresh config validation failed: ${weeklyResult.errors.join(", ")}`,
+            );
+          }
+
+          // Test 4: RandomizedStats_MV - REFRESH EVERY 5 MINUTE RANDOMIZE FOR 30 SECOND
+          const randomizedResult = await verifyMaterializedViewRefreshConfig(
+            "RandomizedStats_MV",
+            {
+              intervalType: "EVERY",
+              intervalValue: 5,
+              intervalUnit: "MINUTE",
+              randomize: "30 SECOND",
+            },
+            "local",
+          );
+          if (!randomizedResult.valid) {
+            throw new Error(
+              `RandomizedStats_MV refresh config validation failed: ${randomizedResult.errors.join(", ")}`,
+            );
+          }
+
+          // Test 5: IncrementalStats_MV - should NOT have REFRESH clause (incremental MV)
+          const incrementalResult = await verifyIncrementalMaterializedView(
+            "IncrementalStats_MV",
+            "local",
+          );
+          if (!incrementalResult.valid) {
+            throw new Error(
+              `IncrementalStats_MV should be incremental (no REFRESH) but validation failed: ${incrementalResult.errors.join(", ")}`,
+            );
+          }
         });
 
         it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
