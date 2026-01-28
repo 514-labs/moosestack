@@ -39,8 +39,13 @@ export const isNewMooseResourceWithTypeParam = (
     return false;
   }
 
+  // Require arguments to be present
+  if (!node.arguments) {
+    return false;
+  }
+
   const expectedArgLength = typesToArgsLength.get(typeName)!;
-  const actualArgLength = node.arguments?.length ?? 0;
+  const actualArgLength = node.arguments.length;
 
   // Check if this is an untransformed moose resource
   // Transformed resources have more arguments (schema, columns, validators, etc.)
