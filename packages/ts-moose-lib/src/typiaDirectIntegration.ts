@@ -124,8 +124,6 @@ export const generateValidateFunction = (
   typeName?: string,
 ): ts.Expression => {
   const typiaCtx = toTypiaContext(ctx);
-  // Don't sanitize for validation - pass original type
-  // Validation works with runtime values, not type metadata
 
   return ValidateProgrammer.write({
     context: typiaCtx,
@@ -191,73 +189,6 @@ export const generateHttpAssertQueryFunction = (
     type,
     name: typeName,
   });
-};
-
-/**
- * Our custom ClickHouse type tags use properties starting with "_clickhouse_".
- * These need to be stripped before JSON schema generation because typia doesn't
- * recognize them as proper type tags.
- */
-const isOurCustomTypeTag = (type: ts.Type): boolean => {
-  const symbol = type.getSymbol();
-  if (!symbol) return false;
-
-  // Check if the type has a property starting with "_clickhouse_" or "_LowCardinality"
-  const declarations = symbol.getDeclarations();
-  if (!declarations || declarations.length === 0) return false;
-
-  for (const decl of declarations) {
-    if (ts.isTypeLiteralNode(decl) || ts.isInterfaceDeclaration(decl)) {
-      for (const member of decl.members) {
-        if (
-          ts.isPropertySignature(member) &&
-          member.name &&
-          ts.isIdentifier(member.name)
-        ) {
-          const name = member.name.text;
-          if (
-            name.startsWith("_clickhouse_") ||
-            name === "_LowCardinality" ||
-            name === "typia.tag"
-          ) {
-            return true;
-          }
-        }
-      }
-    }
-  }
-  return false;
-};
-
-/**
- * Strips our custom type tags from an intersection type, returning the base type(s).
- * For example: `Date & ClickHousePrecision<3>` becomes `Date`
- */
-const stripCustomTypeTagsFromType = (
-  type: ts.Type,
-  checker: ts.TypeChecker,
-): ts.Type => {
-  if (!type.isIntersection()) {
-    return type;
-  }
-
-  // Filter out our custom type tags
-  const filteredTypes = type.types.filter((t) => !isOurCustomTypeTag(t));
-
-  if (filteredTypes.length === 0) {
-    // All types were custom tags, return original
-    return type;
-  }
-
-  if (filteredTypes.length === 1) {
-    // Only one type left, recursively process it
-    return stripCustomTypeTagsFromType(filteredTypes[0], checker);
-  }
-
-  // Multiple types remaining - this is still an intersection
-  // TypeScript doesn't have a direct API to create intersection types,
-  // so we'll use the first non-tag type
-  return stripCustomTypeTagsFromType(filteredTypes[0], checker);
 };
 
 // ============================================================================
@@ -435,11 +366,10 @@ export const generateJsonSchemas = (
   ctx: TypiaDirectContext,
   type: ts.Type,
 ): ts.Expression => {
-  // Strip our custom type tags from the top-level type
-  const strippedType = stripCustomTypeTagsFromType(type, ctx.checker);
-
   // Use same options as CheckerProgrammer for consistency
   // Key: escape: false allows intersection handling without errors
+  // Note: We don't strip custom type tags here - cleanJsonSchemaCollection
+  // handles removing _clickhouse_* properties from the output
   const metadataResult = MetadataFactory.analyze({
     checker: ctx.checker,
     transformer: ctx.transformer,
@@ -451,7 +381,7 @@ export const generateJsonSchemas = (
     collection: new MetadataCollection({
       replace: MetadataCollection.replace,
     }),
-    type: strippedType,
+    type: type,
   });
 
   if (!metadataResult.success) {
