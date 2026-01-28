@@ -24,6 +24,7 @@ export {
   SqlResource,
   View,
   MaterializedView,
+  RefreshableMaterializedView,
   Task,
   Workflow,
   ETLPipeline,
