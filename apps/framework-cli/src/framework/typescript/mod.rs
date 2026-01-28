@@ -7,4 +7,3 @@ pub mod generator;
 pub mod parser;
 pub mod scripts_worker;
 pub mod streaming;
-pub mod templates;

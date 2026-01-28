@@ -4,15 +4,10 @@ import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
 import * as jose from "jose";
 import { ClickHouseClient } from "@clickhouse/client";
 import { Cluster } from "../cluster-utils";
-import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
-import {
-  getSourceDir,
-  shouldUseCompiled,
-  loadModule,
-} from "../compiler-config";
+import { getSourceDir, shouldUseCompiled } from "../compiler-config";
 
 interface ClickhouseConfig {
   database: string;
@@ -68,20 +63,6 @@ const httpLogger = (
 };
 
 const modulesCache = new Map<string, any>();
-
-export function createApi<T extends object, R = any>(
-  _handler: (params: T, utils: ApiUtil) => Promise<R>,
-): (
-  rawParams: Record<string, string[] | string>,
-  utils: ApiUtil,
-) => Promise<R> {
-  throw new Error(
-    "This should be compiled-time replaced by compiler plugins to add parsing.",
-  );
-}
-
-/** @deprecated Use `Api` from "dmv2/sdk/consumptionApi" instead. */
-export const createConsumptionApi = createApi;
 
 const apiHandler = async (
   publicKey: jose.KeyLike | undefined,

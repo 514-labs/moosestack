@@ -10,7 +10,7 @@ register({
     plugins: [
       {
         transform: `./dist/compilerPlugin.js`,
-        transformProgram: true,
+        transformProgram: false,
       },
       {
         transform: "typia/lib/transform",
