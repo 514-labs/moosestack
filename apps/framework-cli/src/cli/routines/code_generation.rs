@@ -1,6 +1,6 @@
 use crate::cli::display::{Message, MessageType};
-use crate::cli::prompt_user;
 use crate::cli::routines::RoutineFailure;
+use crate::cli::{prompt_password, prompt_user};
 use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::framework::core::partial_infrastructure_map::LifeCycle;
@@ -28,7 +28,7 @@ pub fn prompt_user_for_remote_ch_http() -> Result<String, RoutineFailure> {
         Some("Format: https://your-instance.boreal.cloud:8443\n  🔗 Get your URL: https://boreal.cloud/\n  📖 Troubleshooting: https://docs.fiveonefour.com/moose/getting-started/from-clickhouse#troubleshooting")
     )?.trim_end_matches('/').trim_start_matches("https://").to_string();
     let user = prompt_user("Enter username", Some("default"), None)?;
-    let pass = prompt_user("Enter password", None, None)?;
+    let pass = prompt_password("Enter password")?;
     let db = prompt_user("Enter database name", Some("default"), None)?;
 
     let mut url = reqwest::Url::parse(&format!("https://{base}")).map_err(|e| {

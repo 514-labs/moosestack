@@ -38,7 +38,7 @@ export const task1 = new Task<Foo, void>("task1", {
   },
 });
 
-export const myworkflow = new Workflow("myworkflow", {
+export const example_workflow = new Workflow("example", {
   startingTask: task1,
 });
 ```
@@ -62,8 +62,8 @@ task1 = Task[Foo, None](
   config=TaskConfig(run=run_task1)
 )
 
-myworkflow = Workflow(
-  name="myworkflow",
+example_workflow = Workflow(
+  name="example",
   config=WorkflowConfig(starting_task=task1)
 )
 ```
@@ -114,7 +114,7 @@ export const task1 = new Task<Foo, Bar>("task1", {
   onComplete: [task2],
 });
 
-export const myworkflow = new Workflow("myworkflow", {
+export const examploe_workflow = new Workflow("example", {
   startingTask: task1,
 });
 ```
@@ -159,8 +159,8 @@ task1 = Task[Foo, Bar](
   )
 )
 
-myworkflow = Workflow(
-  name="myworkflow",
+example_workflow = Workflow(
+  name="example",
   config=WorkflowConfig(starting_task=task1)
 )
 ```
