@@ -126,6 +126,95 @@ pub fn prompt_user(
     Ok(result)
 }
 
+/// Prompts user for password input with masked characters (shows * instead of typed chars)
+///
+/// Uses crossterm for terminal manipulation to hide the actual password input.
+pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
+    use crossterm::{
+        event::{read, Event, KeyCode, KeyModifiers},
+        terminal::{disable_raw_mode, enable_raw_mode},
+    };
+    use std::io::{self, Write};
+
+    // Print the prompt
+    print!("{}\n> ", prompt_text);
+    let _ = io::stdout().flush();
+
+    // Enable raw mode to capture individual key presses
+    enable_raw_mode().map_err(|e| {
+        RoutineFailure::new(
+            Message {
+                action: "Password".to_string(),
+                details: "Failed to enable terminal raw mode".to_string(),
+            },
+            e,
+        )
+    })?;
+
+    let mut password = String::new();
+
+    loop {
+        match read() {
+            Ok(Event::Key(key_event)) => {
+                // Handle Ctrl+C to cancel
+                if key_event.modifiers.contains(KeyModifiers::CONTROL)
+                    && key_event.code == KeyCode::Char('c')
+                {
+                    let _ = disable_raw_mode();
+                    println!();
+                    return Err(RoutineFailure::error(Message {
+                        action: "Password".to_string(),
+                        details: "Input cancelled by user".to_string(),
+                    }));
+                }
+
+                // Ignore control key combinations (Ctrl+V, Ctrl+A, etc.) to prevent
+                // accidental character input. However, allow:
+                // - ALT alone: macOS Option key for special characters
+                // - CTRL+ALT: Windows AltGr for international keyboard characters
+                if key_event.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key_event.modifiers.contains(KeyModifiers::ALT)
+                {
+                    continue;
+                }
+
+                match key_event.code {
+                    KeyCode::Enter => {
+                        let _ = disable_raw_mode();
+                        println!(); // Move to next line after password entry
+                        return Ok(password);
+                    }
+                    KeyCode::Backspace => {
+                        if !password.is_empty() {
+                            password.pop();
+                            // Erase the last asterisk: move back, print space, move back again
+                            print!("\x08 \x08");
+                            let _ = io::stdout().flush();
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        password.push(c);
+                        print!("*"); // Show asterisk instead of actual character
+                        let _ = io::stdout().flush();
+                    }
+                    _ => {} // Ignore other keys
+                }
+            }
+            Ok(_) => {} // Ignore non-key events
+            Err(e) => {
+                let _ = disable_raw_mode();
+                return Err(RoutineFailure::new(
+                    Message {
+                        action: "Password".to_string(),
+                        details: "Failed to read input".to_string(),
+                    },
+                    e,
+                ));
+            }
+        }
+    }
+}
+
 #[derive(Parser)]
 #[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
 pub struct Cli {
@@ -299,9 +388,8 @@ async fn run_local_infrastructure_with_timeout(
     match timeout(timeout_duration, run_future).await {
         Ok(Ok(result)) => result,
         Ok(Err(e)) => Err(e.into()),
-        Err(_) => {
-            Err(anyhow::anyhow!(
-                "Docker container startup and validation timed out after {} seconds.\n\n\
+        Err(_) => Err(anyhow::anyhow!(
+            "Docker container startup and validation timed out after {} seconds.\n\n\
                 This usually happens when Docker is in an unresponsive state.\n\n\
                 Troubleshooting steps:\n\
                 • Check if Docker is running: `docker info`\n\
@@ -313,10 +401,9 @@ async fn run_local_infrastructure_with_timeout(
                   [dev]\n\
                   infrastructure_timeout_seconds = {}\n\n\
                 For more help, visit: https://docs.moosejs.com/help/troubleshooting",
-                timeout_duration.as_secs(),
-                timeout_duration.as_secs() * 2
-            ))
-        }
+            timeout_duration.as_secs(),
+            timeout_duration.as_secs() * 2
+        )),
     }
 }
 
@@ -350,7 +437,7 @@ pub async fn top_command_handler(
                         return Err(RoutineFailure::error(Message::new(
                             "Unknown".to_string(),
                             format!("language {lang}"),
-                        )))
+                        )));
                     }
                     None => {
                         display::show_message_wrapper(
@@ -446,9 +533,7 @@ pub async fn top_command_handler(
             let success_message = if let Some(connection_string) = normalized_url {
                 format!(
                     "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse --clickhouse-url \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
-                    connection_string,
-                    connection_string,
-                    connection_string
+                    connection_string, connection_string, connection_string
                 )
             } else {
                 format!("\n\n{post_install_message}")
@@ -1329,13 +1414,15 @@ pub async fn top_command_handler(
                     let repo = KeyringSecretRepository;
                     match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
                         Ok(Some(s)) => s,
-                        Ok(None) => return Err(RoutineFailure::error(Message {
-                            action: "DB Pull".to_string(),
-                            details: format!(
-                                "No ClickHouse URL provided. Pass --clickhouse-url, set {} environment variable, or save one during `moose init --from-remote`.",
-                                ENV_CLICKHOUSE_URL
-                            ),
-                        })),
+                        Ok(None) => {
+                            return Err(RoutineFailure::error(Message {
+                                action: "DB Pull".to_string(),
+                                details: format!(
+                                    "No ClickHouse URL provided. Pass --clickhouse-url, set {} environment variable, or save one during `moose init --from-remote`.",
+                                    ENV_CLICKHOUSE_URL
+                                ),
+                            }));
+                        }
                         Err(e) => {
                             return Err(RoutineFailure::error(Message {
                                 action: "DB Pull".to_string(),
