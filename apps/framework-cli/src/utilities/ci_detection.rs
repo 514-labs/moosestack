@@ -1,7 +1,7 @@
 //! CI/CD Environment Detection
 //!
 //! Detects whether the CLI is running in a CI/CD environment by checking
-//! for common environment variables set by various CI providers.
+//! for common environment variable prefixes set by various CI providers.
 
 use std::env;
 
@@ -14,45 +14,49 @@ pub struct CIEnvironment {
     pub ci_provider: Option<String>,
 }
 
-/// Detects the CI/CD environment by checking for common environment variables.
+/// CI provider prefixes and their corresponding provider names.
+/// The first match wins, so more specific prefixes should come before generic ones.
+const CI_PREFIXES: &[(&str, Option<&str>)] = &[
+    ("GITHUB_", Some("github_actions")),
+    ("GITLAB_", Some("gitlab")),
+    ("JENKINS_", Some("jenkins")),
+    ("CIRCLECI", Some("circleci")),
+    ("TRAVIS", Some("travis")),
+    ("BUILDKITE", Some("buildkite")),
+    ("BITBUCKET_", Some("bitbucket")),
+    ("TF_BUILD", Some("azure_devops")),
+    ("TEAMCITY_", Some("teamcity")),
+    ("DRONE", Some("drone")),
+    ("CODEBUILD_", Some("aws_codebuild")),
+    ("HARNESS_", Some("harness")),
+    ("SEMAPHORE", Some("semaphore")),
+    ("APPVEYOR", Some("appveyor")),
+    ("NETLIFY", Some("netlify")),
+    ("VERCEL", Some("vercel")),
+    ("RENDER", Some("render")),
+    ("RAILWAY_", Some("railway")),
+    ("FLY_", Some("fly_io")),
+    // Generic CI check - should be last as it's the most common fallback
+    ("CI", None),
+];
+
+/// Detects the CI/CD environment by checking for common environment variable prefixes.
 ///
-/// This function checks for environment variables set by popular CI/CD providers.
+/// This function checks if any environment variable starts with a known CI provider prefix.
 /// If any are found, it returns information about the detected environment.
 pub fn detect_ci_environment() -> CIEnvironment {
-    // List of (env_var, provider_name) pairs
-    // The first match wins, so more specific checks should come before generic ones
-    let ci_checks: &[(&str, Option<&str>)] = &[
-        ("GITHUB_ACTIONS", Some("github_actions")),
-        ("GITLAB_CI", Some("gitlab")),
-        ("JENKINS_URL", Some("jenkins")),
-        ("CIRCLECI", Some("circleci")),
-        ("TRAVIS", Some("travis")),
-        ("BUILDKITE", Some("buildkite")),
-        ("BITBUCKET_BUILD_NUMBER", Some("bitbucket")),
-        ("TF_BUILD", Some("azure_devops")),
-        ("TEAMCITY_VERSION", Some("teamcity")),
-        ("DRONE", Some("drone")),
-        ("CODEBUILD_BUILD_ID", Some("aws_codebuild")),
-        ("HARNESS_BUILD_ID", Some("harness")),
-        ("SEMAPHORE", Some("semaphore")),
-        ("APPVEYOR", Some("appveyor")),
-        ("NETLIFY", Some("netlify")),
-        ("VERCEL", Some("vercel")),
-        ("RENDER", Some("render")),
-        ("RAILWAY_ENVIRONMENT", Some("railway")),
-        ("FLY_APP_NAME", Some("fly_io")),
-        // Generic CI check - should be last as it's the most common fallback
-        ("CI", None),
-    ];
+    let env_vars: Vec<String> = env::vars().map(|(key, _)| key).collect();
+    detect_ci_from_vars(&env_vars)
+}
 
-    for (env_var, provider) in ci_checks {
-        if env::var(env_var).is_ok() {
+/// Internal function that detects CI from a list of environment variable names.
+/// This allows for testing with controlled inputs.
+fn detect_ci_from_vars(env_vars: &[String]) -> CIEnvironment {
+    for (prefix, provider) in CI_PREFIXES {
+        if env_vars.iter().any(|var| var.starts_with(prefix)) {
             return CIEnvironment {
                 is_ci: true,
-                ci_provider: provider.map(String::from).or_else(|| {
-                    // If CI=true but no specific provider detected, try to identify it
-                    detect_unknown_ci_provider()
-                }),
+                ci_provider: provider.map(String::from),
             };
         }
     }
@@ -63,69 +67,167 @@ pub fn detect_ci_environment() -> CIEnvironment {
     }
 }
 
-/// Attempts to identify an unknown CI provider based on other environment clues.
-fn detect_unknown_ci_provider() -> Option<String> {
-    // Check for additional provider-specific variables that might help identify the CI
-    if env::var("GITHUB_WORKFLOW").is_ok() {
-        return Some("github_actions".to_string());
-    }
-    if env::var("GITLAB_USER_LOGIN").is_ok() {
-        return Some("gitlab".to_string());
-    }
-    if env::var("JENKINS_HOME").is_ok() {
-        return Some("jenkins".to_string());
-    }
-
-    // Return None if we can't identify the specific provider
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
 
-    fn with_env_var<F, R>(key: &str, value: &str, f: F) -> R
-    where
-        F: FnOnce() -> R,
-    {
-        env::set_var(key, value);
-        let result = f();
-        env::remove_var(key);
-        result
+    fn vars(names: &[&str]) -> Vec<String> {
+        names.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
     fn test_detect_github_actions() {
-        with_env_var("GITHUB_ACTIONS", "true", || {
-            let ci = detect_ci_environment();
-            assert!(ci.is_ci);
-            assert_eq!(ci.ci_provider, Some("github_actions".to_string()));
-        });
+        let env_vars = vars(&["GITHUB_ACTIONS", "PATH", "HOME"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("github_actions".to_string()));
+    }
+
+    #[test]
+    fn test_detect_github_with_different_var() {
+        // Test that any GITHUB_ prefixed var triggers detection
+        let env_vars = vars(&["GITHUB_WORKFLOW", "GITHUB_SHA", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("github_actions".to_string()));
     }
 
     #[test]
     fn test_detect_gitlab_ci() {
-        with_env_var("GITLAB_CI", "true", || {
-            let ci = detect_ci_environment();
-            assert!(ci.is_ci);
-            assert_eq!(ci.ci_provider, Some("gitlab".to_string()));
-        });
+        let env_vars = vars(&["GITLAB_CI", "PATH", "HOME"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("gitlab".to_string()));
+    }
+
+    #[test]
+    fn test_detect_gitlab_with_different_var() {
+        // Test that any GITLAB_ prefixed var triggers detection
+        let env_vars = vars(&["GITLAB_USER_LOGIN", "GITLAB_PROJECT_ID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("gitlab".to_string()));
     }
 
     #[test]
     fn test_detect_generic_ci() {
-        with_env_var("CI", "true", || {
-            let ci = detect_ci_environment();
-            assert!(ci.is_ci);
-            // Provider might be None or detected from other vars
-        });
+        let env_vars = vars(&["CI", "PATH", "HOME"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        // Generic CI has no specific provider
+        assert_eq!(ci.ci_provider, None);
+    }
+
+    #[test]
+    fn test_detect_jenkins() {
+        let env_vars = vars(&["JENKINS_HOME", "JENKINS_URL", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("jenkins".to_string()));
+    }
+
+    #[test]
+    fn test_detect_codebuild() {
+        let env_vars = vars(&["CODEBUILD_BUILD_ARN", "CODEBUILD_BUILD_ID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("aws_codebuild".to_string()));
+    }
+
+    #[test]
+    fn test_detect_circleci() {
+        let env_vars = vars(&["CIRCLECI", "CIRCLE_BUILD_NUM", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("circleci".to_string()));
+    }
+
+    #[test]
+    fn test_detect_travis() {
+        let env_vars = vars(&["TRAVIS", "TRAVIS_BUILD_ID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("travis".to_string()));
+    }
+
+    #[test]
+    fn test_detect_buildkite() {
+        let env_vars = vars(&["BUILDKITE", "BUILDKITE_BUILD_ID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("buildkite".to_string()));
+    }
+
+    #[test]
+    fn test_detect_bitbucket() {
+        let env_vars = vars(&["BITBUCKET_BUILD_NUMBER", "BITBUCKET_PIPELINE_UUID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("bitbucket".to_string()));
+    }
+
+    #[test]
+    fn test_detect_azure_devops() {
+        let env_vars = vars(&["TF_BUILD", "BUILD_BUILDID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("azure_devops".to_string()));
+    }
+
+    #[test]
+    fn test_detect_teamcity() {
+        let env_vars = vars(&["TEAMCITY_VERSION", "TEAMCITY_BUILD_ID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("teamcity".to_string()));
+    }
+
+    #[test]
+    fn test_detect_vercel() {
+        let env_vars = vars(&["VERCEL", "VERCEL_ENV", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("vercel".to_string()));
+    }
+
+    #[test]
+    fn test_detect_netlify() {
+        let env_vars = vars(&["NETLIFY", "NETLIFY_BUILD_ID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("netlify".to_string()));
+    }
+
+    #[test]
+    fn test_detect_fly_io() {
+        let env_vars = vars(&["FLY_APP_NAME", "FLY_REGION", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("fly_io".to_string()));
+    }
+
+    #[test]
+    fn test_detect_railway() {
+        let env_vars = vars(&["RAILWAY_ENVIRONMENT", "RAILWAY_PROJECT_ID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("railway".to_string()));
     }
 
     #[test]
     fn test_no_ci_environment() {
-        // This test assumes none of the CI env vars are set
-        // In a real CI environment, this test might fail
-        // We can't reliably test this without clearing all CI env vars
+        let env_vars = vars(&["PATH", "HOME", "USER", "SHELL"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(!ci.is_ci);
+        assert_eq!(ci.ci_provider, None);
+    }
+
+    #[test]
+    fn test_priority_github_over_generic_ci() {
+        // When both GITHUB_ and CI are present, GITHUB_ should win
+        let env_vars = vars(&["GITHUB_ACTIONS", "CI", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("github_actions".to_string()));
     }
 }
