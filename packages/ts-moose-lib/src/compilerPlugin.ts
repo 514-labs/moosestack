@@ -9,6 +9,7 @@ import {
 } from "./dmv2/dataModelMetadata";
 import { isApiV2, transformApiV2 } from "./consumption-apis/typiaValidation";
 import { createTypiaContext } from "./typiaDirectIntegration";
+import { compilerLog } from "./commons";
 
 /**
  * Applies the appropriate transformation based on node type
@@ -18,10 +19,14 @@ const applyTransformation = (
   ctx: TransformContext,
 ): ts.Node | undefined => {
   if (isApiV2(node, ctx.typeChecker)) {
+    compilerLog("[CompilerPlugin] Found API v2, transforming...");
     return transformApiV2(node, ctx.typeChecker, ctx);
   }
 
   if (isNewMooseResourceWithTypeParam(node, ctx.typeChecker)) {
+    compilerLog(
+      "[CompilerPlugin] Found Moose resource with type param, transforming...",
+    );
     return transformNewMooseResource(node, ctx.typeChecker, ctx);
   }
 
@@ -35,6 +40,9 @@ const transform =
   (ctx: TransformContext) =>
   (transformationContext: ts.TransformationContext) =>
   (sourceFile: ts.SourceFile): ts.SourceFile => {
+    compilerLog(
+      `\n[CompilerPlugin] ========== Processing file: ${sourceFile.fileName} ==========`,
+    );
     const typiaContext = createTypiaContext(
       ctx.program,
       transformationContext,
@@ -62,9 +70,15 @@ const transform =
     // Add imports from ImportProgrammer (for direct typia integration)
     const typiaImports = typiaContext.importer.toStatements();
     if (typiaImports.length === 0) {
+      compilerLog(
+        `[CompilerPlugin] ========== Completed processing ${sourceFile.fileName} (no import needed) ==========\n`,
+      );
       return transformedSourceFile;
     }
 
+    compilerLog(
+      `[CompilerPlugin] ========== Completed processing ${sourceFile.fileName} (with import) ==========\n`,
+    );
     return factory.updateSourceFile(
       transformedSourceFile,
       factory.createNodeArray([

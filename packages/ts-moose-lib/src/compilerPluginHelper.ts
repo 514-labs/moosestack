@@ -64,9 +64,6 @@ export const createTransformer =
       );
     }
 
-    const _config = configOrHost as PluginConfig;
-    const _extras = extrasOrConfig as TransformerExtras;
-    // Create transform context with the program's type checker
     const transformCtx: TransformContext = {
       typeChecker: program.getTypeChecker(),
       program,
