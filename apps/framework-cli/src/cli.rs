@@ -156,7 +156,7 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
     loop {
         match read() {
             Ok(Event::Key(key_event)) => {
-                // Handle Ctrl+C
+                // Handle Ctrl+C to cancel
                 if key_event.modifiers.contains(KeyModifiers::CONTROL)
                     && key_event.code == KeyCode::Char('c')
                 {
@@ -166,6 +166,14 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
                         action: "Password".to_string(),
                         details: "Input cancelled by user".to_string(),
                     }));
+                }
+
+                // Ignore all other control/alt key combinations to prevent
+                // accidental character input from shortcuts like Ctrl+V, Ctrl+A, etc.
+                if key_event.modifiers.contains(KeyModifiers::CONTROL)
+                    || key_event.modifiers.contains(KeyModifiers::ALT)
+                {
+                    continue;
                 }
 
                 match key_event.code {
