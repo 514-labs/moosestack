@@ -82,8 +82,11 @@ function testIngestPipelineValidation(
                   const errorMessage =
                     error instanceof Error ? error.message : String(error);
                   // Only capture validation errors (about index signatures)
+                  // Rethrow other errors so they fail the test
                   if (errorMessage.includes("index signature")) {
                     validationError = errorMessage;
+                  } else {
+                    throw error;
                   }
                 }
               }
