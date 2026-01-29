@@ -45,6 +45,63 @@ const MOOSE_LIB_PATH = path.resolve(
 const TEST_SUITE = "otlp-export";
 const APP_NAME = "moose-ts-otlp-app";
 
+// Admin API bearer token for authentication (used in Authorization header)
+const TEST_ADMIN_BEARER_TOKEN =
+  "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
+
+// Admin API key hash (PBKDF2 hash of the bearer token, used in moose config)
+const TEST_ADMIN_API_KEY_HASH = "445fd4696cfc5c49e28995c4aba05de44303a112";
+
+/**
+ * Infrastructure map types for querying primitive names
+ */
+interface PrimitiveSignature {
+  name: string;
+  primitive_type: string;
+}
+
+interface ApiEndpoint {
+  source_primitive: PrimitiveSignature;
+}
+
+interface InfraMap {
+  api_endpoints: Record<string, ApiEndpoint>;
+}
+
+interface InfraMapResponse {
+  status: string;
+  infra_map: InfraMap;
+}
+
+/**
+ * Fetches the infrastructure map from the running Moose server
+ */
+async function getInfraMap(baseUrl: string): Promise<InfraMap> {
+  const response = await axios.get<InfraMapResponse>(
+    `${baseUrl}/admin/inframap`,
+    {
+      headers: {
+        Authorization: `Bearer ${TEST_ADMIN_BEARER_TOKEN}`,
+      },
+    },
+  );
+  return response.data.infra_map;
+}
+
+/**
+ * Extracts the source primitive name for a given API endpoint key from the inframap.
+ * Keys use INGRESS_<name> for ingest APIs and EGRESS_<name> for consumption APIs.
+ */
+function getApiPrimitiveName(infraMap: InfraMap, apiKey: string): string {
+  const endpoint = infraMap.api_endpoints[apiKey];
+  if (!endpoint) {
+    throw new Error(
+      `API endpoint ${apiKey} not found in inframap. Available: ${Object.keys(infraMap.api_endpoints).join(", ")}`,
+    );
+  }
+  return endpoint.source_primitive.name;
+}
+
 /**
  * Valid resource types for structured logging
  * Source: apps/framework-cli/src/cli/logger.rs (resource_type module)
@@ -69,6 +126,11 @@ describe("OTLP Log Export E2E Tests", function () {
   let mooseProcess: ChildProcess | null = null;
   let otlpServer: OtlpMockServer | null = null;
   const testLogger = logger.scope(TEST_SUITE);
+
+  // Infrastructure map and primitive names (populated after moose starts)
+  let infraMap: InfraMap;
+  let ingestPrimitiveName: string;
+  let consumptionApiPrimitiveName: string;
 
   before(async function () {
     this.timeout(TIMEOUTS.TEST_SETUP_MS);
@@ -180,6 +242,7 @@ export * from "./apis/otlp-test";
         MOOSE_HTTP_SERVER_CONFIG__HOST: "localhost",
         MOOSE_HTTP_SERVER_CONFIG__PORT: String(moosePort),
         MOOSE_CONSOLE__HOST_PORT: String(consolePort),
+        MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -211,6 +274,26 @@ export * from "./apis/otlp-test";
     await waitForInfrastructureReady(TIMEOUTS.SERVER_STARTUP_MS, {
       logger: testLogger,
       baseUrl: serverBaseUrl,
+    });
+
+    // Query the inframap to get primitive names for OTLP validation
+    testLogger.info("Querying inframap for primitive names");
+    infraMap = await getInfraMap(serverBaseUrl);
+
+    // Extract primitive names from inframap - these will be used to verify OTLP resource_names match
+    // Keys in inframap use INGRESS_<name> for ingest APIs and EGRESS_<name> for consumption APIs
+    ingestPrimitiveName = getApiPrimitiveName(
+      infraMap,
+      "INGRESS_OtlpTestEvent",
+    );
+    consumptionApiPrimitiveName = getApiPrimitiveName(
+      infraMap,
+      "EGRESS_otlp-test",
+    );
+
+    testLogger.info("Inframap primitive names extracted", {
+      ingestPrimitiveName,
+      consumptionApiPrimitiveName,
     });
 
     // Give the OTLP exporter time to flush initial boot logs
@@ -259,7 +342,7 @@ export * from "./apis/otlp-test";
   });
 
   it("should receive ingest API logs with span fields via OTLP", async function () {
-    // Verifies resource_name matches source_primitive.name ("OtlpTestEvent") for log correlation
+    // Verifies resource_name matches source_primitive.name from inframap for log correlation
     this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Clear previous logs
@@ -278,11 +361,12 @@ export * from "./apis/otlp-test";
     expect(response.status).to.equal(200);
 
     // Wait for logs with ingest_api span fields
+    // resource_name should match source_primitive.name from inframap
     const ingestLogs = await otlpServer!.waitForLogs(
       {
         context: "runtime",
         resourceType: "ingest_api",
-        resourceName: "OtlpTestEvent",
+        resourceName: ingestPrimitiveName,
       },
       { timeoutMs: 15000, minCount: 1 },
     );
@@ -297,11 +381,11 @@ export * from "./apis/otlp-test";
       "Should have at least one log with ingest_api span fields",
     );
 
-    // Verify span fields
+    // Verify span fields match inframap primitive names
     const sampleLog = ingestLogs[0];
     expect(sampleLog.context).to.equal("runtime");
     expect(sampleLog.resourceType).to.equal("ingest_api");
-    expect(sampleLog.resourceName).to.equal("OtlpTestEvent");
+    expect(sampleLog.resourceName).to.equal(ingestPrimitiveName);
     expect(sampleLog.serviceName).to.equal("moose");
   });
 
@@ -346,7 +430,7 @@ export * from "./apis/otlp-test";
   });
 
   it("should receive consumption API logs with span fields via OTLP", async function () {
-    // Verifies resource_name matches source_primitive.name ("otlp-test") for log correlation
+    // Verifies resource_name matches source_primitive.name from inframap for log correlation
     this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Clear previous logs
@@ -362,11 +446,12 @@ export * from "./apis/otlp-test";
     expect(response.data.echo).to.equal("otlp-test-logging");
 
     // Wait for logs with consumption_api span fields
+    // resource_name should match source_primitive.name from inframap
     const consumptionLogs = await otlpServer!.waitForLogs(
       {
         context: "runtime",
         resourceType: "consumption_api",
-        resourceName: "otlp-test",
+        resourceName: consumptionApiPrimitiveName,
       },
       { timeoutMs: 10000, minCount: 1 },
     );
@@ -381,11 +466,11 @@ export * from "./apis/otlp-test";
       "Should have at least one log with consumption_api span fields",
     );
 
-    // Verify span fields
+    // Verify span fields match inframap primitive names
     const sampleLog = consumptionLogs[0];
     expect(sampleLog.context).to.equal("runtime");
     expect(sampleLog.resourceType).to.equal("consumption_api");
-    expect(sampleLog.resourceName).to.equal("otlp-test");
+    expect(sampleLog.resourceName).to.equal(consumptionApiPrimitiveName);
     expect(sampleLog.serviceName).to.equal("moose");
   });
 
@@ -468,5 +553,42 @@ export * from "./apis/otlp-test";
       0,
       "Should have at least some DEBUG or INFO logs",
     );
+  });
+
+  it("should have OTLP resource_names that match inframap source_primitive.name", async function () {
+    this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
+
+    // Get all logs with resource_name
+    const allLogs = otlpServer!.getLogs();
+    const logsWithResourceName = allLogs.filter((log) => log.resourceName);
+
+    // Build a set of valid primitive names from inframap
+    const validPrimitiveNames = new Set<string>();
+    for (const endpoint of Object.values(infraMap.api_endpoints)) {
+      validPrimitiveNames.add(endpoint.source_primitive.name);
+    }
+
+    testLogger.info("Valid primitive names from inframap", {
+      names: Array.from(validPrimitiveNames),
+    });
+
+    testLogger.info(
+      `Checking ${logsWithResourceName.length} logs with resource_name against inframap`,
+    );
+
+    // Verify that all resource_names in OTLP logs for API types are in the inframap
+    // This catches drift where OTLP logs use names that don't exist in inframap
+    for (const log of logsWithResourceName) {
+      if (
+        log.resourceType === "ingest_api" ||
+        log.resourceType === "consumption_api"
+      ) {
+        expect(
+          validPrimitiveNames.has(log.resourceName!),
+          `OTLP resource_name "${log.resourceName}" for ${log.resourceType} not found in inframap. ` +
+            `Valid names: ${Array.from(validPrimitiveNames).join(", ")}`,
+        ).to.be.true;
+      }
+    }
   });
 });
