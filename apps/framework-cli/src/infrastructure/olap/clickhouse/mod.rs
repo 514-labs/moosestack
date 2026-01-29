@@ -241,6 +241,9 @@ pub enum SerializableOlapOperation {
         target_database: Option<String>,
         /// The SELECT SQL statement
         select_sql: String,
+        /// Optional full CREATE SQL (includes REFRESH clause for refreshable MVs)
+        /// If provided, this is used instead of building the SQL from individual fields
+        create_sql: Option<String>,
     },
     /// Drop a materialized view
     DropMaterializedView {
@@ -248,6 +251,15 @@ pub enum SerializableOlapOperation {
         name: String,
         /// Database where the MV is located (None = default database)
         database: Option<String>,
+    },
+    /// Alter the refresh configuration of a refreshable materialized view
+    AlterMaterializedViewRefresh {
+        /// Name of the materialized view
+        name: String,
+        /// Database where the MV is located (None = default database)
+        database: Option<String>,
+        /// The ALTER TABLE MODIFY REFRESH SQL to execute
+        refresh_sql: String,
     },
     /// Create a custom view (user-defined SELECT view)
     CreateView {
@@ -531,6 +543,12 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
         SerializableOlapOperation::DropMaterializedView { name, .. } => {
             format!("Dropping materialized view '{}'", name)
         }
+        SerializableOlapOperation::AlterMaterializedViewRefresh { name, .. } => {
+            format!(
+                "Altering refresh configuration for materialized view '{}'",
+                name
+            )
+        }
         SerializableOlapOperation::CreateView { name, .. } => {
             format!("Creating custom view '{}'", name)
         }
@@ -741,6 +759,7 @@ pub async fn execute_atomic_operation(
             target_table,
             target_database,
             select_sql,
+            create_sql,
         } => {
             execute_create_materialized_view(
                 db_name,
@@ -749,12 +768,27 @@ pub async fn execute_atomic_operation(
                 target_table,
                 target_database.as_deref(),
                 select_sql,
+                create_sql.as_deref(),
                 client,
             )
             .await?;
         }
         SerializableOlapOperation::DropMaterializedView { name, database } => {
             execute_drop_materialized_view(db_name, name, database.as_deref(), client).await?;
+        }
+        SerializableOlapOperation::AlterMaterializedViewRefresh {
+            name,
+            database,
+            refresh_sql,
+        } => {
+            execute_alter_materialized_view_refresh(
+                db_name,
+                name,
+                database.as_deref(),
+                refresh_sql,
+                client,
+            )
+            .await?;
         }
         SerializableOlapOperation::CreateView {
             name,
@@ -1491,6 +1525,7 @@ fn strip_backticks(s: &str) -> String {
 }
 
 /// Executes a CREATE MATERIALIZED VIEW statement
+#[allow(clippy::too_many_arguments)]
 #[instrument(
     name = "create_materialized_view",
     skip_all,
@@ -1507,19 +1542,27 @@ async fn execute_create_materialized_view(
     target_table: &str,
     target_database: Option<&str>,
     select_sql: &str,
+    create_sql: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let target_db = view_database.unwrap_or(db_name);
-    // Strip any existing backticks from target_table to avoid double-backticks
-    let clean_target_table = strip_backticks(target_table);
-    let to_target = match target_database {
-        Some(tdb) => format!("`{}`.`{}`", tdb, clean_target_table),
-        None => format!("`{}`.`{}`", target_db, clean_target_table),
+
+    // Use full CREATE SQL if provided (for refreshable MVs), otherwise build it
+    let sql = if let Some(full_sql) = create_sql {
+        full_sql.to_string()
+    } else {
+        // Strip any existing backticks from target_table to avoid double-backticks
+        let clean_target_table = strip_backticks(target_table);
+        let to_target = match target_database {
+            Some(tdb) => format!("`{}`.`{}`", tdb, clean_target_table),
+            None => format!("`{}`.`{}`", target_db, clean_target_table),
+        };
+        format!(
+            "CREATE MATERIALIZED VIEW IF NOT EXISTS `{}`.`{}` TO {} AS {}",
+            target_db, view_name, to_target, select_sql
+        )
     };
-    let sql = format!(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS `{}`.`{}` TO {} AS {}",
-        target_db, view_name, to_target, select_sql
-    );
+
     tracing::info!("Creating materialized view: {}.{}", target_db, view_name);
     tracing::debug!("MV SQL: {}", sql);
     run_query(&sql, client)
@@ -1600,6 +1643,39 @@ async fn execute_drop_materialized_view(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     execute_drop_view_inner(db_name, view_name, view_database, client).await
+}
+
+/// Executes an ALTER TABLE MODIFY REFRESH statement for a refreshable materialized view
+#[instrument(
+    name = "alter_materialized_view_refresh",
+    skip_all,
+    fields(
+        context = context::BOOT,
+        resource_type = resource_type::MATERIALIZED_VIEW,
+        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+    )
+)]
+async fn execute_alter_materialized_view_refresh(
+    db_name: &str,
+    view_name: &str,
+    view_database: Option<&str>,
+    refresh_sql: &str,
+    client: &ConfiguredDBClient,
+) -> Result<(), ClickhouseChangesError> {
+    let target_db = view_database.unwrap_or(db_name);
+    tracing::info!(
+        "Altering refresh config for materialized view: {}.{} - {}",
+        target_db,
+        view_name,
+        refresh_sql
+    );
+    run_query(refresh_sql, client)
+        .await
+        .map_err(|e| ClickhouseChangesError::ClickhouseClient {
+            error: e,
+            resource: Some(format!("materialized_view:{}", view_name)),
+        })?;
+    Ok(())
 }
 
 /// Executes a DROP VIEW statement
@@ -2620,6 +2696,14 @@ static MATERIALIZED_VIEW_TO_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
         .expect("MATERIALIZED_VIEW_TO_PATTERN regex should compile")
 });
 
+static MATERIALIZED_VIEW_REFRESH_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    // Pattern to extract REFRESH clause from CREATE MATERIALIZED VIEW
+    // Matches: REFRESH EVERY/AFTER <interval> [OFFSET ...] [RANDOMIZE ...] [DEPENDS ON ...] [APPEND]
+    // The clause ends at TO or at column definitions (parenthesis)
+    regex::Regex::new(r"(?i)(REFRESH\s+(?:EVERY|AFTER)\s+[^(]+?)(?:\s+TO\s+|\s*\()")
+        .expect("MATERIALIZED_VIEW_REFRESH_PATTERN regex should compile")
+});
+
 /// Reconstructs a SqlResource from a materialized view's CREATE statement
 ///
 /// # Arguments
@@ -2650,6 +2734,12 @@ fn reconstruct_sql_resource_from_mv(
             ))
         })?;
 
+    // Extract REFRESH clause if present (for refreshable MVs)
+    let refresh_clause = MATERIALIZED_VIEW_REFRESH_PATTERN
+        .captures(&create_query)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().trim().to_string());
+
     // Extract pushes_data_to (target table for MV)
     let (target_base_name, _version) = extract_version_from_table_name(&target_table);
     let (target_db, target_name_only) = split_qualified_name(&target_base_name);
@@ -2668,11 +2758,18 @@ fn reconstruct_sql_resource_from_mv(
         id: target_qualified_id,
     }];
 
-    // Reconstruct with MV-specific CREATE statement
-    let setup_raw = format!(
-        "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
-        name, target_table, as_select
-    );
+    // Reconstruct with MV-specific CREATE statement, preserving REFRESH clause if present
+    let setup_raw = if let Some(refresh) = refresh_clause {
+        format!(
+            "CREATE MATERIALIZED VIEW IF NOT EXISTS {} {} TO {} AS {}",
+            name, refresh, target_table, as_select
+        )
+    } else {
+        format!(
+            "CREATE MATERIALIZED VIEW IF NOT EXISTS {} TO {} AS {}",
+            name, target_table, as_select
+        )
+    };
 
     reconstruct_sql_resource_common(
         name,

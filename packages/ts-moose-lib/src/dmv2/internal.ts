@@ -39,7 +39,10 @@ import {
 } from "./sdk/stream";
 import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
-import { MaterializedView } from "./sdk/materializedView";
+import {
+  MaterializedView,
+  RefreshableMaterializedView,
+} from "./sdk/materializedView";
 import { View } from "./sdk/view";
 import {
   getSourceDir,
@@ -143,7 +146,10 @@ const moose_internal = {
   sqlResources: new Map<string, SqlResource>(),
   workflows: new Map<string, Workflow>(),
   webApps: new Map<string, WebApp>(),
-  materializedViews: new Map<string, MaterializedView<any>>(),
+  materializedViews: new Map<
+    string,
+    MaterializedView<any> | RefreshableMaterializedView<any>
+  >(),
   views: new Map<string, View>(),
 };
 /**
@@ -508,6 +514,28 @@ interface SqlResourceJson {
 }
 
 /**
+ * JSON representation of a refresh interval.
+ */
+interface RefreshIntervalJson {
+  type: "every" | "after";
+  /** Interval as seconds for proto compatibility */
+  interval: number;
+}
+
+/**
+ * JSON representation of refreshable MV configuration.
+ */
+interface RefreshConfigJson {
+  interval: RefreshIntervalJson;
+  /** Offset in seconds */
+  offset?: number;
+  /** Randomize window in seconds */
+  randomize?: number;
+  dependsOn?: string[];
+  append?: boolean;
+}
+
+/**
  * JSON representation of a structured Materialized View.
  */
 interface MaterializedViewJson {
@@ -525,6 +553,8 @@ interface MaterializedViewJson {
   targetDatabase?: string;
   /** Optional metadata for the materialized view (e.g., description, source file) */
   metadata?: { [key: string]: any };
+  /** Refresh config for refreshable MVs. If undefined, this is an incremental MV. */
+  refreshConfig?: RefreshConfigJson;
 }
 
 /**
@@ -541,6 +571,32 @@ interface ViewJson {
   sourceTables: string[];
   /** Optional metadata for the view (e.g., description, source file) */
   metadata?: { [key: string]: any };
+}
+
+/**
+ * Seconds per time unit lookup table.
+ * Used to convert structured Duration/RefreshInterval to seconds.
+ */
+const UNIT_TO_SECONDS: Record<string, number> = {
+  second: 1,
+  minute: 60,
+  hour: 3600,
+  day: 86400,
+  week: 604800,
+};
+
+/**
+ * Convert a Duration (value + unit) to seconds.
+ * This is a simple lookup - no string parsing needed.
+ */
+function durationToSeconds(duration: { value: number; unit: string }): number {
+  const multiplier = UNIT_TO_SECONDS[duration.unit];
+  if (multiplier === undefined) {
+    throw new Error(
+      `Unknown time unit: "${duration.unit}". Supported units: ${Object.keys(UNIT_TO_SECONDS).join(", ")}`,
+    );
+  }
+  return duration.value * multiplier;
 }
 
 /**
@@ -1198,6 +1254,27 @@ export const toInfraMap = (registry: typeof moose_internal) => {
 
   // Serialize materialized views with structured data
   registry.materializedViews.forEach((mv) => {
+    // Convert refresh config to JSON format (if refreshable MV)
+    let refreshConfigJson: RefreshConfigJson | undefined;
+    if (mv.refreshConfig) {
+      refreshConfigJson = {
+        interval: {
+          type: mv.refreshConfig.interval.type,
+          interval: durationToSeconds(mv.refreshConfig.interval),
+        },
+        offset:
+          mv.refreshConfig.offset ?
+            durationToSeconds(mv.refreshConfig.offset)
+          : undefined,
+        randomize:
+          mv.refreshConfig.randomize ?
+            durationToSeconds(mv.refreshConfig.randomize)
+          : undefined,
+        dependsOn: mv.refreshConfig.dependsOn,
+        append: mv.refreshConfig.append,
+      };
+    }
+
     materializedViews[mv.name] = {
       name: mv.name,
       selectSql: mv.selectSql,
@@ -1205,6 +1282,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       targetTable: mv.targetTable.name,
       targetDatabase: mv.targetTable.config.database,
       metadata: mv.metadata,
+      refreshConfig: refreshConfigJson,
     };
   });
 

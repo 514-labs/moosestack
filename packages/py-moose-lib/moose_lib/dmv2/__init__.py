@@ -70,6 +70,14 @@ from .view import (
 from .materialized_view import (
     MaterializedViewOptions,
     MaterializedView,
+    RefreshableMaterializedViewOptions,
+    RefreshableMaterializedView,
+    RefreshConfig,
+    RefreshInterval,
+    RefreshIntervalEvery,
+    RefreshIntervalAfter,
+    Duration,
+    TimeUnit,
 )
 
 from .workflow import (
@@ -165,6 +173,14 @@ __all__ = [
     "View",
     "MaterializedViewOptions",
     "MaterializedView",
+    "RefreshableMaterializedViewOptions",
+    "RefreshableMaterializedView",
+    "RefreshConfig",
+    "RefreshInterval",
+    "RefreshIntervalEvery",
+    "RefreshIntervalAfter",
+    "Duration",
+    "TimeUnit",
     # Workflow
     "TaskContext",
     "TaskConfig",
