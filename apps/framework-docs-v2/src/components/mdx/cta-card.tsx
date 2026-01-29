@@ -51,7 +51,7 @@ export function CTACard({
   return orientation === "horizontal" ?
       <div
         className={cn(
-          "rounded-xl border bg-card text-card-foreground shadow overflow-hidden",
+          "rounded-xl border bg-card text-card-foreground shadow overflow-hidden w-full",
           className,
         )}
       >
@@ -125,10 +125,9 @@ export function CTACards({ children, columns = 2, rows = 1 }: CTACardsProps) {
   return (
     <div
       className={cn(
-        "not-prose grid gap-5 mt-5",
+        "not-prose grid gap-5 mt-5 w-full",
         gridColumns[columns as keyof typeof gridColumns],
         `grid-rows-${rows}`,
-        columns === 1 ? "justify-items-start" : "",
       )}
     >
       {children}
