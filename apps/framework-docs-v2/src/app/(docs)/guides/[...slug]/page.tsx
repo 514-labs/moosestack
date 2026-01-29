@@ -12,6 +12,8 @@ import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { MarkdownMenu } from "@/components/markdown-menu";
+import { GuideHeader } from "@/components/guides/guide-header";
+import { getGuideMetadataBySlug } from "@/config/navigation";
 
 // Force static generation despite searchParams access
 export const dynamic = "force-static";
@@ -109,6 +111,13 @@ export default async function GuidePage({ params }: PageProps) {
   // Check if this is a dynamic guide by checking for guide.toml
   const guideManifest = await parseGuideManifest(slug);
 
+  // Get guide metadata (icon) from navigation config
+  const guideMetadata = getGuideMetadataBySlug(slug);
+
+  // Get languages and tags from frontmatter
+  const languages = content.frontMatter.languages as string[] | undefined;
+  const tags = content.frontMatter.tags as string[] | undefined;
+
   if (guideManifest) {
     // DYNAMIC GUIDE LOGIC
     // Dynamic guides show a form first, steps load based on user selection
@@ -126,6 +135,11 @@ export default async function GuidePage({ params }: PageProps) {
               />
             )}
           </div>
+          <GuideHeader
+            iconName={guideMetadata?.iconName}
+            languages={languages}
+            tags={tags}
+          />
           <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
             {content.isMDX ?
               <MDXRenderer source={content.content} />
@@ -207,6 +221,11 @@ export default async function GuidePage({ params }: PageProps) {
             />
           )}
         </div>
+        <GuideHeader
+          iconName={guideMetadata?.iconName}
+          languages={languages}
+          tags={tags}
+        />
         <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
