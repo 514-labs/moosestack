@@ -22,8 +22,6 @@ export {
 } from "./consumption-apis/webAppHelpers";
 export * from "./scripts/task";
 
-export { createApi, createConsumptionApi } from "./consumption-apis/runner";
-
 export { MooseCache } from "./clients/redisClient";
 
 export { ApiUtil, ConsumptionUtil } from "./consumption-apis/helpers";
