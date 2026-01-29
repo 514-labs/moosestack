@@ -36,6 +36,7 @@ import { Callout } from "@/components/mdx";
 ### Improvements
 - Add secure password input with masked characters for CLI prompts: Password inputs in the CLI now show asterisks (*) instead of plain text for better security. This affects commands that prompt for database passwords, such as connecting to remote ClickHouse instances. ([@callicles](https://github.com/callicles))
 - Improved workflow documentation with clearer example naming: Updated workflow documentation to use more descriptive variable names making the examples easier to understand and follow for developers learning to define workflows. ([@514Ben](https://github.com/514Ben))
+- Faster TypeScript development rebuilds with fixed incremental compilation: Simplified the TypeScript compiler plugin to properly support incremental compilation. Development rebuilds are now faster because TypeScript can correctly cache and reuse previous compilation results. ([@phiSgr](https://github.com/phiSgr))
 
 ### Bug Fixes
 - Fix SQL query comparison in plan and migration commands: Fixed an issue where `moose plan` and migration generation commands would incorrectly show differences between SQL queries that were functionally identical. The commands now properly normalize SQL queries using ClickHouse's native formatting before comparison, eliminating false positives caused by whitespace, formatting, and identifier quoting differences. This makes plan output more accurate and prevents unnecessary migrations. ([@georgevanderson](https://github.com/georgevanderson))
