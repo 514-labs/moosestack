@@ -8,182 +8,45 @@ import { Callout } from "@/components/mdx";
 # January 30, 2026
 
 <Callout type="info" title="Highlights">
+* **New:** Added Boreal command center with keyboard shortcuts for quick navigation
 * **New:** First-class workflows with infrastructure tracking and lifecycle management
-* **New:** Added command center with keyboard shortcuts for quick navigation
 </Callout>
 
-
-
-## 🦌 Moose
+## Moose
 
 ### New Features
-- **First-class workflows with infrastructure tracking and lifecycle management** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
-  Workflows are now treated as first-class infrastructure resources in MooseStack. They are tracked in the infrastructure map, displayed in plan diffs, and managed through the standard infrastructure lifecycle. This means workflow changes (additions, removals, configuration updates) are now visible during `moose plan` and properly managed during deployments. Workflows also now persist across shutdowns - they no longer terminate automatically in development mode, providing more consistent behavior between dev and production environments.
-
-- **Add secure password input with masked characters for CLI prompts** ([@callicles](https://github.com/callicles))
-  Password inputs in the CLI now show asterisks (*) instead of plain text for better security. This affects commands that prompt for database passwords, such as connecting to remote ClickHouse instances. The password input supports backspace for corrections and Ctrl+C to cancel.
-
-- **New guides index page design with enhanced preview cards** ([@callicles](https://github.com/callicles))
+**New guides index page design with enhanced preview cards** ([@callicles](https://github.com/callicles))
   Redesigned the guides index page with improved visual layout, preview cards showing guide content, language badges (TypeScript/Python), and better mobile responsiveness. Makes it easier to discover and navigate to relevant guides.
-  
-  📸 *[Screenshot needed: Redesigned the guides index page with improved visual layout, preview cards showing guide content, language badges (TypeScript/Python), and better mobile responsiveness. Makes it easier to discover and navigate to relevant guides.]*
 
-- **Interactive documentation components for dynamic guides** ([@callicles](https://github.com/callicles))
-  Added interactive MDX components to the documentation system that allow users to customize guide content based on their selections. Users can now choose their programming language, framework, and features to see personalized code examples and instructions that update dynamically. This makes the documentation more relevant and easier to follow for different use cases.
-  
-  📸 *[Screenshot needed: Added interactive MDX components to the documentation system that allow users to customize guide content based on their selections. Users can now choose their programming language, framework, and features to see personalized code examples and instructions that update dynamically. This makes the documentation more relevant and easier to follow for different use cases.]*
+**First-class workflows with infrastructure tracking and lifecycle management** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+  Workflows are now treated as first-class infrastructure resources in MooseStack. They are tracked in the infrastructure map, displayed in plan diffs, and managed through the standard infrastructure lifecycle. This means workflow changes (additions, removals, configuration updates) are now visible during `moose plan` and properly managed during deployments. Workflows also now persist across shutdowns - they no longer terminate automatically in development mode, providing more consistent behavior between dev and production environments.
+  Docs: [Workflow Lifecycle](/moosestack/workflows/define-workflow#workflow-lifecycle)
 
-- **Add Next.js dashboard demo with query layer for ClickHouse** ([@okane16](https://github.com/okane16))
+**Add Next.js dashboard demo with query layer for ClickHouse** ([@okane16](https://github.com/okane16))
   New comprehensive Next.js example showing how to build fast customer-facing dashboards on ClickHouse using MooseStack's query layer. Includes a complete dashboard with metrics, time-series charts, and a dynamic report builder. Demonstrates the query model pattern for rapidly building type-safe API endpoints on OLAP tables, targeting product engineers migrating from Postgres to ClickHouse.
 
-  **Building type-safe ClickHouse queries with defineQueryModel**
-  ```typescript
-  // Define a query model for your ClickHouse table
-  import { defineQueryModel, sql } from "moose";
-  import { Events } from "./models";
-  
-  export const eventsModel = defineQueryModel({
-    table: Events,
-    dimensions: {
-      status: { column: "status" },
-      day: { expression: sql`toDate(${Events.columns.event_time})`, as: "time" },
-      month: { expression: sql`toStartOfMonth(${Events.columns.event_time})`, as: "time" },
-    },
-    metrics: {
-      totalEvents: { agg: sql`count(*)` },
-      totalAmount: { agg: sql`sum(${Events.columns.amount})` },
-      avgAmount: { agg: sql`avg(${Events.columns.amount})` },
-    },
-    filters: {
-      timestamp: { column: "event_time", operators: ["gte", "lte"] as const },
-      status: { column: "status", operators: ["eq", "in"] as const },
-    },
-    sortable: ["totalAmount", "totalEvents"] as const,
-  });
-  
-  // Create type-safe query functions
-  export async function getEventMetrics(startDate?: Date, endDate?: Date) {
-    // Model generates type-safe SQL - invalid fields caught at compile time
-    const query = eventsModel.toSql({
-      dimensions: [],
-      metrics: ["totalEvents", "totalAmount", "avgAmount"],
-      filters: {
-        timestamp: { gte: startDate, lte: endDate },
-      },
-    });
-    
-    return await executeQuery(query);
-  }
-  
-  // Dynamic queries with full type safety
-  export async function runEventsQuery(params: typeof eventsModel.$inferRequest) {
-    return await eventsModel.query(params, clickhouseClient);
-  }
-  ```
-  
-  Shows how to use MooseStack's new query layer to build type-safe API endpoints on ClickHouse tables. The defineQueryModel function creates a semantic layer with dimensions, metrics, and filters that generates SQL while catching invalid queries at compile time.
-  
-  📸 *[Screenshot needed: New comprehensive Next.js example showing how to build fast customer-facing dashboards on ClickHouse using MooseStack's query layer. Includes a complete dashboard with metrics, time-series charts, and a dynamic report builder. Demonstrates the query model pattern for rapidly building type-safe API endpoints on OLAP tables, targeting product engineers migrating from Postgres to ClickHouse.]*
-
-- **Add Fastify example app to templates documentation** ([@03cranec](https://github.com/03cranec))
+**Add Fastify example app to templates documentation** ([@03cranec](https://github.com/03cranec))
   Added a new Fastify example app to the templates documentation page, demonstrating how to embed MooseStack into an existing Fastify application. The example features a monorepo structure with a Fastify app and child Moose project, making it easier for users to integrate MooseStack with their existing Fastify applications.
 
-- **Add SAP HANA CDC connector for real-time data streaming** ([@514Ben](https://github.com/514Ben))
-  Added a new SAP HANA Change Data Capture (CDC) connector that enables users to stream real-time data changes from SAP HANA databases to ClickHouse. This connector allows users to capture and sync database changes as they happen, enabling real-time analytics and data processing workflows.
-
-  **SAP HANA CDC streaming pipeline with real-time analytics**
-  ```python
-  from moose_lib import Moose
-  from dataclasses import dataclass
-  from typing import Optional
-  from datetime import datetime
-  
-  # Define the data model for SAP HANA changes
-  @dataclass
-  class CustomerChange:
-      customer_id: str
-      name: str
-      email: str
-      status: str
-      operation: str  # INSERT, UPDATE, DELETE
-      change_timestamp: datetime
-      
-  app = Moose()
-  
-  # Configure SAP HANA CDC connector
-  @app.streaming_function(
-      source="sap-hana-cdc://customers",
-      sink="clickhouse://customer_changes"
-  )
-  def process_customer_changes(change: CustomerChange) -> CustomerChange:
-      """
-      Stream real-time customer changes from SAP HANA to ClickHouse
-      """
-      # Add any transformation logic here
-      if change.operation == "DELETE":
-          change.status = "DELETED"
-      
-      return change
-  
-  # Optional: Create aggregations on the streamed data
-  @app.aggregation(
-      source="customer_changes",
-      sink="customer_stats"
-  )
-  def customer_change_stats():
-      return """
-      SELECT 
-          operation,
-          COUNT(*) as change_count,
-          toStartOfHour(change_timestamp) as hour
-      FROM customer_changes
-      GROUP BY operation, hour
-      ORDER BY hour DESC
-      """
-  ```
-  
-  This example shows how to set up a real-time data pipeline that captures changes from a SAP HANA database using the new CDC connector and streams them to ClickHouse. It includes data model definition, streaming function configuration, and optional aggregations for analytics.
-
-- **Add SAP HANA timestamp decimal validator and pipeline lineage schemas** ([@514Ben](https://github.com/514Ben))
-  Enhanced SAP HANA CDC connector with improved timestamp handling for decimal-formatted timestamps (YYYYMMDDHHMMSS.microseconds format) and added lineage schema definitions for better data tracking and documentation of SAP table structures.
-
 ### Improvements
-- Improved workflow documentation with clearer example naming: Updated workflow documentation to use more descriptive variable names ('example_workflow' instead of 'myworkflow'), making the examples easier to understand and follow for developers learning to define workflows. ([@514Ben](https://github.com/514Ben))
-- Enhanced static report generation guide with interactive navigation: Improved the static report generation documentation with better navigation elements, interactive callouts, collapsible sections, and structured content cards. The guide now includes a TL;DR summary, visual file tree, and clearer step-by-step organization to help users build data-intensive reports more effectively. ([@cjus](https://github.com/cjus))
-- Enhanced static report generation guide with business context and use cases: Significantly expanded the static report generation guide with comprehensive business context, use cases, and implementation guidance. Added sections on why static reports matter, business use cases (data monetization, compliance, analyst workflows), evaluation criteria, and clearer navigation for different user types (business leaders, developers, data engineers). This helps users understand when and why to use static reports before diving into implementation. ([@cjus](https://github.com/cjus))
-- Updated static report generation guide for Node.js 20+ and pdfmake 0.3: Updated the static report generation tutorial to require Node.js 20+ (for pdfmake 0.3 compatibility) and added comprehensive troubleshooting tips, clearer setup instructions, and improved code examples. The guide now includes better error handling, startup verification steps, and debugging advice to help users successfully complete the tutorial. ([@cjus](https://github.com/cjus))
-- Simplified SAP HANA CDC pipeline setup and fixed pipeline naming: Streamlined the bundled installation process for the SAP HANA CDC to ClickHouse pipeline template. The connector code is now pre-bundled and ready to use without complex setup steps. Updated documentation to reflect the simplified installation process and fixed pipeline naming issues. Users can now get started faster with less configuration required. ([@514Ben](https://github.com/514Ben))
-- Update SAP HANA CDC connector documentation with current command flags: Updated SAP HANA CDC connector documentation to use the current command line flags. Changed --init-cdc to --init-all and --recreate-moose-models to --generate-models throughout all documentation files. This ensures users have accurate setup instructions that work with the current version of the connector. ([@514Ben](https://github.com/514Ben))
-- Improved SAP HANA CDC command names with clearer options: Added clearer command-line flags for SAP HANA CDC initialization script. Users can now use intuitive commands like --init-all, --generate-models, and --create-database-triggers instead of confusing legacy flags. Old flags are still supported but marked as deprecated with helpful warnings. ([@514Ben](https://github.com/514Ben))
-- Improved SAP HANA CDC connector documentation and installation guides: Enhanced documentation for the SAP HANA CDC connector with clearer installation instructions, including both standalone and bundled installation options. Added comprehensive schema documentation for change events and improved getting started guides to help users set up and use the connector more effectively. ([@514Ben](https://github.com/514Ben))
+- Add secure password input with masked characters for CLI prompts: Password inputs in the CLI now show asterisks (*) instead of plain text for better security. This affects commands that prompt for database passwords, such as connecting to remote ClickHouse instances. ([@callicles](https://github.com/callicles))
+- Improved workflow documentation with clearer example naming: Updated workflow documentation to use more descriptive variable names making the examples easier to understand and follow for developers learning to define workflows. ([@514Ben](https://github.com/514Ben))
 
 ### Bug Fixes
 - Fix SQL query comparison in plan and migration commands: Fixed an issue where `moose plan` and migration generation commands would incorrectly show differences between SQL queries that were functionally identical. The commands now properly normalize SQL queries using ClickHouse's native formatting before comparison, eliminating false positives caused by whitespace, formatting, and identifier quoting differences. This makes plan output more accurate and prevents unnecessary migrations. ([@georgevanderson](https://github.com/georgevanderson))
 - Fix workflow precompilation in production builds: Fixed an issue where workflows weren't working properly in production builds due to registry clearing happening in compiled mode. This ensures workflows function correctly when deployed to production environments. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
-- Fix missing schema files for SAP HANA CDC connector: Added missing table schema definitions for the SAP HANA CDC connector, fixing connector setup and data ingestion issues. The connector now properly defines CDC_CHANGES and CDC_TABLE_CHANGES_STATUS tables for change data capture functionality. ([@514Ben](https://github.com/514Ben))
 
-## 🔌 Connectors
-
-### Improvements
-- Enhanced SAP HANA CDC connector reliability with automatic retry and connection resilience: The SAP HANA CDC connector now includes automatic retry logic, connection pooling with circuit breakers, and comprehensive error handling. This significantly improves connector reliability during network issues or database connectivity problems, reducing failed data syncs and providing better resilience for production workloads. ([@514Ben](https://github.com/514Ben))
-
-## 🐻 Boreal
+## Boreal
 
 ### New Features
-- **Added command center with keyboard shortcuts for quick navigation** ([@groy-514](https://github.com/groy-514))
+**Added command center with keyboard shortcuts for quick navigation** ([@groy-514](https://github.com/groy-514))
   Introduced a new command center feature that allows users to quickly navigate and perform actions using keyboard shortcuts. Users can now press Cmd+K (Mac) or Ctrl+K (Windows/Linux) to open a searchable command palette that provides instant access to navigation, theme switching, account settings, and organization management. This improves workflow efficiency by enabling keyboard-driven navigation throughout the platform.
-  
-  📸 *[Screenshot needed: Introduced a new command center feature that allows users to quickly navigate and perform actions using keyboard shortcuts. Users can now press Cmd+K (Mac) or Ctrl+K (Windows/Linux) to open a searchable command palette that provides instant access to navigation, theme switching, account settings, and organization management. This improves workflow efficiency by enabling keyboard-driven navigation throughout the platform.]*
-
-- **Template setup commands for project initialization** ([@onelesd](https://github.com/onelesd))
-  Projects created from templates can now run custom setup commands during deployment to configure environment variables, install dependencies, or perform other initialization tasks. This enables more sophisticated project templates that can automatically configure themselves based on user requirements.
 
 ### Improvements
+- Redesigned sign-up page with improved onboarding experience: The sign-up page has been completely redesigned with a new layout featuring marketing content, value propositions, customer testimonials, and a streamlined registration form. Users now see clear benefits of the platform during sign-up and have an improved visual experience with better form organization and navigation. ([@georgevanderson](https://github.com/georgevanderson))
 - Improved homepage and authentication page layout: Enhanced the visual design and layout of the homepage and sign-in/sign-up pages with better responsive design, updated logo display with dark mode support, improved navigation breadcrumbs, and refined marketing section presentation for a better user experience. ([@georgevanderson](https://github.com/georgevanderson))
 - Improved sign-in and sign-up page layout with marketing content: Redesigned the authentication pages with a new split-screen layout that displays marketing content alongside sign-in and sign-up forms. The new layout provides better visual hierarchy and showcases product value propositions during the authentication process. ([@groy-514](https://github.com/groy-514))
-- Redesigned sign-up page with improved onboarding experience: The sign-up page has been completely redesigned with a new layout featuring marketing content, value propositions, customer testimonials, and a streamlined registration form. Users now see clear benefits of the platform during sign-up and have an improved visual experience with better form organization and navigation. ([@georgevanderson](https://github.com/georgevanderson))
 - Branch selector now preserves current page when switching branches: When switching between branches using the branch selector, users now stay on the same page they were viewing instead of being redirected to the overview page. For example, if you're viewing logs and switch branches, you'll remain on the logs page for the new branch. ([@groy-514](https://github.com/groy-514))
-- Improved ClickHouse monitoring with instance-level metrics: Enhanced monitoring capabilities by adding instance-level metrics for ClickHouse databases. This provides better visibility into database performance and allows for more granular monitoring of individual database instances in the observability dashboard. ([@jmsuzuki](https://github.com/jmsuzuki))
 
 ### Bug Fixes
 - Fixed navigation not updating when switching organizations: Fixed an issue where branch and project navigation would not properly update when switching between organizations. Users can now seamlessly navigate between different organizations without stale navigation data appearing. ([@groy-514](https://github.com/groy-514))
