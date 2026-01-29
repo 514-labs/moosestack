@@ -34,7 +34,7 @@ export function GuideHeader({ iconName, languages, tags }: GuideHeaderProps) {
   }
 
   return (
-    <div className="flex items-center gap-4 mb-4">
+    <div className="flex items-center gap-4 mb-2">
       {IconComponent && (
         <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-muted text-muted-foreground shrink-0">
           <IconComponent className="h-6 w-6" strokeWidth={1.5} />
