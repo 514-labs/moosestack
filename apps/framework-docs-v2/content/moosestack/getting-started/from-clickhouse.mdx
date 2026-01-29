@@ -5,15 +5,16 @@ order: 2
 category: getting-started
 ---
 
-import { Callout, ToggleBlock, ZoomImg, MuxVideo, BulletPointsCard, IconBadge, CTACards, CTACard, LanguageTabs, LanguageTabContent, FileTree, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { Callout, ToggleBlock, ZoomImg, MuxVideo, BulletPointsCard, CTACards, CTACard, LanguageTabs, LanguageTabContent, FileTree, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { Badge } from "@/components/ui/badge";
 import { PathConfig } from "@/lib/path-config";
 
 # Use Moose with Your Existing ClickHouse
 
-<div className="flex flex-wrap md:flex-nowrap gap-4 my-8">
-<IconBadge Icon="Clock" label="5 min setup" variant="moose" />
-<IconBadge Icon="Check" label="Zero disruption to prod" variant="moose" />
-<IconBadge Icon="DeviceLaptop" label="Code-first, local dev" variant="moose" />
+<div className="flex items-center gap-2 mt-4 mb-4 flex-wrap">
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">5 min setup</Badge>
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">Zero disruption to prod</Badge>
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">Code-first, local dev</Badge>
 </div>
 
 ## What This Guide Does
