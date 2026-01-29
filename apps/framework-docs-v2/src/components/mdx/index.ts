@@ -47,6 +47,7 @@ export {
 export { TemplateCard } from "./template-card";
 export { TemplateGrid } from "./template-grid";
 export { TemplatesGridServer } from "./templates-grid-server";
+export { GuideBadges } from "../guides/guide-header";
 
 // Interactive components for dynamic guide customization
 export {

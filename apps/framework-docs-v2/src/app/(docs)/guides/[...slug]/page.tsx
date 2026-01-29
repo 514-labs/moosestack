@@ -12,6 +12,8 @@ import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { MarkdownMenu } from "@/components/markdown-menu";
+import { GuideIcon } from "@/components/guides/guide-header";
+import { getGuideMetadataBySlug } from "@/config/navigation";
 
 // Force static generation despite searchParams access
 export const dynamic = "force-static";
@@ -109,6 +111,9 @@ export default async function GuidePage({ params }: PageProps) {
   // Check if this is a dynamic guide by checking for guide.toml
   const guideManifest = await parseGuideManifest(slug);
 
+  // Get guide metadata (icon) from navigation config
+  const guideMetadata = getGuideMetadataBySlug(slug);
+
   if (guideManifest) {
     // DYNAMIC GUIDE LOGIC
     // Dynamic guides show a form first, steps load based on user selection
@@ -126,6 +131,7 @@ export default async function GuidePage({ params }: PageProps) {
               />
             )}
           </div>
+          <GuideIcon iconName={guideMetadata?.iconName} />
           <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
             {content.isMDX ?
               <MDXRenderer source={content.content} />
@@ -207,6 +213,7 @@ export default async function GuidePage({ params }: PageProps) {
             />
           )}
         </div>
+        <GuideIcon iconName={guideMetadata?.iconName} />
         <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
           {content.isMDX ?
             <MDXRenderer source={content.content} />

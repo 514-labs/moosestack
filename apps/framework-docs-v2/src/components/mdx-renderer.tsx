@@ -2,6 +2,7 @@ import React, { type ReactNode } from "react";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import {
   IconBadge,
+  GuideBadges,
   CTACard,
   CTACards,
   StaggeredCard,
@@ -118,6 +119,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
   const components = {
     // Provide custom components to all MDX files
     IconBadge,
+    GuideBadges,
     CTACard,
     CTACards,
     StaggeredCard,
