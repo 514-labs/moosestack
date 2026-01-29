@@ -6,10 +6,15 @@ languages: ["typescript"]
 tags: ["MCP"]
 ---
 
-import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock, IconBadge } from "@/components/mdx";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 
 # Building a data-aware chat on top of your ClickHouse database with Next.js and MooseStack
+
+<div className="flex items-center gap-4 mt-6 mb-4 flex-wrap">
+  <IconBadge Icon="Code" label="TypeScript" variant="moose" />
+  <IconBadge Icon="MessageChatbot" label="MCP" variant="moose" />
+</div>
 
 <Callout type="info" title="TL;DR">
 * It can be simple to set up high performance chat in your applications.   
