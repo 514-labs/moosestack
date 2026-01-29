@@ -95,6 +95,7 @@ export const CLICKHOUSE_CONFIG = {
 // Server configuration
 export const SERVER_CONFIG = {
   url: "http://localhost:4000",
+  managementUrl: "http://localhost:5001",
   startupMessage:
     "Your local development server is running at: http://localhost:4000/ingest",
 } as const;
