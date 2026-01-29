@@ -110,7 +110,7 @@ export default async function DocPage({ params }: PageProps) {
 
   return (
     <>
-      <div className="flex w-full flex-col gap-6 pt-4">
+      <div className="flex w-full min-w-0 flex-col gap-6 pt-4">
         <div className="flex items-center justify-between">
           <DocBreadcrumbs items={breadcrumbs} />
           {showCopyButton && (
@@ -120,7 +120,7 @@ export default async function DocPage({ params }: PageProps) {
             />
           )}
         </div>
-        <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+        <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}

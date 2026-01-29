@@ -66,7 +66,7 @@ export default async function GuidesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 w-full min-w-0">
       {/* Page header */}
       <div className="mb-2">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Guides</h1>
