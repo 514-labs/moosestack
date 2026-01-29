@@ -2,7 +2,6 @@ import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { IconBadge } from "./icon-badge";
-import { IconArrowRight } from "@tabler/icons-react";
 import type { IconProps } from "@tabler/icons-react";
 import * as TablerIcons from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -50,36 +49,34 @@ export function CTACard({
     typeof Icon === "string" ? (TablerIcons as any)[`Icon${Icon}`] : Icon;
 
   return orientation === "horizontal" ?
-      <Link href={ctaLink} className={cn("w-full", className)}>
-        <Card
-          className={cn(
-            "h-full flex flex-row items-center hover:bg-muted transition w-auto md:w-full",
-          )}
-        >
+      <div
+        className={cn(
+          "rounded-xl border bg-card text-card-foreground shadow overflow-hidden",
+          className,
+        )}
+      >
+        <div className="flex items-center gap-4 px-6 py-4">
           {badge ?
             <IconBadge variant={badge.variant} label={badge.text} />
           : IconComponent ?
-            <div className="ml-4 flex items-center justify-center w-12 h-12 rounded-lg bg-muted text-muted-foreground shrink-0">
-              <IconComponent className="h-6 w-6" strokeWidth={1.5} />
+            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0">
+              <IconComponent className="h-5 w-5" strokeWidth={1.5} />
             </div>
           : null}
-          <CardContent className="min-w-0 px-6 py-4 flex-1 text-left inline-block md:block">
-            <h5 className="text-primary mb-0 mt-0 pt-0 text-left text-lg font-semibold">
+          <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+            <h3 className="text-base font-semibold text-foreground">
               {isMooseModule ?
                 <span className="text-muted-foreground">Moose </span>
               : ""}
               {title}
-            </h5>
-            <CardDescription className="mt-2 text-left">
-              {description}
-            </CardDescription>
-          </CardContent>
-          <div className="mr-6 rounded-lg p-4 shrink-0 flex items-center justify-center">
-            <IconArrowRight className="h-6 w-6" />
-            <span className="sr-only">{ctaLabel}</span>
+            </h3>
+            <p className="text-sm text-muted-foreground">{description}</p>
           </div>
-        </Card>
-      </Link>
+          <Button variant="default" size="sm" asChild className="shrink-0">
+            <Link href={ctaLink}>{ctaLabel}</Link>
+          </Button>
+        </div>
+      </div>
     : <Card className={cn("h-full flex flex-col", className)}>
         <CardHeader>
           <div className="flex gap-2 items-center">
