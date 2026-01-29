@@ -13,6 +13,7 @@ import {
   shouldUseCompiled,
   loadModule,
 } from "../compiler-config";
+import { setupStructuredConsole } from "../utils/structured-logging";
 
 interface ClickhouseConfig {
   database: string;
@@ -67,7 +68,18 @@ const httpLogger = (
   );
 };
 
-const modulesCache = new Map<string, any>();
+// Cache stores both the module and the matched API name for structured logging
+interface CachedApiEntry {
+  module: any;
+  apiName: string;
+}
+const modulesCache = new Map<string, CachedApiEntry>();
+
+// Set up structured console logging for API context
+const apiContextStorage = setupStructuredConsole<{ apiName: string }>(
+  (ctx) => ctx.apiName,
+  "api_name",
+);
 
 export function createApi<T extends object, R = any>(
   _handler: (params: T, utils: ApiUtil) => Promise<R>,
@@ -108,7 +120,7 @@ const apiHandler = async (
       const url = new URL(req.url || "", "http://localhost");
       const fileName = url.pathname;
 
-      let jwtPayload;
+      let jwtPayload: jose.JWTPayload | undefined;
       if (publicKey && jwtConfig) {
         const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
         if (jwt) {
@@ -161,27 +173,40 @@ const apiHandler = async (
         {},
       );
 
-      let userFuncModule = modulesCache.get(pathName);
-      if (userFuncModule === undefined) {
-        let apiName = fileName.replace(/^\/+|\/+$/g, "");
+      // Track matched API name for structured logging - must match source_primitive.name in infra map
+      let matchedApiName: string | undefined;
+      let userFuncModule: any;
+
+      const cachedEntry = modulesCache.get(pathName);
+      if (cachedEntry !== undefined) {
+        userFuncModule = cachedEntry.module;
+        matchedApiName = cachedEntry.apiName;
+      } else {
+        let lookupName = fileName.replace(/^\/+|\/+$/g, "");
         let version: string | null = null;
 
         // First, try to find the API by the full path (for custom paths)
-        userFuncModule = apis.get(apiName);
+        userFuncModule = apis.get(lookupName);
+        if (userFuncModule) {
+          // For custom path lookup, the key IS the API name
+          matchedApiName = lookupName;
+        }
 
         if (!userFuncModule) {
           // Fall back to the old name:version parsing
           version = url.searchParams.get("version");
 
           // Check if version is in the path (e.g., /bar/1)
-          if (!version && apiName.includes("/")) {
-            const pathParts = apiName.split("/");
+          if (!version && lookupName.includes("/")) {
+            const pathParts = lookupName.split("/");
             if (pathParts.length >= 2) {
               // Try the full path first (it might be a custom path)
-              userFuncModule = apis.get(apiName);
-              if (!userFuncModule) {
+              userFuncModule = apis.get(lookupName);
+              if (userFuncModule) {
+                matchedApiName = lookupName;
+              } else {
                 // If not found, treat it as name/version
-                apiName = pathParts[0];
+                lookupName = pathParts[0];
                 version = pathParts.slice(1).join("/");
               }
             }
@@ -189,33 +214,56 @@ const apiHandler = async (
 
           // Only do versioned lookup if we still haven't found it
           if (!userFuncModule && version) {
-            const versionedKey = `${apiName}:${version}`;
+            const versionedKey = `${lookupName}:${version}`;
             userFuncModule = apis.get(versionedKey);
+            if (userFuncModule) {
+              // The API name is the base name without version
+              matchedApiName = lookupName;
+            }
+          }
+
+          // Try unversioned lookup if still not found
+          if (!userFuncModule) {
+            userFuncModule = apis.get(lookupName);
+            if (userFuncModule) {
+              matchedApiName = lookupName;
+            }
           }
         }
 
-        if (!userFuncModule) {
+        if (!userFuncModule || matchedApiName === undefined) {
           const availableApis = Array.from(apis.keys()).map((key) =>
             key.replace(":", "/"),
           );
           const errorMessage =
             version ?
-              `API ${apiName} with version ${version} not found. Available APIs: ${availableApis.join(", ")}`
-            : `API ${apiName} not found. Available APIs: ${availableApis.join(", ")}`;
+              `API ${lookupName} with version ${version} not found. Available APIs: ${availableApis.join(", ")}`
+            : `API ${lookupName} not found. Available APIs: ${availableApis.join(", ")}`;
           throw new Error(errorMessage);
         }
 
-        modulesCache.set(pathName, userFuncModule);
-        console.log(`[API] | Executing API: ${apiName}`);
+        // Cache both the module and API name for future requests
+        modulesCache.set(pathName, { module: userFuncModule, apiName: matchedApiName });
+        console.log(`[API] | Executing API: ${matchedApiName}`);
       }
 
       const queryClient = new QueryClient(clickhouseClient, fileName);
-      let result = await userFuncModule(paramsObject, {
-        client: new MooseClient(queryClient, temporalClient),
-        sql: sql,
-        jwt: jwtPayload,
-      });
 
+      // Use matched API name for structured logging context
+      // This matches source_primitive.name in the infrastructure map
+      // Note: matchedApiName is guaranteed to be defined here (either from cache or lookup)
+      const apiName = matchedApiName!;
+
+      // Use AsyncLocalStorage to set context for this API call.
+      // This avoids race conditions from concurrent API requests - each async
+      // execution chain has its own isolated context value
+      const result = await apiContextStorage.run({ apiName }, async () => {
+        return await userFuncModule(paramsObject, {
+          client: new MooseClient(queryClient, temporalClient),
+          sql: sql,
+          jwt: jwtPayload,
+        });
+      });
       let body: string;
       let status: number | undefined;
 
@@ -302,7 +350,7 @@ const createMainRouter = async (
       return;
     }
 
-    let jwtPayload;
+    let jwtPayload: jose.JWTPayload | undefined;
     if (publicKey && jwtConfig) {
       const jwt = req.headers.authorization?.split(" ")[1];
       if (jwt) {

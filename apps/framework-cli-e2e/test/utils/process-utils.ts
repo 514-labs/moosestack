@@ -7,6 +7,8 @@ const processLogger = logger.scope("utils:process");
 
 export interface ProcessOptions {
   logger?: ScopedLogger;
+  /** Override the base URL for server requests (default: SERVER_CONFIG.url) */
+  baseUrl?: string;
 }
 
 declare const require: any;
@@ -358,11 +360,15 @@ export const waitForInfrastructureReady = async (
   options: ProcessOptions = {},
 ): Promise<void> => {
   const log = options.logger ?? processLogger;
-  log.debug("Waiting for all infrastructure to be ready", { timeoutMs });
+  const baseUrl = options.baseUrl ?? SERVER_CONFIG.url;
+  log.debug("Waiting for all infrastructure to be ready", {
+    timeoutMs,
+    baseUrl,
+  });
 
   await withRetries(
     async () => {
-      const response = await fetch(`${SERVER_CONFIG.url}/ready`);
+      const response = await fetch(`${baseUrl}/ready`);
       // /ready returns 200 OK when all services are healthy, 503 otherwise
       if (response.status !== 200) {
         const body = await response.text();
