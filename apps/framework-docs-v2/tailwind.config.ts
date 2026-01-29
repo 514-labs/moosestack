@@ -240,13 +240,6 @@ const config: Config = {
               color: "hsl(var(--muted-foreground))",
               borderColor: "hsl(var(--border))",
             },
-            hr: {
-              borderColor: "hsl(var(--border))",
-            },
-            blockquote: {
-              borderLeftColor: "hsl(var(--border))",
-              color: "hsl(var(--muted-foreground))",
-            },
           },
         },
       },
