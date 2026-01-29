@@ -4,10 +4,14 @@ description: Automate report generation with MooseStack workflows
 languages: ["typescript"]
 ---
 
-import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock, IconBadge } from "@/components/mdx";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 
 # Static Report Generation
+
+<div className="flex items-center gap-4 mt-6 mb-4 flex-wrap">
+  <IconBadge Icon="Code" label="TypeScript" variant="moose" />
+</div>
 
 <Callout type="info" title="TL;DR">
 * Static reports are pre-generated snapshots (PDF, Excel, CSV) that capture data at a specific point in time
