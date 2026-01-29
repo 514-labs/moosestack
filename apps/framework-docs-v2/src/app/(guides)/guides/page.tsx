@@ -80,29 +80,31 @@ export default async function GuidesPage() {
       <GuideSectionGrid sections={sectionsWithFrontmatter} />
 
       {/* More section */}
-      <div className="flex flex-col gap-6 mt-4">
-        <h2 className="text-2xl font-bold tracking-tight">More</h2>
-        <div className="flex items-center gap-4 rounded-xl border border-border/50 bg-card px-6 py-4">
-          <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-primary/10 text-primary shrink-0">
-            <IconBrandSlack className="h-6 w-6" strokeWidth={1.5} />
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold text-muted-foreground">More</h2>
+        <div className="rounded-xl border bg-card overflow-hidden">
+          <div className="flex items-center gap-4 px-6 py-4">
+            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0">
+              <IconBrandSlack className="h-5 w-5" strokeWidth={1.5} />
+            </div>
+            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+              <h3 className="text-base font-semibold text-foreground">
+                Join the Community
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Ask questions or just join the conversation
+              </p>
+            </div>
+            <Button variant="default" size="sm" asChild className="shrink-0">
+              <Link
+                href="https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Join
+              </Link>
+            </Button>
           </div>
-          <div className="flex flex-col gap-1 flex-1">
-            <h3 className="text-xl font-semibold text-foreground">
-              Join our Slack
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Get help from the community
-            </p>
-          </div>
-          <Button variant="default" asChild className="shrink-0">
-            <Link
-              href="https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Join
-            </Link>
-          </Button>
         </div>
       </div>
     </div>
