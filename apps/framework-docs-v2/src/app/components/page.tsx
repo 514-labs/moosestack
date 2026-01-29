@@ -61,13 +61,11 @@ function MultiTabSnippet() {
 
 export default function ComponentsPage() {
   return (
-    <div className="container mx-auto py-12 px-4 max-w-7xl">
+    <div className="w-full py-12 px-4 sm:px-6 lg:px-8 max-w-5xl lg:max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-4xl font-bold mb-2">Component Testing</h1>
-          <p className="text-muted-foreground">
-            Test and iterate on all documentation components
-          </p>
+        <div className="prose dark:prose-invert max-w-none">
+          <h1>Component Testing</h1>
+          <p>Test and iterate on all documentation components</p>
         </div>
         <ThemeToggle />
       </div>
