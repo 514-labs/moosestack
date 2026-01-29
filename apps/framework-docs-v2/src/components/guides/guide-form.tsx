@@ -113,7 +113,7 @@ export function GuideForm({ manifest }: GuideFormProps) {
   }, [searchParams, manifest, language]);
 
   return (
-    <div className="space-y-6 p-6 border rounded-lg bg-card text-card-foreground shadow-sm mb-8">
+    <div className="space-y-6 p-6 border rounded-xl bg-card text-card-foreground shadow mb-8">
       <div className="space-y-2">
         <h3 className="text-lg font-semibold">Customize Your Guide</h3>
         <p className="text-sm text-muted-foreground">

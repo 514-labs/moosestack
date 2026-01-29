@@ -137,7 +137,7 @@ function BulletPointCard({
   return (
     <Card
       className={cn(
-        "rounded-xl shadow-sm my-6",
+        "rounded-xl shadow my-6",
         maxWidth,
         compact ? "p-4" : "p-6",
         className,
