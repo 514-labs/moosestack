@@ -59,13 +59,8 @@ export function CTACard({
           {badge ?
             <IconBadge variant={badge.variant} label={badge.text} />
           : IconComponent ?
-            <div className="ml-4 bg-muted rounded-lg p-4 shrink-0 flex items-center justify-center border border-neutral-200 dark:border-neutral-800">
-              <IconComponent
-                className={cn(
-                  "h-6 w-6",
-                  variant === "sloan" ? "text-sloan-teal" : "text-primary",
-                )}
-              />
+            <div className="ml-4 flex items-center justify-center w-12 h-12 rounded-lg bg-muted text-muted-foreground shrink-0">
+              <IconComponent className="h-6 w-6" strokeWidth={1.5} />
             </div>
           : null}
           <CardContent className="min-w-0 px-6 py-4 flex-1 text-left inline-block md:block">
@@ -91,13 +86,8 @@ export function CTACard({
             {badge ?
               <IconBadge variant={badge.variant} label={badge.text} />
             : orientation === "vertical" && IconComponent ?
-              <div className="bg-muted rounded-lg p-4 border border-neutral-200 dark:border-neutral-800">
-                <IconComponent
-                  className={cn(
-                    "h-6 w-6",
-                    variant === "sloan" ? "text-sloan-teal" : "text-primary",
-                  )}
-                />
+              <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-muted text-muted-foreground shrink-0">
+                <IconComponent className="h-6 w-6" strokeWidth={1.5} />
               </div>
             : null}
           </div>
