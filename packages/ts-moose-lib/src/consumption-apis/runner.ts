@@ -177,13 +177,18 @@ const apiHandler = async (
       let matchedApiName: string | undefined;
       let userFuncModule: any;
 
-      const cachedEntry = modulesCache.get(pathName);
+      // Extract version from query params early for cache key computation
+      // This prevents cache collisions when the same path is requested with different versions
+      const queryVersion = url.searchParams.get("version");
+      const cacheKey = queryVersion ? `${pathName}:${queryVersion}` : pathName;
+
+      const cachedEntry = modulesCache.get(cacheKey);
       if (cachedEntry !== undefined) {
         userFuncModule = cachedEntry.module;
         matchedApiName = cachedEntry.apiName;
       } else {
         let lookupName = fileName.replace(/^\/+|\/+$/g, "");
-        let version: string | null = null;
+        let version: string | null = queryVersion;
 
         // First, try to find the API by the full path (for custom paths)
         userFuncModule = apis.get(lookupName);
@@ -194,7 +199,6 @@ const apiHandler = async (
 
         if (!userFuncModule) {
           // Fall back to the old name:version parsing
-          version = url.searchParams.get("version");
 
           // Check if version is in the path (e.g., /bar/1)
           if (!version && lookupName.includes("/")) {
@@ -243,7 +247,11 @@ const apiHandler = async (
         }
 
         // Cache both the module and API name for future requests
-        modulesCache.set(pathName, { module: userFuncModule, apiName: matchedApiName });
+        // Use cacheKey which includes version to prevent collisions between different versions
+        modulesCache.set(cacheKey, {
+          module: userFuncModule,
+          apiName: matchedApiName,
+        });
         console.log(`[API] | Executing API: ${matchedApiName}`);
       }
 
