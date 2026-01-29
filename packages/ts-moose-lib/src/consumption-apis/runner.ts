@@ -173,11 +173,16 @@ const apiHandler = async (
         {},
       );
 
+      // Include version query param in cache key to avoid collisions
+      // Path-based versions (/myapi/1) are already in pathName, but query versions (?version=1) are not
+      const versionParam = url.searchParams.get("version");
+      const cacheKey = versionParam ? `${pathName}:${versionParam}` : pathName;
+
       // Track matched API name for structured logging - must match source_primitive.name in infra map
       let matchedApiName: string | undefined;
       let userFuncModule: any;
 
-      const cachedEntry = modulesCache.get(pathName);
+      const cachedEntry = modulesCache.get(cacheKey);
       if (cachedEntry !== undefined) {
         userFuncModule = cachedEntry.module;
         matchedApiName = cachedEntry.apiName;
@@ -243,7 +248,7 @@ const apiHandler = async (
         }
 
         // Cache both the module and API name for future requests
-        modulesCache.set(pathName, { module: userFuncModule, apiName: matchedApiName });
+        modulesCache.set(cacheKey, { module: userFuncModule, apiName: matchedApiName });
         console.log(`[API] | Executing API: ${matchedApiName}`);
       }
 
