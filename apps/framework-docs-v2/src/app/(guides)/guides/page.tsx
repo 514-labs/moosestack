@@ -82,7 +82,7 @@ export default async function GuidesPage() {
       {/* More section */}
       <div className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold text-muted-foreground">More</h2>
-        <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="rounded-xl border bg-card text-card-foreground shadow overflow-hidden">
           <div className="flex items-center gap-4 px-6 py-4">
             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0">
               <IconBrandSlack className="h-5 w-5" strokeWidth={1.5} />

@@ -23,7 +23,7 @@ export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
               {section.title}
             </h2>
           )}
-          <div className="rounded-xl border bg-card overflow-hidden">
+          <div className="rounded-xl border bg-card text-card-foreground shadow overflow-hidden">
             {section.items.map((guide, index) => {
               return (
                 <div key={guide.slug}>

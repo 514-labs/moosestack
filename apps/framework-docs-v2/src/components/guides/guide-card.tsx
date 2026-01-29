@@ -50,7 +50,7 @@ export function GuideCard({
         size="sm"
         className="shrink-0 pointer-events-none"
       >
-        Read
+        Learn more
       </Button>
     </Link>
   );
