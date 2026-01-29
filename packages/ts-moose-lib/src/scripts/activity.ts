@@ -125,8 +125,8 @@ export const activities = {
       try {
         startPeriodicHeartbeat();
 
-        // Get task identifier for context
-        const taskIdentifier = `${workflow.name}/${task.name}`;
+        // Get workflow name for context (matches inframap resource naming)
+        const taskIdentifier = workflow.name;
 
         // Use AsyncLocalStorage to set context for this task execution
         // This avoids race conditions from concurrent task executions
