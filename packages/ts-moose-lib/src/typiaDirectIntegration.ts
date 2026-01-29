@@ -63,9 +63,7 @@ export interface TypiaDirectContext {
  * the node to be attached to a source file. We patch the method directly.
  */
 const createSyntheticModulo = (): ts.LeftHandSideExpression => {
-  const identifier = ts.factory.createIdentifier("typia") as ts.Identifier & {
-    getText: () => string;
-  };
+  const identifier = ts.factory.createIdentifier("typia");
 
   // Monkey-patch getText to return "typia" directly
   identifier.getText = () => "typia";
