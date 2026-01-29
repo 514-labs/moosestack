@@ -18,8 +18,11 @@ import { Callout } from "@/components/mdx";
 **New guides index page design with enhanced preview cards** ([@callicles](https://github.com/callicles))
   Redesigned the guides index page with improved visual layout, preview cards showing guide content, language badges (TypeScript/Python), and better mobile responsiveness. Makes it easier to discover and navigate to relevant guides.
 
+  Docs: [Guides](/guides)
+
 **First-class workflows with infrastructure tracking and lifecycle management** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
   Workflows are now treated as first-class infrastructure resources in MooseStack. They are tracked in the infrastructure map, displayed in plan diffs, and managed through the standard infrastructure lifecycle. This means workflow changes (additions, removals, configuration updates) are now visible during `moose plan` and properly managed during deployments. Workflows also now persist across shutdowns - they no longer terminate automatically in development mode, providing more consistent behavior between dev and production environments.
+
   Docs: [Workflow Lifecycle](/moosestack/workflows/define-workflow#workflow-lifecycle)
 
 **Add Next.js dashboard demo with query layer for ClickHouse** ([@okane16](https://github.com/okane16))
@@ -27,6 +30,8 @@ import { Callout } from "@/components/mdx";
 
 **Add Fastify example app to templates documentation** ([@03cranec](https://github.com/03cranec))
   Added a new Fastify example app to the templates documentation page, demonstrating how to embed MooseStack into an existing Fastify application. The example features a monorepo structure with a Fastify app and child Moose project, making it easier for users to integrate MooseStack with their existing Fastify applications.
+
+  Docs: [Templates](/templates)
 
 ### Improvements
 - Add secure password input with masked characters for CLI prompts: Password inputs in the CLI now show asterisks (*) instead of plain text for better security. This affects commands that prompt for database passwords, such as connecting to remote ClickHouse instances. ([@callicles](https://github.com/callicles))
