@@ -66,11 +66,11 @@ export default async function GuidesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8 w-full min-w-0">
+    <div className="flex w-full min-w-0 flex-col gap-6 pt-4">
       {/* Page header */}
-      <div className="mb-2">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Guides</h1>
-        <p className="text-muted-foreground text-lg">
+      <div className="prose dark:prose-invert max-w-none">
+        <h1>Guides</h1>
+        <p>
           Comprehensive guides for common application use cases powered by
           realtime analytical infrastructure.
         </p>
