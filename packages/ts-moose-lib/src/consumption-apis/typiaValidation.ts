@@ -1,48 +1,13 @@
 import ts, { factory, SyntaxKind } from "typescript";
-import {
-  avoidTypiaNameClash,
-  isMooseFile,
-  typiaJsonSchemas,
-  sanitizeTypeParameter,
-} from "../compilerPluginHelper";
+import { isMooseFile, type TransformContext } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
 import { parseAsAny } from "../dmv2/dataModelMetadata";
-import type { ApiUtil } from "./helpers";
+import {
+  generateHttpAssertQueryFunction,
+  generateJsonSchemas,
+} from "../typiaDirectIntegration";
 
-const iife = (statements: ts.Statement[]): ts.CallExpression =>
-  factory.createCallExpression(
-    factory.createParenthesizedExpression(
-      factory.createArrowFunction(
-        undefined,
-        undefined,
-        [],
-        undefined,
-        factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-        factory.createBlock(statements, true),
-      ),
-    ),
-    undefined,
-    [],
-  );
-
-export const isCreateApi = (
-  node: ts.Node,
-  checker: ts.TypeChecker,
-): node is ts.CallExpression => {
-  if (!ts.isCallExpression(node)) {
-    return false;
-  }
-
-  const declaration: ts.Declaration | undefined =
-    checker.getResolvedSignature(node)?.declaration;
-  if (!declaration || !isMooseFile(declaration.getSourceFile())) {
-    return false;
-  }
-
-  return checker.getTypeAtLocation(declaration).symbol?.name == "createApi";
-};
-
-export const isCreateApiV2 = (
+export const isApiV2 = (
   node: ts.Node,
   checker: ts.TypeChecker,
 ): node is ts.NewExpression => {
@@ -60,279 +25,12 @@ export const isCreateApiV2 = (
   return sym?.name === "Api" || sym?.name === "ConsumptionApi";
 };
 
-const getParamType = (
-  funcType: ts.Type,
-  checker: ts.TypeChecker,
-): ts.TypeNode | undefined => {
-  const sig = funcType.getCallSignatures()[0];
-  const firstParam = sig && sig.getParameters()[0];
-  const t = firstParam && checker.getTypeOfSymbol(firstParam);
-  return t && checker.typeToTypeNode(t, undefined, undefined);
-};
-
-const typeToOutputSchema = (t: ts.Type, checker: ts.TypeChecker): ts.Type => {
-  if (
-    t.isIntersection() &&
-    t.types.some((inner) => inner.getSymbol()?.name === "ResultSet")
-  ) {
-    const queryResultSymbol = t.getProperty("__query_result_t");
-    if (queryResultSymbol) {
-      return checker.getNonNullableType(
-        checker.getTypeOfSymbol(queryResultSymbol),
-      );
-    } else {
-      return checker.getAnyType();
-    }
-  } else if (
-    t.getProperty("status") !== undefined &&
-    t.getProperty("body") !== undefined
-  ) {
-    return checker.getTypeOfSymbol(t.getProperty("body")!);
-  } else {
-    return t;
-  }
-};
-
-export const transformCreateApi = (
-  node: ts.Node,
-  checker: ts.TypeChecker,
-): ts.Node => {
-  if (isCreateApi(node, checker)) {
-    return transformLegacyApi(node, checker);
-  } else if (isCreateApiV2(node, checker)) {
-    return transformNewApi(node as ts.NewExpression, checker);
-  }
-
-  return node;
-};
-
-export const transformLegacyApi = (
-  node: ts.Node,
-  checker: ts.TypeChecker,
-): ts.Node => {
-  if (!isCreateApi(node, checker)) {
-    return node;
-  }
-
-  const handlerFunc = node.arguments[0];
-  const paramType =
-    (node.typeArguments && node.typeArguments[0]) ||
-    getParamType(checker.getTypeAtLocation(handlerFunc), checker);
-
-  if (paramType === undefined) {
-    throw new Error("Unknown type for params");
-  }
-
-  const handlerType = checker.getTypeAtLocation(handlerFunc);
-  const returnType = handlerType.getCallSignatures()[0]?.getReturnType();
-  const awaitedType = checker.getAwaitedType(returnType) || returnType;
-
-  const queryResultType =
-    awaitedType.isUnion() ?
-      factory.createUnionTypeNode(
-        awaitedType.types.flatMap((t) => {
-          const typeNode = checker.typeToTypeNode(
-            typeToOutputSchema(t, checker),
-            undefined,
-            undefined,
-          );
-          return typeNode === undefined ? [] : [typeNode];
-        }),
-      )
-    : checker.typeToTypeNode(
-        typeToOutputSchema(awaitedType, checker),
-        undefined,
-        undefined,
-      );
-
-  const wrappedFunc = factory.createArrowFunction(
-    undefined,
-    undefined,
-    [
-      factory.createParameterDeclaration(
-        undefined,
-        undefined,
-        factory.createIdentifier("params"),
-        undefined,
-        undefined,
-        undefined,
-      ),
-      factory.createParameterDeclaration(
-        undefined,
-        undefined,
-        factory.createIdentifier("utils"),
-        undefined,
-        undefined,
-        undefined,
-      ),
-    ],
-    undefined,
-    factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
-    factory.createBlock(
-      [
-        factory.createVariableStatement(
-          undefined,
-          factory.createVariableDeclarationList(
-            [
-              factory.createVariableDeclaration(
-                factory.createIdentifier("processedParams"),
-                undefined,
-                undefined,
-                factory.createCallExpression(
-                  factory.createIdentifier("assertGuard"),
-                  undefined,
-                  [
-                    factory.createNewExpression(
-                      factory.createIdentifier("URLSearchParams"),
-                      undefined,
-                      [factory.createIdentifier("params")],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            ts.NodeFlags.Const,
-          ),
-        ),
-        factory.createReturnStatement(
-          factory.createCallExpression(
-            factory.createIdentifier("handlerFunc"),
-            undefined,
-            [
-              factory.createIdentifier("processedParams"),
-              factory.createIdentifier("utils"),
-            ],
-          ),
-        ),
-      ],
-      true,
-    ),
-  );
-
-  return iife([
-    // const assertGuard = ____moose____typia.http.createAssertQuery<T>()
-    factory.createVariableStatement(
-      undefined,
-      factory.createVariableDeclarationList(
-        [
-          factory.createVariableDeclaration(
-            factory.createIdentifier("assertGuard"),
-            undefined,
-            undefined,
-            factory.createCallExpression(
-              factory.createPropertyAccessExpression(
-                factory.createPropertyAccessExpression(
-                  factory.createIdentifier(avoidTypiaNameClash),
-                  factory.createIdentifier("http"),
-                ),
-                factory.createIdentifier("createAssertQuery"),
-              ),
-              [sanitizeTypeParameter(paramType)],
-              [],
-            ),
-          ),
-        ],
-        ts.NodeFlags.Const,
-      ),
-    ),
-    // the user provided function
-    // the Parameters of createApi is a trick to avoid extra imports
-    // const handlerFunc: Parameters<typeof createApi<DailyActiveUsersParams>>[0] = async(...) => ...
-    factory.createVariableStatement(
-      undefined,
-      factory.createVariableDeclarationList(
-        [
-          factory.createVariableDeclaration(
-            factory.createIdentifier("handlerFunc"),
-            undefined,
-            factory.createIndexedAccessTypeNode(
-              factory.createTypeReferenceNode(
-                factory.createIdentifier("Parameters"),
-                [
-                  factory.createTypeQueryNode(
-                    factory.createIdentifier("createApi"),
-                    [paramType],
-                  ),
-                ],
-              ),
-              factory.createLiteralTypeNode(factory.createNumericLiteral("0")),
-            ),
-            handlerFunc,
-          ),
-        ],
-        ts.NodeFlags.Const,
-      ),
-    ),
-    // const wrappedFunc = (params, utils) => {
-    //   const processedParams = assertGuard(new URLSearchParams(params))
-    //   return handlerFunc(params, utils)
-    // }
-    factory.createVariableStatement(
-      undefined,
-      factory.createVariableDeclarationList(
-        [
-          factory.createVariableDeclaration(
-            factory.createIdentifier("wrappedFunc"),
-            undefined,
-            undefined,
-            wrappedFunc,
-          ),
-        ],
-        ts.NodeFlags.Const,
-      ),
-    ),
-    // wrappedFunc["moose_input_schema"] = ____moose____typia.json.schemas<[T]>()
-    factory.createExpressionStatement(
-      factory.createBinaryExpression(
-        factory.createElementAccessExpression(
-          factory.createIdentifier("wrappedFunc"),
-          factory.createStringLiteral("moose_input_schema"),
-        ),
-        factory.createToken(ts.SyntaxKind.EqualsToken),
-        typiaJsonSchemas(paramType),
-      ),
-    ),
-
-    // wrappedFunc["moose_output_schema"] = ____moose____typia.json.schemas<[Output]>()
-    factory.createExpressionStatement(
-      factory.createBinaryExpression(
-        factory.createElementAccessExpression(
-          factory.createIdentifier("wrappedFunc"),
-          factory.createStringLiteral("moose_output_schema"),
-        ),
-        factory.createToken(ts.SyntaxKind.EqualsToken),
-        factory.createCallExpression(
-          factory.createPropertyAccessExpression(
-            factory.createPropertyAccessExpression(
-              factory.createIdentifier(avoidTypiaNameClash),
-              factory.createIdentifier("json"),
-            ),
-            factory.createIdentifier("schemas"),
-          ),
-          [
-            factory.createTupleTypeNode([
-              sanitizeTypeParameter(
-                queryResultType ||
-                  factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword),
-              ),
-            ]),
-          ],
-          [],
-        ),
-      ),
-    ),
-
-    factory.createReturnStatement(factory.createIdentifier("wrappedFunc")),
-  ]);
-};
-
-// TODO: When the legacy api is removed, follow the args
-// pattern in transformNewMooseResource
-const transformNewApi = (
+export const transformApiV2 = (
   node: ts.NewExpression,
   checker: ts.TypeChecker,
+  ctx: TransformContext,
 ): ts.Node => {
-  if (!isCreateApiV2(node, checker)) {
+  if (!isApiV2(node, checker)) {
     return node;
   }
 
@@ -340,14 +38,22 @@ const transformNewApi = (
     return node;
   }
 
+  const typiaCtx = ctx.typiaContext;
+
   // Get both type parameters from Api<T, R>
   const typeNode = node.typeArguments[0];
   const responseTypeNode =
     node.typeArguments[1] ||
     factory.createKeywordTypeNode(ts.SyntaxKind.AnyKeyword);
 
+  const inputType = checker.getTypeAtLocation(typeNode);
+  const responseType = checker.getTypeAtLocation(responseTypeNode);
+
   // Get the handler function (second argument)
   const handlerFunc = node.arguments[1];
+
+  // Generate the HTTP assert query function directly
+  const assertQueryFunc = generateHttpAssertQueryFunction(typiaCtx, inputType);
 
   // Create a new handler function that includes validation
   const wrappedHandler = factory.createArrowFunction(
@@ -375,7 +81,7 @@ const transformNewApi = (
     factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken),
     factory.createBlock(
       [
-        // const assertGuard = ____moose____typia.http.createAssertQuery<T>()
+        // const assertGuard = <generated http assert query function>
         factory.createVariableStatement(
           undefined,
           factory.createVariableDeclarationList(
@@ -384,17 +90,7 @@ const transformNewApi = (
                 factory.createIdentifier("assertGuard"),
                 undefined,
                 undefined,
-                factory.createCallExpression(
-                  factory.createPropertyAccessExpression(
-                    factory.createPropertyAccessExpression(
-                      factory.createIdentifier(avoidTypiaNameClash),
-                      factory.createIdentifier("http"),
-                    ),
-                    factory.createIdentifier("createAssertQuery"),
-                  ),
-                  [typeNode],
-                  [],
-                ),
+                assertQueryFunc,
               ),
             ],
             ts.NodeFlags.Const,
@@ -500,16 +196,15 @@ const transformNewApi = (
     ),
   );
 
-  // Create the schema arguments
+  // Generate schemas directly
   const inputSchemaArg =
-    node.arguments.length > 3 ? node.arguments[3] : typiaJsonSchemas(typeNode);
-  const responseSchemaArg = typiaJsonSchemas(responseTypeNode);
+    node.arguments.length > 3 ?
+      node.arguments[3]
+    : generateJsonSchemas(typiaCtx, inputType);
+  const responseSchemaArg = generateJsonSchemas(typiaCtx, responseType);
 
   // Create the columns argument if it doesn't exist
-  const inputColumnsArg = toColumns(
-    checker.getTypeAtLocation(typeNode),
-    checker,
-  );
+  const inputColumnsArg = toColumns(inputType, checker);
 
   // Create the config argument if it doesn't exist
   const configArg =
