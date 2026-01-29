@@ -1728,6 +1728,7 @@ const iconToNameMap = new Map<TablerIcon, string>([
   [IconDatabase, "IconDatabase"],
   [IconServer, "IconServer"],
   [IconRocket, "IconRocket"],
+  [IconFileCode, "IconFileCode"],
 ]);
 
 /**
@@ -1780,10 +1781,10 @@ export function getVisibleGuideSections(flags: {
     }
   }
 
-  // Add top-level guides as first section (no title header)
+  // Add top-level guides as first section with "Popular" header
   if (topLevelGuides.length > 0) {
     sections.push({
-      title: "",
+      title: "Popular",
       items: topLevelGuides,
     });
   }
