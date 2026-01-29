@@ -29,7 +29,7 @@ export function ZoomImg({ light, dark, alt, className }: ZoomImgProps) {
           "w-full h-auto transition-all duration-300 dark:hidden",
           isZoomed ?
             "fixed inset-0 cursor-zoom-out w-screen h-screen object-contain z-50 bg-background"
-          : "relative z-0 cursor-zoom-in rounded-lg",
+          : "relative z-0 cursor-zoom-in rounded-xl border border-border",
         )}
         onClick={toggleZoom}
         role="button"
@@ -52,7 +52,7 @@ export function ZoomImg({ light, dark, alt, className }: ZoomImgProps) {
           "w-full h-auto transition-all duration-300 hidden dark:block",
           isZoomed ?
             "fixed inset-0 cursor-zoom-out w-screen h-screen object-contain z-50 bg-background"
-          : "relative z-0 cursor-zoom-in rounded-lg",
+          : "relative z-0 cursor-zoom-in rounded-xl border border-border",
         )}
         onClick={toggleZoom}
         role="button"
