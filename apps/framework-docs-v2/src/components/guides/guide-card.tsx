@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { getGuideIcon } from "./guide-icons";
+
+const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
+  typescript: "TypeScript",
+  python: "Python",
+};
 
 interface GuideCardProps {
   title: string;
   description?: string;
   href: string;
   iconName?: string;
+  languages?: string[];
+  tags?: string[];
 }
 
 /**
@@ -18,8 +26,16 @@ export function GuideCard({
   description,
   href,
   iconName,
+  languages,
+  tags,
 }: GuideCardProps) {
   const IconComponent = getGuideIcon(iconName);
+
+  // Combine languages and tags for badge display
+  const badges = [
+    ...(languages?.map((lang) => LANGUAGE_DISPLAY_NAMES[lang] || lang) || []),
+    ...(tags || []),
+  ];
 
   return (
     <Link
@@ -35,8 +51,21 @@ export function GuideCard({
       )}
 
       {/* Content */}
-      <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
         <h3 className="text-base font-semibold text-foreground">{title}</h3>
+        {badges.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {badges.map((badge) => (
+              <Badge
+                key={badge}
+                variant="outline"
+                className="bg-muted border-border text-muted-foreground text-xs"
+              >
+                {badge}
+              </Badge>
+            ))}
+          </div>
+        )}
         {description && (
           <p className="text-sm text-muted-foreground leading-relaxed truncate">
             {description}
