@@ -11,6 +11,7 @@
  * 2. Span fields (context, resource_type, resource_name) are included as log attributes
  * 3. Log records contain correct severity, body, and timestamps
  * 4. Resource attributes (service.name, service.version) are present
+ * 5. resource_name matches source_primitive.name from infrastructure map (enables log correlation)
  *
  * NOTE: Span field attributes are captured by the experimental_span_attributes feature
  * for logs emitted within instrumented spans. Fields added after span creation
@@ -56,7 +57,6 @@ const VALID_RESOURCE_TYPES = [
   "view",
   "materialized_view",
   "transform",
-  "consumer",
   "workflow",
   "task",
 ] as const;
@@ -259,6 +259,7 @@ export * from "./apis/otlp-test";
   });
 
   it("should receive ingest API logs with span fields via OTLP", async function () {
+    // Verifies resource_name matches source_primitive.name ("OtlpTestEvent") for log correlation
     this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Clear previous logs
@@ -345,6 +346,7 @@ export * from "./apis/otlp-test";
   });
 
   it("should receive consumption API logs with span fields via OTLP", async function () {
+    // Verifies resource_name matches source_primitive.name ("otlp-test") for log correlation
     this.timeout(TIMEOUTS.STRUCTURED_LOGGING_TEST_MS);
 
     // Clear previous logs

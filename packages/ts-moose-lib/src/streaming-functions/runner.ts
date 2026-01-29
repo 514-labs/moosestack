@@ -1,5 +1,4 @@
 import { Readable } from "node:stream";
-import { AsyncLocalStorage } from "async_hooks";
 import { KafkaJS } from "@514labs/kafka-javascript";
 const { Kafka } = KafkaJS;
 
@@ -39,7 +38,7 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
-import { createStructuredConsoleWrapper } from "../utils/structured-logging";
+import { setupStructuredConsole } from "../utils/structured-logging";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -51,52 +50,10 @@ const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
 // Max messages per eachBatch call - Confluent client defaults to 32, increase for throughput
 const CONSUMER_MAX_BATCH_SIZE = 1000;
 
-// AsyncLocalStorage to track function context without mutating globals
-const functionContextStorage = new AsyncLocalStorage<{ functionName: string }>();
-
-// Wrap console methods once at module load
-const originalConsole = {
-  log: console.log,
-  info: console.info,
-  warn: console.warn,
-  error: console.error,
-  debug: console.debug,
-};
-
-console.log = createStructuredConsoleWrapper(
-  functionContextStorage,
+// Set up structured console logging for streaming function context
+const functionContextStorage = setupStructuredConsole<{ functionName: string }>(
   (ctx) => ctx.functionName,
   "function_name",
-  originalConsole.log,
-  "info",
-);
-console.info = createStructuredConsoleWrapper(
-  functionContextStorage,
-  (ctx) => ctx.functionName,
-  "function_name",
-  originalConsole.info,
-  "info",
-);
-console.warn = createStructuredConsoleWrapper(
-  functionContextStorage,
-  (ctx) => ctx.functionName,
-  "function_name",
-  originalConsole.warn,
-  "warn",
-);
-console.error = createStructuredConsoleWrapper(
-  functionContextStorage,
-  (ctx) => ctx.functionName,
-  "function_name",
-  originalConsole.error,
-  "error",
-);
-console.debug = createStructuredConsoleWrapper(
-  functionContextStorage,
-  (ctx) => ctx.functionName,
-  "function_name",
-  originalConsole.debug,
-  "debug",
 );
 
 /**
@@ -814,18 +771,39 @@ const startConsumer = async (
  *
  * @param args - The streaming function arguments containing source and target topics
  * @returns A Logger instance with standard log, error and warn methods
+ *
+ * The logPrefix is set to match source_primitive.name in the infrastructure map:
+ * - For transforms: `{source}__{target}` (double underscore)
+ * - For consumers: just `{source}` (no suffix)
+ *
+ * This ensures structured logs can be correlated with the infrastructure map.
+ *
  * @example
  * ```ts
- * const logger = buildLogger({sourceTopic: 'source', targetTopic: 'target'});
- * logger.log('message'); // Outputs: "source -> target: message"
+ * const logger = buildLogger({sourceTopic: {..., name: 'events'}, targetTopic: {..., name: 'processed'}}, 0);
+ * logger.log('message'); // Outputs: "events__processed (worker 0): message"
  * ```
  */
 const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
-  const targetLabel =
-    args.targetTopic?.name ? ` -> ${args.targetTopic.name}` : " (consumer)";
-  const logPrefix = `${args.sourceTopic.name}${targetLabel} (worker ${workerId})`;
+  // Get base stream names without namespace prefix or version suffix
+  const sourceBaseName = topicNameToStreamName(args.sourceTopic);
+  const targetBaseName = args.targetTopic
+    ? topicNameToStreamName(args.targetTopic)
+    : undefined;
+
+  // Function name matches source_primitive.name in infrastructure map
+  // Uses double underscore separator for transforms, plain name for consumers
+  const functionName = targetBaseName
+    ? `${sourceBaseName}__${targetBaseName}`
+    : sourceBaseName;
+
+  // Human-readable log prefix includes worker ID for debugging
+  const logPrefix = `${functionName} (worker ${workerId})`;
+
   return {
-    logPrefix: logPrefix,
+    // logPrefix is used for structured logging (function_name field)
+    // Must match source_primitive.name format for log correlation
+    logPrefix: functionName,
     log: (message: string): void => {
       console.log(`${logPrefix}: ${message}`);
     },

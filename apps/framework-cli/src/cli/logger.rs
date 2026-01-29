@@ -866,13 +866,94 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
         .get("level")
         .and_then(|v| v.as_str())
         .unwrap_or("info")
-        .to_string();
+        .to_ascii_lowercase();
 
     Some(StructuredLogData {
         resource_name,
         message,
         level,
     })
+}
+
+/// Processes stderr lines from a child process, parsing structured logs and emitting tracing events.
+///
+/// This is the core logic extracted from `spawn_stderr_structured_logger_with_ui` for testability.
+/// It can be called with any `AsyncBufRead` source, allowing unit tests to use in-memory readers.
+///
+/// ## Parameters
+///
+/// - `reader`: Any async buffered reader (e.g., `BufReader<ChildStderr>` or `BufReader<Cursor<...>>`)
+/// - `resource_name_field`: The JSON field name for the resource (e.g., "function_name", "api_name", "task_name")
+/// - `resource_type`: The resource type constant (e.g., "transform", "consumption_api", "task")
+/// - `ui_action`: Optional action name for UI display (e.g., "Streaming", "API"). When `Some`,
+///   errors will be shown via the callback.
+/// - `ui_callback`: A callback function invoked when errors should be displayed in the UI.
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// use tokio::io::BufReader;
+/// use std::io::Cursor;
+///
+/// // For testing with in-memory input:
+/// let input = r#"{"__moose_structured_log__":true,"function_name":"fn","level":"error","message":"oops"}"#;
+/// let reader = BufReader::new(Cursor::new(input));
+/// process_stderr_lines(reader, "function_name", "transform", Some("Test"), |_, _| {}).await;
+/// ```
+pub async fn process_stderr_lines<R, F>(
+    reader: R,
+    resource_name_field: &'static str,
+    resource_type: &'static str,
+    ui_action: Option<&'static str>,
+    ui_callback: F,
+) where
+    R: tokio::io::AsyncBufRead + Unpin + Send,
+    F: Fn(crate::cli::display::MessageType, crate::cli::display::Message) + Send + Sync,
+{
+    use tokio::io::AsyncBufReadExt;
+    use tracing::error;
+
+    let mut lines = reader.lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        if let Some(log_data) = parse_structured_log(&line, resource_name_field) {
+            let span = tracing::info_span!(
+                "child_process_log",
+                context = context::RUNTIME,
+                resource_type = resource_type,
+                resource_name = %log_data.resource_name,
+            );
+            let _guard = span.enter();
+            match log_data.level.as_str() {
+                "error" => {
+                    tracing::error!("{}", log_data.message);
+                    if let Some(action) = ui_action {
+                        ui_callback(
+                            crate::cli::display::MessageType::Error,
+                            crate::cli::display::Message {
+                                action: action.to_string(),
+                                details: log_data.message.clone(),
+                            },
+                        );
+                    }
+                }
+                "warn" => tracing::warn!("{}", log_data.message),
+                "debug" => tracing::debug!("{}", log_data.message),
+                _ => tracing::info!("{}", log_data.message),
+            }
+            continue;
+        }
+        // Fall back to regular error logging if not a structured log
+        error!("{}", line);
+        if let Some(action) = ui_action {
+            ui_callback(
+                crate::cli::display::MessageType::Error,
+                crate::cli::display::Message {
+                    action: action.to_string(),
+                    details: line.to_string(),
+                },
+            );
+        }
+    }
 }
 
 /// Spawns an async task to read stderr and parse structured logs with optional UI display.
@@ -916,54 +997,19 @@ pub fn spawn_stderr_structured_logger_with_ui(
     resource_type: &'static str,
     ui_action: Option<&'static str>,
 ) -> tokio::task::JoinHandle<()> {
-    use crate::cli::display::{show_message_wrapper, Message, MessageType};
-    use tokio::io::{AsyncBufReadExt, BufReader};
-    use tracing::error;
+    use crate::cli::display::show_message_wrapper;
+    use tokio::io::BufReader;
 
     tokio::spawn(async move {
-        let mut stderr_reader = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            if let Some(log_data) = parse_structured_log(&line, resource_name_field) {
-                let span = tracing::info_span!(
-                    "child_process_log",
-                    context = context::RUNTIME,
-                    resource_type = resource_type,
-                    resource_name = %log_data.resource_name,
-                );
-                let _guard = span.enter();
-                match log_data.level.as_str() {
-                    "error" => {
-                        tracing::error!("{}", log_data.message);
-                        // Show error in CLI UI if ui_action is configured
-                        if let Some(action) = ui_action {
-                            show_message_wrapper(
-                                MessageType::Error,
-                                Message {
-                                    action: action.to_string(),
-                                    details: log_data.message.clone(),
-                                },
-                            );
-                        }
-                    }
-                    "warn" => tracing::warn!("{}", log_data.message),
-                    "debug" => tracing::debug!("{}", log_data.message),
-                    _ => tracing::info!("{}", log_data.message),
-                }
-                continue;
-            }
-            // Fall back to regular error logging if not a structured log
-            error!("{}", line);
-            // Also show non-structured stderr in UI if configured
-            if let Some(action) = ui_action {
-                show_message_wrapper(
-                    MessageType::Error,
-                    Message {
-                        action: action.to_string(),
-                        details: line.to_string(),
-                    },
-                );
-            }
-        }
+        let reader = BufReader::new(stderr);
+        process_stderr_lines(
+            reader,
+            resource_name_field,
+            resource_type,
+            ui_action,
+            show_message_wrapper,
+        )
+        .await
     })
 }
 
@@ -1167,5 +1213,139 @@ mod tests {
         assert_eq!(result.resource_name, "unknown");
         assert_eq!(result.message, "");
         assert_eq!(result.level, "info");
+    }
+
+    // Tests for process_stderr_lines
+    use crate::cli::display::{Message, MessageType};
+
+    #[tokio::test]
+    async fn test_process_stderr_lines_structured_error_log() {
+        // Structured log with error level
+        let input = r#"{"__moose_structured_log__":true,"function_name":"my_func","level":"error","message":"Something went wrong"}"#;
+        let reader = tokio::io::BufReader::new(std::io::Cursor::new(input));
+
+        let callbacks: Arc<Mutex<Vec<(MessageType, Message)>>> = Arc::new(Mutex::new(Vec::new()));
+        let callbacks_clone = callbacks.clone();
+
+        process_stderr_lines(
+            reader,
+            "function_name",
+            resource_type::TRANSFORM,
+            Some("Streaming"),
+            move |msg_type, msg| {
+                callbacks_clone.lock().unwrap().push((msg_type, msg));
+            },
+        )
+        .await;
+
+        let captured = callbacks.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].0, MessageType::Error);
+        assert_eq!(captured[0].1.action, "Streaming");
+        assert_eq!(captured[0].1.details, "Something went wrong");
+    }
+
+    #[tokio::test]
+    async fn test_process_stderr_lines_structured_info_log_no_ui_callback() {
+        // Info-level structured log should not trigger ui_callback
+        let input = r#"{"__moose_structured_log__":true,"function_name":"my_func","level":"info","message":"Just info"}"#;
+        let reader = tokio::io::BufReader::new(std::io::Cursor::new(input));
+
+        let callbacks: Arc<Mutex<Vec<(MessageType, Message)>>> = Arc::new(Mutex::new(Vec::new()));
+        let callbacks_clone = callbacks.clone();
+
+        process_stderr_lines(
+            reader,
+            "function_name",
+            resource_type::TRANSFORM,
+            Some("Streaming"),
+            move |msg_type, msg| {
+                callbacks_clone.lock().unwrap().push((msg_type, msg));
+            },
+        )
+        .await;
+
+        let captured = callbacks.lock().unwrap();
+        assert!(
+            captured.is_empty(),
+            "Info logs should not trigger UI callback"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_stderr_lines_non_structured_line() {
+        // Non-structured line should trigger UI callback with Error
+        let input = "Plain stderr output\n";
+        let reader = tokio::io::BufReader::new(std::io::Cursor::new(input));
+
+        let callbacks: Arc<Mutex<Vec<(MessageType, Message)>>> = Arc::new(Mutex::new(Vec::new()));
+        let callbacks_clone = callbacks.clone();
+
+        process_stderr_lines(
+            reader,
+            "function_name",
+            resource_type::TRANSFORM,
+            Some("Streaming"),
+            move |msg_type, msg| {
+                callbacks_clone.lock().unwrap().push((msg_type, msg));
+            },
+        )
+        .await;
+
+        let captured = callbacks.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        assert_eq!(captured[0].0, MessageType::Error);
+        assert_eq!(captured[0].1.details, "Plain stderr output");
+    }
+
+    #[tokio::test]
+    async fn test_process_stderr_lines_ui_action_none_no_callback() {
+        // When ui_action is None, callback should not be invoked
+        let input = r#"{"__moose_structured_log__":true,"function_name":"my_func","level":"error","message":"Error"}"#;
+        let reader = tokio::io::BufReader::new(std::io::Cursor::new(input));
+
+        let callbacks: Arc<Mutex<Vec<(MessageType, Message)>>> = Arc::new(Mutex::new(Vec::new()));
+        let callbacks_clone = callbacks.clone();
+
+        process_stderr_lines(
+            reader,
+            "function_name",
+            resource_type::TRANSFORM,
+            None, // No UI action
+            move |msg_type, msg| {
+                callbacks_clone.lock().unwrap().push((msg_type, msg));
+            },
+        )
+        .await;
+
+        let captured = callbacks.lock().unwrap();
+        assert!(captured.is_empty(), "No UI callback when ui_action is None");
+    }
+
+    #[tokio::test]
+    async fn test_process_stderr_lines_multiple_lines() {
+        // Multiple lines - one structured error, one plain
+        let input = r#"{"__moose_structured_log__":true,"function_name":"my_func","level":"error","message":"Structured error"}
+Plain error line"#;
+        let reader = tokio::io::BufReader::new(std::io::Cursor::new(input));
+
+        let callbacks: Arc<Mutex<Vec<(MessageType, Message)>>> = Arc::new(Mutex::new(Vec::new()));
+        let callbacks_clone = callbacks.clone();
+
+        process_stderr_lines(
+            reader,
+            "function_name",
+            resource_type::TRANSFORM,
+            Some("Streaming"),
+            move |msg_type, msg| {
+                callbacks_clone.lock().unwrap().push((msg_type, msg));
+            },
+        )
+        .await;
+
+        let captured = callbacks.lock().unwrap();
+        assert_eq!(captured.len(), 2);
+        assert_eq!(captured[0].1.details, "Structured error");
+        assert_eq!(captured[1].1.details, "Plain error line");
     }
 }

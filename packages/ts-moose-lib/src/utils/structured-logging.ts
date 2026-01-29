@@ -2,6 +2,81 @@ import * as util from "util";
 import { AsyncLocalStorage } from "async_hooks";
 
 /**
+ * Sets up structured console logging by wrapping all console methods.
+ * Returns the AsyncLocalStorage for use with .run() during execution.
+ *
+ * @template TContext - The type of context stored in AsyncLocalStorage
+ * @param getContextField - Function to extract the identifying field from context
+ * @param contextFieldName - The JSON field name for the context (e.g., "api_name", "task_name")
+ * @returns The AsyncLocalStorage instance to use with .run() for setting context
+ *
+ * @example
+ * ```ts
+ * const taskContextStorage = setupStructuredConsole<{ taskName: string }>(
+ *   (ctx) => ctx.taskName,
+ *   "task_name"
+ * );
+ *
+ * // Use with .run() to set context for user code execution
+ * await taskContextStorage.run({ taskName: "myTask" }, async () => {
+ *   console.log("Hello"); // Emits structured JSON log
+ * });
+ * ```
+ */
+export function setupStructuredConsole<TContext>(
+  getContextField: (context: TContext) => string,
+  contextFieldName: string,
+): AsyncLocalStorage<TContext> {
+  const contextStorage = new AsyncLocalStorage<TContext>();
+
+  const originalConsole = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+    debug: console.debug,
+  };
+
+  console.log = createStructuredConsoleWrapper(
+    contextStorage,
+    getContextField,
+    contextFieldName,
+    originalConsole.log,
+    "info",
+  );
+  console.info = createStructuredConsoleWrapper(
+    contextStorage,
+    getContextField,
+    contextFieldName,
+    originalConsole.info,
+    "info",
+  );
+  console.warn = createStructuredConsoleWrapper(
+    contextStorage,
+    getContextField,
+    contextFieldName,
+    originalConsole.warn,
+    "warn",
+  );
+  console.error = createStructuredConsoleWrapper(
+    contextStorage,
+    getContextField,
+    contextFieldName,
+    originalConsole.error,
+    "error",
+  );
+  console.debug = createStructuredConsoleWrapper(
+    contextStorage,
+    getContextField,
+    contextFieldName,
+    originalConsole.debug,
+    "debug",
+  );
+
+  return contextStorage;
+}
+
+/**
  * Safely serializes a value to a string, handling circular references, BigInt, Symbols, and Error objects.
  *
  * This function:
@@ -12,7 +87,7 @@ import { AsyncLocalStorage } from "async_hooks";
  * @param arg - The value to serialize (can be any type)
  * @returns A string representation of the value
  */
-export function safeStringify(arg: unknown): string {
+function safeStringify(arg: unknown): string {
   if (typeof arg === "object" && arg !== null) {
     // Special-case Error objects: JSON.stringify(new Error("x")) returns "{}"
     // Use util.inspect to preserve message and stack trace
@@ -60,20 +135,32 @@ export function createStructuredConsoleWrapper<TContext>(
 ) {
   return (...args: unknown[]) => {
     const context = contextStorage.getStore();
-    if (context) {
-      // We're in a context - emit structured log
+    if (!context) {
+      originalMethod(...args);
+      return;
+    }
+
+    // Safely extract context field - never throws
+    let ctxValue: string;
+    try {
+      ctxValue = getContextField(context);
+    } catch {
+      ctxValue = "unknown";
+    }
+
+    // Emit structured log, fall back to original on any failure
+    try {
       const message = args.map((arg) => safeStringify(arg)).join(" ");
       process.stderr.write(
         JSON.stringify({
           __moose_structured_log__: true,
           level,
           message,
-          [contextFieldName]: getContextField(context),
+          [contextFieldName]: ctxValue,
           timestamp: new Date().toISOString(),
         }) + "\n",
       );
-    } else {
-      // Not in context - use original console
+    } catch {
       originalMethod(...args);
     }
   };

@@ -177,6 +177,9 @@ where
 /// format, and data model.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RouteMeta {
+    /// The API name (matches source_primitive.name in infrastructure map)
+    /// Used for structured logging to enable log correlation with infra map
+    pub api_name: String,
     /// The Kafka topic name associated with this route
     pub kafka_topic_name: String,
     /// The data model associated with this route
@@ -467,13 +470,35 @@ fn normalize_consumption_path(path: &str) -> &str {
         .unwrap_or(path)
 }
 
+/// Finds the best matching API name from the consumption_apis set.
+/// Handles versioned paths like `/bar/1` by stripping the version suffix.
+fn find_api_name<'a>(normalized_path: &'a str, consumption_apis: &HashSet<String>) -> &'a str {
+    // First try exact match
+    if consumption_apis.contains(normalized_path) {
+        return normalized_path;
+    }
+
+    // Try stripping version suffix (last segment after '/')
+    // For paths like "bar/1", try "bar"
+    if let Some(pos) = normalized_path.rfind('/') {
+        let base_path = &normalized_path[..pos];
+        if consumption_apis.contains(base_path) {
+            return base_path;
+        }
+    }
+
+    // Fallback to normalized path
+    normalized_path
+}
+
 #[instrument(
     name = "consumption_api_request",
     skip_all,
     fields(
         context = context::RUNTIME,
         resource_type = resource_type::CONSUMPTION_API,
-        resource_name = %normalize_consumption_path(req.uri().path()),
+        // Placeholder - will be recorded with actual API name after matching
+        resource_name = tracing::field::Empty,
     )
 )]
 async fn get_consumption_api_res(
@@ -486,6 +511,14 @@ async fn get_consumption_api_res(
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
     // Normalize to the API name by removing either prefix for consistent resource naming
     let normalized_path = normalize_consumption_path(req.uri().path());
+
+    // Find the best matching API name and record it for structured logging
+    // This ensures resource_name matches source_primitive.name in infrastructure map
+    {
+        let apis = consumption_apis.read().await;
+        let api_name = find_api_name(normalized_path, &apis);
+        tracing::Span::current().record("resource_name", api_name);
+    }
 
     // Extract the Authorization header and check the bearer token
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
@@ -1441,12 +1474,14 @@ fn safe_body_summary(body: &[u8]) -> String {
     fields(
         context = context::RUNTIME,
         resource_type = resource_type::INGEST_API,
-        resource_name = %topic_name,
+        // Use api_name for log correlation with infrastructure map (source_primitive.name)
+        resource_name = %api_name,
     )
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_json_array_body(
     configured_producer: &ConfiguredProducer,
+    api_name: &str,
     topic_name: &str,
     data_model: &DataModel,
     dead_letter_queue: &Option<&str>,
@@ -1713,6 +1748,7 @@ async fn ingest_route(
     match matching_route {
         Some((_, route_meta)) => Ok(handle_json_array_body(
             &configured_producer,
+            &route_meta.api_name,
             &route_meta.kafka_topic_name,
             &route_meta.data_model,
             &route_meta.dead_letter_queue.as_deref(),
@@ -2415,6 +2451,11 @@ impl Webserver {
                                         route_table.insert(
                                             api_endpoint.path.clone(),
                                             RouteMeta {
+                                                // Use source_primitive.name for log correlation with infra map
+                                                api_name: api_endpoint
+                                                    .source_primitive
+                                                    .name
+                                                    .clone(),
                                                 data_model: *data_model.unwrap(),
                                                 dead_letter_queue,
                                                 kafka_topic_name: kafka_topic.name,
@@ -2482,6 +2523,8 @@ impl Webserver {
                                         route_table.insert(
                                             after.path.clone(),
                                             RouteMeta {
+                                                // Use source_primitive.name for log correlation with infra map
+                                                api_name: after.source_primitive.name.clone(),
                                                 data_model: *data_model.as_ref().unwrap().clone(),
                                                 dead_letter_queue: dead_letter_queue.clone(),
                                                 kafka_topic_name: kafka_topic.name,

@@ -1,57 +1,14 @@
 import { log as logger, Context } from "@temporalio/activity";
-import { AsyncLocalStorage } from "async_hooks";
 import { isCancellation } from "@temporalio/workflow";
 import { Task, Workflow } from "../dmv2";
 import { getWorkflows, getTaskForWorkflow } from "../dmv2/internal";
 import { jsonDateReviver } from "../utilities/json";
-import { createStructuredConsoleWrapper } from "../utils/structured-logging";
+import { setupStructuredConsole } from "../utils/structured-logging";
 
-// AsyncLocalStorage to track task context without mutating globals
-const taskContextStorage = new AsyncLocalStorage<{ taskName: string }>();
-
-// Wrap console methods once at module load
-const originalConsole = {
-  log: console.log,
-  info: console.info,
-  warn: console.warn,
-  error: console.error,
-  debug: console.debug,
-};
-
-console.log = createStructuredConsoleWrapper(
-  taskContextStorage,
+// Set up structured console logging for task context
+const taskContextStorage = setupStructuredConsole<{ taskName: string }>(
   (ctx) => ctx.taskName,
   "task_name",
-  originalConsole.log,
-  "info",
-);
-console.info = createStructuredConsoleWrapper(
-  taskContextStorage,
-  (ctx) => ctx.taskName,
-  "task_name",
-  originalConsole.info,
-  "info",
-);
-console.warn = createStructuredConsoleWrapper(
-  taskContextStorage,
-  (ctx) => ctx.taskName,
-  "task_name",
-  originalConsole.warn,
-  "warn",
-);
-console.error = createStructuredConsoleWrapper(
-  taskContextStorage,
-  (ctx) => ctx.taskName,
-  "task_name",
-  originalConsole.error,
-  "error",
-);
-console.debug = createStructuredConsoleWrapper(
-  taskContextStorage,
-  (ctx) => ctx.taskName,
-  "task_name",
-  originalConsole.debug,
-  "debug",
 );
 
 export const activities = {
