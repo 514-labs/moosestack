@@ -6,15 +6,16 @@ category: getting-started
 ---
 
 
-import { Callout, ToggleBlock, MuxVideo, BulletPointsCard, IconBadge, CTACards, CTACard, LanguageTabs, LanguageTabContent, FileTree, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { Callout, ToggleBlock, MuxVideo, BulletPointsCard, CTACards, CTACard, LanguageTabs, LanguageTabContent, FileTree, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { Badge } from "@/components/ui/badge";
 import { PathConfig } from "@/lib/path-config";
 
 # 5-Minute Quickstart
 
-<div className="flex items-center gap-4 mt-6 mb-4 flex-wrap">
-<IconBadge Icon="Clock" label="5 minute setup" variant="moose" />
-<IconBadge Icon="Check" label="Zero config" variant="moose" />
-<IconBadge Icon="DeviceLaptop" label="Local ClickHouse, Redpanda, and APIs" variant="moose" />
+<div className="flex items-center gap-2 mt-4 mb-4 flex-wrap">
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">5 minute setup</Badge>
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">Zero config</Badge>
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">Local ClickHouse, Redpanda, and APIs</Badge>
 </div>
 
 <LanguageTabs>

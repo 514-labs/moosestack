@@ -5,15 +5,16 @@ order: 1
 category: olap
 ---
 
-import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, IconBadge, CTACards, CTACard, FileTree, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { Callout, BulletPointsCard, LanguageTabs, LanguageTabContent, CTACards, CTACard, FileTree, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/mdx";
+import { Badge } from "@/components/ui/badge";
 import { PathConfig } from "@/lib/path-config";
 
 # Modeling Tables
 
-<div className="flex items-center gap-4 mt-6 mb-4 flex-wrap">
-<IconBadge Icon="Database" label="Code-first schema" variant="moose" />
-<IconBadge Icon="Check" label="Type-safe" variant="moose" />
-<IconBadge Icon="DeviceLaptop" label="Hot-reload" variant="moose" />
+<div className="flex items-center gap-2 mt-4 mb-4 flex-wrap">
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">Code-first schema</Badge>
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">Type-safe</Badge>
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">Hot-reload</Badge>
 </div>
 
 ## Overview
