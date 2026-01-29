@@ -114,10 +114,14 @@ const config: Config = {
             lineHeight: "1.5rem",
             h1: {
               fontSize: "2.25rem",
+              lineHeight: "2.5rem",
               fontWeight: "700",
-              marginTop: "2rem",
+              marginTop: "0",
               marginBottom: "1rem",
               color: "hsl(var(--foreground))",
+            },
+            "h1:not(:first-child)": {
+              marginTop: "2rem",
             },
             h2: {
               fontSize: "1.875rem",
