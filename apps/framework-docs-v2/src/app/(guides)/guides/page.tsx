@@ -68,13 +68,13 @@ export default async function GuidesPage() {
   return (
     <div className="flex w-full min-w-0 flex-col gap-6 pt-4">
       {/* Page header */}
-      <div className="prose dark:prose-invert max-w-none">
+      <article className="prose dark:prose-invert max-w-none w-full min-w-0">
         <h1>Guides</h1>
         <p>
           Comprehensive guides for common application use cases powered by
           realtime analytical infrastructure.
         </p>
-      </div>
+      </article>
 
       {/* Guides sections */}
       <GuideSectionGrid sections={sectionsWithFrontmatter} />
