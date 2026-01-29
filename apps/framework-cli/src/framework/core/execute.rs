@@ -19,11 +19,10 @@ use super::{
     plan::InfraPlan,
 };
 use crate::{
-    cli::routines::scripts::terminate_all_workflows,
-    framework::scripts::executor::execute_scheduled_workflows,
     infrastructure::{
         api,
         olap::{self, OlapChangesError},
+        orchestration::workflows,
         processes::{
             self, kafka_clickhouse_sync::SyncingProcessesRegistry,
             process_registry::ProcessRegistries,
@@ -139,7 +138,7 @@ pub async fn execute_initial_infra_change(
     )
     .await?;
 
-    execute_scheduled_workflows(ctx.project, &ctx.plan.target_infra_map.workflows).await;
+    workflows::execute_changes(ctx.project, &ctx.plan.changes.workflow_changes).await;
 
     Ok(process_registries)
 }
@@ -220,11 +219,7 @@ pub async fn execute_online_change(
     )
     .await?;
 
-    match terminate_all_workflows(project).await {
-        Ok(success) => tracing::info!("Terminated running workflows: {:?}", success),
-        Err(e) => tracing::warn!("Failed to terminate running workflows: {:?}", e),
-    }
-    execute_scheduled_workflows(project, &plan.target_infra_map.workflows).await;
+    workflows::execute_changes(project, &plan.changes.workflow_changes).await;
 
     Ok(())
 }

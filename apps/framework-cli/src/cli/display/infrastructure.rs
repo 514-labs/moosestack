@@ -32,6 +32,7 @@ use crate::framework::core::{
     infrastructure::table::{ColumnType, EnumValue},
     infrastructure_map::{
         ApiChange, Change, FilteredChange, OlapChange, ProcessChange, StreamingChange, TableChange,
+        WorkflowChange,
     },
     plan::InfraPlan,
 };
@@ -786,6 +787,44 @@ pub fn show_api_changes(api_changes: &[ApiChange]) {
     });
 }
 
+/// Formats workflow configuration details for display.
+fn format_workflow_details(workflow: &crate::framework::scripts::Workflow) -> Vec<String> {
+    let config = workflow.config();
+    let mut details = Vec::new();
+
+    if config.schedule.is_empty() {
+        details.push("Schedule: manual trigger only".to_string());
+    } else {
+        details.push(format!("Schedule: {}", config.schedule));
+    }
+
+    details.push(format!("Retries: {}", config.retries));
+    details.push(format!("Timeout: {}", config.timeout));
+
+    details
+}
+
+/// Displays workflow infrastructure changes.
+///
+/// Shows changes to workflows including additions, removals, and configuration updates
+pub fn show_workflow_changes(workflow_changes: &[WorkflowChange]) {
+    workflow_changes.iter().for_each(|change| match change {
+        WorkflowChange::Workflow(Change::Added(workflow)) => {
+            let title = format!("Workflow: {}", workflow.name());
+            let details = format_workflow_details(workflow);
+            infra_added_detailed(&title, &details);
+        }
+        WorkflowChange::Workflow(Change::Removed(workflow)) => {
+            infra_removed(&format!("Workflow: {}", workflow.name()));
+        }
+        WorkflowChange::Workflow(Change::Updated { before: _, after }) => {
+            let title = format!("Workflow: {}", after.name());
+            let details = format_workflow_details(after);
+            infra_updated_detailed(&title, &details);
+        }
+    });
+}
+
 /// Displays changes that were filtered out due to lifecycle policies.
 ///
 /// This function shows infrastructure changes that were blocked from being applied
@@ -869,7 +908,7 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_databa
 /// Displays all infrastructure changes from an InfraPlan.
 ///
 /// This function provides a comprehensive display of all infrastructure changes
-/// including streaming engine changes, OLAP changes, process changes, and API changes.
+/// including streaming engine changes, OLAP changes, process changes, API changes, and workflows.
 /// Each category of changes is displayed with appropriate formatting and styling.
 ///
 /// # Arguments
@@ -882,6 +921,7 @@ pub fn show_filtered_changes(filtered_changes: &[FilteredChange], default_databa
 /// - **OLAP Changes**: Tables, views, and SQL resources (via `show_olap_changes`)
 /// - **Process Changes**: Various process types including sync processes, functions, and web servers
 /// - **API Changes**: API endpoints and related infrastructure
+/// - **Workflow Changes**: Workflows with schedules and configurations
 ///
 /// # Examples
 ///
@@ -894,6 +934,7 @@ pub fn show_changes(infra_plan: &InfraPlan) {
     show_olap_changes(&infra_plan.changes.olap_changes);
     show_process_changes(&infra_plan.changes.processes_changes);
     show_api_changes(&infra_plan.changes.api_changes);
+    show_workflow_changes(&infra_plan.changes.workflow_changes);
     show_filtered_changes(
         &infra_plan.changes.filtered_olap_changes,
         &infra_plan.target_infra_map.default_database,

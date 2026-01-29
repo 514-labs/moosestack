@@ -387,7 +387,9 @@ class WorkflowClient:
         processed_input, workflow_id = self._process_input_data(name, input_data)
 
         # Create retry policy and timeout (common logic)
-        retry_policy = RetryPolicy(maximum_attempts=config["retry_count"])
+        # Temporal's maximum_attempts = total attempts (initial + retries)
+        # User-facing "retries" = number of retries after initial failure
+        retry_policy = RetryPolicy(maximum_attempts=config["retry_count"] + 1)
         run_timeout = self.parse_timeout_to_timedelta(config["timeout_str"])
 
         print(

@@ -86,24 +86,27 @@ myworkflow = Workflow(
 
 ## Example: Workflow and Task Retry Interplay
 
-When configuring retries, it's important to understand how workflow-level and task-level retries interact. Consider the following scenario:
+When configuring retries, it's important to understand how workflow-level and task-level retries interact. The `retries` value specifies the number of retry attempts after the initial execution fails.
+
+Consider the following scenario:
 
 <LanguageTabs>
   <LanguageTabContent value="typescript">
-- **Workflow Retry Policy**: 2 attempts
-- **Task Retry Policy**: 3 attempts
+- **Workflow retries**: 1 (1 initial + 1 retry = 2 total attempts)
+- **Task retries**: 2 (1 initial + 2 retries = 3 total attempts)
+
 
 ```typescript filename="app/index.ts" copy
 import { Task, Workflow } from "@514labs/moose-lib";
 
 export const task1 = new Task<Foo, void>("task1", {
   run: async (ctx) => {},
-  retries: 3,
+  retries: 2,
 });
 
 export const myworkflow = new Workflow("myworkflow", {
   startingTask: task1,
-  retries: 2,
+  retries: 1,
 });
 ```
   </LanguageTabContent>
@@ -121,24 +124,24 @@ task1 = Task[Foo, None](
 
 myworkflow = Workflow(
   name="myworkflow",
-  config=WorkflowConfig(starting_task=task1, retries=3)
+  config=WorkflowConfig(starting_task=task1, retries=1)
 )
 ```
   </LanguageTabContent>
 </LanguageTabs>
 
-If the execution of the workflow encounters an error, the retry sequence would proceed as follows:
+If the task keeps failing, the retry sequence would proceed as follows:
 
 1. **Workflow Attempt 1**
-   - **Task Attempt 1**: Task fails
-   - **Task Attempt 2**: Task fails
-   - **Task Attempt 3**: Task fails
+   - **Task Attempt 1** (initial): Task fails
+   - **Task Retry 1**: Task fails
+   - **Task Retry 2**: Task fails
    - Workflow attempt fails after exhausting task retries
 
-2. **Workflow Attempt 2**
-   - **Task Attempt 1**: Task fails
-   - **Task Attempt 2**: Task fails
-   - **Task Attempt 3**: Task fails
-   - Workflow attempt fails after exhausting task retries
+2. **Workflow Retry 1**
+   - **Task Attempt 1** (initial): Task fails
+   - **Task Retry 1**: Task fails
+   - **Task Retry 2**: Task fails
+   - Workflow fails after exhausting all retries
 
-In this example, the workflow will make a total of 2 attempts, and each task within those attempts will retry up to 3 times before the workflow itself retries.
+This results in up to 6 total task executions: 3 task attempts × 2 workflow attempts.

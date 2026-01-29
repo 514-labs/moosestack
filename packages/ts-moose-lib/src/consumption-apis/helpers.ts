@@ -147,7 +147,8 @@ export class WorkflowClient {
         workflowIdConflictPolicy: "FAIL",
         workflowIdReusePolicy: "ALLOW_DUPLICATE",
         retry: {
-          maximumAttempts: config.retries,
+          // Temporal's maximumAttempts = total attempts (initial + retries)
+          maximumAttempts: config.retries + 1,
         },
         workflowRunTimeout: config.timeout as StringValue,
       });

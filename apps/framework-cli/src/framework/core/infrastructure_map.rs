@@ -453,6 +453,15 @@ pub enum ProcessChange {
     OrchestrationWorker(Change<OrchestrationWorker>),
 }
 
+/// Changes to workflow components
+///
+/// Workflows are orchestration units that execute tasks on a schedule or on-demand.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WorkflowChange {
+    /// Change to a workflow
+    Workflow(Change<Workflow>),
+}
+
 /// Represents a change that was blocked by lifecycle policies
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilteredChange {
@@ -478,6 +487,9 @@ pub struct InfraChanges {
     pub web_app_changes: Vec<WebAppChange>,
     /// Changes to streaming components
     pub streaming_engine_changes: Vec<StreamingChange>,
+    /// Changes to workflow components
+    #[serde(default)]
+    pub workflow_changes: Vec<WorkflowChange>,
     /// Changes that were filtered out due to lifecycle policies
     #[serde(default)]
     pub filtered_olap_changes: Vec<FilteredChange>,
@@ -494,6 +506,7 @@ impl InfraChanges {
             && self.api_changes.is_empty()
             && self.web_app_changes.is_empty()
             && self.streaming_engine_changes.is_empty()
+            && self.workflow_changes.is_empty()
             && self.filtered_olap_changes.is_empty()
     }
 }
@@ -635,6 +648,7 @@ impl InfrastructureMap {
             api_changes,
             streaming_engine_changes,
             web_app_changes: vec![],
+            workflow_changes: vec![],
             filtered_olap_changes: vec![],
         }
     }
@@ -882,14 +896,22 @@ impl InfrastructureMap {
         // All process types
         self.diff_all_processes(target_map, &mut changes.processes_changes);
 
+        // Workflows
+        Self::diff_workflows(
+            &self.workflows,
+            &target_map.workflows,
+            &mut changes.workflow_changes,
+        );
+
         // Summary
         tracing::info!(
-            "Total changes detected - OLAP: {}, Processes: {}, API: {}, WebApps: {}, Streaming: {}",
+            "Total changes detected - OLAP: {}, Processes: {}, API: {}, WebApps: {}, Streaming: {}, Workflows: {}",
             changes.olap_changes.len(),
             changes.processes_changes.len(),
             changes.api_changes.len(),
             changes.web_app_changes.len(),
-            changes.streaming_engine_changes.len()
+            changes.streaming_engine_changes.len(),
+            changes.workflow_changes.len()
         );
 
         changes
@@ -1211,6 +1233,68 @@ impl InfrastructureMap {
             &target_map.orchestration_workers,
             process_changes,
         );
+    }
+
+    /// Compare workflows between two infrastructure maps and compute the differences
+    ///
+    /// This method identifies added, removed, and updated workflows by comparing
+    /// the source and target workflow maps. A workflow is considered updated when
+    /// its configuration (schedule, retries, timeout) has changed.
+    ///
+    /// # Arguments
+    /// * `self_workflows` - HashMap of source workflows to compare from
+    /// * `target_workflows` - HashMap of target workflows to compare against
+    /// * `workflow_changes` - Mutable vector to collect the identified changes
+    ///
+    /// # Returns
+    /// A tuple of (additions, removals, updates) counts
+    fn diff_workflows(
+        self_workflows: &HashMap<String, Workflow>,
+        target_workflows: &HashMap<String, Workflow>,
+        workflow_changes: &mut Vec<WorkflowChange>,
+    ) -> (usize, usize, usize) {
+        tracing::info!("Analyzing changes in Workflows...");
+        let mut workflow_updates = 0;
+        let mut workflow_removals = 0;
+        let mut workflow_additions = 0;
+
+        for (id, workflow) in self_workflows {
+            if let Some(target_workflow) = target_workflows.get(id) {
+                if !workflows_config_equal(workflow, target_workflow) {
+                    tracing::debug!("Workflow updated: {}", id);
+                    workflow_updates += 1;
+                    workflow_changes.push(WorkflowChange::Workflow(Change::<Workflow>::Updated {
+                        before: Box::new(workflow.clone()),
+                        after: Box::new(target_workflow.clone()),
+                    }));
+                }
+            } else {
+                tracing::debug!("Workflow removed: {}", id);
+                workflow_removals += 1;
+                workflow_changes.push(WorkflowChange::Workflow(Change::<Workflow>::Removed(
+                    Box::new(workflow.clone()),
+                )));
+            }
+        }
+
+        for (id, workflow) in target_workflows {
+            if !self_workflows.contains_key(id) {
+                tracing::debug!("Workflow added: {}", id);
+                workflow_additions += 1;
+                workflow_changes.push(WorkflowChange::Workflow(Change::<Workflow>::Added(
+                    Box::new(workflow.clone()),
+                )));
+            }
+        }
+
+        tracing::info!(
+            "Workflow changes: {} added, {} removed, {} updated",
+            workflow_additions,
+            workflow_removals,
+            workflow_updates
+        );
+
+        (workflow_additions, workflow_removals, workflow_updates)
     }
 
     /// Compare TopicToTableSyncProcess changes between two infrastructure maps
@@ -2565,6 +2649,11 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            workflows: self
+                .workflows
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_proto()))
+                .collect(),
             special_fields: Default::default(),
         }
     }
@@ -2702,8 +2791,11 @@ impl InfrastructureMap {
                 .collect(),
             consumption_api_web_server: ConsumptionApiWebServer {},
             sql_resources,
-            // TODO: add proto
-            workflows: HashMap::new(),
+            workflows: proto
+                .workflows
+                .into_iter()
+                .map(|(k, v)| (k, Workflow::from_proto(v)))
+                .collect(),
             web_apps: proto
                 .web_apps
                 .into_iter()
@@ -3377,6 +3469,23 @@ fn api_endpoints_equal_ignore_metadata(a: &ApiEndpoint, b: &ApiEndpoint) -> bool
     a.metadata = None;
     b.metadata = None;
     a == b
+}
+
+/// Check if two workflow configurations are equal
+///
+/// Compares the schedule, retries, and timeout settings between two workflows.
+/// These are the configuration values that affect how Temporal runs the workflow.
+///
+/// # Arguments
+/// * `a` - The first workflow to compare
+/// * `b` - The second workflow to compare
+///
+/// # Returns
+/// `true` if the configurations are equal, `false` otherwise
+fn workflows_config_equal(a: &Workflow, b: &Workflow) -> bool {
+    a.config().schedule == b.config().schedule
+        && a.config().retries == b.config().retries
+        && a.config().timeout == b.config().timeout
 }
 
 /// Computes the detailed differences between two table versions
@@ -7430,5 +7539,237 @@ mod normalize_tests {
             normalized.materialized_views.is_empty(),
             "Should not convert MV without TO clause"
         );
+    }
+}
+
+#[cfg(test)]
+mod diff_workflow_tests {
+    use super::*;
+    use crate::framework::languages::SupportedLanguages;
+    use crate::framework::scripts::Workflow;
+
+    fn create_test_workflow(name: &str, schedule: &str, retries: u32, timeout: &str) -> Workflow {
+        Workflow::from_user_code(
+            name.to_string(),
+            SupportedLanguages::Typescript,
+            Some(retries),
+            Some(timeout.to_string()),
+            if schedule.is_empty() {
+                None
+            } else {
+                Some(schedule.to_string())
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_workflow_added() {
+        let current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow = create_test_workflow("my_workflow", "1h", 3, "30s");
+        target.insert("my_workflow".to_string(), workflow);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            WorkflowChange::Workflow(Change::Added(w)) => {
+                assert_eq!(w.name(), "my_workflow");
+            }
+            _ => panic!("Expected Added change"),
+        }
+    }
+
+    #[test]
+    fn test_workflow_removed() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow = create_test_workflow("my_workflow", "1h", 3, "30s");
+        current.insert("my_workflow".to_string(), workflow);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            WorkflowChange::Workflow(Change::Removed(w)) => {
+                assert_eq!(w.name(), "my_workflow");
+            }
+            _ => panic!("Expected Removed change"),
+        }
+    }
+
+    #[test]
+    fn test_workflow_schedule_change_triggers_update() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow_v1 = create_test_workflow("my_workflow", "1h", 3, "30s");
+        let workflow_v2 = create_test_workflow("my_workflow", "2h", 3, "30s");
+
+        current.insert("my_workflow".to_string(), workflow_v1);
+        target.insert("my_workflow".to_string(), workflow_v2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            WorkflowChange::Workflow(Change::Updated { before, after }) => {
+                assert_eq!(before.config().schedule, "1h");
+                assert_eq!(after.config().schedule, "2h");
+            }
+            _ => panic!("Expected Updated change"),
+        }
+    }
+
+    #[test]
+    fn test_workflow_retries_change_triggers_update() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow_v1 = create_test_workflow("my_workflow", "1h", 3, "30s");
+        let workflow_v2 = create_test_workflow("my_workflow", "1h", 5, "30s");
+
+        current.insert("my_workflow".to_string(), workflow_v1);
+        target.insert("my_workflow".to_string(), workflow_v2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            WorkflowChange::Workflow(Change::Updated { before, after }) => {
+                assert_eq!(before.config().retries, 3);
+                assert_eq!(after.config().retries, 5);
+            }
+            _ => panic!("Expected Updated change"),
+        }
+    }
+
+    #[test]
+    fn test_workflow_timeout_change_triggers_update() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow_v1 = create_test_workflow("my_workflow", "1h", 3, "30s");
+        let workflow_v2 = create_test_workflow("my_workflow", "1h", 3, "60s");
+
+        current.insert("my_workflow".to_string(), workflow_v1);
+        target.insert("my_workflow".to_string(), workflow_v2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            WorkflowChange::Workflow(Change::Updated { before, after }) => {
+                assert_eq!(before.config().timeout, "30s");
+                assert_eq!(after.config().timeout, "60s");
+            }
+            _ => panic!("Expected Updated change"),
+        }
+    }
+
+    #[test]
+    fn test_workflow_no_change_when_identical() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow_v1 = create_test_workflow("my_workflow", "1h", 3, "30s");
+        let workflow_v2 = create_test_workflow("my_workflow", "1h", 3, "30s");
+
+        current.insert("my_workflow".to_string(), workflow_v1);
+        target.insert("my_workflow".to_string(), workflow_v2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert!(
+            changes.is_empty(),
+            "No changes expected for identical workflows"
+        );
+    }
+
+    #[test]
+    fn test_workflow_schedule_added_triggers_update() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        // Workflow without schedule
+        let workflow_v1 = create_test_workflow("my_workflow", "", 3, "30s");
+        // Same workflow with schedule added
+        let workflow_v2 = create_test_workflow("my_workflow", "@hourly", 3, "30s");
+
+        current.insert("my_workflow".to_string(), workflow_v1);
+        target.insert("my_workflow".to_string(), workflow_v2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            WorkflowChange::Workflow(Change::Updated { before, after }) => {
+                assert!(before.config().schedule.is_empty());
+                assert_eq!(after.config().schedule, "@hourly");
+            }
+            _ => panic!("Expected Updated change when schedule is added"),
+        }
+    }
+
+    #[test]
+    fn test_workflow_schedule_removed_triggers_update() {
+        let mut current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        // Workflow with schedule
+        let workflow_v1 = create_test_workflow("my_workflow", "@hourly", 3, "30s");
+        // Same workflow with schedule removed
+        let workflow_v2 = create_test_workflow("my_workflow", "", 3, "30s");
+
+        current.insert("my_workflow".to_string(), workflow_v1);
+        target.insert("my_workflow".to_string(), workflow_v2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            WorkflowChange::Workflow(Change::Updated { before, after }) => {
+                assert_eq!(before.config().schedule, "@hourly");
+                assert!(after.config().schedule.is_empty());
+            }
+            _ => panic!("Expected Updated change when schedule is removed"),
+        }
+    }
+
+    #[test]
+    fn test_workflow_upgrade_scenario_all_added() {
+        // Simulates upgrade from old Moose where inframap has no workflows
+        let current: HashMap<String, Workflow> = HashMap::new();
+        let mut target: HashMap<String, Workflow> = HashMap::new();
+
+        let workflow1 = create_test_workflow("workflow_a", "@hourly", 3, "30s");
+        let workflow2 = create_test_workflow("workflow_b", "", 5, "60s");
+        target.insert("workflow_a".to_string(), workflow1);
+        target.insert("workflow_b".to_string(), workflow2);
+
+        let mut changes = vec![];
+        InfrastructureMap::diff_workflows(&current, &target, &mut changes);
+
+        assert_eq!(changes.len(), 2);
+        let added_names: Vec<_> = changes
+            .iter()
+            .filter_map(|c| match c {
+                WorkflowChange::Workflow(Change::Added(w)) => Some(w.name()),
+                _ => None,
+            })
+            .collect();
+        assert!(added_names.contains(&"workflow_a"));
+        assert!(added_names.contains(&"workflow_b"));
     }
 }
