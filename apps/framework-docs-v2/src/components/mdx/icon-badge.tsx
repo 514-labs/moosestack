@@ -28,7 +28,7 @@ export function IconBadge({
     <div
       className={cn(
         "flex items-center gap-1.5 w-fit border text-xs font-medium",
-        "bg-neutral-800 border-neutral-700 text-neutral-100",
+        "bg-muted border-border text-muted-foreground",
         "px-2.5 py-1.5",
         rounded === "full" ? "rounded-full" : "rounded-md",
         className,

@@ -56,7 +56,7 @@ export function GuideStepsWrapper({
                 data-step-index={index}
                 className={index === currentStepIndex ? "block" : "hidden"}
               >
-                <div className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+                <div className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
                   {step.content}
                 </div>
               </div>

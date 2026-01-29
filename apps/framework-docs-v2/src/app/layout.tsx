@@ -41,8 +41,8 @@ export default async function RootLayout({
         >
           <Suspense fallback={null}>
             <LanguageProviderWrapper>
-              <SidebarProvider className="flex flex-col">
-                <div className="[--header-height:theme(spacing.14)]">
+              <SidebarProvider className="flex flex-col min-w-0 w-full">
+                <div className="[--header-height:theme(spacing.14)] min-w-0 w-full">
                   <TopNavWithFlags />
                   {children}
                 </div>
