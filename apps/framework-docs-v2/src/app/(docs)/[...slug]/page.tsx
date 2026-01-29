@@ -108,18 +108,23 @@ export default async function DocPage({ params }: PageProps) {
   // Copy button is always enabled - it's a client component that works with static pages
   const showCopyButton = true;
 
+  // Hide breadcrumbs for top-level section index pages (e.g., /moosestack)
+  const isTopLevelIndex = !slug.includes("/");
+
   return (
     <>
       <div className="flex w-full min-w-0 flex-col gap-6 pt-4">
-        <div className="flex items-center justify-between">
-          <DocBreadcrumbs items={breadcrumbs} />
-          {showCopyButton && (
-            <MarkdownMenu
-              content={content.content}
-              isMDX={content.isMDX ?? false}
-            />
-          )}
-        </div>
+        {!isTopLevelIndex && (
+          <div className="flex items-center justify-between">
+            <DocBreadcrumbs items={breadcrumbs} />
+            {showCopyButton && (
+              <MarkdownMenu
+                content={content.content}
+                isMDX={content.isMDX ?? false}
+              />
+            )}
+          </div>
+        )}
         <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
