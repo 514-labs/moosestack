@@ -116,7 +116,7 @@ export default async function GuidePage({ params }: PageProps) {
 
     return (
       <>
-        <div className="flex w-full flex-col gap-6 pt-4">
+        <div className="flex w-full min-w-0 flex-col gap-6 pt-4">
           <div className="flex items-center justify-between">
             <DocBreadcrumbs items={breadcrumbs} />
             {showCopyButton && (
@@ -126,7 +126,7 @@ export default async function GuidePage({ params }: PageProps) {
               />
             )}
           </div>
-          <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+          <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
             {content.isMDX ?
               <MDXRenderer source={content.content} />
             : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
@@ -197,7 +197,7 @@ export default async function GuidePage({ params }: PageProps) {
 
   return (
     <>
-      <div className="flex w-full flex-col gap-6 pt-4">
+      <div className="flex w-full min-w-0 flex-col gap-6 pt-4">
         <div className="flex items-center justify-between">
           <DocBreadcrumbs items={breadcrumbs} />
           {showCopyButton && (
@@ -207,7 +207,7 @@ export default async function GuidePage({ params }: PageProps) {
             />
           )}
         </div>
-        <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+        <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
@@ -217,7 +217,7 @@ export default async function GuidePage({ params }: PageProps) {
             <article
               key={`step-${step.stepNumber}`}
               id={`step-${step.stepNumber}`}
-              className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 scroll-mt-20"
+              className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto scroll-mt-20"
             >
               <h2>
                 {step.stepNumber}. {step.title}

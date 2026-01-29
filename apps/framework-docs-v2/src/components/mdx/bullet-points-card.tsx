@@ -63,21 +63,14 @@ export function BulletIcon({
       );
     case "check":
       return (
-        <div
-          className={cn(
-            baseIconClasses,
-            "p-1 bg-green-500/10 dark:bg-green-400/10 rounded-full",
-          )}
-        >
-          <IconCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
+        <div className={cn(baseIconClasses, "p-1 bg-muted rounded-full")}>
+          <IconCheck className="w-4 h-4 text-foreground" />
         </div>
       );
     case "x":
       return (
-        <div
-          className={cn(baseIconClasses, "p-1 bg-destructive/10 rounded-full")}
-        >
-          <IconX className="w-4 h-4 text-destructive" />
+        <div className={cn(baseIconClasses, "p-1 bg-muted rounded-full")}>
+          <IconX className="w-4 h-4 text-foreground" />
         </div>
       );
     default:
@@ -134,7 +127,7 @@ function BulletPointCard({
   children,
   className,
   compact,
-  maxWidth = "max-w-3xl",
+  maxWidth = "w-full",
 }: {
   children: React.ReactNode;
   className?: string;
@@ -168,8 +161,8 @@ function BulletPointTitle({
   return (
     <h3
       className={cn(
-        "font-mono text-sm tracking-wider text-muted-foreground",
-        compact ? "mb-3" : "mb-6",
+        "font-mono text-sm font-light tracking-wider text-muted-foreground",
+        compact ? "mb-3" : "mb-4",
         uppercase && "uppercase",
       )}
     >
@@ -284,11 +277,7 @@ export function CompareBulletPointsCard({
   compact = false,
 }: CompareBulletPointsCardProps) {
   return (
-    <BulletPointCard
-      className={className}
-      compact={compact}
-      maxWidth="max-w-5xl"
-    >
+    <BulletPointCard className={className} compact={compact} maxWidth="w-full">
       <div
         className={cn(
           "flex w-full border-b border-border",

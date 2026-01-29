@@ -79,19 +79,40 @@
   * {
     @apply border-border;
   }
+  
+  /* Global prose body variable for consistent body text */
+  :root {
+    --tw-prose-body: hsl(var(--muted-foreground));
+  }
+  
   html {
     scroll-behavior: smooth;
     overscroll-behavior-y: none;
+    overflow-x: clip;
   }
   body {
     @apply bg-background text-foreground;
     overscroll-behavior-y: none;
+    overflow-x: clip;
+    min-width: 0;
   }
 }
 
 @layer components {
   .container {
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Ensure prose body text uses muted-foreground - same as CardDescription */
+  .prose,
+  .prose p,
+  .prose li,
+  .prose ul,
+  .prose ol,
+  .prose td,
+  .prose th,
+  .prose blockquote {
+    @apply text-muted-foreground;
   }
 
   /* Search result highlights */
