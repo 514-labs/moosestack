@@ -1429,7 +1429,6 @@ impl ClickhouseEngine {
     ///
     /// Some engines like Kafka and S3Queue are write-only and cannot be queried with SELECT.
     /// This is important for operations like mirroring and seeding that need to read data.
-    #[allow(dead_code)]
     pub fn supports_select(&self) -> bool {
         !matches!(
             self,
