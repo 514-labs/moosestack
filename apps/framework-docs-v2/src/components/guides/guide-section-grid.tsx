@@ -32,6 +32,8 @@ export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
                     description={guide.description}
                     href={`/${guide.slug}`}
                     iconName={guide.iconName}
+                    languages={guide.languages}
+                    tags={guide.tags}
                   />
                   {index < section.items.length - 1 && (
                     <div className="border-b border-border/50" />
