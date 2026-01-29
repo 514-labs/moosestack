@@ -24,8 +24,7 @@ use super::display::{
 };
 use super::routines::auth::validate_auth_token;
 use super::routines::scripts::{
-    get_workflow_history, run_workflow_and_get_run_ids, temporal_dashboard_url,
-    terminate_all_workflows, terminate_workflow,
+    get_workflow_history, run_workflow_and_get_run_ids, temporal_dashboard_url, terminate_workflow,
 };
 use super::settings::Settings;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -2991,38 +2990,10 @@ async fn shutdown(
     ))
     .await;
 
-    // Step 2: Shutdown workflows (if enabled)
-    // Note: This only runs in development (!project.is_production) because:
-    // - In dev: We want a clean slate - terminate workflow executions so they don't resume on next start
-    // - In production: Workers are already stopped (Step 1), but workflow executions should continue
-    //   running so other workers or future restarts can pick them up. Terminating production workflows
-    //   should be an explicit operational decision, not automatic on every deployment.
-    if !project.is_production && project.features.workflows {
-        let termination_result = with_timing_async("Stop Workflows", async {
-            with_spinner_completion_async(
-                "Stopping workflows",
-                "Workflows stopped",
-                async { terminate_all_workflows(project).await },
-                !SHOW_TIMING.load(Ordering::Relaxed),
-            )
-            .await
-        })
-        .await;
-
-        match termination_result {
-            Ok(_) => info!("Workflow termination completed successfully"),
-            Err(e) => {
-                error!("Failed to stop workflows: {:?}", e);
-                super::display::show_message_wrapper(
-                    MessageType::Error,
-                    Message {
-                        action: "Shutdown".to_string(),
-                        details: "Failed to stop workflows".to_string(),
-                    },
-                );
-            }
-        }
-    }
+    // Step 2: Workflows survive shutdowns
+    // Workers are stopped (Step 1), but its state is persisted in temporal in both dev and production.
+    // Workers can continue after it's started again.
+    // To remove a workflow, delete it from code - the diff will terminate it on next reload.
 
     // Step 3: Drop producer and wait for Kafka clients to fully destroy
     // This must happen BEFORE shutting down containers to avoid connection errors
