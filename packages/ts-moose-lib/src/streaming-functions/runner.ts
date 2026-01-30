@@ -702,7 +702,7 @@ const startConsumer = async (
 
         cliLog({
           action: "Received",
-          message: `${logger.logPrefix} ${batch.messages.length} message(s)`,
+          message: `${logger.logPrefix.replace("__", " -> ")} ${batch.messages.length} message(s)`,
         });
         logger.log(`Received ${batch.messages.length} message(s)`);
 
