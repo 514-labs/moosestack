@@ -490,35 +490,37 @@ fn find_api_name<'a>(normalized_path: &'a str, consumption_apis: &HashSet<String
     normalized_path
 }
 
+/// Resolves consumption API context with a single RwLock read.
+/// Returns (api_name, is_known_api) for use in the instrumented handler.
+async fn resolve_consumption_context(
+    path: &str,
+    consumption_apis: &RwLock<HashSet<String>>,
+) -> (String, bool) {
+    let normalized_path = normalize_consumption_path(path);
+    let apis = consumption_apis.read().await;
+    let api_name = find_api_name(normalized_path, &apis).to_string();
+    let is_known_api = apis.contains(normalized_path);
+    (api_name, is_known_api)
+}
+
 #[instrument(
     name = "consumption_api_request",
     skip_all,
     fields(
         context = context::RUNTIME,
         resource_type = resource_type::CONSUMPTION_API,
-        // Placeholder - will be recorded with actual API name after matching
-        resource_name = tracing::field::Empty,
+        resource_name = %api_name,
     )
 )]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
     host: String,
-    consumption_apis: &RwLock<HashSet<String>>,
+    api_name: &str,
+    is_known_api: bool,
     is_prod: bool,
     proxy_port: u16,
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
-    // Normalize to the API name by removing either prefix for consistent resource naming
-    let normalized_path = normalize_consumption_path(req.uri().path());
-
-    // Find the best matching API name and record it for structured logging
-    // This ensures resource_name matches source_primitive.name in infrastructure map
-    {
-        let apis = consumption_apis.read().await;
-        let api_name = find_api_name(normalized_path, &apis);
-        tracing::Span::current().record("resource_name", api_name);
-    }
-
     // Extract the Authorization header and check the bearer token
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
 
@@ -544,27 +546,16 @@ async fn get_consumption_api_res(
     );
 
     debug!("Creating client for route: {:?}", url);
-    {
-        let consumption_apis = consumption_apis.read().await;
 
-        // Use the already normalized path
-        let consumption_name = normalized_path;
-
-        // Allow forwarding even if not an exact match; the proxy layer (runner) will
-        // handle aliasing (unversioned -> sole versioned) or return 404.
-        if !consumption_apis.contains(consumption_name) && !is_prod {
-            use crossterm::{execute, style::Print};
-            let msg = format!(
-                "Exact match for Analytics API {} not found. Looking for fallback API. Known analytics api paths: {}",
-                consumption_name,
-                consumption_apis
-                    .iter()
-                    .map(|p| p.as_str())
-                    .collect::<Vec<&str>>()
-                    .join(", ")
-            );
-            let _ = execute!(std::io::stdout(), Print(msg + "\n"));
-        }
+    // Allow forwarding even if not an exact match; the proxy layer (runner) will
+    // handle aliasing (unversioned -> sole versioned) or return 404.
+    if !is_known_api && !is_prod {
+        use crossterm::{execute, style::Print};
+        let msg = format!(
+            "Exact match for Analytics API {} not found. Forwarding to proxy.",
+            api_name,
+        );
+        let _ = execute!(std::io::stdout(), Print(msg + "\n"));
     }
 
     let mut client_req = reqwest::Request::new(req.method().clone(), url.parse()?);
@@ -1931,11 +1922,16 @@ async fn router(
             if route_segments.len() >= 2
                 && (route_segments[0] == "api" || route_segments[0] == "consumption") =>
         {
+            // Resolve BEFORE instrumented function for OTLP compatibility
+            let (api_name, is_known_api) =
+                resolve_consumption_context(req.uri().path(), consumption_apis).await;
+
             match get_consumption_api_res(
                 http_client,
                 req,
                 host,
-                consumption_apis,
+                &api_name,
+                is_known_api,
                 is_prod,
                 project.http_server_config.proxy_port,
             )
