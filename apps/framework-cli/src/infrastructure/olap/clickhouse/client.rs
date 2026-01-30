@@ -235,6 +235,7 @@ impl ClickHouseClient {
     ///
     /// # Returns
     /// `Ok(true)` if the table exists, `Ok(false)` if it doesn't, `Err` on query failure
+    #[allow(dead_code)]
     pub async fn table_exists(&self, database: &str, table_name: &str) -> anyhow::Result<bool> {
         let result = self
             .execute_sql(&format!("EXISTS TABLE `{}`.`{}`", database, table_name))
@@ -250,6 +251,7 @@ impl ClickHouseClient {
     ///
     /// # Returns
     /// `Ok(())` on success, `Err` on failure
+    #[allow(dead_code)]
     pub async fn drop_table_if_exists(
         &self,
         database: &str,
