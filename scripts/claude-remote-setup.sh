@@ -8,10 +8,15 @@ set -e
 # =============================================================================
 # VERSION CONSTANTS
 # Update these versions as needed when upgrading dependencies
+# These versions are for Ubuntu 24.04 (noble)
 # =============================================================================
 PYTHON_VERSION_REQUIRED="3.12"
 DOCKER_VERSION="5:27.5.1-1~ubuntu.24.04~noble"
 DOCKER_COMPOSE_VERSION="2.32.4-1~ubuntu.24.04~noble"
+PROTOBUF_COMPILER_VERSION="3.21.12-8.2ubuntu0.2"
+LIBRDKAFKA_VERSION="2.3.0-1build2"
+LIBCURL_VERSION="8.5.0-2ubuntu10.6"
+LIBSASL2_VERSION="2.1.28+dfsg1-5ubuntu3.1"
 
 # =============================================================================
 # ENVIRONMENT CHECK
@@ -86,12 +91,17 @@ service docker start 2>/dev/null || echo "Warning: Could not start Docker daemon
 # PROTOBUF COMPILER
 # =============================================================================
 echo "Installing protobuf-compiler..."
-apt-get install -y -qq protobuf-compiler
+apt-get install -y -qq protobuf-compiler="$PROTOBUF_COMPILER_VERSION" || \
+    apt-get install -y -qq protobuf-compiler
 
 # =============================================================================
 # KAFKA/LIBRDKAFKA DEPENDENCIES
 # =============================================================================
 echo "Installing Kafka native library dependencies..."
+apt-get install -y -qq \
+    librdkafka-dev="$LIBRDKAFKA_VERSION" \
+    libcurl4-openssl-dev="$LIBCURL_VERSION" \
+    libsasl2-dev="$LIBSASL2_VERSION" || \
 apt-get install -y -qq \
     librdkafka-dev \
     libcurl4-openssl-dev \
@@ -127,10 +137,10 @@ echo ""
 echo "Installed packages:"
 echo "  - Docker: $(docker --version 2>/dev/null || echo 'not available')"
 echo "  - Docker Compose: $(docker compose version 2>/dev/null || echo 'not available')"
-echo "  - protobuf-compiler (protoc): $(protoc --version 2>/dev/null || echo 'installed')"
-echo "  - librdkafka-dev"
-echo "  - libcurl4-openssl-dev"
-echo "  - libsasl2-dev"
+echo "  - protobuf-compiler: $(dpkg -s protobuf-compiler 2>/dev/null | grep '^Version:' | cut -d' ' -f2 || echo 'installed')"
+echo "  - librdkafka-dev: $(dpkg -s librdkafka-dev 2>/dev/null | grep '^Version:' | cut -d' ' -f2 || echo 'installed')"
+echo "  - libcurl4-openssl-dev: $(dpkg -s libcurl4-openssl-dev 2>/dev/null | grep '^Version:' | cut -d' ' -f2 || echo 'installed')"
+echo "  - libsasl2-dev: $(dpkg -s libsasl2-dev 2>/dev/null | grep '^Version:' | cut -d' ' -f2 || echo 'installed')"
 echo "  - Python: $(python3 --version 2>/dev/null || echo 'not verified')"
 echo ""
 echo "To install Node.js dependencies: pnpm install"
