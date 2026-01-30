@@ -324,7 +324,7 @@ If you would like access to experiment with this feature, let us know!
 
 ### Change data capture (CDC)
 
-For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production MSSQL database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
+For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production SQL Server database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
 
 This section walks you through setting up CDC using Debezium. Before you start, make sure you have your SQL Server connection credentials (host, port, username, password, database name).
 
@@ -429,14 +429,14 @@ To summarize, the high level data flow is:
   bulletStyle="check"
   compact={true}
   bullets={[
-    "MSSQL Server CDC is enabled and working",
+    "SQL Server CDC is enabled and working",
     "MooseStack is running locally",
     "You can reach the Moose Ingest API from your Debezium environment",
     "Port 443 is available for egress",
   ]}
 />
 
-If CDC is not enabled yet, complete the **MSSQL Server CDC Configuration** section first.
+If CDC is not enabled yet, complete the **SQL Server CDC Configuration** section first.
 
 **Step 1: Add a Moose Ingest API Endpoint for CDC Events**
 
@@ -542,7 +542,7 @@ export const DebeziumChangeEventIngestApi = new IngestApi<DebeziumEventEnvelope>
 
 **Step 2: Map Source Tables to Moose Streams**
 
-Before implementing the streaming function, define an explicit mapping between MSSQL source table names and their corresponding Moose Streams.
+Before implementing the streaming function, define an explicit mapping between SQL Server source table names and their corresponding Moose Streams.
 
 **File location:** `moosestack/src/cdc/tableStreamMap.ts`
 
