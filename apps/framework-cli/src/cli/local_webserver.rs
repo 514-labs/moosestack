@@ -66,6 +66,7 @@ use hyper_util::{rt::TokioExecutor, server::conn::auto};
 use rdkafka::error::KafkaError;
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{DeliveryFuture, FutureProducer, FutureRecord, Producer};
+use regex::Regex;
 use reqwest::Client;
 use schema_registry_client::rest::client_config::ClientConfig as SrClientConfig;
 use schema_registry_client::rest::schema_registry_client::Client as SrClient;
@@ -478,10 +479,13 @@ fn find_api_name<'a>(normalized_path: &'a str, consumption_apis: &HashSet<String
     }
 
     // Try stripping version suffix (last segment after '/')
-    // For paths like "bar/1", try "bar"
+    // Only strip if the suffix matches a version pattern (e.g., "1", "1.0", "2.0.1")
     if let Some(pos) = normalized_path.rfind('/') {
         let base_path = &normalized_path[..pos];
-        if consumption_apis.contains(base_path) {
+        let suffix = &normalized_path[pos + 1..];
+
+        // Only strip suffix if it matches version pattern AND base_path exists in APIs
+        if VERSION_PATTERN.is_match(suffix) && consumption_apis.contains(base_path) {
             return base_path;
         }
     }
@@ -490,17 +494,28 @@ fn find_api_name<'a>(normalized_path: &'a str, consumption_apis: &HashSet<String
     normalized_path
 }
 
+/// Context information for consumption API requests
+struct ConsumptionApiContext {
+    api_name: String,
+    is_known_api: bool,
+    original_path: String,
+}
+
 /// Resolves consumption API context with a single RwLock read.
-/// Returns (api_name, is_known_api) for use in the instrumented handler.
+/// Returns context for use in the instrumented handler.
 async fn resolve_consumption_context(
     path: &str,
     consumption_apis: &RwLock<HashSet<String>>,
-) -> (String, bool) {
+) -> ConsumptionApiContext {
     let normalized_path = normalize_consumption_path(path);
     let apis = consumption_apis.read().await;
     let api_name = find_api_name(normalized_path, &apis).to_string();
     let is_known_api = apis.contains(normalized_path);
-    (api_name, is_known_api)
+    ConsumptionApiContext {
+        api_name,
+        is_known_api,
+        original_path: normalized_path.to_string(),
+    }
 }
 
 #[instrument(
@@ -509,15 +524,14 @@ async fn resolve_consumption_context(
     fields(
         context = context::RUNTIME,
         resource_type = resource_type::CONSUMPTION_API,
-        resource_name = %api_name,
+        resource_name = %api_context.api_name,
     )
 )]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
     host: String,
-    api_name: &str,
-    is_known_api: bool,
+    api_context: ConsumptionApiContext,
     is_prod: bool,
     proxy_port: u16,
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
@@ -549,11 +563,11 @@ async fn get_consumption_api_res(
 
     // Allow forwarding even if not an exact match; the proxy layer (runner) will
     // handle aliasing (unversioned -> sole versioned) or return 404.
-    if !is_known_api && !is_prod {
+    if !api_context.is_known_api && !is_prod {
         use crossterm::{execute, style::Print};
         let msg = format!(
             "Exact match for Analytics API {} not found. Forwarding to proxy.",
-            api_name,
+            api_context.original_path,
         );
         let _ = execute!(std::io::stdout(), Print(msg + "\n"));
     }
@@ -1667,6 +1681,7 @@ fn get_env_var(s: &str) -> Option<String> {
 lazy_static! {
     static ref MOOSE_CONSUMPTION_API_KEY: Option<String> = get_env_var("MOOSE_CONSUMPTION_API_KEY");
     static ref MOOSE_INGEST_API_KEY: Option<String> = get_env_var("MOOSE_INGEST_API_KEY");
+    static ref VERSION_PATTERN: Regex = Regex::new(r"^\d+(\.\d+)*$").unwrap();
 }
 
 async fn check_authorization(
@@ -1923,15 +1938,13 @@ async fn router(
                 && (route_segments[0] == "api" || route_segments[0] == "consumption") =>
         {
             // Resolve BEFORE instrumented function for OTLP compatibility
-            let (api_name, is_known_api) =
-                resolve_consumption_context(req.uri().path(), consumption_apis).await;
+            let api_context = resolve_consumption_context(req.uri().path(), consumption_apis).await;
 
             match get_consumption_api_res(
                 http_client,
                 req,
                 host,
-                &api_name,
-                is_known_api,
+                api_context,
                 is_prod,
                 project.http_server_config.proxy_port,
             )
@@ -3945,5 +3958,80 @@ mod tests {
 
         let deserialized_response = deserialized.unwrap();
         assert_eq!(deserialized_response.status, "success");
+    }
+
+    #[test]
+    fn test_find_api_name_exact_match() {
+        let mut apis = HashSet::new();
+        apis.insert("foo/bar".to_string());
+        apis.insert("baz".to_string());
+
+        // Exact matches should return as-is
+        assert_eq!(find_api_name("foo/bar", &apis), "foo/bar");
+        assert_eq!(find_api_name("baz", &apis), "baz");
+    }
+
+    #[test]
+    fn test_find_api_name_strips_numeric_version() {
+        let mut apis = HashSet::new();
+        apis.insert("bar".to_string());
+        apis.insert("foo/api".to_string());
+
+        // Single numeric version should be stripped
+        assert_eq!(find_api_name("bar/1", &apis), "bar");
+        assert_eq!(find_api_name("bar/42", &apis), "bar");
+        assert_eq!(find_api_name("foo/api/3", &apis), "foo/api");
+    }
+
+    #[test]
+    fn test_find_api_name_strips_semver_version() {
+        let mut apis = HashSet::new();
+        apis.insert("api".to_string());
+        apis.insert("nested/route".to_string());
+
+        // Semver-style versions should be stripped
+        assert_eq!(find_api_name("api/1.0", &apis), "api");
+        assert_eq!(find_api_name("api/2.0.1", &apis), "api");
+        assert_eq!(find_api_name("api/1.2.3.4", &apis), "api");
+        assert_eq!(find_api_name("nested/route/0.1.0", &apis), "nested/route");
+    }
+
+    #[test]
+    fn test_find_api_name_does_not_strip_non_version_suffix() {
+        let mut apis = HashSet::new();
+        apis.insert("foo".to_string());
+        apis.insert("foo/bar".to_string());
+
+        // Non-version suffixes should NOT be stripped
+        assert_eq!(find_api_name("foo/bar/baz", &apis), "foo/bar/baz");
+        assert_eq!(find_api_name("foo/nested", &apis), "foo/nested");
+        assert_eq!(find_api_name("foo/v1", &apis), "foo/v1");
+        assert_eq!(find_api_name("foo/abc123", &apis), "foo/abc123");
+        assert_eq!(find_api_name("foo/1abc", &apis), "foo/1abc");
+    }
+
+    #[test]
+    fn test_find_api_name_base_path_not_in_apis() {
+        let mut apis = HashSet::new();
+        apis.insert("other".to_string());
+
+        // Even with version suffix, if base_path not in APIs, return full path
+        assert_eq!(find_api_name("unknown/1", &apis), "unknown/1");
+        assert_eq!(find_api_name("unknown/1.0.0", &apis), "unknown/1.0.0");
+    }
+
+    #[test]
+    fn test_find_api_name_edge_cases() {
+        let mut apis = HashSet::new();
+        apis.insert("api".to_string());
+
+        // No slash - return as-is (unknown API)
+        assert_eq!(find_api_name("noslash", &apis), "noslash");
+
+        // Empty suffix after slash
+        assert_eq!(find_api_name("api/", &apis), "api/");
+
+        // Leading slash edge case
+        assert_eq!(find_api_name("/api/1", &apis), "/api/1");
     }
 }

@@ -57,10 +57,18 @@ const httpLogger = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
   startMs: number,
+  apiName?: string,
 ) => {
-  console.log(
-    `${req.method} ${req.url} ${res.statusCode} ${Date.now() - startMs}ms`,
-  );
+  const logFn = () =>
+    console.log(
+      `${req.method} ${req.url} ${res.statusCode} ${Date.now() - startMs}ms`,
+    );
+
+  if (apiName) {
+    apiContextStorage.run({ apiName }, logFn);
+  } else {
+    logFn();
+  }
 };
 
 // Cache stores both the module and the matched API name for structured logging
@@ -96,6 +104,9 @@ const apiHandler = async (
   const apis = await getApis();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const start = Date.now();
+    // Track matched API name for structured logging - declared outside try
+    // so it's accessible in catch block for error logging context
+    let matchedApiName: string | undefined;
 
     try {
       const url = new URL(req.url || "", "http://localhost");
@@ -159,8 +170,6 @@ const apiHandler = async (
       const versionParam = url.searchParams.get("version");
       const cacheKey = versionParam ? `${pathName}:${versionParam}` : pathName;
 
-      // Track matched API name for structured logging - must match source_primitive.name in infra map
-      let matchedApiName: string | undefined;
       let userFuncModule: any;
 
       const cachedEntry = modulesCache.get(cacheKey);
@@ -186,15 +195,9 @@ const apiHandler = async (
           if (!version && lookupName.includes("/")) {
             const pathParts = lookupName.split("/");
             if (pathParts.length >= 2) {
-              // Try the full path first (it might be a custom path)
-              userFuncModule = apis.get(lookupName);
-              if (userFuncModule) {
-                matchedApiName = lookupName;
-              } else {
-                // If not found, treat it as name/version
-                lookupName = pathParts[0];
-                version = pathParts.slice(1).join("/");
-              }
+              // Treat as name/version since full path lookup already failed at line 184
+              lookupName = pathParts[0];
+              version = pathParts.slice(1).join("/");
             }
           }
 
@@ -229,8 +232,13 @@ const apiHandler = async (
         }
 
         // Cache both the module and API name for future requests
-        modulesCache.set(cacheKey, { module: userFuncModule, apiName: matchedApiName });
-        console.log(`[API] | Executing API: ${matchedApiName}`);
+        modulesCache.set(cacheKey, {
+          module: userFuncModule,
+          apiName: matchedApiName,
+        });
+        apiContextStorage.run({ apiName: matchedApiName }, () => {
+          console.log(`[API] | Executing API: ${matchedApiName}`);
+        });
       }
 
       const queryClient = new QueryClient(clickhouseClient, fileName);
@@ -267,29 +275,36 @@ const apiHandler = async (
 
       if (status) {
         res.writeHead(status, { "Content-Type": "application/json" });
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, apiName);
       } else {
         res.writeHead(200, { "Content-Type": "application/json" });
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, apiName);
       }
 
       res.end(body);
     } catch (error: any) {
-      console.log("error in path ", req.url, error);
+      // Log error with API context if we know which API was being called
+      const logError = () => console.log("error in path ", req.url, error);
+      if (matchedApiName) {
+        apiContextStorage.run({ apiName: matchedApiName }, logError);
+      } else {
+        logError();
+      }
+
       // todo: same workaround as ResultSet
       if (Object.getPrototypeOf(error).constructor.name === "TypeGuardError") {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, matchedApiName);
       }
       if (error instanceof Error) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, matchedApiName);
       } else {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end();
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, matchedApiName);
       }
     }
   };

@@ -24,7 +24,7 @@ import * as fs from "fs";
 import * as path from "path";
 import axios from "axios";
 
-import { TIMEOUTS } from "./constants";
+import { TIMEOUTS, SERVER_CONFIG } from "./constants";
 import {
   waitForServerStart,
   createTempTestDirectory,
@@ -288,10 +288,6 @@ export * from "./apis/otlp-test";
       otlpEndpoint,
     });
 
-    // Use high port numbers to avoid conflicts with other tests
-    const moosePort = 5000;
-    const consolePort = 5100;
-
     mooseProcess = spawn(CLI_PATH, ["dev"], {
       cwd: projectDir,
       env: {
@@ -299,9 +295,7 @@ export * from "./apis/otlp-test";
         MOOSE_LOGGER__OTLP_ENDPOINT: otlpEndpoint,
         MOOSE_LOGGER__LEVEL: "Debug",
         RUST_LOG: "debug",
-        MOOSE_HTTP_SERVER_CONFIG__HOST: "localhost",
-        MOOSE_HTTP_SERVER_CONFIG__PORT: String(moosePort),
-        MOOSE_CONSOLE__HOST_PORT: String(consolePort),
+        // Admin API key is required for /admin/inframap access
         MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -320,25 +314,21 @@ export * from "./apis/otlp-test";
       testLogger.error(`Failed to spawn moose process: ${err.message}`, err);
     });
 
-    // Wait for server to be ready
-    const serverBaseUrl = `http://localhost:${moosePort}`;
-    // Generate startup message dynamically using the actual port (not the default 4000)
-    const startupMessage = `Your local development server is running at: http://localhost:${moosePort}/ingest`;
+    // Wait for server to be ready (use defaults like other tests)
     await waitForServerStart(
       mooseProcess,
       TIMEOUTS.SERVER_STARTUP_MS,
-      startupMessage,
-      serverBaseUrl,
+      SERVER_CONFIG.startupMessage,
+      SERVER_CONFIG.url,
       { logger: testLogger },
     );
     await waitForInfrastructureReady(TIMEOUTS.SERVER_STARTUP_MS, {
       logger: testLogger,
-      baseUrl: serverBaseUrl,
     });
 
     // Query the inframap to get primitive names for OTLP validation
     testLogger.info("Querying inframap for primitive names");
-    infraMap = await getInfraMap(serverBaseUrl);
+    infraMap = await getInfraMap(SERVER_CONFIG.url);
 
     // Extract primitive names from inframap - these will be used to verify OTLP resource_names match
     // Keys in inframap use INGRESS_<name> for ingest APIs and EGRESS_<name> for consumption APIs
@@ -423,7 +413,7 @@ export * from "./apis/otlp-test";
     otlpServer!.clearLogs();
 
     // Send ingest request
-    const ingestUrl = "http://localhost:5000/ingest/OtlpTestEvent";
+    const ingestUrl = `${SERVER_CONFIG.url}/ingest/OtlpTestEvent`;
     const testEvent = {
       eventId: "otlp-test-123",
       userId: "user-456",
@@ -475,7 +465,7 @@ export * from "./apis/otlp-test";
     );
 
     // Call health endpoint
-    const healthUrl = "http://localhost:5000/health";
+    const healthUrl = `${SERVER_CONFIG.url}/health`;
     testLogger.info("Calling health endpoint", { healthUrl });
 
     const response = await axios.get(healthUrl);
@@ -511,8 +501,7 @@ export * from "./apis/otlp-test";
     otlpServer!.clearLogs();
 
     // Call the consumption API (available on main port at /api/otlp-test)
-    const apiUrl =
-      "http://localhost:5000/api/otlp-test?message=otlp-test-logging";
+    const apiUrl = `${SERVER_CONFIG.url}/api/otlp-test?message=otlp-test-logging`;
     testLogger.info("Calling consumption API", { apiUrl });
 
     const response = await axios.get(apiUrl);
@@ -563,7 +552,7 @@ export * from "./apis/otlp-test";
     await new Promise((resolve) => setTimeout(resolve, 5000));
 
     // Send data to trigger the transform
-    const ingestUrl = "http://localhost:5000/ingest/OtlpTestEvent";
+    const ingestUrl = `${SERVER_CONFIG.url}/ingest/OtlpTestEvent`;
     const testEvent = {
       eventId: "transform-test-123",
       userId: "user-789",

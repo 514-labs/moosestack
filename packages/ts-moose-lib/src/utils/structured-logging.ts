@@ -101,7 +101,11 @@ function safeStringify(arg: unknown): string {
       return util.inspect(arg, { depth: 2, breakLength: Infinity });
     }
   }
-  // Use util.inspect for all non-object types to handle Symbols, functions, etc.
+  // Return strings directly without util.inspect to avoid unwanted quotes
+  if (typeof arg === "string") {
+    return arg;
+  }
+  // Use util.inspect for all other non-object types to handle Symbols, functions, etc.
   // String(Symbol()) throws TypeError, but util.inspect handles it correctly
   return util.inspect(arg);
 }
