@@ -141,6 +141,7 @@ impl SyncingProcessesRegistry {
     ///
     /// # Arguments
     /// * `sync_id` - Unique identifier for the sync process
+    /// * `source_primitive_name` - Name of the source primitive for logging/tracing
     /// * `source_topic_name` - Source Kafka topic name
     /// * `source_topic_columns` - Schema definition of the source topic
     /// * `target_table_name` - Target ClickHouse table name
@@ -153,13 +154,14 @@ impl SyncingProcessesRegistry {
         fields(
             context = context::RUNTIME,
             resource_type = resource_type::STREAM,
-            resource_name = %source_topic_name,
+            resource_name = %source_primitive_name,
         )
     )]
     #[allow(clippy::too_many_arguments)]
     pub fn start_topic_to_table(
         &mut self,
         sync_id: String,
+        source_primitive_name: &str,
         source_topic_name: String,
         source_topic_columns: Vec<Column>,
         target_table_name: String,

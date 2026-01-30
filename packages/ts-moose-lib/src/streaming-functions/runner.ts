@@ -38,6 +38,7 @@ import {
   type FieldMutations,
 } from "../utilities/json";
 import type { Column } from "../dataModels/dataModelTypes";
+import { setupStructuredConsole } from "../utils/structured-logging";
 
 const HOSTNAME = process.env.HOSTNAME;
 const AUTO_COMMIT_INTERVAL_MS = 5000;
@@ -48,6 +49,12 @@ const HEARTBEAT_INTERVAL_CONSUMER = 3000;
 const DEFAULT_MAX_STREAMING_CONCURRENCY = 100;
 // Max messages per eachBatch call - Confluent client defaults to 32, increase for throughput
 const CONSUMER_MAX_BATCH_SIZE = 1000;
+
+// Set up structured console logging for streaming function context
+const functionContextStorage = setupStructuredConsole<{ functionName: string }>(
+  (ctx) => ctx.functionName,
+  "function_name",
+);
 
 /**
  * Data structure for metrics logging containing counts and metadata
@@ -282,6 +289,7 @@ const handleMessage = async (
       logger.log(`[PAYLOAD:STREAM_IN] ${JSON.stringify(parsedData)}`);
     }
 
+    // Context is already set at batch level via functionContextStorage.run()
     const transformedData = await Promise.all(
       streamingFunctionWithConfigList.map(async ([fn, config]) => {
         try {
@@ -685,64 +693,70 @@ const startConsumer = async (
         return;
       }
 
-      metrics.count_in += batch.messages.length;
+      // Get function name for structured logging context
+      const functionName = logger.logPrefix;
 
-      cliLog({
-        action: "Received",
-        message: `${logger.logPrefix} ${batch.messages.length} message(s)`,
+      // Wrap entire batch processing in context so all logs have resource_name
+      await functionContextStorage.run({ functionName }, async () => {
+        metrics.count_in += batch.messages.length;
+
+        cliLog({
+          action: "Received",
+          message: `${logger.logPrefix.replace("__", " -> ")} ${batch.messages.length} message(s)`,
+        });
+        logger.log(`Received ${batch.messages.length} message(s)`);
+
+        let index = 0;
+        const readableStream = Readable.from(batch.messages);
+
+        const processedMessages: (KafkaMessageWithLineage[] | undefined)[] =
+          await readableStream
+            .map(
+              async (message) => {
+                index++;
+                if (
+                  (batch.messages.length > DEFAULT_MAX_STREAMING_CONCURRENCY &&
+                    index % DEFAULT_MAX_STREAMING_CONCURRENCY) ||
+                  index - 1 === batch.messages.length
+                ) {
+                  await heartbeat();
+                }
+                return handleMessage(
+                  logger,
+                  streamingFunctions,
+                  message,
+                  producer,
+                  fieldMutations,
+                  args.logPayloads,
+                );
+              },
+              {
+                concurrency: MAX_STREAMING_CONCURRENCY,
+              },
+            )
+            .toArray();
+
+        const filteredMessages = processedMessages
+          .flat()
+          .filter((msg) => msg !== undefined && msg.value !== undefined);
+
+        if (args.targetTopic === undefined || processedMessages.length === 0) {
+          return;
+        }
+
+        await heartbeat();
+
+        if (filteredMessages.length > 0) {
+          // Messages now carry their own DLQ configuration in the lineage
+          await sendMessages(
+            logger,
+            metrics,
+            args.targetTopic,
+            producer,
+            filteredMessages as KafkaMessageWithLineage[],
+          );
+        }
       });
-      logger.log(`Received ${batch.messages.length} message(s)`);
-
-      let index = 0;
-      const readableStream = Readable.from(batch.messages);
-
-      const processedMessages: (KafkaMessageWithLineage[] | undefined)[] =
-        await readableStream
-          .map(
-            async (message) => {
-              index++;
-              if (
-                (batch.messages.length > DEFAULT_MAX_STREAMING_CONCURRENCY &&
-                  index % DEFAULT_MAX_STREAMING_CONCURRENCY) ||
-                index - 1 === batch.messages.length
-              ) {
-                await heartbeat();
-              }
-              return handleMessage(
-                logger,
-                streamingFunctions,
-                message,
-                producer,
-                fieldMutations,
-                args.logPayloads,
-              );
-            },
-            {
-              concurrency: MAX_STREAMING_CONCURRENCY,
-            },
-          )
-          .toArray();
-
-      const filteredMessages = processedMessages
-        .flat()
-        .filter((msg) => msg !== undefined && msg.value !== undefined);
-
-      if (args.targetTopic === undefined || processedMessages.length === 0) {
-        return;
-      }
-
-      await heartbeat();
-
-      if (filteredMessages.length > 0) {
-        // Messages now carry their own DLQ configuration in the lineage
-        await sendMessages(
-          logger,
-          metrics,
-          args.targetTopic,
-          producer,
-          filteredMessages as KafkaMessageWithLineage[],
-        );
-      }
     },
   });
 
@@ -754,18 +768,39 @@ const startConsumer = async (
  *
  * @param args - The streaming function arguments containing source and target topics
  * @returns A Logger instance with standard log, error and warn methods
+ *
+ * The logPrefix is set to match source_primitive.name in the infrastructure map:
+ * - For transforms: `{source}__{target}` (double underscore)
+ * - For consumers: just `{source}` (no suffix)
+ *
+ * This ensures structured logs can be correlated with the infrastructure map.
+ *
  * @example
  * ```ts
- * const logger = buildLogger({sourceTopic: 'source', targetTopic: 'target'});
- * logger.log('message'); // Outputs: "source -> target: message"
+ * const logger = buildLogger({sourceTopic: {..., name: 'events'}, targetTopic: {..., name: 'processed'}}, 0);
+ * logger.log('message'); // Outputs: "events__processed (worker 0): message"
  * ```
  */
 const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
-  const targetLabel =
-    args.targetTopic?.name ? ` -> ${args.targetTopic.name}` : " (consumer)";
-  const logPrefix = `${args.sourceTopic.name}${targetLabel} (worker ${workerId})`;
+  // Get base stream names without namespace prefix or version suffix
+  const sourceBaseName = topicNameToStreamName(args.sourceTopic);
+  const targetBaseName = args.targetTopic
+    ? topicNameToStreamName(args.targetTopic)
+    : undefined;
+
+  // Function name matches source_primitive.name in infrastructure map
+  // Uses double underscore separator for transforms, plain name for consumers
+  const functionName = targetBaseName
+    ? `${sourceBaseName}__${targetBaseName}`
+    : sourceBaseName;
+
+  // Human-readable log prefix includes worker ID for debugging
+  const logPrefix = `${functionName} (worker ${workerId})`;
+
   return {
-    logPrefix: logPrefix,
+    // logPrefix is used for structured logging (function_name field)
+    // Must match source_primitive.name format for log correlation
+    logPrefix: functionName,
     log: (message: string): void => {
       console.log(`${logPrefix}: ${message}`);
     },
@@ -889,104 +924,113 @@ export const runStreamingFunctions = async (
     maxWorkerCount: args.maxSubscriberCount,
     workerStart: async (worker, parallelism) => {
       const logger = buildLogger(args, worker.id);
+      const functionName = logger.logPrefix;
 
-      const metrics = {
-        count_in: 0,
-        count_out: 0,
-        bytes: 0,
-      };
+      // Wrap entire startup in context so all logs have function_name
+      return await functionContextStorage.run({ functionName }, async () => {
+        const metrics = {
+          count_in: 0,
+          count_out: 0,
+          bytes: 0,
+        };
 
-      setTimeout(() => sendMessageMetrics(logger, metrics), 1000);
+        setTimeout(() => sendMessageMetrics(logger, metrics), 1000);
 
-      const clientIdPrefix = HOSTNAME ? `${HOSTNAME}-` : "";
-      const processId = `${clientIdPrefix}${streamingFuncId}-ts-${worker.id}`;
+        const clientIdPrefix = HOSTNAME ? `${HOSTNAME}-` : "";
+        const processId = `${clientIdPrefix}${streamingFuncId}-ts-${worker.id}`;
 
-      const kafka = await getKafkaClient(
-        {
-          clientId: processId,
-          broker: args.broker,
-          securityProtocol: args.securityProtocol,
-          saslUsername: args.saslUsername,
-          saslPassword: args.saslPassword,
-          saslMechanism: args.saslMechanism,
-        },
-        logger,
-      );
-
-      // Note: "js.consumer.max.batch.size" is a librdkafka native config not in TS types
-      const consumer: Consumer = kafka.consumer({
-        kafkaJS: {
-          groupId: streamingFuncId,
-          sessionTimeout: SESSION_TIMEOUT_CONSUMER,
-          heartbeatInterval: HEARTBEAT_INTERVAL_CONSUMER,
-          retry: {
-            retries: MAX_RETRIES_CONSUMER,
+        const kafka = await getKafkaClient(
+          {
+            clientId: processId,
+            broker: args.broker,
+            securityProtocol: args.securityProtocol,
+            saslUsername: args.saslUsername,
+            saslPassword: args.saslPassword,
+            saslMechanism: args.saslMechanism,
           },
-          autoCommit: true,
-          autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
-          fromBeginning: true,
-        },
-        "js.consumer.max.batch.size": CONSUMER_MAX_BATCH_SIZE,
-      });
+          logger,
+        );
 
-      // Sync producer message.max.bytes with topic config
-      const maxMessageBytes =
-        args.targetTopic?.max_message_bytes || 1024 * 1024;
+        // Note: "js.consumer.max.batch.size" is a librdkafka native config not in TS types
+        const consumer: Consumer = kafka.consumer({
+          kafkaJS: {
+            groupId: streamingFuncId,
+            sessionTimeout: SESSION_TIMEOUT_CONSUMER,
+            heartbeatInterval: HEARTBEAT_INTERVAL_CONSUMER,
+            retry: {
+              retries: MAX_RETRIES_CONSUMER,
+            },
+            autoCommit: true,
+            autoCommitInterval: AUTO_COMMIT_INTERVAL_MS,
+            fromBeginning: true,
+          },
+          "js.consumer.max.batch.size": CONSUMER_MAX_BATCH_SIZE,
+        });
 
-      const producer: Producer = kafka.producer(
-        createProducerConfig(maxMessageBytes),
-      );
+        // Sync producer message.max.bytes with topic config
+        const maxMessageBytes =
+          args.targetTopic?.max_message_bytes || 1024 * 1024;
 
-      try {
-        logger.log("Starting producer...");
-        await startProducer(logger, producer);
+        const producer: Producer = kafka.producer(
+          createProducerConfig(maxMessageBytes),
+        );
 
         try {
-          logger.log("Starting consumer...");
-          await startConsumer(
-            args,
-            logger,
-            metrics,
-            parallelism,
-            consumer,
-            producer,
-            streamingFuncId,
-          );
+          logger.log("Starting producer...");
+          await startProducer(logger, producer);
+
+          try {
+            logger.log("Starting consumer...");
+            await startConsumer(
+              args,
+              logger,
+              metrics,
+              parallelism,
+              consumer,
+              producer,
+              streamingFuncId,
+            );
+          } catch (e) {
+            logger.error("Failed to start kafka consumer: ");
+            if (e instanceof Error) {
+              logError(logger, e);
+            }
+            // Re-throw to ensure proper error handling
+            throw e;
+          }
         } catch (e) {
-          logger.error("Failed to start kafka consumer: ");
+          logger.error("Failed to start kafka producer: ");
           if (e instanceof Error) {
             logError(logger, e);
           }
           // Re-throw to ensure proper error handling
           throw e;
         }
-      } catch (e) {
-        logger.error("Failed to start kafka producer: ");
-        if (e instanceof Error) {
-          logError(logger, e);
-        }
-        // Re-throw to ensure proper error handling
-        throw e;
-      }
 
-      return [logger, producer, consumer] as [Logger, Producer, Consumer];
+        return [logger, producer, consumer] as [Logger, Producer, Consumer];
+      });
     },
     workerStop: async ([logger, producer, consumer]) => {
-      logger.log(`Received SIGTERM, shutting down gracefully...`);
+      const functionName = logger.logPrefix;
 
-      // First stop the consumer to prevent new messages
-      logger.log("Stopping consumer first...");
-      await stopConsumer(logger, consumer, args.sourceTopic);
+      // Wrap entire shutdown in context so all logs have function_name
+      await functionContextStorage.run({ functionName }, async () => {
+        logger.log(`Received SIGTERM, shutting down gracefully...`);
 
-      // Wait a bit for in-flight messages to complete processing
-      logger.log("Waiting for in-flight messages to complete...");
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+        // First stop the consumer to prevent new messages
+        logger.log("Stopping consumer first...");
+        await stopConsumer(logger, consumer, args.sourceTopic);
 
-      // Then stop the producer
-      logger.log("Stopping producer...");
-      await stopProducer(logger, producer);
+        // Wait a bit for in-flight messages to complete processing
+        logger.log("Waiting for in-flight messages to complete...");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      logger.log("Graceful shutdown completed");
+        // Then stop the producer
+        logger.log("Stopping producer...");
+        await stopProducer(logger, producer);
+
+        logger.log("Graceful shutdown completed");
+      });
     },
   });
 

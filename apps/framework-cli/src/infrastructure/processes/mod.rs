@@ -63,6 +63,7 @@ pub async fn execute_changes(
 
                 process_registry.syncing.start_topic_to_table(
                     sync.id(),
+                    &sync.source_primitive.name,
                     source_kafka_topic.name.clone(),
                     source_topic.columns.clone(),
                     target_table.name.clone(),
@@ -90,6 +91,7 @@ pub async fn execute_changes(
                 process_registry.syncing.stop_topic_to_table(&before.id());
                 process_registry.syncing.start_topic_to_table(
                     after.id(),
+                    &after.source_primitive.name,
                     after_kafka_source_topic.name.clone(),
                     after_source_topic.columns.clone(),
                     after_target_table.name.clone(),

@@ -65,10 +65,16 @@ pub fn setup_otlp_logs(settings: OtlpLogSettings) {
     // The OpenTelemetryTracingBridge with experimental_span_attributes enabled
     // automatically captures span fields and adds them as log record attributes.
     // Layer order: env_filter first to filter events before they reach the bridge.
+    //
+    // Note: The experimental_span_attributes feature captures span fields from
+    // #[instrument(fields(...))] and adds them to log records emitted within
+    // those spans. This requires the span to be active when the log is emitted.
     tracing_subscriber::registry()
         .with(env_filter)
         .with(otel_bridge)
         .init();
+
+    tracing::info!(target: "moose_cli::otlp", "OTLP logging initialized with endpoint: {}", settings.endpoint);
 }
 
 /// Shuts down the OTLP log provider, flushing any remaining logs.
