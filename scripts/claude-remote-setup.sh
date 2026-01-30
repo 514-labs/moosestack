@@ -114,16 +114,20 @@ CURRENT_PYTHON_VERSION=$(python3 --version 2>/dev/null | grep -oP '\d+\.\d+' | h
 
 if [ "$(printf '%s\n' "$PYTHON_VERSION_REQUIRED" "$CURRENT_PYTHON_VERSION" | sort -V | head -n1)" != "$PYTHON_VERSION_REQUIRED" ]; then
     echo "Installing Python $PYTHON_VERSION_REQUIRED..."
-    apt-get install -y -qq software-properties-common
-    add-apt-repository -y ppa:deadsnakes/ppa
-    apt-get update -qq
-    apt-get install -y -qq \
-        python${PYTHON_VERSION_REQUIRED} \
-        python${PYTHON_VERSION_REQUIRED}-venv \
-        python${PYTHON_VERSION_REQUIRED}-dev
 
-    # Set up alternatives to use Python 3.12 by default
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION_REQUIRED} 1 2>/dev/null || true
+    # Try to install from deadsnakes PPA (may fail if PPA is blocked)
+    if apt-get install -y -qq software-properties-common 2>/dev/null && \
+       add-apt-repository -y ppa:deadsnakes/ppa 2>/dev/null && \
+       apt-get update -qq 2>/dev/null; then
+        apt-get install -y -qq \
+            python${PYTHON_VERSION_REQUIRED} \
+            python${PYTHON_VERSION_REQUIRED}-venv \
+            python${PYTHON_VERSION_REQUIRED}-dev 2>/dev/null && \
+        update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION_REQUIRED} 1 2>/dev/null || true
+    else
+        echo "Warning: Could not install Python $PYTHON_VERSION_REQUIRED (PPA may be blocked)"
+        echo "         Python E2E tests may not work. Current version: Python $CURRENT_PYTHON_VERSION"
+    fi
 fi
 
 # =============================================================================
