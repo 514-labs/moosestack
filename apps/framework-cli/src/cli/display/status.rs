@@ -10,7 +10,7 @@
 pub(crate) const STATUS_SUCCESS: &str = "✓";
 
 /// Warning status indicator
-pub(crate) const STATUS_WARNING: &str = "⚠️";
+pub(crate) const STATUS_WARNING: &str = "⚠";
 
 /// Error status indicator
 pub(crate) const STATUS_ERROR: &str = "✗";
@@ -31,7 +31,7 @@ pub(crate) fn format_success(item: &str, message: &str) -> String {
 /// # Example
 /// ```
 /// let msg = format_warning("my_table", "schema may differ");
-/// // Returns: "⚠️ my_table: schema may differ"
+/// // Returns: "⚠ my_table: schema may differ"
 /// ```
 pub(crate) fn format_warning(item: &str, message: &str) -> String {
     format!("{} {}: {}", STATUS_WARNING, item, message)
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn test_format_warning() {
         let result = format_warning("table2", "warning message");
-        assert_eq!(result, "⚠️ table2: warning message");
+        assert_eq!(result, "⚠ table2: warning message");
     }
 
     #[test]
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn test_constants() {
         assert_eq!(STATUS_SUCCESS, "✓");
-        assert_eq!(STATUS_WARNING, "⚠️");
+        assert_eq!(STATUS_WARNING, "⚠");
         assert_eq!(STATUS_ERROR, "✗");
     }
 }
