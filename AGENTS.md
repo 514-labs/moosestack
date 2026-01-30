@@ -78,3 +78,17 @@ Multi-language monorepo (Rust CLI + TypeScript/Python libraries) using PNPM work
 ## Key Technologies
 
 Rust (CLI), TypeScript (libs/web), Python (lib), ClickHouse (OLAP), Redpanda/Kafka (streaming), Temporal (workflows), Redis (state)
+
+## Claude Code Remote Environment
+
+When running in Claude Code remote (web) environments, system dependencies are automatically installed via the SessionStart hook in `.claude/settings.json`. The setup script (`scripts/claude-remote-setup.sh`) installs:
+
+- **protobuf-compiler**: Required for Rust build (prost/tonic protobuf compilation)
+- **librdkafka-dev**: Required for `@514labs/kafka-javascript` native module
+- **libcurl4-openssl-dev, libsasl2-dev**: Additional Kafka dependencies
+- **Python 3.12+**: Required for `moose-cli` pip package in Python E2E tests
+
+**Limitations in Claude Code Remote:**
+- **Docker is NOT available**: E2E tests requiring Docker (ClickHouse, Kafka, Temporal) must run in CI or locally
+- Run unit tests (`cargo test`, `pnpm test` in ts-moose-lib) and linting in remote environments
+- Run full E2E tests (`cd apps/framework-cli-e2e && pnpm test`) in environments with Docker support
