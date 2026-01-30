@@ -424,12 +424,17 @@ To summarize, the high level data flow is:
 
 **Step 0: Prerequisites**
 
-Before continuing, confirm:
-
-* MSSQL Server CDC is enabled and working  
-* MooseStack is running locally  
-* You can reach the Moose Ingest API from your Debezium environment  
-* Port 443 is available for egress
+<BulletPointsCard
+  title="Before continuing, confirm"
+  bulletStyle="check"
+  compact={true}
+  bullets={[
+    "MSSQL Server CDC is enabled and working",
+    "MooseStack is running locally",
+    "You can reach the Moose Ingest API from your Debezium environment",
+    "Port 443 is available for egress",
+  ]}
+/>
 
 If CDC is not enabled yet, complete the **MSSQL Server CDC Configuration** section first.
 
