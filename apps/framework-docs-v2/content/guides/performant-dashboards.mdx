@@ -5,7 +5,7 @@ previewVariant: "dashboards"
 languages: ["typescript"]
 ---
 
-import { CTACards, CTACard, Callout, BulletPointsCard } from "@/components/mdx";
+import { CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
 
 # Improving the Performance of Your Dashboards
 
@@ -136,6 +136,13 @@ This tutorial assumes you already have a dashboard or report running in producti
 3. Shipping your changes to production on Boreal Cloud
 
 **AI copilot (optional but recommended):** We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, Github Copilot, Windsurf, etc.) will work.
+
+<Callout type="tip" title="AI copilot tips (optional)">
+If you use a copilot, these two prompts tend to help most in this guide:
+
+* "Generate curl commands to test this new endpoint."
+* "Generate a test script from the success criteria in this guide."
+</Callout>
 
 **Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
 
@@ -295,57 +302,97 @@ And your local services will be running in Docker containers:
 
 #### Setting up developer / agent supporting services
 
-These services let your AI copilot query your local database, inspect infrastructure, and validate SQL directly:
+We optionally recommend setting up your development environment with the following add-ons to let your AI copilot query your local database, inspect infrastructure, and validate SQL directly. These are not required, but can help you get the most out of your development environment.
 
-1. **[Moose Dev MCP server](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript)**: Lets your AI copilot query your local ClickHouse database, inspect logs, and explore infrastructure using natural language. Your copilot can verify query results, debug issues, and validate migrations without you copying/pasting commands.
-2. **[Language Server (LSP) for MooseStack TypeScript](https://github.com/514-labs/moosestack-lsp)**: Validates SQL syntax within your MooseStack code in real-time, catching errors before you run queries. (Coming soon, see appendix).
+**[Moose Dev MCP server](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript)**: 
 
-**Moose Dev MCP setup**
+Lets your AI copilot query your local ClickHouse database, inspect logs, and explore infrastructure using natural language. Your copilot can verify query results, debug issues, and validate migrations without you copying/pasting commands.
 
-To install the Moose Dev MCP with VS Code 1.102+, add this to your project's `.vscode/mcp.json` or User Settings:
+:::include /shared/prerequisites/install-mcp.mdx
 
-```json
-{
-  "servers": {
-    "moose-dev": {
-      "type": "http",
-      "url": "http://localhost:4000/mcp"
-    }
-  }
-}
-```
+**Language Server (LSP) for MooseStack TypeScript**: 
+The [Moose LSP for Typescript](https://github.com/514-labs/moosestack-lsp) enables SQL validation and syntax highlighting for `sql` strings in Typescript objects in your Moose project. 
+Install the extension via your IDE marketplace:
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=514-labs.moosestack-lsp)
+- [Cursor Marketplace](https://open-vsx.org/extension/514-labs/moosestack-lsp)
 
-Confirm the server is running and integrated with VSCode by running `MCP: List Servers` command from the Command Palette.
-
-* For other options to install with VSCode, see [the VSCode docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers#_add-an-mcp-server).  
-* For installation instructions for other IDEs / AI coding assistants, like Claude Code, Windsurf, and Cursor, see the [MooseStack docs](https://docs-v2-git-vscode-mcp-docs.preview.boreal.cloud/moosestack/moosedev-mcp?lang=typescript).
+<Callout type="info" title="Alpha release">
+This feature is currently in alpha and has the following known limitation:
+- Nested SQL and SQL fragments will be incorrectly highlighted as errors. 
+If you would like access to experiment with this feature, let us know!
+</Callout> 
 
 ### Change data capture (CDC)
 
-For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production MSSQL database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
+For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production SQL Server database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
 
-This section walks you through setting up CDC using Debezium. Before you start, make sure you have your MSSQL connection credentials (host, port, username, password, database name).
+This section walks you through setting up CDC using Debezium. Before you start, make sure you have your SQL Server connection credentials (host, port, username, password, database name).
 
 You'll complete 3 main steps:
 
-1. Configure MSSQL Server for CDC
+1. Configure SQL Server for CDC
 2. Configure ingestion pipelines to land CDC events into ClickHouse tables (via MooseStack)
 3. Deploy Debezium Server to your environment
 
 #### How CDC works
 
-Here's how CDC tracks changes to a `customers` table:
+CDC turns row-level changes in SQL Server into an ordered stream of change events that your MooseStack-defined ingestion pipeline receives and routes into ClickHouse landing tables. This diagram shows the high-level data flow:
 
-1\. **App executes:**        `UPDATE dbo.customers SET status='active' WHERE customer_id=123`  
-2\. **Transaction Log:**     Log record written (LSN: 00000042:00000123:0001, BEFORE: 'inactive', AFTER: 'active')  
-3\. **Capture Job:**         Reads log, finds change to CDC-enabled table `dbo.customers`  
-4\. **Tracking Table:**      `INSERT INTO cdc.dbo_customers_CT (__$operation=4, customer_id=123, status='active', ...)`  
-5\. **Debezium:**            Polls tracking table, creates JSON: `{"op":"u", "before":{...}, "after":{"status":"active"}}`  
-6\. **HTTP Sink:**           Receives POST with change event payload
+```mermaid
+flowchart LR
+    SourceCustomers["Source DB<br/>UPDATE dbo.customers ..."] --> Debezium["Debezium"]
+    SourceOrders["Source DB<br/>UPDATE dbo.orders ..."] --> Debezium
+    Debezium --> Ingest["Ingest API (HTTP)"]
+    Ingest --> Stream["Kafka/Redpanda Stream<br/>(shared CDC stream)"]
+    Stream --> FanOut["Streaming Function<br/>(inspect metadata + fan out)"]
+    FanOut --> CHCustomers["ClickHouse landing table<br/>customers_landing"]
+    FanOut --> CHOrders["ClickHouse landing table<br/>orders_landing"]
+```
 
-#### MSSQL Server CDC Configuration
+<ToggleBlock openText="Expected CDC overhead (storage/CPU/I/O/memory)" closeText="Hide CDC overhead estimates">
+#### Storage Impact
 
-Configure your MSSQL Server for CDC before proceeding. For detailed setup instructions, see the [Debezium SQL Server Connector documentation](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#setting-up-sqlserver).
+Primarily driven by change volume (rows changed / day) and retention period
+
+| Component | Expected Impact |
+| :---- | :---- |
+| Tracking tables (`cdc.*_CT`) | ~10-30% of source table sizes (not 2x) |
+| Retention | Default 3 days, then auto-purged |
+| Transaction log | May grow if capture job lags |
+
+#### CPU Impact
+
+Primarily driven by change rate (changes / sec) and the number of CDC-enabled tables
+
+| Component | Expected Overhead |
+| :---- | :---- |
+| CDC Capture Job | Low additional CPU |
+| Multiple tables | Low-moderate (well within normal) |
+| Polling interval (e.g. 2-min) | Negligible (just reads) |
+
+#### I/O Impact
+
+Primarily driven by write volume to tracking tables and transaction log read rate
+
+| Operation | Expected Overhead |
+| :---- | :---- |
+| Transaction log reads | Low additional read I/O |
+| Tracking table writes | Low additional write I/O |
+| Debezium queries (periodic) | Minimal - batched reads |
+
+#### Memory Impact
+
+Primarily driven by the number of CDC-enabled tables and their row size
+
+| Component | Expected Overhead |
+| :---- | :---- |
+| Capture job buffers | Low, measured in MB |
+| Tracking table indexes | Proportional to change volume |
+</ToggleBlock>
+
+#### SQL Server CDC Configuration
+
+Configure your SQL Server for CDC before proceeding. For detailed setup instructions, see the [Debezium SQL Server Connector documentation](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#setting-up-sqlserver).
 
 **Key steps:**
 
@@ -355,13 +402,13 @@ Configure your MSSQL Server for CDC before proceeding. For detailed setup instru
 
 Once CDC is configured, proceed to set up the MooseStack ingestion pipeline below
 
-#### CDC via Pushing to Moose Ingest API
+#### Define your MooseStack ingestion pipeline
 
 This section describes the CDC architecture used when Debezium cannot connect directly to Kafka (for example, due to firewall rules, network segmentation, or cloud provider restrictions). If your Debezium instance can reach Kafka directly, you can configure CDC to stream changes directly into Kafka topics instead of using the HTTP ingest pattern shown here.
 
-In this architecture, all changes from your MSSQL database tables are captured using Debezium and sent to a single, Moose-managed Kafka (or Redpanda) Stream via a Moose-managed HTTP Ingest API endpoint *(there is no per-table endpoint or per-table ingest stream at this stage)*.
+In this architecture, all changes from your SQL Server database tables are captured using Debezium and sent to a single, Moose-managed Kafka (or Redpanda) Stream via a Moose-managed HTTP Ingest API endpoint *(there is no per-table endpoint or per-table ingest stream at this stage)*.
 
-From there, CDC events are explicitly fanned out based on their metadata. Each MSSQL source table ultimately maps to:
+From there, CDC events are explicitly fanned out based on their metadata. Each SQL Server source table ultimately maps to:
 
 * one table-specific Moose Stream, and  
 * one downstream ClickHouse landing table.
@@ -377,14 +424,19 @@ To summarize, the high level data flow is:
 
 **Step 0: Prerequisites**
 
-Before continuing, confirm:
+<BulletPointsCard
+  title="Before continuing, confirm"
+  bulletStyle="check"
+  compact={true}
+  bullets={[
+    "SQL Server CDC is enabled and working",
+    "MooseStack is running locally",
+    "You can reach the Moose Ingest API from your Debezium environment",
+    "Port 443 is available for egress",
+  ]}
+/>
 
-* MSSQL Server CDC is enabled and working  
-* MooseStack is running locally  
-* You can reach the Moose Ingest API from your Debezium environment  
-* Port 443 is available for egress
-
-If CDC is not enabled yet, complete the **MSSQL Server CDC Configuration** section first.
+If CDC is not enabled yet, complete the **SQL Server CDC Configuration** section first.
 
 **Step 1: Add a Moose Ingest API Endpoint for CDC Events**
 
@@ -490,7 +542,7 @@ export const DebeziumChangeEventIngestApi = new IngestApi<DebeziumEventEnvelope>
 
 **Step 2: Map Source Tables to Moose Streams**
 
-Before implementing the streaming function, define an explicit mapping between MSSQL source table names and their corresponding Moose Streams.
+Before implementing the streaming function, define an explicit mapping between SQL Server source table names and their corresponding Moose Streams.
 
 **File location:** `moosestack/src/cdc/tableStreamMap.ts`
 
@@ -674,6 +726,40 @@ export MOOSE_SEED_CLICKHOUSE_URL=PASTE_THE_CLICKHOUSE_HTTPS_URL_HERE
 
 Once your local database is seeded, proceed to Step 1.
 
+<ToggleBlock openText="Advanced: seed local ClickHouse from remote via HTTP" closeText="Hide advanced seeding">
+Prompt your copilot to seed your local database from each remote table:
+
+```
+Goal: seed local ClickHouse from a remote Boreal ClickHouse via HTTP using `moose query`.
+
+Assumptions:
+- `BOREAL_CONNECTION_STRING` is set and looks like: `https://default:PASSWORD@HOST:8443/DB_NAME`
+- Local ClickHouse has the same tables already created.
+- Use `url()` + `JSONEachRow` to stream data from remote into local.
+
+Steps:
+
+1) Extract remote base URL + database name from `BOREAL_CONNECTION_STRING`.
+2) Get list of tables (exclude system + materialized views).
+3) For each table, generate a schema string ("col1 Type1, col2 Type2, ...") from `DESCRIBE TABLE ... FORMAT JSONEachRow`.
+4) For each table, generate a seed SQL file with this pattern:
+
+   INSERT INTO <table>
+   SELECT * FROM url(
+     '<base_url>/?database=<db>&query=SELECT+*+FROM+<table>+FORMAT+JSONEachRow',
+     JSONEachRow,
+     '<schema_string>'
+   );
+
+   (No LIMIT clauses: copy all rows.)
+
+5) Run all generated seed SQL files with `moose query`.
+6) Verify row counts for each table (use FINAL) using `moose query`.
+
+Implement as a single bash script.
+```
+</ToggleBlock>
+
 #### Step 1: Choose the component to migrate
 
 Pick a specific dashboard component or report to migrate. You'll work through one component at a time.
@@ -682,10 +768,6 @@ For this guide, we'll use an e-commerce order fulfillment report:
 
 - Dataset: `OrderFulfillment`
 - Purpose: Track order processing metrics by merchant and time period
-
-→ Once you've identified your component, proceed to Phase 1.
-
----
 
 #### Phase 1: Parity translation (OLTP → ClickHouse SQL)
 
@@ -1257,97 +1339,9 @@ If the count is non-zero (and roughly matches what you expect), the backfill is 
 **Repeat for each new MV you added**
 
 Only backfill the MVs introduced in this change. Avoid reprocessing older MVs unless you intentionally want to rebuild them.
-## Appendices
+## Appendix
 
-### Appendix: Copilot workflow for parity migrations
-
-#### Set up your copilot
-
-Select **Plan mode** (selected near the model selector in the chat pane), and **choose an advanced reasoning model** of your choice (like Claude Opus 4.5, GPT Codex 5.1 Max or GPT 5.2).
-
-{/* image */}
-
-
-#### Generating documentation
-
-Add documentation tasks you want the agent to produce alongside the implementation, e.g.
-
-```
-Generate OpenAPI spec for the created endpoints
-```
-
-```
-Add a README summarizing endpoints and data lineage
-Include example curl requests + sample responses, schema diagrams / entity summary (if relevant), and a "how to test locally" section
-```
-
-```
-Add inline JSDoc for handlers, params, and response shapes
-```
-
-#### Running the plan
-
-Once you are satisfied with the plan, hit `Build`. This will experiment with SQL queries, build up materialized views and implement the new endpoint.
-
-{/* image */}
-
-You will likely be asked for various permissions along the way, including for MCP tool use to check work against local data, and curl commands to check work against the remote database.
-
-Example of tool-use while implementing the plan:
-
-#### Manual testing
-
-You can ask the LLM to generate curl commands that you can use to test the generated API endpoints:
-
-```
-Generate curl commands to test this new endpoint
-```
-
-Which returns:
-
-**Command:**
-```shell
-curl -X POST http://localhost:4000/dataset \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <YOUR_API_TOKEN>" \
-  -d '{
-    "datasetId": "<YOUR_DATASET_GUID>",
-    "parameters": {
-      "limit": "10",
-      "offset": "0",
-      "orderby": "MerchantName Asc"
-    }
-  }' | jq '.'
-```
-
-You can iterate on this curl command to test against known data values.
-
-#### Copilot-assisted testing
-
-You can also instruct the agent to take the success criteria defined in the specification document and create a test suite, showing you the results. Audit the test suite and output to confirm it covers actual usage.
-
-```
-Generate a test script that iterates through the generated API, with the test cases defined in the specification document
-```
-
-Which generates a test script with multiple test cases, testing general API functionality like security, pagination, etc., as well as tests for input and output schemas, and exact input and output data for known values, e.g.:
-
-```
-Test cases:
-
-✅ Basic request with default parameters (limit 10, offset 0, ascending)
-✅ Request with limit 5
-✅ Request with offset (pagination - offset 10)
-✅ Request with descending order
-✅ Request with cacheId
-✅ Request with security filter (merchant)
-✅ Request with parameter.datasource parameter
-✅ Request with orderby leading space (edge case)
-✅ Exact structure validation (validates response structure matches document)
-✅ Exact value validation (validates first 10 records match document exactly)
-```
-
-### WSL: Setting up a WSL2 Linux instance to run MooseStack on Windows
+### Windows (WSL2) setup
 
 #### Prerequisites
 
@@ -1430,245 +1424,3 @@ The hello-world container should download and run, printing a "Hello from Docker
 #### Step 4: Proceed with MooseStack requirements and installation
 
 You now have a working Ubuntu instance on your Windows machine with Docker installed. You can proceed to install MooseStack and its requirements (Node.js 20+ and/or Python 3.12+) as if you were installing on a regular Linux machine. Just make sure to install from the Linux terminal prompt in the Ubuntu instance.
-
-### Expected CDC Impact
-
-#### Storage Impact
-
-Primarily driven by change volume (rows changed / day) and retention period
-
-| Component | Expected Impact |
-| :---- | :---- |
-| Tracking tables (`cdc.*_CT`) | ~10-30% of source table sizes (not 2x) |
-| Retention | Default 3 days, then auto-purged |
-| Transaction log | May grow if capture job lags |
-
-#### CPU Impact
-
-Primarily driven by change rate (changes / sec) and the number of CDC enabled tables
-
-| Component | Expected Overhead |
-| :---- | :---- |
-| CDC Capture Job | Low additional CPU |
-| Multiple tables | Low-moderate (well within normal) |
-| Polling interval (e.g. 2-min) | Negligible (just reads) |
-
-#### I/O Impact
-
-Primarily driven by write volume to tracking tables and transaction log read rate
-
-| Operation | Expected Overhead |
-| :---- | :---- |
-| Transaction log reads | Low additional read I/O |
-| Tracking table writes | Low additional write I/O |
-| Debezium queries (periodic) | Minimal - batched reads |
-
-#### Memory Impact
-
-Primarily driven by the number of CDC-enabled tables and their row size
-
-| Component | Expected Overhead |
-| :---- | :---- |
-| Capture job buffers | Low, measured in MB |
-| Tracking table indexes | Proportional to change volume |
-
-### Moose Language Server
-
-The [Moose LSP for Typescript](https://github.com/514-labs/moosestack-lsp) is an experimental feature available for early access. It enables SQL validation and syntax highlighting for `sql` strings in Typescript objects in your Moose project. It currently has known limitations around nested SQL and SQL fragments that will be incorrectly highlighted as errors. If you would like access to experiment with this feature, let us know!
-
-Beta distributions in IDE extension marketplaces (installation/access not guaranteed):
-
-* vscode: [https://marketplace.visualstudio.com/items?itemName=514-labs.moosestack-lsp](https://marketplace.visualstudio.com/items?itemName=514-labs.moosestack-lsp)
-* cursor: [https://open-vsx.org/extension/514-labs/moosestack-lsp](https://open-vsx.org/extension/514-labs/moosestack-lsp)
-
-### Manually seeding local dev
-
-Prompt your copilot to seed your local database from each remote table:
-
-```
-Goal: seed local ClickHouse from a remote Boreal ClickHouse via HTTP using `moose query`.
-
-Assumptions:
-- `BOREAL_CONNECTION_STRING` is set and looks like: `https://default:PASSWORD@HOST:8443/DB_NAME`
-- Local ClickHouse has the same tables already created.
-- Use `url()` + `JSONEachRow` to stream data from remote into local.
-
-Steps:
-
-1) Extract remote base URL + database name from `BOREAL_CONNECTION_STRING`.
-2) Get list of tables (exclude system + materialized views).
-3) For each table, generate a schema string ("col1 Type1, col2 Type2, ...") from `DESCRIBE TABLE ... FORMAT JSONEachRow`.
-4) For each table, generate a seed SQL file with this pattern:
-
-   INSERT INTO <table>
-   SELECT * FROM url(
-     '<base_url>/?database=<db>&query=SELECT+*+FROM+<table>+FORMAT+JSONEachRow',
-     JSONEachRow,
-     '<schema_string>'
-   );
-
-   (No LIMIT clauses: copy all rows.)
-
-5) Run all generated seed SQL files with `moose query`.
-6) Verify row counts for each table (use FINAL) using `moose query`.
-
-Implement as a single bash script.
-```
-
-### Sample Plan
-
-This is an example of a plan generated by an AI copilot for implementing a dataset API endpoint. Use this as a reference for the level of detail and structure your own AI-generated plans should have.
-
-````markdown
-# Implement Order Fulfillment Dataset API Endpoint
-
-## Overview
-
-Implement the OrderFulfillment dataset endpoint. The endpoint should return order fulfillment metrics by merchant and time period, matching the MSSQL query behavior from the original system.
-
-## Analysis
-
-### MSSQL Query Structure (from specification)
-
-The original MSSQL query:
-
-1. Gets user permissions via `getUserPermissions` stored procedure
-2. Joins `merchants` → `merchant_properties` → `order_metrics`
-3. Returns: `MerchantId`, `MerchantName`, `FulfillmentRate`, `TotalOrders`
-4. Filters based on user permissions (if user doesn't have view-all access, filters by authorized merchants)
-
-### Expected Response Format
-
-Based on the API payload/response in the specification:
-
-- **Payload fields**: `distinct([MerchantName]) AS [value], [FulfillmentRate] AS [metric], [TotalOrders]`
-
-- **Response structure**:
-  ```json
-    {
-      "value": "Acme Corp",          // MerchantName
-      "metric": 95.5,                // FulfillmentRate
-      "TotalOrders": 1250            // TotalOrders
-    }
-  ```
-
-### ClickHouse Tables Available
-
-- `merchants` - Merchant/company information (`merchant_name`)
-- `merchant_properties` - Merchant properties and configurations
-- `order_metrics` - Order and fulfillment data
-- `orders` - Individual order records
-- `order_items` - Line items for orders
-
-## Implementation Plan
-
-### Phase 1: Query Development & Testing
-
-1. **Convert MSSQL to ClickHouse query**
-
-- Map MSSQL syntax to ClickHouse equivalents
-- Handle user permissions (simplify initially - may need to implement `getUserPermissions` logic later)
-- Join: `merchants` → `merchant_properties` → `order_metrics`
-- Calculate: FulfillmentRate = (fulfilled_orders / total_orders) * 100
-- Return: `MerchantName`, `FulfillmentRate`, `TotalOrders`
-
-2. **Test query against production ClickHouse**
-
-- Base URL: `https://default:<PASSWORD>@<HOST>:8443/<DATABASE_NAME>`
-- Verify query returns data
-- Check column names and data types match expected format
-- Iterate until query is correct
-
-3. **Handle cascading queries if needed**
-
-- If materialized views are needed, use CTEs or subqueries to emulate them
-- Test each step of the query chain
-
-### Phase 2: Handler Implementation
-
-1. **Create handler file**: `moosestack/src/analytics/apis/order-fulfillment.api.ts`
-
-- Follow pattern from existing API handlers
-- Use `ApiUtil` with `client` and `sql` helpers
-- Handle security/merchant filtering if needed
-
-2. **Implement query with ClickHouse syntax**
-
-- Use `sql` template tag for type-safe queries
-- Import required table models
-- Handle user permissions (may need to simplify for initial implementation)
-
-3. **Format response to match expected structure**
-
-- Return format matching the API response structure:
-     ```typescript
-          {
-            cacheId: string;
-            offset: number;
-            limit: number;
-            totalRecordCount: number;
-            columns: Array<{name, dataField, displayName, type, precision, scale}>;
-            recordsCount: number;
-            records: Array<{value, metric, TotalOrders}>;
-            failures: {};
-            warnings: {};
-          }
-     ```
-
-### Phase 3: Registration & Testing
-
-1. **Register handler in dataset registry**
-
-- Update `moosestack/src/dataset/registry.ts`
-- Add handler for the OrderFulfillment dataset
-
-2. **Test endpoint via curl**
-
-- Test against route: `http://localhost:4000/dataset` (POST)
-- Use proper authentication header
-- Test with sample payload matching the specification format
-- Verify response matches expected structure
-
-3. **Iterate and fix**
-
-- Fix any query issues
-- Adjust response formatting if needed
-- Handle edge cases (empty results, permissions, etc.)
-
-## Files to Modify
-
-1. **New file**: `moosestack/src/analytics/apis/order-fulfillment.api.ts`
-
-- Handler function: `fetchOrderFulfillmentData`
-- Query implementation
-- Response formatting
-
-2. **Update**: `moosestack/src/dataset/registry.ts`
-
-- Import `fetchOrderFulfillmentData`
-- Register handler for OrderFulfillment dataset
-
-## Key Considerations
-
-1. **User Permissions**: The MSSQL query uses `getUserPermissions` stored procedure. For initial implementation, we may need to:
-
-- Simplify to return all merchants (if user context isn't available)
-- Or implement a simplified version of the permission logic
-
-2. **Field Mapping**: Ensure correct mapping between frontend field names and database columns.
-3. **Security Filtering**: May need to handle merchant-level filtering for multi-tenant scenarios.
-4. **Ordering**: Implement sorting by merchant name or fulfillment rate as specified.
-5. **Pagination**: Implement `limit` and `offset` for large result sets.
-
-## Testing Strategy
-
-1. Test ClickHouse query directly first (before implementing handler)
-2. Show query results at each iteration
-3. Test handler function in isolation
-4. Test full endpoint with curl
-5. Validate response structure and data accuracy
-````
-
-## Security
-
-*Security appendix coming soon. Security protocols have already been implemented in this project.*
