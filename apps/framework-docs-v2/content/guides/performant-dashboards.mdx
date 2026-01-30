@@ -324,24 +324,28 @@ If you would like access to experiment with this feature, let us know!
 
 For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production MSSQL database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
 
-This section walks you through setting up CDC using Debezium. Before you start, make sure you have your MSSQL connection credentials (host, port, username, password, database name).
+This section walks you through setting up CDC using Debezium. Before you start, make sure you have your SQL Server connection credentials (host, port, username, password, database name).
 
 You'll complete 3 main steps:
 
-1. Configure MSSQL Server for CDC
+1. Configure SQL Server for CDC
 2. Configure ingestion pipelines to land CDC events into ClickHouse tables (via MooseStack)
 3. Deploy Debezium Server to your environment
 
 #### How CDC works
 
-Here's how CDC tracks changes to a `customers` table:
+CDC turns row-level changes in SQL Server into an ordered stream of change events that your MooseStack-defined ingestion pipeline receives and routes into ClickHouse landing tables. This diagram shows the high-level data flow:
 
-1\. **App executes:**        `UPDATE dbo.customers SET status='active' WHERE customer_id=123`  
-2\. **Transaction Log:**     Log record written (LSN: 00000042:00000123:0001, BEFORE: 'inactive', AFTER: 'active')  
-3\. **Capture Job:**         Reads log, finds change to CDC-enabled table `dbo.customers`  
-4\. **Tracking Table:**      `INSERT INTO cdc.dbo_customers_CT (__$operation=4, customer_id=123, status='active', ...)`  
-5\. **Debezium:**            Polls tracking table, creates JSON: `{"op":"u", "before":{...}, "after":{"status":"active"}}`  
-6\. **HTTP Sink:**           Receives POST with change event payload
+```mermaid
+flowchart LR
+    SourceCustomers["Source DB<br/>UPDATE dbo.customers ..."] --> Debezium["Debezium"]
+    SourceOrders["Source DB<br/>UPDATE dbo.orders ..."] --> Debezium
+    Debezium --> Ingest["Ingest API (HTTP)"]
+    Ingest --> Stream["Kafka/Redpanda Stream<br/>(shared CDC stream)"]
+    Stream --> FanOut["Streaming Function<br/>(inspect metadata + fan out)"]
+    FanOut --> CHCustomers["ClickHouse landing table<br/>customers_landing"]
+    FanOut --> CHOrders["ClickHouse landing table<br/>orders_landing"]
+```
 
 <ToggleBlock openText="Expected CDC overhead (storage/CPU/I/O/memory)" closeText="Hide CDC overhead estimates">
 #### Storage Impact
@@ -356,7 +360,7 @@ Primarily driven by change volume (rows changed / day) and retention period
 
 #### CPU Impact
 
-Primarily driven by change rate (changes / sec) and the number of CDC enabled tables
+Primarily driven by change rate (changes / sec) and the number of CDC-enabled tables
 
 | Component | Expected Overhead |
 | :---- | :---- |
@@ -384,9 +388,9 @@ Primarily driven by the number of CDC-enabled tables and their row size
 | Tracking table indexes | Proportional to change volume |
 </ToggleBlock>
 
-#### MSSQL Server CDC Configuration
+#### SQL Server CDC Configuration
 
-Configure your MSSQL Server for CDC before proceeding. For detailed setup instructions, see the [Debezium SQL Server Connector documentation](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#setting-up-sqlserver).
+Configure your SQL Server for CDC before proceeding. For detailed setup instructions, see the [Debezium SQL Server Connector documentation](https://debezium.io/documentation/reference/stable/connectors/sqlserver.html#setting-up-sqlserver).
 
 **Key steps:**
 
@@ -396,13 +400,13 @@ Configure your MSSQL Server for CDC before proceeding. For detailed setup instru
 
 Once CDC is configured, proceed to set up the MooseStack ingestion pipeline below
 
-#### CDC via Pushing to Moose Ingest API
+#### Define your MooseStack ingestion pipeline
 
 This section describes the CDC architecture used when Debezium cannot connect directly to Kafka (for example, due to firewall rules, network segmentation, or cloud provider restrictions). If your Debezium instance can reach Kafka directly, you can configure CDC to stream changes directly into Kafka topics instead of using the HTTP ingest pattern shown here.
 
-In this architecture, all changes from your MSSQL database tables are captured using Debezium and sent to a single, Moose-managed Kafka (or Redpanda) Stream via a Moose-managed HTTP Ingest API endpoint *(there is no per-table endpoint or per-table ingest stream at this stage)*.
+In this architecture, all changes from your SQL Server database tables are captured using Debezium and sent to a single, Moose-managed Kafka (or Redpanda) Stream via a Moose-managed HTTP Ingest API endpoint *(there is no per-table endpoint or per-table ingest stream at this stage)*.
 
-From there, CDC events are explicitly fanned out based on their metadata. Each MSSQL source table ultimately maps to:
+From there, CDC events are explicitly fanned out based on their metadata. Each SQL Server source table ultimately maps to:
 
 * one table-specific Moose Stream, and  
 * one downstream ClickHouse landing table.
