@@ -107,6 +107,7 @@ rmcp = { version = "0.8.1", features = ["server", "transport-streamable-http-ser
 percent-encoding = "2.3.2"
 dotenvy = "0.15"
 toon-format = "0.4.0"
+urlencoding = "2"
 
 [dev-dependencies]
 clickhouse = { version = "0.14.0", features = ["uuid", "test-util"] }
