@@ -1,4 +1,3 @@
-import http from "http";
 import {
   existsSync,
   readdirSync,
@@ -86,24 +85,31 @@ export const getClickhouseClient = ({
 };
 
 export type CliLogData = {
-  message_type?: "Info" | "Success" | "Error" | "Highlight";
+  message_type?: "Info" | "Success" | "Warning" | "Error" | "Highlight";
   action: string;
   message: string;
 };
 
 export const cliLog: (log: CliLogData) => void = (log) => {
-  const req = http.request({
-    port: parseInt(process.env.MOOSE_MANAGEMENT_PORT ?? "5001"),
-    method: "POST",
-    path: "/logs",
-  });
+  const level =
+    log.message_type === "Error"
+      ? "error"
+      : log.message_type === "Warning"
+        ? "warn"
+        : "info";
 
-  req.on("error", (err: Error) => {
-    console.log(`Error ${err.name} sending CLI log.`, err.message);
-  });
+  const structuredLog = {
+    __moose_structured_log__: true,
+    log_kind: "cli",
+    level,
+    message: log.message,
+    resource_type: "runtime",
+    cli_action: log.action,
+    cli_message_type: log.message_type ?? "Info",
+    timestamp: new Date().toISOString(),
+  };
 
-  req.write(JSON.stringify({ message_type: "Info", ...log }));
-  req.end();
+  process.stderr.write(JSON.stringify(structuredLog) + "\n");
 };
 
 /**
