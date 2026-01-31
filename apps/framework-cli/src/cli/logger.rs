@@ -93,9 +93,24 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
+use std::sync::OnceLock;
 
 use super::otlp;
 use super::settings::user_directory;
+
+/// Global flag to track if the CLI is running in production mode.
+/// Used to conditionally display CLI logs in the terminal (dev mode only).
+static IS_PROD: OnceLock<bool> = OnceLock::new();
+
+/// Initializes the production mode flag. Should be called once at CLI startup.
+pub fn init_prod_mode(is_prod: bool) {
+    let _ = IS_PROD.set(is_prod); // Ignore if already set
+}
+
+/// Returns true if running in production mode, false otherwise (dev mode).
+pub fn is_prod() -> bool {
+    *IS_PROD.get().unwrap_or(&false)
+}
 
 // # STRUCTURED LOGGING INSTRUMENTATION GUIDE
 //
@@ -789,6 +804,10 @@ pub struct StructuredLogData {
     pub resource_name: String,
     pub message: String,
     pub level: String,
+    #[allow(dead_code)]
+    pub log_kind: Option<String>, // "cli" or "user" (omitted) - reserved for future use
+    pub cli_action: Option<String>, // Display label (e.g., "Received", "DeadLetter")
+    pub cli_message_type: Option<String>, // "Info" | "Success" | "Warning" | "Error" | "Highlight"
 }
 
 /// Parses a structured log from a child process (Node.js/Python).
@@ -868,10 +887,28 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
         .unwrap_or("info")
         .to_ascii_lowercase();
 
+    let log_kind = log_entry
+        .get("log_kind")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let cli_action = log_entry
+        .get("cli_action")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let cli_message_type = log_entry
+        .get("cli_message_type")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
     Some(StructuredLogData {
         resource_name,
         message,
         level,
+        log_kind,
+        cli_action,
+        cli_message_type,
     })
 }
 
@@ -911,11 +948,44 @@ pub async fn process_stderr_lines<R, F>(
     F: Fn(crate::cli::display::MessageType, crate::cli::display::Message) + Send + Sync,
 {
     use tokio::io::AsyncBufReadExt;
-    use tracing::error;
+    use tracing::{error, info, warn};
 
     let mut lines = reader.lines();
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(log_data) = parse_structured_log(&line, resource_name_field) {
+            // Check if this is a CLI log (has cli_action)
+            if let Some(action) = &log_data.cli_action {
+                // Parse message type for CLI display
+                let msg_type_str = log_data.cli_message_type.as_deref().unwrap_or("Info");
+                let msg_type = match msg_type_str {
+                    "Error" => crate::cli::display::MessageType::Error,
+                    "Warning" => crate::cli::display::MessageType::Warning,
+                    "Success" => crate::cli::display::MessageType::Success,
+                    "Highlight" => crate::cli::display::MessageType::Highlight,
+                    _ => crate::cli::display::MessageType::Info,
+                };
+
+                // Dev mode: show in terminal (only if not in production mode)
+                if !is_prod() {
+                    let message =
+                        crate::cli::display::Message::new(action.clone(), log_data.message.clone());
+                    show_message!(msg_type, message);
+                }
+
+                // Always route to tracing for observability
+                match msg_type {
+                    crate::cli::display::MessageType::Error => {
+                        error!("{}: {}", action, log_data.message)
+                    }
+                    crate::cli::display::MessageType::Warning => {
+                        warn!("{}: {}", action, log_data.message)
+                    }
+                    _ => info!("{}: {}", action, log_data.message),
+                }
+                continue;
+            }
+
+            // Regular structured log (not CLI log)
             let span = tracing::info_span!(
                 "child_process_log",
                 context = context::RUNTIME,

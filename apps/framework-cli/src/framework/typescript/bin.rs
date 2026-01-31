@@ -1,16 +1,8 @@
-use crate::{cli::display::MessageType, utilities::constants::TSCONFIG_JSON};
-use serde::Deserialize;
+use crate::utilities::constants::TSCONFIG_JSON;
 use std::{env, path::Path, process::Stdio};
 
 use crate::project::Project;
 use tokio::process::{Child, Command};
-
-#[derive(Deserialize)]
-pub struct CliMessage {
-    pub message_type: MessageType,
-    pub action: String,
-    pub message: String,
-}
 
 const RUNNER_COMMAND: &str = "moose-runner";
 

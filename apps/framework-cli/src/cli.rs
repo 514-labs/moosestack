@@ -693,6 +693,9 @@ pub async fn top_command_handler(
             project.set_is_production_env(false);
             project.log_payloads = *log_payloads;
 
+            // Initialize production mode flag for logger
+            crate::cli::logger::init_prod_mode(false);
+
             if *log_payloads {
                 info!("Payload logging enabled");
             }
@@ -992,6 +995,10 @@ pub async fn top_command_handler(
             let mut project = load_project(commands)?;
 
             project.set_is_production_env(true);
+
+            // Initialize production mode flag for logger
+            crate::cli::logger::init_prod_mode(true);
+
             let project_arc = Arc::new(project);
 
             check_project_name(&project_arc.name())?;
