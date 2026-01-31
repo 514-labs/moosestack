@@ -207,10 +207,15 @@ impl ClickHouseRemote {
     }
 
     /// Builds the headers clause for authentication.
+    ///
+    /// Single quotes in credentials are escaped by doubling them (`'` -> `''`)
+    /// to prevent SQL syntax errors.
     fn http_headers_clause(&self) -> String {
+        let escaped_user = self.user.replace('\'', "''");
+        let escaped_password = self.password.replace('\'', "''");
         format!(
             "headers('X-ClickHouse-User'='{}', 'X-ClickHouse-Key'='{}')",
-            self.user, self.password
+            escaped_user, escaped_password
         )
     }
 
@@ -406,5 +411,19 @@ mod tests {
 
         // Password with special chars should be in headers, not URL
         assert!(sql.contains("'X-ClickHouse-Key'='pass@word!'"));
+    }
+
+    #[test]
+    fn test_single_quotes_in_credentials_are_escaped() {
+        let mut config = create_test_config();
+        config.user = "John's".to_string();
+        config.password = "pass'word".to_string();
+        let remote = ClickHouseRemote::from_config(&config, Protocol::Http);
+
+        let sql = remote.query_function("SELECT 1");
+
+        // Single quotes should be escaped by doubling them
+        assert!(sql.contains("'X-ClickHouse-User'='John''s'"));
+        assert!(sql.contains("'X-ClickHouse-Key'='pass''word'"));
     }
 }
