@@ -63,7 +63,8 @@ class Logger:
             if message_type == CliLogData.INFO:
                 moose_scripts_logger.info(message)
             elif message_type == CliLogData.SUCCESS:
-                moose_scripts_logger.success(message)
+                # Standard Python logger doesn't have .success(), use info instead
+                moose_scripts_logger.info(message)
             elif message_type == CliLogData.ERROR:
                 moose_scripts_logger.error(message)
             elif message_type == CliLogData.HIGHLIGHT:
