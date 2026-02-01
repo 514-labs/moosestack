@@ -43,3 +43,6 @@ next-env.d.ts
 # generated files (created during prebuild)
 /generated
 /public/nav
+
+# local planning docs
+content/guides/chat-in-your-app-usecase-notation.md
