@@ -15,7 +15,7 @@ catalog:
   "@types/js-yaml": "4.0.9"
   "@types/mocha": "10.0.10"
   "@types/node": "^20"
-  axios: "1.7.9"
+  axios: "1.12.0"
   chai: "4.5.0"
   github-slugger: "2.0.0"
   js-yaml: "4.1.1"
