@@ -8,6 +8,8 @@ from typing import Optional, Literal, Any, Union, Callable
 import os
 from kafka import KafkaConsumer, KafkaProducer
 
+moose_management_port = int(os.environ.get("MOOSE_MANAGEMENT_PORT", "5001"))
+
 
 class CliLogData:
     INFO = "Info"
