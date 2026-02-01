@@ -288,22 +288,25 @@ flowchart LR
         D[(ClickHouse Table<br/>Raw Transactions)]
         E[Materialized View<br/>Daily Summaries]
         F[Consumption API<br/>JSON Endpoint]
+        H[PDF API<br/>Binary Response]
     end
 
     subgraph Output
-        G[PDF Export<br/>Executive Summary]
+        G[PDF Export<br/>Local Script]
+        I[PDF Download<br/>curl/Browser]
     end
 
     A --> B --> C --> D
     D --> E --> F --> G
+    E --> H --> I
 ```
 
 ### End result
 
 1. File loader script for CSV/JSON ingestion
 2. Pre-computed daily aggregations (millisecond queries)
-3. Parameterized API endpoint
-4. PDF report generator
+3. Parameterized JSON API endpoint
+4. PDF export via local script or API endpoint
 
 ---
 
@@ -332,6 +335,10 @@ pnpm install
 Moose uses pnpm workspaces. `npm install` won't work.
 
 ### Step 3: Start dev server
+
+<Callout type="warning" title="Stop other Moose projects first">
+If you have other Moose projects running, stop them before continuing. Multiple Moose instances will conflict on ports 4000, 9000, and 18123. Use `docker ps` to check for running containers and stop them if needed.
+</Callout>
 
 **Open a new terminal window** (or terminal tab) and run:
 
@@ -364,7 +371,7 @@ In your **other terminal**, test the services:
 curl http://localhost:4000/health
 ```
 
-Should return `{"status":"ok"}`.
+Should return JSON with `healthy` and `unhealthy` arrays listing service status.
 
 ```bash
 curl http://localhost:18123/ping
@@ -489,7 +496,7 @@ curl -X POST http://localhost:4000/ingest/sales \
   }'
 ```
 
-Returns `{"success": true}`.
+Returns `SUCCESS`.
 
 The data flows through Redpanda into ClickHouse.
 
@@ -1017,9 +1024,16 @@ curl "http://localhost:4000/consumption/sales-report?startDate=2025-01-15&endDat
 
 ## Part 8: PDF export
 
-Transform JSON into PDF.
+Transform JSON into PDF. You'll implement two complementary approaches:
 
-### Step 1: Install pdfmake
+1. **Local script** - For batch generation, scheduled jobs, and local development
+2. **API endpoint** - For on-demand generation and external system integration
+
+Implement both to support the full range of PDF generation use cases.
+
+### Approach A: Local script
+
+#### Step 1: Install pdfmake
 
 ```bash
 pnpm add pdfmake
@@ -1030,7 +1044,7 @@ pnpm add -D @types/pdfmake
 This guide uses pdfmake 0.3.x which requires Node.js 20 LTS (Long-Term Support) or higher. The API changed significantly from version 0.2.x—see the [pdfmake 0.3 documentation](https://pdfmake.github.io/docs/0.3/) for details.
 </Callout>
 
-### Step 2: Create PDF generator
+#### Step 2: Create PDF generator
 
 Create `scripts/generate-pdf-report.ts`:
 
@@ -1300,7 +1314,7 @@ async function main() {
 main();
 ```
 
-### Step 3: Generate report
+#### Step 3: Generate report
 
 With `moose dev` running, first verify the API returns data:
 
@@ -1326,7 +1340,7 @@ PDF report saved to january-15-report.pdf
 Always test the API with `curl` before running the PDF generator. If you see "No data found" or the script hangs, verify the API returns data for your date range.
 </Callout>
 
-### Step 4: Verify
+#### Step 4: Verify
 
 **Actually open the PDF file** to verify formatting and data accuracy—the console output won't show layout issues. The PDF should contain:
 - Header with company name and date range
@@ -1336,6 +1350,368 @@ Always test the API with `curl` before running the PDF generator. If you see "No
 - Footer with timestamp
 
 PDF generates from pre-aggregated data, so it's fast regardless of raw transaction count.
+
+### Approach B: API endpoint
+
+For production use cases, you may want to generate PDFs on-demand via an API endpoint. This approach:
+
+- Returns PDF binary directly in the HTTP response
+- Allows external systems to request reports via HTTP
+- Supports direct download via `curl` or browser
+
+<Callout type="info" title="Why WebApp instead of Api?">
+The standard `Api` class cannot return binary data—it hardcodes `Content-Type: application/json` and JSON-serializes all responses. The `WebApp` class provides direct access to the HTTP handler, allowing you to set custom headers and write binary data.
+</Callout>
+
+#### Step 1: Create the PDF API endpoint
+
+Create `app/apis/salesReportPdf.ts`:
+
+```typescript
+import { WebApp, getMooseUtils } from "@514labs/moose-lib";
+import { IncomingMessage, ServerResponse } from "http";
+import { parse as parseUrl } from "url";
+import { TDocumentDefinitions } from "pdfmake/interfaces";
+import { dailySalesMV } from "../views/DailySalesSummary";
+
+// Use require for pdfmake as it doesn't have proper ESM exports
+const pdfmake = require("pdfmake");
+
+// Use standard PDF fonts (no external files needed)
+const fonts = {
+  Roboto: {
+    normal: "Helvetica",
+    bold: "Helvetica-Bold",
+    italics: "Helvetica-Oblique",
+    bolditalics: "Helvetica-BoldOblique",
+  },
+};
+pdfmake.addFonts(fonts);
+
+// Report data interface (matches materialized view output)
+interface SalesReportRow {
+  saleDate: string;
+  region: string;
+  productCategory: string;
+  transactionCount: number;
+  totalQuantity: number;
+  totalRevenue: number;
+}
+
+function formatCurrency(amount: number): string {
+  return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// Generate PDF buffer using pdfmake 0.3 getBuffer() method
+async function generatePdfBuffer(
+  data: SalesReportRow[],
+  reportDateRange: string
+): Promise<Buffer> {
+  // Calculate totals
+  const totalRevenue = data.reduce((sum, row) => sum + row.totalRevenue, 0);
+  const totalTransactions = data.reduce(
+    (sum, row) => sum + row.transactionCount,
+    0
+  );
+
+  // Aggregate by region
+  const regionMap = new Map<string, { revenue: number; transactions: number }>();
+  for (const row of data) {
+    const existing = regionMap.get(row.region) || { revenue: 0, transactions: 0 };
+    regionMap.set(row.region, {
+      revenue: existing.revenue + row.totalRevenue,
+      transactions: existing.transactions + row.transactionCount,
+    });
+  }
+  const sortedRegions = Array.from(regionMap.entries()).sort(
+    (a, b) => b[1].revenue - a[1].revenue
+  );
+
+  // Aggregate by category
+  const categoryMap = new Map<string, { revenue: number; transactions: number }>();
+  for (const row of data) {
+    const existing = categoryMap.get(row.productCategory) || {
+      revenue: 0,
+      transactions: 0,
+    };
+    categoryMap.set(row.productCategory, {
+      revenue: existing.revenue + row.totalRevenue,
+      transactions: existing.transactions + row.transactionCount,
+    });
+  }
+  const sortedCategories = Array.from(categoryMap.entries()).sort(
+    (a, b) => b[1].revenue - a[1].revenue
+  );
+
+  const docDefinition: TDocumentDefinitions = {
+    content: [
+      { text: "APEX RETAIL", style: "companyName" },
+      { text: "Daily Sales Summary", style: "reportTitle" },
+      { text: reportDateRange, style: "reportDate" },
+      {
+        canvas: [
+          { type: "line", x1: 0, y1: 5, x2: 515, y2: 5, lineWidth: 1 },
+        ],
+      },
+      {
+        text: "EXECUTIVE SUMMARY",
+        style: "sectionHeader",
+        margin: [0, 15, 0, 10],
+      },
+      {
+        columns: [
+          {
+            text: [
+              { text: "Total Revenue: ", bold: true },
+              formatCurrency(totalRevenue),
+            ],
+          },
+          {
+            text: [
+              { text: "Transactions: ", bold: true },
+              totalTransactions.toLocaleString(),
+            ],
+          },
+        ],
+        margin: [0, 0, 0, 15],
+      },
+      {
+        text: "REVENUE BY REGION",
+        style: "sectionHeader",
+        margin: [0, 10, 0, 10],
+      },
+      {
+        table: {
+          headerRows: 1,
+          widths: ["*", "auto", "auto", "auto"],
+          body: [
+            [
+              { text: "Region", style: "tableHeader" },
+              { text: "Revenue", style: "tableHeader" },
+              { text: "Transactions", style: "tableHeader" },
+              { text: "Share", style: "tableHeader" },
+            ],
+            ...sortedRegions.map(([region, stats]) => [
+              region,
+              { text: formatCurrency(stats.revenue), alignment: "right" as const },
+              { text: stats.transactions.toLocaleString(), alignment: "right" as const },
+              {
+                text: `${totalRevenue > 0 ? ((stats.revenue / totalRevenue) * 100).toFixed(1) : "0.0"}%`,
+                alignment: "right" as const,
+              },
+            ]),
+          ],
+        },
+        layout: "lightHorizontalLines",
+      },
+      {
+        text: "REVENUE BY CATEGORY",
+        style: "sectionHeader",
+        margin: [0, 20, 0, 10],
+      },
+      {
+        table: {
+          headerRows: 1,
+          widths: ["*", "auto", "auto", "auto"],
+          body: [
+            [
+              { text: "Category", style: "tableHeader" },
+              { text: "Revenue", style: "tableHeader" },
+              { text: "Transactions", style: "tableHeader" },
+              { text: "Share", style: "tableHeader" },
+            ],
+            ...sortedCategories.map(([category, stats]) => [
+              category,
+              { text: formatCurrency(stats.revenue), alignment: "right" as const },
+              { text: stats.transactions.toLocaleString(), alignment: "right" as const },
+              {
+                text: `${totalRevenue > 0 ? ((stats.revenue / totalRevenue) * 100).toFixed(1) : "0.0"}%`,
+                alignment: "right" as const,
+              },
+            ]),
+          ],
+        },
+        layout: "lightHorizontalLines",
+      },
+    ],
+    footer: {
+      text: `Generated: ${new Date().toISOString()} | Apex Retail Confidential`,
+      style: "footer",
+      margin: [40, 0],
+    },
+    styles: {
+      companyName: { fontSize: 24, bold: true, alignment: "center" },
+      reportTitle: {
+        fontSize: 16,
+        alignment: "center",
+        margin: [0, 5, 0, 5],
+      },
+      reportDate: { fontSize: 12, alignment: "center", color: "gray" },
+      sectionHeader: { fontSize: 12, bold: true },
+      tableHeader: { bold: true, fillColor: "#eeeeee" },
+      footer: { fontSize: 8, color: "gray", alignment: "center" },
+    },
+    defaultStyle: { font: "Roboto", fontSize: 10 },
+    pageMargins: [40, 40, 40, 60],
+  };
+
+  const pdf = pdfmake.createPdf(docDefinition);
+  // pdfmake 0.3 provides promise-based getBuffer()
+  return pdf.getBuffer();
+}
+
+const handler = async (req: IncomingMessage, res: ServerResponse) => {
+  const url = parseUrl(req.url || "", true);
+  const startDate = url.query.startDate as string;
+  const endDate = url.query.endDate as string;
+  const region = url.query.region as string | undefined;
+
+  // Validate required parameters
+  if (!startDate || !endDate) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "startDate and endDate query parameters are required" }));
+    return;
+  }
+
+  // Validate date format (YYYY-MM-DD)
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(startDate) || !dateRegex.test(endDate)) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Dates must be in YYYY-MM-DD format" }));
+    return;
+  }
+
+  // Validate date order
+  if (startDate > endDate) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "startDate must be before or equal to endDate" }));
+    return;
+  }
+
+  try {
+    // Query ClickHouse directly using Moose utilities
+    const { client, sql } = await getMooseUtils();
+    const targetTable = dailySalesMV.targetTable;
+
+    // Build query with optional region filter
+    let query;
+    if (region) {
+      query = sql`
+        SELECT
+          saleDate,
+          region,
+          productCategory,
+          sum(transactionCount) AS transactionCount,
+          sum(totalQuantity) AS totalQuantity,
+          sum(totalRevenue) AS totalRevenue
+        FROM ${targetTable}
+        WHERE saleDate BETWEEN ${startDate} AND ${endDate}
+          AND region = ${region}
+        GROUP BY saleDate, region, productCategory
+        ORDER BY saleDate DESC, totalRevenue DESC
+      `;
+    } else {
+      query = sql`
+        SELECT
+          saleDate,
+          region,
+          productCategory,
+          sum(transactionCount) AS transactionCount,
+          sum(totalQuantity) AS totalQuantity,
+          sum(totalRevenue) AS totalRevenue
+        FROM ${targetTable}
+        WHERE saleDate BETWEEN ${startDate} AND ${endDate}
+        GROUP BY saleDate, region, productCategory
+        ORDER BY saleDate DESC, totalRevenue DESC
+      `;
+    }
+
+    const result = await client.query.execute<SalesReportRow>(query);
+    const data = await result.json() as SalesReportRow[];
+
+    if (data.length === 0) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "No data found for the specified date range" }));
+      return;
+    }
+
+    // Generate PDF buffer
+    const pdfBuffer = await generatePdfBuffer(data, `${startDate} to ${endDate}`);
+
+    // Return binary PDF response with appropriate headers
+    res.writeHead(200, {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="sales-report-${startDate}-to-${endDate}.pdf"`,
+      "Content-Length": pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
+  } catch (error) {
+    console.error("PDF generation error:", error);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Failed to generate PDF" }));
+  }
+};
+
+// Create WebApp with custom mount path
+// Note: Cannot use reserved paths like /consumption or /ingest
+export const salesReportPdfApi = new WebApp("salesReportPdf", handler, {
+  mountPath: "/reports",
+  metadata: {
+    description: "Generate sales report as PDF",
+  },
+});
+```
+
+<Callout type="warning" title="Mount path restrictions">
+WebApp mount paths cannot use reserved paths like `/consumption`, `/ingest`, or `/api`. Use a custom path like `/reports` instead.
+</Callout>
+
+#### Step 2: Update exports
+
+Add the new API to `app/index.ts`:
+
+```typescript
+export * from "./ingest/SalesTransaction";
+export * from "./views/DailySalesSummary";
+export * from "./apis/salesReport";
+export * from "./apis/salesReportPdf";
+```
+
+#### Step 3: Test the PDF endpoint
+
+With `moose dev` running, generate a PDF directly via curl:
+
+```bash
+curl "http://localhost:4000/reports?startDate=2025-01-15&endDate=2025-01-15" > report.pdf
+```
+
+You can also filter by region:
+
+```bash
+curl "http://localhost:4000/reports?startDate=2025-01-15&endDate=2025-01-15&region=West" > west-report.pdf
+```
+
+The endpoint returns:
+- **200 OK** with PDF binary on success
+- **400 Bad Request** if `startDate` or `endDate` is missing
+- **404 Not Found** if no data exists for the date range
+- **500 Internal Server Error** on unexpected failures
+
+#### When to use each approach
+
+With both approaches implemented, you have flexibility for different scenarios:
+
+| Approach | Best For |
+|----------|----------|
+| Local script (Approach A) | Batch generation, scheduled jobs, local development, one-off reports |
+| API endpoint (Approach B) | On-demand generation, external consumers, integration with other systems, user-triggered downloads |
+
+Both approaches use the same pdfmake library and produce identical PDF output. The key differences are:
+
+- **Local script** fetches data from the JSON API, then generates a PDF file on disk
+- **API endpoint** queries ClickHouse directly and returns the PDF binary in the HTTP response
+
+Having both gives you the best of both worlds: scripts for automation and batch processing, plus an API for real-time requests.
 
 ---
 
@@ -1467,6 +1843,22 @@ Raw transactions → Hourly MV → Daily MV → Monthly MV
 
 Each level 10-30x smaller than the previous.
 
+### How Moose helps
+
+The patterns above—columnar storage, materialized views, time-first ordering—are what make ClickHouse fast. But implementing them correctly requires expertise: writing DDL, managing schemas, configuring streams, and keeping everything in sync.
+
+Moose handles this complexity so you can focus on your data model:
+
+| ClickHouse Best Practice | Without Moose | With Moose |
+|--------------------------|---------------|------------|
+| Columnar schema design | Hand-write DDL, manage migrations | Define TypeScript interface, schema auto-generated |
+| Time-first ordering | Configure ORDER BY manually | Set `orderByFields` in pipeline config |
+| Materialized views | Write CREATE MATERIALIZED VIEW DDL | Declare `MaterializedView` with typed query |
+| Streaming ingestion | Set up Kafka/Redpanda, write consumers | Auto-configured with `IngestPipeline` |
+| Type-safe APIs | Build REST endpoints manually | `Api` class with typed params and responses |
+
+This is what we covered in [Why Moose for static reports?](#why-moose-for-static-reports)—a developer-first approach that gives you ClickHouse performance without ClickHouse complexity.
+
 ---
 
 ## Wrap-up
@@ -1495,11 +1887,11 @@ CSV/JSON Files → Ingest API → ClickHouse Table → Materialized View → API
     },
     {
       title: "sales-report API",
-      description: "Date-range queries with filters"
+      description: "Date-range queries with JSON response"
     },
     {
-      title: "PDF generator",
-      description: "JSON to formatted PDF"
+      title: "PDF export (two options)",
+      description: "Local script or API endpoint returning binary PDF"
     }
   ]}
 />
@@ -1606,6 +1998,7 @@ LIMIT 5;
       </FileTree.Folder>
       <FileTree.Folder name="apis">
         <FileTree.File name="salesReport.ts" />
+        <FileTree.File name="salesReportPdf.ts" />
       </FileTree.Folder>
     </FileTree.Folder>
     <FileTree.Folder name="scripts">
@@ -1626,9 +2019,10 @@ LIMIT 5;
 | `app/index.ts` | Export all modules |
 | `app/ingest/SalesTransaction.ts` | IngestPipeline definition |
 | `app/views/DailySalesSummary.ts` | MaterializedView |
-| `app/apis/salesReport.ts` | Consumption API |
+| `app/apis/salesReport.ts` | Consumption API (JSON) |
+| `app/apis/salesReportPdf.ts` | PDF API (binary response) |
 | `scripts/load-file.ts` | CSV/JSON file loader |
-| `scripts/generate-pdf-report.ts` | PDF generator |
+| `scripts/generate-pdf-report.ts` | PDF generator (local script) |
 | `sample-data/west-store-001.csv` | Sample transactions |
 
 ### Configuration
@@ -1666,18 +2060,19 @@ use_ssl = false
 
 **Primary key must be prefix of sorting key:** First field in `orderByFields` becomes primary key.
 
-**Port 4000 or 18123 in use:**
+**Port 4000, 9000, or 18123 in use:**
 
 ```bash
 # Find what's using the port
 lsof -i :4000
+lsof -i :9000
 lsof -i :18123
 
 # Kill the process if needed
 kill -9 <PID>
 ```
 
-Stop other Moose projects before starting a new one.
+Stop other Moose projects before starting a new one. Port 9000 is the ClickHouse native port and commonly conflicts with other Moose instances.
 
 **ClickHouse connection refused:** Wait 20-30 seconds for containers (longer on first startup). Verify:
 
@@ -1696,6 +2091,8 @@ docker ps | grep clickhouse
 **Model not detected:** Check file saved, export in `app/index.ts`, TypeScript errors in terminal. Type errors block the dev server from processing changes.
 
 **TypeScript errors blocking startup:** The `moose dev` terminal shows compilation errors. Fix all errors before proceeding—the system won't process new models or APIs until code compiles.
+
+**TypeScript errors persist after fixing code:** If errors continue to appear with stale line numbers after you've fixed the code, restart `moose dev`. The TypeScript compiler may cache compiled code, and a full restart clears the cache.
 
 #### Data
 
