@@ -748,18 +748,12 @@ struct WorkflowQueryParams {
 
 async fn workflows_history_route(
     req: Request<hyper::body::Incoming>,
-    is_prod: bool,
+    admin_api_key: &Option<String>,
     project: Arc<Project>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    if is_prod {
-        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return add_cors_headers(Response::builder())
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Full::new(Bytes::from(
-                    "Unauthorized: Invalid or missing token",
-                )));
-        }
+    let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+    if let Err(e) = validate_admin_auth(auth_header, admin_api_key).await {
+        return e.to_response();
     }
 
     let query_params: WorkflowQueryParams = req
@@ -808,20 +802,14 @@ async fn workflows_history_route(
 )]
 async fn workflows_trigger_route(
     req: Request<hyper::body::Incoming>,
-    is_prod: bool,
+    admin_api_key: &Option<String>,
     project: Arc<Project>,
     workflow_name: String,
     max_request_body_size: usize,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    if is_prod {
-        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return add_cors_headers(Response::builder())
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Full::new(Bytes::from(
-                    "Unauthorized: Invalid or missing token",
-                )));
-        }
+    let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+    if let Err(e) = validate_admin_auth(auth_header, admin_api_key).await {
+        return e.to_response();
     }
 
     let mut reader = match to_reader(req, max_request_body_size).await {
@@ -853,7 +841,7 @@ async fn workflows_trigger_route(
             let namespace = project.temporal_config.get_temporal_namespace();
 
             let mut payload = serde_json::to_value(&info).unwrap();
-            if !is_prod {
+            if !project.is_production {
                 let dashboard_url =
                     temporal_dashboard_url(&namespace, &info.workflow_id, &info.run_id);
                 payload["dashboardUrl"] = serde_json::Value::String(dashboard_url);
@@ -890,19 +878,13 @@ async fn workflows_trigger_route(
 )]
 async fn workflows_terminate_route(
     req: Request<hyper::body::Incoming>,
-    is_prod: bool,
+    admin_api_key: &Option<String>,
     project: Arc<Project>,
     workflow_name: String,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    if is_prod {
-        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return add_cors_headers(Response::builder())
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Full::new(Bytes::from(
-                    "Unauthorized: Invalid or missing token",
-                )));
-        }
+    let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+    if let Err(e) = validate_admin_auth(auth_header, admin_api_key).await {
+        return e.to_response();
     }
 
     match terminate_workflow(&project, &workflow_name).await {
@@ -1970,23 +1952,34 @@ async fn router(
             )
             .await
         }
-        (_, &hyper::Method::GET, ["workflows", "history"]) if project.features.workflows => {
-            workflows_history_route(req, is_prod, project.clone()).await
+        (_, &hyper::Method::GET, ["admin", "workflows", "history"])
+            if project.features.workflows =>
+        {
+            workflows_history_route(req, &project.authentication.admin_api_key, project.clone())
+                .await
         }
-        (_, &hyper::Method::POST, ["workflows", name, "trigger"]) if project.features.workflows => {
+        (_, &hyper::Method::POST, ["admin", "workflows", name, "trigger"])
+            if project.features.workflows =>
+        {
             workflows_trigger_route(
                 req,
-                is_prod,
+                &project.authentication.admin_api_key,
                 project.clone(),
                 name.to_string(),
                 project.http_server_config.max_request_body_size,
             )
             .await
         }
-        (_, &hyper::Method::POST, ["workflows", name, "terminate"])
+        (_, &hyper::Method::POST, ["admin", "workflows", name, "terminate"])
             if project.features.workflows =>
         {
-            workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
+            workflows_terminate_route(
+                req,
+                &project.authentication.admin_api_key,
+                project.clone(),
+                name.to_string(),
+            )
+            .await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
         (_, _method, _) => {
@@ -2271,17 +2264,17 @@ async fn print_available_routes(
         static_routes.extend_from_slice(&[
             (
                 "GET",
-                "/workflows/history".to_string(),
+                "/admin/workflows/history".to_string(),
                 "Workflow history".to_string(),
             ),
             (
                 "POST",
-                "/workflows/name/trigger".to_string(),
+                "/admin/workflows/name/trigger".to_string(),
                 "Trigger a workflow".to_string(),
             ),
             (
                 "POST",
-                "/workflows/name/terminate".to_string(),
+                "/admin/workflows/name/terminate".to_string(),
                 "Terminate a workflow".to_string(),
             ),
         ]);
