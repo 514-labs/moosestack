@@ -804,8 +804,6 @@ pub struct StructuredLogData {
     pub resource_name: String,
     pub message: String,
     pub level: String,
-    #[allow(dead_code)]
-    pub log_kind: Option<String>, // "cli" or "user" (omitted) - reserved for future use
     pub cli_action: Option<String>, // Display label (e.g., "Received", "DeadLetter")
     pub cli_message_type: Option<String>, // "Info" | "Success" | "Warning" | "Error" | "Highlight"
 }
@@ -887,11 +885,6 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
         .unwrap_or("info")
         .to_ascii_lowercase();
 
-    let log_kind = log_entry
-        .get("log_kind")
-        .and_then(|v| v.as_str())
-        .map(String::from);
-
     let cli_action = log_entry
         .get("cli_action")
         .and_then(|v| v.as_str())
@@ -906,7 +899,6 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
         resource_name,
         message,
         level,
-        log_kind,
         cli_action,
         cli_message_type,
     })

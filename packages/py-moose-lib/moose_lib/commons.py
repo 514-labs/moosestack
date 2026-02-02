@@ -15,13 +15,16 @@ class CliLogData:
     INFO = "Info"
     SUCCESS = "Success"
     ERROR = "Error"
+    WARNING = "Warning"
     HIGHLIGHT = "Highlight"
 
     def __init__(
         self,
         action: str,
         message: str,
-        message_type: Optional[Literal[INFO, SUCCESS, ERROR, HIGHLIGHT]] = INFO,
+        message_type: Optional[
+            Literal[INFO, SUCCESS, ERROR, WARNING, HIGHLIGHT]
+        ] = INFO,
     ):
         self.message_type = message_type
         self.action = action
@@ -32,12 +35,11 @@ def cli_log(log: CliLogData) -> None:
     level = (
         "error"
         if log.message_type == CliLogData.ERROR
-        else "warn" if log.message_type == "Warning" else "info"
+        else "warn" if log.message_type == CliLogData.WARNING else "info"
     )
 
     structured_log = {
         "__moose_structured_log__": True,
-        "log_kind": "cli",
         "level": level,
         "message": log.message,
         "resource_type": "runtime",

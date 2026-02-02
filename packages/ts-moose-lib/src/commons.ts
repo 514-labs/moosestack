@@ -100,7 +100,6 @@ export const cliLog: (log: CliLogData) => void = (log) => {
 
   const structuredLog = {
     __moose_structured_log__: true,
-    log_kind: "cli",
     level,
     message: log.message,
     resource_type: "runtime",
