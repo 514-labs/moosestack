@@ -30,7 +30,6 @@ When triggering workflows, you can pass input data that will be passed to the st
 ```bash filename="Terminal" copy
 moose workflow run data-processing --input '{
   "sourceUrl": "https://api.example.com/data",
-  "apiKey": "your-api-key",
   "batchSize": 100
 }'
 ```
@@ -39,49 +38,46 @@ The input is parsed as JSON and passed to the workflow's starting task.
 
 ## API-Triggered Workflows
 
-Trigger workflows directly via an HTTP POST endpoint exposed by the webserver. These endpoints are protected by admin authentication.
+Trigger workflows directly via HTTP endpoints exposed by the webserver. These endpoints are protected by admin authentication.
 
-- Endpoint: `POST /admin/workflows/{workflowName}/trigger`
+| Endpoint | Description |
+|----------|-------------|
+| `POST /admin/workflows/{workflowName}/trigger` | Start a workflow |
+| `POST /admin/workflows/{workflowName}/terminate` | Stop a running workflow |
+| `GET /admin/workflows/history` | List workflow executions |
 
 ### Authentication
 
 Workflow API endpoints require admin authentication in both development and production. If the admin API key is not configured, the endpoint returns `401 Unauthorized: Admin API key not configured`.
 
-1. Generate a token and hashed key:
-   ```bash filename="Terminal" copy
-   moose generate hash-token
-   # Outputs:
-   # - ENV API Key (hashed) → for config file
-   # - Bearer Token (plain) → for Authorization header
-   ```
+Generate credentials using the CLI:
 
-2. Configure the admin API key in `moose.config.toml`:
-   ```toml filename="moose.config.toml" copy
-   [authentication]
-   admin_api_key = "<hashed_key_from_output>"
-   ```
+```bash filename="Terminal" copy
+moose generate hash-token
+# Output:
+# ENV API Key: <hash>   ← store in config (safe to commit)
+# Bearer Token: <token> ← use in requests (keep secret)
+```
 
-3. Include the Bearer token in your requests (see examples below).
+Add the `ENV API Key` value to `moose.config.toml`:
+```toml filename="moose.config.toml" copy
+[authentication]
+admin_api_key = "<your-env-api-key>"
+```
 
-For details, see the [API Authentication docs](/moosestack/apis/auth).
+Use the `Bearer Token` value in your requests. For more details, see the [API Authentication docs](/moosestack/apis/auth).
 
 ### Trigger Request
 
-- Body: optional JSON payload passed to the workflow's starting task.
-
-Example:
-
 ```bash filename="Terminal" copy
 curl -X POST 'http://localhost:4000/admin/workflows/data-processing/trigger' \
-  -H 'Authorization: Bearer <plain_token_from_output>' \
+  -H 'Authorization: Bearer <your-bearer-token>' \
   -H 'Content-Type: application/json' \
   -d '{
-    "inputValue": "process-user-data",
-    "priority": "high"
+    "sourceUrl": "https://api.example.com/data",
+    "batchSize": 100
   }'
 ```
-
-### Response
 
 ```json filename="Response"
 {
@@ -91,35 +87,23 @@ curl -X POST 'http://localhost:4000/admin/workflows/data-processing/trigger' \
 }
 ```
 
-## Terminate a Running Workflow
-
-After triggering a workflow, you can terminate it via an HTTP endpoint.
-
-- Endpoint: `POST /admin/workflows/{workflowName}/terminate`
-
 ### Terminate Request
 
 ```bash filename="Terminal" copy
 curl -X POST 'http://localhost:4000/admin/workflows/data-processing/terminate' \
-  -H 'Authorization: Bearer <plain_token_from_output>'
+  -H 'Authorization: Bearer <your-bearer-token>'
 ```
-
-## Workflow History
-
-You can retrieve the history of workflow executions:
-
-- Endpoint: `GET /admin/workflows/history`
 
 ### History Request
 
 ```bash filename="Terminal" copy
 curl -X GET 'http://localhost:4000/admin/workflows/history' \
-  -H 'Authorization: Bearer <plain_token_from_output>'
+  -H 'Authorization: Bearer <your-bearer-token>'
 ```
 
 With optional query parameters:
 
 ```bash filename="Terminal" copy
 curl -X GET 'http://localhost:4000/admin/workflows/history?status=RUNNING&limit=20' \
-  -H 'Authorization: Bearer <plain_token_from_output>'
+  -H 'Authorization: Bearer <your-bearer-token>'
 ```
