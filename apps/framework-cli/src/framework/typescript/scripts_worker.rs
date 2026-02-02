@@ -48,7 +48,6 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         .expect("Scripts process did not have a handle to stderr");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -96,18 +95,13 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            error!("{}", line);
-            show_message_wrapper(
-                MessageType::Error,
-                Message {
-                    action: "Workflow".to_string(),
-                    details: line.to_string(),
-                },
-            );
-        }
-    });
+    // Spawn stderr handler with UI display for errors using the centralized helper
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
+        stderr,
+        "task_name",
+        crate::cli::logger::resource_type::TASK,
+        Some("Workflow"),
+    );
 
     Ok(scripts_process)
 }

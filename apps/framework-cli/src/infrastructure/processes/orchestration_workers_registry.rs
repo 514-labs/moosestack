@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use tracing::{info, instrument};
 
-use crate::cli::logger::{context, resource_type};
+use crate::cli::logger::context;
 
 use crate::{
     cli::settings::Settings,
@@ -63,9 +63,7 @@ impl OrchestrationWorkersRegistry {
         name = "orchestration_worker_start",
         skip_all,
         fields(
-            context = context::RUNTIME,
-            resource_type = resource_type::TASK,
-            resource_name = %orchestration_worker.id(),
+            context = context::SYSTEM,
         )
     )]
     pub async fn start(
