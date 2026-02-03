@@ -62,7 +62,7 @@ pub fn run(
         .map(|jwt| jwt.enforce_on_all_consumptions_apis.to_string())
         .unwrap_or("false".to_string());
 
-    let args = vec![
+    let mut args = vec![
         clickhouse_config.db_name.clone(),
         clickhouse_config.host.clone(),
         clickhouse_config.host_port.to_string(),
@@ -73,13 +73,23 @@ pub fn run(
         jwt_issuer,
         jwt_audience,
         enforce_on_all_consumptions_apis,
-        project.temporal_config.temporal_url(),
-        project.temporal_config.get_temporal_namespace(),
-        project.temporal_config.client_cert.clone(),
-        project.temporal_config.client_key.clone(),
-        project.temporal_config.api_key.clone(),
-        proxy_port.unwrap_or(4001).to_string(),
     ];
+
+    if project.features.workflows {
+        args.push("--temporal-url".to_string());
+        args.push(project.temporal_config.temporal_url());
+        args.push("--temporal-namespace".to_string());
+        args.push(project.temporal_config.get_temporal_namespace());
+        args.push("--client-cert".to_string());
+        args.push(project.temporal_config.client_cert.clone());
+        args.push("--client-key".to_string());
+        args.push(project.temporal_config.client_key.clone());
+        args.push("--api-key".to_string());
+        args.push(project.temporal_config.api_key.clone());
+    }
+
+    args.push("--proxy-port".to_string());
+    args.push(proxy_port.unwrap_or(4001).to_string());
 
     let mut consumption_process = executor::run_python_program(
         project,
