@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time;
+use tracing::error;
 
 const MAX_FLUSH_INTERVAL_SECONDS: u64 = 10;
 const MAX_BATCH_SIZE: usize = 1000;
@@ -156,7 +157,7 @@ async fn flush(
             {
                 Some(route) => route,
                 None => {
-                    eprintln!("Error: No endpoint found for event type: {event_type}");
+                    error!("No endpoint found for event type: {event_type}");
                     continue;
                 }
             };
