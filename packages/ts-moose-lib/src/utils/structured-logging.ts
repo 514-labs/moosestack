@@ -77,6 +77,56 @@ export function setupStructuredConsole<TContext>(
 }
 
 /**
+ * Directly emits a structured log if currently in a context, without formatting.
+ * Returns true if structured log was emitted, false if not in context.
+ *
+ * This is useful for framework code that needs to emit structured logs
+ * but doesn't go through console.log() wrapper (e.g., Temporal's logger).
+ *
+ * @template TContext - The type of context stored in AsyncLocalStorage
+ * @param contextStorage - The AsyncLocalStorage instance containing execution context
+ * @param getContextField - Function to extract the identifying field from context
+ * @param contextFieldName - The JSON field name for the context (e.g., "task_name")
+ * @param level - The log level (info, warn, error, debug)
+ * @param message - The log message
+ * @returns true if structured log was emitted, false otherwise
+ */
+export function emitStructuredLog<TContext>(
+  contextStorage: AsyncLocalStorage<TContext>,
+  getContextField: (context: TContext) => string,
+  contextFieldName: string,
+  level: string,
+  message: string,
+): boolean {
+  const context = contextStorage.getStore();
+  if (!context) {
+    return false;
+  }
+
+  let ctxValue: string;
+  try {
+    ctxValue = getContextField(context);
+  } catch {
+    ctxValue = "unknown";
+  }
+
+  try {
+    process.stderr.write(
+      JSON.stringify({
+        __moose_structured_log__: true,
+        level,
+        message,
+        [contextFieldName]: ctxValue,
+        timestamp: new Date().toISOString(),
+      }) + "\n",
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Safely serializes a value to a string, handling circular references, BigInt, Symbols, and Error objects.
  *
  * This function:
