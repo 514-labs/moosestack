@@ -39,7 +39,7 @@ default_sloan_telemetry = "standard"
 
 # Boreal one-click deploy configuration
 [boreal]
-enabled = true
+enabled = false
 display_name = "Chat with your App"
 short_description = "Deploy an AI chat app that can query your data"
 
