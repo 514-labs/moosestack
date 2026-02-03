@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
-use tracing::{error, info};
+use tracing::info;
 
 use super::executor;
 
@@ -18,6 +18,7 @@ pub fn run(
     clickhouse_config: &ClickHouseConfig,
     jwt_config: &Option<JwtConfig>,
     proxy_port: Option<u16>,
+    is_prod: bool,
 ) -> Result<Child, ConsumptionError> {
     // Create the wrapper lib files inside the .moose directory
     let internal_dir = project.internal_dir()?;
@@ -98,7 +99,6 @@ pub fn run(
         .expect("Analytics api process did not have a handle to stderr");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -119,11 +119,14 @@ pub fn run(
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            error!("{}", line);
-        }
-    });
+    // Spawn structured logger for stderr with UI display for errors
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
+        stderr,
+        "api_name",
+        crate::cli::logger::resource_type::CONSUMPTION_API,
+        Some("API"),
+        is_prod,
+    );
 
     Ok(consumption_process)
 }
