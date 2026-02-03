@@ -1250,6 +1250,16 @@ const guidesNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
     status: "draft",
   },
+  {
+    type: "page",
+    slug: "guides/qvd-to-clickhouse",
+    title: "QVD to ClickHouse",
+    description:
+      "Transfer data from QlikView QVD files to ClickHouse using MooseStack workflows.",
+    icon: IconDatabaseImport,
+    languages: ["python"],
+    status: "draft",
+  },
 
   // ===========================================
   // Additional Draft Guides (organized by section)
