@@ -180,6 +180,16 @@ For this guide, assume a **remote ClickHouse instance** (e.g. ClickHouse Cloud) 
       defaultValue="postgres"
       persist
     />
+    <SelectField
+      id="os"
+      label="Operating System"
+      options={[
+        { value: "macos", label: "macOS or Linux" },
+        { value: "windows", label: "Windows (WSL 2)" },
+      ]}
+      defaultValue="macos"
+      persist
+    />
   </CustomizeGrid>
 </CustomizePanel>
 
@@ -218,16 +228,16 @@ Once you’ve set up CDC (via ClickPipes or another method), the rest of this gu
       link: { text: "Download", href: "https://docs.docker.com/desktop/", external: true }
     },
     {
-      title: "macOS, Linux, or WSL 2+ on Windows",
-      description: "Windows users: see the appendix for WSL 2 setup instructions.",
-      link: { text: "Appendix", href: "#appendix", external: false }
-    },
-    {
       title: "Install Moose CLI",
       description: "Install Moose CLI using the installer below.",
     }
   ]}
 />
+
+<ConditionalContent whenId="os" whenValue="windows">
+:::include /shared/prerequisites/wsl-setup.mdx
+</ConditionalContent>
+
 
 <Callout type="info" title="Install Moose CLI">
 Run the installer:
@@ -597,15 +607,11 @@ To summarize, the high level data flow is:
 
 If CDC is not enabled yet, complete the **SQL Server CDC Configuration** section first.
 
-##### Step 1: Add a Moose Ingest API endpoint for CDC events
+##### Step 1: Define a pipeline to receive CDC events from Debezium
 
-This endpoint will receive CDC events from Debezium. 
+Copy the code below into `moosestack/src/cdc/DebeziumChangeEvent.model.ts`. It defines the `DebeziumChangeEvent` payload shape and wires up an `IngestApi` + `Stream` with a Dead Letter Queue (DLQ) so failed events are captured for inspection.
 
-In your MooseStack project, create a new Ingest API sink that accepts Debezium `ChangeEvent` payloads:
-
-**File location:** `moosestack/src/cdc/DebeziumChangeEvent.model.ts`
-
-```ts
+```ts filename="moosestack/src/cdc/DebeziumChangeEvent.model.ts" copy
 import { IngestApi, Stream, DeadLetterQueue, Int64 } from "@514labs/moose-lib";
 
 /**
@@ -703,9 +709,7 @@ export const DebeziumChangeEventIngestApi = new IngestApi<DebeziumEventEnvelope>
 
 Before implementing the streaming function, define an explicit mapping between SQL Server source table names and their corresponding Moose Streams.
 
-**File location:** `moosestack/src/cdc/tableStreamMap.ts`
-
-```typescript
+```typescript filename="moosestack/src/cdc/tableStreamMap.ts" copy
 import { ProductStream } from "../models/Product.model";
 import { CustomerStream } from "../models/Customer.model";
 import { OrderStream } from "../models/Order.model";
@@ -1267,7 +1271,7 @@ time curl -s -X POST http://localhost:4000/api/order-fulfillment \
 
 Verify the response time is significantly improved compared to the original OLTP query.
 
-### 5. Going to production
+### Going to production
 
 In this section, you'll apply your local changes to production. Complete these steps in order:
 
@@ -1487,6 +1491,3 @@ If the count is non-zero (and roughly matches what you expect), the backfill is 
 ##### Repeat for each new MV you added
 
 Only backfill the MVs introduced in this change. Avoid reprocessing older MVs unless you intentionally want to rebuild them.
-## Appendix
-
-:::include /shared/prerequisites/wsl-setup.mdx
