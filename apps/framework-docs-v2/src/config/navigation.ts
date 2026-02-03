@@ -1690,8 +1690,6 @@ export interface SerializableGuideItem {
   title: string;
   description?: string;
   iconName?: string;
-  previewVariant?: string;
-  previewImageIndexFile?: string;
   languages?: string[];
   tags?: string[];
 }

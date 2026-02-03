@@ -38,8 +38,6 @@ export default async function GuidesPage() {
             const content = await parseMarkdownContent(guide.slug);
             return {
               ...guide,
-              previewVariant: content.frontMatter.previewVariant,
-              previewImageIndexFile: content.frontMatter.previewImageIndexFile,
               languages: content.frontMatter.languages,
               tags: content.frontMatter.tags,
             };
