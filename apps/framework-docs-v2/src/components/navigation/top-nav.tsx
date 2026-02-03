@@ -8,9 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { GitHubButtonGroup } from "@/components/github-button-group";
+import { UtilityControls } from "@/components/navigation/utility-controls";
 import { useLanguage } from "@/hooks/use-language";
 import {
   getSectionFromPathname,
@@ -177,9 +175,7 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
                   Release Notes
                 </Link>
               </Button>
-              <GitHubButtonGroup stars={stars} />
-              <ThemeToggle />
-              <SidebarTrigger />
+              <UtilityControls stars={stars} />
             </div>
           </div>
 
@@ -241,13 +237,7 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
                   Release Notes
                 </Link>
               </Button>
-              <div className="flex items-center justify-between pt-2 border-t">
-                <div className="flex items-center space-x-2">
-                  <ThemeToggle />
-                  <SidebarTrigger />
-                </div>
-                <GitHubButtonGroup stars={stars} />
-              </div>
+              <UtilityControls stars={stars} variant="mobile" />
             </div>
           </div>
         )}
