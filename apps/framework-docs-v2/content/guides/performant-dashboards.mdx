@@ -363,9 +363,8 @@ The next screen configures the data services your deploys will use. In practice,
 
 You can accept the default managed services, or connect existing infrastructure.
 
-<Callout type="info" title="Important">
-If you already use ClickHouse Cloud, click `Customize` to connect to your existing instance.
-</Callout>
+<ConditionalContent whenId="source-database" whenValue="postgres">
+Since you are using ClickHouse Cloud, select `Customize` to connect to your existing ClickHouse Cloud instance.
 
 #### Step 4: Configure ClickHouse connection
 
@@ -396,19 +395,18 @@ Next, choose the database that `main` branch deployments should target. This is 
 
 In the database selector, choose the database you created in ClickHouse Cloud (the same one your CDC pipeline will write into).
 
-#### Step 6: Deploy your project
+</ConditionalContent>
 
-Click `Deploy` to run the initial build and create the first deployment for this repo.
+#### Complete deployment
 
-This will redirect you to the `Deployments` page. You can see the status of your deployment in the `Status` column. Typically, it will take around 1-2 minutes to deploy.
+Click `Deploy` to run the initial build and create the first deployment for this repo. This will redirect you to the `Deployments` page. Typically, it will take around 1-2 minutes to deploy.
 
-Once the deployment completes, you’ll be redirected to the project overview page. 
+Once the deployment completes, you’ll be redirected to the project overview page.
 
-#### Step 7: Copy the connection string
+For the next section, you will need to copy the ClickHouse HTTPS connection string. You can locate this by clicking on the `Database` button in the top right corner of your project overview dashboard, and then copying the ClickHouse HTTPS connection string located at the bottom of the panel. 
 
 ![Copy Connection String](/deployment/copy-connection-string.png)
 
-From here, you can copy the ClickHouse HTTPS connection string. This will be used in the next section to seed your local ClickHouse database.
 
 ### Prepare your local development environment
 
