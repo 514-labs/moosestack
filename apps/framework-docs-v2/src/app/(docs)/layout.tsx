@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import { Suspense } from "react";
+import React, { type ReactNode, Suspense } from "react";
 import { SideNavServer } from "@/components/navigation/side-nav-server";
 import { SidebarInset } from "@/components/ui/sidebar";
 import { AnalyticsProvider } from "@/components/analytics-provider";
@@ -8,7 +7,9 @@ interface DocLayoutProps {
   children: ReactNode;
 }
 
-export default function DocLayout({ children }: DocLayoutProps) {
+export default function DocLayout({
+  children,
+}: DocLayoutProps): React.JSX.Element {
   return (
     <AnalyticsProvider>
       <div className="flex flex-1 min-w-0 w-full overflow-hidden">
