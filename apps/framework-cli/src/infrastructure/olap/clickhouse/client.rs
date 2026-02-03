@@ -13,6 +13,7 @@ use tracing::debug;
 use super::config::ClickHouseConfig;
 use super::errors::{validate_clickhouse_identifier, ClickhouseError};
 use super::model::{wrap_and_join_column_names, ClickHouseRecord};
+use super::queries::drop_table_query;
 
 use tracing::error;
 
@@ -257,7 +258,10 @@ impl ClickHouseClient {
         database: &str,
         table_name: &str,
     ) -> anyhow::Result<()> {
-        let query = build_drop_table_query(database, table_name)?;
+        // Validate identifiers to prevent SQL injection
+        validate_clickhouse_identifier(database, "Database name")?;
+        validate_clickhouse_identifier(table_name, "Table name")?;
+        let query = drop_table_query(database, table_name, None)?;
         self.execute_sql(&query).await?;
         Ok(())
     }
@@ -298,26 +302,6 @@ fn build_exists_table_query(database: &str, table_name: &str) -> Result<String, 
     validate_clickhouse_identifier(database, "Database name")?;
     validate_clickhouse_identifier(table_name, "Table name")?;
     Ok(format!("EXISTS TABLE \"{}\".\"{}\"", database, table_name))
-}
-
-/// Builds a DROP TABLE IF EXISTS query string for a ClickHouse table.
-///
-/// # Arguments
-/// * `database` - The database name (must be a valid identifier)
-/// * `table_name` - The table name (must be a valid identifier)
-///
-/// # Returns
-/// A formatted DROP TABLE IF EXISTS query string like: `DROP TABLE IF EXISTS "db"."table"`
-///
-/// # Errors
-/// Returns an error if database or table_name contains invalid characters
-fn build_drop_table_query(database: &str, table_name: &str) -> Result<String, ClickhouseError> {
-    validate_clickhouse_identifier(database, "Database name")?;
-    validate_clickhouse_identifier(table_name, "Table name")?;
-    Ok(format!(
-        "DROP TABLE IF EXISTS \"{}\".\"{}\"",
-        database, table_name
-    ))
 }
 
 fn query_param(query: &str, database: Option<&str>) -> anyhow::Result<String> {
@@ -540,24 +524,6 @@ mod tests {
     }
 
     #[test]
-    fn test_build_drop_table_query() {
-        let result = build_drop_table_query("test_db", "my_table").unwrap();
-        assert_eq!(
-            result, "DROP TABLE IF EXISTS \"test_db\".\"my_table\"",
-            "Should build DROP TABLE IF EXISTS query with double-quoted identifiers"
-        );
-    }
-
-    #[test]
-    fn test_build_drop_table_query_with_special_characters() {
-        let result = build_drop_table_query("analytics_db", "user_events").unwrap();
-        assert_eq!(
-            result, "DROP TABLE IF EXISTS \"analytics_db\".\"user_events\"",
-            "Should handle underscores in database and table names"
-        );
-    }
-
-    #[test]
     fn test_exists_query_includes_wait_end_of_query() {
         // EXISTS is not a DDL command, so it should NOT include wait_end_of_query
         let query = build_exists_table_query("db", "my_table").unwrap();
@@ -571,7 +537,7 @@ mod tests {
     #[test]
     fn test_drop_table_query_includes_wait_end_of_query() {
         // DROP is a DDL command, so it should include wait_end_of_query
-        let query = build_drop_table_query("db", "my_table").unwrap();
+        let query = drop_table_query("db", "my_table", None).unwrap();
         let result = query_param(&query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
@@ -632,17 +598,6 @@ mod tests {
 
         // SQL injection attempt in table name
         let result = build_exists_table_query("db", "table\"; DROP TABLE users; --");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_build_drop_table_query_rejects_invalid_identifiers() {
-        // SQL injection attempt in database name
-        let result = build_drop_table_query("db\"; DROP TABLE users; --", "table");
-        assert!(result.is_err());
-
-        // SQL injection attempt in table name
-        let result = build_drop_table_query("db", "table\"; DROP TABLE users; --");
         assert!(result.is_err());
     }
 }
