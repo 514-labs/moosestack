@@ -199,6 +199,9 @@ pub fn extract_engine_from_create_table(sql: &str) -> Option<String> {
     extract_engine_from_tokens(sql, &dialect)
 }
 
+/// Returns true if the parsed CREATE TABLE options include an ENGINE clause.
+///
+/// This avoids token-scanning statements that don't declare an engine.
 fn create_table_has_engine_option(options: &CreateTableOptions) -> bool {
     let opts = match options {
         CreateTableOptions::None => return false,
@@ -214,6 +217,10 @@ fn create_table_has_engine_option(options: &CreateTableOptions) -> bool {
     })
 }
 
+/// Extract the ENGINE clause using token spans instead of substring search.
+///
+/// Token spans preserve the original formatting (quotes, escapes) and avoid
+/// false matches such as column names containing "engine".
 fn extract_engine_from_tokens(sql: &str, dialect: &ClickHouseDialect) -> Option<String> {
     let tokens = Tokenizer::new(dialect, sql).tokenize_with_location().ok()?;
 
@@ -270,10 +277,12 @@ fn extract_engine_from_tokens(sql: &str, dialect: &ClickHouseDialect) -> Option<
     None
 }
 
+/// Checks whether the token is the given keyword.
 fn is_keyword(token: &Token, keyword: Keyword) -> bool {
     matches!(token, Token::Word(word) if word.keyword == keyword)
 }
 
+/// Advances the index past any whitespace (including comments).
 fn skip_whitespace(tokens: &[sqlparser::tokenizer::TokenWithSpan], idx: &mut usize) {
     while *idx < tokens.len() {
         match tokens[*idx].token {
@@ -283,6 +292,7 @@ fn skip_whitespace(tokens: &[sqlparser::tokenizer::TokenWithSpan], idx: &mut usi
     }
 }
 
+/// Finds the matching ')' for the '(' at start_idx, tracking nesting.
 fn find_matching_paren(
     tokens: &[sqlparser::tokenizer::TokenWithSpan],
     start_idx: usize,
@@ -311,6 +321,7 @@ fn find_matching_paren(
     None
 }
 
+/// Returns the SQL substring corresponding to the given span.
 fn slice_for_span<'a>(sql: &'a str, span: Span) -> Option<&'a str> {
     let start = location_to_index(sql, span.start)?;
     let end = location_to_index(sql, span.end)?;
@@ -320,6 +331,7 @@ fn slice_for_span<'a>(sql: &'a str, span: Span) -> Option<&'a str> {
     Some(&sql[start..end])
 }
 
+/// Convert a sqlparser Location (1-based line/column) into a byte index.
 fn location_to_index(sql: &str, location: Location) -> Option<usize> {
     if location.line == 0 || location.column == 0 {
         return None;
