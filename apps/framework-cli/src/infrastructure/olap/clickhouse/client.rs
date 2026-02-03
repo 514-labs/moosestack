@@ -11,7 +11,7 @@ use tokio::time::{sleep, Duration};
 use tracing::debug;
 
 use super::config::ClickHouseConfig;
-use super::errors::ClickhouseError;
+use super::errors::{validate_clickhouse_identifier, ClickhouseError};
 use super::model::{wrap_and_join_column_names, ClickHouseRecord};
 
 use tracing::error;
@@ -265,40 +265,6 @@ impl ClickHouseClient {
 
 const DDL_COMMANDS: &[&str] = &["INSERT", "CREATE", "ALTER", "DROP", "TRUNCATE"];
 
-/// Validates that a string is a valid ClickHouse identifier.
-///
-/// ClickHouse identifiers (database names, table names, etc.) must:
-/// - Be non-empty
-/// - Contain only alphanumeric characters and underscores
-/// - Not start with a digit
-///
-/// This prevents SQL injection attacks by rejecting malicious input.
-fn validate_identifier(name: &str, identifier_type: &str) -> Result<(), ClickhouseError> {
-    if name.is_empty() {
-        return Err(ClickhouseError::InvalidIdentifier {
-            identifier_type: identifier_type.to_string(),
-            name: name.to_string(),
-            reason: "cannot be empty".to_string(),
-        });
-    }
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        return Err(ClickhouseError::InvalidIdentifier {
-            identifier_type: identifier_type.to_string(),
-            name: name.to_string(),
-            reason: "contains invalid characters (only alphanumeric and underscore allowed)"
-                .to_string(),
-        });
-    }
-    if name.chars().next().unwrap().is_numeric() {
-        return Err(ClickhouseError::InvalidIdentifier {
-            identifier_type: identifier_type.to_string(),
-            name: name.to_string(),
-            reason: "cannot start with a digit".to_string(),
-        });
-    }
-    Ok(())
-}
-
 /// Builds an INSERT query string for a ClickHouse table.
 ///
 /// # Arguments
@@ -329,8 +295,8 @@ fn build_insert_query(database: &str, table_name: &str, columns: &[String]) -> S
 /// # Errors
 /// Returns an error if database or table_name contains invalid characters
 fn build_exists_table_query(database: &str, table_name: &str) -> Result<String, ClickhouseError> {
-    validate_identifier(database, "Database name")?;
-    validate_identifier(table_name, "Table name")?;
+    validate_clickhouse_identifier(database, "Database name")?;
+    validate_clickhouse_identifier(table_name, "Table name")?;
     Ok(format!("EXISTS TABLE \"{}\".\"{}\"", database, table_name))
 }
 
@@ -346,8 +312,8 @@ fn build_exists_table_query(database: &str, table_name: &str) -> Result<String, 
 /// # Errors
 /// Returns an error if database or table_name contains invalid characters
 fn build_drop_table_query(database: &str, table_name: &str) -> Result<String, ClickhouseError> {
-    validate_identifier(database, "Database name")?;
-    validate_identifier(table_name, "Table name")?;
+    validate_clickhouse_identifier(database, "Database name")?;
+    validate_clickhouse_identifier(table_name, "Table name")?;
     Ok(format!(
         "DROP TABLE IF EXISTS \"{}\".\"{}\"",
         database, table_name
@@ -615,42 +581,42 @@ mod tests {
 
     #[test]
     fn test_validate_identifier_valid() {
-        assert!(validate_identifier("test_db", "Database").is_ok());
-        assert!(validate_identifier("my_table", "Table").is_ok());
-        assert!(validate_identifier("Table123", "Table").is_ok());
-        assert!(validate_identifier("_private", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("test_db", "Database").is_ok());
+        assert!(validate_clickhouse_identifier("my_table", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("Table123", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("_private", "Table").is_ok());
     }
 
     #[test]
     fn test_validate_identifier_empty() {
-        let result = validate_identifier("", "Database");
+        let result = validate_clickhouse_identifier("", "Database");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("cannot be empty"));
     }
 
     #[test]
     fn test_validate_identifier_invalid_characters() {
-        let result = validate_identifier("my-table", "Table");
+        let result = validate_clickhouse_identifier("my-table", "Table");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
             .contains("invalid characters"));
 
-        let result = validate_identifier("my.table", "Table");
+        let result = validate_clickhouse_identifier("my.table", "Table");
         assert!(result.is_err());
 
-        let result = validate_identifier("my table", "Table");
+        let result = validate_clickhouse_identifier("my table", "Table");
         assert!(result.is_err());
 
         // SQL injection attempt
-        let result = validate_identifier("table\"; DROP TABLE users; --", "Table");
+        let result = validate_clickhouse_identifier("table\"; DROP TABLE users; --", "Table");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_identifier_starts_with_digit() {
-        let result = validate_identifier("123table", "Table");
+        let result = validate_clickhouse_identifier("123table", "Table");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()

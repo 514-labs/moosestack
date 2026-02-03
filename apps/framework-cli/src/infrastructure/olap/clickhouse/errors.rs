@@ -18,3 +18,50 @@ pub enum ClickhouseError {
     },
     QueryRender(#[from] handlebars::RenderError),
 }
+
+/// Checks if a string is a valid ClickHouse identifier.
+///
+/// ClickHouse identifiers (database names, table names, cluster names, etc.) must:
+/// - Be non-empty
+/// - Contain only alphanumeric characters and underscores
+/// - Not start with a digit
+///
+/// This is the same validation logic used in `utilities/docker.rs::is_valid_clickhouse_identifier`.
+pub fn is_valid_clickhouse_identifier(name: &str) -> bool {
+    !name.is_empty()
+        && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+        && !name.chars().next().unwrap().is_numeric()
+}
+
+/// Validates that a string is a valid ClickHouse identifier, returning a typed error on failure.
+///
+/// This wraps `is_valid_clickhouse_identifier` to provide detailed error information
+/// for SQL injection prevention.
+pub fn validate_clickhouse_identifier(
+    name: &str,
+    identifier_type: &str,
+) -> Result<(), ClickhouseError> {
+    if name.is_empty() {
+        return Err(ClickhouseError::InvalidIdentifier {
+            identifier_type: identifier_type.to_string(),
+            name: name.to_string(),
+            reason: "cannot be empty".to_string(),
+        });
+    }
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return Err(ClickhouseError::InvalidIdentifier {
+            identifier_type: identifier_type.to_string(),
+            name: name.to_string(),
+            reason: "contains invalid characters (only alphanumeric and underscore allowed)"
+                .to_string(),
+        });
+    }
+    if name.chars().next().unwrap().is_numeric() {
+        return Err(ClickhouseError::InvalidIdentifier {
+            identifier_type: identifier_type.to_string(),
+            name: name.to_string(),
+            reason: "cannot start with a digit".to_string(),
+        });
+    }
+    Ok(())
+}
