@@ -322,9 +322,9 @@ In the GitHub authorization screen:
 
 On the “Import Existing Project” page, confirm the basic settings Boreal will use to build and deploy this repo:
 
-`Name`: this field should contain the desired project name. By default it shows the repository name; update it if necessary.
+- `Name`: this field should contain the desired project name. By default it shows the repository name; update it if necessary.
 
-`Project Root`: set the directory within the repository that contains your MooseStack project (for example, the folder that contains your Moose config like `project.toml`). If this is a monorepo, make sure you pick the specific subfolder for the app you’re deploying (e.g., `moosestack/`).
+- `Project Root`: set the directory within the repository that contains your MooseStack project (for example, the folder that contains your Moose config like `project.toml`). If this is a monorepo, make sure you pick the specific subfolder for the app you’re deploying (e.g., `moosestack/`).
 
 Once these fields look correct, click `Next` to proceed.
 
@@ -350,14 +350,14 @@ If you already use ClickHouse Cloud, click `Customize` to connect to your existi
 
 If you chose `Customize`, open the ClickHouse configuration and select `Connect to existing ClickHouse instance`. Then fill out the form:
 
-`Host`: enter the hostname of your ClickHouse instance (e.g., your-instance.clickhouse.cloud).
-`Port`: specify the port number (for ClickHouse Cloud this is commonly 8443).
-`User & Password`: supply the credentials for your ClickHouse user. 
+- `Host`: enter the hostname of your ClickHouse instance (e.g., your-instance.clickhouse.cloud).
+- `Port`: specify the port number (for ClickHouse Cloud this is commonly 8443).
+- `User & Password`: supply the credentials for your ClickHouse user. 
+
 <Callout type="info" title="Admin Role Required">
 This user must have the `admin` role. This is required in order to create preview database instances for each preview environment.
 </Callout>
-
-`Connection Name`: give this connection an identifiable name (e.g., “Prod ClickHouse Cloud”) for future reference.
+- `Connection Name`: give this connection an identifiable name (e.g., “Prod ClickHouse Cloud”) for future reference.
 
 Click `Test Connection` to verify connectivity. If the test fails, fix the connection details before continuing.
 
