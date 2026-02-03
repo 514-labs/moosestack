@@ -146,14 +146,32 @@ If you use a copilot, these two prompts tend to help most in this guide:
 
 **Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
 
-### Setting up your development environment
+<CustomizePanel
+  title="CDC setup"
+  description="Use this toggle to show/hide the SQL Server CDC configuration steps."
+>
+  <CustomizeGrid columns={1}>
+    <SelectField
+      id="cdc-method"
+      label="CDC method"
+      options={[
+        { value: "debezium", label: "Debezium (SQL Server CDC)" },
+        { value: "clickpipes", label: "ClickHouse Cloud ClickPipes" },
+      ]}
+      defaultValue="debezium"
+      persist
+    />
+  </CustomizeGrid>
+</CustomizePanel>
+
+### Project setup
 
 In this section, you'll:
 
 * Install MooseStack and its dependencies
-* Initialize or clone your MooseStack project
-* Set up developer and AI agent tools (MCP + Language Server)
-* Seed your development environment with sample data 
+* Initialize MooseStack in your repo
+* Create a Boreal project connected to your repo
+* Capture your production ClickHouse connection string
 
 #### Installing MooseStack
 
@@ -263,6 +281,114 @@ Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (t
 }
 ```
 
+#### Create your Boreal project (production access)
+
+Step 0 - Sign up for Boreal Cloud.
+
+Go to [boreal.cloud](https://boreal.cloud) and sign up for an account.
+
+Once you have signed up, you’ll land on the `Projects` page. Click `New Project` to start importing your repository.
+
+![Authorize GitHub](/deployment/authorize-github.png)
+
+Before you can create a new project, you’ll be prompted to authorize the Boreal GitHub app for the GitHub account (or organization) that hosts your repository.
+
+This authorization connects your repo to your deployment pipeline so that:
+
+- every `git push` can trigger an automated deployment, and
+- pull requests can get their own preview environment (one per branch), with production deploys tied to merges into your main branch.
+
+In the GitHub authorization screen:
+
+- choose the GitHub account/org that owns the repo
+- select which repositories Boreal can access (prefer “only select repositories” if you want tighter scope)
+- click `Authorize` to continue back to the project import flow
+
+**Step 1 – Define Project Details**
+
+![Project Details](/deployment/import-existing-project.png)
+
+On the “Import Existing Project” page, confirm the basic settings Boreal will use to build and deploy this repo:
+
+`Name`: this field should contain the desired project name. By default it shows the repository name; update it if necessary.
+
+`Project Root`: set the directory within the repository that contains your MooseStack project (for example, the folder that contains your Moose config like `project.toml`). If this is a monorepo, make sure you pick the specific subfolder for the app you’re deploying (e.g., `moosestack/`).
+
+Once these fields look correct, click `Next` to proceed.
+
+**Step 2 – Select Data Services**
+
+![Select Data Services](/deployment/configure-data-services.png)
+
+The next screen configures the data services your deploys will use. In practice, this sets:
+
+- where main-branch deployments apply schema changes, and
+- where pull-request preview environments provision isolated databases.
+
+You can accept the default managed services, or connect existing infrastructure.
+
+<Callout type="info" title="Important">
+If you already use ClickHouse Cloud, click `Customize` to connect to your existing instance.
+</Callout>
+
+
+**Step 3 – Configure ClickHouse Connection**
+
+![Configure ClickHouse Connection](/deployment/configure-clickhouse-connection.png)
+
+If you chose `Customize`, open the ClickHouse configuration and select `Connect to existing ClickHouse instance`. Then fill out the form:
+
+`Host`: enter the hostname of your ClickHouse instance (e.g., your-instance.clickhouse.cloud).
+`Port`: specify the port number (for ClickHouse Cloud this is commonly 8443).
+`User & Password`: supply the credentials for your ClickHouse user. 
+<Callout type="info" title="Admin Role Required">
+This user must have the `admin` role. This is required in order to create preview database instances for each preview environment.
+</Callout>
+
+`Connection Name`: give this connection an identifiable name (e.g., “Prod ClickHouse Cloud”) for future reference.
+
+Click `Test Connection` to verify connectivity. If the test fails, fix the connection details before continuing.
+
+If you intend to use this connection for other projects, toggle `Use as Default`.
+
+Finally, click `Add connection` to finish the setup.
+
+**Step 4 – Set the main-branch database target**
+
+![Set Main Branch](/deployment/set-main-db.png)
+
+Next, choose the database that `main` branch deployments should target. This is the “production” analytics database in your ClickHouse instance: when you merge changes into your repository’s main branch, schema changes will be applied here.
+
+In the database selector, choose the database you created in ClickHouse Cloud (the same one your CDC pipeline will write into).
+
+**Step 5 - Deploy your project**
+
+Click `Deploy` to run the initial build and create the first deployment for this repo.
+
+This will redirect you to the `Deployments` page. You can see the status of your deployment in the `Status` column. Typically, it will take around 1-2 minutes to deploy.
+
+Once the deployment completes, you’ll be redirected to the project overview page. 
+
+**Step 6 - Copy the connection string**
+
+![Copy Connection String](/deployment/copy-connection-string.png)
+
+From here, you can copy the ClickHouse HTTPS connection string. This will be used in the next section to seed your local ClickHouse database.
+
+### Start Developing
+
+At this point, your MooseStack project exists in your repo and your Boreal project is connected and configured. Next you'll start local development and tooling.
+
+If you are not already in a terminal, open a new terminal and navigate to your repository.
+
+#### Create a branch
+
+Create a new branch in your repo to isolate your changes. When you open a pull request from this branch, you’ll get a preview environment you can use to validate changes before merging.
+
+```shell
+git checkout -b <your-branch-name>
+```
+
 #### Run your Moose Development Server
 
 Ensure Docker Desktop is running first.  
@@ -277,7 +403,6 @@ cd moosestack  # or wherever your moose project is
 pnpm install
 moose dev
 ```
-
 
 If the development server runs correctly, you'll see a list of the available API endpoints print:
 
@@ -663,6 +788,7 @@ Your Debezium `application.properties` must include:
 <Callout type="info" title="Example deployment manifests">
 For complete Kubernetes deployment examples with MooseStack, see our [CDC examples repository](https://github.com/514-labs/moose-examples).
 </Callout>
+</ConditionalContent>
 
 ### Migrating a dashboard component to OLAP
 
@@ -715,7 +841,7 @@ moose seed clickhouse --connection-string <PRODUCTION_CONNECTION_STRING> --all
 
 **Important:** `moose seed clickhouse` uses ClickHouse's HTTPS protocol. Use a HTTPS connection string (e.g., `https://username:password@host:8443/database`).
 
-If you already use Boreal, you can locate your connection string in your project overview dashboard. 
+Use the ClickHouse HTTPS connection string from the Boreal project you just created. 
 
 
 Optionally set it as an environment variable:
@@ -969,10 +1095,6 @@ At this stage you are only checking that the data is present. Once the Materiali
 
 In this phase, you will expose the serving table via an API endpoint that your frontend can call.
 
-<Callout type="tip" title="AI acceleration">
-To complete this phase faster with AI assistance, give your copilot this guide section along with your serving table schema from Phase 2.
-</Callout>
-
 In this guide, you’ll use the Query Layer. It’s a small helper library that sits on top of Moose’s `sql` utility and `OlapTable` objects so you can define metrics, group-bys, filters, sorting, and pagination once and reuse them across handlers.
 
 ##### Step 1: Add the Query Layer to your project
@@ -1116,33 +1238,18 @@ time curl -s -X POST http://localhost:4000/api/order-fulfillment \
 
 Verify the response time is significantly improved compared to the original OLTP query.
 
-### Push to remote GitHub
-
-Add the files you created above (or just the functional files if you don't want to commit your test scripts) and push to your version control. Create a Pull Request.
-
-This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR. 
-
 ### Going to production
 
 In this section, you'll apply your local changes to production:
 
-1. Join Boreal
-2. Commit your branch and deploy a preview environment
-3. Test the preview branch
-4. Push to production
-5. Backfill materialized views
+1. Commit your branch and deploy a preview environment
+2. Test the preview branch
+3. Push to production
+4. Backfill materialized views
 
-#### Join Boreal
-
-(Skip this step if you already have completed Boreal onboarding.)
-
-To deploy changes to production, you need access to [Boreal](http://boreal.cloud) and to the organization that owns the project.
-
-1. [Click here to sign up with your GitHub account.](https://www.boreal.cloud/sign-up)
-2. After signing in, you'll be prompted to create or join an organization. Check for any pending invitations and join the organization that owns the project.
-3. If no invitation appears in Boreal, check your email. You should have received an invitation to join the organization. Make sure the email address matches your GitHub account and follow the instructions in that email to accept.
-
-Once you've joined the correct organization, you should be able to see the project in Boreal and proceed with your production rollout.
+<Callout type="info" title="Confirm Boreal project access">
+To deploy to production (and to create branch preview environments), you need a Boreal project connected to the GitHub repo you’re working in. If you haven’t created a project yet, go back to [**Create your Boreal project**](#create-your-boreal-project-production-access) above and complete that setup first.
+</Callout>
 
 #### Generate a Migration Plan
 
@@ -1207,28 +1314,39 @@ If the plan shows changes you did not anticipate, stop and resolve that before p
 
 Once the plan looks correct, you're ready to continue with preview and production rollout.
 
+### Push to remote GitHub
+
+Add the files you created above (or just the functional files if you don't want to commit your test scripts) and push to your version control. Create a Pull Request.
+
+This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR. 
+
 #### Open a Pull Request and Inspect the Preview Environment
 
-Commit your changes, push them to a new branch, and open a pull request targeting `main`.
+At this point you should have:
 
-Once the PR is open, Boreal automatically deploys an isolated preview (staging) environment for the branch. Your code and the generated `plan.yaml` are applied to a staging database forked from production. Validate that your migration works correctly with production data volume, schema, and edge cases before touching your live environment.
+- a reviewed `plan.yaml` that matches your intended changes, and
+- a feature branch with your code changes ready to ship.
 
-Confirm that **boreal-cloud bot** appears in the PR comments.
+Commit your changes, push the branch to GitHub, and open a pull request targeting `main`.
+
+When the PR is opened, Boreal creates an isolated preview environment for the branch. Your PR’s code and the generated `plan.yaml` are applied against a preview database so you can validate schema and behavior before you merge anything into `main`.
+
+In the PR, confirm that **boreal-cloud bot** posts a comment.
 
 {/* image */}
 
 This confirms that:
 
-* Your GitHub account is correctly linked
-* Boreal has started deploying the preview environment
+- the repo is connected and authorized, and
+- the preview deployment has started for this branch.
 
-If the bot does not appear, double check that you have correctly integrated your Github account with your Boreal account. If something doesn't look right, reach out to the 514 team for help.
+If the bot does not appear, double-check that the Boreal GitHub app is authorized for this repository and that the Boreal project is connected to the correct repo/root directory.
 
-In the **boreal-cloud bot** comment, you'll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Boreal project dashboard with your preview environment selected.
+In the **boreal-cloud bot** comment, you’ll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Boreal dashboard with the preview environment selected.
 
 {/* image */}
 
-From here, you'll inspect the database state and validate that the resources created by your migration plan match what you reviewed and expected before proceeding.
+From here, inspect the preview environment’s database state and verify the resources created by your migration plan match what you reviewed in `plan.yaml` (tables, views, and materialized views) before proceeding.
 
 #### Connect to the Staging Database
 
