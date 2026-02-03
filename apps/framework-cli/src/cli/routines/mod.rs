@@ -157,6 +157,46 @@ async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisCli
     }
 }
 
+/// Runs the initial TypeScript compilation using moose-tspc.
+/// This is called before plan_changes in dev mode to ensure compiled artifacts
+/// exist for the dmv2-serializer.
+fn run_initial_typescript_compilation(project: &Project) -> Result<(), String> {
+    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
+    let bin_path = format!(
+        "{}/node_modules/.bin:{}",
+        project.project_location.display(),
+        path
+    );
+
+    let output = std::process::Command::new("npx")
+        .arg("moose-tspc")
+        .arg(".moose/compiled")
+        .current_dir(&project.project_location)
+        .env("MOOSE_SOURCE_DIR", &project.source_dir)
+        .env("PATH", bin_path)
+        .output()
+        .map_err(|e| format!("Failed to run moose-tspc: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Check if output was generated despite errors (noEmitOnError: false)
+        let compiled_index = project
+            .project_location
+            .join(".moose/compiled")
+            .join(&project.source_dir)
+            .join("index.js");
+        if compiled_index.exists() {
+            // Compilation succeeded with warnings
+            debug!("TypeScript compiled with warnings: {}", stderr);
+            Ok(())
+        } else {
+            Err(format!("TypeScript compilation failed: {}", stderr))
+        }
+    }
+}
+
 pub mod auth;
 pub mod build;
 pub mod clean;
@@ -402,6 +442,43 @@ pub async fn start_development_mode(
         .await;
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
+
+    // For TypeScript projects, run initial compilation before planning
+    // This ensures dmv2-serializer can use compiled output instead of ts-node
+    if project.language == SupportedLanguages::Typescript {
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "Compiling".to_string(),
+                details: "TypeScript...".to_string(),
+            },
+        );
+
+        let compile_result = run_initial_typescript_compilation(&project);
+        match compile_result {
+            Ok(()) => {
+                display::show_message_wrapper(
+                    MessageType::Success,
+                    Message {
+                        action: "Compiled".to_string(),
+                        details: "TypeScript successfully".to_string(),
+                    },
+                );
+            }
+            Err(e) => {
+                // Log warning but continue - ts-node fallback will be used
+                warn!("Initial TypeScript compilation failed: {}", e);
+                display::show_message_wrapper(
+                    MessageType::Warning,
+                    Message {
+                        action: "Warning".to_string(),
+                        details: "TypeScript compilation failed, falling back to ts-node"
+                            .to_string(),
+                    },
+                );
+            }
+        }
+    }
 
     // Create state storage once based on project configuration
     let state_storage = StateStorageBuilder::from_config(&project)
