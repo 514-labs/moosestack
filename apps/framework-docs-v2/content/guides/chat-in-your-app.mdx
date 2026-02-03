@@ -1,6 +1,9 @@
 ---
 title: Chat in Your App
 description: Build AI-powered chat experiences with real-time analytics using MooseStack
+previewVariant: "chat"
+languages: ["typescript"]
+tags: ["MCP"]
 ---
 
 import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
@@ -709,14 +712,8 @@ Pull the `moosestack-service` from the `typescript-mcp` template. It includes th
 mkdir -p packages
 cd packages
 
-# Clone just the moosestack-service folder
-git clone --depth 1 --filter=blob:none --sparse \
-  https://github.com/514-labs/moosestack.git temp-moose
-cd temp-moose
-git sparse-checkout set templates/typescript-mcp/packages/moosestack-service
-cp -r templates/typescript-mcp/packages/moosestack-service ../moosestack-service
-cd ..
-rm -rf temp-moose
+### Add the moosestack-service to your workspace
+pnpm dlx tiged 514-labs/moosestack/templates/typescript-mcp/packages/moosestack-service ./moosestack-service
 ```
 
 <Callout type="info" title="Replace the sample data model">

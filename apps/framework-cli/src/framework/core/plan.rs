@@ -52,6 +52,64 @@ pub enum PlanningError {
     #[error("Unknown error")]
     Other(#[from] anyhow::Error),
 }
+
+/// Creates a copy of an infrastructure map with normalized SQL in all materialized views and views.
+/// Uses ClickHouse's native `formatQuerySingleLine()` for accurate normalization.
+///
+/// This returns a NEW map for comparison purposes only - the original map should be
+/// preserved for storage, since storing normalized SQL would break if ClickHouse
+/// changes its `formatQuerySingleLine` behavior in future versions.
+///
+/// IMPORTANT: This function must be called on both maps before using `diff_with_table_strategy`
+/// to ensure correct comparison of MV/View SQL.
+pub async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
+    infra_map: &InfrastructureMap,
+    olap_client: &T,
+) -> InfrastructureMap {
+    let mut normalized_map = infra_map.clone();
+    let default_database = infra_map.default_database.clone();
+
+    // Normalize materialized view SQL
+    for (name, mv) in normalized_map.materialized_views.iter_mut() {
+        match olap_client
+            .normalize_sql(&mv.select_sql, &default_database)
+            .await
+        {
+            Ok(normalized) => {
+                debug!("Normalized MV '{}' SQL for diff comparison", name);
+                mv.select_sql = normalized;
+            }
+            Err(e) => {
+                debug!(
+                    "Failed to normalize MV '{}' SQL, using original: {:?}",
+                    name, e
+                );
+            }
+        }
+    }
+
+    // Normalize view SQL
+    for (name, view) in normalized_map.views.iter_mut() {
+        match olap_client
+            .normalize_sql(&view.select_sql, &default_database)
+            .await
+        {
+            Ok(normalized) => {
+                debug!("Normalized View '{}' SQL for diff comparison", name);
+                view.select_sql = normalized;
+            }
+            Err(e) => {
+                debug!(
+                    "Failed to normalize View '{}' SQL, using original: {:?}",
+                    name, e
+                );
+            }
+        }
+    }
+
+    normalized_map
+}
+
 /// Reconciles an infrastructure map with the actual state from the database.
 ///
 /// This function uses the InfraRealityChecker to determine the actual state of the database
@@ -74,7 +132,7 @@ pub enum PlanningError {
 ///
 /// # Returns
 /// * `Result<InfrastructureMap, PlanningError>` - The reconciled infrastructure map or an error
-pub async fn reconcile_with_reality<T: OlapOperations>(
+pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     project: &Project,
     current_infra_map: &InfrastructureMap,
     target_table_ids: &HashSet<String>,
@@ -564,7 +622,7 @@ pub async fn load_target_infrastructure(
 ///
 /// # Returns
 /// * `Result<InfrastructureMap, PlanningError>` - The reconciled current state
-pub async fn load_reconciled_infrastructure<T: OlapOperations>(
+pub async fn load_reconciled_infrastructure<T: OlapOperations + Sync>(
     project: &Project,
     storage: &dyn StateStorage,
     olap_client: T,
@@ -657,7 +715,17 @@ pub async fn plan_changes(
     )
     .await?;
 
-    // Use the reconciled map for diffing with ClickHouse-specific strategy
+    // Normalize SQL in both maps for comparison only (don't mutate originals).
+    // We normalize at comparison time rather than storing normalized SQL because
+    // ClickHouse's formatQuerySingleLine behavior could change between versions.
+    // The original user SQL is preserved in target_infra_map for storage.
+    let normalization_client = clickhouse::create_client(project.clickhouse_config.clone());
+    let reconciled_normalized =
+        normalize_infra_map_for_comparison(&reconciled_map, &normalization_client).await;
+    let target_normalized =
+        normalize_infra_map_for_comparison(&target_infra_map, &normalization_client).await;
+
+    // Use the normalized maps for diffing with ClickHouse-specific strategy
     // Pass ignore_ops so the diff can normalize tables internally for comparison
     // while using original tables for the actual change operations
     let clickhouse_strategy = ClickHouseTableDiffStrategy;
@@ -667,16 +735,19 @@ pub async fn plan_changes(
         &[]
     };
 
-    let changes = reconciled_map.diff_with_table_strategy(
-        &target_infra_map,
+    let changes = reconciled_normalized.diff_with_table_strategy(
+        &target_normalized,
         &clickhouse_strategy,
         true,
         project.is_production,
         ignore_ops,
     );
 
+    // Note: changes contain normalized SQL (via ClickHouse's formatQuerySingleLine).
+    // This is fine because ClickHouse reformats SQL anyway when storing.
+    // The original user SQL is preserved in target_infra_map for Redis storage.
     let plan = InfraPlan {
-        target_infra_map: target_infra_map.clone(),
+        target_infra_map,
         changes,
     };
 
@@ -1582,6 +1653,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            workflow_changes: vec![],
             filtered_olap_changes: vec![],
         };
 
@@ -1602,6 +1674,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            workflow_changes: vec![],
             filtered_olap_changes: vec![],
         };
 
@@ -1620,6 +1693,7 @@ mod tests {
             api_changes: vec![],
             web_app_changes: vec![],
             streaming_engine_changes: vec![],
+            workflow_changes: vec![],
             filtered_olap_changes: vec![],
         };
 

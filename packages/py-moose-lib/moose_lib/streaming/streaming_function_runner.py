@@ -36,10 +36,16 @@ from moose_lib.commons import (
     get_kafka_consumer,
     get_kafka_producer,
 )
+from moose_lib.utilities import setup_structured_logging
 
 # Force stdout to be unbuffered
 sys.stdout = io.TextIOWrapper(
     open(sys.stdout.fileno(), "wb", 0), write_through=True, line_buffering=True
+)
+
+# Setup structured logging context
+function_context = setup_structured_logging(
+    lambda ctx: ctx["function_name"], "function_name"
 )
 
 # Constants for consumer initialization
@@ -269,7 +275,7 @@ log_prefix = (
 
 def log(msg: str) -> None:
     """Log a message with the source->target topic prefix."""
-    print(f"{log_prefix}: {msg}")
+    function_context.log("info", f"{log_prefix}: {msg}")
 
 
 def error(msg: str) -> None:
@@ -537,8 +543,10 @@ def main():
                                 dlq,
                             ) in streaming_function_callables:
                                 try:
-                                    output_data = streaming_function_callable(
-                                        input_data
+                                    # Wrap user function execution with structured logging context
+                                    output_data = function_context.run(
+                                        {"function_name": log_prefix},
+                                        lambda: streaming_function_callable(input_data),
                                     )
                                 except Exception as e:
                                     traceback.print_exc()
