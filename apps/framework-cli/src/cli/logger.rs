@@ -902,6 +902,7 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
 /// - `ui_action`: Optional action name for UI display (e.g., "Streaming", "API"). When `Some`,
 ///   errors will be shown via the callback.
 /// - `ui_callback`: A callback function invoked when errors should be displayed in the UI.
+/// - `is_prod`: When true, suppresses terminal UI display (messages only go to tracing)
 ///
 /// ## Example
 ///
@@ -912,7 +913,7 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
 /// // For testing with in-memory input:
 /// let input = r#"{"__moose_structured_log__":true,"function_name":"fn","level":"error","message":"oops"}"#;
 /// let reader = BufReader::new(Cursor::new(input));
-/// process_stderr_lines(reader, "function_name", "transform", Some("Test"), |_, _| {}).await;
+/// process_stderr_lines(reader, "function_name", "transform", Some("Test"), |_, _| {}, false).await;
 /// ```
 pub async fn process_stderr_lines<R, F>(
     reader: R,
@@ -947,7 +948,7 @@ pub async fn process_stderr_lines<R, F>(
                 if !is_prod {
                     let message =
                         crate::cli::display::Message::new(action.clone(), log_data.message.clone());
-                    show_message!(msg_type, message);
+                    show_message!(msg_type, message, true);
                 }
 
                 // Always route to tracing for observability
@@ -1018,6 +1019,7 @@ pub async fn process_stderr_lines<R, F>(
 /// - `resource_type`: The resource type constant (e.g., "transform", "consumption_api", "task")
 /// - `ui_action`: Optional action name for UI display (e.g., "Streaming", "API"). When `Some`,
 ///   errors will be shown in the CLI UI with this action label.
+/// - `is_prod`: When true, suppresses terminal UI display (messages only go to tracing)
 ///
 /// ## Returns
 ///
@@ -1036,6 +1038,7 @@ pub async fn process_stderr_lines<R, F>(
 ///         "function_name",
 ///         logger::resource_type::TRANSFORM,
 ///         Some("Streaming"),
+///         false,
 ///     );
 /// }
 /// ```

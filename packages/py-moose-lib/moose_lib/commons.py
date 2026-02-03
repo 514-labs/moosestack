@@ -71,6 +71,8 @@ class Logger:
                 moose_scripts_logger.info(message)
             elif message_type == CliLogData.ERROR:
                 moose_scripts_logger.error(message)
+            elif message_type == CliLogData.WARNING:
+                moose_scripts_logger.warning(message)
             elif message_type == CliLogData.HIGHLIGHT:
                 moose_scripts_logger.warning(message)
         else:
@@ -88,6 +90,9 @@ class Logger:
 
     def error(self, message: str) -> None:
         self._log(message, CliLogData.ERROR)
+
+    def warning(self, message: str) -> None:
+        self._log(message, CliLogData.WARNING)
 
     def highlight(self, message: str) -> None:
         self._log(message, CliLogData.HIGHLIGHT)
