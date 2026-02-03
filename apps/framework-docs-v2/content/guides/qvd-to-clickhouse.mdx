@@ -7,7 +7,7 @@ import { Callout, BulletPointsCard, CTACards, CTACard } from "@/components/mdx";
 
 # Transferring QVD Files to ClickHouse
 
-This guide shows how to transfer data from QlikView Data (QVD) files to ClickHouse using MooseStack workflows. You will learn to auto-generate Pydantic models from QVD schema, handle batch insertions with retry logic, and configure file sources from local or cloud storage.
+This guide shows how to transfer data from QlikView Data (QVD) files to ClickHouse using a pre-built MooseStack pipeline. The pipeline automatically generates data models from QVD schema, handles incremental updates, and provides API monitoring capabilities.
 
 <Callout type="info" title="Prerequisites">
 This guide assumes familiarity with MooseStack workflows and data modeling. If you are new to these concepts, review the [Workflows documentation](/moosestack/workflows) and [Data Warehouses guide](/guides/data-warehouses) first.
@@ -22,597 +22,369 @@ QVD (QlikView Data) files are a proprietary binary format used by QlikView and Q
 - **Flexibility**: Standard SQL access for BI tools, notebooks, and custom applications
 - **Scalability**: Handle billions of rows with consistent sub-second query times
 
-## Dependencies
+## Pipeline Features
 
-Install the required Python packages:
+The QVD-to-ClickHouse pipeline provides:
+
+- **Universal file system support** via `fsspec` (local, S3, HTTP, FTP, Azure Blob, Google Cloud Storage)
+- **Auto-generated Pydantic models** from QVD schema introspection
+- **Incremental updates** with ClickHouse-based file tracking
+- **Batch processing** with configurable batch size and retry logic
+- **REST API monitoring** for sync status, failures, and processing history
+- **Scheduled execution** via MooseStack workflows
+
+## Installation
+
+### Add to Your Project
+
+Add the pipeline to your MooseStack project's `pyproject.toml`:
+
+```toml
+[project]
+dependencies = [
+    # ... your other dependencies
+    "qvd-to-clickhouse",  # Add the QVD pipeline
+]
+```
+
+Then install dependencies:
 
 ```bash
-pip install pyqvd fsspec pandas tenacity moose-lib
+uv sync
+# or
+pip install -e .
 ```
 
-| Package | Purpose |
-|---------|---------|
-| `pyqvd` | Read QVD files and extract schema metadata |
-| `fsspec` | Abstract filesystem interface for local, S3, GCS, Azure storage |
-| `pandas` | DataFrame manipulation for batch processing |
-| `tenacity` | Retry logic for resilient batch insertions |
-| `moose-lib` | MooseStack workflow and OLAP table integration |
-
-## Auto-Generating Pydantic Models from QVD Schema
-
-QVD files contain embedded schema information. Rather than manually defining Pydantic models, you can introspect the QVD file and generate models automatically.
-
-### QvdIntrospector
-
-The `QvdIntrospector` class reads a QVD file and extracts column names and data types:
-
-```python filename="qvd_introspector.py" copy
-from pyqvd import QvdReader
-from typing import Dict, Any, List, Tuple
-
-class QvdIntrospector:
-    """Introspect QVD file schema to extract column definitions."""
-
-    # Map QVD field types to Python/Pydantic types
-    TYPE_MAP = {
-        "ASCII": "str",
-        "TEXT": "str",
-        "INTEGER": "int",
-        "REAL": "float",
-        "FIX": "float",
-        "DUAL": "str",  # Dual values stored as strings
-        "DATE": "datetime",
-        "TIME": "datetime",
-        "TIMESTAMP": "datetime",
-        "INTERVAL": "float",
-        "MONEY": "float",
-    }
-
-    def __init__(self, file_path: str):
-        self.file_path = file_path
-        self._reader = None
-        self._schema = None
-
-    def _load(self):
-        """Lazy load the QVD file."""
-        if self._reader is None:
-            self._reader = QvdReader(self.file_path)
-            self._schema = self._extract_schema()
-
-    def _extract_schema(self) -> List[Tuple[str, str]]:
-        """Extract column names and types from QVD metadata."""
-        columns = []
-        for field in self._reader.fields:
-            field_name = self._sanitize_name(field.name)
-            field_type = self.TYPE_MAP.get(field.type, "str")
-            columns.append((field_name, field_type))
-        return columns
-
-    def _sanitize_name(self, name: str) -> str:
-        """Convert QVD field names to valid Python identifiers."""
-        # Replace spaces and special characters with underscores
-        sanitized = "".join(c if c.isalnum() else "_" for c in name)
-        # Ensure it starts with a letter or underscore
-        if sanitized[0].isdigit():
-            sanitized = f"_{sanitized}"
-        return sanitized.lower()
-
-    def get_schema(self) -> List[Tuple[str, str]]:
-        """Return list of (column_name, python_type) tuples."""
-        self._load()
-        return self._schema
-
-    def get_row_count(self) -> int:
-        """Return the number of rows in the QVD file."""
-        self._load()
-        return self._reader.num_rows
-```
-
-### QvdModelGenerator
-
-The `QvdModelGenerator` dynamically creates Pydantic models from the introspected schema:
-
-```python filename="qvd_model_generator.py" copy
-from pydantic import create_model
-from typing import Type, Optional, Any
-from datetime import datetime
-
-class QvdModelGenerator:
-    """Generate Pydantic models from QVD schema."""
-
-    # Map type strings to actual Python types
-    PYTHON_TYPES = {
-        "str": str,
-        "int": int,
-        "float": float,
-        "datetime": datetime,
-    }
-
-    @classmethod
-    def generate(
-        cls,
-        introspector: "QvdIntrospector",
-        model_name: str = "QvdRecord",
-        make_optional: bool = True
-    ) -> Type:
-        """
-        Generate a Pydantic model from QVD schema.
-
-        Args:
-            introspector: QvdIntrospector instance with loaded schema
-            model_name: Name for the generated Pydantic model
-            make_optional: If True, all fields are Optional (handles NULL values)
-
-        Returns:
-            Dynamically created Pydantic model class
-        """
-        schema = introspector.get_schema()
-
-        field_definitions = {}
-        for field_name, type_str in schema:
-            python_type = cls.PYTHON_TYPES.get(type_str, str)
-
-            if make_optional:
-                field_definitions[field_name] = (Optional[python_type], None)
-            else:
-                field_definitions[field_name] = (python_type, ...)
-
-        return create_model(model_name, **field_definitions)
-```
-
-### Usage Example
-
-```python filename="generate_model.py" copy
-from qvd_introspector import QvdIntrospector
-from qvd_model_generator import QvdModelGenerator
-
-# Introspect the QVD file
-introspector = QvdIntrospector("data/sales_data.qvd")
-
-# Generate the Pydantic model
-SalesRecord = QvdModelGenerator.generate(
-    introspector,
-    model_name="SalesRecord"
-)
-
-# View the generated model schema
-print(SalesRecord.model_json_schema())
-```
-
-<Callout type="warning" title="Schema Validation">
-Generated models use `Optional` fields by default to handle NULL values in QVD files. For production use, review the generated schema and add validation rules as needed.
+<Callout type="tip" title="Pipeline Dependencies">
+The pipeline automatically includes all required dependencies (`pyqvd`, `fsspec`, `pandas`, `tenacity`, etc.) - you don't need to install them separately.
 </Callout>
 
-## Batch Insertion with QvdBatchInserter
+## Configuration
 
-Large QVD files require batch processing to avoid memory issues and ensure reliable data transfer. The `QvdBatchInserter` handles chunked reading, retry logic, and progress tracking.
+Configure the pipeline using environment variables. Create a `.env` file in your project:
 
-### QvdBatchInserter
+```bash filename=".env"
+# Required - Path or URL to QVD files
+QVD_SOURCE=/path/to/qvd/files
+# or
+QVD_SOURCE=s3://my-bucket/qvd-exports
 
-```python filename="qvd_batch_inserter.py" copy
-from moose_lib import OlapTable
-from pyqvd import QvdReader
-from tenacity import retry, stop_after_attempt, wait_exponential
-from typing import Type, Generator, Dict, Any, Optional
-from pydantic import BaseModel
-import logging
+# Optional - File filtering
+QVD_FILE_PATTERN=*.qvd
+QVD_INCLUDE_FILES=Item,PurchaseOrder,Reception,Supplier
+QVD_EXCLUDE_FILES=Archive,Temp,Backup
 
-logger = logging.getLogger(__name__)
+# Optional - Processing configuration
+QVD_BATCH_SIZE=10000
+QVD_SCHEDULE=@daily
 
-class QvdBatchInserter:
-    """Batch insert QVD data into ClickHouse with retry logic."""
+# Optional - Tracking (defaults to ClickHouse tracking)
+QVD_USE_CLICKHOUSE_TRACKING=true
 
-    def __init__(
-        self,
-        file_path: str,
-        table: OlapTable,
-        model_class: Type[BaseModel],
-        batch_size: int = 10000,
-        max_retries: int = 3
-    ):
-        """
-        Initialize the batch inserter.
-
-        Args:
-            file_path: Path to the QVD file (local or fsspec-compatible URI)
-            table: MooseStack OlapTable instance
-            model_class: Pydantic model class for validation
-            batch_size: Number of records per batch
-            max_retries: Maximum retry attempts for failed batches
-        """
-        self.file_path = file_path
-        self.table = table
-        self.model_class = model_class
-        self.batch_size = batch_size
-        self.max_retries = max_retries
-        self._total_inserted = 0
-        self._total_failed = 0
-
-    def _read_batches(self) -> Generator[list, None, None]:
-        """Read QVD file in batches using pyqvd."""
-        reader = QvdReader(self.file_path)
-        df = reader.to_pandas()
-
-        # Sanitize column names to match Pydantic model
-        df.columns = [self._sanitize_name(col) for col in df.columns]
-
-        for start in range(0, len(df), self.batch_size):
-            end = min(start + self.batch_size, len(df))
-            batch_df = df.iloc[start:end]
-            yield batch_df.to_dict(orient="records")
-
-    def _sanitize_name(self, name: str) -> str:
-        """Convert column names to valid Python identifiers."""
-        sanitized = "".join(c if c.isalnum() else "_" for c in name)
-        if sanitized[0].isdigit():
-            sanitized = f"_{sanitized}"
-        return sanitized.lower()
-
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
-    def _insert_batch(self, records: list) -> Dict[str, int]:
-        """Insert a single batch with retry logic."""
-        # Validate records through Pydantic
-        validated = []
-        for record in records:
-            try:
-                model_instance = self.model_class(**record)
-                validated.append(model_instance.model_dump())
-            except Exception as e:
-                logger.warning(f"Validation failed for record: {e}")
-                self._total_failed += 1
-
-        if validated:
-            result = self.table.insert(validated)
-            return {"successful": result.successful, "failed": result.failed}
-
-        return {"successful": 0, "failed": len(records)}
-
-    def run(self) -> Dict[str, int]:
-        """
-        Execute the batch insertion process.
-
-        Returns:
-            Dictionary with total successful and failed record counts
-        """
-        batch_num = 0
-
-        for batch in self._read_batches():
-            batch_num += 1
-            logger.info(f"Processing batch {batch_num} ({len(batch)} records)")
-
-            try:
-                result = self._insert_batch(batch)
-                self._total_inserted += result["successful"]
-                self._total_failed += result["failed"]
-            except Exception as e:
-                logger.error(f"Batch {batch_num} failed after retries: {e}")
-                self._total_failed += len(batch)
-
-        return {
-            "successful": self._total_inserted,
-            "failed": self._total_failed
-        }
+# Optional - AWS credentials for S3 sources
+# (Can also use AWS_PROFILE or IAM role)
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_DEFAULT_REGION=us-east-1
 ```
 
-## Complete Workflow Example
+### Configuration Options
 
-Combine the components into a MooseStack workflow that processes QVD files:
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `QVD_SOURCE` | Yes | - | Source path or URL for QVD files |
+| `QVD_FILE_PATTERN` | No | `*.qvd` | Glob pattern for file matching |
+| `QVD_INCLUDE_FILES` | No | - | Comma-separated whitelist (without .qvd extension) |
+| `QVD_EXCLUDE_FILES` | No | - | Comma-separated blacklist |
+| `QVD_BATCH_SIZE` | No | `10000` | Rows per insert batch |
+| `QVD_SCHEDULE` | No | `@daily` | Workflow schedule (`@daily`, `@hourly`, cron expression) |
+| `QVD_USE_CLICKHOUSE_TRACKING` | No | `true` | Use ClickHouse for tracking vs JSON file |
 
-```python filename="qvd_workflow.py" copy
-from moose_lib import (
-    Task, TaskConfig, TaskContext,
-    Workflow, WorkflowConfig,
-    OlapTable, Key
-)
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
-import logging
+### Supported File Sources
 
-from qvd_introspector import QvdIntrospector
-from qvd_model_generator import QvdModelGenerator
-from qvd_batch_inserter import QvdBatchInserter
+The pipeline uses `fsspec` and supports:
 
-logger = logging.getLogger(__name__)
+- **Local filesystem**: `/path/to/files`
+- **AWS S3**: `s3://bucket/path`
+- **HTTP/HTTPS**: `https://example.com/files`
+- **FTP/SFTP**: `ftp://server/path`
+- **Azure Blob Storage**: `abfs://container/path`
+- **Google Cloud Storage**: `gs://bucket/path`
 
-# Workflow input configuration
-class QvdImportConfig(BaseModel):
-    file_paths: List[str]  # List of QVD file paths to process
-    table_name: str        # Target ClickHouse table name
-    batch_size: int = 10000
+## Generating Data Models
 
-# Task output for tracking results
-class ImportResult(BaseModel):
-    files_processed: int
-    total_records: int
-    failed_records: int
-    duration_seconds: float
+The pipeline includes a CLI tool to auto-generate Pydantic models from your QVD files:
 
+### List Available Files
 
-def run_qvd_import(ctx: TaskContext[QvdImportConfig]) -> ImportResult:
-    """
-    Main task: Import QVD files into ClickHouse.
-    """
-    import time
-    start_time = time.time()
-
-    config = ctx.input
-    total_successful = 0
-    total_failed = 0
-
-    for file_path in config.file_paths:
-        logger.info(f"Processing QVD file: {file_path}")
-
-        # Step 1: Introspect schema
-        introspector = QvdIntrospector(file_path)
-
-        # Step 2: Generate Pydantic model
-        RecordModel = QvdModelGenerator.generate(
-            introspector,
-            model_name=f"{config.table_name}Record"
-        )
-
-        # Step 3: Create or reference OLAP table
-        table = OlapTable[RecordModel](config.table_name)
-
-        # Step 4: Batch insert with retries
-        inserter = QvdBatchInserter(
-            file_path=file_path,
-            table=table,
-            model_class=RecordModel,
-            batch_size=config.batch_size
-        )
-
-        result = inserter.run()
-        total_successful += result["successful"]
-        total_failed += result["failed"]
-
-        logger.info(
-            f"Completed {file_path}: "
-            f"{result['successful']} inserted, {result['failed']} failed"
-        )
-
-    duration = time.time() - start_time
-
-    return ImportResult(
-        files_processed=len(config.file_paths),
-        total_records=total_successful,
-        failed_records=total_failed,
-        duration_seconds=round(duration, 2)
-    )
-
-
-# Define the task
-qvd_import_task = Task[QvdImportConfig, ImportResult](
-    name="qvd_import",
-    config=TaskConfig(run=run_qvd_import)
-)
-
-# Define the workflow
-qvd_import_workflow = Workflow(
-    name="qvd_import",
-    config=WorkflowConfig(starting_task=qvd_import_task)
-)
-```
-
-<Callout type="info" title="Enable Workflows">
-Remember to enable workflows in your `moose.config.toml`:
-
-```toml filename="moose.config.toml" copy
-[features]
-workflows = true
-```
-</Callout>
-
-## Triggering the Workflow
-
-Trigger the workflow via the API or CLI:
-
-### Via API
+First, check what QVD files are available:
 
 ```bash
-curl -X POST http://localhost:4000/workflows/qvd_import/trigger \
-  -H "Content-Type: application/json" \
-  -d '{
-    "file_paths": ["data/sales_q1.qvd", "data/sales_q2.qvd"],
-    "table_name": "sales_data",
-    "batch_size": 10000
-  }'
+# Local files
+uv run init_qvd.py --list-files --source /path/to/qvd
+
+# S3 files
+uv run init_qvd.py --list-files --source s3://my-bucket/qvd-exports
 ```
 
-### Via CLI
+### Generate Models
+
+Generate Pydantic models for your QVD files:
 
 ```bash
-moose workflow run qvd_import --input '{"file_paths": ["data/sales.qvd"], "table_name": "sales_data"}'
+# Generate models for all QVD files
+uv run init_qvd.py --generate-models --source $QVD_SOURCE
+
+# Generate for specific files only
+uv run init_qvd.py --generate-models --source $QVD_SOURCE --files Item,PurchaseOrder
+
+# Exclude certain files
+uv run init_qvd.py --generate-models --source $QVD_SOURCE --exclude Archive,Temp
 ```
 
-### Monitor Progress
+The tool will:
+1. Read the QVD file schema
+2. Generate a Pydantic model with appropriate field types
+3. Create a MooseStack `OlapTable` definition
+4. Save the models to `app/ingest/qvd.py`
 
-```bash
-moose workflow status qvd_import --verbose
-```
+Example generated model:
 
-## Configuration Options
-
-### Filesystem Sources with fsspec
-
-The `fsspec` library provides a unified interface for different storage backends. Modify the `QvdBatchInserter` to support remote files:
-
-```python filename="qvd_batch_inserter_fsspec.py" copy
-import fsspec
-
-class QvdBatchInserterFsspec(QvdBatchInserter):
-    """Extended batch inserter with fsspec support for cloud storage."""
-
-    def __init__(
-        self,
-        file_path: str,
-        table: OlapTable,
-        model_class: Type[BaseModel],
-        batch_size: int = 10000,
-        storage_options: Optional[Dict[str, Any]] = None
-    ):
-        super().__init__(file_path, table, model_class, batch_size)
-        self.storage_options = storage_options or {}
-
-    def _read_batches(self) -> Generator[list, None, None]:
-        """Read QVD file from any fsspec-compatible filesystem."""
-        # Open file using fsspec (supports s3://, gs://, az://, etc.)
-        with fsspec.open(
-            self.file_path,
-            mode="rb",
-            **self.storage_options
-        ) as f:
-            # Write to temp file for pyqvd compatibility
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix=".qvd", delete=False) as tmp:
-                tmp.write(f.read())
-                tmp_path = tmp.name
-
-        # Process from temp file
-        reader = QvdReader(tmp_path)
-        df = reader.to_pandas()
-        df.columns = [self._sanitize_name(col) for col in df.columns]
-
-        for start in range(0, len(df), self.batch_size):
-            end = min(start + self.batch_size, len(df))
-            batch_df = df.iloc[start:end]
-            yield batch_df.to_dict(orient="records")
-
-        # Cleanup
-        import os
-        os.unlink(tmp_path)
-```
-
-### Example: Reading from S3
-
-```python filename="s3_example.py" copy
-# AWS S3
-inserter = QvdBatchInserterFsspec(
-    file_path="s3://my-bucket/qvd-exports/sales_data.qvd",
-    table=sales_table,
-    model_class=SalesRecord,
-    storage_options={
-        "key": "AWS_ACCESS_KEY_ID",
-        "secret": "AWS_SECRET_ACCESS_KEY",
-        "client_kwargs": {"region_name": "us-east-1"}
-    }
-)
-```
-
-### Example: Reading from Azure Blob Storage
-
-```python filename="azure_example.py" copy
-# Azure Blob Storage
-inserter = QvdBatchInserterFsspec(
-    file_path="az://container/qvd-exports/sales_data.qvd",
-    table=sales_table,
-    model_class=SalesRecord,
-    storage_options={
-        "account_name": "mystorageaccount",
-        "account_key": "your-account-key"
-    }
-)
-```
-
-### File Tracking
-
-For incremental processing, track which files have been processed:
-
-```python filename="file_tracker.py" copy
+```python filename="app/ingest/qvd.py"
 from moose_lib import OlapTable, Key
 from pydantic import BaseModel
-from datetime import datetime
 from typing import Optional
+from datetime import datetime
 
-class ProcessedFile(BaseModel):
-    file_path: Key[str]
-    processed_at: datetime
-    record_count: int
-    status: str  # "success", "partial", "failed"
-    error_message: Optional[str] = None
+class QvdItemModel(BaseModel):
+    item_number: Optional[str] = None
+    description: Optional[str] = None
+    quantity: Optional[int] = None
+    price: Optional[float] = None
+    created_date: Optional[datetime] = None
 
-# Create tracking table
-processed_files_table = OlapTable[ProcessedFile](
-    name="qvd_processed_files",
-    order_by_fields=["file_path"]
+QvdItemModel = OlapTable(
+    name="QvdItem",
+    columns=[
+        Key("item_number", "String"),
+        # ... other columns
+    ]
 )
-
-def is_file_processed(file_path: str) -> bool:
-    """Check if a file has already been processed successfully."""
-    result = processed_files_table.query(
-        f"SELECT * FROM qvd_processed_files WHERE file_path = '{file_path}' AND status = 'success'"
-    )
-    return len(result) > 0
-
-def mark_file_processed(file_path: str, record_count: int, status: str, error: str = None):
-    """Record file processing result."""
-    processed_files_table.insert([{
-        "file_path": file_path,
-        "processed_at": datetime.now(),
-        "record_count": record_count,
-        "status": status,
-        "error_message": error
-    }])
 ```
 
-## Best Practices
+<Callout type="warning" title="Regenerating Models">
+If your QVD schema changes, re-run `init_qvd.py --generate-models` to update the models. Existing data will remain in ClickHouse.
+</Callout>
 
-<BulletPointsCard
-  title="Recommendations"
-  bulletStyle="check"
-  bullets={[
+## Running the Pipeline
+
+### Start the Workflow
+
+Start your MooseStack development server:
+
+```bash
+moose dev
+```
+
+The QVD sync workflow will:
+1. Run on the configured schedule (default: daily)
+2. List QVD files from your source
+3. Apply include/exclude filters
+4. Check which files are new or modified
+5. Generate table names (e.g., `Item.qvd` → `QvdItem`)
+6. Read QVD data in batches
+7. Insert into ClickHouse tables
+8. Track processing status, timing, and errors
+
+### Manual Execution
+
+For testing or one-off imports, run the workflow manually:
+
+```bash
+# Run the sync workflow directly
+uv run python -c "
+from app.pipelines.qvd_to_clickhouse.app.workflows.qvd_sync_with_tracking import sync_with_tracking_task
+from moose_lib import TaskContext
+sync_with_tracking_task(TaskContext(None))
+"
+```
+
+## Monitoring
+
+### API Endpoint
+
+The pipeline includes a REST API endpoint for monitoring:
+
+```bash
+# Get overall status
+curl http://localhost:4001/api/qvd_status
+
+# Filter by file name
+curl "http://localhost:4001/api/qvd_status?file_name=Item"
+
+# Show only failures
+curl "http://localhost:4001/api/qvd_status?status=failed"
+
+# Include processing history
+curl "http://localhost:4001/api/qvd_status?include_history=true&limit=10"
+```
+
+Example response:
+
+```json
+{
+  "summary": {
+    "total_files": 45,
+    "total_syncs_all_time": 1250,
+    "syncs_today": 23,
+    "total_rows_processed": 15000000,
+    "current_failures": 0,
+    "currently_processing": 0,
+    "last_sync_at": "2026-02-03T10:30:00Z"
+  },
+  "files": [
     {
-      title: "Start with small batches",
-      description: "Test with batch_size=1000 before scaling up to verify data integrity."
-    },
-    {
-      title: "Monitor memory usage",
-      description: "QVD files can be large. Use generators and chunked processing to avoid memory issues."
-    },
-    {
-      title: "Implement idempotency",
-      description: "Use file tracking to avoid re-processing files on workflow restarts."
-    },
-    {
-      title: "Validate early",
-      description: "Run introspection on a sample file to verify schema mapping before processing all files."
-    },
-    {
-      title: "Log comprehensively",
-      description: "Track batch progress and failures for debugging and audit trails."
+      "file_name": "Item",
+      "table_name": "QvdItem",
+      "status": "completed",
+      "row_count": 125000,
+      "file_size_bytes": 45123456,
+      "processed_at": "2026-02-03T10:30:00Z",
+      "processing_duration_seconds": 12.5,
+      "rows_per_second": 10000.0,
+      "source_type": "s3",
+      "error_message": null
     }
-  ]}
-/>
+  ],
+  "failures": []
+}
+```
 
-## Related Documentation
+### ClickHouse Tracking
 
-<CTACards columns={2}>
+Query the tracking table directly for detailed history:
+
+```sql
+-- View all file processing history
+SELECT
+    file_name,
+    status,
+    row_count,
+    processing_duration_seconds,
+    processed_at
+FROM local.QvdFileTracking FINAL
+ORDER BY processed_at DESC
+LIMIT 20;
+
+-- Check for failures
+SELECT
+    file_name,
+    error_message,
+    processed_at
+FROM local.QvdFileTracking FINAL
+WHERE status = 'failed'
+ORDER BY processed_at DESC;
+
+-- View processing performance
+SELECT
+    file_name,
+    AVG(processing_duration_seconds) as avg_duration,
+    AVG(row_count / processing_duration_seconds) as avg_rows_per_sec
+FROM local.QvdFileTracking
+WHERE status = 'completed'
+GROUP BY file_name;
+```
+
+## Error Handling
+
+### Missing Models
+
+If a QVD file doesn't have a corresponding model:
+
+1. The file is marked as `failed` in the tracking table
+2. The error message indicates which model is missing
+3. Other files continue processing normally
+4. The failed file will be retried on the next run
+
+To fix:
+
+```bash
+# Generate the missing model
+uv run init_qvd.py --generate-models --source $QVD_SOURCE --files MissingFile
+
+# Check failures via API
+curl "http://localhost:4001/api/qvd_status?status=failed"
+```
+
+### File Access Issues
+
+For S3 or cloud storage access errors:
+
+```bash
+# Verify credentials
+aws s3 ls s3://your-bucket/path/
+
+# Check environment variables
+echo $AWS_ACCESS_KEY_ID
+echo $AWS_DEFAULT_REGION
+
+# Test with verbose logging
+uv run init_qvd.py --list-files --source s3://your-bucket --verbose
+```
+
+## Example Workflows
+
+### Local Development
+
+```bash
+# 1. Configure local source
+export QVD_SOURCE=/Users/me/data/qvd
+export QVD_INCLUDE_FILES=Item,PurchaseOrder,Reception
+
+# 2. Generate models
+uv run init_qvd.py --generate-models --source $QVD_SOURCE
+
+# 3. Run once to test
+uv run python -c "from app.workflows.qvd_sync_with_tracking import sync_with_tracking_task; sync_with_tracking_task(None)"
+
+# 4. Start scheduled runs
+moose dev
+```
+
+### Production S3 Setup
+
+```bash
+# 1. Configure S3 source
+export QVD_SOURCE=s3://production-data/qvd-exports
+export QVD_SCHEDULE=@hourly
+export QVD_BATCH_SIZE=50000
+
+# 2. Use IAM role or set credentials
+export AWS_DEFAULT_REGION=us-east-1
+
+# 3. Generate models
+uv run init_qvd.py --generate-models --source $QVD_SOURCE
+
+# 4. Deploy and run
+moose dev  # or deploy to production
+```
+
+## Next Steps
+
+<CTACards>
   <CTACard
-    title="Moose Workflows"
-    description="Learn more about defining and scheduling workflows"
-    ctaLink="/moosestack/workflows"
-    ctaLabel="View Docs"
+    title="Workflows Documentation"
+    description="Learn more about MooseStack workflows and scheduling"
+    href="/moosestack/workflows"
   />
   <CTACard
     title="Data Warehouses Guide"
-    description="Build a complete data warehouse with MooseStack"
-    ctaLink="/guides/data-warehouses"
-    ctaLabel="View Guide"
+    description="Explore data warehouse patterns and best practices"
+    href="/guides/data-warehouses"
   />
   <CTACard
-    title="Inserting Data"
-    description="Different methods for inserting data into OLAP tables"
-    ctaLink="/moosestack/olap/insert-data"
-    ctaLabel="View Docs"
-  />
-  <CTACard
-    title="Retries and Timeouts"
-    description="Configure workflow reliability with retries and timeouts"
-    ctaLink="/moosestack/workflows/retries-and-timeouts"
-    ctaLabel="View Docs"
+    title="ClickHouse Integration"
+    description="Deep dive into ClickHouse OLAP tables"
+    href="/moosestack/olap-tables"
   />
 </CTACards>
