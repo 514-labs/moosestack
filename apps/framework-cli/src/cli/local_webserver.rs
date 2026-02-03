@@ -748,11 +748,10 @@ struct WorkflowQueryParams {
 
 async fn workflows_history_route(
     req: Request<hyper::body::Incoming>,
-    admin_api_key: &Option<String>,
     project: Arc<Project>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-    if let Err(e) = validate_admin_auth(auth_header, admin_api_key).await {
+    if let Err(e) = validate_admin_auth(auth_header, &project.authentication.admin_api_key).await {
         return e.to_response();
     }
 
@@ -802,13 +801,12 @@ async fn workflows_history_route(
 )]
 async fn workflows_trigger_route(
     req: Request<hyper::body::Incoming>,
-    admin_api_key: &Option<String>,
     project: Arc<Project>,
     workflow_name: String,
     max_request_body_size: usize,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-    if let Err(e) = validate_admin_auth(auth_header, admin_api_key).await {
+    if let Err(e) = validate_admin_auth(auth_header, &project.authentication.admin_api_key).await {
         return e.to_response();
     }
 
@@ -878,12 +876,11 @@ async fn workflows_trigger_route(
 )]
 async fn workflows_terminate_route(
     req: Request<hyper::body::Incoming>,
-    admin_api_key: &Option<String>,
     project: Arc<Project>,
     workflow_name: String,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-    if let Err(e) = validate_admin_auth(auth_header, admin_api_key).await {
+    if let Err(e) = validate_admin_auth(auth_header, &project.authentication.admin_api_key).await {
         return e.to_response();
     }
 
@@ -1955,15 +1952,13 @@ async fn router(
         (_, &hyper::Method::GET, ["admin", "workflows", "history"])
             if project.features.workflows =>
         {
-            workflows_history_route(req, &project.authentication.admin_api_key, project.clone())
-                .await
+            workflows_history_route(req, project.clone()).await
         }
         (_, &hyper::Method::POST, ["admin", "workflows", name, "trigger"])
             if project.features.workflows =>
         {
             workflows_trigger_route(
                 req,
-                &project.authentication.admin_api_key,
                 project.clone(),
                 name.to_string(),
                 project.http_server_config.max_request_body_size,
@@ -1973,13 +1968,7 @@ async fn router(
         (_, &hyper::Method::POST, ["admin", "workflows", name, "terminate"])
             if project.features.workflows =>
         {
-            workflows_terminate_route(
-                req,
-                &project.authentication.admin_api_key,
-                project.clone(),
-                name.to_string(),
-            )
-            .await
+            workflows_terminate_route(req, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
         (_, _method, _) => {
