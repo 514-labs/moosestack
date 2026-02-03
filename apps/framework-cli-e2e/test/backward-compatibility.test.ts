@@ -30,6 +30,8 @@ import {
   SERVER_CONFIG,
   TEMPLATE_NAMES,
   APP_NAMES,
+  TEST_ADMIN_BEARER_TOKEN,
+  TEST_ADMIN_API_KEY_HASH,
 } from "./constants";
 
 import {
@@ -318,13 +320,6 @@ describe("Backward Compatibility Tests", function () {
           );
         }
 
-        // Generate a test admin token for backward compatibility testing
-        // Token format: 32_hex_chars.32_hex_chars (16 bytes each)
-        // Hash computed using PBKDF2-HMAC-SHA256(token_hex, salt_hex, 1000 iterations, 20 bytes)
-        const TEST_ADMIN_TOKEN =
-          "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
-        const TEST_ADMIN_HASH = "445fd4696cfc5c49e28995c4aba05de44303a112";
-
         // Configure admin API key in moose.config.toml
         testLogger.info("Configuring admin API key in moose.config.toml...");
         const mooseConfigPath = path.join(
@@ -335,12 +330,12 @@ describe("Backward Compatibility Tests", function () {
         // Check if [authentication] section exists
         if (!mooseConfig.includes("[authentication]")) {
           // Append the [authentication] section if it doesn't exist
-          mooseConfig += `\n[authentication]\nadmin_api_key = "${TEST_ADMIN_HASH}"\n`;
+          mooseConfig += `\n[authentication]\nadmin_api_key = "${TEST_ADMIN_API_KEY_HASH}"\n`;
         } else if (!mooseConfig.includes("admin_api_key =")) {
           // Replace the empty [authentication] section with one that includes admin_api_key
           mooseConfig = mooseConfig.replace(
             /\[authentication\]\s*$/m,
-            `[authentication]\nadmin_api_key = "${TEST_ADMIN_HASH}"`,
+            `[authentication]\nadmin_api_key = "${TEST_ADMIN_API_KEY_HASH}"`,
           );
         }
         fs.writeFileSync(mooseConfigPath, mooseConfig);
@@ -420,11 +415,8 @@ describe("Backward Compatibility Tests", function () {
         // Run moose plan with NEW CLI (querying the running server)
         // Use the same admin token that was configured for the old dev server
         try {
-          const TEST_ADMIN_TOKEN =
-            "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
-
           const { stdout } = await execAsync(
-            `"${CLI_PATH}" plan --url "http://localhost:4000" --token "${TEST_ADMIN_TOKEN}"`,
+            `"${CLI_PATH}" plan --url "http://localhost:4000" --token "${TEST_ADMIN_BEARER_TOKEN}"`,
             {
               cwd: TEST_PROJECT_DIR,
               env:

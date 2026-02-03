@@ -30,6 +30,7 @@ import {
   TEMPLATE_NAMES,
   APP_NAMES,
   CLICKHOUSE_CONFIG,
+  TEST_ADMIN_BEARER_TOKEN,
 } from "./constants";
 
 import {
@@ -55,10 +56,6 @@ const MOOSE_PY_LIB_PATH = path.resolve(
   __dirname,
   "../../../packages/py-moose-lib",
 );
-
-// Admin API key hash for authentication
-const TEST_ADMIN_HASH =
-  "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
 
 const testLogger = logger.scope("cluster-test");
 
@@ -125,7 +122,7 @@ async function verifyInfraMapClusters(
 ): Promise<void> {
   const response = await fetch(`${SERVER_CONFIG.url}/admin/inframap`, {
     headers: {
-      Authorization: `Bearer ${TEST_ADMIN_HASH}`,
+      Authorization: `Bearer ${TEST_ADMIN_BEARER_TOKEN}`,
     },
   });
 
