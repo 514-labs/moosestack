@@ -58,13 +58,15 @@
 
           # Python with required packages (wrapped with safe-chain for malware protection)
           python = pkgs.python313;
-          pythonEnv = (python.withPackages (
-            ps: with ps; [
-              pip
-              setuptools
-              wheel
-            ]
-          ));
+          pythonEnv = (
+            python.withPackages (
+              ps: with ps; [
+                pip
+                setuptools
+                wheel
+              ]
+            )
+          );
           wrappedPython = safeChain.wrapPython pythonEnv;
 
           # Common build inputs
@@ -157,6 +159,7 @@
               pkgs.turbo
               pkgs.protobuf
               pkgs.maturin
+              pkgs.husky
 
               # Test scripts
               testScripts
@@ -184,7 +187,10 @@
 
               src = ./templates;
 
-              nativeBuildInputs = [ pkgs.gnutar pkgs.gzip ];
+              nativeBuildInputs = [
+                pkgs.gnutar
+                pkgs.gzip
+              ];
 
               buildPhase = ''
                 # Create manifest header
@@ -285,26 +291,26 @@
               # Templates at: $out/template-packages/
               # From binary: parent()/parent()/parent()/join("template-packages") = $out/template-packages ✓
               postInstall = ''
-                # Create nested directory for real binary (3 levels deep from $out)
-                mkdir -p $out/libexec/moose
-                mkdir -p $out/template-packages
+                  # Create nested directory for real binary (3 levels deep from $out)
+                  mkdir -p $out/libexec/moose
+                  mkdir -p $out/template-packages
 
-                # Move binary to nested location
-                mv $out/bin/moose-cli $out/libexec/moose/moose-cli
+                  # Move binary to nested location
+                  mv $out/bin/moose-cli $out/libexec/moose/moose-cli
 
-                # Copy templates from the template-packages derivation
-                cp -r ${self'.packages.template-packages}/* $out/template-packages/
+                  # Copy templates from the template-packages derivation
+                  cp -r ${self'.packages.template-packages}/* $out/template-packages/
 
-                # Create wrapper script in standard bin location
-                mkdir -p $out/bin
-                cat > $out/bin/moose-cli << 'EOF'
-              #!/usr/bin/env bash
-              exec "$out/libexec/moose/moose-cli" "$@"
-              EOF
-                chmod +x $out/bin/moose-cli
+                  # Create wrapper script in standard bin location
+                  mkdir -p $out/bin
+                  cat > $out/bin/moose-cli << 'EOF'
+                #!/usr/bin/env bash
+                exec "$out/libexec/moose/moose-cli" "$@"
+                EOF
+                  chmod +x $out/bin/moose-cli
 
-                # Substitute $out with actual path
-                substituteInPlace $out/bin/moose-cli --replace-fail '$out' "$out"
+                  # Substitute $out with actual path
+                  substituteInPlace $out/bin/moose-cli --replace-fail '$out' "$out"
               '';
 
               meta = with lib; {
