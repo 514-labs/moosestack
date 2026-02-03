@@ -79,12 +79,7 @@
   * {
     @apply border-border;
   }
-  
-  /* Global prose body variable for consistent body text */
-  :root {
-    --tw-prose-body: hsl(var(--muted-foreground));
-  }
-  
+
   html {
     scroll-behavior: smooth;
     overscroll-behavior-y: none;
@@ -101,18 +96,6 @@
 @layer components {
   .container {
     @apply max-w-5xl lg:max-w-6xl mx-auto px-4 sm:px-6 lg:px-8;
-  }
-
-  /* Ensure prose body text uses muted-foreground - same as CardDescription */
-  .prose,
-  .prose p,
-  .prose li,
-  .prose ul,
-  .prose ol,
-  .prose td,
-  .prose th,
-  .prose blockquote {
-    @apply text-muted-foreground;
   }
 
   /* Search result highlights */
