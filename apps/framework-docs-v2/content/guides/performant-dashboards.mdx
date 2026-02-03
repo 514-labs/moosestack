@@ -161,12 +161,10 @@ This tutorial assumes you already have a dashboard or report running in producti
 
 <ConditionalContent whenId="cdc-method" whenValue="clickpipes">
 ### ClickHouse Cloud ClickPipes
-This section is coming soon. For now, use ClickHouse Cloud **ClickPipes** to stream your Postgres data into ClickHouse, then continue with the rest of this guide once the ClickHouse tables are present.
+ To get started, you'll need to create a new ClickHouse Cloud account and create a new ClickPipes pipeline to mirror your Postgres data into ClickHouse.
 
-<Callout type="info" title="Tip">
-If you select ClickPipes, make sure your pipeline writes into the same ClickHouse database you configured in Boreal (so `moose seed clickhouse` and your preview environments target the same schema).
-</Callout>
-
+- [Create a new ClickHouse Cloud Account](https://auth.clickhouse.cloud/u/signup)
+- [Docs for Setting up ClickPipes CDC with Postgres](https://clickhouse.com/docs/cloud/reference/billing/clickpipes/postgres-cdc)
 </ConditionalContent>
 
 ### Project setup
