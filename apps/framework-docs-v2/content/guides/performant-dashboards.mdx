@@ -5,7 +5,7 @@ previewVariant: "dashboards"
 languages: ["typescript"]
 ---
 
-import { CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import { CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock, ConditionalContent, CustomizePanel, CustomizeGrid, SelectField } from "@/components/mdx";
 
 # Improving the Performance of Your Dashboards
 
@@ -131,11 +131,11 @@ Engineering can ship new dashboards, metrics, and breakdowns as routine product 
 
 This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices. You'll work through:
 
-1. Setting up your local dev environment
+1. Setting up your local dev environment (with a remote ClickHouse database)
 2. Migrating your dashboard business logic from OLTP to MooseStack/ClickHouse
 3. Shipping your changes to production on Boreal Cloud
 
-**AI copilot (optional but recommended):** We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, Github Copilot, Windsurf, etc.) will work.
+**AI copilot (optional but recommended):** We recommend using an AI copilot that supports MCP (Model Context Protocol) to accelerate the migration and handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor with MCP support (Claude Code, Cursor, Windsurf, etc.) will work.
 
 <Callout type="tip" title="AI copilot tips (optional)">
 If you use a copilot, these two prompts tend to help most in this guide:
@@ -145,6 +145,10 @@ If you use a copilot, these two prompts tend to help most in this guide:
 </Callout>
 
 **Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
+
+<Callout type="info" title="Need help?">
+Join our [community Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) to get support, ask questions, or share your progress. We're here to help you migrate successfully.
+</Callout>
 
 ### Setting up your development environment
 
@@ -715,7 +719,13 @@ moose seed clickhouse --connection-string <PRODUCTION_CONNECTION_STRING> --all
 
 **Important:** `moose seed clickhouse` uses ClickHouse's HTTPS protocol. Use a HTTPS connection string (e.g., `https://username:password@host:8443/database`).
 
-If you already use Boreal, you can locate your connection string in your project overview dashboard. 
+**Finding your connection string in Boreal:**
+1. Open your Boreal project dashboard
+2. Navigate to the project overview page
+3. Look for the "Connection Details" or "Database Credentials" section
+4. Copy the HTTPS connection string (it will start with `https://`)
+
+If you're using a different ClickHouse provider, consult their documentation for obtaining the HTTPS connection string. 
 
 
 Optionally set it as an environment variable:
@@ -1120,7 +1130,16 @@ Verify the response time is significantly improved compared to the original OLTP
 
 Add the files you created above (or just the functional files if you don't want to commit your test scripts) and push to your version control. Create a Pull Request.
 
-This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR. 
+This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR.
+
+<Callout type="success" title="Local development complete">
+You've successfully:
+- Set up your local MooseStack development environment
+- Migrated your dashboard logic from OLTP to ClickHouse
+- Tested your new OLAP-backed endpoints locally
+
+Now you're ready to deploy these changes to production using Boreal Cloud, which provides managed ClickHouse infrastructure and automated deployments.
+</Callout>
 
 ### Going to production
 

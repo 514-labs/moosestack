@@ -1,3 +1,8 @@
 {
-  "installCommand": "pnpm install --filter docs-v2..."
+  "installCommand": "pnpm install --filter docs-v2...",
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_NAV_VARIANT": "draft"
+    }
+  }
 }
