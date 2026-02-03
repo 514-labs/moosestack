@@ -105,22 +105,6 @@ flowchart LR
   ]}
 />
 
-### Required Dependencies
-
-Install the SAP HANA CDC connector and its dependencies:
-
-```bash
-pip install hdbcli moose-lib clickhouse-connect tenacity python-dotenv
-```
-
-| Package | Purpose |
-|---------|---------|
-| `hdbcli` | SAP HANA database driver |
-| `moose-lib` | Moose framework library |
-| `clickhouse-connect` | ClickHouse client for direct inserts |
-| `tenacity` | Retry logic with exponential backoff |
-| `python-dotenv` | Environment variable management |
-
 ## Quick Start
 
 ### 1. Install the Pipeline
