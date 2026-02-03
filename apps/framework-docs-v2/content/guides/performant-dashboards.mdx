@@ -5,7 +5,16 @@ previewVariant: "dashboards"
 languages: ["typescript"]
 ---
 
-import { CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import {
+  CTACards,
+  CTACard,
+  Callout,
+  BulletPointsCard,
+  ToggleBlock,
+  CustomizePanel,
+  CustomizeGrid,
+  SelectField,
+} from "@/components/mdx";
 
 # Improving the Performance of Your Dashboards
 
@@ -146,20 +155,20 @@ This tutorial assumes you already have a dashboard or report running in producti
 >
   <CustomizeGrid columns={1}>
     <SelectField
-      id="cdc-method"
+      id="source-database"
       label="Source database"
       options={[
-        { value: "debezium", label: "SQL Server (Debezium)" },
-        { value: "clickpipes", label: "Postgres (ClickPipes)" },
+        { value: "sqlserver", label: "SQL Server" },
+        { value: "postgres", label: "Postgres" },
       ]}
-      defaultValue="debezium"
+      defaultValue="postgres"
       persist
     />
   </CustomizeGrid>
 </CustomizePanel>
 
 
-<ConditionalContent whenId="cdc-method" whenValue="clickpipes">
+<ConditionalContent whenId="cdc-method" whenValue="postgres">
 ### ClickHouse Cloud ClickPipes
  To get started, you'll need to create a new ClickHouse Cloud account and create a new ClickPipes pipeline to mirror your Postgres data into ClickHouse.
 
@@ -450,7 +459,7 @@ This feature is currently in alpha and has the following known limitation:
 If you would like access to experiment with this feature, let us know!
 </Callout> 
 
-<ConditionalContent whenId="cdc-method" whenValue="debezium">
+<ConditionalContent whenId="source-database" whenValue="sqlserver">
 ### Change data capture (CDC)
 
 For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production SQL Server database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
