@@ -9,6 +9,7 @@ pub mod processing_coordinator;
 pub mod routines;
 use crate::cli::routines::seed_data;
 pub mod settings;
+pub mod ts_compilation_watcher;
 pub mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::{constants, docker::DockerClient};

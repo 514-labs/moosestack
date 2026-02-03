@@ -110,6 +110,7 @@ use tracing::{debug, error, info, warn};
 use super::super::metrics::Metrics;
 use super::local_webserver::{PlanRequest, PlanResponse, Webserver};
 use super::settings::{set_suppress_dev_setup_prompt, Settings};
+use super::ts_compilation_watcher::TsCompilationWatcher;
 use super::watcher::FileWatcher;
 use super::{display, prompt_user};
 use super::{Message, MessageType};
@@ -574,19 +575,41 @@ pub async fn start_development_mode(
     // Create shutdown channel for graceful watcher termination
     let (watcher_shutdown_tx, watcher_shutdown_rx) = tokio::sync::watch::channel(false);
 
-    let file_watcher = FileWatcher::new();
-    file_watcher.start(
-        project.clone(),
-        route_update_channel,
-        webapp_update_channel,
-        infra_map,
-        process_registry.clone(),
-        metrics.clone(),
-        Arc::new(state_storage),
-        settings.clone(),
-        processing_coordinator.clone(),
-        watcher_shutdown_rx,
-    )?;
+    // Use TypeScript compilation watcher for TS projects (incremental compilation)
+    // Use file watcher for Python projects
+    let state_storage = Arc::new(state_storage);
+    match project.language {
+        SupportedLanguages::Typescript => {
+            let ts_watcher = TsCompilationWatcher::new();
+            ts_watcher.start(
+                project.clone(),
+                route_update_channel,
+                webapp_update_channel,
+                infra_map,
+                process_registry.clone(),
+                metrics.clone(),
+                state_storage,
+                settings.clone(),
+                processing_coordinator.clone(),
+                watcher_shutdown_rx,
+            )?;
+        }
+        SupportedLanguages::Python => {
+            let file_watcher = FileWatcher::new();
+            file_watcher.start(
+                project.clone(),
+                route_update_channel,
+                webapp_update_channel,
+                infra_map,
+                process_registry.clone(),
+                metrics.clone(),
+                state_storage,
+                settings.clone(),
+                processing_coordinator.clone(),
+                watcher_shutdown_rx,
+            )?;
+        }
+    }
 
     // Log MCP server status
     if enable_mcp {

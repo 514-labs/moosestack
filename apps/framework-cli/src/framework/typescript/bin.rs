@@ -51,10 +51,12 @@ pub fn run(
         command.env("TS_NODE_COMPILER", "ts-patch/compiler");
     }
 
-    // In production mode, use pre-compiled JavaScript to avoid ts-node overhead
-    if project.is_production {
-        command.env("MOOSE_USE_COMPILED", "true");
-    }
+    // Use pre-compiled JavaScript to avoid ts-node overhead
+    // In dev mode with incremental compilation (TsCompilationWatcher), the tspc --watch
+    // process compiles TypeScript before processes are started.
+    // In production mode, compilation happens at startup.
+    // The moose-runner has fallback logic: if artifacts don't exist, it falls back to ts-node.
+    command.env("MOOSE_USE_COMPILED", "true");
 
     // Set IS_LOADING_INFRA_MAP=true only when loading infrastructure map
     // This allows mooseRuntimeEnv.get() to return markers for later resolution

@@ -1,0 +1,516 @@
+/// # TypeScript Compilation Watcher Module
+///
+/// This module provides functionality for watching TypeScript compilation via `tspc --watch`
+/// and triggering infrastructure updates based on compilation events. It replaces file watching
+/// for TypeScript projects to enable incremental compilation.
+///
+/// The watcher spawns `npx moose-tspc --watch` as a long-running process and parses its
+/// JSON output to detect compilation events.
+///
+/// ## JSON Event Protocol:
+/// - `{"event": "compile_start"}` - Compilation cycle starting
+/// - `{"event": "compile_complete", "errors": 0, "warnings": 2}` - Successful compilation
+/// - `{"event": "compile_error", "errors": 3, "diagnostics": [...]}` - Compilation failed
+///
+/// ## Main Components:
+/// - `TsCompilationWatcher`: The main struct that initializes and starts the compilation watching process
+/// - `CompileEvent`: JSON structure for parsing compilation events
+use crate::framework;
+use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
+use display::with_timing_async;
+use serde::Deserialize;
+use std::io::{BufRead, BufReader};
+use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{debug, error, info, warn};
+
+use super::display::{self, with_spinner_completion_async, Message, MessageType};
+use super::processing_coordinator::ProcessingCoordinator;
+use super::settings::Settings;
+
+use crate::cli::routines::openapi::openapi;
+use crate::framework::core::state_storage::StateStorage;
+use crate::infrastructure::processes::process_registry::ProcessRegistries;
+use crate::metrics::Metrics;
+use crate::project::Project;
+
+/// Errors that can occur during TypeScript compilation watching
+#[derive(Debug, thiserror::Error)]
+pub enum TsCompilationWatcherError {
+    #[error("Failed to spawn tspc process: {0}")]
+    SpawnError(std::io::Error),
+}
+
+/// JSON event structure from moose-tspc --watch
+#[derive(Debug, Clone, Deserialize)]
+pub struct CompileEvent {
+    pub event: String,
+    #[serde(default)]
+    pub errors: u32,
+    #[serde(default)]
+    pub warnings: u32,
+    #[serde(default)]
+    pub diagnostics: Vec<String>,
+}
+
+impl CompileEvent {
+    pub fn is_compile_start(&self) -> bool {
+        self.event == "compile_start"
+    }
+
+    pub fn is_compile_complete(&self) -> bool {
+        self.event == "compile_complete"
+    }
+
+    pub fn is_compile_error(&self) -> bool {
+        self.event == "compile_error"
+    }
+}
+
+/// Spawns the tspc --watch process
+fn spawn_tspc_watch(project: &Project) -> Result<Child, TsCompilationWatcherError> {
+    let mut command = Command::new("npx");
+    command
+        .arg("moose-tspc")
+        .arg(".moose/compiled")
+        .arg("--watch")
+        .current_dir(&project.project_location)
+        .env("MOOSE_SOURCE_DIR", &project.source_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    // Add node_modules/.bin to PATH
+    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
+    let bin_path = format!(
+        "{}/node_modules/.bin:{}",
+        project.project_location.display(),
+        path
+    );
+    command.env("PATH", bin_path);
+
+    command
+        .spawn()
+        .map_err(TsCompilationWatcherError::SpawnError)
+}
+
+/// Display compilation errors to the user
+fn display_compilation_errors(event: &CompileEvent) {
+    show_message!(MessageType::Error, {
+        Message {
+            action: "TypeScript".to_string(),
+            details: format!("compilation failed ({} error(s))", event.errors),
+        }
+    });
+
+    // Display each diagnostic
+    for diagnostic in &event.diagnostics {
+        // Indent each diagnostic line for better readability
+        eprintln!("    {}", diagnostic);
+    }
+}
+
+/// Display compilation success with optional warnings
+fn display_compilation_success(event: &CompileEvent) {
+    if event.warnings > 0 {
+        show_message!(MessageType::Success, {
+            Message {
+                action: "Compiled".to_string(),
+                details: format!("TypeScript successfully ({} warning(s))", event.warnings),
+            }
+        });
+    } else {
+        show_message!(MessageType::Success, {
+            Message {
+                action: "Compiled".to_string(),
+                details: "TypeScript successfully".to_string(),
+            }
+        });
+    }
+}
+
+/// Main watching function that monitors tspc --watch output and triggers infrastructure updates.
+///
+/// This function runs in a loop, parsing JSON events from tspc and triggering
+/// infrastructure planning when compilation completes successfully.
+#[allow(clippy::too_many_arguments)]
+async fn watch(
+    project: Arc<Project>,
+    route_update_channel: tokio::sync::mpsc::Sender<(InfrastructureMap, ApiChange)>,
+    webapp_update_channel: tokio::sync::mpsc::Sender<
+        crate::framework::core::infrastructure_map::WebAppChange,
+    >,
+    infrastructure_map: &'static RwLock<InfrastructureMap>,
+    project_registries: Arc<RwLock<ProcessRegistries>>,
+    metrics: Arc<Metrics>,
+    state_storage: Arc<Box<dyn StateStorage>>,
+    settings: Settings,
+    processing_coordinator: ProcessingCoordinator,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) -> Result<(), anyhow::Error> {
+    debug!(
+        "Starting TypeScript compilation watcher for project: {:?}",
+        project.app_dir().display()
+    );
+
+    // Spawn tspc --watch process
+    let mut child = spawn_tspc_watch(&project)?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to capture stdout from tspc"))?;
+
+    // We'll read stderr in a separate thread to avoid blocking
+    let stderr = child.stderr.take();
+    if let Some(stderr) = stderr {
+        let stderr_reader = BufReader::new(stderr);
+        std::thread::spawn(move || {
+            for line in stderr_reader.lines().map_while(Result::ok) {
+                if !line.trim().is_empty() {
+                    // Forward stderr for debugging
+                    debug!("[tspc stderr] {}", line);
+                }
+            }
+        });
+    }
+
+    // Create a channel for stdout lines
+    // Use a standard mpsc channel since we're reading from a blocking thread
+    let (line_tx, mut line_rx) = tokio::sync::mpsc::channel::<String>(100);
+
+    // Spawn a thread to read stdout lines and send them through the channel
+    let reader = BufReader::new(stdout);
+    std::thread::spawn(move || {
+        for line in reader.lines() {
+            match line {
+                Ok(line) => {
+                    if line_tx.blocking_send(line).is_err() {
+                        // Channel closed, stop reading
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Error reading from tspc stdout: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+
+    // Track if this is the first compilation (initial startup)
+    let mut is_initial_compilation = true;
+
+    show_message!(MessageType::Info, {
+        Message {
+            action: "Watching".to_string(),
+            details: format!(
+                "TypeScript compilation at {:?}",
+                project.app_dir().display()
+            ),
+        }
+    });
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.changed() => {
+                if *shutdown_rx.borrow() {
+                    info!("TypeScript compilation watcher received shutdown signal");
+                    break;
+                }
+            }
+            line_opt = line_rx.recv() => {
+                match line_opt {
+                    Some(line) => {
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+
+                        debug!("[tspc] {}", line);
+
+                        // Try to parse as JSON event
+                        match serde_json::from_str::<CompileEvent>(&line) {
+                            Ok(event) => {
+                                if event.is_compile_start() {
+                                    if !is_initial_compilation {
+                                        show_message!(MessageType::Info, {
+                                            Message {
+                                                action: "Compiling".to_string(),
+                                                details: "TypeScript (incremental)...".to_string(),
+                                            }
+                                        });
+                                    }
+                                } else if event.is_compile_error() {
+                                    display_compilation_errors(&event);
+                                    // Don't trigger infrastructure changes on error
+                                    is_initial_compilation = false;
+                                } else if event.is_compile_complete() {
+                                    display_compilation_success(&event);
+
+                                    // Trigger infrastructure planning
+                                    let _processing_guard =
+                                        processing_coordinator.begin_processing().await;
+
+                                    let project_clone = project.clone();
+                                    let result: anyhow::Result<()> = with_spinner_completion_async(
+                                        "Processing infrastructure changes",
+                                        "Infrastructure changes processed successfully",
+                                        async {
+                                            let plan_result = with_timing_async("Planning", async {
+                                                framework::core::plan::plan_changes(
+                                                    &**state_storage,
+                                                    &project_clone,
+                                                )
+                                                .await
+                                            })
+                                            .await;
+
+                                            match plan_result {
+                                                Ok((_, plan_result)) => {
+                                                    with_timing_async("Validation", async {
+                                                        framework::core::plan_validator::validate(
+                                                            &project_clone,
+                                                            &plan_result,
+                                                        )
+                                                    })
+                                                    .await?;
+
+                                                    display::show_changes(&plan_result);
+                                                    let mut project_registries =
+                                                        project_registries.write().await;
+
+                                                    let execution_result =
+                                                        with_timing_async("Execution", async {
+                                                            framework::core::execute::execute_online_change(
+                                                                &project_clone,
+                                                                &plan_result,
+                                                                route_update_channel.clone(),
+                                                                webapp_update_channel.clone(),
+                                                                &mut project_registries,
+                                                                metrics.clone(),
+                                                                &settings,
+                                                            )
+                                                            .await
+                                                        })
+                                                        .await;
+
+                                                    match execution_result {
+                                                        Ok(_) => {
+                                                            with_timing_async("Persist State", async {
+                                                                state_storage
+                                                                    .store_infrastructure_map(
+                                                                        &plan_result.target_infra_map,
+                                                                    )
+                                                                    .await
+                                                            })
+                                                            .await?;
+
+                                                            with_timing_async("OpenAPI Gen", async {
+                                                                openapi(
+                                                                    &project_clone,
+                                                                    &plan_result.target_infra_map,
+                                                                )
+                                                                .await
+                                                            })
+                                                            .await?;
+
+                                                            let mut infra_ptr =
+                                                                infrastructure_map.write().await;
+                                                            *infra_ptr = plan_result.target_infra_map;
+                                                        }
+                                                        Err(e) => {
+                                                            let error: anyhow::Error = e.into();
+                                                            show_message!(MessageType::Error, {
+                                                                Message {
+                                                                    action: "\nFailed".to_string(),
+                                                                    details: format!(
+                                                                        "Executing changes to the infrastructure failed:\n{error:?}"
+                                                                    ),
+                                                                }
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    let error: anyhow::Error = e.into();
+                                                    show_message!(MessageType::Error, {
+                                                        Message {
+                                                            action: "\nFailed".to_string(),
+                                                            details: format!(
+                                                                "Planning changes to the infrastructure failed:\n{error:?}"
+                                                            ),
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                            Ok(())
+                                        },
+                                        {
+                                            use crate::utilities::constants::SHOW_TIMING;
+                                            use std::sync::atomic::Ordering;
+                                            !project.is_production
+                                                && !SHOW_TIMING.load(Ordering::Relaxed)
+                                        },
+                                    )
+                                    .await;
+
+                                    match result {
+                                        Ok(()) => {
+                                            project
+                                                .http_server_config
+                                                .run_after_dev_server_reload_script()
+                                                .await;
+                                        }
+                                        Err(e) => {
+                                            show_message!(MessageType::Error, {
+                                                Message {
+                                                    action: "Failed".to_string(),
+                                                    details: format!(
+                                                        "Processing infrastructure changes failed:\n{e:?}"
+                                                    ),
+                                                }
+                                            });
+                                        }
+                                    }
+
+                                    is_initial_compilation = false;
+                                }
+                            }
+                            Err(_) => {
+                                // Not a JSON line, might be diagnostic output or other info
+                                // Log it for debugging but don't fail
+                                debug!("[tspc non-json] {}", line);
+                            }
+                        }
+                    }
+                    None => {
+                        // Channel closed - tspc process ended
+                        warn!("tspc process ended unexpectedly");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Clean up the child process
+    let _ = child.kill();
+    let _ = child.wait();
+
+    Ok(())
+}
+
+/// TypeScript compilation watcher that monitors tspc --watch and triggers infrastructure updates.
+///
+/// This struct provides the main interface for starting the TypeScript compilation watching process.
+/// It should be used instead of FileWatcher for TypeScript projects to enable incremental compilation.
+pub struct TsCompilationWatcher;
+
+impl TsCompilationWatcher {
+    /// Creates a new TsCompilationWatcher instance
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// Starts the TypeScript compilation watching process.
+    ///
+    /// This method spawns `tspc --watch` and monitors its output for compilation events.
+    /// When compilation completes successfully, it triggers infrastructure planning and execution.
+    ///
+    /// # Arguments
+    /// * `project` - The project configuration
+    /// * `route_update_channel` - Channel for sending API route updates
+    /// * `webapp_update_channel` - Channel for sending WebApp updates
+    /// * `infrastructure_map` - The current infrastructure map
+    /// * `project_registries` - Registry for all processes
+    /// * `metrics` - Metrics collection
+    /// * `state_storage` - State storage for managing infrastructure state
+    /// * `settings` - CLI settings configuration
+    /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
+    /// * `shutdown_rx` - Receiver to listen for shutdown signal
+    #[allow(clippy::too_many_arguments)]
+    pub fn start(
+        &self,
+        project: Arc<Project>,
+        route_update_channel: tokio::sync::mpsc::Sender<(InfrastructureMap, ApiChange)>,
+        webapp_update_channel: tokio::sync::mpsc::Sender<
+            crate::framework::core::infrastructure_map::WebAppChange,
+        >,
+        infrastructure_map: &'static RwLock<InfrastructureMap>,
+        project_registries: Arc<RwLock<ProcessRegistries>>,
+        metrics: Arc<Metrics>,
+        state_storage: Arc<Box<dyn StateStorage>>,
+        settings: Settings,
+        processing_coordinator: ProcessingCoordinator,
+        shutdown_rx: tokio::sync::watch::Receiver<bool>,
+    ) -> Result<(), std::io::Error> {
+        // Move everything into the spawned task
+        let watch_task = async move {
+            watch(
+                project,
+                route_update_channel,
+                webapp_update_channel,
+                infrastructure_map,
+                project_registries,
+                metrics,
+                state_storage,
+                settings,
+                processing_coordinator,
+                shutdown_rx,
+            )
+            .await
+        };
+
+        tokio::spawn(watch_task);
+
+        Ok(())
+    }
+}
+
+impl Default for TsCompilationWatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_compile_start_event() {
+        let json = r#"{"event": "compile_start"}"#;
+        let event: CompileEvent = serde_json::from_str(json).unwrap();
+        assert!(event.is_compile_start());
+        assert!(!event.is_compile_complete());
+        assert!(!event.is_compile_error());
+    }
+
+    #[test]
+    fn test_parse_compile_complete_event() {
+        let json = r#"{"event": "compile_complete", "errors": 0, "warnings": 2}"#;
+        let event: CompileEvent = serde_json::from_str(json).unwrap();
+        assert!(event.is_compile_complete());
+        assert_eq!(event.errors, 0);
+        assert_eq!(event.warnings, 2);
+    }
+
+    #[test]
+    fn test_parse_compile_error_event() {
+        let json = r#"{"event": "compile_error", "errors": 3, "warnings": 0, "diagnostics": ["error 1", "error 2"]}"#;
+        let event: CompileEvent = serde_json::from_str(json).unwrap();
+        assert!(event.is_compile_error());
+        assert_eq!(event.errors, 3);
+        assert_eq!(event.diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_event_with_missing_fields() {
+        let json = r#"{"event": "compile_complete"}"#;
+        let event: CompileEvent = serde_json::from_str(json).unwrap();
+        assert!(event.is_compile_complete());
+        assert_eq!(event.errors, 0);
+        assert_eq!(event.warnings, 0);
+        assert!(event.diagnostics.is_empty());
+    }
+}
