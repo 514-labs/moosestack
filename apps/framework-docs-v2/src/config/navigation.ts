@@ -1818,12 +1818,19 @@ export function getVisibleGuideSections(flags: {
 }
 
 /**
+ * Metadata for a guide, used by detail pages
+ */
+export interface GuideMetadata {
+  iconName?: string;
+}
+
+/**
  * Get guide metadata by slug for detail pages
  * Returns the icon name from the navigation config
  */
 export function getGuideMetadataBySlug(
   slug: string,
-): { iconName?: string } | undefined {
+): GuideMetadata | undefined {
   // Normalize slug to match navigation config format
   const normalizedSlug = slug.startsWith("guides/") ? slug : `guides/${slug}`;
 
