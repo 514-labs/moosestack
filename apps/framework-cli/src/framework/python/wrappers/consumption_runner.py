@@ -47,12 +47,14 @@ parser.add_argument("jwt_audience", type=str, help="JWT audience")
 parser.add_argument(
     "jwt_enforce_all", type=str, help="Auto-handle requests without JWT"
 )
-parser.add_argument("temporal_url", type=str, help="Temporal URL")
-parser.add_argument("temporal_namespace", type=str, help="Temporal namespace")
-parser.add_argument("client_cert", type=str, help="Client certificate")
-parser.add_argument("client_key", type=str, help="Client key")
-parser.add_argument("api_key", type=str, help="API key")
-parser.add_argument("proxy_port", type=int, help="Proxy port")
+parser.add_argument("--temporal-url", type=str, default="", help="Temporal URL")
+parser.add_argument(
+    "--temporal-namespace", type=str, default="", help="Temporal namespace"
+)
+parser.add_argument("--client-cert", type=str, default="", help="Client certificate")
+parser.add_argument("--client-key", type=str, default="", help="Client key")
+parser.add_argument("--api-key", type=str, default="", help="API key")
+parser.add_argument("--proxy-port", type=int, default=4001, help="Proxy port")
 
 args = parser.parse_args()
 
@@ -68,11 +70,11 @@ jwt_issuer = args.jwt_issuer
 jwt_audience = args.jwt_audience
 jwt_enforce_all = args.jwt_enforce_all
 
-temporal_url = args.temporal_url
-temporal_namespace = args.temporal_namespace
-client_cert = args.client_cert
-client_key = args.client_key
-api_key = args.api_key
+temporal_url = getattr(args, "temporal_url", "")
+temporal_namespace = getattr(args, "temporal_namespace", "")
+client_cert = getattr(args, "client_cert", "")
+client_key = getattr(args, "client_key", "")
+api_key = getattr(args, "api_key", "")
 
 # Persistent event loop for handling async ASGI requests
 # Reusing a single event loop avoids the overhead of creating/destroying
@@ -452,21 +454,22 @@ def main():
     )
 
     temporal_client = None
-    try:
-        print("Connecting to Temporal")
-        temporal_client = asyncio.run(
-            create_temporal_connection(
-                temporal_url, temporal_namespace, client_cert, client_key, api_key
+    if temporal_url:
+        try:
+            print("Connecting to Temporal")
+            temporal_client = asyncio.run(
+                create_temporal_connection(
+                    temporal_url, temporal_namespace, client_cert, client_key, api_key
+                )
             )
-        )
-    except Exception as e:
-        print(f"Failed to connect to Temporal. Is the feature flag enabled? {e}")
+        except Exception as e:
+            print(f"Failed to connect to Temporal. Is the feature flag enabled? {e}")
 
     print("Loading models")
     load_models()
 
     moose_client = MooseClient(ch_client, temporal_client)
-    server_port = args.proxy_port
+    server_port = getattr(args, "proxy_port", 4001)
     server_address = ("localhost", server_port)
     handler = handler_with_client(moose_client)
     httpd = HTTPServer(server_address, handler)
