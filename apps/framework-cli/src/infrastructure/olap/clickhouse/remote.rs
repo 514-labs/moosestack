@@ -20,8 +20,19 @@
 //! For production, wait for `Protocol::Native` support or use ClickHouse's
 //! native `remoteSecure()` directly.
 
+use std::fmt;
+
 use super::config::ClickHouseConfig;
 use urlencoding::encode;
+
+/// Escapes a string for use in a SQL string literal.
+///
+/// Escapes backslashes and single quotes by doubling them:
+/// - `\` -> `\\`
+/// - `'` -> `''`
+fn escape_sql_string_literal(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "''")
+}
 
 /// Protocol to use for remote ClickHouse connections.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -52,7 +63,12 @@ pub enum Protocol {
 ///     remote.query_function("SELECT name, value FROM system.settings LIMIT 10")
 /// );
 /// ```
-#[derive(Debug, Clone)]
+///
+/// # Security Note
+///
+/// The `Debug` implementation redacts the password field to prevent
+/// accidental exposure in logs.
+#[derive(Clone)]
 pub struct ClickHouseRemote {
     /// Remote server hostname
     pub host: String,
@@ -70,16 +86,37 @@ pub struct ClickHouseRemote {
     pub protocol: Protocol,
 }
 
+impl fmt::Debug for ClickHouseRemote {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClickHouseRemote")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("database", &self.database)
+            .field("user", &self.user)
+            .field("password", &"[REDACTED]")
+            .field("use_ssl", &self.use_ssl)
+            .field("protocol", &self.protocol)
+            .finish()
+    }
+}
+
 impl ClickHouseRemote {
     /// Creates a ClickHouseRemote from a ClickHouseConfig.
     ///
     /// The port is selected based on the protocol:
     /// - `Protocol::Http`: Uses `host_port` (HTTP port)
     /// - `Protocol::Native`: Would use `native_port`
+    ///
+    /// # Panics
+    ///
+    /// Panics if the port value in the config is negative or exceeds u16::MAX (65535).
     pub fn from_config(config: &ClickHouseConfig, protocol: Protocol) -> Self {
         let port = match protocol {
-            Protocol::Http => config.host_port as u16,
-            // Protocol::Native => config.native_port as u16,
+            Protocol::Http => {
+                u16::try_from(config.host_port).expect("host_port must be a valid u16 (0-65535)")
+            }
+            // Protocol::Native => u16::try_from(config.native_port)
+            //     .expect("native_port must be a valid u16 (0-65535)"),
         };
 
         Self {
@@ -208,11 +245,12 @@ impl ClickHouseRemote {
 
     /// Builds the headers clause for authentication.
     ///
-    /// Single quotes in credentials are escaped by doubling them (`'` -> `''`)
-    /// to prevent SQL syntax errors.
+    /// Credentials are escaped for SQL string literals:
+    /// - Backslashes are doubled (`\` -> `\\`)
+    /// - Single quotes are doubled (`'` -> `''`)
     fn http_headers_clause(&self) -> String {
-        let escaped_user = self.user.replace('\'', "''");
-        let escaped_password = self.password.replace('\'', "''");
+        let escaped_user = escape_sql_string_literal(&self.user);
+        let escaped_password = escape_sql_string_literal(&self.password);
         format!(
             "headers('X-ClickHouse-User'='{}', 'X-ClickHouse-Key'='{}')",
             escaped_user, escaped_password
@@ -229,7 +267,7 @@ impl ClickHouseRemote {
         format!(
             "url('{}', '{}', {})",
             self.http_query_url(query),
-            format,
+            escape_sql_string_literal(format),
             self.http_headers_clause()
         )
     }
@@ -425,5 +463,34 @@ mod tests {
         // Single quotes should be escaped by doubling them
         assert!(sql.contains("'X-ClickHouse-User'='John''s'"));
         assert!(sql.contains("'X-ClickHouse-Key'='pass''word'"));
+    }
+
+    #[test]
+    fn test_backslashes_in_credentials_are_escaped() {
+        let mut config = create_test_config();
+        config.user = r"domain\user".to_string();
+        config.password = r"pass\word".to_string();
+        let remote = ClickHouseRemote::from_config(&config, Protocol::Http);
+
+        let sql = remote.query_function("SELECT 1");
+
+        // Backslashes should be escaped by doubling them
+        assert!(sql.contains(r"'X-ClickHouse-User'='domain\\user'"));
+        assert!(sql.contains(r"'X-ClickHouse-Key'='pass\\word'"));
+    }
+
+    #[test]
+    fn test_debug_redacts_password() {
+        let config = create_test_config();
+        let remote = ClickHouseRemote::from_config(&config, Protocol::Http);
+
+        let debug_output = format!("{:?}", remote);
+
+        // Password should be redacted
+        assert!(debug_output.contains("[REDACTED]"));
+        assert!(!debug_output.contains("secret123"));
+        // Other fields should be visible
+        assert!(debug_output.contains("remote.example.com"));
+        assert!(debug_output.contains("admin"));
     }
 }
