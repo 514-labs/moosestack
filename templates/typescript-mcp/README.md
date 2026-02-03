@@ -14,7 +14,7 @@ A MooseStack service template that demonstrates how to build a data service with
 - Exposes an MCP server that AI agents can connect to
 - Includes data ingestion, processing, and API capabilities
 - Can be run independently for development and testing
-- Built using [BYO API](https://docs.fiveonefour.com/moose/app-api-frameworks) and Express
+- Built using [BYO API](https://docs.fiveonefour.com/moosestack/app-api-frameworks) and Express
 
 ### 2. `packages/web-app/`
 

@@ -21,6 +21,15 @@ const nextConfig = {
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
     NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,
   },
+  async redirects() {
+    return [
+      {
+        source: "/moosestack/quickstart",
+        destination: "/moosestack/getting-started/quickstart",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

@@ -17,7 +17,7 @@ import { PathConfig } from "@/lib/path-config";
   <IconBadge Icon="DeviceLaptop" label="Hot-reload development" variant="moose" />
 </div>
 
-Type-safe, code-first tooling for building real-time analytical backends--OLAP Databases, Data Streaming, ETL Workflows, Query APIs, and more.
+Type-safe, code-first tooling for building real-time analytical backends in TypeScript or Python—OLAP storage, streaming pipelines, workflows, query APIs, and more.
 
 ## Get Started
 
@@ -28,7 +28,7 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 <CTACards rows={3} columns={1}>
   <CTACard
     title="5-minute Quickstart"
-    description="Start with a simple demo app to get a feel for Moose"
+    description="Start with a small demo app to learn the dev loop"
     ctaLink="/moosestack/getting-started/quickstart"
     Icon="Rocket"
     variant="default"
@@ -44,7 +44,7 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
   />
   <CTACard
     title="Bootstrap with a Reference Application"
-    description="Start with a reference application for integrating Moose with complex microservices architectures"
+    description="Start with a reference application for integrating MooseStack with complex microservices architectures"
     ctaLink="https://github.com/514-labs/area-code"
     Icon="BrandGithub"
     variant="default"
@@ -94,7 +94,16 @@ export const analyticsApi = new Api<QueryParams, DataModel[]>("get-api-route",
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```python
-from moose_lib import Key, OlapTable, Stream, StreamConfig, IngestApi, IngestApiConfig, Api
+from moose_lib import (
+    Api,
+    IngestApi,
+    IngestConfigWithDestination,
+    Key,
+    MooseClient,
+    OlapTable,
+    Stream,
+    StreamConfig,
+)
 from pydantic import BaseModel
  
 class DataModel(BaseModel):
@@ -105,26 +114,29 @@ class DataModel(BaseModel):
 clickhouse_table = OlapTable[DataModel]("TableName")
  
 # Create a Redpanda streaming topic
-redpanda_topic = Stream[DataModel]("TopicName", StreamConfig(
-    destination=clickhouse_table,
-))
+redpanda_topic = Stream[DataModel](
+    "TopicName",
+    StreamConfig(destination=clickhouse_table),
+)
  
 # Create an ingest API endpoint
-ingest_api = IngestApi[DataModel]("post-api-route", IngestConfig(
-    destination=redpanda_topic,
-))
+ingest_api = IngestApi[DataModel](
+    "post-api-route",
+    IngestConfigWithDestination(destination=redpanda_topic),
+)
  
-# Create a analytics API endpoint
+# Create an analytics API endpoint
 class QueryParams(BaseModel):
     limit: int = 10
  
-def handler(client, params: QueryParams):
-    return client.query.execute("SELECT * FROM {table: Identifier} LIMIT {limit: Int32}", {
-        "table": clickhouse_table.name,
-        "limit": params.limit,
-    })
+def run(client: MooseClient, params: QueryParams) -> list[DataModel]:
+    return client.query.execute(
+        "SELECT * FROM {table} LIMIT {limit}",
+        {"table": clickhouse_table, "limit": params.limit},
+        row_type=DataModel,
+    )
  
-analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=handler)
+analytics_api = Api[QueryParams, DataModel](name="get-api-route", query_function=run)
 ```
   </LanguageTabContent>
 </LanguageTabs>
@@ -420,4 +432,3 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
 <Callout type="info" title="Managed Moose in Production" href="https://www.fiveonefour.com/boreal" ctaLabel="Boreal Cloud" compact>
   Want this managed in production for you? Check out Boreal Cloud (from the makers of the Moose Stack).
 </Callout>
-

@@ -4,7 +4,7 @@ A Python FastAPI-based Moose template for building analytical backend services w
 
 [![PyPI Version](https://img.shields.io/pypi/v/moose-cli?logo=python)](https://pypi.org/project/moose-cli/)
 [![Moose Community](https://img.shields.io/badge/slack-moose_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
-[![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
+[![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 [![MIT license](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 ## Quick Start
@@ -75,7 +75,7 @@ app/
 
 ## Learn More
 
-- [Moose Documentation](https://docs.fiveonefour.com/moose) - learn about Moose
+- [Moose Documentation](https://docs.fiveonefour.com/moosestack) - learn about Moose
 
 ## Community
 

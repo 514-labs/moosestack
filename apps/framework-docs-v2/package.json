@@ -10,7 +10,9 @@
     "generate:search-content": "tsx scripts/generate-search-index.ts",
     "index:search": "pnpm run generate:search-content && pagefind --site .search-index --output-path public/pagefind",
     "start": "next start",
-    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "lint:docs": "tsx scripts/lint-docs.ts",
+    "lint": "pnpm run typecheck && pnpm run lint:docs",
     "test:snippets": "tsx scripts/test-snippets.ts",
     "validate:includes": "tsx scripts/validate-includes.ts"
   },
