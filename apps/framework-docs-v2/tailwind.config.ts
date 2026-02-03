@@ -156,12 +156,12 @@ const config: Config = {
             },
             ul: {
               listStyleType: "disc",
-              listStylePosition: "inside",
+              listStylePosition: "outside",
               marginBottom: "1rem",
             },
             ol: {
               listStyleType: "decimal",
-              listStylePosition: "inside",
+              listStylePosition: "outside",
               marginBottom: "1rem",
             },
             li: {

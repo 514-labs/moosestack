@@ -5,7 +5,17 @@ previewVariant: "dashboards"
 languages: ["typescript"]
 ---
 
-import { CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import {
+  CTACards,
+  CTACard,
+  Callout,
+  BulletPointsCard,
+  ToggleBlock,
+  CustomizePanel,
+  CustomizeGrid,
+  SelectField,
+  ConditionalContent,
+} from "@/components/mdx";
 
 # Improving the Performance of Your Dashboards
 
@@ -42,11 +52,13 @@ This guide will:
 
 ### What this guide is for
 
-This guide is for you if you already have customer-facing dashboards or reports in production, and you're experiencing:
+The root cause of slow dashboards is usually analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, competing with the core transactional workloads that power the rest of your application.
+
+You'll know you're hitting this when you see one (or more) of these symptoms:
 
 <BulletPointsCard
   title="Common symptoms"
-  bulletStyle="bullet"
+  bulletStyle="x"
   bullets={[
     {
       title: "Charts/metrics take 5+ seconds to load",
@@ -63,13 +75,18 @@ This guide is for you if you already have customer-facing dashboards or reports 
   ]}
 />
 
-The root cause of slow dashboards is usually analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, which compete with the core transactional workloads that power the rest of your application.
+This guide lays out a step-by-step path to offload those analytical workloads to a purpose-built analytical database (ClickHouse), incrementally, without needing to rearchitect your existing application.
 
-This guide lays out a step-by-step path to offload those analytical workloads to a purpose-built analytical database (ClickHouse), that can be done incrementally and without needing to rearchitect your existing application.
+At a high level, you'll:
+
+1. Stand up ClickHouse and replicate the data your dashboards need
+2. Set up a local development workflow that supports ClickHouse-backed analytics
+3. Migrate one dashboard/report at a time by translating OLTP queries to ClickHouse
+4. Ship your changes to production on Boreal Cloud
 
 ### Why this matters
 
-Customer-facing analytics becomes mission-critical once users depend on it to understand their behavior, progress, or outcomes. Slow or unreliable dashboards drive down engagement: lower retention, higher churn, and direct revenue impact as users stop trusting your product for insights.
+Customer-facing analytics becomes mission-critical once users depend on it to understand their behavior, progress, or outcomes. Slow or unreliable dashboards drive down engagement: lower retention, higher churn, and direct revenue impact as users stop trusting your product for insights. Fast dashboards do the opposite—they encourage exploration, increase repeat usage, and let customers interact with your data in ways you can't predict upfront.
 
 <Callout type="info" title="Case study: F45's LionHeart experience">
 LionHeart is where F45's most engaged members track workout performance and progress. Their original OLTP-backed implementation meant they had to ship reports as static images rather than interactive charts.
@@ -85,7 +102,7 @@ Most teams don't start with a dedicated analytical database (OLAP), and it's oft
 
 <BulletPointsCard
   title="Why teams delay adopting OLAP"
-  bulletStyle="bullet"
+  bulletStyle="default"
   bullets={[
     {
       title: "The OLTP path is the highest-ROI path early on",
@@ -112,15 +129,21 @@ Most teams don't start with a dedicated analytical database (OLAP), and it's oft
 
 While it's common to delay adopting OLAP, there's an inflection point at which it becomes a real business risk. OLAP migrations are non-trivial and can take months with traditional data engineering tooling. If you wait too long to start or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning. 
 
+<Callout type="info" title="Feeling daunted? This is designed to be incremental">
+You don't need to migrate your entire analytics stack at once. In this guide, you'll translate **one dashboard/report at a time**: replicate only the data you need, model it in ClickHouse, and cut over reads when you’re confident.
+
+If you get stuck on a schema design decision or an especially complex query, join the [Moose community Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) and we’ll help you map out the next step.
+</Callout>
+
 ### When to pull the trigger
 
-Users want more metrics, filters, breakdowns, or longer time ranges in their dashboards. But engineering can't deliver these seemingly small changes without risking the transactional workloads your core product depends on. Load times creep up. Customers complain. Before long, those complaints surface in retention metrics, support tickets, and sales calls.
+Users want more metrics, filters, breakdowns, or longer time ranges in their dashboards, but engineering can't deliver these seemingly small changes without risking the transactional workloads your core product depends on. Load times creep up. Customers complain. Before long, those complaints surface in retention metrics, support tickets, and sales calls.
 
 Throwing more hardware at the problem either isn't possible or is prohibitively expensive. Even when feasible, this approach only buys temporary relief. The underlying issue is certain to resurface.
 
 ### What success looks like
 
-When this works, the impact shows up in both product velocity and system reliability.
+You'll have migrated to ClickHouse successfully if you see a measurable impact on both product velocity and system reliability.
 
 Dashboards stay fast as data grows, instead of degrading over time. Analytical workloads run on dedicated infrastructure, so your transactional database can focus on what it does best.
 
@@ -131,31 +154,62 @@ Engineering can ship new dashboards, metrics, and breakdowns as routine product 
 
 This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices. You'll work through:
 
-1. Setting up your local dev environment
-2. Migrating your dashboard business logic from OLTP to MooseStack/ClickHouse
-3. Shipping your changes to production on Boreal Cloud
+1. Getting you up and running with a ClickHouse database
+2. Setting up your local dev environment to work with ClickHouse
+3. Migrating your dashboard business logic from OLTP to MooseStack/ClickHouse
+4. Shipping your changes to production on Boreal Cloud
 
-**AI copilot (optional but recommended):** We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, Github Copilot, Windsurf, etc.) will work.
+For this guide, assume a **remote ClickHouse instance** (e.g. ClickHouse Cloud) and a **local MooseStack project** that you’ll use for development.
 
-<Callout type="tip" title="AI copilot tips (optional)">
-If you use a copilot, these two prompts tend to help most in this guide:
-
-* "Generate curl commands to test this new endpoint."
-* "Generate a test script from the success criteria in this guide."
-</Callout>
+**AI copilot (optional but recommended):** We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub Copilot, Windsurf, etc.) will work—editors that support MCPs can make this workflow even faster.
 
 **Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
 
-### Setting up your development environment
+<CustomizePanel
+  title="Where does your current data live?"
+  description="Select the database you use today so we can show the right way to replicate this data into ClickHouse"
+>
+  <CustomizeGrid columns={1}>
+    <SelectField
+      id="source-database"
+      label="Source database"
+      options={[
+        { value: "sqlserver", label: "SQL Server" },
+        { value: "postgres", label: "Postgres" },
+      ]}
+      defaultValue="postgres"
+      persist
+    />
+    <SelectField
+      id="os"
+      label="Operating System"
+      options={[
+        { value: "macos", label: "macOS or Linux" },
+        { value: "windows", label: "Windows (WSL 2)" },
+      ]}
+      defaultValue="macos"
+      persist
+    />
+  </CustomizeGrid>
+</CustomizePanel>
 
-In this section, you'll:
 
-* Install MooseStack and its dependencies
-* Initialize or clone your MooseStack project
-* Set up developer and AI agent tools (MCP + Language Server)
-* Seed your development environment with sample data 
+<ConditionalContent whenId="source-database" whenValue="postgres">
+### ClickHouse Cloud ClickPipes (Postgres CDC)
 
-#### Installing MooseStack
+To get started, you'll need to create a new ClickHouse Cloud account and create a new ClickPipes pipeline to mirror your Postgres data into ClickHouse.
+
+- [Create a new ClickHouse Cloud Account](https://auth.clickhouse.cloud/u/signup)
+- [Docs for Setting up ClickPipes CDC with Postgres](https://clickhouse.com/docs/cloud/reference/billing/clickpipes/postgres-cdc)
+
+<Callout type="info" title="Assumption for the rest of this guide">
+Once you’ve set up CDC (via ClickPipes or another method), the rest of this guide primarily interacts with **ClickHouse** (modeling tables/views and migrating read queries). We’ll treat your OLTP database as the source of truth feeding ClickHouse.
+</Callout>
+
+</ConditionalContent>
+
+
+### Add MooseStack to your Project
 
 <BulletPointsCard
   title="Prerequisites"
@@ -174,13 +228,19 @@ In this section, you'll:
       link: { text: "Download", href: "https://docs.docker.com/desktop/", external: true }
     },
     {
-      title: "macOS, Linux, or WSL 2+ on Windows",
-      description: "Windows users: see the appendix for WSL 2 setup instructions."
+      title: "Install Moose CLI",
+      description: "Install Moose CLI using the installer below.",
     }
   ]}
 />
 
-**Install MooseStack**
+<ConditionalContent whenId="os" whenValue="windows">
+:::include /shared/prerequisites/wsl-setup.mdx
+</ConditionalContent>
+
+
+<Callout type="info" title="Install Moose CLI">
+Run the installer:
 
 ```bash
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
@@ -189,14 +249,13 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 <Callout type="info" title="Make sure to restart your terminal after installing MooseStack.">
 MooseStack is installed globally, so you need to restart your terminal to make the `moose` command available.
 </Callout>
+</Callout>
 
-#### Add MooseStack to your existing application
+If you have an existing monorepo with your application (e.g., a Next.js frontend with an API backend), you can add MooseStack as a subdirectory. 
 
-If you have an existing monorepo with your application (e.g., a Next.js frontend with an API backend), you can add MooseStack as a subdirectory:
+#### Step 1: Initialize MooseStack in a subdirectory
 
-**Step 1: Initialize MooseStack in a subdirectory**
-
-From your monorepo root:
+From your repository root:
 
 ```shell
 mkdir moosestack
@@ -204,21 +263,21 @@ cd moosestack
 moose-cli init . typescript
 ```
 
-**Step 2: Update your PNPM workspace configuration**
+#### Step 2: Update your PNPM workspace configuration
 
 Edit your root `pnpm-workspace.yaml` to include the `moosestack` directory:
 
 ```yaml
 packages:
   - .                    # Your main app (e.g., Next.js)
-  - moosestack                # MooseStack project
+  - moosestack           # MooseStack project
 ```
 
-**Step 3: Configure the MooseStack package**
+#### Step 3: Configure the MooseStack package
 
-Edit `moosestack/package.json` to set it up as a workspace package:
+Edit moosestack/package.json to set up your `moosestack` project as a workspace package:
 
-```json
+```json title="moosestack/package.json"
 {
   "name": "moosestack",
   "private": true,
@@ -248,7 +307,7 @@ Edit `moosestack/package.json` to set it up as a workspace package:
 }
 ```
 
-**Step 4: Add the `pnpm` configuration to your root package.json**
+#### Step 4: Add the pnpm configuration to your root package.json
 
 Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (this ensures required native/built dependencies are handled correctly by PNPM):
 
@@ -263,7 +322,117 @@ Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (t
 }
 ```
 
-#### Run your Moose Development Server
+You should now have MooseStack configured in your monorepo and ready to deploy.
+Next we’ll set up **Boreal** so you can validate upcoming changes in a real environment, and later get pull-request preview environments with migration plans.
+
+### Deploy your MooseStack project to Boreal
+
+This guide uses Boreal to manage deployment of your MooseStack project to production. 
+
+<BulletPointsCard
+  title="Why set up Boreal now?"
+  bulletStyle="check"
+  bullets={[
+    {
+      title: "Preview Environments and Migration Planning",
+      description: "When you open a feature branch and PR later in this guide, Boreal can automatically provision a preview environment and generate a migration plan for the code changes in your branch. This ensures your code changes are safe and you can safely apply them to your production database."
+    }
+  ]}
+/>
+
+#### Step 1: Create New Boreal Project
+
+Go to [boreal.cloud](https://boreal.cloud) and sign in to your account. If you don't have an account, click the `Sign Up` button to create one.
+
+<Callout type="info" title="Don't have a Boreal account?" ctaLabel="Sign Up" href="https://boreal.cloud/sign-up">
+If you don't have a Boreal account, go to [boreal.cloud](https://boreal.cloud) and sign up for an account. Once you're signed up, you'll land on the `Projects` page.
+</Callout>
+
+From your account dashboard, click the `New Project` button to create a new project.
+
+#### Step 2: Define project details
+
+![Project Details](/deployment/import-existing-project.png)
+
+On the “Import Existing Project” page, confirm the basic settings Boreal will use to build and deploy this repo:
+
+- `Name`: this field should contain the desired project name. By default it shows the repository name; update it if necessary.
+
+- `Project Root`: set the directory within the repository that contains your MooseStack project (for example, the folder that contains your Moose config like `project.toml`). If this is a monorepo, make sure you pick the specific subfolder for the app you’re deploying (e.g., `moosestack/`).
+
+Once these fields look correct, click `Next` to proceed.
+
+#### Step 3: Select data services
+
+![Select Data Services](/deployment/configure-data-services.png)
+
+The next screen configures the data services your deploys will use. In practice, this sets:
+
+- where main-branch deployments apply schema changes, and
+- where pull-request preview environments provision isolated databases.
+
+You can accept the default managed services, or connect existing infrastructure.
+
+<ConditionalContent whenId="source-database" whenValue="postgres">
+Since you are using ClickHouse Cloud, select `Customize` to connect to your existing ClickHouse Cloud instance.
+
+#### Step 4: Configure ClickHouse connection
+
+![Configure ClickHouse Connection](/deployment/configure-clickhouse-connection.png)
+
+If you chose `Customize`, open the ClickHouse configuration and select `Connect to existing ClickHouse instance`. Then fill out the form:
+
+- `Host`: enter the hostname of your ClickHouse instance (e.g., your-instance.clickhouse.cloud).
+- `Port`: specify the port number (for ClickHouse Cloud this is commonly 8443).
+- `User & Password`: supply the credentials for your ClickHouse user. 
+
+<Callout type="info" title="Admin Role Required">
+This user must have the `admin` role. This is required in order to create preview database instances for each preview environment.
+</Callout>
+- `Connection Name`: give this connection an identifiable name (e.g., “Prod ClickHouse Cloud”) for future reference.
+
+Click `Test Connection` to verify connectivity. If the test fails, fix the connection details before continuing.
+
+If you intend to use this connection for other projects, toggle `Use as Default`.
+
+Finally, click `Add connection` to finish the setup.
+
+#### Step 5: Set the main-branch database target
+
+![Set Main Branch](/deployment/set-main-db.png)
+
+Next, choose the database that `main` branch deployments should target. This is the “production” analytics database in your ClickHouse instance: when you merge changes into your repository’s main branch, schema changes will be applied here.
+
+In the database selector, choose the database you created in ClickHouse Cloud (the same one your CDC pipeline will write into).
+
+</ConditionalContent>
+
+#### Complete deployment
+
+Click `Deploy` to run the initial build and create the first deployment for this repo. This will redirect you to the `Deployments` page. Typically, it will take around 1-2 minutes to deploy.
+
+Once the deployment completes, you’ll be redirected to the project overview page.
+
+For the next section, you will need to copy the ClickHouse HTTPS connection string. You can locate this by clicking on the `Database` button in the top right corner of your project overview dashboard, and then copying the ClickHouse HTTPS connection string located at the bottom of the panel. 
+
+![Copy Connection String](/deployment/copy-connection-string.png)
+
+
+### Prepare your local development environment
+
+In this section you'll create a feature branch, run the Moose development server (`moose dev`) so ClickHouse and Redpanda run locally in Docker, and optionally install the MCP server and LSP so your copilot can query the database. Once this is done, you'll use the connection string you copied from Boreal to seed your local ClickHouse and start the migration (translating OLTP queries, adding materialized views, and wiring the API). PRs from this branch will get a Boreal preview environment automatically.
+
+If you are not already in a terminal, open a new terminal and navigate to your repository.
+
+#### Step 1: Create a branch
+
+Create a new branch in your repo to isolate your changes. When you open a pull request from this branch, you’ll get a preview environment you can use to validate changes before merging.
+
+```shell
+git checkout -b <your-branch-name>
+```
+
+#### Step 2: Run your Moose development server
 
 Ensure Docker Desktop is running first.  
 
@@ -277,7 +446,6 @@ cd moosestack  # or wherever your moose project is
 pnpm install
 moose dev
 ```
-
 
 If the development server runs correctly, you'll see a list of the available API endpoints print:
 
@@ -300,7 +468,7 @@ And your local services will be running in Docker containers:
 
 ![Docker Services](/docker-services.png)
 
-#### Setting up developer / agent supporting services
+#### Step 3: Set up developer and agent tooling (optional)
 
 We optionally recommend setting up your development environment with the following add-ons to let your AI copilot query your local database, inspect infrastructure, and validate SQL directly. These are not required, but can help you get the most out of your development environment.
 
@@ -322,9 +490,11 @@ This feature is currently in alpha and has the following known limitation:
 If you would like access to experiment with this feature, let us know!
 </Callout> 
 
-### Change data capture (CDC)
+<ConditionalContent whenId="source-database" whenValue="sqlserver">
+### Set up Change Data Capture (CDC)
 
 For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production SQL Server database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
+
 
 This section walks you through setting up CDC using Debezium. Before you start, make sure you have your SQL Server connection credentials (host, port, username, password, database name).
 
@@ -422,10 +592,9 @@ To summarize, the high level data flow is:
 * Streaming function → table-specific streams  
 * Table-specific streams → ClickHouse tables
 
-**Step 0: Prerequisites**
 
 <BulletPointsCard
-  title="Before continuing, confirm"
+  title="Prerequisites"
   bulletStyle="check"
   compact={true}
   bullets={[
@@ -438,15 +607,11 @@ To summarize, the high level data flow is:
 
 If CDC is not enabled yet, complete the **SQL Server CDC Configuration** section first.
 
-**Step 1: Add a Moose Ingest API Endpoint for CDC Events**
+##### Step 1: Define a pipeline to receive CDC events from Debezium
 
-This endpoint will receive CDC events from Debezium. 
+Copy the code below into `moosestack/src/cdc/DebeziumChangeEvent.model.ts`. It defines the `DebeziumChangeEvent` payload shape and wires up an `IngestApi` + `Stream` with a Dead Letter Queue (DLQ) so failed events are captured for inspection.
 
-In your MooseStack project, create a new Ingest API sink that accepts Debezium `ChangeEvent` payloads:
-
-**File location:** `moosestack/src/cdc/DebeziumChangeEvent.model.ts`
-
-```ts
+```ts filename="moosestack/src/cdc/DebeziumChangeEvent.model.ts" copy
 import { IngestApi, Stream, DeadLetterQueue, Int64 } from "@514labs/moose-lib";
 
 /**
@@ -540,13 +705,11 @@ export const DebeziumChangeEventIngestApi = new IngestApi<DebeziumEventEnvelope>
 );
 ```
 
-**Step 2: Map Source Tables to Moose Streams**
+##### Step 2: Map source tables to Moose Streams
 
 Before implementing the streaming function, define an explicit mapping between SQL Server source table names and their corresponding Moose Streams.
 
-**File location:** `moosestack/src/cdc/tableStreamMap.ts`
-
-```typescript
+```typescript filename="moosestack/src/cdc/tableStreamMap.ts" copy
 import { ProductStream } from "../models/Product.model";
 import { CustomerStream } from "../models/Customer.model";
 import { OrderStream } from "../models/Order.model";
@@ -562,7 +725,7 @@ export const TABLE_STREAM_MAP: Record<string, any> = {
 
 This mapping is what makes the fan-out deterministic and ensures each source table's changes flow through the correct stream and into the correct ClickHouse table.
 
-**Step 3: Add Streaming Function to the API Endpoint**
+##### Step 3: Add streaming function to the API endpoint
 
 This function acts as our fanout point.
 
@@ -649,7 +812,7 @@ export default async function processDebeziumEvent(envelope: DebeziumEventEnvelo
 DebeziumChangeEventStream.addConsumer(processDebeziumEvent);
 ```
 
-#### Deploy Debezium Server
+##### Step 4: Deploy Debezium Server
 
 Debezium Server can be deployed using Kubernetes, Docker Compose, or as a standalone service. For deployment options and detailed configuration, see the [Debezium Server documentation](https://debezium.io/documentation/reference/stable/operations/debezium-server.html).
 
@@ -663,8 +826,9 @@ Your Debezium `application.properties` must include:
 <Callout type="info" title="Example deployment manifests">
 For complete Kubernetes deployment examples with MooseStack, see our [CDC examples repository](https://github.com/514-labs/moose-examples).
 </Callout>
+</ConditionalContent>
 
-### Migrating a dashboard component to OLAP
+### Migrate a dashboard component to ClickHouse
 
 In this section, you'll take an existing dashboard component that's currently served by an OLTP-backed API endpoint and switch it to an OLAP-backed implementation (ClickHouse + MooseStack). Concretely, you'll update the existing backend handler so it reads from the ClickHouse tables you've just built, instead of querying your OLTP database.
 
@@ -676,7 +840,7 @@ This guide follows a three-phase migration pattern:
 2. **Precompute (make it OLAP-native)**: Refactor that raw query by shifting joins and upfront transformations to Materialized Views and prepared tables. This makes reads cheaper and the model easier to extend.
 3. **Serve (semantic/query layer)**: Layer a query/semantic model over those prepared tables so defining dashboard metrics, group-bys, filters, and other controls becomes clean, reusable, and maintainable, so you don't have to rewrite raw dynamic SQL in every handler.
 
-#### Step 0: Prepare your environment
+#### Step 0: Seed your local ClickHouse database
 
 Before starting the migration, prepare your development environment by seeding your local ClickHouse database with a deterministic slice of production data. You’ll use this data to validate parity during Phase 1.
 
@@ -685,10 +849,18 @@ Ensure your dev server is running and accessible:
 moose dev
 ```
 
-Run the [`moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse) to pull data from your production ClickHouse database:
+First, export the **HTTPS** ClickHouse connection string from the **previous Boreal step** (the ClickHouse connection details Boreal shows you) as an environment variable:
 
 ```shell
-moose seed clickhouse --connection-string <PRODUCTION_CONNECTION_STRING> --limit 1000
+export CLICKHOUSE_PROD_URL="<YOUR_HTTPS_CONNECTION_STRING>"
+```
+
+**Important:** `moose seed clickhouse` uses ClickHouse's HTTPS protocol. Your connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
+
+Then run the [`moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse) to pull data from your production ClickHouse database:
+
+```shell
+moose seed clickhouse --connection-string "$CLICKHOUSE_PROD_URL" --limit 1000
 ```
 
 **Recommended (seed for parity):** seed the specific table(s) your component will query, ordered by recency, with a large-enough limit to cover the time window you’ll test (e.g. “last 7–30 days”).
@@ -697,7 +869,7 @@ Run this once per table your endpoint depends on:
 
 ```shell
 moose seed clickhouse \
-  --connection-string <PRODUCTION_CONNECTION_STRING> \
+  --connection-string "$CLICKHOUSE_PROD_URL" \
   --table <TABLE_NAME> \
   --order-by '<TIMESTAMP_COLUMN> DESC' \
   --limit 100000
@@ -708,20 +880,7 @@ If you hit missing-data issues during parity validation, re-run seeding with a l
 **Strict parity (slowest):** seed full production tables with `--all` (can take hours for large datasets):
 
 ```shell
-moose seed clickhouse --connection-string <PRODUCTION_CONNECTION_STRING> --all
-```
-
-`PRODUCTION_CONNECTION_STRING` is your connection string to your production ClickHouse database. 
-
-**Important:** `moose seed clickhouse` uses ClickHouse's HTTPS protocol. Use a HTTPS connection string (e.g., `https://username:password@host:8443/database`).
-
-If you already use Boreal, you can locate your connection string in your project overview dashboard. 
-
-
-Optionally set it as an environment variable:
-
-```shell
-export MOOSE_SEED_CLICKHOUSE_URL=PASTE_THE_CLICKHOUSE_HTTPS_URL_HERE
+moose seed clickhouse --connection-string $CLICKHOUSE_PROD_URL --all
 ```
 
 Once your local database is seeded, proceed to Step 1.
@@ -733,7 +892,7 @@ Prompt your copilot to seed your local database from each remote table:
 Goal: seed local ClickHouse from a remote Boreal ClickHouse via HTTP using `moose query`.
 
 Assumptions:
-- `BOREAL_CONNECTION_STRING` is set and looks like: `https://default:PASSWORD@HOST:8443/DB_NAME`
+- `CLICKHOUSE_PROD_URL` is set and looks like: `https://default:PASSWORD@HOST:8443/DB_NAME`
 - Local ClickHouse has the same tables already created.
 - Use `url()` + `JSONEachRow` to stream data from remote into local.
 
@@ -969,10 +1128,6 @@ At this stage you are only checking that the data is present. Once the Materiali
 
 In this phase, you will expose the serving table via an API endpoint that your frontend can call.
 
-<Callout type="tip" title="AI acceleration">
-To complete this phase faster with AI assistance, give your copilot this guide section along with your serving table schema from Phase 2.
-</Callout>
-
 In this guide, you’ll use the Query Layer. It’s a small helper library that sits on top of Moose’s `sql` utility and `OlapTable` objects so you can define metrics, group-bys, filters, sorting, and pagination once and reuse them across handlers.
 
 ##### Step 1: Add the Query Layer to your project
@@ -1116,35 +1271,21 @@ time curl -s -X POST http://localhost:4000/api/order-fulfillment \
 
 Verify the response time is significantly improved compared to the original OLTP query.
 
-### Push to remote GitHub
-
-Add the files you created above (or just the functional files if you don't want to commit your test scripts) and push to your version control. Create a Pull Request.
-
-This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR. 
-
 ### Going to production
 
-In this section, you'll apply your local changes to production:
+In this section, you'll apply your local changes to production. Complete these steps in order:
 
-1. Join Boreal
-2. Commit your branch and deploy a preview environment
-3. Test the preview branch
-4. Push to production
-5. Backfill materialized views
+1. Generate and review the migration plan
+2. Push your branch and open a pull request
+3. Validate the preview environment
+4. Merge the PR to deploy to production
+5. Backfill new materialized views (if applicable)
 
-#### Join Boreal
+<Callout type="info" title="Confirm Boreal project access">
+To deploy to production (and to create branch preview environments), you need a Boreal project connected to the GitHub repo you’re working in. If you haven’t created a project yet, go back to [**Create your Boreal project**](#create-your-boreal-project-production-access) above and complete that setup first.
+</Callout>
 
-(Skip this step if you already have completed Boreal onboarding.)
-
-To deploy changes to production, you need access to [Boreal](http://boreal.cloud) and to the organization that owns the project.
-
-1. [Click here to sign up with your GitHub account.](https://www.boreal.cloud/sign-up)
-2. After signing in, you'll be prompted to create or join an organization. Check for any pending invitations and join the organization that owns the project.
-3. If no invitation appears in Boreal, check your email. You should have received an invitation to join the organization. Make sure the email address matches your GitHub account and follow the instructions in that email to accept.
-
-Once you've joined the correct organization, you should be able to see the project in Boreal and proceed with your production rollout.
-
-#### Generate a Migration Plan
+#### Step 1: Generate a migration plan
 
 Return to your IDE and confirm the following before moving on:
 
@@ -1168,7 +1309,7 @@ moose generate migration --save --url <BOREAL_HOST> --token <BOREAL_ADMIN_API_BE
 
 After successfully running `moose generate migration` with the correct `--url` and `--token`, a new `/migrations` directory should appear at the root of your MooseStack project. Open the `plan.yaml` file in that directory and review it carefully.
 
-#### Migration plan review
+##### Review the migration plan
 
 [Review the migration plan to confirm which SQL resources will be created or modified](https://docs.fiveonefour.com/moosestack/migrate/plan-format?). Make sure it matches exactly what you intend to ship. As a rule of thumb:
 
@@ -1176,7 +1317,7 @@ After successfully running `moose generate migration` with the correct `--url` a
 * Carefully review schema changes to existing tables
 * Avoid deleting existing tables at all costs
 
-**Look for new tables and materialized views**
+##### Look for new tables and materialized views
 
 This is expected when optimizing queries. Any new materialized view should result in:
 
@@ -1185,7 +1326,7 @@ This is expected when optimizing queries. Any new materialized view should resul
 
 Seeing both confirms the Materialized View is being added cleanly and additively. For every new Materialized View in your branch, there should be exactly one `CreateTable` and one `SqlResource` defining it.
 
-**Watch closely for column changes**
+##### Watch closely for column changes
 
 [Column-level changes](https://docs.fiveonefour.com/moosestack/migrate/plan-format#column-operations) are uncommon. If you encounter them:
 
@@ -1199,7 +1340,7 @@ There are a [small number of cases where column changes are expected:](https://d
 
 Outside of these cases, column-level changes should be treated with caution, especially [`DropTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#droptablecolumn) or [`ModifyTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#modifytablecolumn) operations. These changes are strongly discouraged. Instead, stick to strictly additive migrations. Undo the delete or modification in your `OlapTable` object, and introduce a new column instead.
 
-**Sanity-check for `DropTable` operations**
+##### Sanity-check for `DropTable` operations
 
 If you see any [`DropTable` operations](https://docs.fiveonefour.com/moosestack/migrate/plan-format?lang=python#droptable), proceed with extreme caution and review your changes carefully. They may indicate that an `OlapTable` or `MaterializedView` object defined in the codebase (and currently used in production) is being deleted, which can result in irreversible data loss if applied unintentionally.
 
@@ -1207,36 +1348,47 @@ If the plan shows changes you did not anticipate, stop and resolve that before p
 
 Once the plan looks correct, you're ready to continue with preview and production rollout.
 
-#### Open a Pull Request and Inspect the Preview Environment
+#### Step 2: Push your branch and open a pull request
 
-Commit your changes, push them to a new branch, and open a pull request targeting `main`.
+Add the files you created above (or just the functional files if you don't want to commit your test scripts) and push to your version control. Create a Pull Request.
 
-Once the PR is open, Boreal automatically deploys an isolated preview (staging) environment for the branch. Your code and the generated `plan.yaml` are applied to a staging database forked from production. Validate that your migration works correctly with production data volume, schema, and edge cases before touching your live environment.
+This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR. 
 
-Confirm that **boreal-cloud bot** appears in the PR comments.
+##### Open a pull request and inspect the preview environment
+
+At this point you should have:
+
+- a reviewed `plan.yaml` that matches your intended changes, and
+- a feature branch with your code changes ready to ship.
+
+Commit your changes, push the branch to GitHub, and open a pull request targeting `main`.
+
+When the PR is opened, Boreal creates an isolated preview environment for the branch. Your PR’s code and the generated `plan.yaml` are applied against a preview database so you can validate schema and behavior before you merge anything into `main`.
+
+In the PR, confirm that **boreal-cloud bot** posts a comment.
 
 {/* image */}
 
 This confirms that:
 
-* Your GitHub account is correctly linked
-* Boreal has started deploying the preview environment
+- the repo is connected and authorized, and
+- the preview deployment has started for this branch.
 
-If the bot does not appear, double check that you have correctly integrated your Github account with your Boreal account. If something doesn't look right, reach out to the 514 team for help.
+If the bot does not appear, double-check that the Boreal GitHub app is authorized for this repository and that the Boreal project is connected to the correct repo/root directory.
 
-In the **boreal-cloud bot** comment, you'll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Boreal project dashboard with your preview environment selected.
+In the **boreal-cloud bot** comment, you’ll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Boreal dashboard with the preview environment selected.
 
 {/* image */}
 
-From here, you'll inspect the database state and validate that the resources created by your migration plan match what you reviewed and expected before proceeding.
+From here, inspect the preview environment’s database state and verify the resources created by your migration plan match what you reviewed in `plan.yaml` (tables, views, and materialized views) before proceeding.
 
-#### Connect to the Staging Database
+#### Step 3: Validate the preview environment
 
-In this step, you'll query the staging ClickHouse database directly using ClickHouse's HTTPS interface.
+Query the staging ClickHouse database directly using ClickHouse's HTTPS interface to confirm tables and views match the migration plan.
 
-First, get the database HTTPS connection string from Boreal using the same steps you followed earlier. Make sure the Boreal dashboard is set to your feature branch, not `main`. You can confirm this by checking the branch selector in the left sidebar of the project dashboard.
+Get the database HTTPS connection string from Boreal using the same steps you followed earlier. Make sure the Boreal dashboard is set to your feature branch, not `main`. You can confirm this by checking the branch selector in the left sidebar of the project dashboard.
 
-**Set the staging connection string locally**
+##### Set the staging connection string locally
 
 Create a temporary environment variable for your staging database URL:
 
@@ -1247,7 +1399,7 @@ export STAGING_DB=<your-staging-db-connection>
 
 You can now safely use `$STAGING_DB` to run queries against the staging database via `curl`.
 
-**Inspect Staging Database Tables**
+##### Inspect staging database tables
 
 In a terminal, run:
 
@@ -1282,19 +1434,19 @@ If the list of tables does not match what you reviewed in the migration plan, st
 
 Do not merge until the preview environment reflects exactly the database resources and behavior you expect to see in production.
 
-#### Merge PR to Deploy to Prod
+#### Step 4: Merge the PR to deploy to production
 
 If everything lines up as you expect, you're ready to merge!
 
 Merge your PR and now do the same thing: click the Boreal bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
 
-#### Backfill new Materialized Views
+#### Step 5: Backfill new materialized views
 
 If your migration introduces new Materialized Views, they populate only for new incoming data. Your dashboards will show incomplete or empty results for historical time ranges until you backfill. To make historical data available immediately, explicitly backfill the MVs from existing ClickHouse tables.
 
 This step uses the same HTTPS + `curl` workflow as before, but targets the production (`main`) database and performs a write operation to apply the backfill.
 
-**Identify which materialized views need a backfill**
+##### Identify which materialized views need a backfill
 
 Open the migration `plan.yml` you just shipped and find the new materialized views you created (look for the `CREATE MATERIALIZED VIEW` statements in `SqlResource`).
 
@@ -1303,7 +1455,7 @@ For each one, note two things:
 * the materialized view name
 * the backing table name it writes `TO`
 
-**Run the backfill (one MV at a time)**
+##### Run the backfill (one MV at a time)
 
 Backfilling is done by inserting historical rows into the MV's backing table using the same `SELECT` logic used by the view.
 
@@ -1321,7 +1473,7 @@ curl -sS \
 
 Use the exact `SELECT` statement from the `CREATE MATERIALIZED VIEW` definition (or the underlying `SELECT` you used when building it) and paste it in place of `SELECT ...`.
 
-**Confirm the backfill worked**
+##### Confirm the backfill worked
 
 After each backfill, sanity check that the backing table now has rows:
 
@@ -1336,91 +1488,6 @@ curl -sS \
 
 If the count is non-zero (and roughly matches what you expect), the backfill is complete.
 
-**Repeat for each new MV you added**
+##### Repeat for each new MV you added
 
 Only backfill the MVs introduced in this change. Avoid reprocessing older MVs unless you intentionally want to rebuild them.
-## Appendix
-
-### Windows (WSL2) setup
-
-#### Prerequisites
-
-* **Windows 10 or 11:** Ensure you are running Windows 10 version 2004 (build 19041) or later, or Windows 11 [\[1\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=Prerequisites).
-* **Hardware virtualization:** WSL2 requires a 64-bit processor with virtualization support (e.g. VT-x/AMD-V) enabled in your BIOS, and at least 4 GB of RAM to run Docker [\[2\]](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers#:~:text=%2A%2064,SLAT). Make sure virtualization is turned on in your system BIOS settings.
-* **Internet access:** The setup will download Linux and various packages (Node.js, Docker, etc.), so an internet connection is required.
-* **Disk space:** Have at least 10-20 GB of free disk space for the Linux filesystem and Docker images.
-* **Docker Desktop:** We will use Docker Desktop for Windows (with WSL2 integration) to run MooseStack's containers. You can download and configure it during the steps below.
-* *(Optional)* **Windows Terminal:** It's recommended to install Windows Terminal for a better command-line experience (multiple tabs, copy/paste, etc.) [\[3\]](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl#:~:text=Windows%20Terminal), though you can use any terminal you prefer.
-
-#### Step 1: Enable WSL 2 and Install Ubuntu Linux
-
-1. **Enable WSL 2:** Open PowerShell as Administrator (right-click Start menu, choose PowerShell (Admin)). Run the following command to enable the Windows Subsystem for Linux and install its components:
-
-**Command:**
-```shell
-wsl --install
-```
-
-   1. This one command enables the necessary Windows features and downloads the latest Ubuntu Linux distribution by default [\[4\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=You%20can%20now%20install%20everything,command%2C%20then%20restart%20your%20machine). If prompted, restart your computer to complete the WSL installation. (On Windows 11, a restart may happen automatically.)
-
-   2. *Note:* If WSL was already partially installed and the above command just shows help text, you can list available distros with `wsl --list --online` and then install a specific one with `wsl --install -d Ubuntu` [\[5\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=The%20above%20command%20only%20works,WSL%20%20or%20%207).
-
-2. **Initial Ubuntu setup:** After reboot, Windows should automatically launch the newly installed *Ubuntu* for its first-time setup. If it doesn't open on its own, you can launch "Ubuntu" from the Start menu. A console window will appear as Ubuntu initializes (this may take a minute as files decompress) [\[6\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=The%20first%20time%20you%20launch,take%20less%20than%20a%20second).
-
-3. **Create Linux user:** You will be prompted to create a new UNIX username and password for the Ubuntu instance (this is separate from your Windows credentials) [\[7\]](https://learn.microsoft.com/en-us/windows/wsl/install#:~:text=Set%20up%20your%20Linux%20user,info). Enter a username and a secure password — you won't see characters as you type the password (that's normal). This will create a new user account in the Ubuntu environment and then drop you into a Linux shell.
-
-4. **Verify WSL installation:** Once setup is complete, you should see a Linux terminal prompt (e.g. something like `username@DESKTOP-XYZ:~$`). At this point, you have a Ubuntu WSL instance running. You can check that it's using WSL version 2 by opening a PowerShell/Command Prompt (not the Ubuntu shell) and running `wsl -l -v`. It should list your Ubuntu distro with version "2". If it says version "1", upgrade it with `wsl --set-version Ubuntu 2`.
-
-#### Step 2: Update Linux Packages
-
-Now that Ubuntu is running in WSL, update its package lists and upgrade installed packages:
-
-Update apt repositories: In the Ubuntu terminal, run:
-
-**Command:**
-```shell
-sudo apt update && sudo apt upgrade -y
-```
-
-* This fetches the latest package listings and installs any updates. It's good practice to do this right after installing a new Linux distro [\[8\]](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl#:~:text=menu,dc). (The `-y` flag auto-confirms prompts during upgrade.)
-
-* **(Optional) Install basic tools:** You may want to install some common utilities. For example, you can run `sudo apt install -y build-essential curl git` to ensure you have compilers and Git available. This is not strictly required for MooseStack, but can be useful for general development.
-
-#### Step 3: Install and Configure Docker (WSL Integration)
-
-MooseStack uses Docker containers under the hood for components like ClickHouse (database), Redpanda (streaming), etc. On Windows, the recommended way to run Docker with WSL2 is via **Docker Desktop** [\[9\]](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers#:~:text=containers%20by%20setting%20up%20Docker,Subsystem%20for%20Linux%2C%20version%202)
-
-**Install Docker Desktop:**
-
-1. **Download and Install:** If you don't have it already, download **Docker Desktop for Windows** from the Docker website and run the installer. During installation, it should prompt to enable WSL2 features if not already enabled (which we did in Step 1). Follow the prompts to install Docker Desktop.
-
-2. **Start Docker Desktop:** After installation, launch Docker Desktop. In the taskbar, you'll see the Docker whale icon appear (it may take a few seconds to start up the first time).
-
-**Configure Docker Desktop with WSL2**
-
-1. **Enable WSL2 backend:** In Docker Desktop, open **Settings** (gear icon or via the taskbar menu). Under **General**, ensure **"Use the WSL 2 based engine"** is checked. This tells Docker to use WSL2 for running Linux containers.
-  {/* image */}
-
-2. **Integrate with Ubuntu:** Still in Settings, go to **Resources > WSL Integration**. You should see a list of your WSL distributions. Find **Ubuntu** (or the distro you installed) and **enable integration** for it (toggle it on). This allows Docker containers to be managed from within that WSL instance.
-   {/* image */}
-
-3. **Allocate sufficient resources:** Docker Desktop by default might allocate limited resources. MooseStack's stack requires at least **2.5 GB of memory** for Docker. Go to **Resources > Advanced** (or **Resources > Memory**) and increase the memory to 3-4 GB to be safe. You can also adjust CPUs if needed (2 CPUs is usually fine for dev).
-
-4. **Apply settings:** Click "Apply & Restart" if you changed any Docker settings. Docker Desktop will restart its engine to apply the new configuration.
-
-5. **Test Docker in WSL:** Open a new Ubuntu WSL terminal (or use the existing one). Run `docker --version` to ensure the Docker CLI is accessible, and then run a test container:
-
-**Command:**
-```shell
-docker run hello-world
-```
-
-**Expected Response:**
-
-The hello-world container should download and run, printing a "Hello from Docker!" message and exiting. This confirms that Docker is working inside WSL (via Docker Desktop). You can also try `docker ps` (which should list no running containers, until the Moose dev containers start later) to verify the Docker daemon is reachable from WSL.
-
-**Troubleshooting:** If `docker run hello-world` fails, ensure Docker Desktop is running and that WSL integration is enabled for your distro. In some cases, you might need to install the Docker CLI tools inside WSL, but Docker Desktop usually handles that by exposing the `docker` command in WSL [\[10\]](https://stackoverflow.com/questions/70449927/how-can-i-access-wsl2-which-is-used-by-docker-desktop#:~:text=Docker%20Desktop%20,tab%20in%20Settings). Also verify that your Ubuntu WSL is set to version 2 (as Docker won't work with WSL1).
-
-#### Step 4: Proceed with MooseStack requirements and installation
-
-You now have a working Ubuntu instance on your Windows machine with Docker installed. You can proceed to install MooseStack and its requirements (Node.js 20+ and/or Python 3.12+) as if you were installing on a regular Linux machine. Just make sure to install from the Linux terminal prompt in the Ubuntu instance.
