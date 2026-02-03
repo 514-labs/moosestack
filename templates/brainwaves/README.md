@@ -23,7 +23,7 @@ To quickly learn about this project watch/skim through the following brief video
 
 ## Project Overview
 
-**Brainwaves** is a comprehensive demo platform for brain mapping and movement analytics, built with [Moose](https://docs.fiveonefour.com/moose) and designed to work with the [Muse Headband](https://choosemuse.com) EEG device. The project consists of two main applications:
+**Brainwaves** is a comprehensive demo platform for brain mapping and movement analytics, built with [Moose](https://docs.fiveonefour.com/moosestack) and designed to work with the [Muse Headband](https://choosemuse.com) EEG device. The project consists of two main applications:
 
 - **DAS (Data Acquisition Server):** Real-time collection, analysis, visualization, and logging of brainwave and movement data from a Muse device or simulator.
 - **Brainmoose:** A Moose-powered backend for data ingestion, storage, analytics, and API access.
@@ -179,7 +179,7 @@ GROUP BY sessionId;
 ---
 
 ## References
-- [Moose Documentation](https://docs.fiveonefour.com/moose)
+- [Moose Documentation](https://docs.fiveonefour.com/moosestack)
 - [Muse Headband](https://choosemuse.com)
 - [osc-min Library](https://github.com/russellmcc/node-osc-min)
 - [Redpanda](https://redpanda.com)
@@ -202,4 +202,4 @@ You can join the Moose community [on Slack](https://join.slack.com/t/moose-commu
 
 The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose.
 
-Check out our [Moose deployment documentation](https://docs.fiveonefour.com/moose/deploying) for more details.
+Check out our [Moose deployment documentation](https://docs.fiveonefour.com/moosestack/deploying) for more details.

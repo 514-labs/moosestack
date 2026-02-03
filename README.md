@@ -8,7 +8,7 @@
 
 # MooseStack
 
-**Developer toolkit for building real-time analytical backends in Typescript and Python** — MooseStack brings data engineering best practices and a modern web development DX to any engineer building on data infra.
+**Developer toolkit for building real-time analytical backends in TypeScript and Python** — MooseStack brings data engineering best practices and a modern web development DX to any engineer building on data infra.
 
 MooseStack modules offer a type‑safe, code‑first developer experience layer for popular open source analytical infrastructure, including [ClickHouse](https://clickhouse.com/), [Kafka](https://kafka.apache.org/), [Redpanda](https://redpanda.com/), and [Temporal](https://temporal.io/).
 
@@ -35,9 +35,9 @@ MooseStack is designed for:
 
 ## Quickstart
 
-Also available in the Docs: [5-minute Quickstart](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
-
-Already running Clickhouse: [Getting Started with Existing Clickhouse](https://docs.fiveonefour.com/moosestack/getting-started/from-clickhouse)
+Docs:
+1. [5-minute Quickstart](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
+2. [Existing ClickHouse](https://docs.fiveonefour.com/moosestack/getting-started/from-clickhouse)
 
 ### Install the CLI
 
@@ -47,19 +47,39 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 
 ### Create a project
 
-```bash
-# typescript
-moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
+Start a new project:
 
-# python
-moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language python
+```bash
+moose init my-project typescript  # or: python
+```
+
+Connect to an existing ClickHouse:
+
+```bash
+moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript  # or: python
+```
+
+### Install dependencies
+
+TypeScript:
+
+```bash
+cd my-project
+pnpm install
+```
+
+Python:
+
+```bash
+cd my-project
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ### Run locally
 
 ```bash
-cd my-project
-npm install  # or: pip install -r requirements.txt
 moose dev
 ```
 
@@ -80,7 +100,7 @@ MooseStack is open source and can be self-hosted. If you're only using MooseOLAP
 ### TypeScript 
 
 ```typescript
-import { Key, OlapTable, Stream, IngestApi, ConsumptionApi } from "@514labs/moose-lib";
+import { Key, OlapTable, Stream, IngestApi, Api } from "@514labs/moose-lib";
  
 interface DataModel {
   primaryKey: Key<string>;
@@ -103,7 +123,7 @@ export const ingestApi = new IngestApi<DataModel>("post-api-route", {
 interface QueryParams {
   limit?: number;
 }
-export const consumptionApi = new ConsumptionApi<QueryParams, DataModel[]>("get-api-route", 
+export const analyticsApi = new Api<QueryParams, DataModel[]>("get-api-route", 
   async ({limit = 10}: QueryParams, {client, sql}) => {
     const result = await client.query.execute(sql`SELECT * FROM ${clickhouseTable} LIMIT ${limit}`);
     return await result.json();
@@ -113,7 +133,16 @@ export const consumptionApi = new ConsumptionApi<QueryParams, DataModel[]>("get-
 ### Python 
 
 ```python
-from moose_lib import Key, OlapTable, Stream, StreamConfig, IngestApi, IngestApiConfig, ConsumptionApi
+from moose_lib import (
+    Api,
+    IngestApi,
+    IngestConfigWithDestination,
+    Key,
+    MooseClient,
+    OlapTable,
+    Stream,
+    StreamConfig,
+)
 from pydantic import BaseModel
  
 class DataModel(BaseModel):
@@ -124,33 +153,36 @@ class DataModel(BaseModel):
 clickhouse_table = OlapTable[DataModel]("TableName")
  
 # Create a Redpanda streaming topic
-redpanda_topic = Stream[DataModel]("TopicName", StreamConfig(
-    destination=clickhouse_table,
-))
+redpanda_topic = Stream[DataModel](
+    "TopicName",
+    StreamConfig(destination=clickhouse_table),
+)
  
 # Create an ingest API endpoint
-ingest_api = IngestApi[DataModel]("post-api-route", IngestApiConfig(
-    destination=redpanda_topic,
-))
+ingest_api = IngestApi[DataModel](
+    "post-api-route",
+    IngestConfigWithDestination(destination=redpanda_topic),
+)
  
 # Create a consumption API endpoint
 class QueryParams(BaseModel):
     limit: int = 10
  
-def handler(client, params: QueryParams):
-    return client.query.execute("SELECT * FROM {table: Identifier} LIMIT {limit: Int32}", {
-        "table": clickhouse_table.name,
-        "limit": params.limit,
-    })
+def run(client: MooseClient, params: QueryParams) -> list[DataModel]:
+    return client.query.execute(
+        "SELECT * FROM {table} LIMIT {limit}",
+        {"table": clickhouse_table, "limit": params.limit},
+        row_type=DataModel,
+    )
  
-consumption_api = ConsumptionApi[RequestParams, DataModel]("get-api-route", query_function=handler)
+analytics_api = Api[QueryParams, DataModel](name="get-api-route", query_function=run)
 ```
 
 ## Docs
 
 - [Overview](https://docs.fiveonefour.com/moosestack)
 - [5-min Quickstart](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
-- [Quickstart with Existing Clickhouse](https://docs.fiveonefour.com/moosestack/getting-started/from-clickhouse)
+- [Quickstart with Existing ClickHouse](https://docs.fiveonefour.com/moosestack/getting-started/from-clickhouse)
 
 ## Built on
 

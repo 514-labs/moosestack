@@ -1,14 +1,14 @@
 # This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the 
-[`Moose CLI`](https://github.com/514-labs/moose/tree/main/apps/framework-cli).
+[`Moose CLI`](https://github.com/514-labs/moosestack/tree/main/apps/framework-cli).
 
-<a href="https://docs.fiveonefour.com/moose/"><img src="https://raw.githubusercontent.com/514-labs/moose/main/logo-m-light.png" alt="moose logo" height="100px"></a>
+<a href="https://docs.fiveonefour.com/moosestack/"><img src="https://raw.githubusercontent.com/514-labs/moose/main/logo-m-light.png" alt="moose logo" height="100px"></a>
 
 [![NPM Version](https://img.shields.io/npm/v/%40514labs%2Fmoose-cli?logo=npm)](https://www.npmjs.com/package/@514labs/moose-cli?activeTab=readme)
 [![Moose Community](https://img.shields.io/badge/slack-moose_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
-[![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
+[![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 [![MIT license](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-[Moose](https://docs.fiveonefour.com/moose) is an open-source data engineering framework designed to drastically accelerate AI-enabled software developers, as you prototype and scale data-intensive features and applications.
+[Moose](https://docs.fiveonefour.com/moosestack) is an open-source data engineering framework designed to drastically accelerate AI-enabled software developers, as you prototype and scale data-intensive features and applications.
 
 # Get started with Moose
 
@@ -26,7 +26,7 @@ Here you can get together with other Moose developers, ask questions, give feedb
 
 # Contributing
 
-We welcome contributions to Moose! Please check out the [contribution guidelines](https://github.com/514-labs/moose/blob/main/CONTRIBUTING.md).
+We welcome contributions to Moose! Please check out the [contribution guidelines](https://github.com/514-labs/moosestack/blob/main/CONTRIBUTING.md).
 
 # Made by 514
 
