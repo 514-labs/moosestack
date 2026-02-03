@@ -11,7 +11,6 @@
 /// during runtime. It also handles leadership-based execution for certain operations that
 /// should only be performed by a single instance.
 use crate::cli::settings::Settings;
-use crate::infrastructure::redis::redis_client::RedisClient;
 use std::sync::Arc;
 use tokio::sync::mpsc::Sender;
 
@@ -20,11 +19,10 @@ use super::{
     plan::InfraPlan,
 };
 use crate::{
-    cli::routines::scripts::terminate_all_workflows,
-    framework::scripts::executor::execute_scheduled_workflows,
     infrastructure::{
         api,
         olap::{self, OlapChangesError},
+        orchestration::workflows,
         processes::{
             self, kafka_clickhouse_sync::SyncingProcessesRegistry,
             process_registry::ProcessRegistries,
@@ -57,10 +55,6 @@ pub enum ExecutionError {
     /// Error occurred while applying changes to synchronization processes
     #[error("Failed to communicate with Sync Processes")]
     SyncProcessesChange(#[from] processes::SyncProcessChangesError),
-
-    /// Error occurred while checking leadership status
-    #[error("Leadership check failed")]
-    LeadershipCheckFailed(anyhow::Error),
 }
 
 /// Context for executing infrastructure changes
@@ -72,7 +66,6 @@ pub struct ExecutionContext<'a> {
     pub api_changes_channel: Sender<(InfrastructureMap, ApiChange)>,
     pub webapp_changes_channel: Sender<super::infrastructure_map::WebAppChange>,
     pub metrics: Arc<Metrics>,
-    pub redis_client: &'a Arc<RedisClient>,
 }
 
 /// Executes the initial infrastructure changes when the system starts up.
@@ -145,21 +138,7 @@ pub async fn execute_initial_infra_change(
     )
     .await?;
 
-    execute_scheduled_workflows(ctx.project, &ctx.plan.target_infra_map.workflows).await;
-
-    // Check if this process instance has the "leadership" lock
-    if ctx
-        .redis_client
-        .has_lock("leadership")
-        .await
-        .map_err(ExecutionError::LeadershipCheckFailed)?
-    {
-        tracing::info!("Executing changes for leader instance");
-
-        processes::execute_leader_changes(&mut process_registries, &changes).await?;
-    } else {
-        tracing::info!("Skipping migration & olap process changes as this instance does not have the leadership lock");
-    }
+    workflows::execute_changes(ctx.project, &ctx.plan.changes.workflow_changes).await;
 
     Ok(process_registries)
 }
@@ -231,7 +210,6 @@ pub async fn execute_online_change(
         .await
         .map_err(Box::new)?;
 
-    processes::execute_leader_changes(process_registries, &plan.changes.processes_changes).await?;
     processes::execute_changes(
         &project.redpanda_config,
         &plan.target_infra_map,
@@ -241,11 +219,7 @@ pub async fn execute_online_change(
     )
     .await?;
 
-    match terminate_all_workflows(project).await {
-        Ok(success) => tracing::info!("Terminated running workflows: {:?}", success),
-        Err(e) => tracing::warn!("Failed to terminate running workflows: {:?}", e),
-    }
-    execute_scheduled_workflows(project, &plan.target_infra_map.workflows).await;
+    workflows::execute_changes(project, &plan.changes.workflow_changes).await;
 
     Ok(())
 }

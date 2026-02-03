@@ -925,6 +925,12 @@ const moosestackNavigationConfig: NavigationConfig = [
     children: [
       {
         type: "page",
+        slug: "moosestack/release-notes/2026-01-16",
+        title: "January 16, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/release-notes/2026-01-09",
         title: "January 9, 2026",
         languages: ["typescript", "python"],
@@ -1412,6 +1418,14 @@ const guidesNavigationConfig: NavigationConfig = [
         languages: ["typescript", "python"],
         status: "draft",
       },
+      {
+        type: "page",
+        slug: "guides/test-guides/interactive-guide-demo",
+        title: "Interactive Components Demo",
+        icon: IconFileCode,
+        languages: ["typescript", "python"],
+        status: "draft",
+      },
     ],
   },
 ];
@@ -1676,14 +1690,17 @@ export interface SerializableGuideItem {
   title: string;
   description?: string;
   iconName?: string;
+  previewVariant?: string;
+  previewImageIndexFile?: string;
+  languages?: string[];
+  tags?: string[];
 }
 
 /**
  * Serializable guide section for passing to client components
- * title can be null for uncategorized/top-level guides
  */
 export interface SerializableGuideSection {
-  title: string | null;
+  title: string;
   items: SerializableGuideItem[];
 }
 
@@ -1727,6 +1744,9 @@ function getIconName(icon?: TablerIcon): string | undefined {
  * Supports both:
  * - Top-level guides (pages not inside a section) - shown first with null title
  * - Sectioned guides (pages inside a section) - shown with section title
+ *
+ * Note: This function does NOT load frontmatter. Languages and tags should be
+ * loaded separately in server components using loadGuideFrontmatter utility.
  */
 export function getVisibleGuideSections(flags: {
   showDraftGuides: boolean;
@@ -1755,14 +1775,15 @@ export function getVisibleGuideSections(flags: {
         title: item.title,
         description: item.description,
         iconName: getIconName(item.icon),
+        // languages and tags will be populated by loadGuideFrontmatter in server component
       });
     }
   }
 
-  // Add top-level guides as first section (with null title)
+  // Add top-level guides as first section (no title header)
   if (topLevelGuides.length > 0) {
     sections.push({
-      title: null,
+      title: "",
       items: topLevelGuides,
     });
   }
@@ -1781,6 +1802,7 @@ export function getVisibleGuideSections(flags: {
           title: subItem.title,
           description: subItem.description,
           iconName: getIconName(subItem.icon),
+          // languages and tags will be populated by loadGuideFrontmatter in server component
         });
       }
 

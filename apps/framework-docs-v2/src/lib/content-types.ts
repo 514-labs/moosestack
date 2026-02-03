@@ -9,6 +9,10 @@ export interface FrontMatter {
     title: string;
     url: string;
   }>;
+  previewVariant?: string;
+  previewImageIndexFile?: string;
+  languages?: Language[];
+  tags?: string[];
 }
 
 export interface Heading {

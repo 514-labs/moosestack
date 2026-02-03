@@ -1,37 +1,23 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
-import { getEvents } from "moose";
-
-interface RecentEventsQuery {
-  limit?: string;
-}
+import { getEventsQuery, BadRequestError } from "moose";
 
 export default async function clickhouseController(fastify: FastifyInstance) {
-  // GET /api/v1/clickhouse/recent?limit=10
+  // GET /api/v1/clickhouse/events
+  // Query: ?minAmount=100&maxAmount=1000&status=active&limit=20&offset=0
   fastify.get(
-    "/recent",
-    async function (
-      request: FastifyRequest<{ Querystring: RecentEventsQuery }>,
-      reply: FastifyReply,
-    ) {
-      const parsedLimit = Number.parseInt(
-        String(request.query.limit ?? ""),
-        10,
-      );
-      const limit = Math.min(
-        100,
-        Math.max(1, Number.isNaN(parsedLimit) ? 10 : parsedLimit),
-      );
-
+    "/events",
+    async function (request: FastifyRequest, reply: FastifyReply) {
       try {
-        const rows = await getEvents(limit);
-        reply.send({ rows });
-      } catch (error) {
-        request.log.error(
-          { err: error, limit },
-          "Failed to fetch events from ClickHouse",
-        );
-        reply.code(500).send({ error: "Failed to fetch events" });
+        const rows = await getEventsQuery.fromUrl(request.url);
+        reply.send({ rows, count: rows.length });
+      } catch (err: unknown) {
+        if (err instanceof BadRequestError) {
+          return reply.code(400).send(err.toJSON());
+        }
+        const message = err instanceof Error ? err.message : "Unknown error";
+        request.log.error({ err }, "Query failed");
+        reply.code(500).send({ error: message });
       }
     },
   );

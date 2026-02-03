@@ -6,23 +6,20 @@ import {
   discoverStepFiles,
 } from "@/lib/content";
 import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
-import { parseGuideManifest, getCachedGuideSteps } from "@/lib/guide-content";
-import { cleanContent, filterLanguageContent } from "@/lib/llms-generator";
-import { showCopyAsMarkdown, showLinearIntegration } from "@/flags";
+import { parseGuideManifest } from "@/lib/guide-content";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
 import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { GuideStepsWrapper } from "@/components/guides/guide-steps-wrapper";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
-import { CopyPageButton } from "@/components/copy-page-button";
+import { MarkdownMenu } from "@/components/markdown-menu";
 
-// export const dynamic = "force-dynamic";
+// Force static generation despite searchParams access
+export const dynamic = "force-static";
 
 interface PageProps {
   params: Promise<{
     slug: string[];
   }>;
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
 export async function generateStaticParams() {
@@ -80,9 +77,8 @@ export async function generateMetadata({
   }
 }
 
-export default async function GuidePage({ params, searchParams }: PageProps) {
+export default async function GuidePage({ params }: PageProps) {
   const resolvedParams = await params;
-  const resolvedSearchParams = await searchParams;
   const slugArray = resolvedParams.slug;
 
   // Handle empty slug array (shouldn't happen with [...slug] but be safe)
@@ -95,7 +91,7 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
   let content;
   try {
     content = await parseMarkdownContent(slug);
-  } catch (error) {
+  } catch {
     notFound();
   }
 
@@ -106,47 +102,17 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     : undefined,
   );
 
-  const showCopyButton = await showCopyAsMarkdown().catch(() => false);
-  const showLinear = await showLinearIntegration().catch(() => false);
-  const langParam = resolvedSearchParams?.lang;
+  // Copy button is always enabled - it's a client component that works with static pages
+  const showCopyButton = true;
+  const showLinear = false; // Can be enabled via environment variable if needed
 
   // Check if this is a dynamic guide by checking for guide.toml
   const guideManifest = await parseGuideManifest(slug);
 
   if (guideManifest) {
     // DYNAMIC GUIDE LOGIC
-
-    // Flatten search params to Record<string, string> for our cache function
-    const queryParams: Record<string, string> = {};
-    Object.entries(resolvedSearchParams).forEach(([key, value]) => {
-      if (typeof value === "string") {
-        queryParams[key] = value;
-      } else if (Array.isArray(value) && value.length > 0 && value[0]) {
-        // Take first value if array
-        queryParams[key] = value[0];
-      }
-    });
-
-    // Fetch steps here (cached function)
-    const steps = await getCachedGuideSteps(slug, queryParams);
-
-    const allHeadings = [...content.headings];
-    if (steps.length > 0) {
-      // Add steps as headings in TOC, avoiding duplicates
-      const existingIds = new Set(allHeadings.map((h) => h.id));
-      steps.forEach((step) => {
-        const stepId = `step-${step.stepNumber}`;
-        // Only add if ID doesn't already exist
-        if (!existingIds.has(stepId)) {
-          allHeadings.push({
-            level: 2,
-            text: `${step.stepNumber}. ${step.title}`,
-            id: stepId,
-          });
-          existingIds.add(stepId);
-        }
-      });
-    }
+    // Dynamic guides show a form first, steps load based on user selection
+    // No steps are pre-rendered - they load when user makes selections
 
     return (
       <>
@@ -154,14 +120,9 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
           <div className="flex items-center justify-between">
             <DocBreadcrumbs items={breadcrumbs} />
             {showCopyButton && (
-              <CopyPageButton
-                content={
-                  content.isMDX ?
-                    cleanContent(
-                      filterLanguageContent(content.content, langParam),
-                    )
-                  : content.content
-                }
+              <MarkdownMenu
+                content={content.content}
+                isMDX={content.isMDX ?? false}
               />
             )}
           </div>
@@ -173,20 +134,12 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
 
           <DynamicGuideBuilder manifest={guideManifest} />
 
-          {steps.length > 0 ?
-            <GuideStepsWrapper
-              steps={steps.map(({ content, isMDX, ...step }) => step)}
-              stepsWithContent={steps}
-              currentSlug={slug}
-            />
-          : <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
-              No steps found for this configuration. Please try different
-              options.
-            </div>
-          }
+          <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
+            Select options above to see the guide steps.
+          </div>
         </div>
         <TOCNav
-          headings={allHeadings}
+          headings={content.headings}
           helpfulLinks={content.frontMatter.helpfulLinks}
           showLinearIntegration={showLinear}
         />
@@ -194,31 +147,34 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
     );
   }
 
-  // STATIC GUIDE LOGIC (Fallback)
+  // STATIC GUIDE LOGIC
+  // Pre-render ALL steps at build time for full static generation
 
   // Discover step files for this starting point page
   const steps = discoverStepFiles(slug);
 
-  // Load step content server-side and pre-render MDX
-  const stepsWithContent = await Promise.all(
-    steps.map(async (step) => {
-      try {
-        const stepContent = await parseMarkdownContent(step.slug);
-        return {
-          ...step,
-          content: stepContent.content,
-          isMDX: stepContent.isMDX ?? false,
-        };
-      } catch (error) {
-        console.error(`Failed to load step ${step.slug}:`, error);
-        return {
-          ...step,
-          content: null,
-          isMDX: false,
-        };
-      }
-    }),
-  );
+  // Pre-render ALL steps (not just the first one)
+  const allStepContents: Array<{
+    stepNumber: number;
+    title: string;
+    content: React.ReactNode;
+  }> = [];
+
+  for (const step of steps) {
+    try {
+      const stepData = await parseMarkdownContent(step.slug);
+      allStepContents.push({
+        stepNumber: step.stepNumber,
+        title: step.title,
+        content:
+          stepData.isMDX ?
+            <MDXRenderer source={stepData.content} />
+          : <div dangerouslySetInnerHTML={{ __html: stepData.content }} />,
+      });
+    } catch (error) {
+      console.error(`Failed to load step ${step.slug}:`, error);
+    }
+  }
 
   // Combine page headings with step headings for TOC
   const allHeadings = [...content.headings];
@@ -245,14 +201,9 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
         <div className="flex items-center justify-between">
           <DocBreadcrumbs items={breadcrumbs} />
           {showCopyButton && (
-            <CopyPageButton
-              content={
-                content.isMDX ?
-                  cleanContent(
-                    filterLanguageContent(content.content, langParam),
-                  )
-                : content.content
-              }
+            <MarkdownMenu
+              content={content.content}
+              isMDX={content.isMDX ?? false}
             />
           )}
         </div>
@@ -261,15 +212,19 @@ export default async function GuidePage({ params, searchParams }: PageProps) {
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}
         </article>
-        {steps.length > 0 && (
-          <GuideStepsWrapper
-            steps={stepsWithContent.map(
-              ({ content: _, isMDX: __, ...step }) => step,
-            )}
-            stepsWithContent={stepsWithContent}
-            currentSlug={slug}
-          />
-        )}
+        {allStepContents.length > 0 &&
+          allStepContents.map((step) => (
+            <article
+              key={`step-${step.stepNumber}`}
+              id={`step-${step.stepNumber}`}
+              className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 scroll-mt-20"
+            >
+              <h2>
+                {step.stepNumber}. {step.title}
+              </h2>
+              {step.content}
+            </article>
+          ))}
       </div>
       <TOCNav
         headings={allHeadings}

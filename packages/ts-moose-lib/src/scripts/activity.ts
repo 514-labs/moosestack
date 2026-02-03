@@ -3,14 +3,16 @@ import { isCancellation } from "@temporalio/workflow";
 import { Task, Workflow } from "../dmv2";
 import { getWorkflows, getTaskForWorkflow } from "../dmv2/internal";
 import { jsonDateReviver } from "../utilities/json";
+import { setupStructuredConsole } from "../utils/structured-logging";
 
-export interface ScriptExecutionInput {
-  scriptPath: string;
-  inputData?: any;
-}
+// Set up structured console logging for task context
+const taskContextStorage = setupStructuredConsole<{ taskName: string }>(
+  (ctx) => ctx.taskName,
+  "task_name",
+);
 
 export const activities = {
-  async hasDmv2Workflow(name: string): Promise<boolean> {
+  async hasWorkflow(name: string): Promise<boolean> {
     try {
       const workflows = await getWorkflows();
       const hasWorkflow = workflows.has(name);
@@ -22,7 +24,7 @@ export const activities = {
     }
   },
 
-  async getDmv2Workflow(name: string): Promise<Workflow> {
+  async getWorkflowByName(name: string): Promise<Workflow> {
     try {
       logger.info(`Getting workflow ${name}`);
 
@@ -74,7 +76,7 @@ export const activities = {
     }
   },
 
-  async executeDmv2Task(
+  async executeTask(
     workflow: Workflow,
     task: Task<any, any>,
     inputData: any,
@@ -123,14 +125,24 @@ export const activities = {
       try {
         startPeriodicHeartbeat();
 
-        // Race user code against cancellation detection
-        // - context.cancelled Promise rejects when server signals cancellation via heartbeat response
-        // - This allows immediate cancellation detection rather than waiting for user code to finish
-        // - If cancellation happens first, we catch it below and call onCancel cleanup
-        const result = await Promise.race([
-          fullTask.config.run({ state: taskState, input: revivedInputData }),
-          context.cancelled,
-        ]);
+        // Get workflow name for context (matches inframap resource naming)
+        const taskIdentifier = workflow.name;
+
+        // Use AsyncLocalStorage to set context for this task execution
+        // This avoids race conditions from concurrent task executions
+        const result = await taskContextStorage.run(
+          { taskName: taskIdentifier },
+          async () => {
+            // Race user code against cancellation detection
+            // - context.cancelled Promise rejects when server signals cancellation via heartbeat response
+            // - This allows immediate cancellation detection rather than waiting for user code to finish
+            // - If cancellation happens first, we catch it below and call onCancel cleanup
+            return await Promise.race([
+              fullTask.config.run({ state: taskState, input: revivedInputData }),
+              context.cancelled,
+            ]);
+          },
+        );
         return result;
       } catch (error) {
         if (isCancellation(error)) {
@@ -166,6 +178,6 @@ export const activities = {
 // Helper function to create activity for a specific script
 export function createActivityForScript(scriptName: string) {
   return {
-    [scriptName]: activities.executeDmv2Task,
+    [scriptName]: activities.executeTask,
   };
 }

@@ -24,8 +24,7 @@ use super::display::{
 };
 use super::routines::auth::validate_auth_token;
 use super::routines::scripts::{
-    get_workflow_history, run_workflow_and_get_run_ids, temporal_dashboard_url,
-    terminate_all_workflows, terminate_workflow,
+    get_workflow_history, run_workflow_and_get_run_ids, temporal_dashboard_url, terminate_workflow,
 };
 use super::settings::Settings;
 use crate::infrastructure::redis::redis_client::RedisClient;
@@ -67,6 +66,7 @@ use hyper_util::{rt::TokioExecutor, server::conn::auto};
 use rdkafka::error::KafkaError;
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{DeliveryFuture, FutureProducer, FutureRecord, Producer};
+use regex::Regex;
 use reqwest::Client;
 use schema_registry_client::rest::client_config::ClientConfig as SrClientConfig;
 use schema_registry_client::rest::schema_registry_client::Client as SrClient;
@@ -177,6 +177,9 @@ where
 /// format, and data model.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RouteMeta {
+    /// The API name (matches source_primitive.name in infrastructure map)
+    /// Used for structured logging to enable log correlation with infra map
+    pub api_name: String,
     /// The Kafka topic name associated with this route
     pub kafka_topic_name: String,
     /// The data model associated with this route
@@ -467,26 +470,71 @@ fn normalize_consumption_path(path: &str) -> &str {
         .unwrap_or(path)
 }
 
+/// Finds the best matching API name from the consumption_apis set.
+/// Handles versioned paths like `/bar/1` by stripping the version suffix.
+fn find_api_name<'a>(normalized_path: &'a str, consumption_apis: &HashSet<String>) -> &'a str {
+    // First try exact match
+    if consumption_apis.contains(normalized_path) {
+        return normalized_path;
+    }
+
+    // Try stripping version suffix (last segment after '/')
+    // Only strip if the suffix matches a version pattern (e.g., "1", "1.0", "2.0.1")
+    if let Some(pos) = normalized_path.rfind('/') {
+        let base_path = &normalized_path[..pos];
+        let suffix = &normalized_path[pos + 1..];
+
+        // Only strip suffix if it matches version pattern AND base_path exists in APIs
+        if VERSION_PATTERN.is_match(suffix) && consumption_apis.contains(base_path) {
+            return base_path;
+        }
+    }
+
+    // Fallback to normalized path
+    normalized_path
+}
+
+/// Context information for consumption API requests
+struct ConsumptionApiContext {
+    api_name: String,
+    is_known_api: bool,
+    original_path: String,
+}
+
+/// Resolves consumption API context with a single RwLock read.
+/// Returns context for use in the instrumented handler.
+async fn resolve_consumption_context(
+    path: &str,
+    consumption_apis: &RwLock<HashSet<String>>,
+) -> ConsumptionApiContext {
+    let normalized_path = normalize_consumption_path(path);
+    let apis = consumption_apis.read().await;
+    let api_name = find_api_name(normalized_path, &apis).to_string();
+    let is_known_api = apis.contains(normalized_path);
+    ConsumptionApiContext {
+        api_name,
+        is_known_api,
+        original_path: normalized_path.to_string(),
+    }
+}
+
 #[instrument(
     name = "consumption_api_request",
     skip_all,
     fields(
         context = context::RUNTIME,
         resource_type = resource_type::CONSUMPTION_API,
-        resource_name = %normalize_consumption_path(req.uri().path()),
+        resource_name = %api_context.api_name,
     )
 )]
 async fn get_consumption_api_res(
     http_client: Arc<Client>,
     req: Request<hyper::body::Incoming>,
     host: String,
-    consumption_apis: &RwLock<HashSet<String>>,
+    api_context: ConsumptionApiContext,
     is_prod: bool,
     proxy_port: u16,
 ) -> Result<Response<Full<Bytes>>, anyhow::Error> {
-    // Normalize to the API name by removing either prefix for consistent resource naming
-    let normalized_path = normalize_consumption_path(req.uri().path());
-
     // Extract the Authorization header and check the bearer token
     let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
 
@@ -512,27 +560,16 @@ async fn get_consumption_api_res(
     );
 
     debug!("Creating client for route: {:?}", url);
-    {
-        let consumption_apis = consumption_apis.read().await;
 
-        // Use the already normalized path
-        let consumption_name = normalized_path;
-
-        // Allow forwarding even if not an exact match; the proxy layer (runner) will
-        // handle aliasing (unversioned -> sole versioned) or return 404.
-        if !consumption_apis.contains(consumption_name) && !is_prod {
-            use crossterm::{execute, style::Print};
-            let msg = format!(
-                "Exact match for Analytics API {} not found. Looking for fallback API. Known analytics api paths: {}",
-                consumption_name,
-                consumption_apis
-                    .iter()
-                    .map(|p| p.as_str())
-                    .collect::<Vec<&str>>()
-                    .join(", ")
-            );
-            let _ = execute!(std::io::stdout(), Print(msg + "\n"));
-        }
+    // Allow forwarding even if not an exact match; the proxy layer (runner) will
+    // handle aliasing (unversioned -> sole versioned) or return 404.
+    if !api_context.is_known_api && !is_prod {
+        use crossterm::{execute, style::Print};
+        let msg = format!(
+            "Exact match for Analytics API {} not found. Forwarding to proxy.",
+            api_context.original_path,
+        );
+        let _ = execute!(std::io::stdout(), Print(msg + "\n"));
     }
 
     let mut client_req = reqwest::Request::new(req.method().clone(), url.parse()?);
@@ -655,7 +692,6 @@ impl Service<Request<Incoming>> for RouteService {
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
         Box::pin(router(
-            self.current_version.clone(),
             self.path_prefix.clone(),
             self.consumption_apis,
             self.web_apps,
@@ -1442,12 +1478,14 @@ fn safe_body_summary(body: &[u8]) -> String {
     fields(
         context = context::RUNTIME,
         resource_type = resource_type::INGEST_API,
-        resource_name = %topic_name,
+        // Use api_name for log correlation with infrastructure map (source_primitive.name)
+        resource_name = %api_name,
     )
 )]
 #[allow(clippy::too_many_arguments)]
 async fn handle_json_array_body(
     configured_producer: &ConfiguredProducer,
+    api_name: &str,
     topic_name: &str,
     data_model: &DataModel,
     dead_letter_queue: &Option<&str>,
@@ -1643,6 +1681,7 @@ fn get_env_var(s: &str) -> Option<String> {
 lazy_static! {
     static ref MOOSE_CONSUMPTION_API_KEY: Option<String> = get_env_var("MOOSE_CONSUMPTION_API_KEY");
     static ref MOOSE_INGEST_API_KEY: Option<String> = get_env_var("MOOSE_INGEST_API_KEY");
+    static ref VERSION_PATTERN: Regex = Regex::new(r"^\d+(\.\d+)*$").unwrap();
 }
 
 async fn check_authorization(
@@ -1714,6 +1753,7 @@ async fn ingest_route(
     match matching_route {
         Some((_, route_meta)) => Ok(handle_json_array_body(
             &configured_producer,
+            &route_meta.api_name,
             &route_meta.kafka_topic_name,
             &route_meta.data_model,
             &route_meta.dead_letter_queue.as_deref(),
@@ -1756,7 +1796,6 @@ fn get_path_without_prefix(path: PathBuf, path_prefix: Option<String>) -> PathBu
 
 #[allow(clippy::too_many_arguments)]
 async fn router(
-    current_version: String,
     path_prefix: Option<String>,
     consumption_apis: &RwLock<HashSet<String>>,
     web_apps: &RwLock<HashSet<String>>,
@@ -1801,8 +1840,8 @@ async fn router(
             if segments.len() >= 2 && segments[0] == "ingest" =>
         {
             // For nested paths, we need to handle version resolution differently
-            if project.features.data_model_v2 && segments.len() == 2 {
-                // For v2 with simple path (e.g., /ingest/model_name), find the latest version
+            if segments.len() == 2 {
+                // For simple path (e.g., /ingest/model_name), find the latest version
                 let route_table_read = route_table.read().await;
                 let base_path = route.to_str().unwrap();
                 let mut latest_version: Option<&Version> = None;
@@ -1849,19 +1888,6 @@ async fn router(
                         .await
                     }
                 }
-            } else if !project.features.data_model_v2 && segments.len() == 2 {
-                // For v1 with simple path, append current version
-                ingest_route(
-                    req,
-                    route.join(&current_version),
-                    configured_producer,
-                    route_table,
-                    is_prod,
-                    jwt_config,
-                    project.http_server_config.max_request_body_size,
-                    project.log_payloads,
-                )
-                .await
             } else {
                 // For nested paths or paths with explicit version, use as-is
                 ingest_route(
@@ -1911,11 +1937,14 @@ async fn router(
             if route_segments.len() >= 2
                 && (route_segments[0] == "api" || route_segments[0] == "consumption") =>
         {
+            // Resolve BEFORE instrumented function for OTLP compatibility
+            let api_context = resolve_consumption_context(req.uri().path(), consumption_apis).await;
+
             match get_consumption_api_res(
                 http_client,
                 req,
                 host,
-                consumption_apis,
+                api_context,
                 is_prod,
                 project.http_server_config.proxy_port,
             )
@@ -2430,6 +2459,11 @@ impl Webserver {
                                         route_table.insert(
                                             api_endpoint.path.clone(),
                                             RouteMeta {
+                                                // Use source_primitive.name for log correlation with infra map
+                                                api_name: api_endpoint
+                                                    .source_primitive
+                                                    .name
+                                                    .clone(),
                                                 data_model: *data_model.unwrap(),
                                                 dead_letter_queue,
                                                 kafka_topic_name: kafka_topic.name,
@@ -2497,6 +2531,8 @@ impl Webserver {
                                         route_table.insert(
                                             after.path.clone(),
                                             RouteMeta {
+                                                // Use source_primitive.name for log correlation with infra map
+                                                api_name: after.source_primitive.name.clone(),
                                                 data_model: *data_model.as_ref().unwrap().clone(),
                                                 dead_letter_queue: dead_letter_queue.clone(),
                                                 kafka_topic_name: kafka_topic.name,
@@ -2963,38 +2999,10 @@ async fn shutdown(
     ))
     .await;
 
-    // Step 2: Shutdown workflows (if enabled)
-    // Note: This only runs in development (!project.is_production) because:
-    // - In dev: We want a clean slate - terminate workflow executions so they don't resume on next start
-    // - In production: Workers are already stopped (Step 1), but workflow executions should continue
-    //   running so other workers or future restarts can pick them up. Terminating production workflows
-    //   should be an explicit operational decision, not automatic on every deployment.
-    if !project.is_production && project.features.workflows {
-        let termination_result = with_timing_async("Stop Workflows", async {
-            with_spinner_completion_async(
-                "Stopping workflows",
-                "Workflows stopped",
-                async { terminate_all_workflows(project).await },
-                !SHOW_TIMING.load(Ordering::Relaxed),
-            )
-            .await
-        })
-        .await;
-
-        match termination_result {
-            Ok(_) => info!("Workflow termination completed successfully"),
-            Err(e) => {
-                error!("Failed to stop workflows: {:?}", e);
-                super::display::show_message_wrapper(
-                    MessageType::Error,
-                    Message {
-                        action: "Shutdown".to_string(),
-                        details: "Failed to stop workflows".to_string(),
-                    },
-                );
-            }
-        }
-    }
+    // Step 2: Workflows survive shutdowns
+    // Workers are stopped (Step 1), but its state is persisted in temporal in both dev and production.
+    // Workers can continue after it's started again.
+    // To remove a workflow, delete it from code - the diff will terminate it on next reload.
 
     // Step 3: Drop producer and wait for Kafka clients to fully destroy
     // This must happen BEFORE shutting down containers to avoid connection errors
@@ -3286,10 +3294,16 @@ async fn store_updated_inframap(
     infra_map: &InfrastructureMap,
     redis_client: Arc<RedisClient>,
 ) -> Result<(), IntegrationError> {
+    use crate::utilities::constants::CLI_VERSION;
+
     debug!("Storing updated inframap");
 
+    // Set moose_version before storing (consistent with StateStorage implementations)
+    let mut versioned_map = infra_map.clone();
+    versioned_map.moose_version = Some(CLI_VERSION.to_string());
+
     // Store in Redis
-    if let Err(e) = infra_map.store_in_redis(&redis_client).await {
+    if let Err(e) = versioned_map.store_in_redis(&redis_client).await {
         debug!("Failed to store inframap in Redis: {}", e);
         return Err(IntegrationError::InternalError(format!(
             "Failed to store updated inframap in Redis: {e}"
@@ -3630,6 +3644,19 @@ async fn admin_plan_route(
         }
     };
 
+    // Normalize SQL in both maps before diffing to handle ClickHouse reformatting
+    let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
+    let current_normalized = crate::framework::core::plan::normalize_infra_map_for_comparison(
+        &current_infra_map,
+        &olap_client,
+    )
+    .await;
+    let target_normalized = crate::framework::core::plan::normalize_infra_map_for_comparison(
+        &plan_request.infra_map,
+        &olap_client,
+    )
+    .await;
+
     // Calculate the changes between the submitted infrastructure map and the current one
     // Use ClickHouse-specific strategy for table diffing
     let clickhouse_strategy = clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
@@ -3638,8 +3665,8 @@ async fn admin_plan_route(
     } else {
         &[]
     };
-    let changes = current_infra_map.diff_with_table_strategy(
-        &plan_request.infra_map,
+    let changes = current_normalized.diff_with_table_strategy(
+        &target_normalized,
         &clickhouse_strategy,
         true,
         project.is_production,
@@ -3937,5 +3964,80 @@ mod tests {
 
         let deserialized_response = deserialized.unwrap();
         assert_eq!(deserialized_response.status, "success");
+    }
+
+    #[test]
+    fn test_find_api_name_exact_match() {
+        let mut apis = HashSet::new();
+        apis.insert("foo/bar".to_string());
+        apis.insert("baz".to_string());
+
+        // Exact matches should return as-is
+        assert_eq!(find_api_name("foo/bar", &apis), "foo/bar");
+        assert_eq!(find_api_name("baz", &apis), "baz");
+    }
+
+    #[test]
+    fn test_find_api_name_strips_numeric_version() {
+        let mut apis = HashSet::new();
+        apis.insert("bar".to_string());
+        apis.insert("foo/api".to_string());
+
+        // Single numeric version should be stripped
+        assert_eq!(find_api_name("bar/1", &apis), "bar");
+        assert_eq!(find_api_name("bar/42", &apis), "bar");
+        assert_eq!(find_api_name("foo/api/3", &apis), "foo/api");
+    }
+
+    #[test]
+    fn test_find_api_name_strips_semver_version() {
+        let mut apis = HashSet::new();
+        apis.insert("api".to_string());
+        apis.insert("nested/route".to_string());
+
+        // Semver-style versions should be stripped
+        assert_eq!(find_api_name("api/1.0", &apis), "api");
+        assert_eq!(find_api_name("api/2.0.1", &apis), "api");
+        assert_eq!(find_api_name("api/1.2.3.4", &apis), "api");
+        assert_eq!(find_api_name("nested/route/0.1.0", &apis), "nested/route");
+    }
+
+    #[test]
+    fn test_find_api_name_does_not_strip_non_version_suffix() {
+        let mut apis = HashSet::new();
+        apis.insert("foo".to_string());
+        apis.insert("foo/bar".to_string());
+
+        // Non-version suffixes should NOT be stripped
+        assert_eq!(find_api_name("foo/bar/baz", &apis), "foo/bar/baz");
+        assert_eq!(find_api_name("foo/nested", &apis), "foo/nested");
+        assert_eq!(find_api_name("foo/v1", &apis), "foo/v1");
+        assert_eq!(find_api_name("foo/abc123", &apis), "foo/abc123");
+        assert_eq!(find_api_name("foo/1abc", &apis), "foo/1abc");
+    }
+
+    #[test]
+    fn test_find_api_name_base_path_not_in_apis() {
+        let mut apis = HashSet::new();
+        apis.insert("other".to_string());
+
+        // Even with version suffix, if base_path not in APIs, return full path
+        assert_eq!(find_api_name("unknown/1", &apis), "unknown/1");
+        assert_eq!(find_api_name("unknown/1.0.0", &apis), "unknown/1.0.0");
+    }
+
+    #[test]
+    fn test_find_api_name_edge_cases() {
+        let mut apis = HashSet::new();
+        apis.insert("api".to_string());
+
+        // No slash - return as-is (unknown API)
+        assert_eq!(find_api_name("noslash", &apis), "noslash");
+
+        // Empty suffix after slash
+        assert_eq!(find_api_name("api/", &apis), "api/");
+
+        // Leading slash edge case
+        assert_eq!(find_api_name("/api/1", &apis), "/api/1");
     }
 }

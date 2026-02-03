@@ -34,6 +34,9 @@ export const TIMEOUTS = {
   // Brief cleanup wait (1 second)
   BRIEF_CLEANUP_WAIT_MS: 1_000,
 
+  // Service settle time after operations (1 second - allows services to stabilize)
+  SERVICE_SETTLE_MS: 1_000,
+
   // Schema validation timeout (30 seconds)
   SCHEMA_VALIDATION_MS: 30_000,
 
@@ -92,6 +95,7 @@ export const CLICKHOUSE_CONFIG = {
 // Server configuration
 export const SERVER_CONFIG = {
   url: "http://localhost:4000",
+  managementUrl: "http://localhost:5001",
   startupMessage:
     "Your local development server is running at: http://localhost:4000/ingest",
 } as const;

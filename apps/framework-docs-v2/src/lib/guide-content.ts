@@ -8,8 +8,7 @@ import {
   type GuideStep,
 } from "./guide-types";
 import { parseMarkdownContent } from "./content";
-
-const CONTENT_ROOT = path.join(process.cwd(), "content");
+import { CONTENT_ROOT } from "./includes";
 
 /**
  * Parse the guide.toml manifest for a given guide slug
@@ -42,9 +41,6 @@ export async function getCachedGuideSteps(
   slug: string,
   params: Record<string, string>,
 ): Promise<GuideStep[]> {
-  "use cache";
-  cacheLife("max");
-
   const manifest = await parseGuideManifest(slug);
   if (!manifest) {
     return [];
