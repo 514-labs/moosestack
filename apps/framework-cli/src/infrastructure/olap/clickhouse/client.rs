@@ -11,6 +11,7 @@ use tokio::time::{sleep, Duration};
 use tracing::debug;
 
 use super::config::ClickHouseConfig;
+use super::errors::ClickhouseError;
 use super::model::{wrap_and_join_column_names, ClickHouseRecord};
 
 use tracing::error;
@@ -272,19 +273,28 @@ const DDL_COMMANDS: &[&str] = &["INSERT", "CREATE", "ALTER", "DROP", "TRUNCATE"]
 /// - Not start with a digit
 ///
 /// This prevents SQL injection attacks by rejecting malicious input.
-fn validate_identifier(name: &str, identifier_type: &str) -> anyhow::Result<()> {
+fn validate_identifier(name: &str, identifier_type: &str) -> Result<(), ClickhouseError> {
     if name.is_empty() {
-        anyhow::bail!("{} cannot be empty", identifier_type);
+        return Err(ClickhouseError::InvalidIdentifier {
+            identifier_type: identifier_type.to_string(),
+            name: name.to_string(),
+            reason: "cannot be empty".to_string(),
+        });
     }
     if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        anyhow::bail!(
-            "{} '{}' contains invalid characters (only alphanumeric and underscore allowed)",
-            identifier_type,
-            name
-        );
+        return Err(ClickhouseError::InvalidIdentifier {
+            identifier_type: identifier_type.to_string(),
+            name: name.to_string(),
+            reason: "contains invalid characters (only alphanumeric and underscore allowed)"
+                .to_string(),
+        });
     }
     if name.chars().next().unwrap().is_numeric() {
-        anyhow::bail!("{} '{}' cannot start with a digit", identifier_type, name);
+        return Err(ClickhouseError::InvalidIdentifier {
+            identifier_type: identifier_type.to_string(),
+            name: name.to_string(),
+            reason: "cannot start with a digit".to_string(),
+        });
     }
     Ok(())
 }
@@ -318,7 +328,7 @@ fn build_insert_query(database: &str, table_name: &str, columns: &[String]) -> S
 ///
 /// # Errors
 /// Returns an error if database or table_name contains invalid characters
-fn build_exists_table_query(database: &str, table_name: &str) -> anyhow::Result<String> {
+fn build_exists_table_query(database: &str, table_name: &str) -> Result<String, ClickhouseError> {
     validate_identifier(database, "Database name")?;
     validate_identifier(table_name, "Table name")?;
     Ok(format!("EXISTS TABLE \"{}\".\"{}\"", database, table_name))
@@ -335,7 +345,7 @@ fn build_exists_table_query(database: &str, table_name: &str) -> anyhow::Result<
 ///
 /// # Errors
 /// Returns an error if database or table_name contains invalid characters
-fn build_drop_table_query(database: &str, table_name: &str) -> anyhow::Result<String> {
+fn build_drop_table_query(database: &str, table_name: &str) -> Result<String, ClickhouseError> {
     validate_identifier(database, "Database name")?;
     validate_identifier(table_name, "Table name")?;
     Ok(format!(

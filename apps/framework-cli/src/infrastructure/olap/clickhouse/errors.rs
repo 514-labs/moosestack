@@ -10,5 +10,11 @@ pub enum ClickhouseError {
     InvalidParameters {
         message: String,
     },
+    #[error("Clickhouse - Invalid {identifier_type}: '{name}' - {reason}")]
+    InvalidIdentifier {
+        identifier_type: String,
+        name: String,
+        reason: String,
+    },
     QueryRender(#[from] handlebars::RenderError),
 }
