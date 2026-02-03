@@ -5,43 +5,45 @@
 // It registers ts-node to be able to interpret user code.
 
 import { register } from "ts-node";
+import {
+  MOOSE_COMPILER_PLUGINS,
+  COMMANDS_REQUIRING_PLUGINS,
+  shouldUseCompiled,
+} from "./compiler-config";
+
+// Determine if we should use compiled code (with fallback check).
+// If MOOSE_USE_COMPILED=true but compiled artifacts don't exist,
+// this will return false and we'll fall back to ts-node.
+const useCompiled = shouldUseCompiled();
 
 // We register ts-node to be able to interpret TS user code.
-if (
-  process.argv[2] == "consumption-apis" ||
-  process.argv[2] == "consumption-type-serializer" ||
-  process.argv[2] == "dmv2-serializer" ||
-  // Streaming functions for dmv2 need to load moose internals
-  process.argv[2] == "streaming-functions" ||
-  process.argv[2] == "scripts"
-) {
-  register({
-    require: ["tsconfig-paths/register"],
-    esm: true,
-    experimentalTsImportSpecifiers: true,
-    compiler: "ts-patch/compiler",
-    compilerOptions: {
-      plugins: [
-        {
-          transform: `./node_modules/@514labs/moose-lib/dist/compilerPlugin.js`,
-          transformProgram: true,
-        },
-        {
-          transform: "typia/lib/transform",
-        },
-      ],
-      experimentalDecorators: true,
-    },
-  });
-} else {
-  register({
-    esm: true,
-    experimentalTsImportSpecifiers: true,
-  });
+// Skip registration if using pre-compiled mode.
+if (!useCompiled) {
+  const command = process.argv[2];
+  const needsPlugins = (
+    COMMANDS_REQUIRING_PLUGINS as readonly string[]
+  ).includes(command);
+
+  if (needsPlugins) {
+    register({
+      require: ["tsconfig-paths/register"],
+      esm: true,
+      experimentalTsImportSpecifiers: true,
+      compiler: "ts-patch/compiler",
+      compilerOptions: {
+        plugins: [...MOOSE_COMPILER_PLUGINS],
+        experimentalDecorators: true,
+      },
+    });
+  } else {
+    register({
+      esm: true,
+      experimentalTsImportSpecifiers: true,
+    });
+  }
 }
 
 import { dumpMooseInternal } from "./dmv2/internal";
-import { runBlocks } from "./blocks/runner";
 import { runApis } from "./consumption-apis/runner";
 import { runStreamingFunctions } from "./streaming-functions/runner";
 import { runExportSerializer } from "./moduleExportSerializer";
@@ -64,56 +66,21 @@ program
 program
   .command("dmv2-serializer")
   .description("Load DMv2 index")
-  .action(() => {
-    dumpMooseInternal();
+  .action(async () => {
+    await dumpMooseInternal();
   });
 
 program
   .command("export-serializer")
   .description("Run export serializer")
   .argument("<target-model>", "Target model to serialize")
-  .action((targetModel) => {
-    runExportSerializer(targetModel);
+  .action(async (targetModel) => {
+    await runExportSerializer(targetModel);
   });
-
-program
-  .command("blocks")
-  .description("Run blocks")
-  .argument("<blocks-dir>", "Directory containing blocks")
-  .argument("<clickhouse-db>", "Clickhouse database name")
-  .argument("<clickhouse-host>", "Clickhouse host")
-  .argument("<clickhouse-port>", "Clickhouse port")
-  .argument("<clickhouse-username>", "Clickhouse username")
-  .argument("<clickhouse-password>", "Clickhouse password")
-  .option("--clickhouse-use-ssl", "Use SSL for Clickhouse connection", false)
-  .action(
-    (
-      blocksDir,
-      clickhouseDb,
-      clickhouseHost,
-      clickhousePort,
-      clickhouseUsername,
-      clickhousePassword,
-      options,
-    ) => {
-      runBlocks({
-        blocksDir,
-        clickhouseConfig: {
-          database: clickhouseDb,
-          host: clickhouseHost,
-          port: clickhousePort,
-          username: clickhouseUsername,
-          password: clickhousePassword,
-          useSSL: options.clickhouseUseSsl,
-        },
-      });
-    },
-  );
 
 program
   .command("consumption-apis")
   .description("Run consumption APIs")
-  .argument("<consumption-dir>", "Directory containing consumption APIs")
   .argument("<clickhouse-db>", "Clickhouse database name")
   .argument("<clickhouse-host>", "Clickhouse host")
   .argument("<clickhouse-port>", "Clickhouse port")
@@ -133,7 +100,6 @@ program
   .option("--client-cert <path>", "Path to client certificate")
   .option("--client-key <path>", "Path to client key")
   .option("--api-key <key>", "API key for authentication")
-  .option("--is-dmv2", "Whether this is a DMv2 consumption", false)
   .option("--proxy-port <port>", "Port to run the proxy server on", parseInt)
   .option(
     "--worker-count <count>",
@@ -142,7 +108,6 @@ program
   )
   .action(
     (
-      apisDir,
       clickhouseDb,
       clickhouseHost,
       clickhousePort,
@@ -151,7 +116,6 @@ program
       options,
     ) => {
       runApis({
-        apisDir,
         clickhouseConfig: {
           database: clickhouseDb,
           host: clickhouseHost,
@@ -173,7 +137,6 @@ program
           apiKey: options.apiKey,
         },
         enforceAuth: options.enforceAuth,
-        isDmv2: options.isDmv2,
         proxyPort: options.proxyPort,
         workerCount: options.workerCount,
       });
@@ -195,7 +158,6 @@ program
   .option("--sasl-password <password>", "SASL password")
   .option("--sasl-mechanism <mechanism>", "SASL mechanism")
   .option("--security-protocol <protocol>", "Security protocol")
-  .option("--is-dmv2", "Whether this is a DMv2 function", false)
   .option("--log-payloads", "Log payloads for debugging", false)
   .action(
     (sourceTopic, functionFilePath, broker, maxSubscriberCount, options) => {
@@ -206,7 +168,6 @@ program
         functionFilePath,
         broker,
         maxSubscriberCount: parseInt(maxSubscriberCount),
-        isDmv2: options.isDmv2,
         logPayloads: options.logPayloads,
         saslUsername: options.saslUsername,
         saslPassword: options.saslPassword,
@@ -221,8 +182,8 @@ program
   .command("consumption-type-serializer")
   .description("Run consumption type serializer")
   .argument("<target-model>", "Target model to serialize")
-  .action((targetModel) => {
-    runApiTypeSerializer(targetModel);
+  .action(async (targetModel) => {
+    await runApiTypeSerializer(targetModel);
   });
 
 program

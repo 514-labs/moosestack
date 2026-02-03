@@ -124,18 +124,11 @@ apps/framework-docs-v2/
 - Tracks: page views, navigation, code copies, search queries
 - Debug mode in development
 
-**Custom Metrics SDK Wrapper:**
-- Wraps PostHog with custom event types
-- Sends to internal endpoint: `https://moosefood.514.dev/ingest/DocsEvent`
-- Tracking events:
-  - Page views with language context
-  - Documentation snippet copies
-  - Search queries and result clicks
-  - Navigation patterns
-  - Session management
-
-**Event Types:**
-- `DocsEvent` interface with eventType, language, path, metadata
+**Tracking Events:**
+- Page views with language context
+- Documentation snippet copies
+- Search queries and result clicks
+- Navigation patterns
 - Auto-tracks code copying from code blocks
 - Non-blocking analytics (won't disrupt UX on failure)
 

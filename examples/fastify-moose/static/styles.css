@@ -1,0 +1,180 @@
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --border: #2a2a3a;
+  --text: #e4e4e7;
+  --muted: #71717a;
+  --accent: #22d3ee;
+  --accent-dim: #0891b2;
+  --success: #4ade80;
+  --error: #f87171;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 2rem;
+  min-height: 100vh;
+  background-image: radial-gradient(
+      ellipse at top,
+      rgba(34, 211, 238, 0.08) 0%,
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse at bottom right,
+      rgba(139, 92, 246, 0.05) 0%,
+      transparent 40%
+    );
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  background: linear-gradient(135deg, var(--accent), #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 0.875rem;
+  margin-bottom: 2rem;
+}
+
+h2 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 2rem 0 1rem 0;
+  font-weight: 500;
+}
+
+.queries {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.query-btn {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text);
+}
+
+.query-btn:hover {
+  border-color: var(--accent-dim);
+  background: rgba(34, 211, 238, 0.05);
+}
+
+.query-btn.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.query-method {
+  font-size: 0.625rem;
+  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+  background: var(--accent-dim);
+  color: var(--bg);
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.query-path {
+  font-size: 0.875rem;
+  flex: 1;
+}
+
+.query-desc {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.result-panel {
+  margin-top: 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.result-url {
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.result-status {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.result-status.success {
+  background: rgba(74, 222, 128, 0.15);
+  color: var(--success);
+}
+
+.result-status.error {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--error);
+}
+
+.result-body {
+  padding: 1rem;
+  max-height: 400px;
+  overflow: auto;
+}
+
+.result-body pre {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.loading {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+

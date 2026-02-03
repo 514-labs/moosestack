@@ -20,6 +20,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
+import * as yaml from "js-yaml";
 
 // Import constants and utilities
 import {
@@ -1195,6 +1196,37 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         }
       });
       if (config.isTestsVariant) {
+        it("should verify sql helpers (join, raw, append) work correctly (TS)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // The sql-helpers-test API queries BarAggregatedMV which was populated by the generator workflow
+          // in the previous test. It exercises sql.join(), sql.raw(), and Sql.append() from moose-lib.
+          await verifyConsumptionApi("sql-helpers-test?minDay=1&maxDay=31", [
+            {
+              // The API selects dayOfMonth and totalRows from BarAggregated
+              dayOfMonth: "placeholder",
+              totalRows: "placeholder",
+            },
+          ]);
+
+          // Also test with includeTimestamp=true to verify sql.raw("NOW()") works
+          await withRetries(async () => {
+            const response = await fetch(
+              `${SERVER_CONFIG.url}/api/sql-helpers-test?minDay=1&maxDay=31&includeTimestamp=true`,
+            );
+            if (!response.ok) {
+              const text = await response.text();
+              throw new Error(
+                `sql-helpers-test with includeTimestamp failed: ${response.status}: ${text}`,
+              );
+            }
+            const json = (await response.json()) as any[];
+            expect(json).to.be.an("array").that.is.not.empty;
+            // When includeTimestamp=true, the response should include query_time from NOW()
+            expect(json[0]).to.have.property("query_time");
+          });
+        });
+
         it("should ingest geometry types into a single GeoTypes table (TS)", async function () {
           const id = randomUUID();
           await withRetries(
@@ -1760,6 +1792,66 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         });
 
+        // OpenAPI schema sanity check for TypeScript
+        it("should generate OpenAPI schema with DateTime types for ingest APIs", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const response = await fetch(
+            `${SERVER_CONFIG.managementUrl}/openapi.yaml`,
+          );
+          expect(response.ok).to.be.true;
+
+          const yamlText = await response.text();
+          const spec = yaml.load(yamlText) as any;
+
+          // Basic structure check
+          expect(spec.openapi).to.exist;
+          expect(spec.paths).to.exist;
+          expect(spec.paths["/ingest/DateTimePrecisionInput"]).to.exist;
+          expect(spec.components?.schemas).to.exist;
+
+          // Verify Date schema is properly formatted as string with date-time format
+          // NOT as an empty object (which was the old buggy behavior)
+          const dateSchema = spec.components.schemas.Date;
+          expect(dateSchema).to.exist;
+          expect(dateSchema.type).to.equal("string");
+          expect(dateSchema.format).to.equal("date-time");
+
+          // Verify DateTimePrecisionTestData schema has proper DateTime field formats
+          const dtSchema = spec.components.schemas.DateTimePrecisionTestData;
+          expect(dtSchema).to.exist;
+          expect(dtSchema.type).to.equal("object");
+
+          const dateTimeFields = [
+            "createdAt",
+            "timestampMs",
+            "timestampUsDate",
+            "timestampUsString",
+            "timestampNs",
+            "createdAtString",
+          ];
+
+          for (const field of dateTimeFields) {
+            const fieldSchema = dtSchema.properties?.[field];
+            expect(
+              fieldSchema,
+              `Field '${field}' should exist in DateTimePrecisionTestData`,
+            ).to.exist;
+            expect(
+              fieldSchema.type,
+              `Field '${field}' should have type: string`,
+            ).to.equal("string");
+            expect(
+              fieldSchema.format,
+              `Field '${field}' should have format: date-time`,
+            ).to.equal("date-time");
+          }
+
+          testLogger.info(
+            "✅ OpenAPI schema sanity check passed - all DateTime fields correctly formatted as string/date-time",
+          );
+        });
+
         // DateTime precision test for TypeScript
         it("should preserve microsecond precision with DateTime64String types via streaming transform", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
@@ -2263,6 +2355,67 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           );
         });
 
+        // OpenAPI schema sanity check for Python
+        it("should generate OpenAPI schema with DateTime types for ingest APIs (PY)", async function () {
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          const response = await fetch(
+            `${SERVER_CONFIG.managementUrl}/openapi.yaml`,
+          );
+          expect(response.ok).to.be.true;
+
+          const yamlText = await response.text();
+          const spec = yaml.load(yamlText) as any;
+
+          // Basic structure check
+          expect(spec.openapi).to.exist;
+          expect(spec.paths).to.exist;
+          expect(spec.paths["/ingest/DateTimePrecisionInput"]).to.exist;
+
+          // Python inlines the schema in the path definition (Pydantic generates inline schemas)
+          const pathSchema =
+            spec.paths["/ingest/DateTimePrecisionInput"].post.requestBody
+              .content["application/json"].schema;
+          expect(pathSchema.title).to.equal("DateTimePrecisionTestData");
+          expect(pathSchema.type).to.equal("object");
+
+          // Verify each DateTime field has format: date-time
+          // Python uses snake_case field names
+          const dateTimeFields = [
+            "created_at",
+            "timestamp_ms",
+            "timestamp_us",
+            "timestamp_ns",
+          ];
+
+          for (const field of dateTimeFields) {
+            const fieldSchema = pathSchema.properties?.[field];
+            expect(
+              fieldSchema,
+              `Field '${field}' should exist in DateTimePrecisionTestData`,
+            ).to.exist;
+            expect(
+              fieldSchema.type,
+              `Field '${field}' should have type: string`,
+            ).to.equal("string");
+            expect(
+              fieldSchema.format,
+              `Field '${field}' should have format: date-time`,
+            ).to.equal("date-time");
+          }
+
+          // Verify no internal "tagging" properties are leaking into the schema
+          if (yamlText.includes("_clickhouse_")) {
+            throw new Error(
+              "Found _clickhouse_ internal properties leaking into OpenAPI schema (Python)",
+            );
+          }
+
+          testLogger.info(
+            "✅ OpenAPI schema sanity check passed (Python) - all DateTime fields correctly formatted",
+          );
+        });
+
         // DateTime precision test for Python
         it("should preserve microsecond precision with clickhouse_datetime64 annotations via streaming transform (PY)", async function () {
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
@@ -2293,6 +2446,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
 
           // Ingest to DateTimePrecisionInput (which has a transform to Output)
           const response = await fetch(
+            // somehow we accidentally test for case insensitivity in the CLI
             `${SERVER_CONFIG.url}/ingest/datetimeprecisioninput`,
             {
               method: "POST",

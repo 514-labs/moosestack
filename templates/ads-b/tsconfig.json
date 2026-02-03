@@ -8,8 +8,7 @@
     },
     "plugins": [
       {
-        "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js",
-        "transformProgram": true
+        "transform": "./node_modules/@514labs/moose-lib/dist/compilerPlugin.js"
       },
       {
         "transform": "typia/lib/transform"

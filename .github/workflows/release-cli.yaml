@@ -129,7 +129,7 @@ jobs:
     if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
     needs:
       - version
-      - cleanup-pypi
+      # - cleanup-pypi  # Commented out: job is disabled, skipped jobs cause dependents to skip
     # Add explicit permissions
     permissions:
       contents: read
@@ -537,7 +537,8 @@ jobs:
   release-python:
     name: Release Python Wheels
     runs-on: ubuntu-latest
-    needs: [version, build-and-publish-binaries, cleanup-pypi]
+    # cleanup-pypi commented out: job is disabled, skipped jobs cause dependents to skip
+    needs: [version, build-and-publish-binaries]  # cleanup-pypi
     if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
     # Add explicit permissions
     permissions:
@@ -694,8 +695,15 @@ jobs:
   cleanup-pypi:
     name: Cleanup PyPI
     runs-on: ubuntu-latest
-    # Only run for release builds (main branch), not CI builds
-    # if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
+    # DISABLED: PyPI no longer supports automated deletion of releases.
+    # The pypi-cleanup tool uses web scraping which breaks due to:
+    # 1. PyPI sends device confirmation emails for each new IP (GitHub Actions runners change IPs)
+    # 2. PyPI has no public API for deleting releases
+    # Open feature requests to watch:
+    # - https://github.com/pypi/warehouse/issues/12810 (API to delete old .dev wheels)
+    # - https://github.com/pypi/warehouse/issues/11397 (Automatically delete old releases)
+    # Re-enable this job if/when PyPI adds a proper deletion API.
+    if: false
     continue-on-error: true
     needs:
       - version

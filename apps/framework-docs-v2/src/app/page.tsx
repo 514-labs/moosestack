@@ -13,17 +13,14 @@ import {
   IconSparkles,
   IconCode,
 } from "@tabler/icons-react";
-import { showHostingSection, showAiSection } from "@/flags";
 import { cn } from "@/lib/utils";
+import { getNavVariant } from "@/lib/nav-variant";
 
-// export const dynamic = "force-dynamic";
-
-export default async function HomePage() {
-  // Evaluate feature flags
-  const [showHosting, showAi] = await Promise.all([
-    showHostingSection().catch(() => false),
-    showAiSection().catch(() => false),
-  ]);
+export default function HomePage() {
+  // Use build-time variant (same approach as guides page)
+  const variant = getNavVariant();
+  const showHosting = variant !== "base";
+  const showAi = variant !== "base";
 
   const sections = [
     {

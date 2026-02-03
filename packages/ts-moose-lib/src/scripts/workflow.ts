@@ -18,7 +18,7 @@ interface WorkflowRequest {
   continue_from_task?: string; // Only for continue_as_new
 }
 
-const { getDmv2Workflow, getTaskForWorkflow } = proxyActivities({
+const { getWorkflowByName, getTaskForWorkflow } = proxyActivities({
   startToCloseTimeout: "1 minutes",
   retry: {
     maximumAttempts: 1,
@@ -33,8 +33,6 @@ export async function ScriptWorkflow(
     completedSteps: [],
     currentStep: null,
     failedStep: null,
-    scriptPath: null,
-    inputData: null,
   };
 
   const results: any[] = [];
@@ -47,12 +45,12 @@ export async function ScriptWorkflow(
 
   try {
     currentData = JSON.parse(mooseJsonEncode(currentData));
-    const workflow = await getDmv2Workflow(workflowName);
+    const workflow = await getWorkflowByName(workflowName);
     const task =
       request.execution_mode === "start" ?
         workflow.config.startingTask
       : await getTaskForWorkflow(workflowName, request.continue_from_task!);
-    const result = await handleDmv2Task(workflow, task, currentData);
+    const result = await handleTask(workflow, task, currentData);
     results.push(...result);
 
     return results;
@@ -62,7 +60,7 @@ export async function ScriptWorkflow(
   }
 }
 
-async function handleDmv2Task(
+async function handleTask(
   workflow: Workflow,
   task: Task<any, any>,
   inputData: any,
@@ -80,6 +78,9 @@ async function handleDmv2Task(
   }
 
   const taskRetries = task.config.retries ?? 3;
+  // Temporal's maximumAttempts = total attempts (initial + retries)
+  // User-facing "retries" = number of retries after initial failure
+  const maxAttempts = taskRetries + 1;
 
   const timeoutMessage =
     taskTimeout ? `with timeout ${taskTimeout}` : "with no timeout (unlimited)";
@@ -90,7 +91,7 @@ async function handleDmv2Task(
   const activityOptions: ActivityOptions = {
     heartbeatTimeout: "10s",
     retry: {
-      maximumAttempts: taskRetries,
+      maximumAttempts: maxAttempts,
     },
   };
 
@@ -106,7 +107,7 @@ async function handleDmv2Task(
     activityOptions.scheduleToCloseTimeout = "87600h"; // 10 years
   }
 
-  const { executeDmv2Task } = proxyActivities(activityOptions);
+  const { executeTask } = proxyActivities(activityOptions);
 
   let taskCompleted = false;
 
@@ -131,7 +132,7 @@ async function handleDmv2Task(
   };
 
   const result = await Promise.race([
-    executeDmv2Task(workflow, task, inputData)
+    executeTask(workflow, task, inputData)
       .then((taskResult) => {
         return {
           type: "task_completed" as const,
@@ -156,7 +157,7 @@ async function handleDmv2Task(
   }
 
   for (const childTask of task.config.onComplete) {
-    const childResult = await handleDmv2Task(workflow, childTask, result.data);
+    const childResult = await handleTask(workflow, childTask, result.data);
     results.push(...childResult);
   }
 
@@ -174,7 +175,7 @@ async function handleDmv2Task(
     logger.info(`Extract task ${task.name} has more data, restarting chain...`);
 
     // Recursively call the extract task again to get the next batch
-    const nextBatchResults = await handleDmv2Task(workflow, task, null);
+    const nextBatchResults = await handleTask(workflow, task, null);
     results.push(...nextBatchResults);
   }
 

@@ -29,160 +29,7 @@ The MCP server is enabled by default. To disable it, use `moose dev --mcp=false`
 </Callout>
 
 ## Configure Your AI Client
-
-Connect your AI assistant to the Moose MCP server. Most clients now support native HTTP transport for easier setup.
-
-<Tabs defaultValue="claude-code">
-<TabsList>
-<TabsTrigger value="claude-code">Claude Code</TabsTrigger>
-<TabsTrigger value="windsurf">Windsurf</TabsTrigger>
-<TabsTrigger value="vs-code">VS Code</TabsTrigger>
-<TabsTrigger value="cursor">Cursor</TabsTrigger>
-<TabsTrigger value="claude-desktop">Claude Desktop</TabsTrigger>
-</TabsList>
-<TabsContent value="claude-code">
-
-**Setup**: Use the Claude Code CLI (easiest method)
-
-```bash copy
-claude mcp add --transport http moose-dev http://localhost:4000/mcp
-```
-
-That's it! Claude Code will automatically connect to your Moose dev server.
-
-<Callout type="info">
-**Scope**: This command adds the MCP server to Claude Code's project configuration, making it available to your project when using Claude Code. Other AI clients (Cursor, Windsurf, etc.) require separate configuration - see the tabs below.
-</Callout>
-
-<Callout type="info">
-Make sure `moose dev` is running before adding the server. The CLI will verify the connection.
-</Callout>
-
-**Alternative**: Manual configuration at `~/.claude/config.json`
-
-```json filename="config.json" copy
-{
-  "mcpServers": {
-    "moose-dev": {
-      "transport": "http",
-      "url": "http://localhost:4000/mcp"
-    }
-  }
-}
-```
-
-</TabsContent>
-<TabsContent value="windsurf">
-
-**Location**: `~/.codeium/windsurf/mcp_config.json`
-
-Windsurf supports native Streamable HTTP transport:
-
-```json filename="mcp_config.json" copy
-{
-  "mcpServers": {
-    "moose-dev": {
-      "serverUrl": "http://localhost:4000/mcp"
-    }
-  }
-}
-```
-
-</TabsContent>
-<TabsContent value="vs-code">
-
-**Prerequisites**:
-- VS Code 1.102+ (built-in MCP support)
-- Or install the [Cline extension](https://marketplace.visualstudio.com/items?itemName=saoudrizwan.claude-dev)
-
-**Option 1: Native HTTP Support (VS Code 1.102+)**
-
-Add to your project's `.vscode/mcp.json` or User Settings:
-
-```json filename=".vscode/mcp.json" copy
-{
-  "servers": {
-    "moose-dev": {
-      "type": "http",
-      "url": "http://localhost:4000/mcp"
-    }
-  }
-}
-```
-
-Confirm the server is running and integrated with VSCode by running `MCP: List Servers` command from the Command Palette.
-
-For other native options, see the [VSCode docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers#_add-an-mcp-server).
-
-**Option 2: Cline Extension**
-
-Configure in Cline's MCP settings:
-
-```json copy
-{
-  "moose-dev": {
-    "transport": "sse",
-    "url": "http://localhost:4000/mcp"
-  }
-}
-```
-
-</TabsContent>
-<TabsContent value="cursor">
-
-**Location**: `.cursor/mcp.json` (project-level) or `~/.cursor/settings/mcp.json` (global)
-
-<Callout type="info">
-Cursor currently uses stdio transport. Use `mcp-remote` to bridge to HTTP servers:
-</Callout>
-
-```json filename=".cursor/mcp.json" copy
-{
-  "mcpServers": {
-    "moose-dev": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "http://localhost:4000/mcp"
-      ]
-    }
-  }
-}
-```
-
-</TabsContent>
-<TabsContent value="claude-desktop">
-
-**Location**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-Access via: Claude > Settings > Developer > Edit Config
-
-```json filename="claude_desktop_config.json" copy
-{
-  "servers": {
-    "moose-dev": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "http://localhost:4000/mcp"
-      ]
-    }
-  }
-}
-```
-
-<Callout type="info">
-The `-y` flag automatically installs `mcp-remote` if not already installed.
-</Callout>
-
-</TabsContent>
-</Tabs>
-
-<Callout type="warning">
-Make sure `moose dev` is running before using the MCP tools. The AI client will connect to `http://localhost:4000/mcp`.
-</Callout>
+:::include /shared/prerequisites/install-mcp.mdx
 
 ## Available Tools
 
@@ -569,9 +416,22 @@ The MCP server:
 
 ## LLM-Optimized Documentation Feeds
 
-### Context7 for MooseStack Documentation
+### Documentation Index
 
-For general MooseStack documentation and code examples, use Context7 MCP.
+[`https://docs.fiveonefour.com/llm.md`](https://docs.fiveonefour.com/llm.md) returns a table of contents linking to all public pages. LLMs can discover what exists, then fetch only what they need — avoiding context window limits.
+
+### Per-Page Markdown Endpoints
+
+Append `.md` to any doc URL to get clean markdown:
+
+- [`https://docs.fiveonefour.com/moosestack/olap/model-table.md`](https://docs.fiveonefour.com/moosestack/olap/model-table.md) — Defaults to TypeScript
+- [`https://docs.fiveonefour.com/moosestack/olap/model-table.md?lang=python`](https://docs.fiveonefour.com/moosestack/olap/model-table.md?lang=python) — Specific language
+
+Useful for AI agents fetching specific pages on-demand.
+
+### Context7
+
+Context7 indexes MooseStack documentation and code examples, letting LLMs pull context on-demand.
 
 **Setup:** [Install Context7 for your IDE](https://context7.com/docs/overview)
 
@@ -582,6 +442,13 @@ Show me how to create a streaming function in MooseStack using TypeScript. use c
 ```
 
 **Best together:** Context7 provides MooseStack framework documentation, while the Moose MCP server provides access to your local project's data, logs, and infrastructure.
+
+### Copy Page Menu
+
+Every doc page has a **Copy Page** dropdown with two options:
+
+- **Copy as Markdown** — copies clean markdown to your clipboard
+- **Open Markdown** — opens the `.md` endpoint in a new tab
 
 ## Troubleshooting
 

@@ -3,15 +3,11 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
-  injectWorkspacePackages: true
 
 importers:
 
   .:
     dependencies:
-      '@514labs/moose-lib':
-        specifier: ^0.6.293
-        version: 0.6.293(@swc/core@1.15.5)(@types/node@24.10.4)(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@24.10.4)(typescript@5.9.3))
       fastify:
         specifier: ^5.6.2
         version: 5.6.2
@@ -26,11 +22,11 @@ importers:
         version: 4.2.0
       typia:
         specifier: ^10.1.0
-        version: 10.1.0(@types/node@24.10.4)(typescript@5.9.3)
+        version: 10.1.0(@types/node@20.19.30)(typescript@5.9.3)
     devDependencies:
       '@types/node':
-        specifier: ^24.10.4
-        version: 24.10.4
+        specifier: ^20
+        version: 20.19.30
       cross-env:
         specifier: ^10.1.0
         version: 10.1.0
@@ -48,20 +44,20 @@ importers:
     dependencies:
       '@514labs/moose-lib':
         specifier: ^0.6.293
-        version: 0.6.293(@swc/core@1.15.5)(@types/node@24.10.4)(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@24.10.4)(typescript@5.9.3))
+        version: 0.6.293(@swc/core@1.15.5)(@types/node@20.19.30)(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@20.19.30)(typescript@5.9.3))
       ts-patch:
         specifier: ^3.3.0
         version: 3.3.0
       typia:
         specifier: ^10.1.0
-        version: 10.1.0(@types/node@24.10.4)(typescript@5.9.3)
+        version: 10.1.0(@types/node@20.19.30)(typescript@5.9.3)
     devDependencies:
       '@514labs/moose-cli':
         specifier: ^0.6.293
         version: 0.6.293
       '@types/node':
-        specifier: ^24.10.4
-        version: 24.10.4
+        specifier: ^20
+        version: 20.19.30
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -419,8 +415,8 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
-  '@types/node@24.10.4':
-    resolution: {integrity: sha512-vnDVpYPMzs4wunl27jHrfmwojOGKya0xyM3sH+UE5iv5uPS6vX7UIoh6m+vQc5LGBq52HBKPIn/zcSZVzeDEZg==}
+  '@types/node@20.19.30':
+    resolution: {integrity: sha512-WJtwWJu7UdlvzEAUm484QNg5eAoq5QR08KDNx7g45Usrs2NtOPiX8ugDqmKdXkyL03rBqU5dYNYVQetEpBHq2g==}
 
   '@webassemblyjs/ast@1.14.1':
     resolution: {integrity: sha512-nuBEDgQfm1ccRp/8bCQrx1frohyufl4JlbMMZ4P1wpeOfDhF6FQkxZJ1b/e+PLwr6X1Nhw6OLme5usuBWYBvuQ==}
@@ -1422,8 +1418,8 @@ packages:
     peerDependencies:
       typescript: '>=4.8.0 <5.10.0'
 
-  undici-types@7.16.0:
-    resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
+  undici-types@6.21.0:
+    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
   unionfs@4.6.0:
     resolution: {integrity: sha512-fJAy3gTHjFi5S3TP5EGdjs/OUMFFvI/ady3T8qVuZfkv8Qi8prV/Q8BuFEgODJslhZTT2z2qdD2lGdee9qjEnA==}
@@ -1543,7 +1539,7 @@ snapshots:
       '@514labs/moose-cli-linux-arm64': 0.6.293
       '@514labs/moose-cli-linux-x64': 0.6.293
 
-  '@514labs/moose-lib@0.6.293(@swc/core@1.15.5)(@types/node@24.10.4)(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@24.10.4)(typescript@5.9.3))':
+  '@514labs/moose-lib@0.6.293(@swc/core@1.15.5)(@types/node@20.19.30)(ts-patch@3.3.0)(tsconfig-paths@4.2.0)(typia@10.1.0(@types/node@20.19.30)(typescript@5.9.3))':
     dependencies:
       '@514labs/kafka-javascript': 1.7.1-patch
       '@clickhouse/client': 1.8.1
@@ -1560,11 +1556,11 @@ snapshots:
       jose: 5.9.2
       redis: 4.7.1
       toml: 3.0.0
-      ts-node: 10.9.2(@swc/core@1.15.5)(@types/node@24.10.4)(typescript@5.9.3)
+      ts-node: 10.9.2(@swc/core@1.15.5)(@types/node@20.19.30)(typescript@5.9.3)
       ts-patch: 3.3.0
       tsconfig-paths: 4.2.0
       typescript: 5.9.3
-      typia: 10.1.0(@types/node@24.10.4)(typescript@5.9.3)
+      typia: 10.1.0(@types/node@20.19.30)(typescript@5.9.3)
     transitivePeerDependencies:
       - '@swc/core'
       - '@swc/helpers'
@@ -1629,12 +1625,12 @@ snapshots:
       protobufjs: 7.5.4
       yargs: 17.7.2
 
-  '@inquirer/external-editor@1.0.3(@types/node@24.10.4)':
+  '@inquirer/external-editor@1.0.3(@types/node@20.19.30)':
     dependencies:
       chardet: 2.1.1
       iconv-lite: 0.7.1
     optionalDependencies:
-      '@types/node': 24.10.4
+      '@types/node': 20.19.30
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -1929,9 +1925,9 @@ snapshots:
 
   '@types/json-schema@7.0.15': {}
 
-  '@types/node@24.10.4':
+  '@types/node@20.19.30':
     dependencies:
-      undici-types: 7.16.0
+      undici-types: 6.21.0
 
   '@webassemblyjs/ast@1.14.1':
     dependencies:
@@ -2406,9 +2402,9 @@ snapshots:
 
   ini@4.1.3: {}
 
-  inquirer@8.2.7(@types/node@24.10.4):
+  inquirer@8.2.7(@types/node@20.19.30):
     dependencies:
-      '@inquirer/external-editor': 1.0.3(@types/node@24.10.4)
+      '@inquirer/external-editor': 1.0.3(@types/node@20.19.30)
       ansi-escapes: 4.3.2
       chalk: 4.1.2
       cli-cursor: 3.1.0
@@ -2444,7 +2440,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 24.10.4
+      '@types/node': 20.19.30
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -2634,7 +2630,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.0
-      '@types/node': 24.10.4
+      '@types/node': 20.19.30
       long: 5.3.2
 
   punycode@2.3.1: {}
@@ -2845,14 +2841,14 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  ts-node@10.9.2(@swc/core@1.15.5)(@types/node@24.10.4)(typescript@5.9.3):
+  ts-node@10.9.2(@swc/core@1.15.5)(@types/node@20.19.30)(typescript@5.9.3):
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       '@tsconfig/node10': 1.0.12
       '@tsconfig/node12': 1.0.11
       '@tsconfig/node14': 1.0.3
       '@tsconfig/node16': 1.0.4
-      '@types/node': 24.10.4
+      '@types/node': 20.19.30
       acorn: 8.15.0
       acorn-walk: 8.3.4
       arg: 4.1.3
@@ -2886,20 +2882,20 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  typia@10.1.0(@types/node@24.10.4)(typescript@5.9.3):
+  typia@10.1.0(@types/node@20.19.30)(typescript@5.9.3):
     dependencies:
       '@samchon/openapi': 5.1.0
       '@standard-schema/spec': 1.1.0
       commander: 10.0.1
       comment-json: 4.5.0
-      inquirer: 8.2.7(@types/node@24.10.4)
+      inquirer: 8.2.7(@types/node@20.19.30)
       package-manager-detector: 0.2.11
       randexp: 0.5.3
       typescript: 5.9.3
     transitivePeerDependencies:
       - '@types/node'
 
-  undici-types@7.16.0: {}
+  undici-types@6.21.0: {}
 
   unionfs@4.6.0:
     dependencies:

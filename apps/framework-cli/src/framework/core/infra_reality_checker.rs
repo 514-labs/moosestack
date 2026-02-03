@@ -4,6 +4,8 @@
 /// with the documented infrastructure map. It helps identify discrepancies between
 /// what exists in reality and what is documented in the infrastructure map.
 ///
+/// SQL normalization uses ClickHouse's native formatQuerySingleLine for accurate comparison.
+///
 /// The module includes:
 /// - A reality checker that queries the actual infrastructure state
 /// - Structures to represent discrepancies between reality and documentation
@@ -22,9 +24,7 @@ use crate::{
         infrastructure::view::View,
         infrastructure_map::{Change, InfrastructureMap, OlapChange, TableChange},
     },
-    infrastructure::olap::{
-        clickhouse::sql_parser::normalize_sql_for_comparison, OlapChangesError, OlapOperations,
-    },
+    infrastructure::olap::{OlapChangesError, OlapOperations},
     project::Project,
 };
 use serde::{Deserialize, Serialize};
@@ -97,21 +97,6 @@ impl InfraDiscrepancies {
             && self.missing_views.is_empty()
             && self.mismatched_views.is_empty()
     }
-}
-
-/// Checks if two SQL strings are semantically equivalent.
-/// Uses AST-based normalization to handle:
-/// - Whitespace differences (newlines, tabs, multiple spaces)
-/// - Database prefix differences (e.g., `local.Table` vs `Table`)
-/// - Identifier quoting differences (e.g., `` `column` `` vs `column`)
-/// - Keyword casing differences
-///
-/// This is needed because ClickHouse reformats SQL when storing it
-/// (e.g., puts everything on one line, adds database prefixes, adds backticks).
-fn sql_is_equivalent(sql1: &str, sql2: &str, default_database: &str) -> bool {
-    let normalized1 = normalize_sql_for_comparison(sql1, default_database);
-    let normalized2 = normalize_sql_for_comparison(sql2, default_database);
-    normalized1 == normalized2
 }
 
 /// Normalizes a database reference for comparison.
@@ -190,8 +175,8 @@ pub fn materialized_views_are_equivalent(
         return false;
     }
 
-    // Compare SELECT SQL (normalized)
-    sql_is_equivalent(&mv1.select_sql, &mv2.select_sql, default_database)
+    // Compare SELECT SQL (must be pre-normalized via ClickHouse + Rust db prefix stripping)
+    mv1.select_sql == mv2.select_sql
 }
 
 /// Checks if two Views are semantically equivalent.
@@ -217,8 +202,8 @@ pub fn views_are_equivalent(v1: &View, v2: &View, default_database: &str) -> boo
         return false;
     }
 
-    // Compare SELECT SQL (normalized)
-    sql_is_equivalent(&v1.select_sql, &v2.select_sql, default_database)
+    // Compare SELECT SQL (must be pre-normalized via ClickHouse + Rust db prefix stripping)
+    v1.select_sql == v2.select_sql
 }
 
 /// The Infrastructure Reality Checker compares actual infrastructure state with the infrastructure map.
@@ -292,7 +277,7 @@ pub fn find_table_from_infra_map(
     fallback_match
 }
 
-impl<T: OlapOperations> InfraRealityChecker<T> {
+impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
     /// Creates a new InfraRealityChecker with the provided OLAP client.
     ///
     /// # Arguments
@@ -651,11 +636,50 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         );
 
         // Find mismatched MVs (exist in both but differ)
+        // Normalize SQL at the edge using ClickHouse's native formatting
         let mut mismatched_materialized_views = Vec::new();
         for (id, desired) in &infra_map.materialized_views {
             if let Some(actual) = actual_materialized_views.get(id) {
-                if !materialized_views_are_equivalent(actual, desired, &infra_map.default_database)
-                {
+                debug!("Normalizing SQL for MV '{}' comparison", id);
+                // Normalize both SQLs via ClickHouse for accurate comparison
+                let actual_sql_normalized = self
+                    .olap_client
+                    .normalize_sql(&actual.select_sql, &infra_map.default_database)
+                    .await
+                    .unwrap_or_else(|e| {
+                        debug!("Failed to normalize actual SQL for MV '{}': {:?}", id, e);
+                        actual.select_sql.clone()
+                    });
+                let desired_sql_normalized = self
+                    .olap_client
+                    .normalize_sql(&desired.select_sql, &infra_map.default_database)
+                    .await
+                    .unwrap_or_else(|e| {
+                        debug!("Failed to normalize desired SQL for MV '{}': {:?}", id, e);
+                        desired.select_sql.clone()
+                    });
+                debug!(
+                    "MV '{}' SQL comparison - actual_normalized: {} | desired_normalized: {}",
+                    id,
+                    actual_sql_normalized.replace('\n', " "),
+                    desired_sql_normalized.replace('\n', " ")
+                );
+
+                // Create copies with normalized SQL for comparison
+                let actual_normalized = MaterializedView {
+                    select_sql: actual_sql_normalized,
+                    ..actual.clone()
+                };
+                let desired_normalized = MaterializedView {
+                    select_sql: desired_sql_normalized,
+                    ..desired.clone()
+                };
+
+                if !materialized_views_are_equivalent(
+                    &actual_normalized,
+                    &desired_normalized,
+                    &infra_map.default_database,
+                ) {
                     debug!("Found mismatch in materialized view: {}", id);
                     mismatched_materialized_views.push(OlapChange::MaterializedView(
                         Change::Updated {
@@ -707,10 +731,37 @@ impl<T: OlapOperations> InfraRealityChecker<T> {
         );
 
         // Find mismatched views (exist in both but differ)
+        // Normalize SQL at the edge using ClickHouse's native formatting
         let mut mismatched_views = Vec::new();
         for (id, desired) in &infra_map.views {
             if let Some(actual) = actual_views.get(id) {
-                if !views_are_equivalent(actual, desired, &infra_map.default_database) {
+                // Normalize both SQLs via ClickHouse for accurate comparison
+                let actual_sql_normalized = self
+                    .olap_client
+                    .normalize_sql(&actual.select_sql, &infra_map.default_database)
+                    .await
+                    .unwrap_or_else(|_| actual.select_sql.clone());
+                let desired_sql_normalized = self
+                    .olap_client
+                    .normalize_sql(&desired.select_sql, &infra_map.default_database)
+                    .await
+                    .unwrap_or_else(|_| desired.select_sql.clone());
+
+                // Create copies with normalized SQL for comparison
+                let actual_normalized = View {
+                    select_sql: actual_sql_normalized,
+                    ..actual.clone()
+                };
+                let desired_normalized = View {
+                    select_sql: desired_sql_normalized,
+                    ..desired.clone()
+                };
+
+                if !views_are_equivalent(
+                    &actual_normalized,
+                    &desired_normalized,
+                    &infra_map.default_database,
+                ) {
                     debug!("Found mismatch in view: {}", id);
                     mismatched_views.push(OlapChange::View(Change::Updated {
                         before: Box::new(actual.clone()),
@@ -769,7 +820,6 @@ mod tests {
     use super::*;
     use crate::cli::local_webserver::LocalWebserverConfig;
     use crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer;
-    use crate::framework::core::infrastructure::olap_process::OlapProcess;
     use crate::framework::core::infrastructure::table::{
         Column, ColumnType, IntType, OrderBy, Table,
     };
@@ -918,7 +968,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -992,7 +1041,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -1072,7 +1120,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -1143,7 +1190,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -1216,7 +1262,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -1305,7 +1350,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -1511,7 +1555,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -1579,7 +1622,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: OlapProcess {},
             consumption_api_web_server: ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),
@@ -1665,24 +1707,15 @@ mod tests {
     }
 
     #[test]
-    fn test_materialized_views_are_equivalent_with_backticks() {
+    fn test_materialized_views_are_equivalent_pre_normalized() {
         use crate::framework::core::infrastructure::materialized_view::MaterializedView;
 
         let default_db = "mydb";
 
-        // MV from SDK (with backticks)
-        let mv_sdk = MaterializedView {
-            name: "test_mv".to_string(),
-            database: None,
-            target_table: "`events`".to_string(),
-            target_database: None,
-            select_sql: "SELECT * FROM `source`".to_string(),
-            source_tables: vec!["`source`".to_string()],
-            metadata: None,
-        };
-
-        // MV from migrated SQL (without backticks, as SQL parser strips them)
-        let mv_migrated = MaterializedView {
+        // In production, both MVs are pre-normalized via ClickHouse's formatQuerySingleLine
+        // + Rust's normalize_sql_for_comparison before comparison.
+        // This test verifies that pre-normalized MVs compare correctly.
+        let mv1 = MaterializedView {
             name: "test_mv".to_string(),
             database: None,
             target_table: "events".to_string(),
@@ -1692,30 +1725,32 @@ mod tests {
             metadata: None,
         };
 
-        // These should be equivalent despite backtick differences
+        let mv2 = MaterializedView {
+            name: "test_mv".to_string(),
+            database: None,
+            target_table: "events".to_string(),
+            target_database: None,
+            select_sql: "SELECT * FROM source".to_string(),
+            source_tables: vec!["source".to_string()],
+            metadata: None,
+        };
+
         assert!(
-            materialized_views_are_equivalent(&mv_sdk, &mv_migrated, default_db),
-            "MVs should be equivalent despite backtick differences"
+            materialized_views_are_equivalent(&mv1, &mv2, default_db),
+            "Pre-normalized MVs should be equivalent"
         );
     }
 
     #[test]
-    fn test_views_are_equivalent_with_backticks() {
+    fn test_views_are_equivalent_pre_normalized() {
         use crate::framework::core::infrastructure::view::View;
 
         let default_db = "mydb";
 
-        // View from SDK (with backticks)
-        let view_sdk = View {
-            name: "test_view".to_string(),
-            database: None,
-            select_sql: "SELECT * FROM `source`".to_string(),
-            source_tables: vec!["`source`".to_string()],
-            metadata: None,
-        };
-
-        // View from migrated SQL (without backticks)
-        let view_migrated = View {
+        // In production, both Views are pre-normalized via ClickHouse's formatQuerySingleLine
+        // + Rust's normalize_sql_for_comparison before comparison.
+        // This test verifies that pre-normalized Views compare correctly.
+        let view1 = View {
             name: "test_view".to_string(),
             database: None,
             select_sql: "SELECT * FROM source".to_string(),
@@ -1723,10 +1758,17 @@ mod tests {
             metadata: None,
         };
 
-        // These should be equivalent despite backtick differences
+        let view2 = View {
+            name: "test_view".to_string(),
+            database: None,
+            select_sql: "SELECT * FROM source".to_string(),
+            source_tables: vec!["source".to_string()],
+            metadata: None,
+        };
+
         assert!(
-            views_are_equivalent(&view_sdk, &view_migrated, default_db),
-            "Views should be equivalent despite backtick differences"
+            views_are_equivalent(&view1, &view2, default_db),
+            "Pre-normalized Views should be equivalent"
         );
     }
 }

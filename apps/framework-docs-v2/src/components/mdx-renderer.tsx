@@ -28,12 +28,29 @@ import {
   BreakingChanges,
   TemplatesGridServer,
   CommandSnippet,
+  // Interactive components for dynamic guides
+  SelectField,
+  CheckboxGroup,
+  CheckboxGroupContent,
+  CustomizePanel,
+  CustomizeGrid,
+  NumberedAccordion,
+  NumberedAccordionItem,
+  TabbedCode,
+  TabbedCodeContent,
+  ConditionalContent,
 } from "@/components/mdx";
 import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionItem,
+  AccordionTrigger,
+  AccordionContent,
+} from "@/components/ui/accordion";
 import { IconTerminal, IconFileCode } from "@tabler/icons-react";
 import {
   ServerCodeBlock,
@@ -49,22 +66,32 @@ import { rehypeCodeMeta } from "@/lib/rehype-code-meta";
 import { rehypeRestoreCodeMeta } from "@/lib/rehype-restore-code-meta";
 import { ensureCodeBlockSpacing } from "@/lib/remark-code-block-spacing";
 
+// Module-level component wiring (hoisted to avoid per-render allocations)
+// Create FileTree with nested components
+const FileTreeWithSubcomponents = Object.assign(FileTree, {
+  Folder: FileTreeFolder,
+  File: FileTreeFile,
+});
+
+// Create interactive components with nested sub-components
+const CheckboxGroupWithSubcomponents = Object.assign(CheckboxGroup, {
+  Content: CheckboxGroupContent,
+});
+const NumberedAccordionWithSubcomponents = Object.assign(NumberedAccordion, {
+  Item: NumberedAccordionItem,
+});
+const TabbedCodeWithSubcomponents = Object.assign(TabbedCode, {
+  Content: TabbedCodeContent,
+});
+
 interface MDXRendererProps {
   source: string;
 }
 
 export async function MDXRenderer({ source }: MDXRendererProps) {
-  "use cache";
-
   // Preprocess content to ensure proper spacing around code blocks
   // This prevents hydration errors from invalid HTML nesting
   const processedSource = ensureCodeBlockSpacing(source);
-
-  // Create FileTree with nested components
-  const FileTreeWithSubcomponents = Object.assign(FileTree, {
-    Folder: FileTreeFolder,
-    File: FileTreeFile,
-  });
 
   // SourceCodeLink component for linking to GitHub source code
   const SourceCodeLink = ({
@@ -127,10 +154,26 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     TabsTrigger,
     TabsContent,
     Badge,
+    Accordion,
+    AccordionItem,
+    AccordionTrigger,
+    AccordionContent,
     Terminal: IconTerminal,
     FileCode: IconFileCode,
     SourceCodeLink,
     Link,
+
+    // Interactive components for dynamic guides
+    SelectField,
+    CheckboxGroup: CheckboxGroupWithSubcomponents,
+    "CheckboxGroup.Content": CheckboxGroupContent,
+    CustomizePanel,
+    CustomizeGrid,
+    NumberedAccordion: NumberedAccordionWithSubcomponents,
+    "NumberedAccordion.Item": NumberedAccordionItem,
+    TabbedCode: TabbedCodeWithSubcomponents,
+    "TabbedCode.Content": TabbedCodeContent,
+    ConditionalContent,
 
     // Code block handling - server-side rendered
     figure: ServerFigure,

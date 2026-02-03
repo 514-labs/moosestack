@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use super::bin;
 
@@ -21,7 +21,6 @@ pub fn run(
     project: &Project,
     clickhouse_config: &ClickHouseConfig,
     jwt_config: &Option<JwtConfig>,
-    consumption_path: &Path,
     project_path: &Path,
     proxy_port: Option<u16>,
 ) -> Result<Child, ConsumptionError> {
@@ -33,7 +32,6 @@ pub fn run(
     let api_key = project.temporal_config.api_key.clone();
 
     let mut string_args = vec![
-        consumption_path.to_str().unwrap().to_string(),
         clickhouse_config.db_name.clone(),
         clickhouse_config.host.clone(),
         host_port,
@@ -75,10 +73,6 @@ pub fn run(
         string_args.push(api_key);
     }
 
-    if project.features.data_model_v2 {
-        string_args.push("--is-dmv2".to_string());
-    }
-
     if let Some(port) = proxy_port {
         string_args.push("--proxy-port".to_string());
         string_args.push(port.to_string());
@@ -103,7 +97,6 @@ pub fn run(
         .expect("Analytics api process did not have a handle to stderr");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -124,11 +117,13 @@ pub fn run(
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            error!("{}", line);
-        }
-    });
+    // Spawn structured logger for stderr with UI display for errors
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
+        stderr,
+        "api_name",
+        crate::cli::logger::resource_type::CONSUMPTION_API,
+        Some("API"),
+    );
 
     Ok(consumption_process)
 }

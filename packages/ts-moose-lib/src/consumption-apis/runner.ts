@@ -4,10 +4,11 @@ import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
 import * as jose from "jose";
 import { ClickHouseClient } from "@clickhouse/client";
 import { Cluster } from "../cluster-utils";
-import { ApiUtil } from "../index";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
+import { getSourceDir, shouldUseCompiled } from "../compiler-config";
+import { setupStructuredConsole } from "../utils/structured-logging";
 
 interface ClickhouseConfig {
   database: string;
@@ -33,12 +34,10 @@ interface TemporalConfig {
 }
 
 interface ApisConfig {
-  apisDir: string;
   clickhouseConfig: ClickhouseConfig;
   jwtConfig?: JwtConfig;
   temporalConfig?: TemporalConfig;
   enforceAuth: boolean;
-  isDmv2: boolean;
   proxyPort?: number;
   workerCount?: number;
 }
@@ -49,52 +48,71 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   useSSL: config.useSSL ? "true" : "false",
 });
 
-const createPath = (apisDir: string, path: string) => `${apisDir}${path}.ts`;
+const createPath = (apisDir: string, path: string, useCompiled: boolean) => {
+  const extension = useCompiled ? ".js" : ".ts";
+  return `${apisDir}${path}${extension}`;
+};
 
 const httpLogger = (
   req: http.IncomingMessage,
   res: http.ServerResponse,
   startMs: number,
+  apiName?: string,
 ) => {
-  console.log(
-    `${req.method} ${req.url} ${res.statusCode} ${Date.now() - startMs}ms`,
-  );
+  const logFn = () =>
+    console.log(
+      `${req.method} ${req.url} ${res.statusCode} ${Date.now() - startMs}ms`,
+    );
+
+  if (apiName) {
+    apiContextStorage.run({ apiName }, logFn);
+  } else {
+    logFn();
+  }
 };
 
-const modulesCache = new Map<string, any>();
-
-export function createApi<T extends object, R = any>(
-  _handler: (params: T, utils: ApiUtil) => Promise<R>,
-): (
-  rawParams: Record<string, string[] | string>,
-  utils: ApiUtil,
-) => Promise<R> {
-  throw new Error(
-    "This should be compiled-time replaced by compiler plugins to add parsing.",
-  );
+// Cache stores both the module and the matched API name for structured logging
+interface CachedApiEntry {
+  module: any;
+  apiName: string;
 }
+const modulesCache = new Map<string, CachedApiEntry>();
 
-/** @deprecated Use `Api` from "dmv2/sdk/consumptionApi" instead. */
-export const createConsumptionApi = createApi;
+// Set up structured console logging for API context
+const apiContextStorage = setupStructuredConsole<{ apiName: string }>(
+  (ctx) => ctx.apiName,
+  "api_name",
+);
 
 const apiHandler = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
-  apisDir: string,
   enforceAuth: boolean,
-  isDmv2: boolean,
   jwtConfig?: JwtConfig,
 ) => {
-  const apis = isDmv2 ? await getApis() : new Map();
+  // Check if we should use compiled code
+  const useCompiled = shouldUseCompiled();
+  const sourceDir = getSourceDir();
+
+  // Adjust apisDir for compiled mode
+  const actualApisDir =
+    useCompiled ?
+      `${process.cwd()}/.moose/compiled/${sourceDir}/apis/`
+    : undefined;
+
+  const apis = await getApis();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
     const start = Date.now();
+    // Track matched API name for structured logging - declared outside try
+    // so it's accessible in catch block for error logging context
+    let matchedApiName: string | undefined;
 
     try {
       const url = new URL(req.url || "", "http://localhost");
       const fileName = url.pathname;
 
-      let jwtPayload;
+      let jwtPayload: jose.JWTPayload | undefined;
       if (publicKey && jwtConfig) {
         const jwt = req.headers.authorization?.split(" ")[1]; // Bearer <token>
         if (jwt) {
@@ -126,7 +144,10 @@ const apiHandler = async (
         return;
       }
 
-      const pathName = createPath(apisDir, fileName);
+      const pathName =
+        actualApisDir ?
+          createPath(actualApisDir, fileName, useCompiled)
+        : fileName;
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
         (obj: { [key: string]: string[] | string }, [key, value]) => {
           const existingValue = obj[key];
@@ -144,77 +165,99 @@ const apiHandler = async (
         {},
       );
 
-      let userFuncModule = modulesCache.get(pathName);
-      if (userFuncModule === undefined) {
-        if (isDmv2) {
-          let apiName = fileName.replace(/^\/+|\/+$/g, "");
-          let version: string | null = null;
+      // Include version query param in cache key to avoid collisions
+      // Path-based versions (/myapi/1) are already in pathName, but query versions (?version=1) are not
+      const versionParam = url.searchParams.get("version");
+      const cacheKey = versionParam ? `${pathName}:${versionParam}` : pathName;
 
-          // First, try to find the API by the full path (for custom paths)
-          userFuncModule = apis.get(apiName);
+      let userFuncModule: any;
 
-          if (!userFuncModule) {
-            // Fall back to the old name:version parsing
-            version = url.searchParams.get("version");
+      const cachedEntry = modulesCache.get(cacheKey);
+      if (cachedEntry !== undefined) {
+        userFuncModule = cachedEntry.module;
+        matchedApiName = cachedEntry.apiName;
+      } else {
+        let lookupName = fileName.replace(/^\/+|\/+$/g, "");
+        let version: string | null = null;
 
-            // Check if version is in the path (e.g., /bar/1)
-            if (!version && apiName.includes("/")) {
-              const pathParts = apiName.split("/");
-              if (pathParts.length >= 2) {
-                // Try the full path first (it might be a custom path)
-                userFuncModule = apis.get(apiName);
-                if (!userFuncModule) {
-                  // If not found, treat it as name/version
-                  apiName = pathParts[0];
-                  version = pathParts.slice(1).join("/");
-                }
-              }
-            }
-
-            // Only do versioned lookup if we still haven't found it
-            if (!userFuncModule) {
-              if (version) {
-                const versionedKey = `${apiName}:${version}`;
-                userFuncModule = apis.get(versionedKey);
-              } else {
-                userFuncModule = apis.get(apiName);
-              }
-            }
-          }
-
-          if (!userFuncModule) {
-            const availableApis = Array.from(apis.keys()).map((key) =>
-              key.replace(":", "/"),
-            );
-            const errorMessage =
-              version ?
-                `API ${apiName} with version ${version} not found. Available APIs: ${availableApis.join(", ")}`
-              : `API ${apiName} not found. Available APIs: ${availableApis.join(", ")}`;
-            throw new Error(errorMessage);
-          }
-
-          modulesCache.set(pathName, userFuncModule);
-          console.log(`[API] | Executing API: ${apiName}`);
-        } else {
-          userFuncModule = require(pathName);
-          modulesCache.set(pathName, userFuncModule);
+        // First, try to find the API by the full path (for custom paths)
+        userFuncModule = apis.get(lookupName);
+        if (userFuncModule) {
+          // For custom path lookup, the key IS the API name
+          matchedApiName = lookupName;
         }
+
+        if (!userFuncModule) {
+          // Fall back to the old name:version parsing
+          version = url.searchParams.get("version");
+
+          // Check if version is in the path (e.g., /bar/1)
+          if (!version && lookupName.includes("/")) {
+            const pathParts = lookupName.split("/");
+            if (pathParts.length >= 2) {
+              // Treat as name/version since full path lookup already failed at line 184
+              lookupName = pathParts[0];
+              version = pathParts.slice(1).join("/");
+            }
+          }
+
+          // Only do versioned lookup if we still haven't found it
+          if (!userFuncModule && version) {
+            const versionedKey = `${lookupName}:${version}`;
+            userFuncModule = apis.get(versionedKey);
+            if (userFuncModule) {
+              // The API name is the base name without version
+              matchedApiName = lookupName;
+            }
+          }
+
+          // Try unversioned lookup if still not found
+          if (!userFuncModule) {
+            userFuncModule = apis.get(lookupName);
+            if (userFuncModule) {
+              matchedApiName = lookupName;
+            }
+          }
+        }
+
+        if (!userFuncModule || matchedApiName === undefined) {
+          const availableApis = Array.from(apis.keys()).map((key) =>
+            key.replace(":", "/"),
+          );
+          const errorMessage =
+            version ?
+              `API ${lookupName} with version ${version} not found. Available APIs: ${availableApis.join(", ")}`
+            : `API ${lookupName} not found. Available APIs: ${availableApis.join(", ")}`;
+          throw new Error(errorMessage);
+        }
+
+        // Cache both the module and API name for future requests
+        modulesCache.set(cacheKey, {
+          module: userFuncModule,
+          apiName: matchedApiName,
+        });
+        apiContextStorage.run({ apiName: matchedApiName }, () => {
+          console.log(`[API] | Executing API: ${matchedApiName}`);
+        });
       }
 
       const queryClient = new QueryClient(clickhouseClient, fileName);
-      let result =
-        isDmv2 ?
-          await userFuncModule(paramsObject, {
-            client: new MooseClient(queryClient, temporalClient),
-            sql: sql,
-            jwt: jwtPayload,
-          })
-        : await userFuncModule.default(paramsObject, {
-            client: new MooseClient(queryClient, temporalClient),
-            sql: sql,
-            jwt: jwtPayload,
-          });
 
+      // Use matched API name for structured logging context
+      // This matches source_primitive.name in the infrastructure map
+      // Note: matchedApiName is guaranteed to be defined here (either from cache or lookup)
+      const apiName = matchedApiName!;
+
+      // Use AsyncLocalStorage to set context for this API call.
+      // This avoids race conditions from concurrent API requests - each async
+      // execution chain has its own isolated context value
+      const result = await apiContextStorage.run({ apiName }, async () => {
+        return await userFuncModule(paramsObject, {
+          client: new MooseClient(queryClient, temporalClient),
+          sql: sql,
+          jwt: jwtPayload,
+        });
+      });
       let body: string;
       let status: number | undefined;
 
@@ -232,29 +275,36 @@ const apiHandler = async (
 
       if (status) {
         res.writeHead(status, { "Content-Type": "application/json" });
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, apiName);
       } else {
         res.writeHead(200, { "Content-Type": "application/json" });
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, apiName);
       }
 
       res.end(body);
     } catch (error: any) {
-      console.log("error in path ", req.url, error);
+      // Log error with API context if we know which API was being called
+      const logError = () => console.log("error in path ", req.url, error);
+      if (matchedApiName) {
+        apiContextStorage.run({ apiName: matchedApiName }, logError);
+      } else {
+        logError();
+      }
+
       // todo: same workaround as ResultSet
       if (Object.getPrototypeOf(error).constructor.name === "TypeGuardError") {
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, matchedApiName);
       }
       if (error instanceof Error) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: error.message }));
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, matchedApiName);
       } else {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end();
-        httpLogger(req, res, start);
+        httpLogger(req, res, start, matchedApiName);
       }
     }
   };
@@ -264,22 +314,18 @@ const createMainRouter = async (
   publicKey: jose.KeyLike | undefined,
   clickhouseClient: ClickHouseClient,
   temporalClient: TemporalClient | undefined,
-  apisDir: string,
   enforceAuth: boolean,
-  isDmv2: boolean,
   jwtConfig?: JwtConfig,
 ) => {
   const apiRequestHandler = await apiHandler(
     publicKey,
     clickhouseClient,
     temporalClient,
-    apisDir,
     enforceAuth,
-    isDmv2,
     jwtConfig,
   );
 
-  const webApps = isDmv2 ? await getWebApps() : new Map();
+  const webApps = await getWebApps();
 
   const sortedWebApps = Array.from(webApps.values()).sort((a, b) => {
     const pathA = a.config.mountPath || "/";
@@ -305,7 +351,7 @@ const createMainRouter = async (
       return;
     }
 
-    let jwtPayload;
+    let jwtPayload: jose.JWTPayload | undefined;
     if (publicKey && jwtConfig) {
       const jwt = req.headers.authorization?.split(" ")[1];
       if (jwt) {
@@ -437,9 +483,7 @@ export const runApis = async (config: ApisConfig) => {
           publicKey,
           clickhouseClient,
           temporalClient,
-          config.apisDir,
           config.enforceAuth,
-          config.isDmv2,
           config.jwtConfig,
         ),
       );

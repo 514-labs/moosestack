@@ -47,6 +47,7 @@ export type SimpleAggregated<
 };
 
 export { OlapTable, OlapConfig, S3QueueTableSettings } from "./sdk/olapTable";
+export { ClickHouseEngines } from "../dataModels/types";
 export {
   Stream,
   StreamConfig,
