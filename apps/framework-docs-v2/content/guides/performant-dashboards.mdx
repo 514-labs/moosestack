@@ -312,6 +312,9 @@ Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (t
 }
 ```
 
+You should now have MooseStack configured in your monorepo and ready to deploy.
+Next we’ll set up **Boreal** so you can validate upcoming changes in a real environment, and later get pull-request preview environments with migration plans.
+
 ### Deploy your MooseStack project to Boreal
 
 This guide uses Boreal to manage deployment of your MooseStack project to production. 
@@ -844,10 +847,18 @@ Ensure your dev server is running and accessible:
 moose dev
 ```
 
-Run the [`moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse) to pull data from your production ClickHouse database:
+First, export the **HTTPS** ClickHouse connection string from the **previous Boreal step** (the ClickHouse connection details Boreal shows you) as an environment variable:
 
 ```shell
-moose seed clickhouse --connection-string <PRODUCTION_CONNECTION_STRING> --limit 1000
+export CLICKHOUSE_PROD_URL="<YOUR_HTTPS_CONNECTION_STRING>"
+```
+
+**Important:** `moose seed clickhouse` uses ClickHouse's HTTPS protocol. Your connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
+
+Then run the [`moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse) to pull data from your production ClickHouse database:
+
+```shell
+moose seed clickhouse --connection-string "$CLICKHOUSE_PROD_URL" --limit 1000
 ```
 
 **Recommended (seed for parity):** seed the specific table(s) your component will query, ordered by recency, with a large-enough limit to cover the time window you’ll test (e.g. “last 7–30 days”).
@@ -856,7 +867,7 @@ Run this once per table your endpoint depends on:
 
 ```shell
 moose seed clickhouse \
-  --connection-string <PRODUCTION_CONNECTION_STRING> \
+  --connection-string "$CLICKHOUSE_PROD_URL" \
   --table <TABLE_NAME> \
   --order-by '<TIMESTAMP_COLUMN> DESC' \
   --limit 100000
@@ -867,20 +878,7 @@ If you hit missing-data issues during parity validation, re-run seeding with a l
 **Strict parity (slowest):** seed full production tables with `--all` (can take hours for large datasets):
 
 ```shell
-moose seed clickhouse --connection-string <PRODUCTION_CONNECTION_STRING> --all
-```
-
-`PRODUCTION_CONNECTION_STRING` is your connection string to your production ClickHouse database. 
-
-**Important:** `moose seed clickhouse` uses ClickHouse's HTTPS protocol. Use a HTTPS connection string (e.g., `https://username:password@host:8443/database`).
-
-Use the ClickHouse HTTPS connection string from the Boreal project you just created. 
-
-
-Optionally set it as an environment variable:
-
-```shell
-export MOOSE_SEED_CLICKHOUSE_URL=PASTE_THE_CLICKHOUSE_HTTPS_URL_HERE
+moose seed clickhouse --connection-string $CLICKHOUSE_PROD_URL --all
 ```
 
 Once your local database is seeded, proceed to Step 1.
@@ -892,7 +890,7 @@ Prompt your copilot to seed your local database from each remote table:
 Goal: seed local ClickHouse from a remote Boreal ClickHouse via HTTP using `moose query`.
 
 Assumptions:
-- `BOREAL_CONNECTION_STRING` is set and looks like: `https://default:PASSWORD@HOST:8443/DB_NAME`
+- `CLICKHOUSE_PROD_URL` is set and looks like: `https://default:PASSWORD@HOST:8443/DB_NAME`
 - Local ClickHouse has the same tables already created.
 - Use `url()` + `JSONEachRow` to stream data from remote into local.
 
