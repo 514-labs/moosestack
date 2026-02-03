@@ -3,7 +3,7 @@ title: QVD to ClickHouse
 description: Transfer data from QlikView QVD files to ClickHouse using MooseStack workflows
 ---
 
-import { Callout, BulletPointsCard, CTACards, CTACard } from "@/components/mdx";
+import { Callout, CTACards, CTACard } from "@/components/mdx";
 
 # Transferring QVD Files to ClickHouse
 
@@ -371,20 +371,26 @@ moose dev  # or deploy to production
 
 ## Next Steps
 
-<CTACards>
+<CTACards columns={3}>
   <CTACard
     title="Workflows Documentation"
     description="Learn more about MooseStack workflows and scheduling"
-    href="/moosestack/workflows"
+    ctaLink="/moosestack/workflows"
+    ctaLabel="View docs"
+    Icon="Workflow"
   />
   <CTACard
     title="Data Warehouses Guide"
     description="Explore data warehouse patterns and best practices"
-    href="/guides/data-warehouses"
+    ctaLink="/guides/data-warehouses"
+    ctaLabel="Read guide"
+    Icon="Database"
   />
   <CTACard
     title="ClickHouse Integration"
     description="Deep dive into ClickHouse OLAP tables"
-    href="/moosestack/olap-tables"
+    ctaLink="/moosestack/olap-tables"
+    ctaLabel="Learn more"
+    Icon="Table"
   />
 </CTACards>
