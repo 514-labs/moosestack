@@ -104,6 +104,7 @@ impl FunctionProcessRegistry {
                                 &project,
                                 &project_location,
                                 parallel_process_count,
+                                project.is_production,
                             )?)
                         })
                     } else {
@@ -157,6 +158,7 @@ impl FunctionProcessRegistry {
                                 &project,
                                 &project_location,
                                 parallel_process_count,
+                                project.is_production,
                             )?)
                         })
                     } else {

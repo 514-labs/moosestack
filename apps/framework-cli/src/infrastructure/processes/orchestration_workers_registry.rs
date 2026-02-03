@@ -91,7 +91,7 @@ impl OrchestrationWorkersRegistry {
                 })
             } else {
                 Box::new(move || {
-                    typescript::scripts_worker::start_worker(&project)
+                    typescript::scripts_worker::start_worker(&project, project.is_production)
                         .map_err(OrchestrationWorkersRegistryError::from)
                 })
             };

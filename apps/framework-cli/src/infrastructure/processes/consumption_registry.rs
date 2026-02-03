@@ -85,6 +85,7 @@ impl ConsumptionProcessRegistry {
                         &jwt_config,
                         &project_path,
                         proxy_port,
+                        project.is_production,
                     )
                 })
             }

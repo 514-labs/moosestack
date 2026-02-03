@@ -93,24 +93,9 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::utilities::constants::{CONTEXT, CTX_SESSION_ID, NO_ANSI};
 use std::sync::atomic::Ordering;
-use std::sync::OnceLock;
 
 use super::otlp;
 use super::settings::user_directory;
-
-/// Global flag to track if the CLI is running in production mode.
-/// Used to conditionally display CLI logs in the terminal (dev mode only).
-static IS_PROD: OnceLock<bool> = OnceLock::new();
-
-/// Initializes the production mode flag. Should be called once at CLI startup.
-pub fn init_prod_mode(is_prod: bool) {
-    let _ = IS_PROD.set(is_prod); // Ignore if already set
-}
-
-/// Returns true if running in production mode, false otherwise (dev mode).
-pub fn is_prod() -> bool {
-    *IS_PROD.get().unwrap_or(&false)
-}
 
 // # STRUCTURED LOGGING INSTRUMENTATION GUIDE
 //
@@ -935,6 +920,7 @@ pub async fn process_stderr_lines<R, F>(
     resource_type: &'static str,
     ui_action: Option<&'static str>,
     ui_callback: F,
+    is_prod: bool,
 ) where
     R: tokio::io::AsyncBufRead + Unpin + Send,
     F: Fn(crate::cli::display::MessageType, crate::cli::display::Message) + Send + Sync,
@@ -958,7 +944,7 @@ pub async fn process_stderr_lines<R, F>(
                 };
 
                 // Dev mode: show in terminal (only if not in production mode)
-                if !is_prod() {
+                if !is_prod {
                     let message =
                         crate::cli::display::Message::new(action.clone(), log_data.message.clone());
                     show_message!(msg_type, message);
@@ -1058,6 +1044,7 @@ pub fn spawn_stderr_structured_logger_with_ui(
     resource_name_field: &'static str,
     resource_type: &'static str,
     ui_action: Option<&'static str>,
+    is_prod: bool,
 ) -> tokio::task::JoinHandle<()> {
     use crate::cli::display::show_message_wrapper;
     use tokio::io::BufReader;
@@ -1070,6 +1057,7 @@ pub fn spawn_stderr_structured_logger_with_ui(
             resource_type,
             ui_action,
             show_message_wrapper,
+            is_prod,
         )
         .await
     })
@@ -1297,6 +1285,7 @@ mod tests {
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
@@ -1324,6 +1313,7 @@ mod tests {
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
@@ -1351,6 +1341,7 @@ mod tests {
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
@@ -1377,6 +1368,7 @@ mod tests {
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
@@ -1402,6 +1394,7 @@ Plain error line"#;
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
