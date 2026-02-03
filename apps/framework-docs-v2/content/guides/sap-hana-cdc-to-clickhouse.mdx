@@ -123,7 +123,31 @@ pip install hdbcli moose-lib clickhouse-connect tenacity python-dotenv
 
 ## Quick Start
 
-### 1. Set Environment Variables
+### 1. Install the Pipeline
+
+Copy the SAP HANA CDC pipeline code from the registry to your Moose project:
+
+```bash
+# Navigate to your Moose project directory
+cd your-moose-project
+
+# Copy the pipeline files from the registry
+cp -r path/to/registry/pipeline-registry/sap_hana_cdc_to_clickhouse/* .
+```
+
+Alternatively, if using the Moose CLI with registry support:
+
+```bash
+moose install pipeline sap_hana_cdc_to_clickhouse
+```
+
+This installs:
+- `workflows/cdc.py` - CDC workflow for initial load and incremental sync
+- `workflows/prune.py` - Cleanup workflow for CDC_CHANGES table
+- `init_cdc.py` - Initialization script for generating models and creating triggers
+- `connectors/sap_hana_cdc.py` - SAP HANA connection and CDC utilities
+
+### 2. Set Environment Variables
 
 Create a `.env` file in your project root:
 
@@ -148,7 +172,7 @@ SAP_HANA_CDC_RETENTION_DAYS=7
 Never commit `.env` files to version control. Add `.env` to your `.gitignore` file.
 </Callout>
 
-### 2. Initialize CDC Infrastructure
+### 3. Initialize CDC Infrastructure
 
 Run the initialization script to create triggers and CDC tables in SAP HANA:
 
@@ -162,7 +186,7 @@ This command:
 3. Creates CDC_CHANGES and CDC_CLIENT_STATUS tables
 4. Creates INSERT/UPDATE/DELETE triggers for each table
 
-### 3. Start Moose Development Server
+### 4. Start Moose Development Server
 
 ```bash
 moose dev
@@ -172,7 +196,7 @@ The CDC workflow runs automatically every 60 seconds, performing:
 1. Initial load for any NEW tables (full table copy)
 2. Incremental sync of changes from the CDC_CHANGES table
 
-### 4. Verify the Pipeline
+### 5. Verify the Pipeline
 
 Check that data is flowing:
 
