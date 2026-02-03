@@ -790,7 +790,7 @@ pub struct StructuredLogData {
     pub message: String,
     pub level: String,
     pub cli_action: Option<String>, // Display label (e.g., "Received", "DeadLetter")
-    pub cli_message_type: Option<String>, // "Info" | "Success" | "Warning" | "Error" | "Highlight"
+    pub cli_message_type: Option<String>, // "info" | "success" | "warning" | "error" | "highlight"
 }
 
 /// Parses a structured log from a child process (Node.js/Python).
@@ -878,7 +878,7 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
     let cli_message_type = log_entry
         .get("cli_message_type")
         .and_then(|v| v.as_str())
-        .map(String::from);
+        .map(|s| s.to_ascii_lowercase());
 
     Some(StructuredLogData {
         resource_name,
@@ -937,10 +937,10 @@ pub async fn process_stderr_lines<R, F>(
                 // Parse message type for CLI display
                 let msg_type_str = log_data.cli_message_type.as_deref().unwrap_or("Info");
                 let msg_type = match msg_type_str {
-                    "Error" => crate::cli::display::MessageType::Error,
-                    "Warning" => crate::cli::display::MessageType::Warning,
-                    "Success" => crate::cli::display::MessageType::Success,
-                    "Highlight" => crate::cli::display::MessageType::Highlight,
+                    "error" => crate::cli::display::MessageType::Error,
+                    "warning" => crate::cli::display::MessageType::Warning,
+                    "success" => crate::cli::display::MessageType::Success,
+                    "highlight" => crate::cli::display::MessageType::Highlight,
                     _ => crate::cli::display::MessageType::Info,
                 };
 
