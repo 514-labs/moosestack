@@ -163,7 +163,7 @@ class QvdItemModel(BaseModel):
     price: Optional[float] = None
     created_date: Optional[datetime] = None
 
-QvdItemModel = OlapTable(
+QvdItemTable = OlapTable(
     name="QvdItem",
     columns=[
         Key("item_number", "String"),
