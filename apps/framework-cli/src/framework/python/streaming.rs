@@ -16,7 +16,6 @@ pub fn run(
     source_topic: &StreamConfig,
     target_topic: Option<&StreamConfig>,
     function_path: &Path,
-    is_dmv2: bool,
 ) -> Result<Child, std::io::Error> {
     let dir = function_path
         .parent()
@@ -50,9 +49,6 @@ pub fn run(
         "--security_protocol",
         &kafka_config.security_protocol,
     );
-    if is_dmv2 {
-        args.push("--dmv2".to_string());
-    }
     if project.log_payloads {
         args.push("--log-payloads".to_string());
     }
@@ -74,7 +70,6 @@ pub fn run(
         .expect("Streaming process did not have a handle to stderr");
 
     let mut stdout_reader = tokio::io::BufReader::new(stdout).lines();
-    let mut stderr_reader = tokio::io::BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -82,11 +77,12 @@ pub fn run(
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            tracing::error!("{}", line);
-        }
-    });
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
+        stderr,
+        "function_name",
+        crate::cli::logger::resource_type::TRANSFORM,
+        Some("Streaming"),
+    );
 
     Ok(streaming_function_process)
 }

@@ -33,6 +33,8 @@ message InfrastructureMap {
   map<string, MaterializedView> materialized_views = 16;
   // Structured views (replaces SqlResource for views)
   map<string, View> views = 17;
+  // Workflow definitions
+  map<string, Workflow> workflows = 18;
 }
 
 message SourceLocation {
@@ -505,4 +507,17 @@ message WebApp {
 
 message WebAppMetadata {
   optional string description = 1;
+}
+
+message Workflow {
+  // Unique workflow identifier
+  string name = 1;
+  // Cron schedule for automatic execution
+  string schedule = 2;
+  // Number of retry attempts on failure
+  uint32 retries = 3;
+  // Workflow timeout
+  string timeout = 4;
+  // Programming language of the workflow
+  string language = 5;
 }

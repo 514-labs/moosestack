@@ -2,175 +2,126 @@ import fs from "fs";
 import path from "path";
 import matter from "gray-matter";
 import type { Language } from "./content-types";
+import {
+  sectionNavigationConfigs,
+  type NavItem,
+  type NavPage,
+} from "@/config/navigation";
+import { CONTENT_ROOT } from "./includes";
 
-const CONTENT_ROOT = path.join(process.cwd(), "content");
+export const LLM_MD_SUFFIX = ".md";
 
-interface LLMSection {
+// Re-export content filtering functions (now client-safe)
+export { filterLanguageContent, cleanContent } from "./content-filters";
+
+// --- TOC Generation ---
+
+interface TocEntry {
   title: string;
-  source: string;
   description?: string;
-  content: string;
+  url: string;
 }
 
-/**
- * Generate llms.txt content for a specific language
- */
-export function generateLLMsTxt(language: Language): string {
-  const sections: LLMSection[] = [];
-  const contentDir = path.join(CONTENT_ROOT, language);
+/** Read title/description from MDX file's YAML frontmatter */
+function getFrontmatter(
+  slug: string,
+): { title?: string; description?: string } | null {
+  const normalizedSlug = slug === "index" ? "index" : slug;
+  const paths = [
+    path.join(CONTENT_ROOT, `${normalizedSlug}.mdx`),
+    path.join(CONTENT_ROOT, `${normalizedSlug}.md`),
+    path.join(CONTENT_ROOT, normalizedSlug, "index.mdx"),
+    path.join(CONTENT_ROOT, normalizedSlug, "index.md"),
+  ];
 
-  if (!fs.existsSync(contentDir)) {
-    return `# ${language.charAt(0).toUpperCase() + language.slice(1)} Documentation\n\nNo content available.`;
-  }
-
-  // Recursively collect all markdown files
-  const files = collectMarkdownFiles(contentDir, contentDir);
-  files.sort();
-
-  for (const file of files) {
-    const fullPath = path.join(contentDir, file);
-    const fileContents = fs.readFileSync(fullPath, "utf8");
-    const { data, content: rawContent } = matter(fileContents);
-
-    // Clean content for LLM consumption
-    const cleaned = cleanContent(rawContent);
-
-    if (cleaned.trim()) {
-      sections.push({
-        title: data.title || file.replace(/\.(md|mdx)$/, ""),
-        source: file,
-        description: data.description,
-        content: cleaned,
-      });
-    }
-  }
-
-  // Build the llms.txt output
-  const heading = `# MooseStack ${language === "typescript" ? "TypeScript" : "Python"} Documentation`;
-  const toc = buildTableOfContents(sections);
-  const body = sections
-    .map((section) => {
-      const parts = [`## ${section.title}`, `Source: ${section.source}`];
-      if (section.description) {
-        parts.push(section.description);
+  for (const filePath of paths) {
+    if (fs.existsSync(filePath)) {
+      try {
+        const fileContent = fs.readFileSync(filePath, "utf8");
+        const { data } = matter(fileContent);
+        return { title: data.title, description: data.description };
+      } catch (error) {
+        console.warn(`Failed to parse frontmatter for ${filePath}:`, error);
+        return null;
       }
-      parts.push(section.content);
-      return parts.join("\n\n");
-    })
-    .join("\n\n---\n\n");
-
-  return [heading, toc, body].join("\n\n");
+    }
+  }
+  return null;
 }
 
-/**
- * Collect all markdown files recursively
- */
-function collectMarkdownFiles(dir: string, baseDir: string): string[] {
-  const files: string[] = [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+/** Convert NavPage to TocEntry, merging nav config with frontmatter */
+function processPage(page: NavPage): TocEntry {
+  const frontmatter = getFrontmatter(page.slug);
+  return {
+    title: page.title || frontmatter?.title || page.slug,
+    description: page.description || frontmatter?.description,
+    url: `/${page.slug}${LLM_MD_SUFFIX}`,
+  };
+}
 
-  for (const entry of entries) {
-    if (entry.name.startsWith("_")) continue;
+/** Recursively walk nav tree, skipping draft/beta pages */
+function processNavItems(items: NavItem[]): TocEntry[] {
+  const entries: TocEntry[] = [];
 
-    const fullPath = path.join(dir, entry.name);
-
-    if (entry.isDirectory()) {
-      files.push(...collectMarkdownFiles(fullPath, baseDir));
-    } else if (
-      entry.isFile() &&
-      (entry.name.endsWith(".md") || entry.name.endsWith(".mdx"))
-    ) {
-      const relativePath = path.relative(baseDir, fullPath);
-      files.push(relativePath);
+  for (const item of items) {
+    if (item.type === "page") {
+      // Skip draft/beta pages (behind feature flags) and external pages (no local content)
+      if (item.status === "draft" || item.status === "beta" || item.external) {
+        continue;
+      }
+      entries.push(processPage(item));
+      if (item.children) {
+        entries.push(...processNavItems(item.children));
+      }
+    } else if (item.type === "section") {
+      entries.push(...processNavItems(item.items));
     }
   }
 
-  return files;
+  return entries;
 }
 
-function normalizeLanguageParam(
-  param?: string | string[] | undefined,
-): Language {
-  if (typeof param === "string") {
-    return param === "python" ? "python" : "typescript";
-  }
-  if (Array.isArray(param) && param[0] === "python") {
-    return "python";
-  }
-  return "typescript";
-}
-
-function buildLanguageTabRegex(language: string) {
-  return new RegExp(
-    `<LanguageTabContent\\s+value="${language}"[^>]*>([\\s\\S]*?)</LanguageTabContent>`,
-    "gi",
-  );
-}
-
-export function filterLanguageContent(
-  content: string,
-  languageParam?: string | string[] | undefined,
-): string {
-  const language = normalizeLanguageParam(languageParam);
-  const excludeLang = language === "python" ? "typescript" : "python";
-
-  let filtered = content.replace(buildLanguageTabRegex(excludeLang), "");
-  filtered = filtered.replace(
-    buildLanguageTabRegex(language),
-    (_match, inner) => inner ?? "",
-  );
-
-  return filtered;
-}
+// Whitelist of publicly visible sections for the TOC.
+// New sections are hidden by default until explicitly added here.
+// This prevents accidentally exposing sections behind feature flags (ai, hosting, etc.)
+const PUBLIC_SECTIONS = new Set(["moosestack", "guides"]);
 
 /**
- * Clean markdown content for LLM consumption
+ * Generate TOC markdown for LLM consumption
+ * Lists all documentation pages with links to their /llm.md endpoints
+ * Filters out sections/pages behind feature flags
  */
-export function cleanContent(content: string): string {
-  let cleaned = content;
+export function generateLlmToc(): string {
+  const sections: { title: string; entries: TocEntry[] }[] = [];
 
-  // Remove MDX module-level imports/exports (before first heading)
-  const firstHeadingMatch = cleaned.match(/^#+ /m);
-  if (firstHeadingMatch && firstHeadingMatch.index !== undefined) {
-    const beforeHeading = cleaned.slice(0, firstHeadingMatch.index);
-    const afterHeading = cleaned.slice(firstHeadingMatch.index);
-
-    const cleanedBeforeHeading = beforeHeading
-      .replace(/^import .*$/gm, "")
-      .replace(/^export (default|const) .*$/gm, "");
-
-    cleaned = cleanedBeforeHeading + afterHeading;
+  for (const config of Object.values(sectionNavigationConfigs)) {
+    // Only include whitelisted public sections
+    if (!PUBLIC_SECTIONS.has(config.id)) {
+      continue;
+    }
+    const entries = processNavItems(config.nav);
+    if (entries.length > 0) {
+      sections.push({ title: config.title, entries });
+    }
   }
 
-  // Remove JSX components
-  cleaned = cleaned.replace(/<>|<\/>/g, "");
-  cleaned = cleaned.replace(/<[A-Z][A-Za-z0-9]*(?:\s[^<>]*)?\/>/g, "");
-  cleaned = cleaned.replace(/<[A-Z][A-Za-z0-9]*(?:\s[^<>]*)?>/g, "");
-  cleaned = cleaned.replace(/<\/[A-Z][A-Za-z0-9]*>/g, "");
-  // Remove HTML tags (like <div>, <script>, <span>)
-  cleaned = cleaned.replace(/(^|\s)<\/?[a-z][a-z0-9]*(?:\s[^>]*)?>/gm, "$1");
+  const lines: string[] = [
+    "# MooseStack Documentation",
+    "",
+    "This is a table of contents for the MooseStack documentation.",
+    "Each link points to the LLM-friendly markdown version of that page.",
+    "Append `?lang=typescript` or `?lang=python` to any link for language-specific content.",
+    "",
+  ];
 
-  // Remove HTML comments (apply repeatedly to catch nested/fragmented cases)
-  let prev: string;
-  do {
-    prev = cleaned;
-    cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, "");
-  } while (cleaned !== prev);
+  for (const section of sections) {
+    lines.push(`## ${section.title}`, "");
+    for (const entry of section.entries) {
+      const desc = entry.description ? ` - ${entry.description}` : "";
+      lines.push(`- [${entry.title}](${entry.url})${desc}`);
+    }
+    lines.push("");
+  }
 
-  // Clean up excessive whitespace
-  cleaned = cleaned.replace(/^[ \t]+$/gm, "");
-  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
-  cleaned = cleaned.trim();
-
-  return cleaned;
-}
-
-/**
- * Build table of contents
- */
-function buildTableOfContents(sections: LLMSection[]): string {
-  const items = sections.map(
-    (section, index) => `${index + 1}. ${section.source}`,
-  );
-  return ["## Included Files", ...items].join("\n");
+  return lines.join("\n");
 }

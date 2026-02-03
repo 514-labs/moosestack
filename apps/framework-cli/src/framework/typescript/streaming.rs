@@ -1,7 +1,7 @@
 use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
-use tracing::{error, info};
+use tracing::info;
 
 use super::bin;
 use crate::infrastructure::stream::kafka::models::KafkaConfig;
@@ -12,7 +12,6 @@ const FUNCTION_RUNNER_BIN: &str = "streaming-functions";
 
 // TODO: we currently refer kafka configuration here. If we want to be able to
 // abstract this to other type of streaming engine, we will need to be able to abstract this away.
-#[allow(clippy::too_many_arguments)]
 pub fn run(
     kafka_config: &KafkaConfig,
     source_topic: &StreamConfig,
@@ -21,7 +20,6 @@ pub fn run(
     project: &Project,
     project_path: &Path,
     max_subscriber_count: usize,
-    is_dmv2: bool,
     // TODO Remove the anyhow type here
 ) -> Result<Child, std::io::Error> {
     let subscriber_count_str = max_subscriber_count.to_string();
@@ -46,28 +44,24 @@ pub fn run(
         args
     );
 
-    if kafka_config.sasl_username.is_some() {
+    if let Some(sasl_username) = &kafka_config.sasl_username {
         args.push("--sasl-username");
-        args.push(kafka_config.sasl_username.as_ref().unwrap());
+        args.push(sasl_username);
     }
 
-    if kafka_config.sasl_password.is_some() {
+    if let Some(sasl_password) = &kafka_config.sasl_password {
         args.push("--sasl-password");
-        args.push(kafka_config.sasl_password.as_ref().unwrap());
+        args.push(sasl_password);
     }
 
-    if kafka_config.sasl_mechanism.is_some() {
+    if let Some(sasl_mechanism) = &kafka_config.sasl_mechanism {
         args.push("--sasl-mechanism");
-        args.push(kafka_config.sasl_mechanism.as_ref().unwrap());
+        args.push(sasl_mechanism);
     }
 
-    if kafka_config.security_protocol.is_some() {
+    if let Some(security_protocol) = &kafka_config.security_protocol {
         args.push("--security-protocol");
-        args.push(kafka_config.security_protocol.as_ref().unwrap());
-    }
-
-    if is_dmv2 {
-        args.push("--is-dmv2");
+        args.push(security_protocol);
     }
 
     if project.log_payloads {
@@ -88,7 +82,6 @@ pub fn run(
         .expect("Streaming process did not have a handle to stderr");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -96,11 +89,13 @@ pub fn run(
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            error!("{}", line);
-        }
-    });
+    // Spawn structured logger for stderr with UI display for errors
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
+        stderr,
+        "function_name",
+        crate::cli::logger::resource_type::TRANSFORM,
+        Some("Streaming"),
+    );
 
     Ok(streaming_function_process)
 }

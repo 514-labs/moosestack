@@ -1,0 +1,20 @@
+{
+  "buildCommand": "pnpm --filter web-app build",
+  "installCommand": "pnpm install",
+  "framework": "nextjs",
+  "outputDirectory": "packages/web-app/.next",
+  "env": {
+    "ANTHROPIC_API_KEY": {
+      "description": "Your Anthropic API key for Claude",
+      "required": true
+    },
+    "MCP_SERVER_URL": {
+      "description": "URL of your MCP server",
+      "required": true
+    },
+    "MCP_API_TOKEN": {
+      "description": "Authentication token for the MCP server",
+      "required": true
+    }
+  }
+}

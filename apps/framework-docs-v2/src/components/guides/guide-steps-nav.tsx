@@ -18,20 +18,39 @@ interface GuideStepsNavProps {
   steps: Step[];
   currentSlug: string;
   children?: React.ReactNode;
+  // Callback to update step visibility in parent
+  onStepChange?: (stepIndex: number) => void;
+}
+
+// Context for sharing step state with wrapper
+interface StepContextValue {
+  currentStepIndex: number;
+  setCurrentStepIndex: (index: number) => void;
+  steps: Step[];
+}
+
+export const StepContext = React.createContext<StepContextValue | null>(null);
+
+export function useStepContext() {
+  return React.useContext(StepContext);
 }
 
 export function GuideStepsNav({
   steps,
   currentSlug,
   children,
+  onStepChange,
 }: GuideStepsNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [currentStepIndex, setCurrentStepIndex] = React.useState(0);
+  const isInitialMount = React.useRef(true);
 
-  // Determine current step from URL hash or default to first step
+  // Determine current step from URL hash on mount only
   React.useEffect(() => {
+    if (typeof window === "undefined") return;
+
     const hash = window.location.hash;
     if (hash) {
       const stepMatch = hash.match(/step-(\d+)/);
@@ -45,67 +64,56 @@ export function GuideStepsNav({
     }
   }, [steps]);
 
-  // Update URL hash and show/hide steps when step changes
+  // Update URL hash when step changes (but not on initial mount)
   React.useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
     if (steps.length > 0 && currentStepIndex < steps.length) {
       const currentStep = steps[currentStepIndex];
       if (currentStep) {
-        const hasPrevious = currentStepIndex > 0;
-        const hasNext = currentStepIndex < steps.length - 1;
-
-        // Update URL hash
-        window.history.replaceState(
-          null,
-          "",
-          `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}#step-${currentStep.stepNumber}`,
-        );
-
-        // Show/hide step content
-        const stepContents = document.querySelectorAll(".step-content");
-        stepContents.forEach((content, index) => {
-          if (index === currentStepIndex) {
-            content.classList.remove("hidden");
-            content.classList.add("block");
-          } else {
-            content.classList.add("hidden");
-            content.classList.remove("block");
-          }
-        });
-
-        // Update card header with current step info
-        const cardTitle = document.querySelector(".step-card-title");
-        const cardBadge = document.querySelector(".step-card-badge");
-        const buttonsContainer = document.getElementById(
-          "step-nav-buttons-container",
-        );
-        if (cardTitle) cardTitle.textContent = currentStep.title;
-        if (cardBadge)
-          cardBadge.textContent = currentStep.stepNumber.toString();
-
-        // Update navigation buttons
-        if (buttonsContainer) {
-          buttonsContainer.innerHTML = `
-            <button
-              class="step-nav-prev inline-flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-              ${hasPrevious ? "" : "disabled"}
-              onclick="window.__goToStep(${currentStepIndex - 1})"
-            >
-              <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-              Previous
-            </button>
-            <button
-              class="step-nav-next inline-flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
-              ${hasNext ? "" : "disabled"}
-              onclick="window.__goToStep(${currentStepIndex + 1})"
-            >
-              Next
-              <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-            </button>
-          `;
-        }
+        // Update URL hash without triggering navigation
+        const searchString = searchParams?.toString();
+        const url = `${pathname}${searchString ? `?${searchString}` : ""}#step-${currentStep.stepNumber}`;
+        window.history.replaceState(null, "", url);
       }
     }
   }, [currentStepIndex, steps, pathname, searchParams]);
+
+  // Notify parent of step changes for visibility updates
+  React.useEffect(() => {
+    onStepChange?.(currentStepIndex);
+  }, [currentStepIndex, onStepChange]);
+
+  const goToStep = React.useCallback(
+    (index: number) => {
+      if (index >= 0 && index < steps.length) {
+        setCurrentStepIndex(index);
+        // Scroll to top of steps section
+        requestAnimationFrame(() => {
+          const element = document.getElementById("guide-steps");
+          if (element) {
+            element.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+      }
+    },
+    [steps.length],
+  );
+
+  // Pre-compute URL base once
+  const urlBase = React.useMemo(() => {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.set("lang", language);
+    return `?${params.toString()}`;
+  }, [searchParams, language]);
+
+  const buildUrl = React.useCallback(
+    (stepSlug: string) => `/${stepSlug}${urlBase}`,
+    [urlBase],
+  );
 
   if (steps.length === 0) return null;
 
@@ -113,33 +121,13 @@ export function GuideStepsNav({
   const hasPrevious = currentStepIndex > 0;
   const hasNext = currentStepIndex < steps.length - 1;
 
-  const goToStep = (index: number) => {
-    if (index >= 0 && index < steps.length) {
-      setCurrentStepIndex(index);
-      // Scroll to top of steps section
-      const element = document.getElementById("guide-steps");
-      if (element) {
-        element.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }
-  };
-
-  // Expose goToStep to window for button onclick handlers
-  React.useEffect(() => {
-    (window as any).__goToStep = goToStep;
-    return () => {
-      delete (window as any).__goToStep;
-    };
-  }, [goToStep]);
-
-  const buildUrl = (stepSlug: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("lang", language);
-    return `/${stepSlug}?${params.toString()}`;
-  };
+  const contextValue = React.useMemo(
+    () => ({ currentStepIndex, setCurrentStepIndex, steps }),
+    [currentStepIndex, steps],
+  );
 
   return (
-    <>
+    <StepContext.Provider value={contextValue}>
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Implementation Steps</h2>
         <div className="flex gap-2">
@@ -158,6 +146,30 @@ export function GuideStepsNav({
       </div>
 
       {children}
+
+      {/* Navigation buttons - rendered in React instead of innerHTML */}
+      <div className="flex gap-2 mt-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => goToStep(currentStepIndex - 1)}
+          disabled={!hasPrevious}
+          className="gap-2"
+        >
+          <IconChevronLeft className="h-4 w-4" />
+          Previous
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => goToStep(currentStepIndex + 1)}
+          disabled={!hasNext}
+          className="gap-2"
+        >
+          Next
+          <IconChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
 
       {/* Step list for navigation */}
       <div className="mt-6 space-y-2">
@@ -185,6 +197,6 @@ export function GuideStepsNav({
           ))}
         </div>
       </div>
-    </>
+    </StepContext.Provider>
   );
 }

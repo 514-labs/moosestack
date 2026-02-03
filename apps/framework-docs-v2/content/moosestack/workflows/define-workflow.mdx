@@ -38,7 +38,7 @@ export const task1 = new Task<Foo, void>("task1", {
   },
 });
 
-export const myworkflow = new Workflow("myworkflow", {
+export const example_workflow = new Workflow("example", {
   startingTask: task1,
 });
 ```
@@ -62,8 +62,8 @@ task1 = Task[Foo, None](
   config=TaskConfig(run=run_task1)
 )
 
-myworkflow = Workflow(
-  name="myworkflow",
+example_workflow = Workflow(
+  name="example",
   config=WorkflowConfig(starting_task=task1)
 )
 ```
@@ -114,7 +114,7 @@ export const task1 = new Task<Foo, Bar>("task1", {
   onComplete: [task2],
 });
 
-export const myworkflow = new Workflow("myworkflow", {
+export const examploe_workflow = new Workflow("example", {
   startingTask: task1,
 });
 ```
@@ -159,8 +159,8 @@ task1 = Task[Foo, Bar](
   )
 )
 
-myworkflow = Workflow(
-  name="myworkflow",
+example_workflow = Workflow(
+  name="example",
   config=WorkflowConfig(starting_task=task1)
 )
 ```
@@ -221,3 +221,20 @@ With this more detailed output, you can see the exact sequence of events and the
 The result of each task is included in the output, allowing you to inspect the data that was passed between task for debugging purposes.
 
 If your workflow fails due to some runtime error, you can use the event history timeline to identify the task that failed.
+
+## Workflow Lifecycle
+
+Moose compares your code to the last known state and applies changes automatically — both at startup and during hot reload.
+
+| Change Type | Behavior |
+|-------------|----------|
+| **Add workflow** | Registered with Temporal (scheduled) or available for manual trigger |
+| **Remove workflow** | Terminated in Temporal |
+| **Rename workflow** | Old terminated, new registered |
+| **Workflow config** | Old terminated, new registered |
+| **Task code or config** | Picked up automatically — the worker restarts and uses the new code |
+| **No changes** | Nothing happens — workers reconnect, existing workflows continue |
+
+When Moose stops, workflow definitions and schedules persist in Temporal. On restart, Moose reconnects and resumes orchestration.
+
+Workflow config changes that trigger re-registration: `schedule`, `retries`, and `timeout`. Task config & code changes are picked up automatically when the worker restarts.

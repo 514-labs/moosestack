@@ -4,7 +4,6 @@ use crate::cli::display::{with_spinner_completion_async, Message, MessageType};
 use crate::cli::routines::RoutineFailure;
 use crate::cli::routines::RoutineSuccess;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::framework::core::primitive_map::PrimitiveMap;
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::{
     parse_clickhouse_connection_string, ClickHouseConfig,
@@ -134,25 +133,15 @@ fn build_count_query(
 
 /// Loads the infrastructure map based on project configuration
 async fn load_infrastructure_map(project: &Project) -> Result<InfrastructureMap, RoutineFailure> {
-    if project.features.data_model_v2 {
-        // Resolve credentials for seeding data into S3-backed tables
-        InfrastructureMap::load_from_user_code(project, true)
-            .await
-            .map_err(|e| {
-                RoutineFailure::error(Message {
-                    action: "SeedClickhouse".to_string(),
-                    details: format!("Failed to load InfrastructureMap: {e:?}"),
-                })
-            })
-    } else {
-        let primitive_map = PrimitiveMap::load(project).await.map_err(|e| {
+    // Resolve credentials for seeding data into S3-backed tables
+    InfrastructureMap::load_from_user_code(project, true)
+        .await
+        .map_err(|e| {
             RoutineFailure::error(Message {
                 action: "SeedClickhouse".to_string(),
-                details: format!("Failed to load Primitives: {e:?}"),
+                details: format!("Failed to load InfrastructureMap: {e:?}"),
             })
-        })?;
-        Ok(InfrastructureMap::new(project, primitive_map))
-    }
+        })
 }
 
 /// Builds the ORDER BY clause for a table based on infrastructure map or provided order
@@ -392,6 +381,54 @@ async fn seed_clickhouse_operation(
     Ok((local_db, remote_db, summary))
 }
 
+/// Reports row counts by querying system.parts for the local database
+async fn report_row_counts(project: &Project) -> Result<String, RoutineFailure> {
+    let local_clickhouse = ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "ReportRowCounts".to_string(),
+            format!("Failed to create local ClickHouseClient: {e}"),
+        ))
+    })?;
+
+    let db_name = local_clickhouse
+        .config()
+        .db_name
+        .replace('\\', "\\\\")
+        .replace('\'', "''");
+    let sql = format!(
+        "SELECT table AS table_name, sum(rows) AS total_rows FROM system.parts WHERE database = '{}' AND active = 1 GROUP BY table ORDER BY total_rows DESC",
+        db_name
+    );
+
+    let result = local_clickhouse.execute_sql(&sql).await.map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "ReportRowCounts".to_string(),
+            format!("Failed to query row counts: {e}"),
+        ))
+    })?;
+
+    // Parse the tab-separated results into a formatted table
+    let mut output = String::from("Row counts after seeding:\n");
+    for line in result.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 2 {
+            let table_name = parts[0].trim();
+            let row_count = parts[1].trim();
+            output.push_str(&format!("  {}: {} rows\n", table_name, row_count));
+        }
+    }
+
+    if output == "Row counts after seeding:\n" {
+        output.push_str("  (no tables with data found)\n");
+    }
+
+    Ok(output)
+}
+
 /// Get list of available tables from remote ClickHouse database
 /// Returns a set of (database, table_name) tuples
 async fn get_remote_tables(
@@ -437,6 +474,7 @@ pub async fn handle_seed_command(
             all,
             table,
             order_by,
+            report,
         }) => {
             let resolved_clickhouse_url = match clickhouse_url {
                 Some(s) => s.clone(),
@@ -476,13 +514,26 @@ pub async fn handle_seed_command(
             )
             .await?;
 
+            let report_output = if *report {
+                match report_row_counts(project).await {
+                    Ok(counts) => format!("\n{}", counts),
+                    Err(e) => format!("\nReport failed: {}", e.message.details),
+                }
+            } else {
+                String::new()
+            };
+
+            let manual_hint = "\nYou can validate the seed manually (e.g., for tables in non-default databases):\n  $ moose query \"SELECT count(*) FROM <table>\"";
+
             Ok(RoutineSuccess::success(Message::new(
                 "Seeded".to_string(),
                 format!(
-                    "Seeded '{}' from '{}'\n{}",
+                    "Seeded '{}' from '{}'\n{}{}{}",
                     local_db_name,
                     remote_db_name,
-                    summary.join("\n")
+                    summary.join("\n"),
+                    report_output,
+                    manual_hint
                 ),
             )))
         }
@@ -630,7 +681,6 @@ mod tests {
             topic_to_table_sync_processes: HashMap::new(),
             topic_to_topic_sync_processes: HashMap::new(),
             function_processes: HashMap::new(),
-            block_db_processes: crate::framework::core::infrastructure::olap_process::OlapProcess {},
             consumption_api_web_server: crate::framework::core::infrastructure::consumption_webserver::ConsumptionApiWebServer {},
             orchestration_workers: HashMap::new(),
             sql_resources: HashMap::new(),

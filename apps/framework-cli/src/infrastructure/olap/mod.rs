@@ -1,3 +1,4 @@
+use clickhouse::sql_parser::normalize_sql_for_comparison;
 use clickhouse::ClickhouseChangesError;
 
 use crate::framework::core::infrastructure::sql_resource::SqlResource;
@@ -92,6 +93,30 @@ pub trait OlapOperations {
         db_name: &str,
         default_database: &str,
     ) -> Result<Vec<SqlResource>, OlapChangesError>;
+
+    /// Normalizes SQL using the database's native formatting.
+    ///
+    /// This is used to compare SQL statements for semantic equivalence,
+    /// handling differences in formatting, parenthesization, and numeric literals.
+    ///
+    /// # Arguments
+    /// * `sql` - The SQL string to normalize
+    /// * `default_database` - The default database name to strip from the result
+    ///
+    /// # Returns
+    /// * `Result<String, OlapChangesError>` - The normalized SQL string
+    ///
+    /// # Default Implementation
+    /// Uses Rust-based AST normalization as a fallback.
+    /// Implementations should override this to use native database normalization.
+    async fn normalize_sql(
+        &self,
+        sql: &str,
+        default_database: &str,
+    ) -> Result<String, OlapChangesError> {
+        // Default implementation uses Rust-based normalization
+        Ok(normalize_sql_for_comparison(sql, default_database))
+    }
 }
 
 /// This method dispatches the execution of the changes to the right olap storage.

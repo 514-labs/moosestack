@@ -321,7 +321,7 @@ impl ResourceInfo for ResourceListing {
     }
 }
 
-pub async fn ls_dmv2(
+pub async fn ls(
     project: &Project,
     _type: Option<&str>,
     name: Option<&str>,

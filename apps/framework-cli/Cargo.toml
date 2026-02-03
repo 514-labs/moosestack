@@ -49,7 +49,7 @@ lazy_static = "1.4.0"
 anyhow = "1.0"
 git2 = { version = "0.18.1", features = ["vendored-libgit2"] }
 regex = "1.10.3"
-reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }
+reqwest = { version = "0.13.1", default-features = false, features = ["stream", "json", "blocking", "query", "native-tls"] }
 chrono = { version = "0.4", features = ["serde"] }
 bytes = "1"
 futures = "0.3"
@@ -58,7 +58,6 @@ flate2 = "1.0"
 tar = "0.4"
 rustpython-parser = "0.3.1"
 rustpython-ast = { version = "0.3.1", features = ["unparse"] }
-walkdir = "2"
 comfy-table = "7.1.1"
 ratatui = "0.27.0"
 prometheus-parse = "0.2.5"
@@ -88,6 +87,10 @@ logos = "0.15.0"
 # Monitoring
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+opentelemetry = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb" }
+opentelemetry_sdk = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["rt-tokio", "logs"] }
+opentelemetry-otlp = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["logs", "grpc-tonic"] }
+opentelemetry-appender-tracing = { git = "https://github.com/open-telemetry/opentelemetry-rust.git", rev = "81b459a102e16e644cb27ebebb0976c5234d65bb", features = ["experimental_span_attributes"] }
 prometheus-client = "0.23"
 serde_yaml = "0.9.34"
 temporal-sdk-core = { git = "https://github.com/temporalio/sdk-core.git", rev = "b94b2fc172c2740705b3454a0e04b856fe426233" }
@@ -110,7 +113,7 @@ clickhouse = { version = "0.14.0", features = ["uuid", "test-util"] }
 assert_cmd = "2.0.12"
 assert_fs = "1.0.13"
 predicates = "3.0.4"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { version = "0.13.1", default-features = false, features = ["blocking", "json", "query", "native-tls"] }
 serial_test = "3.1.1"
 
 [build-dependencies]

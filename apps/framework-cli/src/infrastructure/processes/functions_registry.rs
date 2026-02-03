@@ -48,7 +48,8 @@ impl FunctionProcessRegistry {
         fields(
             context = context::RUNTIME,
             resource_type = resource_type::TRANSFORM,
-            resource_name = %function_process.id(),
+            // Use source_primitive.name for log correlation with infrastructure map
+            resource_name = %function_process.source_primitive.name,
         )
     )]
     pub fn start(
@@ -60,7 +61,6 @@ impl FunctionProcessRegistry {
         let redpanda_config = self.project.redpanda_config.clone();
         let executable = function_process.executable.clone();
         let parallel_process_count = function_process.parallel_process_count;
-        let data_model_v2 = self.project.features.data_model_v2;
 
         match (
             infra_map.find_topic_by_id(&function_process.source_topic_id),
@@ -92,7 +92,6 @@ impl FunctionProcessRegistry {
                                 &source_topic,
                                 Some(&target_topic),
                                 &executable,
-                                data_model_v2,
                             )?)
                         })
                     } else if function_process.is_ts_function_process() {
@@ -105,7 +104,6 @@ impl FunctionProcessRegistry {
                                 &project,
                                 &project_location,
                                 parallel_process_count,
-                                data_model_v2,
                             )?)
                         })
                     } else {
@@ -147,7 +145,6 @@ impl FunctionProcessRegistry {
                                 &source_topic,
                                 None,
                                 &executable,
-                                data_model_v2,
                             )?)
                         })
                     } else if function_process.is_ts_function_process() {
@@ -160,7 +157,6 @@ impl FunctionProcessRegistry {
                                 &project,
                                 &project_location,
                                 parallel_process_count,
-                                data_model_v2,
                             )?)
                         })
                     } else {
