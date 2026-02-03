@@ -114,9 +114,8 @@ impl ClickHouseRemote {
         let port = match protocol {
             Protocol::Http => {
                 u16::try_from(config.host_port).expect("host_port must be a valid u16 (0-65535)")
-            }
-            // Protocol::Native => u16::try_from(config.native_port)
-            //     .expect("native_port must be a valid u16 (0-65535)"),
+            } // Protocol::Native => u16::try_from(config.native_port)
+              //     .expect("native_port must be a valid u16 (0-65535)"),
         };
 
         Self {
