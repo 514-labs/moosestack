@@ -14,6 +14,7 @@ import {
   CustomizePanel,
   CustomizeGrid,
   SelectField,
+  ConditionalContent,
 } from "@/components/mdx";
 
 # Improving the Performance of Your Dashboards
@@ -51,11 +52,13 @@ This guide will:
 
 ### What this guide is for
 
-This guide is for you if you already have customer-facing dashboards or reports in production, and you're experiencing:
+The root cause of slow dashboards is usually analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, competing with the core transactional workloads that power the rest of your application.
+
+You'll know you're hitting this when you see one (or more) of these symptoms:
 
 <BulletPointsCard
   title="Common symptoms"
-  bulletStyle="bullet"
+  bulletStyle="x"
   bullets={[
     {
       title: "Charts/metrics take 5+ seconds to load",
@@ -72,13 +75,18 @@ This guide is for you if you already have customer-facing dashboards or reports 
   ]}
 />
 
-The root cause of slow dashboards is usually analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, which compete with the core transactional workloads that power the rest of your application.
+This guide lays out a step-by-step path to offload those analytical workloads to a purpose-built analytical database (ClickHouse), incrementally, without needing to rearchitect your existing application.
 
-This guide lays out a step-by-step path to offload those analytical workloads to a purpose-built analytical database (ClickHouse), that can be done incrementally and without needing to rearchitect your existing application.
+At a high level, you'll:
+
+1. Stand up ClickHouse and replicate the data your dashboards need
+2. Set up a local development workflow that supports ClickHouse-backed analytics
+3. Migrate one dashboard/report at a time by translating OLTP queries to ClickHouse
+4. Ship your changes to production on Boreal Cloud
 
 ### Why this matters
 
-Customer-facing analytics becomes mission-critical once users depend on it to understand their behavior, progress, or outcomes. Slow or unreliable dashboards drive down engagement: lower retention, higher churn, and direct revenue impact as users stop trusting your product for insights.
+Customer-facing analytics becomes mission-critical once users depend on it to understand their behavior, progress, or outcomes. Slow or unreliable dashboards drive down engagement: lower retention, higher churn, and direct revenue impact as users stop trusting your product for insights. Fast dashboards do the opposite—they encourage exploration, increase repeat usage, and let customers interact with your data in ways you can't predict upfront.
 
 <Callout type="info" title="Case study: F45's LionHeart experience">
 LionHeart is where F45's most engaged members track workout performance and progress. Their original OLTP-backed implementation meant they had to ship reports as static images rather than interactive charts.
@@ -94,7 +102,7 @@ Most teams don't start with a dedicated analytical database (OLAP), and it's oft
 
 <BulletPointsCard
   title="Why teams delay adopting OLAP"
-  bulletStyle="bullet"
+  bulletStyle="default"
   bullets={[
     {
       title: "The OLTP path is the highest-ROI path early on",
@@ -121,15 +129,21 @@ Most teams don't start with a dedicated analytical database (OLAP), and it's oft
 
 While it's common to delay adopting OLAP, there's an inflection point at which it becomes a real business risk. OLAP migrations are non-trivial and can take months with traditional data engineering tooling. If you wait too long to start or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning. 
 
+<Callout type="info" title="Feeling daunted? This is designed to be incremental">
+You don't need to migrate your entire analytics stack at once. In this guide, you'll translate **one dashboard/report at a time**: replicate only the data you need, model it in ClickHouse, and cut over reads when you’re confident.
+
+If you get stuck on a schema design decision or an especially complex query, join the [Moose community Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) and we’ll help you map out the next step.
+</Callout>
+
 ### When to pull the trigger
 
-Users want more metrics, filters, breakdowns, or longer time ranges in their dashboards. But engineering can't deliver these seemingly small changes without risking the transactional workloads your core product depends on. Load times creep up. Customers complain. Before long, those complaints surface in retention metrics, support tickets, and sales calls.
+Users want more metrics, filters, breakdowns, or longer time ranges in their dashboards, but engineering can't deliver these seemingly small changes without risking the transactional workloads your core product depends on. Load times creep up. Customers complain. Before long, those complaints surface in retention metrics, support tickets, and sales calls.
 
 Throwing more hardware at the problem either isn't possible or is prohibitively expensive. Even when feasible, this approach only buys temporary relief. The underlying issue is certain to resurface.
 
 ### What success looks like
 
-When this works, the impact shows up in both product velocity and system reliability.
+You'll have migrated to ClickHouse successfully if you see a measurable impact on both product velocity and system reliability.
 
 Dashboards stay fast as data grows, instead of degrading over time. Analytical workloads run on dedicated infrastructure, so your transactional database can focus on what it does best.
 
@@ -142,10 +156,12 @@ This tutorial assumes you already have a dashboard or report running in producti
 
 1. Getting you up and running with a ClickHouse database
 2. Setting up your local dev environment to work with ClickHouse
-2. Migrating your dashboard business logic from OLTP to MooseStack/ClickHouse
-3. Shipping your changes to production on Boreal Cloud
+3. Migrating your dashboard business logic from OLTP to MooseStack/ClickHouse
+4. Shipping your changes to production on Boreal Cloud
 
-**AI copilot (optional but recommended):** We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, Github Copilot, Windsurf, etc.) will work.
+For this guide, assume a **remote ClickHouse instance** (e.g. ClickHouse Cloud) and a **local MooseStack project** that you’ll use for development.
+
+**AI copilot (optional but recommended):** We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub Copilot, Windsurf, etc.) will work—editors that support MCPs can make this workflow even faster.
 
 **Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
 
@@ -168,14 +184,20 @@ This tutorial assumes you already have a dashboard or report running in producti
 </CustomizePanel>
 
 
-<ConditionalContent whenId="cdc-method" whenValue="postgres">
-### Optional: ClickHouse Cloud ClickPipes (Postgres CDC)
+<ConditionalContent whenId="source-database" whenValue="postgres">
+### ClickHouse Cloud ClickPipes (Postgres CDC)
 
 To get started, you'll need to create a new ClickHouse Cloud account and create a new ClickPipes pipeline to mirror your Postgres data into ClickHouse.
 
 - [Create a new ClickHouse Cloud Account](https://auth.clickhouse.cloud/u/signup)
 - [Docs for Setting up ClickPipes CDC with Postgres](https://clickhouse.com/docs/cloud/reference/billing/clickpipes/postgres-cdc)
+
+<Callout type="info" title="Assumption for the rest of this guide">
+Once you’ve set up CDC (via ClickPipes or another method), the rest of this guide primarily interacts with **ClickHouse** (modeling tables/views and migrating read queries). We’ll treat your OLTP database as the source of truth feeding ClickHouse.
+</Callout>
+
 </ConditionalContent>
+
 
 ### Add MooseStack to your Project
 
@@ -197,7 +219,8 @@ To get started, you'll need to create a new ClickHouse Cloud account and create 
     },
     {
       title: "macOS, Linux, or WSL 2+ on Windows",
-      description: "Windows users: see the appendix for WSL 2 setup instructions."
+      description: "Windows users: see the appendix for WSL 2 setup instructions.",
+      link: { text: "Appendix", href: "#appendix", external: false }
     },
     {
       title: "Install Moose CLI",
