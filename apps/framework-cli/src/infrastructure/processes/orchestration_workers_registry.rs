@@ -86,7 +86,7 @@ impl OrchestrationWorkersRegistry {
         let start_fn: crate::utilities::system::StartChildFn<OrchestrationWorkersRegistryError> =
             if language == SupportedLanguages::Python {
                 Box::new(move || {
-                    python::scripts_worker::start_worker(&project)
+                    python::scripts_worker::start_worker(&project, project.is_production)
                         .map_err(OrchestrationWorkersRegistryError::from)
                 })
             } else {
