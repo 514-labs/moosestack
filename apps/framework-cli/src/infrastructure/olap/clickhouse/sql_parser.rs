@@ -322,7 +322,7 @@ fn find_matching_paren(
 }
 
 /// Returns the SQL substring corresponding to the given span.
-fn slice_for_span<'a>(sql: &'a str, span: Span) -> Option<&'a str> {
+fn slice_for_span(sql: &str, span: Span) -> Option<&str> {
     let start = location_to_index(sql, span.start)?;
     let end = location_to_index(sql, span.end)?;
     if end < start {
