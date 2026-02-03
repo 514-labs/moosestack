@@ -1320,6 +1320,16 @@ const guidesNavigationConfig: NavigationConfig = [
         languages: ["typescript", "python"],
         status: "draft",
       },
+      {
+        type: "page",
+        slug: "guides/sap-hana-cdc-to-clickhouse",
+        title: "SAP HANA CDC to ClickHouse",
+        description:
+          "Set up Change Data Capture from SAP HANA to ClickHouse using Moose workflows",
+        icon: IconDatabaseImport,
+        languages: ["python"],
+        status: "draft",
+      },
     ],
   },
   {
