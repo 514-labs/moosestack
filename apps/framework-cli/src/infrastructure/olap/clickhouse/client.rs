@@ -237,9 +237,8 @@ impl ClickHouseClient {
     /// `Ok(true)` if the table exists, `Ok(false)` if it doesn't, `Err` on query failure
     #[allow(dead_code)]
     pub async fn table_exists(&self, database: &str, table_name: &str) -> anyhow::Result<bool> {
-        let result = self
-            .execute_sql(&build_exists_table_query(database, table_name))
-            .await?;
+        let query = build_exists_table_query(database, table_name)?;
+        let result = self.execute_sql(&query).await?;
         Ok(result.trim() == "1")
     }
 
@@ -257,13 +256,38 @@ impl ClickHouseClient {
         database: &str,
         table_name: &str,
     ) -> anyhow::Result<()> {
-        self.execute_sql(&build_drop_table_query(database, table_name))
-            .await?;
+        let query = build_drop_table_query(database, table_name)?;
+        self.execute_sql(&query).await?;
         Ok(())
     }
 }
 
 const DDL_COMMANDS: &[&str] = &["INSERT", "CREATE", "ALTER", "DROP", "TRUNCATE"];
+
+/// Validates that a string is a valid ClickHouse identifier.
+///
+/// ClickHouse identifiers (database names, table names, etc.) must:
+/// - Be non-empty
+/// - Contain only alphanumeric characters and underscores
+/// - Not start with a digit
+///
+/// This prevents SQL injection attacks by rejecting malicious input.
+fn validate_identifier(name: &str, identifier_type: &str) -> anyhow::Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("{} cannot be empty", identifier_type);
+    }
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        anyhow::bail!(
+            "{} '{}' contains invalid characters (only alphanumeric and underscore allowed)",
+            identifier_type,
+            name
+        );
+    }
+    if name.chars().next().unwrap().is_numeric() {
+        anyhow::bail!("{} '{}' cannot start with a digit", identifier_type, name);
+    }
+    Ok(())
+}
 
 /// Builds an INSERT query string for a ClickHouse table.
 ///
@@ -286,25 +310,38 @@ fn build_insert_query(database: &str, table_name: &str, columns: &[String]) -> S
 /// Builds an EXISTS TABLE query string for a ClickHouse table.
 ///
 /// # Arguments
-/// * `database` - The database name
-/// * `table_name` - The table name
+/// * `database` - The database name (must be a valid identifier)
+/// * `table_name` - The table name (must be a valid identifier)
 ///
 /// # Returns
 /// A formatted EXISTS TABLE query string like: `EXISTS TABLE "db"."table"`
-fn build_exists_table_query(database: &str, table_name: &str) -> String {
-    format!("EXISTS TABLE \"{}\".\"{}\"", database, table_name)
+///
+/// # Errors
+/// Returns an error if database or table_name contains invalid characters
+fn build_exists_table_query(database: &str, table_name: &str) -> anyhow::Result<String> {
+    validate_identifier(database, "Database name")?;
+    validate_identifier(table_name, "Table name")?;
+    Ok(format!("EXISTS TABLE \"{}\".\"{}\"", database, table_name))
 }
 
 /// Builds a DROP TABLE IF EXISTS query string for a ClickHouse table.
 ///
 /// # Arguments
-/// * `database` - The database name
-/// * `table_name` - The table name
+/// * `database` - The database name (must be a valid identifier)
+/// * `table_name` - The table name (must be a valid identifier)
 ///
 /// # Returns
 /// A formatted DROP TABLE IF EXISTS query string like: `DROP TABLE IF EXISTS "db"."table"`
-fn build_drop_table_query(database: &str, table_name: &str) -> String {
-    format!("DROP TABLE IF EXISTS \"{}\".\"{}\"", database, table_name)
+///
+/// # Errors
+/// Returns an error if database or table_name contains invalid characters
+fn build_drop_table_query(database: &str, table_name: &str) -> anyhow::Result<String> {
+    validate_identifier(database, "Database name")?;
+    validate_identifier(table_name, "Table name")?;
+    Ok(format!(
+        "DROP TABLE IF EXISTS \"{}\".\"{}\"",
+        database, table_name
+    ))
 }
 
 fn query_param(query: &str, database: Option<&str>) -> anyhow::Result<String> {
@@ -510,7 +547,7 @@ mod tests {
 
     #[test]
     fn test_build_exists_table_query() {
-        let result = build_exists_table_query("test_db", "my_table");
+        let result = build_exists_table_query("test_db", "my_table").unwrap();
         assert_eq!(
             result, "EXISTS TABLE \"test_db\".\"my_table\"",
             "Should build EXISTS TABLE query with double-quoted identifiers"
@@ -519,7 +556,7 @@ mod tests {
 
     #[test]
     fn test_build_exists_table_query_with_special_characters() {
-        let result = build_exists_table_query("analytics_db", "user_events");
+        let result = build_exists_table_query("analytics_db", "user_events").unwrap();
         assert_eq!(
             result, "EXISTS TABLE \"analytics_db\".\"user_events\"",
             "Should handle underscores in database and table names"
@@ -528,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_build_drop_table_query() {
-        let result = build_drop_table_query("test_db", "my_table");
+        let result = build_drop_table_query("test_db", "my_table").unwrap();
         assert_eq!(
             result, "DROP TABLE IF EXISTS \"test_db\".\"my_table\"",
             "Should build DROP TABLE IF EXISTS query with double-quoted identifiers"
@@ -537,7 +574,7 @@ mod tests {
 
     #[test]
     fn test_build_drop_table_query_with_special_characters() {
-        let result = build_drop_table_query("analytics_db", "user_events");
+        let result = build_drop_table_query("analytics_db", "user_events").unwrap();
         assert_eq!(
             result, "DROP TABLE IF EXISTS \"analytics_db\".\"user_events\"",
             "Should handle underscores in database and table names"
@@ -547,7 +584,7 @@ mod tests {
     #[test]
     fn test_exists_query_includes_wait_end_of_query() {
         // EXISTS is not a DDL command, so it should NOT include wait_end_of_query
-        let query = build_exists_table_query("db", "table");
+        let query = build_exists_table_query("db", "my_table").unwrap();
         let result = query_param(&query, None).unwrap();
         assert!(
             !result.contains("wait_end_of_query"),
@@ -558,11 +595,78 @@ mod tests {
     #[test]
     fn test_drop_table_query_includes_wait_end_of_query() {
         // DROP is a DDL command, so it should include wait_end_of_query
-        let query = build_drop_table_query("db", "table");
+        let query = build_drop_table_query("db", "my_table").unwrap();
         let result = query_param(&query, None).unwrap();
         assert!(
             result.contains("wait_end_of_query=1"),
             "DROP TABLE query should include wait_end_of_query parameter"
         );
+    }
+
+    #[test]
+    fn test_validate_identifier_valid() {
+        assert!(validate_identifier("test_db", "Database").is_ok());
+        assert!(validate_identifier("my_table", "Table").is_ok());
+        assert!(validate_identifier("Table123", "Table").is_ok());
+        assert!(validate_identifier("_private", "Table").is_ok());
+    }
+
+    #[test]
+    fn test_validate_identifier_empty() {
+        let result = validate_identifier("", "Database");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_validate_identifier_invalid_characters() {
+        let result = validate_identifier("my-table", "Table");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid characters"));
+
+        let result = validate_identifier("my.table", "Table");
+        assert!(result.is_err());
+
+        let result = validate_identifier("my table", "Table");
+        assert!(result.is_err());
+
+        // SQL injection attempt
+        let result = validate_identifier("table\"; DROP TABLE users; --", "Table");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_identifier_starts_with_digit() {
+        let result = validate_identifier("123table", "Table");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("cannot start with a digit"));
+    }
+
+    #[test]
+    fn test_build_exists_table_query_rejects_invalid_identifiers() {
+        // SQL injection attempt in database name
+        let result = build_exists_table_query("db\"; DROP TABLE users; --", "table");
+        assert!(result.is_err());
+
+        // SQL injection attempt in table name
+        let result = build_exists_table_query("db", "table\"; DROP TABLE users; --");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_build_drop_table_query_rejects_invalid_identifiers() {
+        // SQL injection attempt in database name
+        let result = build_drop_table_query("db\"; DROP TABLE users; --", "table");
+        assert!(result.is_err());
+
+        // SQL injection attempt in table name
+        let result = build_drop_table_query("db", "table\"; DROP TABLE users; --");
+        assert!(result.is_err());
     }
 }
