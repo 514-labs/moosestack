@@ -1258,7 +1258,6 @@ const guidesNavigationConfig: NavigationConfig = [
       "Transfer data from QlikView QVD files to ClickHouse using MooseStack workflows.",
     icon: IconDatabaseImport,
     languages: ["python"],
-    status: "draft",
   },
 
   // ===========================================
