@@ -9,14 +9,12 @@ use super::{
     stream::kafka::models::{KafkaConfig, KafkaStreamConfig},
 };
 use crate::{
-    framework::{
-        blocks::model::BlocksError,
-        core::infrastructure_map::{Change, InfraMapError, InfrastructureMap, ProcessChange},
+    framework::core::infrastructure_map::{
+        Change, InfraMapError, InfrastructureMap, ProcessChange,
     },
     metrics::Metrics,
 };
 
-pub mod blocks_registry;
 pub mod consumption_registry;
 pub mod functions_registry;
 pub mod kafka_clickhouse_sync;
@@ -30,9 +28,6 @@ pub enum SyncProcessChangesError {
 
     #[error("Failed in the function registry")]
     FunctionRegistry(#[from] functions_registry::FunctionRegistryError),
-
-    #[error("Failed in the blocks registry")]
-    OlapProcess(#[from] BlocksError),
 
     #[error("Failed in the analytics api registry")]
     ConsumptionProcess(#[from] ConsumptionError),
@@ -68,6 +63,7 @@ pub async fn execute_changes(
 
                 process_registry.syncing.start_topic_to_table(
                     sync.id(),
+                    &sync.source_primitive.name,
                     source_kafka_topic.name.clone(),
                     source_topic.columns.clone(),
                     target_table.name.clone(),
@@ -95,6 +91,7 @@ pub async fn execute_changes(
                 process_registry.syncing.stop_topic_to_table(&before.id());
                 process_registry.syncing.start_topic_to_table(
                     after.id(),
+                    &after.source_primitive.name,
                     after_kafka_source_topic.name.clone(),
                     after_source_topic.columns.clone(),
                     after_target_table.name.clone(),
@@ -171,13 +168,6 @@ pub async fn execute_changes(
                 process_registry.functions.stop(before).await;
                 process_registry.functions.start(infra_map, after)?;
             }
-            // Olap process changes are conditional on the leader instance
-            ProcessChange::OlapProcess(Change::Added(_)) => {}
-            ProcessChange::OlapProcess(Change::Removed(_)) => {}
-            ProcessChange::OlapProcess(Change::Updated {
-                before: _,
-                after: _,
-            }) => {}
             ProcessChange::ConsumptionApiWebServer(Change::Added(_)) => {
                 tracing::info!("Starting analytics api webserver process");
                 process_registry.consumption.start()?;
@@ -213,33 +203,6 @@ pub async fn execute_changes(
                 process_registry.orchestration_workers.stop(before).await?;
                 process_registry.orchestration_workers.start(after).await?;
             }
-        }
-    }
-
-    Ok(())
-}
-
-/// This method executes changes that are only allowed on the leader instance.
-pub async fn execute_leader_changes(
-    process_registry: &mut ProcessRegistries,
-    changes: &[ProcessChange],
-) -> Result<(), SyncProcessChangesError> {
-    for change in changes.iter() {
-        match (change, &mut process_registry.blocks) {
-            (ProcessChange::OlapProcess(Change::Added(olap_process)), Some(blocks)) => {
-                tracing::info!("Starting Blocks process: {:?}", olap_process.id());
-                blocks.start(olap_process)?;
-            }
-            (ProcessChange::OlapProcess(Change::Removed(olap_process)), Some(blocks)) => {
-                tracing::info!("Stopping Blocks process: {:?}", olap_process.id());
-                blocks.stop(olap_process).await?;
-            }
-            (ProcessChange::OlapProcess(Change::Updated { before, after }), Some(blocks)) => {
-                tracing::info!("Updating Blocks process: {:?}", before.id());
-                blocks.stop(before).await?;
-                blocks.start(after)?;
-            }
-            _ => {}
         }
     }
 

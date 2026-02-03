@@ -75,3 +75,9 @@ venv/
 # ignore content folders
 templates/*/content/
 content-generation.mdc
+
+# guide todo files
+*-todo.md
+
+# auto-generated sitemaps
+**/public/sitemap*.xml

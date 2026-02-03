@@ -20,7 +20,7 @@ impl NodeVersion {
     }
 }
 
-/// Known LTS versions of Node.js as of 2024
+/// Known LTS versions of Node.js
 /// This should be updated periodically or ideally fetched from Node.js release API
 const NODE_LTS_VERSIONS: &[NodeVersion] = &[
     NodeVersion {
@@ -29,6 +29,10 @@ const NODE_LTS_VERSIONS: &[NodeVersion] = &[
     },
     NodeVersion {
         major: 22,
+        is_lts: true,
+    },
+    NodeVersion {
+        major: 24,
         is_lts: true,
     },
 ];
@@ -73,17 +77,63 @@ pub fn parse_node_engine_requirement(
 }
 
 /// Normalizes Node.js version requirements to semver format
-/// Handles common patterns like ">=18", "18.x", "^18.0.0", etc.
+/// Handles common patterns like ">=18", "18.x", "^18.0.0", ">=20 <=24", etc.
 fn normalize_node_version_requirement(req: &str) -> String {
     let trimmed = req.trim();
 
-    // Handle patterns like ">=18", ">=18.0", etc.
+    // Handle compound requirements like ">=20 <=24" by splitting and normalizing each part
+    // Semver crate uses comma separation for AND conditions
+    if trimmed.contains(' ') {
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        let normalized_parts: Vec<String> = parts
+            .iter()
+            .map(|part| normalize_single_version_requirement(part))
+            .collect();
+        return normalized_parts.join(", ");
+    }
+
+    normalize_single_version_requirement(trimmed)
+}
+
+/// Normalizes a single version requirement (no spaces/compound)
+fn normalize_single_version_requirement(req: &str) -> String {
+    let trimmed = req.trim();
+
+    // Handle two-character operators first to avoid wrong matches
+    // >=, <=, then single-character >, <
     if let Some(version_part) = trimmed.strip_prefix(">=") {
         let version_part = version_part.trim();
         if !version_part.contains('.') {
             return format!(">={}.0.0", version_part);
         } else if version_part.matches('.').count() == 1 {
-            return format!("{}.0", trimmed);
+            return format!(">={}.0", version_part);
+        }
+    }
+
+    if let Some(version_part) = trimmed.strip_prefix("<=") {
+        let version_part = version_part.trim();
+        if !version_part.contains('.') {
+            return format!("<={}.0.0", version_part);
+        } else if version_part.matches('.').count() == 1 {
+            return format!("<={}.0", version_part);
+        }
+    }
+
+    if let Some(version_part) = trimmed.strip_prefix('>') {
+        let version_part = version_part.trim();
+        if !version_part.contains('.') {
+            return format!(">{}.0.0", version_part);
+        } else if version_part.matches('.').count() == 1 {
+            return format!(">{}.0", version_part);
+        }
+    }
+
+    if let Some(version_part) = trimmed.strip_prefix('<') {
+        let version_part = version_part.trim();
+        if !version_part.contains('.') {
+            return format!("<{}.0.0", version_part);
+        } else if version_part.matches('.').count() == 1 {
+            return format!("<{}.0", version_part);
         }
     }
 
@@ -169,37 +219,120 @@ mod tests {
 
     #[test]
     fn test_normalize_node_version_requirement() {
+        // Greater-than-or-equal (>=)
         assert_eq!(normalize_node_version_requirement(">=18"), ">=18.0.0");
-        assert_eq!(normalize_node_version_requirement("^18"), "^18.0.0");
-        assert_eq!(normalize_node_version_requirement("18.x"), "^18.0.0");
-        assert_eq!(normalize_node_version_requirement("18"), "^18.0.0");
+        assert_eq!(normalize_node_version_requirement(">=18.5"), ">=18.5.0");
         assert_eq!(normalize_node_version_requirement(">=18.5.0"), ">=18.5.0");
+
+        // Less-than-or-equal (<=)
+        assert_eq!(normalize_node_version_requirement("<=24"), "<=24.0.0");
+        assert_eq!(normalize_node_version_requirement("<=24.5"), "<=24.5.0");
+        assert_eq!(normalize_node_version_requirement("<=24.5.0"), "<=24.5.0");
+
+        // Greater-than (>)
+        assert_eq!(normalize_node_version_requirement(">18"), ">18.0.0");
+        assert_eq!(normalize_node_version_requirement(">18.5"), ">18.5.0");
+        assert_eq!(normalize_node_version_requirement(">18.5.0"), ">18.5.0");
+
+        // Less-than (<)
+        assert_eq!(normalize_node_version_requirement("<25"), "<25.0.0");
+        assert_eq!(normalize_node_version_requirement("<25.5"), "<25.5.0");
+        assert_eq!(normalize_node_version_requirement("<25.5.0"), "<25.5.0");
+
+        // Caret (^)
+        assert_eq!(normalize_node_version_requirement("^18"), "^18.0.0");
+        assert_eq!(normalize_node_version_requirement("^18.0.0"), "^18.0.0");
+
+        // Tilde (~)
+        assert_eq!(normalize_node_version_requirement("~18"), "~18.0.0");
+        assert_eq!(normalize_node_version_requirement("~18.0.0"), "~18.0.0");
+
+        // Wildcard patterns
+        assert_eq!(normalize_node_version_requirement("18.x"), "^18.0.0");
+        assert_eq!(normalize_node_version_requirement("18.*"), "^18.0.0");
+
+        // Bare number
+        assert_eq!(normalize_node_version_requirement("18"), "^18.0.0");
+
+        // Compound requirements
+        assert_eq!(
+            normalize_node_version_requirement(">=20 <25"),
+            ">=20.0.0, <25.0.0"
+        );
+        assert_eq!(
+            normalize_node_version_requirement(">=20.0.0 <25.0.0"),
+            ">=20.0.0, <25.0.0"
+        );
+        assert_eq!(
+            normalize_node_version_requirement(">18 <=24"),
+            ">18.0.0, <=24.0.0"
+        );
+
+        // Whitespace handling
+        assert_eq!(normalize_node_version_requirement("  >=18  "), ">=18.0.0");
+        assert_eq!(
+            normalize_node_version_requirement(">=20   <25"),
+            ">=20.0.0, <25.0.0"
+        );
     }
 
     #[test]
     fn test_find_compatible_lts_version() {
+        // No requirement - should return default (20)
+        let version_none = find_compatible_lts_version(None);
+        assert_eq!(version_none.major, 20);
+        assert!(version_none.is_lts);
+
+        // >=20 - should pick highest (24)
         let req = VersionReq::parse(">=20.0.0").unwrap();
         let version = find_compatible_lts_version(Some(&req));
-        assert!(version.major >= 20);
+        assert_eq!(version.major, 24);
         assert!(version.is_lts);
 
-        // Test that it picks the highest compatible version (should be 22)
-        assert_eq!(version.major, 22);
-
-        // Test with constraint that should pick specific version
+        // ^20 - should pick exactly 20
         let req_20 = VersionReq::parse("^20.0.0").unwrap();
         let version_20 = find_compatible_lts_version(Some(&req_20));
         assert_eq!(version_20.major, 20);
 
-        // Test that >=18.0.0 still works since 20 and 22 satisfy it
+        // ^22 - should pick exactly 22
+        let req_22 = VersionReq::parse("^22.0.0").unwrap();
+        let version_22 = find_compatible_lts_version(Some(&req_22));
+        assert_eq!(version_22.major, 22);
+
+        // ^24 - should pick exactly 24
+        let req_24 = VersionReq::parse("^24.0.0").unwrap();
+        let version_24 = find_compatible_lts_version(Some(&req_24));
+        assert_eq!(version_24.major, 24);
+
+        // >=18 - should pick highest available (24)
         let req_18_plus = VersionReq::parse(">=18.0.0").unwrap();
         let version_18_plus = find_compatible_lts_version(Some(&req_18_plus));
-        assert_eq!(version_18_plus.major, 22); // Should pick highest available (22)
+        assert_eq!(version_18_plus.major, 24);
 
-        // Test that ^18.0.0 (18.x.x only) falls back to default since 18 is not available
+        // ^18 - no match, should fall back to default (20)
         let req_18_caret = VersionReq::parse("^18.0.0").unwrap();
         let version_18_caret = find_compatible_lts_version(Some(&req_18_caret));
-        assert_eq!(version_18_caret.major, 20); // Should fall back to default (20)
+        assert_eq!(version_18_caret.major, 20);
+
+        // >=20 <25 - should pick highest in range (24)
+        let req_compound = VersionReq::parse(">=20.0.0, <25.0.0").unwrap();
+        let version_compound = find_compatible_lts_version(Some(&req_compound));
+        assert_eq!(version_compound.major, 24);
+
+        // >=20 <23 - should pick highest in range (22)
+        let req_compound_22 = VersionReq::parse(">=20.0.0, <23.0.0").unwrap();
+        let version_compound_22 = find_compatible_lts_version(Some(&req_compound_22));
+        assert_eq!(version_compound_22.major, 22);
+
+        // >=20 <21 - should pick 20
+        let req_compound_20 = VersionReq::parse(">=20.0.0, <21.0.0").unwrap();
+        let version_compound_20 = find_compatible_lts_version(Some(&req_compound_20));
+        assert_eq!(version_compound_20.major, 20);
+
+        // >24 - no match (nothing > 24), should fall back to default (20)
+        let req_gt_24 = VersionReq::parse(">24.0.0").unwrap();
+        let version_gt_24 = find_compatible_lts_version(Some(&req_gt_24));
+        assert_eq!(version_gt_24.major, 20);
     }
 
     #[test]
@@ -222,5 +355,60 @@ mod tests {
         let req = result.unwrap();
         let version = Version::new(18, 0, 0);
         assert!(req.matches(&version));
+    }
+
+    #[test]
+    fn test_parse_package_json_without_engines() {
+        let dir = tempdir().unwrap();
+        let package_json_path = dir.path().join("package.json");
+
+        let content = r#"{
+            "name": "test-package"
+        }"#;
+
+        fs::write(&package_json_path, content).unwrap();
+
+        let result = parse_node_engine_requirement(&package_json_path).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_package_json_missing_file() {
+        let dir = tempdir().unwrap();
+        let package_json_path = dir.path().join("nonexistent.json");
+
+        let result = parse_node_engine_requirement(&package_json_path).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_determine_node_version_with_compound_requirement() {
+        // End-to-end test with our actual >=20 <25 format
+        let dir = tempdir().unwrap();
+        let package_json_path = dir.path().join("package.json");
+
+        let content = r#"{
+            "name": "test-package",
+            "engines": {
+                "node": ">=20 <25"
+            }
+        }"#;
+
+        fs::write(&package_json_path, content).unwrap();
+
+        let version = determine_node_version_from_package_json(&package_json_path);
+        assert_eq!(version.major, 24); // Should pick highest in range
+        assert!(version.is_lts);
+    }
+
+    #[test]
+    fn test_determine_node_version_fallback() {
+        // Test fallback when no package.json exists
+        let dir = tempdir().unwrap();
+        let package_json_path = dir.path().join("nonexistent.json");
+
+        let version = determine_node_version_from_package_json(&package_json_path);
+        assert_eq!(version.major, 20); // Should fall back to default
+        assert!(version.is_lts);
     }
 }

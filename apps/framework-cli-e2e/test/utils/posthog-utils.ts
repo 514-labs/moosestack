@@ -1,0 +1,104 @@
+/**
+ * PostHog utilities for sending events from E2E tests.
+ */
+
+import { PostHog } from "posthog-node";
+import { logger } from "./logger";
+
+const posthogLogger = logger.scope("posthog");
+
+const POSTHOG_HOST = "https://us.i.posthog.com";
+
+export interface PostHogEvent {
+  /** Event name (e.g., "llm_docs_automation_test", "e2e_test_run") */
+  event: string;
+  /** Custom properties for this event */
+  properties?: PostHogMetricsProperties;
+  /** Optional distinct ID override (defaults to CI run ID or local timestamp) */
+  distinctId?: string;
+}
+
+export interface PostHogMetricsProperties {
+  language: string;
+  success: boolean;
+  error?: string;
+  total_duration_ms: number;
+  time_to_cli_install_ms: number | null;
+  time_to_moose_init_ms: number | null;
+  time_to_moose_dev_ms: number | null;
+  time_to_ingest_ms: number | null;
+  llm_calls: number;
+  commands_executed: number;
+  doc_searches: number;
+  phases: { phase: string; duration_ms: number | null }[];
+}
+
+/**
+ * Default distinct ID for E2E tests.
+ * Using a consistent ID groups all test runs under one "person" in PostHog.
+ */
+const DEFAULT_DISTINCT_ID = "moose-e2e-tests";
+
+/**
+ * Get additional context about the test run environment.
+ */
+function getRunContext(): Record<string, string | undefined> {
+  return {
+    git_branch: process.env.GITHUB_REF_NAME || process.env.GITHUB_HEAD_REF,
+    git_sha: process.env.GITHUB_SHA,
+    ci_run_id: process.env.GITHUB_RUN_ID,
+    ci_run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+    ci_workflow: process.env.GITHUB_WORKFLOW,
+    ci_actor: process.env.GITHUB_ACTOR,
+    node_version: process.version,
+    platform: process.platform,
+    arch: process.arch,
+  };
+}
+
+/**
+ * Send an event to PostHog.
+ *
+ * @param event - The event to send (name, properties, optional distinctId)
+ * @param apiKey - Optional API key override (defaults to POSTHOG_API_KEY env var)
+ * @returns true if sent successfully, false otherwise
+ */
+export async function sendPostHogEvent(
+  event: PostHogEvent,
+  apiKey?: string,
+): Promise<boolean> {
+  const key = apiKey || process.env.POSTHOG_API_KEY;
+
+  if (!key) {
+    posthogLogger.warn("⚠️  POSTHOG_API_KEY not set, skipping event");
+    return false;
+  }
+
+  const distinctId = event.distinctId || DEFAULT_DISTINCT_ID;
+
+  try {
+    posthogLogger.info(
+      `📤 Sending "${event.event}" to PostHog (distinct_id: ${distinctId})`,
+    );
+
+    const client = new PostHog(key, { host: POSTHOG_HOST });
+
+    client.capture({
+      distinctId,
+      event: event.event,
+      properties: {
+        ...getRunContext(),
+        ...event.properties,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    await client.shutdown();
+
+    posthogLogger.info("✅ Event sent to PostHog successfully");
+    return true;
+  } catch (error) {
+    posthogLogger.error(`❌ Error sending event to PostHog: ${error}`);
+    return false;
+  }
+}

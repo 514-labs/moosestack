@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install black
-        run: pip install black
+        run: pip install black==25.12.0  # Keep in sync with packages/py-moose-lib/requirements-dev.txt
       - name: Check black compliance
         run: black --check .
 

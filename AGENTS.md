@@ -39,6 +39,29 @@ Multi-language monorepo (Rust CLI + TypeScript/Python libraries) using PNPM work
 - **Run E2E**: `cd apps/framework-cli-e2e && pnpm test` (includes pretest: cargo build, pnpm build, package templates)
 - **Single E2E test**: `cd apps/framework-cli-e2e && pnpm test --grep "test name"`
 
+### Testing Templates Manually
+Templates cannot be run directly from within the repo—they must be initialized in a temp directory first. To test a template using the current branch's CLI and moose-lib versions:
+```bash
+# 1. Build the CLI
+cargo build --package moose-cli
+
+# 2. Package templates (creates tgz files with current template content)
+node scripts/package-templates.js
+
+# 3. Initialize template in a temp directory (outside the repo)
+cd /tmp && ~/repos/moosestack/target/debug/moose-cli init my-test-app <template-name>
+
+# 4. Verify the lockfile is up-to-date
+cd /tmp/my-test-app && pnpm install
+git status  # Should show "nothing to commit, working tree clean"
+```
+If the lockfile changes after `pnpm install`, regenerate it in the template source directory:
+```bash
+cd ~/repos/moosestack/templates/<template-name>
+rm -rf node_modules && pnpm install
+# Commit the updated pnpm-lock.yaml
+```
+
 ## Code Style Guidelines
 
 ### TypeScript/JavaScript

@@ -11,7 +11,6 @@ export type DataModelConfig<T> = Partial<{
   parallelism?: number;
 }>;
 
-export * from "./blocks/helpers";
 export * from "./commons";
 export * from "./secrets";
 export * from "./consumption-apis/helpers";
@@ -22,8 +21,6 @@ export {
   getLegacyMooseUtils,
 } from "./consumption-apis/webAppHelpers";
 export * from "./scripts/task";
-
-export { createApi, createConsumptionApi } from "./consumption-apis/runner";
 
 export { MooseCache } from "./clients/redisClient";
 

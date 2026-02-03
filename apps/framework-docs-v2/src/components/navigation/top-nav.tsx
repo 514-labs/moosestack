@@ -134,8 +134,8 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex md:flex-1 md:items-center md:justify-between">
-            <nav className="flex items-center gap-2">
+          <div className="hidden xl:flex xl:flex-1 xl:items-center xl:justify-between">
+            <nav className="flex items-center gap-2 overflow-hidden">
               {navItems.map((item, index) => {
                 const isActive =
                   item.isActive ?
@@ -146,6 +146,7 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
                     key={`${item.section}-${index}`}
                     variant={isActive ? "secondary" : "ghost"}
                     asChild
+                    className="shrink-0 min-w-fit"
                   >
                     <Link
                       href={item.external ? item.href : buildUrl(item.href)}
@@ -162,14 +163,11 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
             <div className="flex items-center space-x-2">
               <Button
                 variant="outline"
-                className="relative h-9 w-full justify-start text-sm text-muted-foreground sm:pr-14 md:w-40 lg:w-64"
+                className="relative h-9 w-full justify-start text-sm text-muted-foreground sm:pr-14 xl:w-64"
                 onClick={() => setSearchOpen(true)}
               >
                 <IconSearch className="mr-2 h-4 w-4" />
-                <span className="hidden lg:inline-flex">
-                  Search documentation
-                </span>
-                <span className="inline-flex lg:hidden">Search...</span>
+                <span className="inline-flex">Search documentation</span>
                 <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 ml-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
                   <span className="text-xs">⌘</span>K
                 </kbd>
@@ -186,7 +184,7 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
           </div>
 
           {/* Mobile Menu Button */}
-          <div className="flex flex-1 items-center justify-end md:hidden">
+          <div className="flex flex-1 items-center justify-end xl:hidden">
             <Button
               variant="ghost"
               size="icon"
@@ -200,8 +198,19 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
 
       {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden border-t">
+        <div className="xl:hidden border-t">
           <div className="px-4 py-4 space-y-2">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => {
+                setSearchOpen(true);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <IconSearch className="mr-2 h-4 w-4" />
+              Search documentation
+            </Button>
             {navItems.map((item, index) => {
               const isActive =
                 item.isActive ?
@@ -225,9 +234,20 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
                 </Button>
               );
             })}
-            <div className="flex items-center justify-center space-x-2 pt-2 border-t">
-              <ThemeToggle />
-              <SidebarTrigger />
+            <Button variant="ghost" asChild className="w-full justify-start">
+              <Link
+                href={buildUrl("/moosestack/release-notes")}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Release Notes
+              </Link>
+            </Button>
+            <div className="flex items-center justify-between pt-2 border-t">
+              <div className="flex items-center space-x-2">
+                <ThemeToggle />
+                <SidebarTrigger />
+              </div>
+              <GitHubButtonGroup stars={stars} />
             </div>
           </div>
         </div>

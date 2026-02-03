@@ -2,13 +2,15 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
 import "@/styles/globals.css";
-import { ThemeProvider } from "@/components/theme-provider";
+import { VercelToolbar } from "@vercel/toolbar/next";
+import { Apollo } from "@/components/apollo";
+import { CommonRoom } from "@/components/common-room";
 import { LanguageProviderWrapper } from "@/components/language-provider-wrapper";
 import { TopNavWithFlags } from "@/components/navigation/top-nav-with-flags";
+import { ScrollRestoration } from "@/components/scroll-restoration";
+import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
-import { ScrollRestoration } from "@/components/scroll-restoration";
-import { VercelToolbar } from "@vercel/toolbar/next";
 
 export const metadata: Metadata = {
   title: "MooseStack Documentation",
@@ -28,6 +30,8 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <Apollo />
+        <CommonRoom />
         <ScrollRestoration />
         <ThemeProvider
           attribute="class"

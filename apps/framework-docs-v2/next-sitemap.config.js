@@ -1,46 +1,11 @@
-const { sectionNavigationConfigs } = require("./src/config/navigation.ts");
-
 /**
- * Recursively collect all draft and beta guide slugs from navigation config
- * to exclude them from the sitemap and prevent search engine indexing.
+ * Load draft and beta slugs from the generated JSON file.
+ * This file is created by scripts/generate-sitemap-excludes.ts during prebuild.
  *
  * This ensures that test pages, work-in-progress guides, and beta features
  * are not discoverable by search engines in production.
  */
-function getDraftAndBetaSlugs() {
-  const slugs = [];
-
-  function processNavItems(items) {
-    for (const item of items) {
-      if (item.type === "page") {
-        // Check if page is draft or beta
-        if (item.status === "draft" || item.status === "beta") {
-          // Add leading slash if not present
-          const slug = item.slug.startsWith("/") ? item.slug : `/${item.slug}`;
-          // Add exact path and wildcard for nested pages
-          slugs.push(slug);
-          slugs.push(`${slug}/*`);
-        }
-        // Process children if they exist
-        if (item.children) {
-          processNavItems(item.children);
-        }
-      } else if (item.type === "section") {
-        // Process section items
-        processNavItems(item.items);
-      }
-    }
-  }
-
-  // Process all section navigation configs
-  for (const sectionConfig of Object.values(sectionNavigationConfigs)) {
-    processNavItems(sectionConfig.nav);
-  }
-
-  return slugs;
-}
-
-const draftAndBetaSlugs = getDraftAndBetaSlugs();
+const draftAndBetaSlugs = require("./generated/sitemap-excludes.json");
 
 /** @type {import('next-sitemap').IConfig} */
 module.exports = {

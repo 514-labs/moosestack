@@ -24,7 +24,6 @@ pub mod api_endpoint;
 pub mod consumption_webserver;
 pub mod function_process;
 pub mod materialized_view;
-pub mod olap_process;
 pub mod orchestration_worker;
 pub mod sql_resource;
 pub mod table;
