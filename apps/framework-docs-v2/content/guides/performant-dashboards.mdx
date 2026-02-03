@@ -131,38 +131,43 @@ Engineering can ship new dashboards, metrics, and breakdowns as routine product 
 
 This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices. You'll work through:
 
-1. Setting up your local dev environment
+1. Getting you up and running with a ClickHouse database
+2. Setting up your local dev environment to work with ClickHouse
 2. Migrating your dashboard business logic from OLTP to MooseStack/ClickHouse
 3. Shipping your changes to production on Boreal Cloud
 
 **AI copilot (optional but recommended):** We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, Github Copilot, Windsurf, etc.) will work.
 
-<Callout type="tip" title="AI copilot tips (optional)">
-If you use a copilot, these two prompts tend to help most in this guide:
-
-* "Generate curl commands to test this new endpoint."
-* "Generate a test script from the success criteria in this guide."
-</Callout>
-
 **Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
 
 <CustomizePanel
-  title="CDC setup"
-  description="Use this toggle to show/hide the SQL Server CDC configuration steps."
+  title="Where does your current data live?"
+  description="Select the database you use today so we can show the right way to replicate this data into ClickHouse"
 >
   <CustomizeGrid columns={1}>
     <SelectField
       id="cdc-method"
-      label="CDC method"
+      label="Source database"
       options={[
-        { value: "debezium", label: "Debezium (SQL Server CDC)" },
-        { value: "clickpipes", label: "ClickHouse Cloud ClickPipes" },
+        { value: "debezium", label: "SQL Server (Debezium)" },
+        { value: "clickpipes", label: "Postgres (ClickPipes)" },
       ]}
       defaultValue="debezium"
       persist
     />
   </CustomizeGrid>
 </CustomizePanel>
+
+
+<ConditionalContent whenId="cdc-method" whenValue="clickpipes">
+### ClickHouse Cloud ClickPipes
+This section is coming soon. For now, use ClickHouse Cloud **ClickPipes** to stream your Postgres data into ClickHouse, then continue with the rest of this guide once the ClickHouse tables are present.
+
+<Callout type="info" title="Tip">
+If you select ClickPipes, make sure your pipeline writes into the same ClickHouse database you configured in Boreal (so `moose seed clickhouse` and your preview environments target the same schema).
+</Callout>
+
+</ConditionalContent>
 
 ### Project setup
 
@@ -447,9 +452,11 @@ This feature is currently in alpha and has the following known limitation:
 If you would like access to experiment with this feature, let us know!
 </Callout> 
 
+<ConditionalContent whenId="cdc-method" whenValue="debezium">
 ### Change data capture (CDC)
 
 For your dashboards to show accurate, real-time data, your ClickHouse analytics database needs to stay in sync with your production SQL Server database. Change Data Capture (CDC) streams every insert, update, and delete in real time. Your reports always reflect the latest state without custom sync jobs or batch ETL scripts.
+
 
 This section walks you through setting up CDC using Debezium. Before you start, make sure you have your SQL Server connection credentials (host, port, username, password, database name).
 
