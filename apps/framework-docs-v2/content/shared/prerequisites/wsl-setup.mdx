@@ -1,0 +1,93 @@
+### Windows (WSL2) setup
+
+#### Prerequisites
+
+- **Windows 10 or 11**: Ensure you are running Windows 10 version 2004 (build 19041) or later, or Windows 11. See Microsoft’s [WSL prerequisites](https://learn.microsoft.com/en-us/windows/wsl/install).
+- **Hardware virtualization**: WSL2 requires a 64-bit processor with virtualization support (e.g. VT-x/AMD-V) enabled in BIOS, and at least 4 GB of RAM to run Docker. See Microsoft’s [WSL containers guide](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers).
+- **Internet access**: The setup will download Linux and various packages (Node.js, Docker, etc.), so an internet connection is required.
+- **Disk space**: Have at least 10–20 GB of free disk space for the Linux filesystem and Docker images.
+- **Docker Desktop**: We’ll use Docker Desktop for Windows (with WSL2 integration) to run MooseStack’s containers.
+- *(Optional)* **Windows Terminal**: Recommended for a better command-line experience. See [Microsoft’s guidance](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl).
+
+#### Step 1: Enable WSL 2 and install Ubuntu Linux
+
+Open PowerShell as Administrator (right-click Start menu, choose **PowerShell (Admin)**), then run:
+
+```shell
+wsl --install
+```
+
+**Restart if prompted.** If Windows asks you to restart, do so to complete the installation.
+
+**If `wsl --install` only shows help text**, list available distros and install Ubuntu explicitly:
+
+```shell
+wsl --list --online
+wsl --install -d Ubuntu
+```
+
+**Complete Ubuntu’s first-time setup.** After reboot, Windows should automatically launch Ubuntu for setup. If it doesn’t open, launch **Ubuntu** from the Start menu.
+
+**Create your Linux user.** You’ll be prompted to create a UNIX username and password for Ubuntu (separate from your Windows credentials). You won’t see characters as you type the password—this is normal.
+
+**Verify you’re on WSL2.** In PowerShell (not the Ubuntu shell), run:
+
+```shell
+wsl -l -v
+```
+
+If your Ubuntu distro shows version `1`, upgrade it:
+
+```shell
+wsl --set-version Ubuntu 2
+```
+
+#### Step 2: Update Linux Packages
+
+Now that Ubuntu is running in WSL, update its package lists and upgrade installed packages:
+
+In the Ubuntu terminal, run:
+
+```shell
+sudo apt update && sudo apt upgrade -y
+```
+
+- This fetches the latest package listings and installs updates. (The `-y` flag auto-confirms prompts during upgrade.)
+- (Optional) Install basic tools:
+
+  ```shell
+  sudo apt install -y build-essential curl git
+  ```
+
+#### Step 3: Install and Configure Docker (WSL Integration)
+
+MooseStack uses Docker containers under the hood for components like ClickHouse and Redpanda. On Windows, the recommended way to run Docker with WSL2 is via **Docker Desktop**.
+
+**Install Docker Desktop**
+
+- **Download and install:** Download **Docker Desktop for Windows** from Docker and run the installer. During installation, it may prompt to enable WSL2 features if not already enabled.
+- **Start Docker Desktop:** Launch Docker Desktop. In the taskbar, you’ll see the Docker whale icon (it may take a few seconds to start up the first time).
+
+**Configure Docker Desktop with WSL2**
+
+- **Enable WSL2 backend:** In Docker Desktop, open **Settings**. Under **General**, ensure **"Use the WSL 2 based engine"** is checked. {/* image */}
+- **Integrate with Ubuntu:** In **Resources > WSL Integration**, enable integration for **Ubuntu** (or the distro you installed). {/* image */}
+- **Allocate sufficient resources:** MooseStack needs at least **2.5 GB** of Docker memory. In **Resources**, set memory to 3–4 GB to be safe.
+- **Apply settings:** Click **Apply & Restart** if you changed any settings.
+
+**Test Docker inside WSL**
+
+In the Ubuntu terminal, run:
+
+```shell
+docker --version
+docker run hello-world
+```
+
+The `hello-world` container should print a “Hello from Docker!” message and exit. You can also run `docker ps` to confirm the Docker daemon is reachable from WSL.
+
+**Troubleshooting:** If `docker run hello-world` fails, ensure Docker Desktop is running and WSL integration is enabled for your distro. Also verify Ubuntu is using WSL2 (Docker won’t work with WSL1).
+
+#### Step 4: Proceed with MooseStack requirements and installation
+
+You now have a working Ubuntu instance on your Windows machine with Docker installed. You can proceed to install MooseStack and its requirements (Node.js 20+ and/or Python 3.12+) as if you were installing on a regular Linux machine. Just make sure to install from the Linux terminal prompt in the Ubuntu instance.
