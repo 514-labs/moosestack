@@ -238,7 +238,7 @@ impl ClickHouseClient {
     #[allow(dead_code)]
     pub async fn table_exists(&self, database: &str, table_name: &str) -> anyhow::Result<bool> {
         let result = self
-            .execute_sql(&format!("EXISTS TABLE `{}`.`{}`", database, table_name))
+            .execute_sql(&build_exists_table_query(database, table_name))
             .await?;
         Ok(result.trim() == "1")
     }
@@ -257,11 +257,8 @@ impl ClickHouseClient {
         database: &str,
         table_name: &str,
     ) -> anyhow::Result<()> {
-        self.execute_sql(&format!(
-            "DROP TABLE IF EXISTS `{}`.`{}`",
-            database, table_name
-        ))
-        .await?;
+        self.execute_sql(&build_drop_table_query(database, table_name))
+            .await?;
         Ok(())
     }
 }
@@ -284,6 +281,30 @@ fn build_insert_query(database: &str, table_name: &str, columns: &[String]) -> S
         table_name,
         wrap_and_join_column_names(columns, ","),
     )
+}
+
+/// Builds an EXISTS TABLE query string for a ClickHouse table.
+///
+/// # Arguments
+/// * `database` - The database name
+/// * `table_name` - The table name
+///
+/// # Returns
+/// A formatted EXISTS TABLE query string like: `EXISTS TABLE "db"."table"`
+fn build_exists_table_query(database: &str, table_name: &str) -> String {
+    format!("EXISTS TABLE \"{}\".\"{}\"", database, table_name)
+}
+
+/// Builds a DROP TABLE IF EXISTS query string for a ClickHouse table.
+///
+/// # Arguments
+/// * `database` - The database name
+/// * `table_name` - The table name
+///
+/// # Returns
+/// A formatted DROP TABLE IF EXISTS query string like: `DROP TABLE IF EXISTS "db"."table"`
+fn build_drop_table_query(database: &str, table_name: &str) -> String {
+    format!("DROP TABLE IF EXISTS \"{}\".\"{}\"", database, table_name)
 }
 
 fn query_param(query: &str, database: Option<&str>) -> anyhow::Result<String> {
@@ -484,6 +505,64 @@ mod tests {
         assert_eq!(
             result, "INSERT INTO \"analytics_db\".\"user_events\" (`user_id`,`event_time`) VALUES",
             "Should handle underscores in database and table names"
+        );
+    }
+
+    #[test]
+    fn test_build_exists_table_query() {
+        let result = build_exists_table_query("test_db", "my_table");
+        assert_eq!(
+            result, "EXISTS TABLE \"test_db\".\"my_table\"",
+            "Should build EXISTS TABLE query with double-quoted identifiers"
+        );
+    }
+
+    #[test]
+    fn test_build_exists_table_query_with_special_characters() {
+        let result = build_exists_table_query("analytics_db", "user_events");
+        assert_eq!(
+            result, "EXISTS TABLE \"analytics_db\".\"user_events\"",
+            "Should handle underscores in database and table names"
+        );
+    }
+
+    #[test]
+    fn test_build_drop_table_query() {
+        let result = build_drop_table_query("test_db", "my_table");
+        assert_eq!(
+            result, "DROP TABLE IF EXISTS \"test_db\".\"my_table\"",
+            "Should build DROP TABLE IF EXISTS query with double-quoted identifiers"
+        );
+    }
+
+    #[test]
+    fn test_build_drop_table_query_with_special_characters() {
+        let result = build_drop_table_query("analytics_db", "user_events");
+        assert_eq!(
+            result, "DROP TABLE IF EXISTS \"analytics_db\".\"user_events\"",
+            "Should handle underscores in database and table names"
+        );
+    }
+
+    #[test]
+    fn test_exists_query_includes_wait_end_of_query() {
+        // EXISTS is not a DDL command, so it should NOT include wait_end_of_query
+        let query = build_exists_table_query("db", "table");
+        let result = query_param(&query, None).unwrap();
+        assert!(
+            !result.contains("wait_end_of_query"),
+            "EXISTS query should NOT include wait_end_of_query parameter"
+        );
+    }
+
+    #[test]
+    fn test_drop_table_query_includes_wait_end_of_query() {
+        // DROP is a DDL command, so it should include wait_end_of_query
+        let query = build_drop_table_query("db", "table");
+        let result = query_param(&query, None).unwrap();
+        assert!(
+            result.contains("wait_end_of_query=1"),
+            "DROP TABLE query should include wait_end_of_query parameter"
         );
     }
 }
