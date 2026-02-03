@@ -1322,7 +1322,7 @@ const guidesNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
-        slug: "guides/data-management/sap-hana-cdc-to-clickhouse",
+        slug: "guides/sap-hana-cdc-to-clickhouse",
         title: "SAP HANA CDC to ClickHouse",
         description:
           "Set up Change Data Capture from SAP HANA to ClickHouse using Moose workflows",
