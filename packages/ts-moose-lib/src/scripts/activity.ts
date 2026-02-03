@@ -3,13 +3,7 @@ import { isCancellation } from "@temporalio/workflow";
 import { Task, Workflow } from "../dmv2";
 import { getWorkflows, getTaskForWorkflow } from "../dmv2/internal";
 import { jsonDateReviver } from "../utilities/json";
-import { setupStructuredConsole } from "../utils/structured-logging";
-
-// Set up structured console logging for task context
-const taskContextStorage = setupStructuredConsole<{ taskName: string }>(
-  (ctx) => ctx.taskName,
-  "task_name",
-);
+import { taskContextStorage } from "./task-context";
 
 export const activities = {
   async hasWorkflow(name: string): Promise<boolean> {
@@ -84,94 +78,94 @@ export const activities = {
     // Get context for heartbeat (required for cancellation detection)
     const context = Context.current();
     const taskState = {};
+    const taskIdentifier = workflow.name;
 
-    // Periodic heartbeat is required for cancellation detection
-    // https://docs.temporal.io/develop/typescript/cancellation#cancel-an-activity
-    // - Temporal activities can only receive cancellation if they send heartbeats
-    // - Heartbeats are the communication channel between activity and Temporal server
-    // - Server sends cancellation signals back in heartbeat responses
-    // - Without heartbeats, context.cancelled will never resolve and cancellation is impossible
-    let heartbeatInterval: NodeJS.Timeout | null = null;
-    const startPeriodicHeartbeat = () => {
-      heartbeatInterval = setInterval(() => {
-        context.heartbeat(`Task ${task.name} in progress`);
-      }, 5000);
-    };
-    const stopPeriodicHeartbeat = () => {
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-      }
-    };
+    // Wrap entire executeTask in task context so ALL logs (framework + user) have task_name
+    return await taskContextStorage.run(
+      { taskName: taskIdentifier },
+      async () => {
+        // Periodic heartbeat is required for cancellation detection
+        // https://docs.temporal.io/develop/typescript/cancellation#cancel-an-activity
+        // - Temporal activities can only receive cancellation if they send heartbeats
+        // - Heartbeats are the communication channel between activity and Temporal server
+        // - Server sends cancellation signals back in heartbeat responses
+        // - Without heartbeats, context.cancelled will never resolve and cancellation is impossible
+        let heartbeatInterval: NodeJS.Timeout | null = null;
+        const startPeriodicHeartbeat = () => {
+          heartbeatInterval = setInterval(() => {
+            context.heartbeat(`Task ${task.name} in progress`);
+          }, 5000);
+        };
+        const stopPeriodicHeartbeat = () => {
+          if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+          }
+        };
 
-    try {
-      logger.info(
-        `Task ${task.name} received input: ${JSON.stringify(inputData)}`,
-      );
+        try {
+          logger.info(
+            `Task ${task.name} received input: ${JSON.stringify(inputData)}`,
+          );
 
-      // Send initial heartbeat to enable cancellation detection
-      context.heartbeat(`Starting task: ${task.name}`);
+          // Send initial heartbeat to enable cancellation detection
+          context.heartbeat(`Starting task: ${task.name}`);
 
-      // Data between temporal workflow & activities are serialized so we
-      // have to get it again to access the user's run function
-      const fullTask = await getTaskForWorkflow(workflow.name, task.name);
+          // Data between temporal workflow & activities are serialized so we
+          // have to get it again to access the user's run function
+          const fullTask = await getTaskForWorkflow(workflow.name, task.name);
 
-      // Revive any JSON serialized dates in the input data
-      const revivedInputData =
-        inputData ?
-          JSON.parse(JSON.stringify(inputData), jsonDateReviver)
-        : inputData;
+          // Revive any JSON serialized dates in the input data
+          const revivedInputData =
+            inputData ?
+              JSON.parse(JSON.stringify(inputData), jsonDateReviver)
+            : inputData;
 
-      try {
-        startPeriodicHeartbeat();
+          try {
+            startPeriodicHeartbeat();
 
-        // Get workflow name for context (matches inframap resource naming)
-        const taskIdentifier = workflow.name;
-
-        // Use AsyncLocalStorage to set context for this task execution
-        // This avoids race conditions from concurrent task executions
-        const result = await taskContextStorage.run(
-          { taskName: taskIdentifier },
-          async () => {
             // Race user code against cancellation detection
             // - context.cancelled Promise rejects when server signals cancellation via heartbeat response
             // - This allows immediate cancellation detection rather than waiting for user code to finish
             // - If cancellation happens first, we catch it below and call onCancel cleanup
-            return await Promise.race([
-              fullTask.config.run({ state: taskState, input: revivedInputData }),
+            const result = await Promise.race([
+              fullTask.config.run({
+                state: taskState,
+                input: revivedInputData,
+              }),
               context.cancelled,
             ]);
-          },
-        );
-        return result;
-      } catch (error) {
-        if (isCancellation(error)) {
-          logger.info(
-            `Task ${task.name} cancelled, calling onCancel handler if it exists`,
-          );
-          if (fullTask.config.onCancel) {
-            await fullTask.config.onCancel({
-              state: taskState,
-              input: revivedInputData,
-            });
+            return result;
+          } catch (error) {
+            if (isCancellation(error)) {
+              logger.info(
+                `Task ${task.name} cancelled, calling onCancel handler if it exists`,
+              );
+              if (fullTask.config.onCancel) {
+                await fullTask.config.onCancel({
+                  state: taskState,
+                  input: revivedInputData,
+                });
+              }
+              return [];
+            } else {
+              throw error;
+            }
+          } finally {
+            stopPeriodicHeartbeat();
           }
-          return [];
-        } else {
-          throw error;
+        } catch (error) {
+          const errorData = {
+            error: "Task execution failed",
+            details: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          };
+          const errorMsg = JSON.stringify(errorData);
+          logger.error(errorMsg);
+          throw new Error(errorMsg);
         }
-      } finally {
-        stopPeriodicHeartbeat();
-      }
-    } catch (error) {
-      const errorData = {
-        error: "Task execution failed",
-        details: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      };
-      const errorMsg = JSON.stringify(errorData);
-      logger.error(errorMsg);
-      throw new Error(errorMsg);
-    }
+      },
+    );
   },
 };
 

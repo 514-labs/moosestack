@@ -92,11 +92,9 @@ export type CliLogData = {
 
 export const cliLog: (log: CliLogData) => void = (log) => {
   const level =
-    log.message_type === "Error"
-      ? "error"
-      : log.message_type === "Warning"
-        ? "warn"
-        : "info";
+    log.message_type === "Error" ? "error"
+    : log.message_type === "Warning" ? "warn"
+    : "info";
 
   const structuredLog = {
     __moose_structured_log__: true,
