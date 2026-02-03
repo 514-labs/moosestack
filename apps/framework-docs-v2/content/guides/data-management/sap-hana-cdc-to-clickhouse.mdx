@@ -191,57 +191,15 @@ moose query "SELECT * FROM CDC_CLIENT_STATUS WHERE CLIENT_ID = 'moose_cdc_client
 
 ### Trigger Creation
 
-When you run `--create-database-triggers`, the connector creates three triggers per table:
-
-```sql
--- Example: INSERT trigger for EKKO table
-CREATE TRIGGER EKKO_INSERT_CDC_TRIGGER
-AFTER INSERT ON SAPHANADB.EKKO
-REFERENCING NEW ROW AS new_row
-FOR EACH ROW
-BEGIN
-    DECLARE new_json NCLOB;
-    SELECT :new_row."EBELN", :new_row."BUKRS", ... INTO new_json FROM DUMMY FOR JSON;
-
-    INSERT INTO SAPHANADB.CDC_CHANGES (
-        TABLE_SCHEMA, TABLE_NAME, TRIGGER_TYPE, TRANSACTION_ID, OLD_VALUES, NEW_VALUES
-    ) VALUES (
-        'SAPHANADB', 'EKKO', 'insert', CURRENT_UPDATE_TRANSACTION(), NULL, :new_json
-    );
-END
-```
-
-Similar triggers are created for UPDATE (capturing both old and new values) and DELETE (capturing old values).
+When you run `--create-database-triggers`, the connector creates three triggers per table (INSERT, UPDATE, and DELETE). Each trigger captures row data as JSON and writes it to the CDC_CHANGES table, with UPDATE triggers capturing both old and new values, and DELETE triggers capturing old values.
 
 ### CDC_CHANGES Table Schema
 
-```sql
-CREATE TABLE CDC_CHANGES (
-    CHANGE_ID BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    TABLE_SCHEMA VARCHAR(128) NOT NULL,
-    TABLE_NAME VARCHAR(128) NOT NULL,
-    TRIGGER_TYPE VARCHAR(10) NOT NULL,  -- 'insert', 'update', 'delete'
-    CHANGE_TIMESTAMP TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    TRANSACTION_ID VARCHAR(50) NOT NULL,
-    OLD_VALUES NCLOB,  -- JSON for UPDATE/DELETE
-    NEW_VALUES NCLOB   -- JSON for INSERT/UPDATE
-)
-```
+The CDC_CHANGES table stores all captured changes with columns for change ID, table identification, trigger type, timestamp, transaction ID, and JSON-serialized old/new values.
 
 ### CDC_CLIENT_STATUS Table Schema
 
-```sql
-CREATE TABLE CDC_CLIENT_STATUS (
-    CLIENT_ID VARCHAR(128) NOT NULL,
-    SCHEMA_NAME VARCHAR(128) NOT NULL,
-    TABLE_NAME VARCHAR(128) NOT NULL,
-    LAST_PROCESSED_CHANGE_ID BIGINT DEFAULT 0,
-    STATUS VARCHAR(128) NOT NULL,  -- 'new' or 'active'
-    CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UPDATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (CLIENT_ID, SCHEMA_NAME, TABLE_NAME)
-)
-```
+The CDC_CLIENT_STATUS table tracks each client's progress through the change stream with columns for client ID, schema/table identification, last processed change ID, status (NEW or ACTIVE), and timestamps.
 
 ### Table Status Lifecycle
 
@@ -260,87 +218,14 @@ The workflow handles this automatically:
 
 The main CDC workflow runs on a schedule (default: every 60 seconds) and orchestrates two tasks:
 
-```python
-# app/workflows/cdc.py
+1. **Initial Load Task**: Processes tables with status=NEW by paginating through all rows and performing a full table copy, then marking them as ACTIVE
+2. **Sync Changes Task**: Processes incremental changes from the CDC_CHANGES table for ACTIVE tables, reading batches of changes and updating the client status after successful processing
 
-from moose_lib import Task, TaskConfig, Workflow, WorkflowConfig, TaskContext
-
-def initial_load_task(ctx: TaskContext[None]) -> None:
-    """Load full table data for any tables with status=NEW"""
-    connector = get_connector()
-    inserter = BatchChangeInserter()
-
-    for table_status in connector.get_client_status():
-        if table_status.status == TableStatus.NEW:
-            # Paginate through all rows
-            offset = 0
-            while True:
-                rows = connector.get_all_table_rows(
-                    table_status.table_name,
-                    page_size=100000,
-                    offset=offset
-                )
-                if not rows:
-                    break
-                inserter.insert_table_data(table_status.table_name, rows)
-                offset += len(rows)
-
-            # Mark as ACTIVE after successful load
-            connector.infrastructure.set_table_status_active(table_status.table_name)
-
-def sync_changes_task(ctx: TaskContext[None]) -> None:
-    """Process incremental changes from CDC_CHANGES table"""
-    connector = get_connector()
-    batch = connector.get_changes(limit=1000)
-
-    if batch:
-        inserter = BatchChangeInserter()
-        inserter.insert(batch.changes)
-        connector.update_client_status(batch)
-
-# Wire up tasks with dependencies
-initial_load_task_instance = Task[None, None](
-    name="initial_load",
-    config=TaskConfig(
-        run=initial_load_task,
-        on_complete=[sync_changes_task_instance]
-    )
-)
-
-cdc_workflow = Workflow(
-    name="cdc",
-    config=WorkflowConfig(
-        starting_task=initial_load_task_instance,
-        retries=3,
-        timeout=300,
-        schedule="@every 60s"
-    )
-)
-```
+The workflow is configured with automatic retries (3 attempts), timeout handling (300 seconds), and runs the initial load task first, followed by the sync changes task.
 
 ### Prune Workflow
 
-To prevent the CDC_CHANGES table from growing indefinitely, a daily prune workflow deletes old entries:
-
-```python
-# app/workflows/prune.py
-
-def prune_database_task(ctx: TaskContext[None]) -> None:
-    retention_days = int(os.getenv("SAP_HANA_CDC_RETENTION_DAYS", "7"))
-    connector = get_connector()
-    result = connector.prune(older_than_days=retention_days)
-    logger.info(f"Pruned {result.entries_deleted} entries older than {result.cutoff_timestamp}")
-
-prune_workflow = Workflow(
-    name="prune_database",
-    config=WorkflowConfig(
-        starting_task=prune_task_instance,
-        retries=1,
-        timeout="10m",
-        schedule="@daily"
-    )
-)
-```
+To prevent the CDC_CHANGES table from growing indefinitely, a daily prune workflow deletes old entries based on the configured retention period (default: 7 days from the `SAP_HANA_CDC_RETENTION_DAYS` environment variable). The workflow runs once per day with a 600-second timeout and automatic retry on failure.
 
 ## Configuration Options
 
@@ -365,19 +250,7 @@ The CDC connector handles both tables and views, with an important distinction:
 - **Tables**: Full CDC support with INSERT/UPDATE/DELETE triggers
 - **Views**: Initial load only (no triggers, as views are read-only)
 
-The connector automatically detects views and skips trigger creation:
-
-```python
-def setup_table_triggers(self) -> None:
-    # Filter out views - only create triggers for tables
-    tables_only = set(self._filter_tables_only(list(desired_tables)))
-
-    for table in tables_only:
-        if self._setup_table_cdc(cursor, table):
-            self._update_table_status(cursor, table, TableStatus.NEW)
-```
-
-Views are still introspected and can be included in `SAP_HANA_TABLES`. They will receive an initial load but won't capture ongoing changes.
+The connector automatically detects views and skips trigger creation. Views are still introspected and can be included in `SAP_HANA_TABLES`. They will receive an initial load but won't capture ongoing changes.
 
 ### Multi-Client Setup
 
@@ -521,58 +394,23 @@ python init_cdc.py --recreate-cdc-tables --tables EKKO
 
 **Memory Errors During Initial Load**
 
-For large tables, reduce the page size:
-
-```python
-# In your workflow, adjust page_size
-rows = connector.get_all_table_rows(
-    table_status.table_name,
-    page_size=10000,  # Smaller batches
-    offset=offset
-)
-```
+For large tables, you can adjust the page size in the workflow to use smaller batches (e.g., 10,000 rows instead of the default 100,000).
 
 **Stale Connection Errors**
 
-The connector includes connection pool management with retry logic:
-
-```python
-connector.refresh_connection()
-```
-
-This is called automatically on connection errors, but you can trigger it manually if needed.
+The connector includes connection pool management with automatic retry logic that refreshes connections on errors. This happens automatically, but can also be triggered manually if needed.
 
 </ToggleBlock>
 
 ### Monitoring
 
-Check CDC health by querying the status tables:
+Monitor CDC health by querying the CDC_CHANGES and CDC_CLIENT_STATUS tables. You can track:
 
-```sql
--- Overall CDC lag
-SELECT
-    (SELECT MAX(CHANGE_TIMESTAMP) FROM CDC_CHANGES) AS latest_change,
-    (SELECT MAX(UPDATED_AT) FROM CDC_CLIENT_STATUS WHERE CLIENT_ID = 'moose_cdc_client') AS last_processed,
-    SECONDS_BETWEEN(
-        (SELECT MAX(UPDATED_AT) FROM CDC_CLIENT_STATUS WHERE CLIENT_ID = 'moose_cdc_client'),
-        (SELECT MAX(CHANGE_TIMESTAMP) FROM CDC_CHANGES)
-    ) AS lag_seconds
-FROM DUMMY;
+- **Overall CDC lag**: Compare the latest change timestamp with the last processed timestamp
+- **Pending changes per table**: Count unprocessed changes for each table based on change IDs
+- **CDC table size**: Monitor the total number of entries in the CDC_CHANGES table
 
--- Pending changes per table
-SELECT
-    ct.TABLE_NAME,
-    COUNT(*) AS pending_changes
-FROM CDC_CHANGES ct
-LEFT JOIN CDC_CLIENT_STATUS cs
-    ON ct.TABLE_NAME = cs.TABLE_NAME
-    AND cs.CLIENT_ID = 'moose_cdc_client'
-WHERE ct.CHANGE_ID > COALESCE(cs.LAST_PROCESSED_CHANGE_ID, 0)
-GROUP BY ct.TABLE_NAME;
-
--- CDC table size
-SELECT COUNT(*) AS total_entries FROM CDC_CHANGES;
-```
+The connector provides built-in methods for accessing this monitoring data programmatically.
 
 ## Summary
 
