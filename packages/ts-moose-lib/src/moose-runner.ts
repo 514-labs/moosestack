@@ -129,13 +129,16 @@ program
           issuer: options.jwtIssuer,
           audience: options.jwtAudience,
         },
-        temporalConfig: {
-          url: options.temporalUrl,
-          namespace: options.temporalNamespace,
-          clientCert: options.clientCert,
-          clientKey: options.clientKey,
-          apiKey: options.apiKey,
-        },
+        temporalConfig:
+          options.temporalUrl ?
+            {
+              url: options.temporalUrl,
+              namespace: options.temporalNamespace,
+              clientCert: options.clientCert,
+              clientKey: options.clientKey,
+              apiKey: options.apiKey,
+            }
+          : undefined,
         enforceAuth: options.enforceAuth,
         proxyPort: options.proxyPort,
         workerCount: options.workerCount,
@@ -196,13 +199,16 @@ program
   .option("--api-key <key>", "API key for authentication")
   .action((options) => {
     runScripts({
-      temporalConfig: {
-        url: options.temporalUrl,
-        namespace: options.temporalNamespace,
-        clientCert: options.clientCert,
-        clientKey: options.clientKey,
-        apiKey: options.apiKey,
-      },
+      temporalConfig:
+        options.temporalUrl ?
+          {
+            url: options.temporalUrl,
+            namespace: options.temporalNamespace,
+            clientCert: options.clientCert,
+            clientKey: options.clientKey,
+            apiKey: options.apiKey,
+          }
+        : undefined,
     });
   });
 

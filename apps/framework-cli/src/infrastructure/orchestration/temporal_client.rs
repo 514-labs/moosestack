@@ -11,7 +11,7 @@ use temporal_sdk_core_protos::temporal::api::workflowservice::v1::{
 };
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::{Channel, Uri};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::infrastructure::orchestration::temporal::{InvalidTemporalSchemeError, TemporalConfig};
 use crate::project::Project;
@@ -103,7 +103,7 @@ impl TemporalClientManager {
     async fn get_temporal_client(&self) -> Result<WorkflowServiceClient<Channel>> {
         let endpoint: Uri = self.temporal_url.parse().unwrap();
         WorkflowServiceClient::connect(endpoint).await.map_err(|e| {
-            eprintln!("{e}");
+            warn!("Failed to connect to Temporal: {}", e);
             Error::msg(format!(
                 r#"Could not connect to Temporal: {e}
 

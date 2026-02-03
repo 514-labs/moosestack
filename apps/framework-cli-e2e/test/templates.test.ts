@@ -30,6 +30,7 @@ import {
   TEMPLATE_NAMES,
   APP_NAMES,
   CLICKHOUSE_CONFIG,
+  TEST_ADMIN_API_KEY_HASH,
 } from "./constants";
 
 import {
@@ -212,6 +213,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
             TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
             MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+            MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
           }
         : {
             ...process.env,
@@ -219,6 +221,7 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
             TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
             MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
+            MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
           };
 
       devProcess = spawn(CLI_PATH, ["dev"], {

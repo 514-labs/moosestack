@@ -1,0 +1,61 @@
+---
+title: January 30, 2026
+description: Release notes for January 30, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# January 30, 2026
+
+<Callout type="info" title="Highlights">
+* **New:** Added Boreal command center with keyboard shortcuts for quick navigation
+* **New:** First-class workflows with infrastructure tracking and lifecycle management
+</Callout>
+
+## Moose
+
+### New Features
+**New guides index page design with enhanced preview cards** ([@callicles](https://github.com/callicles))
+  Redesigned the guides index page with improved visual layout, preview cards showing guide content, language badges (TypeScript/Python), and better mobile responsiveness. Makes it easier to discover and navigate to relevant guides.
+
+  Docs: [Guides](/guides)
+
+**First-class workflows with infrastructure tracking and lifecycle management** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+  Workflows are now treated as first-class infrastructure resources in MooseStack. They are tracked in the infrastructure map, displayed in plan diffs, and managed through the standard infrastructure lifecycle. This means workflow changes (additions, removals, configuration updates) are now visible during `moose plan` and properly managed during deployments. Workflows also now persist across shutdowns - they no longer terminate automatically in development mode, providing more consistent behavior between dev and production environments.
+
+  Docs: [Workflow Lifecycle](/moosestack/workflows/define-workflow#workflow-lifecycle)
+
+**Add Next.js dashboard demo with query layer for ClickHouse** ([@okane16](https://github.com/okane16))
+  New comprehensive Next.js example showing how to build fast customer-facing dashboards on ClickHouse using MooseStack's query layer. Includes a complete dashboard with metrics, time-series charts, and a dynamic report builder. Demonstrates the query model pattern for rapidly building type-safe API endpoints on OLAP tables, targeting product engineers migrating from Postgres to ClickHouse.
+
+**Add Fastify example app to templates documentation** ([@03cranec](https://github.com/03cranec))
+  Added a new Fastify example app to the templates documentation page, demonstrating how to embed MooseStack into an existing Fastify application. The example features a monorepo structure with a Fastify app and child Moose project, making it easier for users to integrate MooseStack with their existing Fastify applications.
+
+  Docs: [Templates](/templates)
+
+### Improvements
+- Add secure password input with masked characters for CLI prompts: Password inputs in the CLI now show asterisks (*) instead of plain text for better security. This affects commands that prompt for database passwords, such as connecting to remote ClickHouse instances. ([@callicles](https://github.com/callicles))
+- Improved workflow documentation with clearer example naming: Updated workflow documentation to use more descriptive variable names making the examples easier to understand and follow for developers learning to define workflows. ([@514Ben](https://github.com/514Ben))
+- Faster TypeScript development rebuilds with fixed incremental compilation: Simplified the TypeScript compiler plugin to properly support incremental compilation. Development rebuilds are now faster because TypeScript can correctly cache and reuse previous compilation results. ([@phiSgr](https://github.com/phiSgr))
+
+### Bug Fixes
+- Fix SQL query comparison in plan and migration commands: Fixed an issue where `moose plan` and migration generation commands would incorrectly show differences between SQL queries that were functionally identical. The commands now properly normalize SQL queries using ClickHouse's native formatting before comparison, eliminating false positives caused by whitespace, formatting, and identifier quoting differences. This makes plan output more accurate and prevents unnecessary migrations. ([@georgevanderson](https://github.com/georgevanderson))
+- Fix workflow precompilation in production builds: Fixed an issue where workflows weren't working properly in production builds due to registry clearing happening in compiled mode. This ensures workflows function correctly when deployed to production environments. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+
+## Boreal
+
+### New Features
+**Added command center with keyboard shortcuts for quick navigation** ([@groy-514](https://github.com/groy-514))
+  Introduced a new command center feature that allows users to quickly navigate and perform actions using keyboard shortcuts. Users can now press Cmd+K (Mac) or Ctrl+K (Windows/Linux) to open a searchable command palette that provides instant access to navigation, theme switching, account settings, and organization management. This improves workflow efficiency by enabling keyboard-driven navigation throughout the platform.
+
+### Improvements
+- Redesigned sign-up page with improved onboarding experience: The sign-up page has been completely redesigned with a new layout featuring marketing content, value propositions, customer testimonials, and a streamlined registration form. Users now see clear benefits of the platform during sign-up and have an improved visual experience with better form organization and navigation. ([@georgevanderson](https://github.com/georgevanderson))
+- Improved homepage and authentication page layout: Enhanced the visual design and layout of the homepage and sign-in/sign-up pages with better responsive design, updated logo display with dark mode support, improved navigation breadcrumbs, and refined marketing section presentation for a better user experience. ([@georgevanderson](https://github.com/georgevanderson))
+- Improved sign-in and sign-up page layout with marketing content: Redesigned the authentication pages with a new split-screen layout that displays marketing content alongside sign-in and sign-up forms. The new layout provides better visual hierarchy and showcases product value propositions during the authentication process. ([@groy-514](https://github.com/groy-514))
+- Branch selector now preserves current page when switching branches: When switching between branches using the branch selector, users now stay on the same page they were viewing instead of being redirected to the overview page. For example, if you're viewing logs and switch branches, you'll remain on the logs page for the new branch. ([@groy-514](https://github.com/groy-514))
+
+### Bug Fixes
+- Fixed navigation not updating when switching organizations: Fixed an issue where branch and project navigation would not properly update when switching between organizations. Users can now seamlessly navigate between different organizations without stale navigation data appearing. ([@groy-514](https://github.com/groy-514))
+- Fixed logs page URL parameters when using time presets: Fixed an issue where the logs page URL would always include startTime and endTime parameters even when using preset time ranges (like "Last 15 minutes" or "Last hour"). Now URLs are cleaner when using presets and only include specific timestamps for custom time ranges. ([@groy-514](https://github.com/groy-514))
+
+
