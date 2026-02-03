@@ -21,7 +21,12 @@ import { promisify } from "util";
 import { createClient, ClickHouseClient } from "@clickhouse/client";
 
 // Import constants and utilities
-import { TIMEOUTS, CLICKHOUSE_CONFIG, SERVER_CONFIG } from "./constants";
+import {
+  TIMEOUTS,
+  CLICKHOUSE_CONFIG,
+  SERVER_CONFIG,
+  TEST_ADMIN_BEARER_TOKEN,
+} from "./constants";
 
 import {
   waitForServerStart,
@@ -62,10 +67,7 @@ const TEST_ENV = {
   // Suppress the prompt for externally managed tables setup
   MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
   // Admin token for moose plan --url authentication
-  // Token: deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef
-  // Hash: 445fd4696cfc5c49e28995c4aba05de44303a112
-  MOOSE_ADMIN_TOKEN:
-    "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef",
+  MOOSE_ADMIN_TOKEN: TEST_ADMIN_BEARER_TOKEN,
 };
 
 /**
