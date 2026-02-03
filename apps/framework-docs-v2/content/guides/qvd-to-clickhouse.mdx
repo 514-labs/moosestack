@@ -260,41 +260,6 @@ Example response:
 }
 ```
 
-### ClickHouse Tracking
-
-Query the tracking table directly for detailed history:
-
-```sql
--- View all file processing history
-SELECT
-    file_name,
-    status,
-    row_count,
-    processing_duration_seconds,
-    processed_at
-FROM local.QvdFileTracking FINAL
-ORDER BY processed_at DESC
-LIMIT 20;
-
--- Check for failures
-SELECT
-    file_name,
-    error_message,
-    processed_at
-FROM local.QvdFileTracking FINAL
-WHERE status = 'failed'
-ORDER BY processed_at DESC;
-
--- View processing performance
-SELECT
-    file_name,
-    AVG(processing_duration_seconds) as avg_duration,
-    AVG(row_count / processing_duration_seconds) as avg_rows_per_sec
-FROM local.QvdFileTracking
-WHERE status = 'completed'
-GROUP BY file_name;
-```
-
 ## Error Handling
 
 ### Missing Models
