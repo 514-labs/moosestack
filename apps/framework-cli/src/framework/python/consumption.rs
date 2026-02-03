@@ -18,6 +18,7 @@ pub fn run(
     clickhouse_config: &ClickHouseConfig,
     jwt_config: &Option<JwtConfig>,
     proxy_port: Option<u16>,
+    is_prod: bool,
 ) -> Result<Child, ConsumptionError> {
     // Create the wrapper lib files inside the .moose directory
     let internal_dir = project.internal_dir()?;
@@ -128,11 +129,13 @@ pub fn run(
         }
     });
 
+    // Spawn structured logger for stderr with UI display for errors
     crate::cli::logger::spawn_stderr_structured_logger_with_ui(
         stderr,
         "api_name",
         crate::cli::logger::resource_type::CONSUMPTION_API,
         Some("API"),
+        is_prod,
     );
 
     Ok(consumption_process)

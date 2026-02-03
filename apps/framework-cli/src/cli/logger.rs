@@ -789,6 +789,8 @@ pub struct StructuredLogData {
     pub resource_name: String,
     pub message: String,
     pub level: String,
+    pub cli_action: Option<String>, // Display label (e.g., "Received", "DeadLetter")
+    pub cli_message_type: Option<String>, // "info" | "success" | "warning" | "error" | "highlight"
 }
 
 /// Parses a structured log from a child process (Node.js/Python).
@@ -868,10 +870,22 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
         .unwrap_or("info")
         .to_ascii_lowercase();
 
+    let cli_action = log_entry
+        .get("cli_action")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let cli_message_type = log_entry
+        .get("cli_message_type")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_ascii_lowercase());
+
     Some(StructuredLogData {
         resource_name,
         message,
         level,
+        cli_action,
+        cli_message_type,
     })
 }
 
@@ -888,6 +902,7 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
 /// - `ui_action`: Optional action name for UI display (e.g., "Streaming", "API"). When `Some`,
 ///   errors will be shown via the callback.
 /// - `ui_callback`: A callback function invoked when errors should be displayed in the UI.
+/// - `is_prod`: When true, suppresses terminal UI display (messages only go to tracing)
 ///
 /// ## Example
 ///
@@ -898,7 +913,7 @@ pub fn parse_structured_log(line: &str, resource_name_field: &str) -> Option<Str
 /// // For testing with in-memory input:
 /// let input = r#"{"__moose_structured_log__":true,"function_name":"fn","level":"error","message":"oops"}"#;
 /// let reader = BufReader::new(Cursor::new(input));
-/// process_stderr_lines(reader, "function_name", "transform", Some("Test"), |_, _| {}).await;
+/// process_stderr_lines(reader, "function_name", "transform", Some("Test"), |_, _| {}, false).await;
 /// ```
 pub async fn process_stderr_lines<R, F>(
     reader: R,
@@ -906,16 +921,50 @@ pub async fn process_stderr_lines<R, F>(
     resource_type: &'static str,
     ui_action: Option<&'static str>,
     ui_callback: F,
+    is_prod: bool,
 ) where
     R: tokio::io::AsyncBufRead + Unpin + Send,
     F: Fn(crate::cli::display::MessageType, crate::cli::display::Message) + Send + Sync,
 {
     use tokio::io::AsyncBufReadExt;
-    use tracing::error;
+    use tracing::{error, info, warn};
 
     let mut lines = reader.lines();
     while let Ok(Some(line)) = lines.next_line().await {
         if let Some(log_data) = parse_structured_log(&line, resource_name_field) {
+            // Check if this is a CLI log (has cli_action)
+            if let Some(action) = &log_data.cli_action {
+                // Parse message type for CLI display
+                let msg_type_str = log_data.cli_message_type.as_deref().unwrap_or("Info");
+                let msg_type = match msg_type_str {
+                    "error" => crate::cli::display::MessageType::Error,
+                    "warning" => crate::cli::display::MessageType::Warning,
+                    "success" => crate::cli::display::MessageType::Success,
+                    "highlight" => crate::cli::display::MessageType::Highlight,
+                    _ => crate::cli::display::MessageType::Info,
+                };
+
+                // Dev mode: show in terminal (only if not in production mode)
+                if !is_prod {
+                    let message =
+                        crate::cli::display::Message::new(action.clone(), log_data.message.clone());
+                    show_message!(msg_type, message, true);
+                }
+
+                // Always route to tracing for observability
+                match msg_type {
+                    crate::cli::display::MessageType::Error => {
+                        error!("{}: {}", action, log_data.message)
+                    }
+                    crate::cli::display::MessageType::Warning => {
+                        warn!("{}: {}", action, log_data.message)
+                    }
+                    _ => info!("{}: {}", action, log_data.message),
+                }
+                continue;
+            }
+
+            // Regular structured log (not CLI log)
             let span = tracing::info_span!(
                 "child_process_log",
                 context = context::RUNTIME,
@@ -970,6 +1019,7 @@ pub async fn process_stderr_lines<R, F>(
 /// - `resource_type`: The resource type constant (e.g., "transform", "consumption_api", "task")
 /// - `ui_action`: Optional action name for UI display (e.g., "Streaming", "API"). When `Some`,
 ///   errors will be shown in the CLI UI with this action label.
+/// - `is_prod`: When true, suppresses terminal UI display (messages only go to tracing)
 ///
 /// ## Returns
 ///
@@ -988,6 +1038,7 @@ pub async fn process_stderr_lines<R, F>(
 ///         "function_name",
 ///         logger::resource_type::TRANSFORM,
 ///         Some("Streaming"),
+///         false,
 ///     );
 /// }
 /// ```
@@ -996,6 +1047,7 @@ pub fn spawn_stderr_structured_logger_with_ui(
     resource_name_field: &'static str,
     resource_type: &'static str,
     ui_action: Option<&'static str>,
+    is_prod: bool,
 ) -> tokio::task::JoinHandle<()> {
     use crate::cli::display::show_message_wrapper;
     use tokio::io::BufReader;
@@ -1008,6 +1060,7 @@ pub fn spawn_stderr_structured_logger_with_ui(
             resource_type,
             ui_action,
             show_message_wrapper,
+            is_prod,
         )
         .await
     })
@@ -1235,6 +1288,7 @@ mod tests {
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
@@ -1262,6 +1316,7 @@ mod tests {
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
@@ -1289,6 +1344,7 @@ mod tests {
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
@@ -1315,6 +1371,7 @@ mod tests {
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 
@@ -1340,6 +1397,7 @@ Plain error line"#;
             move |msg_type, msg| {
                 callbacks_clone.lock().unwrap().push((msg_type, msg));
             },
+            false,
         )
         .await;
 

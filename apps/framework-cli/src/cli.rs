@@ -992,6 +992,7 @@ pub async fn top_command_handler(
             let mut project = load_project(commands)?;
 
             project.set_is_production_env(true);
+
             let project_arc = Arc::new(project);
 
             check_project_name(&project_arc.name())?;

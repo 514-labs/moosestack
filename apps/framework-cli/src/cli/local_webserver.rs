@@ -43,7 +43,6 @@ use crate::utilities::auth::{get_claims, validate_jwt};
 use crate::utilities::constants::SHOW_TIMING;
 
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
-use crate::framework::typescript::bin::CliMessage;
 use crate::infrastructure::olap::clickhouse;
 use crate::infrastructure::stream::kafka;
 use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
@@ -1194,48 +1193,6 @@ async fn admin_reality_check_route(
         .body(Full::new(Bytes::from(response.to_string())))
 }
 
-async fn log_route(
-    req: Request<Incoming>,
-    is_prod: bool,
-    max_request_body_size: usize,
-) -> Response<Full<Bytes>> {
-    let body = match to_reader(req, max_request_body_size).await {
-        Ok(reader) => reader,
-        Err(response) => return response,
-    };
-
-    let parsed: Result<CliMessage, serde_json::Error> = serde_json::from_reader(body);
-    match parsed {
-        Ok(cli_message) => {
-            let message = Message {
-                action: cli_message.action,
-                details: cli_message.message,
-            };
-            if !is_prod {
-                show_message!(cli_message.message_type, message);
-            } else {
-                match cli_message.message_type {
-                    MessageType::Error => {
-                        error!("{}: {}", message.action, message.details);
-                    }
-                    MessageType::Warning => {
-                        warn!("{}: {}", message.action, message.details);
-                    }
-                    MessageType::Success | MessageType::Info | MessageType::Highlight => {
-                        info!("{}: {}", message.action, message.details);
-                    }
-                }
-            }
-        }
-        Err(e) => println!("Received unknown message: {e:?}"),
-    }
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .body(Full::new(Bytes::from("")))
-        .unwrap()
-}
-
 async fn metrics_log_route(
     req: Request<Incoming>,
     metrics: Arc<Metrics>,
@@ -2160,7 +2117,6 @@ async fn management_router<I: InfraMapProvider>(
     let route = get_path_without_prefix(PathBuf::from(req.uri().path()), path_prefix);
     let route = route.to_str().unwrap();
     let res = match (req.method(), route) {
-        (&hyper::Method::POST, "logs") => Ok(log_route(req, is_prod, max_request_body_size).await),
         (&hyper::Method::POST, METRICS_LOGS_PATH) => {
             Ok(metrics_log_route(req, metrics.clone(), max_request_body_size).await)
         }

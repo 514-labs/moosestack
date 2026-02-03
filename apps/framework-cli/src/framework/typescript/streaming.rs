@@ -12,6 +12,7 @@ const FUNCTION_RUNNER_BIN: &str = "streaming-functions";
 
 // TODO: we currently refer kafka configuration here. If we want to be able to
 // abstract this to other type of streaming engine, we will need to be able to abstract this away.
+#[allow(clippy::too_many_arguments)]
 pub fn run(
     kafka_config: &KafkaConfig,
     source_topic: &StreamConfig,
@@ -20,7 +21,7 @@ pub fn run(
     project: &Project,
     project_path: &Path,
     max_subscriber_count: usize,
-    // TODO Remove the anyhow type here
+    is_prod: bool,
 ) -> Result<Child, std::io::Error> {
     let subscriber_count_str = max_subscriber_count.to_string();
 
@@ -95,6 +96,7 @@ pub fn run(
         "function_name",
         crate::cli::logger::resource_type::TRANSFORM,
         Some("Streaming"),
+        is_prod,
     );
 
     Ok(streaming_function_process)
