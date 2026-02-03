@@ -768,7 +768,7 @@ async fn workflows_history_route(
             let json_string =
                 serde_json::to_string(&workflows).unwrap_or_else(|_| "[]".to_string());
 
-            add_cors_headers(Response::builder())
+            Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(json_string)))
@@ -780,7 +780,7 @@ async fn workflows_history_route(
                 "details": format!("{:?}", e)
             });
 
-            add_cors_headers(Response::builder())
+            Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(
@@ -820,7 +820,7 @@ async fn workflows_trigger_route(
         Err(e) => match e.classify() {
             serde_json::error::Category::Eof => None,
             _ => {
-                return add_cors_headers(Response::builder())
+                return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .header("Content-Type", "application/json")
                     .body(Full::new(Bytes::from(
@@ -845,14 +845,14 @@ async fn workflows_trigger_route(
                 payload["dashboardUrl"] = serde_json::Value::String(dashboard_url);
             }
 
-            add_cors_headers(Response::builder())
+            Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(
                     serde_json::to_string(&payload).unwrap(),
                 )))
         }
-        Err(e) => add_cors_headers(Response::builder())
+        Err(e) => Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "application/json")
             .body(Full::new(Bytes::from(
@@ -885,7 +885,7 @@ async fn workflows_terminate_route(
     }
 
     match terminate_workflow(&project, &workflow_name).await {
-        Ok(success) => add_cors_headers(Response::builder())
+        Ok(success) => Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "application/json")
             .body(Full::new(Bytes::from(
@@ -895,7 +895,7 @@ async fn workflows_terminate_route(
                 }))
                 .unwrap(),
             ))),
-        Err(err) => add_cors_headers(Response::builder())
+        Err(err) => Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "application/json")
             .body(Full::new(Bytes::from(
