@@ -780,7 +780,7 @@ pub async fn execute_atomic_operation(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %table.id(table.database.as_deref().unwrap_or(db_name)),
+        resource_name = %table.name,
     )
 )]
 async fn execute_create_table(
@@ -908,7 +908,7 @@ async fn execute_remove_sample_by(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}_{}", table_database.unwrap_or(db_name), table_name),
+        resource_name = %table_name,
     )
 )]
 async fn execute_drop_table(
@@ -942,7 +942,7 @@ async fn execute_drop_table(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}_{}", db_name, table_name),
+        resource_name = %table_name,
     )
 )]
 async fn execute_add_table_column(
@@ -1027,7 +1027,7 @@ async fn execute_add_table_column(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}_{}", db_name, table_name),
+        resource_name = %table_name,
     )
 )]
 async fn execute_drop_table_column(
@@ -1072,7 +1072,7 @@ async fn execute_drop_table_column(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}_{}", db_name, table_name),
+        resource_name = %table_name,
     )
 )]
 async fn execute_modify_table_column(
@@ -1498,7 +1498,7 @@ fn strip_backticks(s: &str) -> String {
     fields(
         context = context::BOOT,
         resource_type = resource_type::MATERIALIZED_VIEW,
-        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %view_name,
     )
 )]
 async fn execute_create_materialized_view(
@@ -1539,7 +1539,7 @@ async fn execute_create_materialized_view(
     fields(
         context = context::BOOT,
         resource_type = resource_type::VIEW,
-        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %view_name,
     )
 )]
 async fn execute_create_view(
@@ -1591,7 +1591,7 @@ async fn execute_drop_view_inner(
     fields(
         context = context::BOOT,
         resource_type = resource_type::MATERIALIZED_VIEW,
-        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %view_name,
     )
 )]
 async fn execute_drop_materialized_view(
@@ -1610,7 +1610,7 @@ async fn execute_drop_materialized_view(
     fields(
         context = context::BOOT,
         resource_type = resource_type::VIEW,
-        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %view_name,
     )
 )]
 async fn execute_drop_view(
