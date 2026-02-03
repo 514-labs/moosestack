@@ -74,7 +74,10 @@ pub struct ClickHouseRemote {
     pub host: String,
     /// Port number (HTTP port for Http protocol, native port for Native)
     pub port: u16,
-    /// Default database on the remote server
+    /// Default database on the remote server.
+    ///
+    /// Reserved for future use with methods that need a default database context.
+    /// Currently stored but not used by query methods which accept database as a parameter.
     pub database: String,
     /// Username for authentication
     pub user: String,
@@ -190,6 +193,14 @@ impl ClickHouseRemote {
     /// * `table` - The table name on the remote server
     /// * `columns` - Column selection (e.g., "*" or "col1, col2")
     /// * `where_clause` - Optional WHERE clause (without the "WHERE" keyword)
+    ///
+    /// # Safety
+    ///
+    /// The `database`, `table`, `columns`, and `where_clause` parameters are embedded
+    /// directly into the SQL query without escaping. These values must come from
+    /// trusted sources (e.g., application code, validated configuration) and should
+    /// NOT contain user input. For user-provided values, use parameterized queries
+    /// or validate/sanitize inputs before passing them to this method.
     pub fn select_from_table(
         &self,
         database: &str,
@@ -265,7 +276,7 @@ impl ClickHouseRemote {
     fn build_http_url_function_with_format(&self, query: &str, format: &str) -> String {
         format!(
             "url('{}', '{}', {})",
-            self.http_query_url(query),
+            escape_sql_string_literal(&self.http_query_url(query)),
             escape_sql_string_literal(format),
             self.http_headers_clause()
         )
@@ -491,5 +502,47 @@ mod tests {
         // Other fields should be visible
         assert!(debug_output.contains("remote.example.com"));
         assert!(debug_output.contains("admin"));
+    }
+
+    #[test]
+    fn test_format_with_special_chars_is_escaped() {
+        let remote = ClickHouseRemote::new(
+            "localhost",
+            8123,
+            "default",
+            "user",
+            "pass",
+            false,
+            Protocol::Http,
+        );
+
+        // Format with single quote (edge case)
+        let sql = remote.query_function_with_format("SELECT 1", "Custom'Format");
+        assert!(sql.contains("'Custom''Format'"));
+
+        // Format with backslash
+        let sql = remote.query_function_with_format("SELECT 1", r"Path\Format");
+        assert!(sql.contains(r"'Path\\Format'"));
+    }
+
+    #[test]
+    fn test_url_with_special_chars_in_host_is_escaped() {
+        // While unusual, hostnames with special chars should be safely escaped
+        let remote = ClickHouseRemote::new(
+            "host'name",
+            8123,
+            "default",
+            "user",
+            "pass",
+            false,
+            Protocol::Http,
+        );
+
+        let sql = remote.query_function("SELECT 1");
+
+        // Single quote in hostname should be escaped in the URL string
+        assert!(sql.contains("host''name"));
+        // Should not break the SQL structure
+        assert!(sql.starts_with("url('"));
     }
 }
