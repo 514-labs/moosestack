@@ -34,6 +34,54 @@ interface CTACardProps {
   _grouped?: boolean;
 }
 
+/** Shared content for horizontal card variants */
+function HorizontalCardContent({
+  badge,
+  IconComponent,
+  isMooseModule,
+  title,
+  description,
+  ctaLabel,
+}: {
+  badge?: CTACardProps["badge"];
+  IconComponent?:
+    | React.ComponentType<IconProps>
+    | React.FC<React.SVGProps<SVGSVGElement>>;
+  isMooseModule: boolean;
+  title: string;
+  description: string;
+  ctaLabel: string;
+}) {
+  return (
+    <>
+      {badge ?
+        <IconBadge variant={badge.variant} label={badge.text} />
+      : IconComponent ?
+        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0">
+          <IconComponent className="h-5 w-5" strokeWidth={1.5} />
+        </div>
+      : null}
+      <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+        <h3 className="text-base font-semibold text-foreground">
+          {isMooseModule ?
+            <span className="text-muted-foreground">Moose </span>
+          : ""}
+          {title}
+        </h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+      <Button
+        variant="default"
+        size="sm"
+        className="shrink-0 pointer-events-none"
+        asChild
+      >
+        <span>{ctaLabel}</span>
+      </Button>
+    </>
+  );
+}
+
 export function CTACard({
   title,
   description,
@@ -58,29 +106,14 @@ export function CTACard({
         href={ctaLink}
         className="group relative flex items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors cursor-pointer"
       >
-        {badge ?
-          <IconBadge variant={badge.variant} label={badge.text} />
-        : IconComponent ?
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0">
-            <IconComponent className="h-5 w-5" strokeWidth={1.5} />
-          </div>
-        : null}
-        <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-          <h3 className="text-base font-semibold text-foreground">
-            {isMooseModule ?
-              <span className="text-muted-foreground">Moose </span>
-            : ""}
-            {title}
-          </h3>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
-        <Button
-          variant="default"
-          size="sm"
-          className="shrink-0 pointer-events-none"
-        >
-          {ctaLabel}
-        </Button>
+        <HorizontalCardContent
+          badge={badge}
+          IconComponent={IconComponent}
+          isMooseModule={isMooseModule}
+          title={title}
+          description={description}
+          ctaLabel={ctaLabel}
+        />
       </Link>
     );
   }
@@ -98,29 +131,14 @@ export function CTACard({
           href={ctaLink}
           className="flex items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors"
         >
-          {badge ?
-            <IconBadge variant={badge.variant} label={badge.text} />
-          : IconComponent ?
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0">
-              <IconComponent className="h-5 w-5" strokeWidth={1.5} />
-            </div>
-          : null}
-          <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-            <h3 className="text-base font-semibold text-foreground">
-              {isMooseModule ?
-                <span className="text-muted-foreground">Moose </span>
-              : ""}
-              {title}
-            </h3>
-            <p className="text-sm text-muted-foreground">{description}</p>
-          </div>
-          <Button
-            variant="default"
-            size="sm"
-            className="shrink-0 pointer-events-none"
-          >
-            {ctaLabel}
-          </Button>
+          <HorizontalCardContent
+            badge={badge}
+            IconComponent={IconComponent}
+            isMooseModule={isMooseModule}
+            title={title}
+            description={description}
+            ctaLabel={ctaLabel}
+          />
         </Link>
       </div>
     );
@@ -150,11 +168,9 @@ export function CTACard({
         <CardDescription className="mt-2">{description}</CardDescription>
       </CardContent>
       <CardFooter>
-        <Link href={ctaLink}>
-          <Button className="font-normal" variant="secondary">
-            {ctaLabel}
-          </Button>
-        </Link>
+        <Button className="font-normal" variant="secondary" asChild>
+          <Link href={ctaLink}>{ctaLabel}</Link>
+        </Button>
       </CardFooter>
     </Card>
   );

@@ -1,10 +1,6 @@
 import { getGuideIcon } from "./guide-icons";
 import { Badge } from "@/components/ui/badge";
-
-const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
-  typescript: "TypeScript",
-  python: "Python",
-};
+import { LANGUAGE_DISPLAY_NAMES } from "./guide-constants";
 
 interface GuideIconProps {
   iconName?: string;

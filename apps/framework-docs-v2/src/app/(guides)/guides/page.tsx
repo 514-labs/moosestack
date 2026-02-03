@@ -85,7 +85,11 @@ export default async function GuidesPage() {
         <div className="rounded-xl border bg-card text-card-foreground shadow overflow-hidden">
           <div className="flex items-center gap-4 px-6 py-4">
             <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0">
-              <IconBrandSlack className="h-5 w-5" strokeWidth={1.5} />
+              <IconBrandSlack
+                className="h-5 w-5"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
             </div>
             <div className="flex flex-col gap-0.5 flex-1 min-w-0">
               <h3 className="text-base font-semibold text-foreground">

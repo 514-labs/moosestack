@@ -2,11 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getGuideIcon } from "./guide-icons";
-
-const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
-  typescript: "TypeScript",
-  python: "Python",
-};
+import { LANGUAGE_DISPLAY_NAMES } from "./guide-constants";
 
 interface GuideCardProps {
   title: string;
@@ -31,10 +27,13 @@ export function GuideCard({
 }: GuideCardProps) {
   const IconComponent = getGuideIcon(iconName);
 
-  // Combine languages and tags for badge display
+  // Combine languages and tags for badge display with type prefix for unique keys
   const badges = [
-    ...(languages?.map((lang) => LANGUAGE_DISPLAY_NAMES[lang] || lang) || []),
-    ...(tags || []),
+    ...(languages?.map((lang) => ({
+      type: "lang" as const,
+      label: LANGUAGE_DISPLAY_NAMES[lang] || lang,
+    })) || []),
+    ...(tags?.map((tag) => ({ type: "tag" as const, label: tag })) || []),
   ];
 
   return (
@@ -57,11 +56,11 @@ export function GuideCard({
           <div className="flex flex-wrap gap-1.5">
             {badges.map((badge) => (
               <Badge
-                key={badge}
+                key={`${badge.type}-${badge.label}`}
                 variant="outline"
                 className="bg-muted border-border text-muted-foreground text-xs"
               >
-                {badge}
+                {badge.label}
               </Badge>
             ))}
           </div>
@@ -73,13 +72,14 @@ export function GuideCard({
         )}
       </div>
 
-      {/* Button */}
+      {/* Button - using asChild with span to avoid invalid <button> inside <a> */}
       <Button
         variant="default"
         size="sm"
         className="shrink-0 pointer-events-none"
+        asChild
       >
-        Read
+        <span>Read</span>
       </Button>
     </Link>
   );
