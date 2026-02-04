@@ -1,6 +1,6 @@
 ---
 title: Language Server (LSP)
-description: IDE intelligence for SQL in Moose TypeScript projects
+description: IDE intelligence for ClickHouse SQL in Moose TypeScript projects
 order: 5
 ---
 
@@ -8,10 +8,10 @@ import { Callout } from "@/components/mdx";
 
 # Language Server for Moose Development
 
-The MooseStack Language Server provides real-time SQL intelligence for `sql` tagged template literals in TypeScript Moose projects. It gives you syntax validation, auto-completions, hover documentation, and code formatting as you write SQL in your editor.
+The MooseStack Language Server provides real-time ClickHouse SQL intelligence for `sql` tagged template literals in TypeScript Moose projects. It gives you syntax validation, auto-completions, hover documentation, and code formatting as you write SQL in your editor.
 
-<Callout type="info">
-The Language Server currently supports TypeScript projects only.
+<Callout type="experimental">
+Experimental: TypeScript only.
 </Callout>
 
 ## Features
@@ -21,15 +21,15 @@ The Language Server currently supports TypeScript projects only.
 - **Hover documentation** - Syntax help and examples for ClickHouse functions
 - **Code actions** - Format SQL directly from your editor
 
+![SQL validation showing error diagnostics](/lsp-sql-validation.png)
+
+![Hover documentation for ClickHouse functions](/lsp-hoverdoc.png)
+
 ## Installation
 
-Install the Language Server globally:
+For VS Code and Cursor, search for "MooseStack LSP" in the Extensions panel and click Install.
 
-```bash
-npm install -g @514labs/moose-lsp
-```
-
-For VS Code or Cursor, search for "MooseStack LSP" in the Extensions panel and click Install.
+For other installation methods visit the GitHub repo.
 
 ## Learn More
 
