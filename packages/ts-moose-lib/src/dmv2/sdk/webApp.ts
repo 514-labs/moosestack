@@ -29,6 +29,7 @@ const RESERVED_MOUNT_PATHS = [
   "/consumption",
   "/health",
   "/ingest",
+  "/liveness",
   "/moose", // reserved for future use
   "/ready",
   "/workflows",
