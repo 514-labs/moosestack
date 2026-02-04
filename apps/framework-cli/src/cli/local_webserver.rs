@@ -915,6 +915,73 @@ async fn workflows_terminate_route(
         // No resource_type/resource_name - infrastructure check
     )
 )]
+/// Lightweight liveness probe endpoint.
+/// Only checks if the Consumption API process is responsive (detects Node.js deadlocks).
+/// Does NOT check external dependencies - use /health for that.
+async fn live_route(project: &Project) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    use std::time::Duration;
+
+    // Only check Consumption API if enabled
+    let (healthy, unhealthy) = if project.features.apis {
+        let consumption_api_port = project.http_server_config.proxy_port;
+        let health_url = format!(
+            "http://localhost:{}/_moose_internal/health",
+            consumption_api_port
+        );
+
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Live check: Failed to create HTTP client: {}", e);
+                return Response::builder()
+                    .status(StatusCode::SERVICE_UNAVAILABLE)
+                    .header("Content-Type", "application/json")
+                    .body(Full::new(Bytes::from(
+                        r#"{"healthy":[],"unhealthy":["Consumption API"]}"#,
+                    )));
+            }
+        };
+
+        match client.get(&health_url).send().await {
+            Ok(response) if response.status().is_success() => (vec!["Consumption API"], Vec::new()),
+            Ok(response) => {
+                warn!(
+                    "Live check: Consumption API returned status {}",
+                    response.status()
+                );
+                (Vec::new(), vec!["Consumption API"])
+            }
+            Err(e) => {
+                warn!("Live check: Consumption API unavailable: {}", e);
+                (Vec::new(), vec!["Consumption API"])
+            }
+        }
+    } else {
+        // No Consumption API to check, just return alive
+        (Vec::new(), Vec::new())
+    };
+
+    let status = if unhealthy.is_empty() {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    let json_response = serde_json::to_string_pretty(&serde_json::json!({
+        "healthy": healthy,
+        "unhealthy": unhealthy
+    }))
+    .unwrap_or_else(|_| String::from(r#"{"error":"Failed to serialize response"}"#));
+
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Full::new(Bytes::from(json_response)))
+}
+
 async fn health_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
@@ -1896,6 +1963,7 @@ async fn router(
             }
         }
         (_, &hyper::Method::GET, ["health"]) => health_route(&project, &redis_client).await,
+        (_, &hyper::Method::GET, ["live"]) => live_route(&project).await,
         (_, &hyper::Method::GET, ["ready"]) => ready_route(&project, &redis_client).await,
         (_, &hyper::Method::GET, ["admin", "reality-check"]) => {
             admin_reality_check_route(
@@ -2196,6 +2264,11 @@ async fn print_available_routes(
             "GET",
             "/health".to_string(),
             "Health check endpoint".to_string(),
+        ),
+        (
+            "GET",
+            "/live".to_string(),
+            "Liveness probe endpoint (checks Consumption API only)".to_string(),
         ),
         (
             "GET",
