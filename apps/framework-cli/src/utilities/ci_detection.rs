@@ -1,7 +1,7 @@
 //! CI/CD and Container Environment Detection
 //!
 //! Detects whether the CLI is running in a CI/CD environment or Docker container
-//! by checking for common environment variable prefixes set by various CI providers.
+//! by checking for specific CI indicator environment variables set by various CI providers.
 
 use std::env;
 
