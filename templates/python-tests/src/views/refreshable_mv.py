@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from moose_lib.dmv2 import MaterializedView, MaterializedViewOptions
 from moose_lib.dmv2.materialized_view import (
+    RefreshableMaterializedView,
+    RefreshableMaterializedViewOptions,
     RefreshConfig,
     RefreshIntervalEvery,
     RefreshIntervalAfter,
@@ -66,10 +68,11 @@ class IncrementalStats(BaseModel):
 # ============================================================================
 # This MV refreshes every hour, aggregating data from the Bar table
 
-hourly_stats_mv = MaterializedView[HourlyStats](
-    MaterializedViewOptions(
+hourly_stats_mv = RefreshableMaterializedView[HourlyStats](
+    RefreshableMaterializedViewOptions(
         materialized_view_name="hourly_stats_mv",
-        table_name="hourly_stats",
+        target_table_name="hourly_stats",
+        order_by_fields=["hour"],
         select_statement="""
             SELECT
                 toStartOfHour(utc_timestamp) as hour,
@@ -81,21 +84,23 @@ hourly_stats_mv = MaterializedView[HourlyStats](
         select_tables=[barModel.table],
         refresh_config=RefreshConfig(
             interval=RefreshIntervalEvery(value=1, unit="hour"),
+            offset=Duration(value=5, unit="minute"),  # OFFSET is valid with EVERY
         ),
     )
 )
 
 
 # ============================================================================
-# Test 2: Refreshable MV with AFTER interval and offset
+# Test 2: Refreshable MV with AFTER interval (no offset - OFFSET only valid with EVERY)
 # ============================================================================
-# This MV refreshes 30 minutes after the last refresh completed,
-# with a 5-minute offset from the start of the interval
+# This MV refreshes 30 minutes after the last refresh completed.
+# Note: OFFSET is NOT valid with REFRESH AFTER in ClickHouse, only with REFRESH EVERY.
 
-daily_stats_mv = MaterializedView[DailyStats](
-    MaterializedViewOptions(
+daily_stats_mv = RefreshableMaterializedView[DailyStats](
+    RefreshableMaterializedViewOptions(
         materialized_view_name="daily_stats_mv",
-        table_name="daily_stats",
+        target_table_name="daily_stats",
+        order_by_fields=["day"],
         select_statement="""
             SELECT
                 toDate(utc_timestamp) as day,
@@ -107,7 +112,7 @@ daily_stats_mv = MaterializedView[DailyStats](
         select_tables=[barModel.table],
         refresh_config=RefreshConfig(
             interval=RefreshIntervalAfter(value=30, unit="minute"),
-            offset=Duration(value=5, unit="minute"),
+            # Note: No offset here - OFFSET is only valid with REFRESH EVERY, not REFRESH AFTER
         ),
     )
 )
@@ -118,10 +123,11 @@ daily_stats_mv = MaterializedView[DailyStats](
 # ============================================================================
 # This MV depends on daily_stats_mv and uses APPEND mode for incremental updates
 
-weekly_rollup_mv = MaterializedView[WeeklyRollup](
-    MaterializedViewOptions(
+weekly_rollup_mv = RefreshableMaterializedView[WeeklyRollup](
+    RefreshableMaterializedViewOptions(
         materialized_view_name="weekly_rollup_mv",
-        table_name="weekly_rollup",
+        target_table_name="weekly_rollup",
+        order_by_fields=["week_start"],
         select_statement="""
             SELECT
                 toMonday(day) as week_start,
@@ -129,10 +135,12 @@ weekly_rollup_mv = MaterializedView[WeeklyRollup](
             FROM daily_stats
             GROUP BY week_start
         """,
-        select_tables=[],  # Note: source is another MV's target table
+        select_tables=[
+            daily_stats_mv.target_table
+        ],  # Source is another MV's target table
         refresh_config=RefreshConfig(
             interval=RefreshIntervalEvery(value=1, unit="day"),
-            depends_on=["daily_stats_mv"],
+            depends_on=[daily_stats_mv],  # Type-safe: actual MV objects, not strings
             append=True,
         ),
     )
@@ -144,10 +152,11 @@ weekly_rollup_mv = MaterializedView[WeeklyRollup](
 # ============================================================================
 # This MV uses randomization to prevent thundering herd on refresh
 
-randomized_stats_mv = MaterializedView[RandomizedStats](
-    MaterializedViewOptions(
+randomized_stats_mv = RefreshableMaterializedView[RandomizedStats](
+    RefreshableMaterializedViewOptions(
         materialized_view_name="randomized_stats_mv",
-        table_name="randomized_stats",
+        target_table_name="randomized_stats",
+        order_by_fields=["minute"],
         select_statement="""
             SELECT
                 toStartOfMinute(utc_timestamp) as minute,
@@ -174,6 +183,7 @@ incremental_stats_mv = MaterializedView[IncrementalStats](
     MaterializedViewOptions(
         materialized_view_name="incremental_stats_mv",
         table_name="incremental_stats",
+        order_by_fields=["primary_key"],
         select_statement="""
             SELECT
                 primary_key,

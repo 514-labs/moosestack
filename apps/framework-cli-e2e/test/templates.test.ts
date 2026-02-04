@@ -1236,6 +1236,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
         });
 
         it("should create refreshable MVs with correct REFRESH configurations (TS)", async function () {
+          if (config.language !== "typescript" || !config.isTestsVariant) {
+            this.skip();
+          }
           this.timeout(TIMEOUTS.TEST_SETUP_MS);
 
           // Test 1: HourlyStats_MV - REFRESH EVERY 1 HOUR OFFSET 5 MINUTE
@@ -1315,6 +1318,93 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
           if (!incrementalResult.valid) {
             throw new Error(
               `IncrementalStats_MV should be incremental (no REFRESH) but validation failed: ${incrementalResult.errors.join(", ")}`,
+            );
+          }
+        });
+
+        it("should create refreshable MVs with correct REFRESH configurations (Py)", async function () {
+          if (config.language !== "python" || !config.isTestsVariant) {
+            this.skip();
+          }
+          this.timeout(TIMEOUTS.TEST_SETUP_MS);
+
+          // Test 1: hourly_stats_mv - REFRESH EVERY 1 HOUR OFFSET 5 MINUTE
+          const hourlyResult = await verifyMaterializedViewRefreshConfig(
+            "hourly_stats_mv",
+            {
+              intervalType: "EVERY",
+              intervalValue: 1,
+              intervalUnit: "HOUR",
+              offset: "5 MINUTE", // OFFSET is valid with EVERY
+            },
+            "local",
+          );
+          if (!hourlyResult.valid) {
+            throw new Error(
+              `hourly_stats_mv refresh config validation failed: ${hourlyResult.errors.join(", ")}`,
+            );
+          }
+
+          // Test 2: daily_stats_mv - REFRESH AFTER 30 MINUTE (no offset - OFFSET only valid with EVERY)
+          const dailyResult = await verifyMaterializedViewRefreshConfig(
+            "daily_stats_mv",
+            {
+              intervalType: "AFTER",
+              intervalValue: 30,
+              intervalUnit: "MINUTE",
+              // Note: No offset - OFFSET is only valid with REFRESH EVERY, not REFRESH AFTER
+            },
+            "local",
+          );
+          if (!dailyResult.valid) {
+            throw new Error(
+              `daily_stats_mv refresh config validation failed: ${dailyResult.errors.join(", ")}`,
+            );
+          }
+
+          // Test 3: weekly_rollup_mv - REFRESH EVERY 1 DAY DEPENDS ON daily_stats_mv APPEND
+          const weeklyResult = await verifyMaterializedViewRefreshConfig(
+            "weekly_rollup_mv",
+            {
+              intervalType: "EVERY",
+              intervalValue: 1,
+              intervalUnit: "DAY",
+              dependsOn: ["daily_stats_mv"],
+              append: true,
+            },
+            "local",
+          );
+          if (!weeklyResult.valid) {
+            throw new Error(
+              `weekly_rollup_mv refresh config validation failed: ${weeklyResult.errors.join(", ")}`,
+            );
+          }
+
+          // Test 4: randomized_stats_mv - REFRESH EVERY 5 MINUTE RANDOMIZE FOR 30 SECOND
+          const randomizedResult = await verifyMaterializedViewRefreshConfig(
+            "randomized_stats_mv",
+            {
+              intervalType: "EVERY",
+              intervalValue: 5,
+              intervalUnit: "MINUTE",
+              randomize: "30 SECOND",
+            },
+            "local",
+          );
+          if (!randomizedResult.valid) {
+            throw new Error(
+              `randomized_stats_mv refresh config validation failed: ${randomizedResult.errors.join(", ")}`,
+            );
+          }
+
+          // Test 5: incremental_stats_mv - should NOT have REFRESH clause (incremental MV)
+          const incrementalResult = await verifyIncrementalMaterializedView(
+            "incremental_stats_mv",
+            "local",
+          );
+          if (!incrementalResult.valid) {
+            throw new Error(
+              `incremental_stats_mv should be incremental (no REFRESH) but validation failed: ${incrementalResult.errors.join(", ")}`,
             );
           }
         });
