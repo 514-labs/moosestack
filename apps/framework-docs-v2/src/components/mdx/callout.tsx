@@ -145,19 +145,21 @@ export function Callout({
   );
 }
 
+export interface CommunityCalloutProps {
+  title?: string;
+  icon?: CalloutProps["icon"];
+  href?: string;
+  ctaLabel?: string;
+  children: React.ReactNode;
+}
+
 export function CommunityCallout({
   title = "Join the Community",
   icon = IconBrandSlack,
   href = "https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg",
   ctaLabel = "Join Slack",
   children,
-}: {
-  title: string;
-  icon?: React.ComponentType<IconProps>;
-  href?: string;
-  ctaLabel?: string;
-  children: React.ReactNode;
-}) {
+}: CommunityCalloutProps): JSX.Element {
   return (
     <Callout
       type="info"
