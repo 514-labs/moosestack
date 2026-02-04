@@ -152,6 +152,18 @@ Engineering can ship new dashboards, metrics, and breakdowns as routine product 
 
 ## Tutorial: Migrate Your Dashboard to ClickHouse
 
+This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices.
+
+For this guide, your source database (Postgres or SQL Server) remains the system of record; your application continues writing to it as usual. You’ll add CDC (ClickPipes or Debezium) to stream changes into ClickHouse in real time. Think of ClickHouse as a read-optimized “replica” for analytics: it’s fed by CDC, and you’ll build query-optimized views/materializations on top of it (not run OLTP transactions on it) to serve your dashboard queries. You'll use MooseStack and Boreal to build this analytics layer on ClickHouse and serve your dashboard queries.
+
+By the end of this guide you’ll have:
+
+1. A real-time replication pipeline feeding ClickHouse from your source database.
+2. A MooseStack project that defines the ClickHouse analytics layer (views, materialized views, serving tables) and the handler functions your dashboard API endpoints will run to query these tables.
+3. A Boreal-backed deploy workflow with preview environments and migration plans so you can validate changes before merging to `main`.
+
+Use the selectors below to tailor the steps to your environment.
+
 <CustomizePanel
   title="Where does your current data live?"
   description="Select the database you use today so we can show the right way to replicate this data into ClickHouse"
@@ -180,27 +192,24 @@ Engineering can ship new dashboards, metrics, and breakdowns as routine product 
   </CustomizeGrid>
 </CustomizePanel>
 
-This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices. You'll work through:
+You'll work through:
 
 <ConditionalContent whenId="source-database" whenValue="postgres">
-1. Setting up ClickHouse Cloud ClickPipes (Postgres CDC) so the replicated tables exist in ClickHouse
-2. Creating a MooseStack project and pulling the ClickPipes tables into code (`moose db pull`)
-3. Deploying to Boreal for preview branches and migration plans
-4. Preparing your local dev environment to work with ClickHouse
-5. Migrating one dashboard component from OLTP → ClickHouse
-6. Shipping to production safely with a preview environment first
+1. Set up ClickHouse Cloud **ClickPipes** to replicate your Postgres tables into ClickHouse.
+2. Add a **MooseStack** project to your repo and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
+3. Connect **Boreal** so pull requests get preview environments and migration plans.
+4. Build ClickHouse-native resources in MooseStack (views, materialized views, serving tables) and wire up your dashboard queries.
+5. Validate in preview, then merge to apply the reviewed migrations to your main ClickHouse database.
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-1. Adding MooseStack to your project
-2. Deploying to Boreal for preview branches and migration plans
-3. Preparing your local dev environment to work with ClickHouse
-4. Setting up real-time data replication (CDC) with Debezium
-5. Migrating one dashboard component from OLTP → ClickHouse
-6. Shipping to production safely with a preview environment first
+1. Add a **MooseStack** project to your repo (you’ll define the Debezium ingest pipeline in this project).
+2. Connect **Boreal** so pull requests get preview environments and migration plans.
+3. Prepare your local dev environment to work with ClickHouse.
+4. Set up **Debezium** to stream SQL Server changes into ClickHouse via your MooseStack ingest API.
+5. Build ClickHouse-native resources in MooseStack (views, materialized views, serving tables) and wire up your dashboard queries.
+6. Validate in preview, then merge to apply the reviewed migrations to your main ClickHouse database.
 </ConditionalContent>
-
-For this guide, assume a **remote ClickHouse instance** (for example, ClickHouse Cloud) and a **local MooseStack project** in your repo that you’ll use for development.
 
 <Callout type="info" title="AI-assisted Development">
 We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub Copilot, Windsurf, etc.) will work—editors that support MCPs can make this workflow even faster.
@@ -212,20 +221,18 @@ We recommend using an AI copilot to accelerate the migration to handle complex q
 <ConditionalContent whenId="source-database" whenValue="postgres">
 ### Set up ClickHouse Cloud ClickPipes (Postgres CDC)
 
-ClickPipes mirrors changes from Postgres into ClickHouse in real time, so your dashboards always reflect the latest state without custom sync jobs or batch ETL scripts.
+ClickPipes is a managed service from ClickHouse Cloud that mirrors changes from Postgres into ClickHouse in real time. If you're already using ClickPipes and your replicated tables are present in ClickHouse, you can skip this step.
 
-Set up ClickPipes first so the replicated tables exist in ClickHouse. In the next step, you’ll initialize a MooseStack project (`typescript-empty`) and run `moose db pull` to generate external models for those tables.
-
-Tip: by default `db pull` writes to `app/externalModels.ts`. For ClickPipes, we recommend using `--file-path` to name the file something self-explanatory like `app/clickpipesExternalModels.ts`.
-
+Set up ClickPipes first so the replicated raw tables exist in ClickHouse:
 - [Create a new ClickHouse Cloud Account](https://auth.clickhouse.cloud/u/signup)
 - [Docs for Setting up ClickPipes CDC with Postgres](https://clickhouse.com/docs/cloud/reference/billing/clickpipes/postgres-cdc)
 
 <Callout type="info" title="ClickPipes owns the raw tables">
-ClickPipes creates and manages the replicated raw tables in ClickHouse. MooseStack reads from these tables and creates its own ClickHouse resources (views, materialized views, serving tables) alongside them—MooseStack does not rewrite or manage ClickPipes-owned tables.
+ClickPipes creates and manages the replicated raw tables in ClickHouse. MooseStack reads from those tables and creates its own ClickHouse resources (views, materialized views, serving tables) alongside them. MooseStack does not rewrite or migrate ClickPipes-owned tables.
 </Callout>
 
-Once the pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project**](#add-moosestack-to-your-project).
+Once your ClickPipes pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project**](#add-moosestack-to-your-project). In that step, you’ll initialize `moosestack/` and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
+
 </ConditionalContent>
 
 ### Add MooseStack to your Project
