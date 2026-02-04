@@ -15,6 +15,7 @@ import {
   CustomizeGrid,
   SelectField,
   ConditionalContent,
+  CommunityCallout,
 } from "@/components/mdx";
 
 # Improving the Performance of Your Dashboards
@@ -164,8 +165,8 @@ By the end of this guide you’ll have:
 2. A MooseStack project that defines ClickHouse resources (views, materialized views, serving tables) on top of the CDC-replicated raw tables, plus the query/API handlers your dashboard will call.
 3. A local dev workflow for evolving those resources safely, and a Boreal-backed deploy workflow with preview environments + migration plans so you can validate changes before merging to `main`.
 
-<Callout type="info" title="Starting from scratch?">
-If you’re building a new dashboard or data-connected chat (not migrating an existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app) or [Startup Metrics Dashboard](/guides/data-warehousing/startup-metrics).
+<Callout type="info" title="Starting from scratch?" href="/guides/chat-in-your-app" ctaLabel="Get started">
+If you’re building a new dashboard or data-connected chat (not migrating an existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app).
 </Callout>
 
 ### Customize this tutorial
@@ -221,8 +222,11 @@ You'll work through:
 We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub Copilot, Windsurf, etc.) will work—editors that support MCPs can make this workflow even faster.
 </Callout>
 
-**Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. If you'd like to see Python-specific examples, let us know and we'll prioritize creating them.
+**Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. 
 
+<CommunityCallout title="Want Python Examples?">
+If you'd like to see Python-specific examples, let us know in our Slack community and we'll prioritize creating them.
+</CommunityCallout>
 
 <ConditionalContent whenId="source-database" whenValue="postgres">
 ### Set up ClickHouse Cloud ClickPipes (Postgres CDC)
