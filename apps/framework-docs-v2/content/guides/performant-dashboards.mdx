@@ -154,9 +154,9 @@ Engineering can ship new dashboards, metrics, and breakdowns as routine product 
 
 This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices.
 
-For this guide, your source database (Postgres or SQL Server) remains the system of record; your application continues writing to it as usual. You’ll add CDC (ClickPipes or Debezium) to stream changes into ClickHouse in real time. Think of ClickHouse as a read-optimized “replica” for analytics: it’s fed by CDC, and you’ll build query-optimized views/materializations on top of it (not run OLTP transactions on it).
+Your source database (Postgres or SQL Server) remains your system of record, and your application continues writing to it as usual. CDC (ClickPipes or Debezium) streams changes into ClickHouse in real time so dashboards can read from ClickHouse instead of competing with OLTP workloads.
 
-MooseStack is where you define that ClickHouse analytics layer **in code**. In local development, you’ll iterate on schemas (views, materialized views, serving tables) that read from the CDC-replicated tables, and run the same queries/endpoints your dashboard will call.
+MooseStack is where you define your ClickHouse analytics layer **in code**. You’ll build views/materializations on top of the CDC-replicated raw tables and keep your existing dashboard APIs and request/response contracts the same—only the backing queries change.
 
 By the end of this guide you’ll have:
 
@@ -164,7 +164,11 @@ By the end of this guide you’ll have:
 2. A MooseStack project that defines ClickHouse resources (views, materialized views, serving tables) on top of the CDC-replicated raw tables, plus the query/API handlers your dashboard will call.
 3. A local dev workflow for evolving those resources safely, and a Boreal-backed deploy workflow with preview environments + migration plans so you can validate changes before merging to `main`.
 
-Use the selectors below to tailor the steps to your environment.
+<Callout type="info" title="Starting from scratch?">
+If you’re building a new dashboard or data-connected chat (not migrating an existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app) or [Startup Metrics Dashboard](/guides/data-warehousing/startup-metrics).
+</Callout>
+
+### Customize this tutorial
 
 <CustomizePanel
   title="Where does your current data live?"
@@ -197,20 +201,20 @@ Use the selectors below to tailor the steps to your environment.
 You'll work through:
 
 <ConditionalContent whenId="source-database" whenValue="postgres">
-1. Set up ClickHouse Cloud **ClickPipes** to replicate your Postgres tables into ClickHouse.
-2. Add a **MooseStack** project to your repo and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
-3. Connect **Boreal** so pull requests get preview environments and migration plans.
-4. Build ClickHouse-native resources in MooseStack (views, materialized views, serving tables) and wire up your dashboard queries.
-5. Validate in preview, then merge to apply the reviewed migrations to your main ClickHouse database.
+1. [Set up ClickHouse Cloud ClickPipes](#set-up-clickhouse-cloud-clickpipes-postgres-cdc) to replicate your Postgres tables into ClickHouse.
+2. [Add MooseStack to your repo](#add-moosestack-to-your-project) and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
+3. [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get preview environments and migration plans.
+4. [Migrate one dashboard component](#migrate-a-dashboard-component-to-clickhouse) using ClickHouse-native resources (views, materialized views, serving tables).
+5. [Go to production](#going-to-production) using the preview environment and reviewed migrations.
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-1. Add a **MooseStack** project to your repo (you’ll define the Debezium ingest pipeline in this project).
-2. Connect **Boreal** so pull requests get preview environments and migration plans.
-3. Prepare your local dev environment to work with ClickHouse.
-4. Set up **Debezium** to stream SQL Server changes into ClickHouse via your MooseStack ingest API.
-5. Build ClickHouse-native resources in MooseStack (views, materialized views, serving tables) and wire up your dashboard queries.
-6. Validate in preview, then merge to apply the reviewed migrations to your main ClickHouse database.
+1. [Add MooseStack to your repo](#add-moosestack-to-your-project) (you’ll define the Debezium ingest pipeline in this project).
+2. [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get preview environments and migration plans.
+3. [Prepare your local dev environment](#prepare-your-local-development-environment) to work with ClickHouse.
+4. [Set up Debezium CDC](#set-up-change-data-capture-cdc) to stream SQL Server changes into ClickHouse via your MooseStack ingest API.
+5. [Migrate one dashboard component](#migrate-a-dashboard-component-to-clickhouse) using ClickHouse-native resources (views, materialized views, serving tables).
+6. [Go to production](#going-to-production) using the preview environment and reviewed migrations.
 </ConditionalContent>
 
 <Callout type="info" title="AI-assisted Development">
@@ -231,6 +235,12 @@ Set up ClickPipes first so the replicated raw tables exist in ClickHouse:
 
 <Callout type="info" title="ClickPipes owns the raw tables">
 ClickPipes creates and manages the replicated raw tables in ClickHouse. MooseStack reads from those tables and creates its own ClickHouse resources (views, materialized views, serving tables) alongside them. MooseStack does not rewrite or migrate ClickPipes-owned tables.
+
+In MooseStack, you’ll treat ClickPipes tables as **externally managed**. See [External Tables](/moosestack/olap/external-tables).
+</Callout>
+
+<Callout type="info" title="Not using ClickPipes?">
+If your CDC provider lands tables in ClickHouse (for example, Debezium, Supabase Live, or a custom pipeline), you can follow the same workflow: pull the table schemas into code as external models, then build ClickHouse-native views/materializations on top. If you want help mapping your setup to MooseStack, join the [MooseStack community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg).
 </Callout>
 
 Once your ClickPipes pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project**](#add-moosestack-to-your-project). In that step, you’ll initialize `moosestack/` and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
@@ -309,6 +319,7 @@ Add or update these top-level fields in `moosestack/package.json` so other packa
 
 ```json title="moosestack/package.json"
 {
+  "name": "moosestack",
   "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -320,6 +331,14 @@ Add or update these top-level fields in `moosestack/package.json` so other packa
   }
 }
 ```
+
+<Callout type="info" title="When do you need to build?">
+If another workspace package imports from `"moosestack"`, run a build once so `dist/` exists:
+
+```bash
+pnpm -C moosestack build
+```
+</Callout>
 
 #### Step 4: Add the pnpm configuration to your root package.json
 
@@ -341,11 +360,9 @@ Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (t
 
 Now that your project directory exists, generate TypeScript models for the ClickPipes-owned tables in ClickHouse.
 
-From your repo root:
+From the `moosestack/` directory you created above:
 
 ```shell
-cd moosestack  # or wherever your moose project is
-
 # Save your ClickHouse credentials as an env var (treat this like a secret)
 export CLICKHOUSE_URL="<YOUR_CLICKHOUSE_CLOUD_HTTPS_URL>"
 
@@ -355,8 +372,17 @@ moose db pull \
   --file-path app/clickpipesExternalModels.ts
 ```
 
+<Callout type="info" title="Optional: store credentials in a .env file">
+If you prefer, you can store the URL in a `.env` file (for example, `moosestack/.env`). The Moose runtime loads `.env` at runtime, but the CLI does not automatically load it, so you still need to source/export it before running `moose db pull`:
+
+```bash
+echo "CLICKHOUSE_URL=<YOUR_CLICKHOUSE_CLOUD_HTTPS_URL>" >> .env
+set -a; source .env; set +a
+```
+</Callout>
+
 <Callout type="info" title="Make sure Moose loads your ClickPipes external models">
-`moose db pull` writes a file at `app/clickpipesExternalModels.ts`. Load it once from `app/index.ts` so Moose can discover those table definitions (we use an export here so other code can import these tables too):
+`moose db pull` writes a file at `app/clickpipesExternalModels.ts`. Import it once from `app/index.ts` so Moose can discover those table definitions (we use an export here so other code can import these tables too):
 
 ```ts filename="app/index.ts" copy
 export * from "./clickpipesExternalModels";
@@ -365,9 +391,17 @@ export * from "./clickpipesExternalModels";
 
 <Callout type="info" title="These ClickPipes tables are externally managed">
 The tables replicated by ClickPipes are owned and mutated by ClickPipes, not your MooseStack project. `moose db pull` generates `EXTERNALLY_MANAGED` table definitions that mirror ClickPipes-owned schemas so you can write type-safe queries, views, and materialized views against them without taking ownership of their lifecycle.
+
+In TypeScript, you’ll see this reflected in the generated table config:
+
+```ts copy
+lifeCycle: LifeCycle.EXTERNALLY_MANAGED
+```
+
+For details, see [External Tables](/moosestack/olap/external-tables).
 </Callout>
 
-To make this repeatable, add a script to `moosestack/package.json`:
+To make this repeatable, add this script to the `scripts` section in `moosestack/package.json`:
 
 ```json title="moosestack/package.json"
 {
@@ -675,9 +709,9 @@ If CDC is not enabled yet, complete the **SQL Server CDC Configuration** section
 
 ##### Step 1: Define a pipeline to receive CDC events from Debezium
 
-Copy the code below into `moosestack/src/cdc/DebeziumChangeEvent.model.ts`. It defines the `DebeziumChangeEvent` payload shape and wires up an `IngestApi` + `Stream` with a Dead Letter Queue (DLQ) so failed events are captured for inspection.
+Copy the code below into `moosestack/app/cdc/DebeziumChangeEvent.model.ts`. It defines the `DebeziumChangeEvent` payload shape and wires up an `IngestApi` + `Stream` with a Dead Letter Queue (DLQ) so failed events are captured for inspection.
 
-```ts filename="moosestack/src/cdc/DebeziumChangeEvent.model.ts" copy
+```ts filename="moosestack/app/cdc/DebeziumChangeEvent.model.ts" copy
 import { IngestApi, Stream, DeadLetterQueue, Int64 } from "@514labs/moose-lib";
 
 /**
@@ -775,7 +809,7 @@ export const DebeziumChangeEventIngestApi = new IngestApi<DebeziumEventEnvelope>
 
 Before implementing the streaming function, define an explicit mapping between SQL Server source table names and their corresponding Moose Streams.
 
-```typescript filename="moosestack/src/cdc/tableStreamMap.ts" copy
+```typescript filename="moosestack/app/cdc/tableStreamMap.ts" copy
 import { ProductStream } from "../models/Product.model";
 import { CustomerStream } from "../models/Customer.model";
 import { OrderStream } from "../models/Order.model";
@@ -797,7 +831,7 @@ This function acts as our fanout point.
 
 When cdc events are posted from Debezium, we need to read the table name from the payload and route the cdc event to the correct stream.
 
-**File location:** `moosestack/src/cdc/processDebeziumEvent.ts`
+**File location:** `moosestack/app/cdc/processDebeziumEvent.ts`
 
 ```ts
 import {
@@ -1111,7 +1145,7 @@ GROUP BY om.merchant_id, m.merchant_name, toDate(om.created_at)
 
 Then your serving table should contain the final output columns, and `orderByFields` should match the grain (here, `["merchant_id", "day"]`).
 ```ts
-// File: moosestack/src/models/OrderFulfillmentServing.model.ts
+// File: moosestack/app/models/OrderFulfillmentServing.model.ts
 
 import { OlapTable, Int64 } from "@514labs/moose-lib";
 
@@ -1136,7 +1170,7 @@ This table will be populated by the Materialized View and becomes the table your
 The Materialized View performs the joins/aggregations from your parity query and writes results to the serving table whenever source data changes.
 
 ```ts
-// File: moosestack/src/views/OrderFulfillmentMV.view.ts
+// File: moosestack/app/views/OrderFulfillmentMV.view.ts
 
 import { MaterializedView, sql } from "@514labs/moose-lib";
 import { OrderMetrics } from "../models/OrderMetrics.model";
@@ -1210,7 +1244,7 @@ pnpm dlx tiged 514-labs/query-layer/src ./query-layer
 Define a QueryModel that exposes the dimensions, metrics, filters, and sortable fields your endpoint needs:
 
 ```ts
-// File: moosestack/src/query-models/orderFulfillment.model.ts
+// File: moosestack/app/query-models/orderFulfillment.model.ts
 
 import { sql } from "@514labs/moose-lib";
 import { defineQueryModel } from "../query-layer";
@@ -1250,7 +1284,7 @@ export const orderFulfillmentModel = defineQueryModel({
 Update your existing endpoint handler to build a Query Layer request from your endpoint contract and execute it against ClickHouse:
 
 ```ts
-// File: moosestack/src/apis/orderFulfillment.api.ts
+// File: moosestack/app/apis/orderFulfillment.api.ts
 
 import { getMooseUtils } from "@514labs/moose-lib";
 import { orderFulfillmentModel } from "../query-models/orderFulfillment.model";
@@ -1293,7 +1327,7 @@ export async function getOrderFulfillment(
 Rewire your existing API endpoint to call the new function from Step 3. Make sure to import the function from the `moosestack` package.
 
 ```ts
-// File: moosestack/src/apis/orderFulfillment.api.ts
+// File: moosestack/app/apis/orderFulfillment.api.ts
 
 import { getOrderFulfillment } from "moosestack";
 // ... existing code ...
