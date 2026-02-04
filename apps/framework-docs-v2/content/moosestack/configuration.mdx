@@ -114,6 +114,28 @@ MOOSE_<SECTION>__<KEY>=value
 | `features.workflows` | `MOOSE_FEATURES__WORKFLOWS` |
 | `redis_config.url` | `MOOSE_REDIS_CONFIG__URL` |
 
+### CDC Connection Strings
+
+For CDC sources, keep database URLs in `.env` files or your platform’s environment variables, then reference them in code:
+
+```bash
+ORDERS_DB_URL=postgres://user:pass@host:5432/orders
+```
+
+TypeScript:
+
+```ts
+connection: mooseRuntimeEnv.get("ORDERS_DB_URL")
+```
+
+Python:
+
+```python
+connection=moose_runtime_env.get("ORDERS_DB_URL")
+```
+
+Moose resolves these at runtime and masks them in plan output.
+
 ### Complete Example
 
 **File structure:**

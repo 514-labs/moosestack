@@ -46,6 +46,7 @@ use tracing::debug;
 use super::{
     infrastructure::{
         api_endpoint::{APIType, ApiEndpoint, Method},
+        cdc_source::{CdcSource, CdcTable},
         consumption_webserver::ConsumptionApiWebServer,
         function_process::FunctionProcess,
         orchestration_worker::OrchestrationWorker,
@@ -65,7 +66,7 @@ use crate::{
         scripts::Workflow, versions::Version,
     },
     infrastructure::olap::clickhouse::queries::ClickhouseEngine,
-    utilities::{constants, normalize_path_string},
+    utilities::{constants, normalize_path_string, secrets::resolve_runtime_env},
 };
 
 /// Defines how Moose manages the lifecycle of database resources when code changes.
@@ -471,6 +472,31 @@ pub struct PartialWorkflow {
     pub schedule: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialCdcTable {
+    pub name: String,
+    pub source_table: String,
+    pub primary_key: Vec<String>,
+    pub stream: Option<String>,
+    pub table: Option<String>,
+    pub snapshot: Option<String>,
+    pub version: Option<String>,
+    pub metadata: Option<Metadata>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartialCdcSource {
+    pub name: String,
+    pub kind: String,
+    pub connection: String,
+    pub tables: Vec<PartialCdcTable>,
+    pub metadata: Option<Metadata>,
+    #[serde(alias = "life_cycle")]
+    pub life_cycle: Option<LifeCycle>,
+}
+
 /// Errors that can occur during the loading of Data Model V2 infrastructure definitions.
 ///
 /// This error type follows the Rust error handling best practices and provides
@@ -555,6 +581,8 @@ pub struct PartialInfrastructureMap {
     >,
     #[serde(default)]
     views: HashMap<String, crate::framework::core::infrastructure::view::View>,
+    #[serde(default)]
+    cdc_sources: HashMap<String, PartialCdcSource>,
     /// List of source files that exist in the project but were not loaded during the build process.
     /// This is used to warn developers about potentially missing imports or configuration issues.
     /// File paths should be relative to the project root.
@@ -674,6 +702,7 @@ impl PartialInfrastructureMap {
         let function_processes = self.create_function_processes(main_file, language, &topics);
         let workflows = self.convert_workflows(language);
         let web_apps = self.convert_web_apps();
+        let cdc_sources = self.convert_cdc_sources()?;
 
         // Why does dmv1 InfrastructureMap::new do this?
         let mut orchestration_workers = HashMap::new();
@@ -698,6 +727,7 @@ impl PartialInfrastructureMap {
             web_apps,
             materialized_views: self.materialized_views,
             views: self.views,
+            cdc_sources,
         };
 
         normalize_all_metadata_paths(&mut infra_map, project_root);
@@ -1408,6 +1438,49 @@ impl PartialInfrastructureMap {
             })
             .collect()
     }
+
+    fn convert_cdc_sources(&self) -> Result<HashMap<String, CdcSource>, DmV2LoadingError> {
+        let mut sources = HashMap::new();
+
+        for (name, source) in &self.cdc_sources {
+            let connection = resolve_runtime_env(&source.connection).map_err(|error| {
+                DmV2LoadingError::RuntimeEnvResolution {
+                    table_name: name.clone(),
+                    field: "connection".to_string(),
+                    error: error.to_string(),
+                }
+            })?;
+
+            let tables = source
+                .tables
+                .iter()
+                .map(|table| CdcTable {
+                    name: table.name.clone(),
+                    source_table: table.source_table.clone(),
+                    primary_key: table.primary_key.clone(),
+                    stream: table.stream.clone(),
+                    table: table.table.clone(),
+                    snapshot: table.snapshot.clone(),
+                    version: table.version.clone(),
+                    metadata: table.metadata.clone(),
+                })
+                .collect();
+
+            sources.insert(
+                name.clone(),
+                CdcSource {
+                    name: source.name.clone(),
+                    kind: source.kind.clone(),
+                    connection,
+                    tables,
+                    metadata: source.metadata.clone(),
+                    life_cycle: source.life_cycle.unwrap_or(LifeCycle::FullyManaged),
+                },
+            );
+        }
+
+        Ok(sources)
+    }
 }
 
 fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root: &Path) {
@@ -1432,6 +1505,18 @@ fn normalize_all_metadata_paths(infra_map: &mut InfrastructureMap, project_root:
     for func in infra_map.function_processes.values_mut() {
         if let Some(metadata) = &mut func.metadata {
             metadata.normalize_source_path(project_root);
+        }
+    }
+
+    for source in infra_map.cdc_sources.values_mut() {
+        if let Some(metadata) = &mut source.metadata {
+            metadata.normalize_source_path(project_root);
+        }
+
+        for table in source.tables.iter_mut() {
+            if let Some(metadata) = &mut table.metadata {
+                metadata.normalize_source_path(project_root);
+            }
         }
     }
 

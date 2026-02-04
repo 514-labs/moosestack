@@ -34,6 +34,7 @@
 //! This module is essential for maintaining consistency between the defined infrastructure
 //! and the actual deployed components.
 use super::infrastructure::api_endpoint::{APIType, ApiEndpoint};
+use super::infrastructure::cdc_source::CdcSource;
 use super::infrastructure::consumption_webserver::ConsumptionApiWebServer;
 use super::infrastructure::function_process::FunctionProcess;
 use super::infrastructure::orchestration_worker::OrchestrationWorker;
@@ -451,6 +452,8 @@ pub enum ProcessChange {
     ConsumptionApiWebServer(Change<ConsumptionApiWebServer>),
     /// Change to an orchestration worker
     OrchestrationWorker(Change<OrchestrationWorker>),
+    /// Change to a CDC source
+    CdcSource(Change<super::infrastructure::cdc_source::CdcSource>),
 }
 
 /// Changes to workflow components
@@ -585,6 +588,10 @@ pub struct InfrastructureMap {
     /// Collection of views indexed by view name
     #[serde(default)]
     pub views: HashMap<String, View>,
+
+    /// Collection of CDC sources indexed by name
+    #[serde(default)]
+    pub cdc_sources: HashMap<String, CdcSource>,
 }
 
 impl InfrastructureMap {
@@ -622,6 +629,7 @@ impl InfrastructureMap {
             web_apps: Default::default(),
             materialized_views: Default::default(),
             views: Default::default(),
+            cdc_sources: Default::default(),
         }
     }
 
@@ -769,6 +777,20 @@ impl InfrastructureMap {
 
         process_changes.append(&mut function_process_changes);
 
+        let mut cdc_process_changes: Vec<ProcessChange> = self
+            .cdc_sources
+            .values()
+            .map(|source| {
+                ProcessChange::CdcSource(
+                    Change::<super::infrastructure::cdc_source::CdcSource>::Added(Box::new(
+                        source.clone(),
+                    )),
+                )
+            })
+            .collect();
+
+        process_changes.append(&mut cdc_process_changes);
+
         // Only add Analytics API server if apis feature is enabled
         if project.features.apis {
             process_changes.push(ProcessChange::ConsumptionApiWebServer(Change::<
@@ -894,7 +916,11 @@ impl InfrastructureMap {
         tracing::info!("View changes detected: {}", view_changes);
 
         // All process types
-        self.diff_all_processes(target_map, &mut changes.processes_changes);
+        self.diff_all_processes(
+            target_map,
+            &mut changes.processes_changes,
+            respect_life_cycle,
+        );
 
         // Workflows
         Self::diff_workflows(
@@ -1203,6 +1229,7 @@ impl InfrastructureMap {
         &self,
         target_map: &InfrastructureMap,
         process_changes: &mut Vec<ProcessChange>,
+        respect_life_cycle: bool,
     ) {
         Self::diff_topic_to_table_sync_processes(
             &self.topic_to_table_sync_processes,
@@ -1232,6 +1259,13 @@ impl InfrastructureMap {
             &self.orchestration_workers,
             &target_map.orchestration_workers,
             process_changes,
+        );
+
+        Self::diff_cdc_sources(
+            &self.cdc_sources,
+            &target_map.cdc_sources,
+            process_changes,
+            respect_life_cycle,
         );
     }
 
@@ -1545,6 +1579,91 @@ impl InfrastructureMap {
         );
 
         (worker_additions, worker_removals, worker_updates)
+    }
+
+    /// Compare CDC source changes between two infrastructure maps
+    fn diff_cdc_sources(
+        self_sources: &HashMap<String, CdcSource>,
+        target_sources: &HashMap<String, CdcSource>,
+        process_changes: &mut Vec<ProcessChange>,
+        respect_life_cycle: bool,
+    ) -> (usize, usize, usize) {
+        tracing::info!("Analyzing changes in CDC Sources...");
+        let mut updates = 0;
+        let mut removals = 0;
+        let mut additions = 0;
+
+        for (id, source) in self_sources {
+            if let Some(target_source) = target_sources.get(id) {
+                if source != target_source {
+                    if target_source.life_cycle == LifeCycle::ExternallyManaged
+                        && respect_life_cycle
+                    {
+                        tracing::debug!(
+                            "CDC Source '{}' has changes but is externally managed - skipping update",
+                            source.name
+                        );
+                    } else {
+                        tracing::debug!("CDC Source updated: {}", id);
+                        updates += 1;
+                        process_changes.push(ProcessChange::CdcSource(
+                            Change::<CdcSource>::Updated {
+                                before: Box::new(source.clone()),
+                                after: Box::new(target_source.clone()),
+                            },
+                        ));
+                    }
+                }
+            } else {
+                match (source.life_cycle, respect_life_cycle) {
+                    (LifeCycle::FullyManaged, _) | (_, false) => {
+                        tracing::debug!("CDC Source removed: {}", id);
+                        removals += 1;
+                        process_changes.push(ProcessChange::CdcSource(
+                            Change::<CdcSource>::Removed(Box::new(source.clone())),
+                        ));
+                    }
+                    (LifeCycle::DeletionProtected, true) => {
+                        tracing::debug!(
+                            "CDC Source '{}' marked for removal but is deletion-protected - skipping removal",
+                            source.name
+                        );
+                    }
+                    (LifeCycle::ExternallyManaged, true) => {
+                        tracing::debug!(
+                            "CDC Source '{}' marked for removal but is externally managed - skipping removal",
+                            source.name
+                        );
+                    }
+                }
+            }
+        }
+
+        for (id, source) in target_sources {
+            if !self_sources.contains_key(id) {
+                if source.life_cycle == LifeCycle::ExternallyManaged && respect_life_cycle {
+                    tracing::debug!(
+                        "CDC Source '{}' marked for addition but is externally managed - skipping addition",
+                        source.name
+                    );
+                } else {
+                    tracing::debug!("CDC Source added: {}", id);
+                    additions += 1;
+                    process_changes.push(ProcessChange::CdcSource(Change::<CdcSource>::Added(
+                        Box::new(source.clone()),
+                    )));
+                }
+            }
+        }
+
+        tracing::info!(
+            "CDC Source changes: {} added, {} removed, {} updated",
+            additions,
+            removals,
+            updates
+        );
+
+        (additions, removals, updates)
     }
 
     /// Compare SQL resources between two infrastructure maps and compute the differences
@@ -2654,6 +2773,11 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            cdc_sources: self
+                .cdc_sources
+                .iter()
+                .map(|(k, v)| (k.clone(), v.to_proto()))
+                .collect(),
             special_fields: Default::default(),
         }
     }
@@ -2803,6 +2927,16 @@ impl InfrastructureMap {
                 .collect(),
             materialized_views,
             views,
+            cdc_sources: proto
+                .cdc_sources
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        super::infrastructure::cdc_source::CdcSource::from_proto(v),
+                    )
+                })
+                .collect(),
         })
     }
 
@@ -3004,6 +3138,12 @@ impl InfrastructureMap {
                         *value = CREDENTIAL_PLACEHOLDER.to_string();
                     }
                 }
+            }
+        }
+
+        for source in self.cdc_sources.values_mut() {
+            if !source.connection.is_empty() {
+                source.connection = CREDENTIAL_PLACEHOLDER.to_string();
             }
         }
 
@@ -3577,6 +3717,7 @@ impl Default for InfrastructureMap {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         }
     }
 }
@@ -3611,6 +3752,7 @@ impl serde::Serialize for InfrastructureMap {
             materialized_views:
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
             views: &'a HashMap<String, super::infrastructure::view::View>,
+            cdc_sources: &'a HashMap<String, super::infrastructure::cdc_source::CdcSource>,
         }
 
         // Mask credentials before serialization (for JSON migration files)
@@ -3633,6 +3775,7 @@ impl serde::Serialize for InfrastructureMap {
             web_apps: &masked_inframap.web_apps,
             materialized_views: &masked_inframap.materialized_views,
             views: &masked_inframap.views,
+            cdc_sources: &masked_inframap.cdc_sources,
         };
 
         // Serialize to JSON value, sort keys, then serialize that

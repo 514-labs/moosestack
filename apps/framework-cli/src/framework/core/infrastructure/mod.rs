@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 pub mod api_endpoint;
+pub mod cdc_source;
 pub mod consumption_webserver;
 pub mod function_process;
 pub mod materialized_view;

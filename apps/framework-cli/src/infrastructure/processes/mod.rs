@@ -203,6 +203,23 @@ pub async fn execute_changes(
                 process_registry.orchestration_workers.stop(before).await?;
                 process_registry.orchestration_workers.start(after).await?;
             }
+            ProcessChange::CdcSource(change) => match change {
+                Change::Added(source) => {
+                    tracing::info!(
+                        "CDC source '{}' reviewed (no apply step in v1)",
+                        source.name
+                    );
+                }
+                Change::Removed(source) => {
+                    tracing::info!(
+                        "CDC source '{}' removal reviewed (no apply step in v1)",
+                        source.name
+                    );
+                }
+                Change::Updated { before: _, after } => {
+                    tracing::info!("CDC source '{}' updated (no apply step in v1)", after.name);
+                }
+            },
         }
     }
 

@@ -22,3 +22,4 @@ _web_apps: Dict[str, Any] = {}
 # Structured registries for views and materialized views
 _materialized_views: Dict[str, Any] = {}
 _views: Dict[str, Any] = {}
+_cdc_sources: Dict[str, Any] = {}

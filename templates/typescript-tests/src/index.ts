@@ -6,6 +6,7 @@ export * from "./ingest/s3Tests"; // Import S3 engine tests for runtime env reso
 export * from "./ingest/kafkaTests"; // Import Kafka engine tests
 export * from "./ingest/drizzleInfer";
 export * from "./ingest/dateAggregationModels";
+export * from "./ingest/cdc";
 
 export * from "./apis/bar";
 export * from "./apis/barExpress";
