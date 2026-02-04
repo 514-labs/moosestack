@@ -1,9 +1,13 @@
-//! CI/CD Environment Detection
+//! CI/CD and Container Environment Detection
 //!
-//! Detects whether the CLI is running in a CI/CD environment by checking
-//! for common environment variable prefixes set by various CI providers.
+//! Detects whether the CLI is running in a CI/CD environment or Docker container
+//! by checking for common environment variable prefixes set by various CI providers.
 
 use std::env;
+
+/// Environment variable set in Moose Docker images.
+/// Already present in the generated Dockerfile: `ENV DOCKER_IMAGE=true`
+pub const DOCKER_IMAGE_ENV_VAR: &str = "DOCKER_IMAGE";
 
 /// Information about the CI/CD environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -12,6 +16,8 @@ pub struct CIEnvironment {
     pub is_ci: bool,
     /// The detected CI provider, if any.
     pub ci_provider: Option<String>,
+    /// Whether the CLI is running inside a Docker container.
+    pub is_docker: bool,
 }
 
 /// CI provider prefixes and their corresponding provider names.
@@ -43,6 +49,7 @@ const CI_PREFIXES: &[(&str, Option<&str>)] = &[
 ///
 /// This function checks if any environment variable starts with a known CI provider prefix.
 /// If any are found, it returns information about the detected environment.
+/// Also detects if running inside a Docker container via the DOCKER_IMAGE env var.
 pub fn detect_ci_environment() -> CIEnvironment {
     let env_vars: Vec<String> = env::vars().map(|(key, _)| key).collect();
     detect_ci_from_vars(&env_vars)
@@ -51,11 +58,16 @@ pub fn detect_ci_environment() -> CIEnvironment {
 /// Internal function that detects CI from a list of environment variable names.
 /// This allows for testing with controlled inputs.
 fn detect_ci_from_vars(env_vars: &[String]) -> CIEnvironment {
+    // Check for Docker container
+    let is_docker = env_vars.iter().any(|var| var == DOCKER_IMAGE_ENV_VAR);
+
+    // Check for CI providers
     for (prefix, provider) in CI_PREFIXES {
         if env_vars.iter().any(|var| var.starts_with(prefix)) {
             return CIEnvironment {
                 is_ci: true,
                 ci_provider: provider.map(String::from),
+                is_docker,
             };
         }
     }
@@ -63,6 +75,7 @@ fn detect_ci_from_vars(env_vars: &[String]) -> CIEnvironment {
     CIEnvironment {
         is_ci: false,
         ci_provider: None,
+        is_docker,
     }
 }
 
@@ -252,5 +265,33 @@ mod tests {
         let ci = detect_ci_from_vars(&env_vars);
         assert!(ci.is_ci);
         assert_eq!(ci.ci_provider, Some("github_actions".to_string()));
+    }
+
+    #[test]
+    fn test_detect_docker_container() {
+        // DOCKER_IMAGE env var indicates running in Moose Docker image
+        let env_vars = vars(&["DOCKER_IMAGE", "PATH", "HOME"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(!ci.is_ci); // Docker alone doesn't mean CI
+        assert_eq!(ci.ci_provider, None);
+        assert!(ci.is_docker);
+    }
+
+    #[test]
+    fn test_detect_docker_with_ci() {
+        // Can be both in Docker and in CI
+        let env_vars = vars(&["DOCKER_IMAGE", "GITHUB_ACTIONS", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("github_actions".to_string()));
+        assert!(ci.is_docker);
+    }
+
+    #[test]
+    fn test_no_docker_when_not_set() {
+        let env_vars = vars(&["GITHUB_ACTIONS", "PATH", "HOME"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert!(!ci.is_docker);
     }
 }
