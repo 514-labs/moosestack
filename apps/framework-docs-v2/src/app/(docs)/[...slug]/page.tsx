@@ -108,11 +108,16 @@ export default async function DocPage({ params }: PageProps) {
   // Copy button is always enabled - it's a client component that works with static pages
   const showCopyButton = true;
 
-  // Hide breadcrumbs for top-level section index pages (e.g., /moosestack, /hosting/overview, /ai/overview)
-  const isTopLevelIndex =
-    !slug.includes("/") ||
-    slug === "hosting/overview" ||
-    slug === "ai/overview";
+  // Hide breadcrumbs for top-level section index pages
+  const topLevelIndexPages = [
+    "moosestack",
+    "moosestack/index",
+    "hosting/overview",
+    "hosting/index",
+    "ai/overview",
+    "ai/index",
+  ];
+  const isTopLevelIndex = topLevelIndexPages.includes(slug);
 
   return (
     <>
