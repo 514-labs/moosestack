@@ -159,7 +159,7 @@ export function CommunityCallout({
   href = "https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg",
   ctaLabel = "Join Slack",
   children,
-}: CommunityCalloutProps): JSX.Element {
+}: CommunityCalloutProps) {
   return (
     <Callout
       type="info"
