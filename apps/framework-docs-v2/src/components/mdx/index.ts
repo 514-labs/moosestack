@@ -61,3 +61,10 @@ export {
   TabbedCodeContent,
   ConditionalContent,
 } from "./interactive";
+
+// Chapter navigation for guides with Why/How separation
+export {
+  ChapterGuide,
+  ChapterNavigation,
+  type Chapter,
+} from "../guides/chapter-navigation";

@@ -3,22 +3,265 @@ title: Performant Dashboards
 description: Guide to building high-performance dashboards with MooseStack
 ---
 
-# Performant Dashboards
+<ChapterGuide
+  chapters={[
+    { id: "why", title: "Why", subtitle: "Understanding the problem and the approach" },
+    { id: "how", title: "How", subtitle: "Step-by-step implementation" },
+  ]}
+>
 
-This guide covers best practices for building performant dashboards using MooseStack.
+{/* Chapter 1: Why */}
+<div>
 
-## Overview
+# Why Dashboards Get Slow
 
-Building dashboards that load quickly and provide real-time insights requires careful consideration of data modeling, query optimization, and caching strategies.
+Traditional dashboards that query OLTP databases directly face fundamental performance challenges at scale. Understanding these challenges is key to building dashboards that stay fast.
 
-## Key Concepts
+## The Problem with Direct Queries
 
-- Materialized views for pre-aggregated data
-- Efficient query patterns
-- Caching strategies
-- Real-time data updates
+When you query your production PostgreSQL or MySQL database for dashboard data, you're competing with your application's transactional workload. This creates several issues:
+
+- **Lock contention**: Analytical queries that scan large tables can block or slow down transactional writes
+- **Resource competition**: Your dashboard queries consume CPU, memory, and I/O that your application needs
+- **No query optimization**: OLTP databases optimize for single-row lookups, not aggregations across millions of rows
+
+## Why Traditional Caching Falls Short
+
+You might think "I'll just add Redis caching" — but this approach has limits:
+
+- **Cache invalidation complexity**: When does your cache become stale? After every write? That defeats the purpose.
+- **Memory constraints**: Caching pre-computed results for every possible filter combination explodes memory usage
+- **Cold start problem**: First query after cache expiration is still slow
+
+## The OLAP Approach
+
+MooseStack solves this by separating concerns:
+
+1. **Your OLTP database** handles application transactions
+2. **ClickHouse** (OLAP) handles analytical queries
+3. **Materialized views** pre-aggregate data for common access patterns
+
+This isn't just "another database to manage" — it's purpose-built infrastructure that makes 100ms dashboard loads achievable even with billions of rows.
+
+## When You Need This
+
+Consider this approach when:
+
+- Dashboard queries take more than 500ms
+- Your application database CPU spikes during dashboard usage
+- Users complain about slow loading charts
+- You need real-time or near-real-time analytics
+
+</div>
+
+{/* Chapter 2: How */}
+<div>
+
+# Building a Performant Dashboard
+
+This chapter walks through the concrete steps to build a fast dashboard with MooseStack.
+
+## Prerequisites
+
+Before starting, ensure you have:
+
+- A running MooseStack project
+- Access to your source data (OLTP database, event stream, or API)
+- Basic familiarity with SQL
+
+## Step 1: Model Your Data
+
+First, define what data your dashboard needs. Create a data model in your Moose project:
+
+<LanguageTabs>
+<LanguageTabContent language="typescript">
+```typescript
+// datamodels/PageView.ts
+import { Key, DataModelConfig } from "@514labs/moose-lib";
+
+export interface PageView {
+  timestamp: Key<Date>;
+  userId: string;
+  pageUrl: string;
+  sessionId: string;
+  durationMs: number;
+  country: string;
+}
+
+export const config: DataModelConfig<PageView> = {
+  storage: {
+    enabled: true,
+    order_by_fields: ["timestamp", "userId"],
+  },
+};
+```
+</LanguageTabContent>
+<LanguageTabContent language="python">
+```python
+# datamodels/page_view.py
+from moose_lib import Key, moose_data_model
+from dataclasses import dataclass
+from datetime import datetime
+
+@moose_data_model
+@dataclass
+class PageView:
+    timestamp: Key[datetime]
+    user_id: str
+    page_url: str
+    session_id: str
+    duration_ms: int
+    country: str
+```
+</LanguageTabContent>
+</LanguageTabs>
+
+## Step 2: Create a Materialized View
+
+Materialized views pre-compute aggregations so your dashboard queries return instantly:
+
+<LanguageTabs>
+<LanguageTabContent language="typescript">
+```typescript
+// blocks/DailyPageViews.ts
+import { Blocks } from "@514labs/moose-lib";
+import { PageView } from "../datamodels/PageView";
+
+export default {
+  setup: Blocks.Materializations.materializedView({
+    selectStatement: `
+      SELECT
+        toDate(timestamp) as date,
+        country,
+        count() as views,
+        uniq(userId) as unique_users,
+        avg(durationMs) as avg_duration
+      FROM PageView
+      GROUP BY date, country
+    `,
+    tableName: "DailyPageViewsByCountry",
+    materializedViewName: "DailyPageViewsByCountry_mv",
+  }),
+};
+```
+</LanguageTabContent>
+<LanguageTabContent language="python">
+```python
+# blocks/daily_page_views.py
+from moose_lib import Blocks
+
+setup = Blocks.Materializations.materialized_view(
+    select_statement="""
+      SELECT
+        toDate(timestamp) as date,
+        country,
+        count() as views,
+        uniq(user_id) as unique_users,
+        avg(duration_ms) as avg_duration
+      FROM PageView
+      GROUP BY date, country
+    """,
+    table_name="DailyPageViewsByCountry",
+    materialized_view_name="DailyPageViewsByCountry_mv",
+)
+```
+</LanguageTabContent>
+</LanguageTabs>
+
+## Step 3: Create a Consumption API
+
+Expose your aggregated data through a type-safe API endpoint:
+
+<LanguageTabs>
+<LanguageTabContent language="typescript">
+```typescript
+// apis/dashboard.ts
+import { ConsumptionApi } from "@514labs/moose-lib";
+
+interface DashboardParams {
+  startDate: string;
+  endDate: string;
+  country?: string;
+}
+
+export default ConsumptionApi<DashboardParams>({
+  path: "/dashboard/views",
+  handler: async ({ startDate, endDate, country }, { client }) => {
+    const countryFilter = country ? `AND country = {country:String}` : "";
+
+    return client.query(`
+      SELECT date, country, views, unique_users, avg_duration
+      FROM DailyPageViewsByCountry
+      WHERE date >= {startDate:Date} AND date <= {endDate:Date}
+      ${countryFilter}
+      ORDER BY date DESC
+    `, { startDate, endDate, country });
+  },
+});
+```
+</LanguageTabContent>
+<LanguageTabContent language="python">
+```python
+# apis/dashboard.py
+from moose_lib import ConsumptionApi
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class DashboardParams:
+    start_date: str
+    end_date: str
+    country: Optional[str] = None
+
+async def handler(params: DashboardParams, context):
+    country_filter = f"AND country = '{params.country}'" if params.country else ""
+
+    return await context.client.query(f"""
+      SELECT date, country, views, unique_users, avg_duration
+      FROM DailyPageViewsByCountry
+      WHERE date >= '{params.start_date}' AND date <= '{params.end_date}'
+      {country_filter}
+      ORDER BY date DESC
+    """)
+
+api = ConsumptionApi(
+    path="/dashboard/views",
+    handler=handler,
+)
+```
+</LanguageTabContent>
+</LanguageTabs>
+
+## Step 4: Connect Your Frontend
+
+Query your consumption API from your dashboard frontend:
+
+```typescript
+// React example
+const { data, isLoading } = useQuery({
+  queryKey: ['dashboard', startDate, endDate, country],
+  queryFn: () =>
+    fetch(`/consumption/dashboard/views?startDate=${startDate}&endDate=${endDate}${country ? `&country=${country}` : ''}`)
+      .then(res => res.json())
+});
+```
+
+## Performance Expectations
+
+With this architecture in place, you can expect:
+
+| Metric | Before (OLTP) | After (OLAP + MV) |
+|--------|---------------|-------------------|
+| Query latency | 2-10s | 10-100ms |
+| Concurrent users | ~10 | 1000+ |
+| Data freshness | Real-time | Near real-time (seconds) |
 
 ## Next Steps
 
-Learn more about [data modeling](/moosestack/data-modeling) and [OLAP](/moosestack/olap) to get started.
+- Learn about [incremental materialized views](/moosestack/building-blocks/materialized-views) for more complex aggregations
+- Explore [consumption APIs](/moosestack/consumption-apis) for advanced query patterns
+- See [data modeling best practices](/moosestack/data-modeling) for optimizing your schema
 
+</div>
+
+</ChapterGuide>
