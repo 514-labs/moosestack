@@ -175,7 +175,7 @@ def run(client: MooseClient, params: QueryParams) -> list[DataModel]:
         row_type=DataModel,
     )
  
-analytics_api = Api[QueryParams, DataModel](name="get-api-route", query_function=run)
+analytics_api = Api[QueryParams, list[DataModel]](name="get-api-route", query_function=run)
 ```
 
 ## Docs
