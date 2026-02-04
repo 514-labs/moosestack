@@ -21,7 +21,7 @@ const CI_PREFIXES: &[(&str, Option<&str>)] = &[
     ("GITHUB_", Some("github_actions")),
     ("GITLAB_", Some("gitlab")),
     ("JENKINS_", Some("jenkins")),
-    ("CIRCLECI_", Some("circleci")),
+    ("CIRCLE_", Some("circleci")),
     ("TRAVIS_", Some("travis")),
     ("BUILDKITE_", Some("buildkite")),
     ("BITBUCKET_", Some("bitbucket")),
@@ -150,7 +150,8 @@ mod tests {
 
     #[test]
     fn test_detect_circleci() {
-        let env_vars = vars(&["CIRCLECI_BUILD_NUM", "CIRCLECI_JOB", "PATH"]);
+        // CircleCI uses CIRCLE_ prefix (e.g., CIRCLE_BUILD_NUM, CIRCLE_BRANCH)
+        let env_vars = vars(&["CIRCLE_BUILD_NUM", "CIRCLE_BRANCH", "PATH"]);
         let ci = detect_ci_from_vars(&env_vars);
         assert!(ci.is_ci);
         assert_eq!(ci.ci_provider, Some("circleci".to_string()));
