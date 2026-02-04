@@ -1230,7 +1230,7 @@ def to_infra_map() -> dict:
                     if mv.refresh_config.depends_on
                     else None
                 ),
-                append=mv.refresh_config.append if mv.refresh_config.append else None,
+                append=mv.refresh_config.append,
             )
 
         materialized_views[name] = MaterializedViewJson(

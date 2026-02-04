@@ -10,7 +10,7 @@ Two types of materialized views are supported:
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional, Union, Generic, List, TYPE_CHECKING
+from typing import Any, Literal, Optional, Union, Generic, List
 
 from pydantic import BaseModel, ConfigDict
 
@@ -101,7 +101,7 @@ class RefreshConfig:
     interval: RefreshInterval
     """The refresh interval (EVERY or AFTER)"""
     offset: Optional[Duration] = None
-    """Optional offset from interval start"""
+    """Optional offset from interval start. NOTE: Only valid with REFRESH EVERY, not REFRESH AFTER."""
     randomize: Optional[Duration] = None
     """Optional randomization window"""
     depends_on: List["RefreshableMaterializedView"] = field(default_factory=list)
@@ -343,6 +343,16 @@ class RefreshableMaterializedView(BaseTypedResource, Generic[T]):
         if target_table.name == options.materialized_view_name:
             raise ValueError(
                 "Target table name cannot be the same as the materialized view name"
+            )
+
+        # Validate OFFSET is not used with REFRESH AFTER (only valid with REFRESH EVERY)
+        if (
+            options.refresh_config.interval.type == "after"
+            and options.refresh_config.offset is not None
+        ):
+            raise ValueError(
+                "OFFSET is only valid with REFRESH EVERY, not REFRESH AFTER. "
+                "Remove the 'offset' option or change the interval type to 'every'."
             )
 
         self.name = options.materialized_view_name
