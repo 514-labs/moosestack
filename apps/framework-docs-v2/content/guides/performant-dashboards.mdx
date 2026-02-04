@@ -154,7 +154,7 @@ Engineering can ship new dashboards, metrics, and breakdowns as routine product 
 
 This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices.
 
-Your source database (Postgres or SQL Server) remains your system of record, and your application continues writing to it as usual. CDC (ClickPipes or Debezium) streams changes into ClickHouse in real time so dashboards can read from ClickHouse instead of competing with OLTP workloads.
+Your source database (Postgres or SQL Server) remains your transactional system of record, and your application continues writing to it as usual. CDC (ClickPipes or Debezium) streams changes into ClickHouse in real time so dashboards can read from ClickHouse instead of competing with OLTP workloads.
 
 MooseStack is where you define your ClickHouse analytics layer **in code**. You’ll build views/materializations on top of the CDC-replicated raw tables and keep your existing dashboard APIs and request/response contracts the same—only the backing queries change.
 
