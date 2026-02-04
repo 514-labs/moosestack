@@ -78,7 +78,6 @@ pub enum MetricEvent {
 
 #[derive(Clone)]
 pub struct TelemetryMetadata {
-    pub anonymous_telemetry_enabled: bool,
     pub machine_id: String,
     pub is_moose_developer: bool,
     pub metric_labels: Option<String>,
@@ -449,7 +448,6 @@ impl Metrics {
 
         // Anonymous telemetry to moosefood.514.dev has been disabled.
         // CI/CD environment info is now sent via PostHog in capture.rs.
-        let _ = &self.telemetry_metadata.anonymous_telemetry_enabled; // Silence unused field warning
     }
 }
 

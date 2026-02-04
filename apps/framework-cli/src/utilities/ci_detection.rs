@@ -6,7 +6,7 @@
 use std::env;
 
 /// Information about the CI/CD environment.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CIEnvironment {
     /// Whether the CLI is running in a CI/CD environment.
     pub is_ci: bool,
@@ -15,29 +15,28 @@ pub struct CIEnvironment {
 }
 
 /// CI provider prefixes and their corresponding provider names.
-/// The first match wins, so more specific prefixes should come before generic ones.
+/// All prefixes use underscores to avoid false positives with unrelated env vars
+/// (e.g., "CI" would match "CIDR_BLOCK", "RENDER" would match "RENDERER").
 const CI_PREFIXES: &[(&str, Option<&str>)] = &[
     ("GITHUB_", Some("github_actions")),
     ("GITLAB_", Some("gitlab")),
     ("JENKINS_", Some("jenkins")),
-    ("CIRCLECI", Some("circleci")),
-    ("TRAVIS", Some("travis")),
-    ("BUILDKITE", Some("buildkite")),
+    ("CIRCLECI_", Some("circleci")),
+    ("TRAVIS_", Some("travis")),
+    ("BUILDKITE_", Some("buildkite")),
     ("BITBUCKET_", Some("bitbucket")),
     ("TF_BUILD", Some("azure_devops")),
     ("TEAMCITY_", Some("teamcity")),
-    ("DRONE", Some("drone")),
+    ("DRONE_", Some("drone")),
     ("CODEBUILD_", Some("aws_codebuild")),
     ("HARNESS_", Some("harness")),
-    ("SEMAPHORE", Some("semaphore")),
-    ("APPVEYOR", Some("appveyor")),
-    ("NETLIFY", Some("netlify")),
-    ("VERCEL", Some("vercel")),
-    ("RENDER", Some("render")),
+    ("SEMAPHORE_", Some("semaphore")),
+    ("APPVEYOR_", Some("appveyor")),
+    ("NETLIFY_", Some("netlify")),
+    ("VERCEL_", Some("vercel")),
+    ("RENDER_", Some("render")),
     ("RAILWAY_", Some("railway")),
     ("FLY_", Some("fly_io")),
-    // Generic CI check - should be last as it's the most common fallback
-    ("CI", None),
 ];
 
 /// Detects the CI/CD environment by checking for common environment variable prefixes.
@@ -110,12 +109,27 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_generic_ci() {
+    fn test_no_false_positive_ci_prefix() {
+        // Generic "CI" env var should NOT trigger detection (would match CIDR_BLOCK, etc.)
         let env_vars = vars(&["CI", "PATH", "HOME"]);
         let ci = detect_ci_from_vars(&env_vars);
-        assert!(ci.is_ci);
-        // Generic CI has no specific provider
+        assert!(!ci.is_ci);
         assert_eq!(ci.ci_provider, None);
+    }
+
+    #[test]
+    fn test_no_false_positive_cidr_block() {
+        let env_vars = vars(&["CIDR_BLOCK", "PATH", "HOME"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(!ci.is_ci);
+    }
+
+    #[test]
+    fn test_no_false_positive_renderer() {
+        // RENDERER should not trigger Render.com detection
+        let env_vars = vars(&["RENDERER", "PATH", "HOME"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(!ci.is_ci);
     }
 
     #[test]
@@ -136,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_detect_circleci() {
-        let env_vars = vars(&["CIRCLECI", "CIRCLE_BUILD_NUM", "PATH"]);
+        let env_vars = vars(&["CIRCLECI_BUILD_NUM", "CIRCLECI_JOB", "PATH"]);
         let ci = detect_ci_from_vars(&env_vars);
         assert!(ci.is_ci);
         assert_eq!(ci.ci_provider, Some("circleci".to_string()));
@@ -144,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_detect_travis() {
-        let env_vars = vars(&["TRAVIS", "TRAVIS_BUILD_ID", "PATH"]);
+        let env_vars = vars(&["TRAVIS_BUILD_ID", "TRAVIS_JOB_ID", "PATH"]);
         let ci = detect_ci_from_vars(&env_vars);
         assert!(ci.is_ci);
         assert_eq!(ci.ci_provider, Some("travis".to_string()));
@@ -152,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_detect_buildkite() {
-        let env_vars = vars(&["BUILDKITE", "BUILDKITE_BUILD_ID", "PATH"]);
+        let env_vars = vars(&["BUILDKITE_BUILD_ID", "BUILDKITE_JOB_ID", "PATH"]);
         let ci = detect_ci_from_vars(&env_vars);
         assert!(ci.is_ci);
         assert_eq!(ci.ci_provider, Some("buildkite".to_string()));
@@ -184,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_detect_vercel() {
-        let env_vars = vars(&["VERCEL", "VERCEL_ENV", "PATH"]);
+        let env_vars = vars(&["VERCEL_ENV", "VERCEL_URL", "PATH"]);
         let ci = detect_ci_from_vars(&env_vars);
         assert!(ci.is_ci);
         assert_eq!(ci.ci_provider, Some("vercel".to_string()));
@@ -192,10 +206,18 @@ mod tests {
 
     #[test]
     fn test_detect_netlify() {
-        let env_vars = vars(&["NETLIFY", "NETLIFY_BUILD_ID", "PATH"]);
+        let env_vars = vars(&["NETLIFY_BUILD_ID", "NETLIFY_CONTEXT", "PATH"]);
         let ci = detect_ci_from_vars(&env_vars);
         assert!(ci.is_ci);
         assert_eq!(ci.ci_provider, Some("netlify".to_string()));
+    }
+
+    #[test]
+    fn test_detect_render() {
+        let env_vars = vars(&["RENDER_SERVICE_ID", "RENDER_INSTANCE_ID", "PATH"]);
+        let ci = detect_ci_from_vars(&env_vars);
+        assert!(ci.is_ci);
+        assert_eq!(ci.ci_provider, Some("render".to_string()));
     }
 
     #[test]
@@ -223,9 +245,9 @@ mod tests {
     }
 
     #[test]
-    fn test_priority_github_over_generic_ci() {
-        // When both GITHUB_ and CI are present, GITHUB_ should win
-        let env_vars = vars(&["GITHUB_ACTIONS", "CI", "PATH"]);
+    fn test_priority_github_over_gitlab() {
+        // When both GITHUB_ and GITLAB_ are present, GITHUB_ should win (first in list)
+        let env_vars = vars(&["GITHUB_ACTIONS", "GITLAB_CI", "PATH"]);
         let ci = detect_ci_from_vars(&env_vars);
         assert!(ci.is_ci);
         assert_eq!(ci.ci_provider, Some("github_actions".to_string()));
