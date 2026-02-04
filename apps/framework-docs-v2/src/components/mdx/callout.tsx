@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   IconInfoCircle,
-  IconBulb,
+  IconBrandSlack,
   IconConfetti,
   IconAlertCircle,
 } from "@tabler/icons-react";
@@ -142,5 +142,33 @@ export function Callout({
         )}
       </AlertDescription>
     </Alert>
+  );
+}
+
+export interface CommunityCalloutProps {
+  title?: string;
+  icon?: CalloutProps["icon"];
+  href?: string;
+  ctaLabel?: string;
+  children: React.ReactNode;
+}
+
+export function CommunityCallout({
+  title = "Join the Community",
+  icon = IconBrandSlack,
+  href = "https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg",
+  ctaLabel = "Join Slack",
+  children,
+}: CommunityCalloutProps): JSX.Element {
+  return (
+    <Callout
+      type="info"
+      title={title}
+      icon={icon}
+      href={href}
+      ctaLabel={ctaLabel}
+    >
+      {children}
+    </Callout>
   );
 }
