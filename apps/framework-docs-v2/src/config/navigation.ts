@@ -202,6 +202,13 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "moosestack/language-server",
+    title: "Language Server",
+    icon: IconFileCode,
+    languages: ["typescript"],
+  },
+  {
+    type: "page",
     slug: "moosestack/data-modeling",
     title: "Data Modeling",
     icon: IconDatabase,
