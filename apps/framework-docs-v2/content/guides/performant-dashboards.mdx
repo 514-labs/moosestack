@@ -219,7 +219,7 @@ You'll work through:
 </ConditionalContent>
 
 <Callout type="info" title="AI-assisted Development">
-We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub Copilot, Windsurf, etc.) will work—editors that support MCPs can make this workflow even faster.
+We recommend using an AI copilot to accelerate the migration to handle complex query translations. However, you can complete every step manually if you prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub Copilot, Windsurf, etc.) will work. Editors that support MCPs can make this workflow even faster.
 </Callout>
 
 **Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns. 
@@ -243,9 +243,9 @@ ClickPipes creates and manages the replicated raw tables in ClickHouse. MooseSta
 In MooseStack, you’ll treat ClickPipes tables as **externally managed**. See [External Tables](/moosestack/olap/external-tables).
 </Callout>
 
-<Callout type="info" title="Not using ClickPipes?">
+<CommunityCallout type="info" title="Not using ClickPipes?">
 If your CDC provider lands tables in ClickHouse (for example, Debezium, Supabase Live, or a custom pipeline), you can follow the same workflow: pull the table schemas into code as external models, then build ClickHouse-native views/materializations on top. If you want help mapping your setup to MooseStack, join the [MooseStack community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg).
-</Callout>
+</CommunityCallout>
 
 Once your ClickPipes pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project**](#add-moosestack-to-your-project). In that step, you’ll initialize `moosestack/` and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
 
