@@ -21,8 +21,9 @@ pub struct CIEnvironment {
 }
 
 /// CI provider prefixes and their corresponding provider names.
-/// All prefixes use underscores to avoid false positives with unrelated env vars
+/// Most prefixes use underscores to avoid false positives with unrelated env vars
 /// (e.g., "CI" would match "CIDR_BLOCK", "RENDER" would match "RENDERER").
+/// Exception: TF_BUILD is an exact env var name set by Azure DevOps, not a prefix pattern.
 const CI_PREFIXES: &[(&str, Option<&str>)] = &[
     ("GITHUB_", Some("github_actions")),
     ("GITLAB_", Some("gitlab")),
