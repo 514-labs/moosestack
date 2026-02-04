@@ -64,6 +64,19 @@ TONE REFERENCE (from performant-dashboards):
 - "Load times creep up. Customers complain."
 */}
 
+### The Scenario
+
+{/*
+CONTENT TO WRITE:
+- Expand on the scenario: workforce platform, time tracking, labor cost dashboards
+- Problem: dashboard queries (joins, aggregations) compete with transactional workload
+- Data model: projects table, time_entries table (keep simple - 2 tables)
+*/}
+
+You're building a construction workforce platform on Supabase. Workers clock hours from job sites, managers track labor costs against project budgets. The app handles day-to-day operations fine, but dashboard queries — joining time entries with projects, aggregating by week, calculating costs — compete with the transactional workload and slow down the whole app.
+
+**Goal:** Fast labor cost analytics without impacting the operational database.
+
 ### Architecture
 
 ```mermaid
@@ -92,21 +105,6 @@ flowchart LR
 - **OlapTable.insert()** - Direct inserts to ClickHouse, schema managed by Moose
 - **ReplacingMergeTree** - Handles UPDATE/DELETE by keeping latest version per record
 - **Single Moose project** - Workflow, tables, and APIs all in one place
-
----
-
-## The Scenario
-
-{/*
-CONTENT TO WRITE:
-- Expand on the scenario: workforce platform, time tracking, labor cost dashboards
-- Problem: dashboard queries (joins, aggregations) compete with transactional workload
-- Data model: projects table, time_entries table (keep simple - 2 tables)
-*/}
-
-You're building a construction workforce platform on Supabase. Workers clock hours from job sites, managers track labor costs against project budgets. The app handles day-to-day operations fine, but dashboard queries — joining time entries with projects, aggregating by week, calculating costs — compete with the transactional workload and slow down the whole app.
-
-**Goal:** Fast labor cost analytics without impacting the operational database.
 
 ---
 
