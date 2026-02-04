@@ -26,7 +26,8 @@ pub enum ClickhouseError {
 /// - Contain only alphanumeric characters and underscores
 /// - Not start with a digit
 ///
-/// This is the same validation logic used in `utilities/docker.rs::is_valid_clickhouse_identifier`.
+/// This prevents SQL/XML injection and ensures compatibility with ClickHouse's naming rules.
+/// Used by both the ClickHouse client and Docker utilities.
 pub fn is_valid_clickhouse_identifier(name: &str) -> bool {
     !name.is_empty()
         && name.chars().all(|c| c.is_alphanumeric() || c == '_')

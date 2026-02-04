@@ -9,6 +9,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::{error, info, warn};
 
 use crate::cli::settings::Settings;
+use crate::infrastructure::olap::clickhouse::errors::is_valid_clickhouse_identifier;
 use crate::project::Project;
 use crate::utilities::constants::REDPANDA_CONTAINER_NAME;
 
@@ -688,20 +689,6 @@ lazy_static! {
             .unwrap();
 }
 
-/// Validates that a string is a valid ClickHouse identifier
-///
-/// ClickHouse identifiers (table names, cluster names, etc.) must:
-/// - Be non-empty
-/// - Contain only alphanumeric characters and underscores
-/// - Not start with a digit
-///
-/// This prevents XML injection and ensures compatibility with ClickHouse's naming rules.
-fn is_valid_clickhouse_identifier(name: &str) -> bool {
-    !name.is_empty()
-        && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-        && !name.chars().next().unwrap().is_numeric()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -939,25 +926,6 @@ mod tests {
         // Verify cluster name with underscores and numbers works
         assert!(xml.contains("<prod_cluster_01>"));
         assert!(xml.contains("</prod_cluster_01>"));
-    }
-
-    #[test]
-    fn test_is_valid_clickhouse_identifier() {
-        // Valid identifiers
-        assert!(is_valid_clickhouse_identifier("test_cluster"));
-        assert!(is_valid_clickhouse_identifier("cluster123"));
-        assert!(is_valid_clickhouse_identifier("_cluster"));
-        assert!(is_valid_clickhouse_identifier("prod_cluster_01"));
-        assert!(is_valid_clickhouse_identifier("default"));
-
-        // Invalid identifiers
-        assert!(!is_valid_clickhouse_identifier("")); // empty
-        assert!(!is_valid_clickhouse_identifier("123cluster")); // starts with digit
-        assert!(!is_valid_clickhouse_identifier("cluster-name")); // hyphen
-        assert!(!is_valid_clickhouse_identifier("cluster.name")); // dot
-        assert!(!is_valid_clickhouse_identifier("cluster name")); // space
-        assert!(!is_valid_clickhouse_identifier("cluster<test>")); // XML injection attempt
-        assert!(!is_valid_clickhouse_identifier("test</test><hack>")); // XML injection
     }
 
     #[test]
