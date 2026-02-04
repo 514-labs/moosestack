@@ -30,8 +30,8 @@ pub enum ClickhouseError {
 /// Used by both the ClickHouse client and Docker utilities.
 pub fn is_valid_clickhouse_identifier(name: &str) -> bool {
     !name.is_empty()
-        && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-        && !name.chars().next().unwrap().is_numeric()
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !name.chars().next().unwrap().is_ascii_digit()
 }
 
 /// Validates that a string is a valid ClickHouse identifier, returning a typed error on failure.
@@ -49,7 +49,7 @@ pub fn validate_clickhouse_identifier(
     // Determine the specific reason for failure to provide a helpful error message
     let reason = if name.is_empty() {
         "cannot be empty"
-    } else if name.chars().next().unwrap().is_numeric() {
+    } else if name.chars().next().unwrap().is_ascii_digit() {
         "cannot start with a digit"
     } else {
         "contains invalid characters (only alphanumeric and underscore allowed)"
