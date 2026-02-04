@@ -42,10 +42,17 @@ export function GuideCard({
       prefetch={true}
       className="group relative flex items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors cursor-pointer"
     >
-      {/* Icon */}
+      {/* Icon - decorative, hidden from assistive tech */}
       {IconComponent && (
-        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0">
-          <IconComponent className="h-5 w-5" strokeWidth={1.5} />
+        <div
+          className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0"
+          aria-hidden="true"
+        >
+          <IconComponent
+            className="h-5 w-5"
+            strokeWidth={1.5}
+            focusable={false}
+          />
         </div>
       )}
 
