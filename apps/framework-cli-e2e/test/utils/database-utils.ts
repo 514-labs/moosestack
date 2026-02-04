@@ -708,7 +708,6 @@ export const getMaterializedViewDDL = async (
   mvName: string,
   database?: string,
 ): Promise<string> => {
-  const fullMvName = database ? `\`${database}\`.\`${mvName}\`` : mvName;
   const client = createClient(CLICKHOUSE_CONFIG);
   try {
     const result = await client.query({
