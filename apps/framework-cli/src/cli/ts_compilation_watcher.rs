@@ -69,11 +69,12 @@ impl CompileEvent {
 }
 
 /// Spawns the tspc --watch process
+/// Respects user's tsconfig.json outDir if specified, otherwise uses .moose/compiled
 fn spawn_tspc_watch(project: &Project) -> Result<Child, TsCompilationWatcherError> {
     let mut command = Command::new("npx");
+    // Don't pass outDir - let moose-tspc read from tsconfig or use default
     command
         .arg("moose-tspc")
-        .arg(".moose/compiled")
         .arg("--watch")
         .current_dir(&project.project_location)
         .env("MOOSE_SOURCE_DIR", &project.source_dir)

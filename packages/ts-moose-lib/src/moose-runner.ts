@@ -1,55 +1,14 @@
 #!/usr/bin/env node
 
-// This file is use to run the proper runners for moose based on the
-// the arguments passed to the file.
-// It registers ts-node to be able to interpret user code.
-
-import { register } from "ts-node";
-import {
-  MOOSE_COMPILER_PLUGINS,
-  COMMANDS_REQUIRING_PLUGINS,
-  shouldUseCompiled,
-} from "./compiler-config";
-
-// Determine if we should use compiled code (with fallback check).
-// If MOOSE_USE_COMPILED=true but compiled artifacts don't exist,
-// this will return false and we'll fall back to ts-node.
-const useCompiled = shouldUseCompiled();
-
-// We register ts-node to be able to interpret TS user code.
-// Skip registration if using pre-compiled mode.
-if (!useCompiled) {
-  const command = process.argv[2];
-  const needsPlugins = (
-    COMMANDS_REQUIRING_PLUGINS as readonly string[]
-  ).includes(command);
-
-  if (needsPlugins) {
-    register({
-      require: ["tsconfig-paths/register"],
-      esm: true,
-      experimentalTsImportSpecifiers: true,
-      compiler: "ts-patch/compiler",
-      compilerOptions: {
-        plugins: [...MOOSE_COMPILER_PLUGINS],
-        experimentalDecorators: true,
-      },
-    });
-  } else {
-    register({
-      esm: true,
-      experimentalTsImportSpecifiers: true,
-    });
-  }
-}
+// This file is used to run the proper runners for moose based on the
+// arguments passed to the file.
+// It loads pre-compiled JavaScript - no ts-node required.
 
 import { dumpMooseInternal } from "./dmv2/internal";
 import { runApis } from "./consumption-apis/runner";
 import { runStreamingFunctions } from "./streaming-functions/runner";
 import { runExportSerializer } from "./moduleExportSerializer";
-import { runApiTypeSerializer } from "./consumption-apis/exportTypeSerializer";
 import { runScripts } from "./scripts/runner";
-import process from "process";
 
 import { Command } from "commander";
 
@@ -177,14 +136,6 @@ program
       runStreamingFunctions(config);
     },
   );
-
-program
-  .command("consumption-type-serializer")
-  .description("Run consumption type serializer")
-  .argument("<target-model>", "Target model to serialize")
-  .action(async (targetModel) => {
-    await runApiTypeSerializer(targetModel);
-  });
 
 program
   .command("scripts")

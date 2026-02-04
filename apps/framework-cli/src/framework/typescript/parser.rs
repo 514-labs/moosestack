@@ -178,3 +178,35 @@ pub async fn extract_data_model_from_file(
 
     Ok(serde_json::from_value(output_json)?)
 }
+
+/// Default output directory for compiled TypeScript code.
+pub const DEFAULT_OUT_DIR: &str = ".moose/compiled";
+
+/// Reads the outDir from .moose/.compile-config.json (written by moose-tspc).
+/// Falls back to default if the file doesn't exist.
+///
+/// This avoids duplicating the outDir resolution logic between Rust and TypeScript.
+/// moose-tspc is the source of truth for where it compiles to.
+fn read_compile_config_out_dir(project: &Project) -> Option<String> {
+    let config_path = project
+        .project_location
+        .join(".moose")
+        .join(".compile-config.json");
+
+    fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .and_then(|json| json.get("outDir")?.as_str().map(String::from))
+}
+
+/// Gets the path to the compiled index.js for a TypeScript project.
+/// Reads from .moose/.compile-config.json (written by moose-tspc) to know where output is.
+pub fn get_compiled_index_path(project: &Project) -> std::path::PathBuf {
+    let out_dir =
+        read_compile_config_out_dir(project).unwrap_or_else(|| DEFAULT_OUT_DIR.to_string());
+    project
+        .project_location
+        .join(&out_dir)
+        .join(&project.source_dir)
+        .join("index.js")
+}

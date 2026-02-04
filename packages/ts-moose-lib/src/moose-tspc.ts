@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 /**
  * Pre-compiles TypeScript app code with moose compiler plugins and typia transforms.
- * Used during Docker build to eliminate ts-node overhead at runtime.
  *
  * Usage: moose-tspc [outDir] [--watch]
- *   outDir: Output directory for compiled files (default: .moose/compiled)
+ *   outDir: Output directory for compiled files (optional, overrides tsconfig)
  *   --watch: Enable watch mode for incremental compilation (outputs JSON events)
+ *
+ * Output directory is determined by (in priority order):
+ * 1. CLI argument (if provided) - used by Docker builds
+ * 2. User's tsconfig.json outDir setting (if specified)
+ * 3. Default: .moose/compiled
  *
  * This script creates a temporary tsconfig that extends the user's config and adds
  * the required moose compiler plugins, then runs tspc to compile with transforms.
@@ -24,6 +28,8 @@ import {
   detectModuleSystem,
   getModuleOptions,
   getSourceDir,
+  readUserOutDir,
+  DEFAULT_OUT_DIR,
   type ModuleSystem,
 } from "./compiler-config";
 import { rewriteImportExtensions } from "./commons";
@@ -31,11 +37,19 @@ import { rewriteImportExtensions } from "./commons";
 // Parse command line arguments
 const args = process.argv.slice(2);
 const watchMode = args.includes("--watch");
-const outDir = args.find((arg) => !arg.startsWith("--")) || ".moose/compiled";
+// CLI argument takes priority (for Docker builds), then tsconfig, then default
+const cliOutDir = args.find((arg) => !arg.startsWith("--"));
 
 const projectRoot = process.cwd();
 const tsconfigPath = path.join(projectRoot, "tsconfig.json");
 const tempTsconfigPath = path.join(projectRoot, "tsconfig.moose-build.json");
+
+// Determine outDir - CLI arg > tsconfig > default
+const userOutDir = readUserOutDir(projectRoot);
+const outDir = cliOutDir || userOutDir || DEFAULT_OUT_DIR;
+// Only add --outDir flag if user hasn't specified in tsconfig AND no CLI arg
+// (if CLI arg is provided, we always pass it explicitly)
+const shouldAddOutDir = cliOutDir !== undefined || !userOutDir;
 
 /**
  * JSON event protocol for watch mode communication with Rust CLI.
@@ -93,25 +107,25 @@ function runSingleCompilation(moduleSystem: ModuleSystem): void {
   writeFileSync(tempTsconfigPath, JSON.stringify(buildTsconfig, null, 2));
   console.log("Created temporary tsconfig with moose plugins...");
 
+  // Build tspc arguments - only add --outDir if user hasn't specified one in tsconfig
+  const tspcArgs = [
+    "tspc",
+    "-p",
+    tempTsconfigPath,
+    "--rootDir",
+    ".",
+    "--sourceMap",
+    "--inlineSources",
+  ];
+  if (shouldAddOutDir) {
+    tspcArgs.push("--outDir", outDir);
+  }
+
   try {
-    execFileSync(
-      "npx",
-      [
-        "tspc",
-        "-p",
-        tempTsconfigPath,
-        "--outDir",
-        outDir,
-        "--rootDir",
-        ".",
-        "--sourceMap",
-        "--inlineSources",
-      ],
-      {
-        stdio: "inherit",
-        cwd: projectRoot,
-      },
-    );
+    execFileSync("npx", tspcArgs, {
+      stdio: "inherit",
+      cwd: projectRoot,
+    });
     console.log("TypeScript compilation complete.");
   } catch (compileError: any) {
     // TypeScript might exit with non-zero code even when noEmitOnError: false
@@ -194,27 +208,28 @@ function runWatchCompilation(moduleSystem: ModuleSystem): void {
   let errorCount = 0;
   let warningCount = 0;
 
+  // Build tspc arguments - only add --outDir if user hasn't specified one in tsconfig
+  const tspcArgs = [
+    "tspc",
+    "-p",
+    tempTsconfigPath,
+    "--rootDir",
+    ".",
+    "--sourceMap",
+    "--inlineSources",
+    "--watch",
+    "--preserveWatchOutput",
+  ];
+  if (shouldAddOutDir) {
+    // Insert --outDir before the watch flags
+    tspcArgs.splice(4, 0, "--outDir", outDir);
+  }
+
   // Spawn tspc in watch mode
-  const tspcProcess = spawn(
-    "npx",
-    [
-      "tspc",
-      "-p",
-      tempTsconfigPath,
-      "--outDir",
-      outDir,
-      "--rootDir",
-      ".",
-      "--sourceMap",
-      "--inlineSources",
-      "--watch",
-      "--preserveWatchOutput",
-    ],
-    {
-      cwd: projectRoot,
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const tspcProcess = spawn("npx", tspcArgs, {
+    cwd: projectRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 
   // Handle process termination
   const cleanup = () => {
@@ -327,6 +342,19 @@ function runWatchCompilation(moduleSystem: ModuleSystem): void {
   });
 }
 
+/**
+ * Write compile metadata to .moose/.compile-config.json
+ * This allows Rust CLI to know where compiled output is without duplicating logic
+ */
+function writeCompileConfig() {
+  const mooseDir = path.join(projectRoot, ".moose");
+  if (!existsSync(mooseDir)) {
+    mkdirSync(mooseDir, { recursive: true });
+  }
+  const configPath = path.join(mooseDir, ".compile-config.json");
+  writeFileSync(configPath, JSON.stringify({ outDir }, null, 2));
+}
+
 // Main execution
 if (!existsSync(tsconfigPath)) {
   console.error("Error: tsconfig.json not found in", projectRoot);
@@ -334,6 +362,9 @@ if (!existsSync(tsconfigPath)) {
 }
 
 try {
+  // Write compile config so Rust CLI knows where output is
+  writeCompileConfig();
+
   // Auto-detect module system from package.json
   const moduleSystem = detectModuleSystem(projectRoot);
 

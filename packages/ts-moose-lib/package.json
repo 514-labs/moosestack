@@ -54,7 +54,6 @@
     "@kafkajs/confluent-schema-registry": "3.9.0",
     "redis": "^4.6.13",
     "toml": "3.0.0",
-    "ts-node": "^10.9.1",
     "typescript": "~5.9.2"
   },
   "devDependencies": {

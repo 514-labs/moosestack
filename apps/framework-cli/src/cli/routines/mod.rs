@@ -96,6 +96,7 @@ use crate::framework::core::infrastructure_map::{
 };
 use crate::framework::core::migration_plan::{MigrationPlan, MigrationPlanWithBeforeAfter};
 use crate::framework::core::plan_validator;
+use crate::framework::typescript::parser::get_compiled_index_path;
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::project::Project;
 use serde::Deserialize;
@@ -160,6 +161,8 @@ async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisCli
 /// Runs the initial TypeScript compilation using moose-tspc.
 /// This is called before plan_changes in dev mode to ensure compiled artifacts
 /// exist for the dmv2-serializer.
+///
+/// Respects user's tsconfig.json outDir if specified, otherwise uses .moose/compiled
 fn run_initial_typescript_compilation(project: &Project) -> Result<(), String> {
     let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
     let bin_path = format!(
@@ -168,9 +171,9 @@ fn run_initial_typescript_compilation(project: &Project) -> Result<(), String> {
         path
     );
 
+    // Don't pass outDir - let moose-tspc read from tsconfig or use default
     let output = std::process::Command::new("npx")
         .arg("moose-tspc")
-        .arg(".moose/compiled")
         .current_dir(&project.project_location)
         .env("MOOSE_SOURCE_DIR", &project.source_dir)
         .env("PATH", bin_path)
@@ -182,11 +185,7 @@ fn run_initial_typescript_compilation(project: &Project) -> Result<(), String> {
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         // Check if output was generated despite errors (noEmitOnError: false)
-        let compiled_index = project
-            .project_location
-            .join(".moose/compiled")
-            .join(&project.source_dir)
-            .join("index.js");
+        let compiled_index = get_compiled_index_path(project);
         if compiled_index.exists() {
             // Compilation succeeded with warnings
             debug!("TypeScript compiled with warnings: {}", stderr);
@@ -753,6 +752,8 @@ pub async fn start_production_mode(
 
     // Pre-compile TypeScript with moose plugins for faster startup
     // This eliminates ts-node overhead in production by using pre-compiled JavaScript
+    // Compile TypeScript before starting production mode
+    // Respects user's tsconfig.json outDir if specified
     if project.language == SupportedLanguages::Typescript {
         display::show_message_wrapper(
             MessageType::Info,
@@ -762,9 +763,9 @@ pub async fn start_production_mode(
             },
         );
 
+        // Don't pass outDir - let moose-tspc read from tsconfig or use default
         let compile_result = std::process::Command::new("npx")
             .arg("moose-tspc")
-            .arg(".moose/compiled")
             .current_dir(&project.project_location)
             .env("MOOSE_SOURCE_DIR", &project.source_dir)
             .output();
@@ -781,23 +782,36 @@ pub async fn start_production_mode(
             }
             Ok(output) => {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                warn!("TypeScript compilation failed: {}", stderr);
-                display::show_message_wrapper(
-                    MessageType::Warning,
-                    Message {
-                        action: "Warning".to_string(),
-                        details: "TypeScript compilation failed, falling back to ts-node"
-                            .to_string(),
-                    },
-                );
+                // Check if compiled artifacts exist (compilation might have warnings but succeeded)
+                let compiled_index = get_compiled_index_path(&project);
+                if compiled_index.exists() {
+                    debug!("TypeScript compiled with warnings: {}", stderr);
+                    display::show_message_wrapper(
+                        MessageType::Success,
+                        Message {
+                            action: "Compiled".to_string(),
+                            details: "TypeScript successfully (with warnings)".to_string(),
+                        },
+                    );
+                } else {
+                    error!("TypeScript compilation failed: {}", stderr);
+                    display::show_message_wrapper(
+                        MessageType::Error,
+                        Message {
+                            action: "Error".to_string(),
+                            details: "TypeScript compilation failed".to_string(),
+                        },
+                    );
+                }
             }
             Err(e) => {
-                warn!("Failed to run moose-tspc: {}", e);
+                error!("Failed to run moose-tspc: {}", e);
                 display::show_message_wrapper(
-                    MessageType::Warning,
+                    MessageType::Error,
                     Message {
-                        action: "Warning".to_string(),
-                        details: "moose-tspc not found, falling back to ts-node".to_string(),
+                        action: "Error".to_string(),
+                        details: "moose-tspc not found - ensure @514labs/moose-lib is installed"
+                            .to_string(),
                     },
                 );
             }

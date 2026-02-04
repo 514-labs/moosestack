@@ -43,7 +43,9 @@ import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
 import {
   getSourceDir,
-  shouldUseCompiled,
+  getCompiledIndexPath,
+  getOutDir,
+  hasCompiledArtifacts,
   loadModule,
 } from "../compiler-config";
 
@@ -1272,47 +1274,44 @@ export const dumpMooseInternal = async () => {
 };
 
 const loadIndex = async () => {
-  // Check if we should use pre-compiled JavaScript.
-  // This checks MOOSE_USE_COMPILED=true AND verifies artifacts exist,
-  // providing automatic fallback to ts-node if compilation wasn't run.
-  const useCompiled = shouldUseCompiled();
+  // Always use pre-compiled JavaScript - no ts-node fallback.
+  // Compilation is handled by moose-tspc before this runs.
 
-  // In dev mode, clear registry and require.cache to support hot reloading.
-  // In production (compiled mode), skip clearing - code doesn't change.
-  if (!useCompiled) {
-    const registry = getMooseInternal();
-    registry.tables.clear();
-    registry.streams.clear();
-    registry.ingestApis.clear();
-    registry.apis.clear();
-    registry.sqlResources.clear();
-    registry.workflows.clear();
-    registry.webApps.clear();
-    registry.materializedViews.clear();
-    registry.views.clear();
-
-    // Clear require cache for app directory to pick up changes
-    const appDir = `${process.cwd()}/${getSourceDir()}`;
-    Object.keys(require.cache).forEach((key) => {
-      if (key.startsWith(appDir)) {
-        delete require.cache[key];
-      }
-    });
+  // Check if compiled artifacts exist
+  if (!hasCompiledArtifacts()) {
+    const outDir = getOutDir();
+    const sourceDir = getSourceDir();
+    throw new Error(
+      `Compiled artifacts not found at ${outDir}/${sourceDir}/index.js. ` +
+        `Run 'npx moose-tspc' to compile your TypeScript first.`,
+    );
   }
 
-  try {
-    // Load from compiled directory if available, otherwise TypeScript
-    const sourceDir = getSourceDir();
-    if (useCompiled) {
-      // In compiled mode, load pre-compiled JavaScript from .moose/compiled/
-      // Use dynamic loader that handles both CJS and ESM
-      await loadModule(
-        `${process.cwd()}/.moose/compiled/${sourceDir}/index.js`,
-      );
-    } else {
-      // In development mode, load TypeScript via ts-node
-      require(`${process.cwd()}/${sourceDir}/index.ts`);
+  // Clear registry and require.cache for hot reloading
+  const registry = getMooseInternal();
+  registry.tables.clear();
+  registry.streams.clear();
+  registry.ingestApis.clear();
+  registry.apis.clear();
+  registry.sqlResources.clear();
+  registry.workflows.clear();
+  registry.webApps.clear();
+  registry.materializedViews.clear();
+  registry.views.clear();
+
+  // Clear require cache for compiled directory to pick up changes
+  const outDir = getOutDir();
+  const compiledDir = `${process.cwd()}/${outDir}`;
+  Object.keys(require.cache).forEach((key) => {
+    if (key.startsWith(compiledDir)) {
+      delete require.cache[key];
     }
+  });
+
+  try {
+    // Load pre-compiled JavaScript from the configured outDir
+    const indexPath = getCompiledIndexPath();
+    await loadModule(indexPath);
   } catch (error) {
     let hint: string | undefined;
     let includeDetails = true;
