@@ -903,6 +903,7 @@ mod tests {
             source_dir: crate::project::default_source_dir(),
             docker_config: crate::project::DockerConfig::default(),
             watcher_config: crate::cli::watcher::WatcherConfig::default(),
+            dev: crate::project::DevConfig::default(),
         }
     }
 
