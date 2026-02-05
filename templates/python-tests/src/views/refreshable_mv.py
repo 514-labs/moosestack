@@ -5,7 +5,6 @@
 # new refresh configuration API works correctly end-to-end.
 
 from datetime import datetime, date
-from typing import Optional
 from pydantic import BaseModel
 
 from moose_lib.dmv2 import MaterializedView, MaterializedViewOptions
