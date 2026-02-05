@@ -1,0 +1,295 @@
+---
+title: CDC Managed Tables
+description: Develop locally with tables managed by CDC pipelines like ClickPipes, PeerDB, or Debezium
+order: 2
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# CDC Managed Tables
+
+This guide walks through developing locally with tables whose schemas are managed by CDC (Change Data Capture) services—ClickPipes, PeerDB, Debezium, or similar tools that replicate data from external sources into ClickHouse.
+
+## Overview
+
+CDC services continuously sync data from source databases (PostgreSQL, MySQL, etc.) into ClickHouse. The CDC service owns the table schema—it creates columns, handles schema evolution, and adds metadata fields for tracking changes.
+
+With Moose, you can:
+- **Model CDC tables in code** for type-safe queries and IDE autocompletion
+- **Build views and APIs** on top of replicated data
+- **Develop locally** with mirrored schemas and seeded sample data
+
+## When to Use This Guide
+
+Use this workflow when:
+
+- **ClickPipes** syncs PostgreSQL → ClickHouse Cloud
+- **PeerDB** replicates data from transactional databases
+- **Debezium** captures changes via Kafka
+- Any external process owns the table schema and you want type safety in Moose
+
+## Step 1: Configure Local Development
+
+First, configure Moose to connect to your remote ClickHouse and set up local mirroring.
+
+### Remote ClickHouse Connection
+
+Add your remote ClickHouse connection to `moose.config.toml`:
+
+```toml filename="moose.config.toml" copy
+[dev.remote_clickhouse]
+host = "your-clickhouse-host.example.com"
+port = 8443
+database = "production_db"
+use_ssl = true
+protocol = "http"
+```
+
+| Key | Type | Default | Description |
+|:----|:-----|:--------|:------------|
+| `host` | String | - | Hostname of the remote ClickHouse server |
+| `port` | Integer | `8443` (SSL) / `8123` (non-SSL) | HTTP port for the remote server |
+| `database` | String | - | Default database to query |
+| `use_ssl` | Boolean | `true` | Whether to use HTTPS |
+| `protocol` | String | `http` | Connection protocol |
+
+<Callout type="warning" title="Credential Storage">
+Credentials are **not** stored in `moose.config.toml`. On first run, Moose prompts for credentials and stores them in your OS keychain. Alternatively, set environment variables:
+
+```bash
+export MOOSE_REMOTE_CLICKHOUSE_USER=your_username
+export MOOSE_REMOTE_CLICKHOUSE_PASSWORD=your_password
+```
+</Callout>
+
+### Enable Local Mirrors and Seeding
+
+Configure Moose to create local mirror tables and seed them with sample data:
+
+```toml filename="moose.config.toml" copy
+[dev.externally_managed.tables]
+# Create local tables matching external schemas
+create_local_mirrors = true
+
+# Number of rows to seed from remote (0 = schema only)
+sample_size = 1000
+
+# Re-create and re-seed on every moose dev start
+refresh_on_startup = false
+```
+
+| Key | Type | Default | Description |
+|:----|:-----|:--------|:------------|
+| `create_local_mirrors` | Boolean | `false` | Create local tables matching external schemas |
+| `sample_size` | Integer | `0` | Number of rows to copy from remote for seeding (0 = empty tables) |
+| `refresh_on_startup` | Boolean | `false` | Drop and recreate mirror tables on each `moose dev` start |
+
+## Step 2: Initialize External Models
+
+Before running `moose dev`, generate your external model definitions from the remote database:
+
+```bash
+moose db pull --clickhouse-url "clickhouse://user:pass@host:8443/database?secure=true"
+```
+
+This introspects your remote ClickHouse and generates:
+- **TypeScript**: `app/externalModels.ts`
+- **Python**: `app/external_models.py`
+
+Tables managed by CDC services (detected via PeerDB metadata columns like `_peerdb_synced_at`) are automatically marked as `EXTERNALLY_MANAGED`.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```ts filename="app/externalModels.ts" copy
+import { OlapTable, LifeCycle, ClickHouseEngines } from "@514labs/moose-lib";
+import type { ClickHouseInt, ClickHousePrecision, ClickHouseDefault } from "@514labs/moose-lib";
+import typia from "typia";
+
+// Auto-generated from remote database
+export interface users {
+  id: string & typia.tags.Format<"uuid">;
+  email: string;
+  name: string;
+  created_at: string & typia.tags.Format<"date-time"> & ClickHousePrecision<6>;
+  // PeerDB metadata columns
+  _peerdb_synced_at: string & typia.tags.Format<"date-time"> & ClickHousePrecision<9> & ClickHouseDefault<"now64()">;
+  _peerdb_is_deleted: number & ClickHouseInt<"int8">;
+  _peerdb_version: number & ClickHouseInt<"int64">;
+}
+
+export const UsersTable = new OlapTable<users>("users", {
+  orderByFields: ["id"],
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  ver: "_peerdb_version",
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```py filename="app/external_models.py" copy
+from moose_lib import OlapTable, OlapConfig, LifeCycle
+from pydantic import BaseModel
+from datetime import datetime
+
+# Auto-generated from remote database
+class Users(BaseModel):
+    id: str  # UUID
+    email: str
+    name: str
+    created_at: datetime
+    # PeerDB metadata columns
+    _peerdb_synced_at: datetime
+    _peerdb_is_deleted: int
+    _peerdb_version: int
+
+users_table = OlapTable[Users]("users", OlapConfig(
+    order_by_fields=["id"],
+    engine="ReplacingMergeTree",
+    ver="_peerdb_version",
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED,
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="New Project Shortcut">
+Starting a new project? Use `moose init --from-remote` to bootstrap your entire project from an existing ClickHouse:
+
+```bash
+moose init my-project --from-remote <YOUR_CLICKHOUSE_URL> --language typescript
+```
+</Callout>
+
+## Step 3: Run moose dev
+
+Start the development server:
+
+```bash
+moose dev
+```
+
+### What Happens on Startup
+
+1. **Remote connected** - Moose connects to your remote ClickHouse
+2. **Local tables created** - Mirror tables are created in local ClickHouse matching remote schemas
+3. **Data seeded** - If `sample_size > 0`, rows are copied from remote for local testing
+4. **Server starts** - Your APIs and views work against local data
+
+### Example Output
+
+```
+[INFO] Starting Moose dev server...
+[INFO] Connecting to remote ClickHouse: your-clickhouse-host.example.com:8443
+[INFO] Creating local mirror: users
+[INFO] Seeding users with 1000 rows from remote
+[INFO] Creating local mirror: orders
+[INFO] Seeding orders with 1000 rows from remote
+[INFO] Infrastructure ready
+[INFO] Server running at http://localhost:4000
+```
+
+### Fallback Behavior
+
+If remote ClickHouse is not configured or unreachable:
+- Tables are created using your local model definitions
+- No sample data is seeded (tables start empty)
+- A warning is logged but the server continues
+
+## Step 4: Develop Against Local Data
+
+With local mirrors created and seeded, you can now:
+
+- **Write and test queries** against realistic data
+- **Build views and materialized views** on top of CDC tables
+- **Create API endpoints** that query your data models
+- **Iterate quickly** without impacting production
+
+Your local changes to views, APIs, and other Moose resources hot-reload automatically. The underlying `EXTERNALLY_MANAGED` table schemas remain unchanged locally (matching production).
+
+## Step 5: Keep Models in Sync
+
+When the remote schema changes (DBA adds columns, CDC service updates metadata), your local models need to stay in sync.
+
+### Manual Sync
+
+Re-run `moose db pull` to regenerate external models:
+
+```bash
+moose db pull --clickhouse-url "clickhouse://user:pass@host:8443/database?secure=true"
+```
+
+### Automatic Sync on Dev Start
+
+Use lifecycle hooks to automatically sync on every `moose dev` start:
+
+```toml filename="moose.config.toml" copy
+[http_server_config]
+on_first_start_script = "moose db pull --clickhouse-url $REMOTE_CLICKHOUSE_URL"
+```
+
+Set the environment variable:
+
+```bash
+export REMOTE_CLICKHOUSE_URL="clickhouse://user:pass@host:8443/database?secure=true"
+```
+
+<Callout type="info" title="Ignore Generated Files">
+If using automatic sync, add generated model files to your watcher ignore patterns to prevent reload loops:
+
+```toml
+[watcher_config]
+ignore_patterns = ["app/externalModels.ts", "app/external_models.py"]
+```
+</Callout>
+
+## Complete Example
+
+Full configuration for working with PeerDB-replicated tables:
+
+```toml filename="moose.config.toml" copy
+[project]
+name = "my-analytics-app"
+language = "typescript"
+
+# Remote ClickHouse connection
+[dev.remote_clickhouse]
+host = "abc123.us-east-1.aws.clickhouse.cloud"
+port = 8443
+database = "production"
+use_ssl = true
+
+# Mirror and seed externally managed tables
+[dev.externally_managed.tables]
+create_local_mirrors = true
+sample_size = 500
+refresh_on_startup = false
+
+# Auto-sync models on startup
+[http_server_config]
+on_first_start_script = "moose db pull --clickhouse-url $REMOTE_CLICKHOUSE_URL"
+
+# Don't trigger reloads on generated files
+[watcher_config]
+ignore_patterns = ["app/externalModels.ts"]
+```
+
+**Workflow:**
+1. Configure remote connection and mirroring settings
+2. Run `moose db pull` to generate initial models
+3. Run `moose dev` - mirrors are created and seeded
+4. Develop views, APIs, and queries against local data
+5. Models auto-sync on restart (or run `moose db pull` manually when needed)
+
+## Summary
+
+| Step | Action | Result |
+|:-----|:-------|:-------|
+| 1 | Configure `[dev.remote_clickhouse]` and `[dev.externally_managed.tables]` | Connection and mirroring settings ready |
+| 2 | Run `moose db pull` | External models generated with `EXTERNALLY_MANAGED` lifecycle |
+| 3 | Run `moose dev` | Local mirrors created and seeded with sample data |
+| 4 | Develop | Build views, APIs, queries against local data |
+| 5 | Sync when needed | Re-run `moose db pull` or use auto-sync hook |
