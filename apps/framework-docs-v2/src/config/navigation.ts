@@ -1228,6 +1228,16 @@ const guidesNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "guides/sap-hana-cdc-to-clickhouse",
+    title: "SAP HANA CDC",
+    description:
+      "Set up Change Data Capture from SAP HANA to ClickHouse using Moose workflows.",
+    icon: IconBolt,
+    languages: ["python"],
+    status: "draft",
+  },
+  {
+    type: "page",
     slug: "guides/customer-data-platform",
     title: "Customer Data Platform (CDP)",
     icon: IconUsers,
@@ -1257,16 +1267,6 @@ const guidesNavigationConfig: NavigationConfig = [
     description:
       "Transfer data from QlikView QVD files to ClickHouse using MooseStack workflows.",
     icon: IconDatabaseImport,
-    languages: ["python"],
-    status: "draft",
-  },
-  {
-    type: "page",
-    slug: "guides/sap-hana-cdc-to-clickhouse",
-    title: "SAP HANA CDC",
-    description:
-      "Set up Change Data Capture from SAP HANA to ClickHouse using Moose workflows.",
-    icon: IconBolt,
     languages: ["python"],
     status: "draft",
   },
