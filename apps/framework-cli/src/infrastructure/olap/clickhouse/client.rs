@@ -14,6 +14,7 @@ use super::config::ClickHouseConfig;
 use super::errors::{validate_clickhouse_identifier, ClickhouseError};
 use super::model::{wrap_and_join_column_names, ClickHouseRecord};
 use super::queries::drop_table_query;
+use super::remote::ClickHouseRemote;
 
 use tracing::error;
 
@@ -263,6 +264,111 @@ impl ClickHouseClient {
         validate_clickhouse_identifier(table_name, "Table name")?;
         let query = drop_table_query(database, table_name, None)?;
         self.execute_sql(&query).await?;
+        Ok(())
+    }
+
+    /// Creates a local mirror table with schema inferred from a remote ClickHouse table.
+    ///
+    /// Uses the HTTP-based `url()` table function via `remote.query_function()` with
+    /// `LIMIT 0` to get schema only. The local table is created with
+    /// `MergeTree() ORDER BY tuple()` - a simple default that works for any schema.
+    ///
+    /// # Arguments
+    /// * `local_database` - The local database name
+    /// * `table_name` - The table name (same for local and remote)
+    /// * `remote` - The remote ClickHouse connection
+    /// * `remote_database` - The database name on the remote server
+    ///
+    /// # Returns
+    /// `Ok(())` on success, `Err` on failure
+    #[allow(dead_code)]
+    pub async fn create_mirror_table_from_remote(
+        &self,
+        local_database: &str,
+        table_name: &str,
+        remote: &ClickHouseRemote,
+        remote_database: &str,
+    ) -> anyhow::Result<()> {
+        validate_clickhouse_identifier(local_database, "Local database name")?;
+        validate_clickhouse_identifier(table_name, "Table name")?;
+        validate_clickhouse_identifier(remote_database, "Remote database name")?;
+
+        let select_query = format!(
+            "SELECT * FROM `{}`.`{}` LIMIT 0",
+            remote_database, table_name
+        );
+        let remote_func = remote.query_function(&select_query);
+
+        let create_sql = format!(
+            "CREATE TABLE `{}`.`{}` ENGINE = MergeTree() ORDER BY tuple() AS SELECT * FROM {}",
+            local_database, table_name, remote_func
+        );
+
+        debug!(
+            "Creating mirror table {}.{} from remote",
+            local_database, table_name
+        );
+        self.execute_sql(&create_sql).await?;
+        Ok(())
+    }
+
+    /// Inserts sample data from a remote ClickHouse table into a local table.
+    ///
+    /// Uses the HTTP-based `url()` table function to fetch rows from the remote
+    /// and insert them into the local table. When `columns` is provided, only those
+    /// columns are selected from the remote and inserted into the local table,
+    /// avoiding schema mismatch errors when local and remote tables differ.
+    ///
+    /// # Arguments
+    /// * `local_database` - The local database name
+    /// * `table_name` - The table name (same for local and remote)
+    /// * `remote` - The remote ClickHouse connection
+    /// * `remote_database` - The database name on the remote server
+    /// * `limit` - Maximum number of rows to insert
+    /// * `columns` - Column names to select/insert (uses `*` if empty)
+    ///
+    /// # Returns
+    /// `Ok(())` on success, `Err` on failure
+    #[allow(dead_code)]
+    pub async fn insert_from_remote(
+        &self,
+        local_database: &str,
+        table_name: &str,
+        remote: &ClickHouseRemote,
+        remote_database: &str,
+        limit: usize,
+        columns: &[String],
+    ) -> anyhow::Result<()> {
+        validate_clickhouse_identifier(local_database, "Local database name")?;
+        validate_clickhouse_identifier(table_name, "Table name")?;
+        validate_clickhouse_identifier(remote_database, "Remote database name")?;
+
+        let col_list = if columns.is_empty() {
+            "*".to_string()
+        } else {
+            columns
+                .iter()
+                .map(|c| format!("`{}`", c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
+        let select_query = format!(
+            "SELECT {} FROM `{}`.`{}` LIMIT {} FORMAT JSONEachRow",
+            col_list, remote_database, table_name, limit
+        );
+        let remote_func = remote.query_function_with_format(&select_query, "JSONEachRow");
+
+        let insert_sql = format!(
+            "INSERT INTO `{}`.`{}` ({}) SELECT * FROM {}",
+            local_database, table_name, col_list, remote_func
+        );
+
+        debug!(
+            "Inserting {} rows from remote into {}.{}",
+            limit, local_database, table_name
+        );
+        self.execute_sql(&insert_sql).await?;
         Ok(())
     }
 }
@@ -551,6 +657,8 @@ mod tests {
         assert!(validate_clickhouse_identifier("my_table", "Table").is_ok());
         assert!(validate_clickhouse_identifier("Table123", "Table").is_ok());
         assert!(validate_clickhouse_identifier("_private", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("my-table", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("project-db-main-123", "Database").is_ok());
     }
 
     #[test]
@@ -562,15 +670,12 @@ mod tests {
 
     #[test]
     fn test_validate_identifier_invalid_characters() {
-        let result = validate_clickhouse_identifier("my-table", "Table");
+        let result = validate_clickhouse_identifier("my.table", "Table");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
             .contains("invalid characters"));
-
-        let result = validate_clickhouse_identifier("my.table", "Table");
-        assert!(result.is_err());
 
         let result = validate_clickhouse_identifier("my table", "Table");
         assert!(result.is_err());

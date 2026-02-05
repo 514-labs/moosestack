@@ -23,14 +23,20 @@ pub enum ClickhouseError {
 ///
 /// ClickHouse identifiers (database names, table names, cluster names, etc.) must:
 /// - Be non-empty
-/// - Contain only alphanumeric characters and underscores
+/// - Contain only alphanumeric characters, underscores, and hyphens
 /// - Not start with a digit
+///
+/// Hyphens are allowed because cloud-hosted ClickHouse instances commonly use
+/// hyphenated database names (e.g. `my-project-db-main`). All SQL queries use
+/// backtick quoting (`\`name\``) to handle these safely.
 ///
 /// This prevents SQL/XML injection and ensures compatibility with ClickHouse's naming rules.
 /// Used by both the ClickHouse client and Docker utilities.
 pub fn is_valid_clickhouse_identifier(name: &str) -> bool {
     !name.is_empty()
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
         && !name.chars().next().unwrap().is_ascii_digit()
 }
 
@@ -52,7 +58,7 @@ pub fn validate_clickhouse_identifier(
     } else if name.chars().next().unwrap().is_ascii_digit() {
         "cannot start with a digit"
     } else {
-        "contains invalid characters (only alphanumeric and underscore allowed)"
+        "contains invalid characters (only alphanumeric, underscore, and hyphen allowed)"
     };
 
     Err(ClickhouseError::InvalidIdentifier {
