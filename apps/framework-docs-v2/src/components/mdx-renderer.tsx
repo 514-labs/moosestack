@@ -40,6 +40,7 @@ import {
   TabbedCode,
   TabbedCodeContent,
   ConditionalContent,
+  CopilotCallout,
 } from "@/components/mdx";
 import { FileTreeFolder, FileTreeFile } from "@/components/mdx/file-tree";
 import { CodeEditor } from "@/components/ui/shadcn-io/code-editor";
@@ -176,6 +177,9 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     TabbedCode: TabbedCodeWithSubcomponents,
     "TabbedCode.Content": TabbedCodeContent,
     ConditionalContent,
+
+    // Copilot callout component (callout with "Copy as prompt" button)
+    CopilotCallout,
 
     // Code block handling - server-side rendered
     figure: ServerFigure,

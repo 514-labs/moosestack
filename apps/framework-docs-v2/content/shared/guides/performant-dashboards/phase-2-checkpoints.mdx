@@ -1,0 +1,143 @@
+##### Checkpoint 1 — Serving table design
+
+Goal: define the serving table’s **grain**, **columns**, and **orderByFields**. This table will be populated by the Materialized View and becomes the table your API reads from.
+
+Checklist:
+
+1. **Output columns**: copy the final `SELECT` list from your existing query function. Those columns become the serving table schema.
+2. **Grain**: decide what uniquely identifies one row (e.g., `merchant_id` + `day`). This is the table’s grain.
+3. **orderByFields**: start with the grain columns, then add the most common filter/group-by fields from your access patterns.
+
+Record the grain, columns, and `orderByFields` in `context-map.md`.
+
+Example: if your existing query function looks like this:
+
+```typescript
+import { sql } from "@514labs/moose-lib";
+
+const existingQuery = sql`
+SELECT
+  merchant_id,
+  merchant_name,
+  day,
+  total_orders,
+  fulfilled_orders,
+  fulfillment_rate
+FROM OrderMetrics om
+JOIN Merchants m ON m.id = om.merchant_id
+WHERE om.merchant_id = ${merchantId}
+GROUP BY om.merchant_id, m.merchant_name, toDate(om.created_at)`
+```
+
+Then your serving table should contain the columns from the existing query function, and `orderByFields` should match the grain (here, `["merchant_id", "day"]`).
+```ts
+// File: moosestack/app/models/OrderFulfillmentServing-mv.ts
+
+import { OlapTable, Int64 } from "@514labs/moose-lib";
+
+interface OrderFulfillmentServing {
+  merchant_id: string;
+  merchant_name: string;
+  day: Date;
+  total_orders: Int64;
+  fulfilled_orders: Int64;
+  fulfillment_rate: number;
+}
+export const OrderFulfillmentServing = new OlapTable<OrderFulfillmentServing>("OrderFulfillmentServing", {
+  orderByFields: ["merchant_id", "day"],
+});
+```
+
+##### Checkpoint 2 — Define the Materialized View (MV) plan
+
+Goal: decide how data gets into the serving table before you write code.
+
+Rule of thumb:
+
+- **Single MV** — 1 source table, no CTEs, straightforward aggregation
+- **Staged pipeline** — multiple CTEs, 3+ joined tables, or cascading aggregations (create intermediate staging tables/MVs that feed the final serving table)
+
+Anything not driven by request parameters belongs in write-time MVs. Keep only truly dynamic filters (from the API request) for the final read query.
+
+Steps:
+
+1. Decide single MV vs staged pipeline using the heuristic above.
+2. List the source table models that must be imported and included in `selectTables`.
+3. Record the MV plan in `context-map.md`.
+
+##### Checkpoint 3 — Implement the serving table + MV
+
+Write the MooseStack file that defines the serving table and the MV that populates it.
+
+- Put the serving table and MV in the same file.
+- Ensure the column names and types align between the `SELECT` statement of the existing query function and the serving table.
+- If you are implementing a staged pipeline of intermediate tables/views, ensure the column names and types align between the intermediate tables/views and the serving table.
+- Use the `sql` tagged template literal to build the `selectStatement` for the MV.
+- Do not forget to import the source tables from the paths listed in your `context-map.md`.
+
+Example:
+```ts
+// File: moosestack/app/models/OrderFulfillmentServing-mv.ts
+
+import { Int64, MaterializedView, OlapTable, sql } from "@514labs/moose-lib";
+import { OrderMetrics } from "../models/OrderMetrics.model";
+import { Merchants } from "../models/Merchants.model";
+
+interface OrderFulfillmentServing {
+  merchant_id: string;
+  merchant_name: string;
+  day: Date;
+  total_orders: Int64;
+  fulfilled_orders: Int64;
+  fulfillment_rate: number;
+}
+
+export const OrderFulfillmentServing = new OlapTable<OrderFulfillmentServing>("OrderFulfillmentServing", {
+  orderByFields: ["merchant_id", "day"],
+});
+
+export const OrderFulfillmentMV = new MaterializedView<OrderFulfillmentServing>({
+  selectStatement: sql`
+    SELECT
+      om.merchant_id,
+      m.merchant_name,
+      toDate(om.created_at) AS day,
+      om.total_orders,
+      om.fulfilled_orders,
+      round(100 * om.fulfilled_orders / nullIf(om.total_orders, 0), 2) AS fulfillment_rate
+    FROM ${OrderMetrics} om
+    JOIN ${Merchants} m ON m.id = om.merchant_id
+  `,
+  targetTable: OrderFulfillmentServing,
+  materializedViewName: "OrderFulfillmentMV",
+  selectTables: [OrderMetrics, Merchants],
+});
+```
+
+##### Checkpoint 4 — Verification
+
+Save your files and watch the `moose dev` logs for the creation of the serving table and the Materialized View:
+
+```
+[INFO] Created table: OrderFulfillmentServing
+[INFO] Created materialized view: OrderFulfillmentMV
+```
+
+If you see errors, check:
+- Column names match between the `selectStatement` of the existing query function and the serving table.
+- The column types from `selectTables` line up with the casts/expressions used in the `selectStatement`.
+- Every source table referenced in `selectTables` exists and is registered.
+
+The `moose dev` server automatically populates the serving table when you create or update a Materialized View by running the `selectStatement` defined in the Materialized View. Do not backfill the serving table manually.
+
+Use `moose query` to verify the serving table is populated for a few test cases:
+
+```bash
+# Check row count in serving table
+moose query "SELECT count() FROM OrderFulfillmentServing"
+
+# Check a specific slice of the serving table
+moose query "SELECT * FROM OrderFulfillmentServing WHERE merchant_id = '123' ORDER BY day DESC LIMIT 5"
+```
+
+At this stage you are only checking that the data is present. Once the Materialized View is created and the serving table is populated, you can proceed to Phase 3. Phase 3 will rewire the existing API endpoint to read from the serving table.

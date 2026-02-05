@@ -18,6 +18,7 @@ import type {
 } from "@/lib/content-types";
 
 import { CONTENT_ROOT, processIncludes } from "./includes";
+import { processCopilotPrompts } from "./copilot-prompt-preprocessor";
 
 /**
  * Get all content files from the content directory
@@ -97,8 +98,8 @@ export async function parseMarkdownContent(
   const fileContents = fs.readFileSync(fullPath, "utf8");
   const { data, content: rawContent } = matter(fileContents);
 
-  // Process include directives for both MD and MDX
-  const processedContent = processIncludes(rawContent);
+  // Process include directives and CopilotCallout rawContent injection
+  const processedContent = processCopilotPrompts(processIncludes(rawContent));
 
   let content: string;
 
