@@ -494,6 +494,21 @@ const moosestackNavigationConfig: NavigationConfig = [
   { type: "label", title: "Deployment & Lifecycle" },
   {
     type: "page",
+    slug: "moosestack/dev",
+    title: "Moose Dev",
+    icon: IconDeviceLaptop,
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/dev/cdc-managed-tables",
+        title: "CDC Managed Tables",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
+  {
+    type: "page",
     slug: "moosestack/migrate",
     title: "Moose Migrate",
     icon: IconGitMerge,
