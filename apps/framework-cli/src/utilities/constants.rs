@@ -115,6 +115,10 @@ pub const KEY_REMOTE_CLICKHOUSE_URL: &str = "remote_clickhouse_url";
 pub const KEY_REMOTE_ADMIN_URL: &str = "remote_admin_url";
 pub const KEY_REMOTE_ADMIN_TOKEN: &str = "remote_admin_token";
 
+// Keychain keys for remote ClickHouse credentials (separate from URL)
+pub const KEY_REMOTE_CLICKHOUSE_USER: &str = "remote_clickhouse_user";
+pub const KEY_REMOTE_CLICKHOUSE_PASSWORD: &str = "remote_clickhouse_password";
+
 pub const ENV_CLICKHOUSE_URL: &str = "MOOSE_CLICKHOUSE_CONFIG__URL";
 pub const ENV_REDIS_URL: &str = "MOOSE_REDIS_CONFIG__URL";
 
@@ -124,10 +128,19 @@ pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json"
 
 pub const STORE_CRED_PROMPT: &str = r#"You have externally managed tables in your code base.
 Ensure your code is up to date with `moose db pull`.
-You can also configure `moose dev` to automatically check each time you start the dev server,
-so you're not developing with out-of-date data models/schemas.
 
-In order to set this up we will need your ClickHouse connection details:
-1. Host and port (e.g., from Boreal)
-2. Username and password
-3. Database name"#;
+To enable automatic schema drift detection, add to moose.config.toml:
+
+  [dev.remote_clickhouse]
+  protocol = "http"
+  host = "your-instance.boreal.cloud"
+  port = 8443
+  database = "production"
+  use_ssl = true
+
+Credentials are NOT stored in config files.
+You'll be prompted for username and password once, and they will be stored securely in your OS keychain.
+
+This config is safe to commit to git.
+
+Interactive setup:"#;

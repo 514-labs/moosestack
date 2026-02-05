@@ -252,6 +252,74 @@ pub struct MigrationConfig {
     pub ignore_operations: Vec<IgnorableOperation>,
 }
 
+/// Configuration for development mode behavior with externally managed tables
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DevExternallyManagedConfig {
+    /// Create local mirror tables for EXTERNALLY_MANAGED tables in dev
+    #[serde(default)]
+    pub create_local_mirrors: bool,
+
+    /// Number of sample rows to seed (0 = schema only, no data)
+    #[serde(default)]
+    pub sample_size: usize,
+
+    /// Refresh mirrors on every startup (vs. only if missing)
+    #[serde(default)]
+    pub refresh_on_startup: bool,
+}
+
+/// Configuration for externally managed tables in development mode
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DevExternallyManagedTablesConfig {
+    #[serde(default)]
+    pub tables: DevExternallyManagedConfig,
+}
+
+/// Protocol for remote ClickHouse connections
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ClickHouseProtocol {
+    /// HTTP/HTTPS protocol (default)
+    #[default]
+    Http,
+    // Native protocol will be added later
+}
+
+/// Remote ClickHouse connection config (no credentials - stored in keychain)
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct RemoteClickHouseConfig {
+    /// Connection protocol (default: HTTP)
+    #[serde(default)]
+    pub protocol: ClickHouseProtocol,
+
+    /// Remote ClickHouse host
+    pub host: Option<String>,
+
+    /// Port (default: 8443 for SSL, 8123 for non-SSL with HTTP)
+    #[serde(default)]
+    pub port: Option<u16>,
+
+    /// Database name
+    pub database: Option<String>,
+
+    /// Use SSL/TLS (default: true)
+    #[serde(default = "_true")]
+    pub use_ssl: bool,
+}
+
+/// Development mode configuration
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct DevConfig {
+    /// Configuration for externally managed tables
+    #[serde(default)]
+    pub externally_managed: DevExternallyManagedTablesConfig,
+
+    /// Main read-only remote ClickHouse connection (e.g., production)
+    /// No credentials stored - they go in OS keychain or env vars
+    #[serde(default)]
+    pub remote_clickhouse: Option<RemoteClickHouseConfig>,
+}
+
 /// Represents a user's Moose project
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Project {
@@ -319,6 +387,9 @@ pub struct Project {
     /// File watcher configuration
     #[serde(default)]
     pub watcher_config: WatcherConfig,
+    /// Development mode configuration
+    #[serde(default)]
+    pub dev: DevConfig,
 }
 
 pub fn default_source_dir() -> String {
@@ -393,6 +464,7 @@ impl Project {
             source_dir: default_source_dir(),
             docker_config: DockerConfig::default(),
             watcher_config: WatcherConfig::default(),
+            dev: DevConfig::default(),
         }
     }
 
