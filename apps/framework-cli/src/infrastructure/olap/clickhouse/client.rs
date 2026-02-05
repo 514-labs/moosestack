@@ -14,6 +14,7 @@ use super::config::ClickHouseConfig;
 use super::errors::{validate_clickhouse_identifier, ClickhouseError};
 use super::model::{wrap_and_join_column_names, ClickHouseRecord};
 use super::queries::drop_table_query;
+use super::remote::ClickHouseRemote;
 
 use tracing::error;
 
@@ -263,6 +264,95 @@ impl ClickHouseClient {
         validate_clickhouse_identifier(table_name, "Table name")?;
         let query = drop_table_query(database, table_name, None)?;
         self.execute_sql(&query).await?;
+        Ok(())
+    }
+
+    /// Creates a local mirror table with schema inferred from a remote ClickHouse table.
+    ///
+    /// Uses the HTTP-based `url()` table function via `remote.query_function()` with
+    /// `LIMIT 0` to get schema only. The local table is created with
+    /// `MergeTree() ORDER BY tuple()` - a simple default that works for any schema.
+    ///
+    /// # Arguments
+    /// * `local_database` - The local database name
+    /// * `table_name` - The table name (same for local and remote)
+    /// * `remote` - The remote ClickHouse connection
+    /// * `remote_database` - The database name on the remote server
+    ///
+    /// # Returns
+    /// `Ok(())` on success, `Err` on failure
+    #[allow(dead_code)]
+    pub async fn create_mirror_table_from_remote(
+        &self,
+        local_database: &str,
+        table_name: &str,
+        remote: &ClickHouseRemote,
+        remote_database: &str,
+    ) -> anyhow::Result<()> {
+        validate_clickhouse_identifier(local_database, "Local database name")?;
+        validate_clickhouse_identifier(table_name, "Table name")?;
+
+        let select_query = format!(
+            "SELECT * FROM `{}`.`{}` LIMIT 0",
+            remote_database, table_name
+        );
+        let remote_func = remote.query_function(&select_query);
+
+        let create_sql = format!(
+            "CREATE TABLE `{}`.`{}` ENGINE = MergeTree() ORDER BY tuple() AS SELECT * FROM {}",
+            local_database, table_name, remote_func
+        );
+
+        debug!(
+            "Creating mirror table {}.{} from remote",
+            local_database, table_name
+        );
+        self.execute_sql(&create_sql).await?;
+        Ok(())
+    }
+
+    /// Inserts sample data from a remote ClickHouse table into a local table.
+    ///
+    /// Uses the HTTP-based `url()` table function to fetch rows from the remote
+    /// and insert them into the local table.
+    ///
+    /// # Arguments
+    /// * `local_database` - The local database name
+    /// * `table_name` - The table name (same for local and remote)
+    /// * `remote` - The remote ClickHouse connection
+    /// * `remote_database` - The database name on the remote server
+    /// * `limit` - Maximum number of rows to insert
+    ///
+    /// # Returns
+    /// `Ok(())` on success, `Err` on failure
+    #[allow(dead_code)]
+    pub async fn insert_from_remote(
+        &self,
+        local_database: &str,
+        table_name: &str,
+        remote: &ClickHouseRemote,
+        remote_database: &str,
+        limit: usize,
+    ) -> anyhow::Result<()> {
+        validate_clickhouse_identifier(local_database, "Local database name")?;
+        validate_clickhouse_identifier(table_name, "Table name")?;
+
+        let select_query = format!(
+            "SELECT * FROM `{}`.`{}` LIMIT {}",
+            remote_database, table_name, limit
+        );
+        let remote_func = remote.query_function(&select_query);
+
+        let insert_sql = format!(
+            "INSERT INTO `{}`.`{}` SELECT * FROM {}",
+            local_database, table_name, remote_func
+        );
+
+        debug!(
+            "Inserting {} rows from remote into {}.{}",
+            limit, local_database, table_name
+        );
+        self.execute_sql(&insert_sql).await?;
         Ok(())
     }
 }
