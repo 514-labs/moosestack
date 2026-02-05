@@ -2968,6 +2968,19 @@ impl InfrastructureMap {
         self.tables.values().find(|table| table.name == name)
     }
 
+    /// Returns EXTERNALLY_MANAGED tables that support SELECT operations
+    ///
+    /// Filters tables to find those marked as EXTERNALLY_MANAGED and have engines
+    /// that support SELECT queries (excludes Kafka, S3Queue which are write-only).
+    /// Useful for operations like mirroring, seeding, and creating local copies.
+    pub fn get_mirrorable_external_tables(&self) -> Vec<&Table> {
+        self.tables
+            .values()
+            .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
+            .filter(|t| t.engine.supports_select())
+            .collect()
+    }
+
     /// Masks sensitive credentials before exporting to JSON migration files.
     pub fn mask_credentials_for_json_export(mut self) -> Self {
         for table in self.tables.values_mut() {
@@ -7771,5 +7784,142 @@ mod diff_workflow_tests {
             .collect();
         assert!(added_names.contains(&"workflow_a"));
         assert!(added_names.contains(&"workflow_b"));
+    }
+}
+
+#[cfg(test)]
+mod mirrorable_external_tables_tests {
+    use super::*;
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType};
+    use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
+
+    #[test]
+    fn test_get_mirrorable_external_tables() {
+        let mut map = InfrastructureMap::default();
+
+        // 1. ExternallyManaged table with MergeTree engine (supports SELECT) - SHOULD be returned
+        let external_mergetree = Table {
+            name: "external_mergetree".to_string(),
+            engine: ClickhouseEngine::MergeTree,
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            version: Some(Version::from_string("1.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::ExternallyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        // 2. ExternallyManaged table with Kafka engine (write-only) - should NOT be returned
+        let external_kafka = Table {
+            name: "external_kafka".to_string(),
+            engine: ClickhouseEngine::Kafka {
+                broker_list: "localhost:9092".to_string(),
+                topic_list: "test_topic".to_string(),
+                group_name: "test_group".to_string(),
+                format: "JSONEachRow".to_string(),
+            },
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            version: Some(Version::from_string("1.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::ExternallyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        // 3. FullyManaged table with MergeTree (supports SELECT but wrong lifecycle) - should NOT be returned
+        let mut managed_mergetree = external_mergetree.clone();
+        managed_mergetree.name = "managed_mergetree".to_string();
+        managed_mergetree.life_cycle = LifeCycle::FullyManaged;
+
+        // Insert tables into the map
+        map.tables.insert(
+            external_mergetree.id(DEFAULT_DATABASE_NAME),
+            external_mergetree.clone(),
+        );
+        map.tables.insert(
+            external_kafka.id(DEFAULT_DATABASE_NAME),
+            external_kafka.clone(),
+        );
+        map.tables.insert(
+            managed_mergetree.id(DEFAULT_DATABASE_NAME),
+            managed_mergetree.clone(),
+        );
+
+        // Call the method under test
+        let mirrorable = map.get_mirrorable_external_tables();
+
+        // Assert: should only return the ExternallyManaged MergeTree table
+        assert_eq!(
+            mirrorable.len(),
+            1,
+            "Should return exactly 1 mirrorable table"
+        );
+        assert_eq!(
+            mirrorable[0].name, "external_mergetree",
+            "Should return the ExternallyManaged MergeTree table"
+        );
+
+        // Verify the Kafka table (write-only engine) is NOT included
+        assert!(
+            !mirrorable.iter().any(|t| t.name == "external_kafka"),
+            "Kafka table should not be mirrorable (write-only engine)"
+        );
+
+        // Verify the FullyManaged table is NOT included
+        assert!(
+            !mirrorable.iter().any(|t| t.name == "managed_mergetree"),
+            "FullyManaged table should not be mirrorable (wrong lifecycle)"
+        );
     }
 }
