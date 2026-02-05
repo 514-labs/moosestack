@@ -11,7 +11,9 @@ use tokio::time::{sleep, Duration};
 use tracing::debug;
 
 use super::config::ClickHouseConfig;
+use super::errors::{validate_clickhouse_identifier, ClickhouseError};
 use super::model::{wrap_and_join_column_names, ClickHouseRecord};
+use super::queries::drop_table_query;
 
 use tracing::error;
 
@@ -226,6 +228,43 @@ impl ClickHouseClient {
     pub async fn execute_sql(&self, sql: &str) -> anyhow::Result<String> {
         self.execute_sql_with_database(sql, None).await
     }
+
+    /// Checks if a table exists in the specified database
+    ///
+    /// # Arguments
+    /// * `database` - The database name
+    /// * `table_name` - The table name
+    ///
+    /// # Returns
+    /// `Ok(true)` if the table exists, `Ok(false)` if it doesn't, `Err` on query failure
+    #[allow(dead_code)]
+    pub async fn table_exists(&self, database: &str, table_name: &str) -> anyhow::Result<bool> {
+        let query = build_exists_table_query(database, table_name)?;
+        let result = self.execute_sql(&query).await?;
+        Ok(result.trim() == "1")
+    }
+
+    /// Drops a table if it exists in the specified database
+    ///
+    /// # Arguments
+    /// * `database` - The database name
+    /// * `table_name` - The table name
+    ///
+    /// # Returns
+    /// `Ok(())` on success, `Err` on failure
+    #[allow(dead_code)]
+    pub async fn drop_table_if_exists(
+        &self,
+        database: &str,
+        table_name: &str,
+    ) -> anyhow::Result<()> {
+        // Validate identifiers to prevent SQL injection
+        validate_clickhouse_identifier(database, "Database name")?;
+        validate_clickhouse_identifier(table_name, "Table name")?;
+        let query = drop_table_query(database, table_name, None)?;
+        self.execute_sql(&query).await?;
+        Ok(())
+    }
 }
 
 const DDL_COMMANDS: &[&str] = &["INSERT", "CREATE", "ALTER", "DROP", "TRUNCATE"];
@@ -246,6 +285,23 @@ fn build_insert_query(database: &str, table_name: &str, columns: &[String]) -> S
         table_name,
         wrap_and_join_column_names(columns, ","),
     )
+}
+
+/// Builds an EXISTS TABLE query string for a ClickHouse table.
+///
+/// # Arguments
+/// * `database` - The database name (must be a valid identifier)
+/// * `table_name` - The table name (must be a valid identifier)
+///
+/// # Returns
+/// A formatted EXISTS TABLE query string like: `EXISTS TABLE "db"."table"`
+///
+/// # Errors
+/// Returns an error if database or table_name contains invalid characters
+fn build_exists_table_query(database: &str, table_name: &str) -> Result<String, ClickhouseError> {
+    validate_clickhouse_identifier(database, "Database name")?;
+    validate_clickhouse_identifier(table_name, "Table name")?;
+    Ok(format!("EXISTS TABLE \"{}\".\"{}\"", database, table_name))
 }
 
 fn query_param(query: &str, database: Option<&str>) -> anyhow::Result<String> {
@@ -447,5 +503,101 @@ mod tests {
             result, "INSERT INTO \"analytics_db\".\"user_events\" (`user_id`,`event_time`) VALUES",
             "Should handle underscores in database and table names"
         );
+    }
+
+    #[test]
+    fn test_build_exists_table_query() {
+        let result = build_exists_table_query("test_db", "my_table").unwrap();
+        assert_eq!(
+            result, "EXISTS TABLE \"test_db\".\"my_table\"",
+            "Should build EXISTS TABLE query with double-quoted identifiers"
+        );
+    }
+
+    #[test]
+    fn test_build_exists_table_query_with_special_characters() {
+        let result = build_exists_table_query("analytics_db", "user_events").unwrap();
+        assert_eq!(
+            result, "EXISTS TABLE \"analytics_db\".\"user_events\"",
+            "Should handle underscores in database and table names"
+        );
+    }
+
+    #[test]
+    fn test_exists_query_includes_wait_end_of_query() {
+        // EXISTS is not a DDL command, so it should NOT include wait_end_of_query
+        let query = build_exists_table_query("db", "my_table").unwrap();
+        let result = query_param(&query, None).unwrap();
+        assert!(
+            !result.contains("wait_end_of_query"),
+            "EXISTS query should NOT include wait_end_of_query parameter"
+        );
+    }
+
+    #[test]
+    fn test_drop_table_query_includes_wait_end_of_query() {
+        // DROP is a DDL command, so it should include wait_end_of_query
+        let query = drop_table_query("db", "my_table", None).unwrap();
+        let result = query_param(&query, None).unwrap();
+        assert!(
+            result.contains("wait_end_of_query=1"),
+            "DROP TABLE query should include wait_end_of_query parameter"
+        );
+    }
+
+    #[test]
+    fn test_validate_identifier_valid() {
+        assert!(validate_clickhouse_identifier("test_db", "Database").is_ok());
+        assert!(validate_clickhouse_identifier("my_table", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("Table123", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("_private", "Table").is_ok());
+    }
+
+    #[test]
+    fn test_validate_identifier_empty() {
+        let result = validate_clickhouse_identifier("", "Database");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn test_validate_identifier_invalid_characters() {
+        let result = validate_clickhouse_identifier("my-table", "Table");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("invalid characters"));
+
+        let result = validate_clickhouse_identifier("my.table", "Table");
+        assert!(result.is_err());
+
+        let result = validate_clickhouse_identifier("my table", "Table");
+        assert!(result.is_err());
+
+        // SQL injection attempt
+        let result = validate_clickhouse_identifier("table\"; DROP TABLE users; --", "Table");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_identifier_starts_with_digit() {
+        let result = validate_clickhouse_identifier("123table", "Table");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("cannot start with a digit"));
+    }
+
+    #[test]
+    fn test_build_exists_table_query_rejects_invalid_identifiers() {
+        // SQL injection attempt in database name
+        let result = build_exists_table_query("db\"; DROP TABLE users; --", "table");
+        assert!(result.is_err());
+
+        // SQL injection attempt in table name
+        let result = build_exists_table_query("db", "table\"; DROP TABLE users; --");
+        assert!(result.is_err());
     }
 }
