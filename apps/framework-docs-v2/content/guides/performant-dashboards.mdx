@@ -941,9 +941,9 @@ The rest of your application stays the same: routing, auth, request/response con
 
 This guide follows a three-phase migration pattern:
 
-1. **Parity (raw translation)**: Do a direct, SQL-for-SQL translation of your OLTP logic into ClickHouse so the endpoint returns the same result as the original OLTP endpoint. The goal here is correctness, not perfect OLAP code.
-2. **Precompute (make it OLAP-native)**: Refactor that raw query by shifting joins and upfront transformations to Materialized Views and prepared tables. This makes reads cheaper and the model easier to extend.
-3. **Serve (semantic/query layer)**: Layer a query/semantic model over those prepared tables so defining dashboard metrics, group-bys, filters, and other controls becomes clean, reusable, and maintainable, so you don't have to rewrite raw dynamic SQL in every handler.
+1. [**Parity (raw translation)**](#phase-1-parity-translation-oltp-clickhouse-parity-function): Do a direct, SQL-for-SQL translation of your OLTP logic into ClickHouse so the endpoint returns the same result as the original OLTP endpoint. The goal here is correctness, not perfect OLAP code.
+2. [**Precompute (make it OLAP-native)**](#phase-2-performance-optimization-materialized-views): Refactor that raw query by shifting joins and upfront transformations to Materialized Views and prepared tables. This makes reads cheaper and the model easier to extend.
+3. [**Serve (semantic/query layer)**](#phase-3-serve-the-materialized-view-to-your-frontend): Layer a query/semantic model over those prepared tables so defining dashboard metrics, group-bys, filters, and other controls becomes clean, reusable, and maintainable, so you don't have to rewrite raw dynamic SQL in every handler.
 
 #### (Recommended) Build a copilot context pack
 
