@@ -7,8 +7,11 @@ use clap::{Args, Subcommand};
 
 #[derive(Subcommand)]
 pub enum Commands {
-    // Initializes the developer environment with all the necessary directories including temporary ones for data storage
-    /// Initialize your data-intensive app or service
+    // ─────────────────────────────────────────────────────────────────────────────
+    // GETTING STARTED
+    // ─────────────────────────────────────────────────────────────────────────────
+    /// Create a new Moose project
+    #[command(display_order = 1)]
     Init {
         /// Name of your app or service
         name: String,
@@ -45,77 +48,16 @@ pub enum Commands {
         #[arg(long)]
         custom_dockerfile: bool,
     },
-    /// Builds your moose project
-    Build {
-        /// Build for docker
-        #[arg(short, long, default_value = "false")]
-        docker: bool,
-        /// Build for amd64 architecture
-        #[arg(long)]
-        amd64: bool,
-        /// Build for arm64 architecture
-        #[arg(long)]
-        arm64: bool,
-    },
-    /// Checks the project for non-runtime errors
-    Check {
-        #[arg(long, default_value = "false")]
-        write_infra_map: bool,
-    },
-    /// Displays the changes that will be applied to the infrastructure during the next deployment
-    /// to production, considering the current state of the project
-    Plan {
-        /// URL of the remote Moose instance (default: http://localhost:4000)
-        #[arg(long, conflicts_with = "clickhouse_url")]
-        url: Option<String>,
 
-        /// API token for authentication with the remote Moose instance
-        /// This token will be sent as a Bearer token in the Authorization header
-        #[arg(long)]
-        token: Option<String>,
+    /// List available project templates
+    #[command(display_order = 2)]
+    Template(TemplateCommands),
 
-        /// ClickHouse connection URL for serverless deployments
-        #[arg(long, conflicts_with = "url")]
-        clickhouse_url: Option<String>,
-
-        /// Output plan as JSON for programmatic use
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Execute a migration plan against a remote ClickHouse database
-    Migrate {
-        /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
-        /// Authentication credentials should be included in the URL
-        #[arg(long)]
-        clickhouse_url: Option<String>,
-
-        /// Redis connection URL for state storage (e.g., redis://host:port)
-        /// Required when state_config.storage = "redis"
-        #[arg(long)]
-        redis_url: Option<String>,
-    },
-
-    /// View some data from a table or stream
-    Peek {
-        /// Name of the table or stream to peek
-        name: String,
-        /// Limit the number of rows to view
-        #[arg(short, long, default_value = "5")]
-        limit: u8,
-        /// Output to a file
-        #[arg(short, long)]
-        file: Option<PathBuf>,
-
-        /// View data from a table
-        #[arg(short = 't', long = "table", group = "resource_type")]
-        table: bool,
-
-        /// View data from a stream/topic
-        #[arg(short = 's', long = "stream", group = "resource_type")]
-        stream: bool,
-    },
-    /// Starts a local development environment to build your data-intensive app or service
+    // ─────────────────────────────────────────────────────────────────────────────
+    // DEVELOPMENT
+    // ─────────────────────────────────────────────────────────────────────────────
+    /// Start local development server with hot reload
+    #[command(display_order = 10)]
     Dev {
         /// Skip starting docker containers for infrastructure
         #[arg(long)]
@@ -137,83 +79,37 @@ pub enum Commands {
         #[arg(long)]
         log_payloads: bool,
     },
-    /// Start a remote environment for use in cloud deployments
-    Prod {
-        /// Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
+
+    /// Build project for deployment
+    #[command(display_order = 11)]
+    Build {
+        /// Build for docker
+        #[arg(short, long, default_value = "false")]
+        docker: bool,
+        /// Build for amd64 architecture
         #[arg(long)]
-        start_include_dependencies: bool,
+        amd64: bool,
+        /// Build for arm64 architecture
+        #[arg(long)]
+        arm64: bool,
     },
-    /// Generates helpers for your data models (i.e. sdk, api tokens)
-    Generate(GenerateArgs),
-    /// Clears all temporary data and stops development infrastructure
-    Clean {},
-    /// View Moose logs
-    Logs {
-        /// Follow the logs in real-time
-        #[arg(short, long)]
-        tail: bool,
 
-        /// Filter logs by a specific string
-        #[arg(short, long)]
-        filter: Option<String>,
-    },
-    /// View Moose processes
-    Ps {},
-    /// View Moose primitives & infrastructure
-    Ls {
-        /// Filter by infrastructure type (tables, streams, ingestion, sql_resource, consumption, workflows, web_apps)
-        #[arg(long)]
-        _type: Option<String>,
-
-        /// Filter by name (supports partial matching)
-        #[arg(long)]
-        name: Option<String>,
-
-        /// Output results in JSON format
+    /// Validate project without starting servers
+    #[command(display_order = 12)]
+    Check {
         #[arg(long, default_value = "false")]
-        json: bool,
+        write_infra_map: bool,
     },
 
-    /// Opens metrics console for viewing live metrics from your moose app
-    Metrics {},
-    /// Manage data processing workflows
-    Workflow(WorkflowArgs),
-    /// Manage templates
-    Template(TemplateCommands),
-    /// Manage database schema import
-    Db(DbArgs),
-    /// Integrate matching tables from a remote Moose instance into the local project
-    Refresh {
-        /// URL of the remote Moose instance (default: http://localhost:4000)
-        #[arg(long)]
-        url: Option<String>,
+    /// Stop dev server and clean up temporary data
+    #[command(display_order = 13)]
+    Clean {},
 
-        /// API token for authentication with the remote Moose instance
-        /// This token will be sent as a Bearer token in the Authorization header
-        #[arg(long)]
-        token: Option<String>,
-        // #[arg(default_value = "true", short, long)]
-        // interactive: bool,
-    },
-    /// Seed data into your project
-    Seed(SeedCommands),
-    /// Truncate tables or delete the last N rows
-    Truncate {
-        /// List of table names to target (omit when using --all)
-        #[arg(value_name = "TABLE", num_args = 0.., value_delimiter = ',')]
-        tables: Vec<String>,
-
-        /// Apply the operation to all tables in the current database
-        #[arg(long, conflicts_with = "tables", default_value = "false")]
-        all: bool,
-
-        /// Number of most recent rows to delete per table. Omit to delete all rows.
-        #[arg(long)]
-        rows: Option<u64>,
-    },
-    /// Manage Kafka-related operations
-    Kafka(KafkaArgs),
-    /// Execute SQL queries against ClickHouse
+    // ─────────────────────────────────────────────────────────────────────────────
+    // DATA & QUERIES
+    // ─────────────────────────────────────────────────────────────────────────────
+    /// Run SQL queries against ClickHouse
+    #[command(display_order = 20)]
     Query {
         /// SQL query to execute
         query: Option<String>,
@@ -234,6 +130,167 @@ pub enum Commands {
         #[arg(short = 'p', long = "prettify", requires = "format_query")]
         prettify: bool,
     },
+
+    /// Preview data from a table or stream
+    #[command(display_order = 21)]
+    Peek {
+        /// Name of the table or stream to peek
+        name: String,
+        /// Limit the number of rows to view
+        #[arg(short, long, default_value = "5")]
+        limit: u8,
+        /// Output to a file
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+
+        /// View data from a table
+        #[arg(short = 't', long = "table", group = "resource_type")]
+        table: bool,
+
+        /// View data from a stream/topic
+        #[arg(short = 's', long = "stream", group = "resource_type")]
+        stream: bool,
+    },
+
+    /// Import sample data into your project
+    #[command(display_order = 22)]
+    Seed(SeedCommands),
+
+    /// Delete data from tables
+    #[command(display_order = 23)]
+    Truncate {
+        /// List of table names to target (omit when using --all)
+        #[arg(value_name = "TABLE", num_args = 0.., value_delimiter = ',')]
+        tables: Vec<String>,
+
+        /// Apply the operation to all tables in the current database
+        #[arg(long, conflicts_with = "tables", default_value = "false")]
+        all: bool,
+
+        /// Number of most recent rows to delete per table. Omit to delete all rows.
+        #[arg(long)]
+        rows: Option<u64>,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // INFRASTRUCTURE & MONITORING
+    // ─────────────────────────────────────────────────────────────────────────────
+    /// List project primitives (tables, streams, APIs, etc.)
+    #[command(display_order = 30)]
+    Ls {
+        /// Filter by infrastructure type (tables, streams, ingestion, sql_resource, consumption, workflows, web_apps)
+        #[arg(long)]
+        _type: Option<String>,
+
+        /// Filter by name (supports partial matching)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Output results in JSON format
+        #[arg(long, default_value = "false")]
+        json: bool,
+    },
+
+    /// Show running Moose processes
+    #[command(display_order = 31)]
+    Ps {},
+
+    /// View Moose logs
+    #[command(display_order = 32)]
+    Logs {
+        /// Follow the logs in real-time
+        #[arg(short, long)]
+        tail: bool,
+
+        /// Filter logs by a specific string
+        #[arg(short, long)]
+        filter: Option<String>,
+    },
+
+    /// Open live metrics dashboard
+    #[command(display_order = 33)]
+    Metrics {},
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // DEPLOYMENT & MIGRATION
+    // ─────────────────────────────────────────────────────────────────────────────
+    /// Preview infrastructure changes before deployment
+    #[command(display_order = 40)]
+    Plan {
+        /// URL of the remote Moose instance (default: http://localhost:4000)
+        #[arg(long, conflicts_with = "clickhouse_url")]
+        url: Option<String>,
+
+        /// API token for authentication with the remote Moose instance
+        /// This token will be sent as a Bearer token in the Authorization header
+        #[arg(long)]
+        token: Option<String>,
+
+        /// ClickHouse connection URL for serverless deployments
+        #[arg(long, conflicts_with = "url")]
+        clickhouse_url: Option<String>,
+
+        /// Output plan as JSON for programmatic use
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Apply migrations to remote ClickHouse database
+    #[command(display_order = 41)]
+    Migrate {
+        /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
+        /// Authentication credentials should be included in the URL
+        #[arg(long)]
+        clickhouse_url: Option<String>,
+
+        /// Redis connection URL for state storage (e.g., redis://host:port)
+        /// Required when state_config.storage = "redis"
+        #[arg(long)]
+        redis_url: Option<String>,
+    },
+
+    /// Start production server for cloud deployments
+    #[command(display_order = 42)]
+    Prod {
+        /// Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
+        #[arg(long)]
+        start_include_dependencies: bool,
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // CODE GENERATION & UTILITIES
+    // ─────────────────────────────────────────────────────────────────────────────
+    /// Generate SDK, tokens, or migration files
+    #[command(display_order = 50)]
+    Generate(GenerateArgs),
+
+    /// Sync tables from a remote Moose instance
+    #[command(display_order = 51)]
+    Refresh {
+        /// URL of the remote Moose instance (default: http://localhost:4000)
+        #[arg(long)]
+        url: Option<String>,
+
+        /// API token for authentication with the remote Moose instance
+        /// This token will be sent as a Bearer token in the Authorization header
+        #[arg(long)]
+        token: Option<String>,
+    },
+
+    /// Manage database schema for external tables
+    #[command(display_order = 52)]
+    Db(DbArgs),
+
+    /// Import Kafka topics as external streams
+    #[command(display_order = 53)]
+    Kafka(KafkaArgs),
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // WORKFLOWS
+    // ─────────────────────────────────────────────────────────────────────────────
+    /// Manage data processing workflows
+    #[command(display_order = 60)]
+    Workflow(WorkflowArgs),
 }
 
 #[derive(Debug, Args)]

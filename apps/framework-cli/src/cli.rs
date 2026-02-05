@@ -215,7 +215,16 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
 }
 
 #[derive(Parser)]
-#[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
+#[command(
+    name = "moose",
+    author,
+    version = constants::CLI_VERSION,
+    about = "Build data-intensive apps and services with Moose",
+    long_about = None,
+    arg_required_else_help(true),
+    next_display_order = None,
+    after_help = "Learn more: https://docs.moosejs.com"
+)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
