@@ -8,7 +8,7 @@ JSON format expected by the Moose infrastructure management system.
 """
 
 from importlib import import_module
-from typing import Literal, Optional, List, Any, Dict, Union, TYPE_CHECKING
+from typing import Literal, Optional, List, Any, Dict, Union
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
 import json
 import os
@@ -1246,7 +1246,7 @@ def to_infra_map() -> dict:
                 ),
                 depends_on=(
                     mv.refresh_config.depends_on
-                    if mv.refresh_config.depends_on
+                    if mv.refresh_config.depends_on is not None
                     else None
                 ),
                 append=mv.refresh_config.append,
