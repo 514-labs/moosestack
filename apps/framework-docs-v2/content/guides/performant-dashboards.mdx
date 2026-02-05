@@ -966,12 +966,35 @@ The goal of this phase is to reproduce your existing API behavior exactly by tra
 <CopilotCallout
   title="Copy Checkpoints as Copilot Prompt"
   contentFile="/shared/guides/performant-dashboards/phase-1-checkpoints.mdx"
-  systemPrompt="You are helping me migrate one dashboard endpoint from OLTP to ClickHouse (MooseStack). Goal: Phase 1 parity — translate the existing handler/query logic into ClickHouse SQL that returns the exact same JSON contract. Work sequentially and stop after each checkpoint."
+  systemPrompt="You are an expert backend engineer helping me migrate a single dashboard
+endpoint from an OLTP database to ClickHouse using MooseStack.
+
+Goal: Phase 1 parity — translate the existing handler/query logic into
+ClickHouse SQL that returns byte-for-byte identical JSON to the current
+OLTP endpoint.
+
+Context you have been given:
+- The context directory for this component (context-map.md, test case
+  templates, and an example migration for reference)
+- The API specification for the endpoint
+- The existing backend endpoint handler
+- The OLTP query file(s) the handler calls
+
+Rules:
+1. Work through the checkpoints below sequentially. After completing each
+   checkpoint, stop and summarize what you did so I can confirm before
+   you continue.
+2. Never fabricate query results or API responses. All expected responses
+   must come from actually calling the running endpoint.
+3. When something is ambiguous (e.g. implicit filters, default parameter
+   values, edge case behavior), ask me rather than guessing.
+4. Record every file you create or modify in context-map.md."
   buttonLabel="Copy Prompt"
 >
 Attach the following files as context alongside the prompt:
 
 - `moosestack/context/dashboard-migration/<component>/` — the context directory for this component
+- The API specification for the endpoint
 - Your existing backend endpoint handler (e.g. Express route, Fastify handler) that serves the dashboard data
 - The OLTP query file(s) that the handler calls (e.g. SQL builder, ORM query, raw query function)
 

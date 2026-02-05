@@ -1,17 +1,18 @@
-##### Checkpoint 1 — Capture test cases (curl + expected response)
+##### Checkpoint 1 — Capture test cases
 
-Goal: capture 2–5 replayable test cases from the **existing** OLTP endpoint and save them as your parity oracle for all later phases.
+Goal: capture 2–5 replayable test cases from the **existing** OLTP endpoint. These are your parity oracle for all later phases.
 
 Steps:
 
-1. Run the existing endpoint (your current OLTP implementation) and capture 2–5 representative requests + responses.
-2. For each test case, create a file under `moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md`.
-3. Each file must include:
-   - the `curl` request you used to call the endpoint (**GET or POST**)
-   - the **expected response** JSON you got back — this must come from actually calling the running OLTP endpoint, not from approximation
-4. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days). You will seed your local ClickHouse to match this window after identifying the source tables in Checkpoint 2.
+1. Identify 2–5 representative requests that exercise different filters, time ranges, and edge cases (e.g. empty results, large result sets, boundary dates).
+2. Run each request against the **live OLTP endpoint** and capture the exact response.
+3. For each test case, create a file: `moosestack/context/dashboard-migration/<component>/test-cases/0N-<short-name>.md`.
+4. Each file must include:
+   - the `curl` command (GET or POST)
+   - the **verbatim** JSON response — this must come from actually calling the running endpoint, not from approximation
+5. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days). You will seed your local ClickHouse to match this window after identifying the source tables in Checkpoint 2.
 
-Template (keep only the request block that matches your endpoint method):
+Use this template (keep only the request method that matches your endpoint):
 
 ````md
 # Test case: <short-name>
@@ -33,35 +34,28 @@ Template (keep only the request block that matches your endpoint method):
 curl -sS -G "$API_BASE_URL/api/<endpoint>" \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  --data-urlencode "merchantId=123" \
-  --data-urlencode "startDate=2024-01-01" \
-  --data-urlencode "endDate=2024-01-31" \
+  --data-urlencode "param1=value1" \
+  --data-urlencode "param2=value2" \
   | jq .
 
 # POST (JSON body)
 curl -sS -X POST "$API_BASE_URL/api/<endpoint>" \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d @- << 'JSON' \
+  -d '{"param1": "value1", "param2": "value2"}' \
   | jq .
-{
-  "merchantId": "123",
-  "startDate": "2024-01-01",
-  "endDate": "2024-01-31"
-}
-JSON
 ```
 
 ## Expected response
 
 ```json
 {
-  "REPLACE_ME": "paste the full JSON response body here (verbatim)"
+  "REPLACE_ME": "paste the full JSON response body here (verbatim from the running endpoint)"
 }
 ```
 ````
 
-These test cases are your source of truth for validating parity in your ClickHouse-backed implementation.
+**Done when:** 2–5 test case files exist under `test-cases/`, each with a runnable curl command and the actual JSON response from the OLTP endpoint. Record the file paths in `context-map.md`.
 
 ##### Checkpoint 2 — OLTP semantics
 
@@ -78,23 +72,25 @@ Steps:
    - Edge cases (null handling, division by zero, missing rows)
 3. Record these findings in `context-map.md` under Phase 1 Notes.
 
-##### Checkpoint 3 — Seed your local ClickHouse database
+**Done when:** `context-map.md` lists every source table, the join graph, all filter/aggregation logic, and any edge cases. You should be able to write the ClickHouse translation from this spec alone.
 
-Goal: seed your local ClickHouse with enough production data to fully cover the test cases from Checkpoint 1. You now know the source tables (from Checkpoint 2) and the time windows and filter values (from Checkpoint 1 test cases).
+##### Checkpoint 3 — Seed local ClickHouse
+
+Goal: seed your local ClickHouse with enough production data to fully cover the test cases from Checkpoint 1. You now know the source tables (from Checkpoint 2) and the time windows and filter values (from Checkpoint 1).
 
 Prerequisites:
-- Your dev server is running (`moose dev`)
-- Export your production ClickHouse HTTPS connection string:
+- Dev server is running (`moose dev`)
+- Production ClickHouse HTTPS connection string is exported:
 
 ```shell
 export CLICKHOUSE_PROD_URL="<YOUR_HTTPS_CONNECTION_STRING>"
 ```
 
-Your connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
+The connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
 
 Steps:
 
-1. For each source table identified in Checkpoint 2, seed the rows that cover your test case time windows:
+1. For each source table from Checkpoint 2, generate and run a seed command that covers the test case time windows:
 
 ```shell
 moose seed clickhouse \
@@ -104,7 +100,7 @@ moose seed clickhouse \
   --limit 100000
 ```
 
-2. Verify the seeded data covers your test cases:
+2. Verify the seeded data covers every test case:
 
 ```shell
 moose query -q "SELECT min(<TIMESTAMP_COLUMN>), max(<TIMESTAMP_COLUMN>), count() FROM <TABLE_NAME> FINAL"
@@ -112,45 +108,49 @@ moose query -q "SELECT min(<TIMESTAMP_COLUMN>), max(<TIMESTAMP_COLUMN>), count()
 
 If any test case falls outside the seeded range, re-seed with a larger `--limit` or use `--all`.
 
+**Done when:** every source table has local data that spans the time windows used in all Checkpoint 1 test cases.
+
 ##### Checkpoint 4 — ClickHouse parity function
 
-Goal: implement a direct translation of the OLTP query into ClickHouse SQL that returns the exact same response shape.
+Goal: write a direct translation of the OLTP query into ClickHouse SQL that returns the exact same response shape.
 
 Steps:
 
 1. Create `moosestack/app/queries/<component>-olap-translation.ts`.
 2. Write a function that:
    - accepts the exact same parameters as the existing handler/query logic
-   - builds the translated query with the `sql` tagged template literal
-   - executes the query via the Moose ClickHouse client against local `moose dev`
-3. Preserve column names, types, and ordering. Add explicit `ORDER BY` and casts where needed.
-4. Call out any ClickHouse differences (null handling, decimals, timestamp bucketing).
+   - builds the translated query using the `sql` tagged template literal
+   - executes via the Moose ClickHouse client against local `moose dev`
+3. Preserve column names, types, and ordering exactly. Add explicit `ORDER BY` and casts where needed.
+4. Call out any ClickHouse-specific differences (null handling, decimal precision, timestamp bucketing) as comments in the code.
 5. Record the file path in `context-map.md`.
 
-Use the [ClickHouse SQL reference](https://clickhouse.com/docs/en/sql-reference) as you translate.
+Refer to the [ClickHouse SQL reference](https://clickhouse.com/docs/en/sql-reference) as you translate.
 
-Example:
+Example (adapt to your component — do not copy names literally):
 
-```ts filename="moosestack/app/queries/order-fulfillment-olap-translation.ts" copy
+```ts
+// File: moosestack/app/queries/<component>-olap-translation.ts
+
 import { sql, MooseClient } from "@514labs/moose-lib";
 import { Orders } from "./models/Orders.model";
 
-interface OrderFulfillmentInput {
+interface ParityInput {
   merchantId: string;
   startDate: string;
   endDate: string;
 }
 
-interface OrderFulfillmentRow {
+interface ParityRow {
   day: string;
   fulfilled: number;
   total: number;
 }
 
-export async function runOrderFulfillmentParity(
-  params: OrderFulfillmentInput,
+export async function runParity(
+  params: ParityInput,
   client: MooseClient,
-): Promise<OrderFulfillmentRow[]> {
+): Promise<ParityRow[]> {
   const statement = sql`
     SELECT
       toDate(order_ts) AS day,
@@ -164,25 +164,27 @@ export async function runOrderFulfillmentParity(
     ORDER BY day ASC
   `;
 
-  return client.query<OrderFulfillmentRow>(statement);
+  return client.query<ParityRow>(statement);
 }
 ```
 
+**Done when:** the parity function compiles, runs against local `moose dev`, and returns results. The file path is recorded in `context-map.md`.
+
 ##### Checkpoint 5 — Verification
 
-Goal: prove the parity function returns the exact same response as the existing OLTP endpoint for every test case.
+Goal: prove the parity function returns the exact same JSON as the OLTP endpoint for every test case.
 
 Steps:
 
-1. Create a small script that imports the parity function, calls it with the parameters from a test case, and outputs JSON:
+1. For each Checkpoint 1 test case, call the parity function with the same parameters and capture the output:
 
 ```bash
 pnpm tsx -e "
-  import { runOrderFulfillmentParity } from './app/order-fulfillment-olap-translation';
+  import { runParity } from './app/queries/<component>-olap-translation';
   import { getMooseUtils } from '@514labs/moose-lib';
   const { client } = await getMooseUtils();
-  const result = await runOrderFulfillmentParity(
-    { merchantId: '123', startDate: '2024-01-01', endDate: '2024-01-31' },
+  const result = await runParity(
+    { /* same params as the test case curl */ },
     client,
   );
   console.log(JSON.stringify(result));
@@ -203,10 +205,10 @@ awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
 diff expected.json actual.json
 ```
 
-4. Repeat for every test case. If there are differences:
-   - Check column names (case-sensitive in ClickHouse)
-   - Check data types (timestamps, decimals)
-   - Check sort order (add explicit `ORDER BY` if needed)
-   - If parity fails due to missing rows (seed slice too small), reseed with a larger `--limit` and retry
+4. If there are differences, check:
+   - Column names (case-sensitive in ClickHouse)
+   - Data types (timestamps, decimals, integers vs floats)
+   - Sort order (add explicit `ORDER BY` if needed)
+   - Missing rows (seed slice too small — re-seed with a larger `--limit`)
 
-Iterate until the diff is empty for all test cases. Once they pass, proceed to Phase 2.
+**Done when:** `diff` produces no output for every test case. Once all test cases pass, Phase 1 is complete — proceed to Phase 2.
