@@ -949,29 +949,9 @@ This guide follows a three-phase migration pattern:
 
 Copy the starter kit to create a dedicated workspace to compile all the context your copilot needs to migrate each component. It includes a template for a `context-map.md` file (a worksheet that tracks the location of relevant files in your codebase for each component) and a full example to help your copilot complete each phase of the migration.
 
-<TabbedCode
-  variants={[
-    { value: "pnpm", label: "pnpm" },
-    { value: "npx", label: "npx" },
-  ]}
-  defaultValue="pnpm"
-  syncKey="dashboard-migration-starter-kit"
->
-  <TabbedCode.Content value="pnpm">
-
 ```bash
 pnpm dlx tiged 514-labs/moose/examples/dashboard-migration moosestack/context
 ```
-
-  </TabbedCode.Content>
-  <TabbedCode.Content value="npx">
-
-```bash
-npx tiged 514-labs/moose/examples/dashboard-migration moosestack/context
-```
-
-  </TabbedCode.Content>
-</TabbedCode>
 
 As you complete each phase of this guide, you will attach the required input files in your initial prompt to your copilot. From there, the copilot will update the workspace files as it completes the steps in this guide. 
 
