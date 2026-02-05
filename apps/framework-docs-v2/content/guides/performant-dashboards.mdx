@@ -975,93 +975,9 @@ npx tiged 514-labs/moose/examples/dashboard-migration moosestack/context
 
 As you complete each phase of this guide, you will attach the required input files in your initial prompt to your copilot. From there, the copilot will update the workspace files as it completes the steps in this guide. 
 
-#### Step 0: Seed your local ClickHouse database
-
-Before starting the migration, prepare your development environment by seeding your local ClickHouse database with a deterministic slice of production data. You’ll use this data to validate parity during Phase 1.
-
-Ensure your dev server is running and accessible:
-```shell
-moose dev
-```
-
-First, export the **HTTPS** ClickHouse connection string from the **previous Boreal step** (the ClickHouse connection details Boreal shows you) as an environment variable:
-
-```shell
-export CLICKHOUSE_PROD_URL="<YOUR_HTTPS_CONNECTION_STRING>"
-```
-
-**Important:** `moose seed clickhouse` uses ClickHouse's HTTPS protocol. Your connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
-
-Then run the [`moose seed` command](https://docs.fiveonefour.com/moosestack/moose-cli?lang=typescript#seed-clickhouse) to pull data from your production ClickHouse database:
-
-```shell
-moose seed clickhouse --connection-string "$CLICKHOUSE_PROD_URL" --limit 1000
-```
-
-**Recommended (seed for parity):** seed the specific table(s) your component will query, ordered by recency, with a large-enough limit to cover the time window you’ll test (e.g. “last 7–30 days”).
-
-Run this once per table your endpoint depends on:
-
-```shell
-moose seed clickhouse \
-  --connection-string "$CLICKHOUSE_PROD_URL" \
-  --table <TABLE_NAME> \
-  --order-by '<TIMESTAMP_COLUMN> DESC' \
-  --limit 100000
-```
-
-If you hit missing-data issues during parity validation, re-run seeding with a larger `--limit` (or seed full tables with `--all`).
-
-**Strict parity (slowest):** seed full production tables with `--all` (can take hours for large datasets):
-
-```shell
-moose seed clickhouse --connection-string $CLICKHOUSE_PROD_URL --all
-```
-
-Once your local database is seeded, proceed to Step 1.
-
-<ToggleBlock openText="Advanced: seed local ClickHouse from remote via HTTP" closeText="Hide advanced seeding">
-Prompt your copilot to seed your local database from each remote table:
-
-```
-Goal: seed local ClickHouse from a remote Boreal ClickHouse via HTTP using `moose query`.
-
-Assumptions:
-- `CLICKHOUSE_PROD_URL` is set and looks like: `https://default:PASSWORD@HOST:8443/DB_NAME`
-- Local ClickHouse has the same tables already created.
-- Use `url()` + `JSONEachRow` to stream data from remote into local.
-
-Steps:
-
-1) Extract remote base URL + database name from `BOREAL_CONNECTION_STRING`.
-2) Get list of tables (exclude system + materialized views).
-3) For each table, generate a schema string ("col1 Type1, col2 Type2, ...") from `DESCRIBE TABLE ... FORMAT JSONEachRow`.
-4) For each table, generate a seed SQL file with this pattern:
-
-   INSERT INTO <table>
-   SELECT * FROM url(
-     '<base_url>/?database=<db>&query=SELECT+*+FROM+<table>+FORMAT+JSONEachRow',
-     JSONEachRow,
-     '<schema_string>'
-   );
-
-   (No LIMIT clauses: copy all rows.)
-
-5) Run all generated seed SQL files with `moose query`.
-6) Verify row counts for each table (use FINAL) using `moose query`.
-
-Implement as a single bash script.
-```
-</ToggleBlock>
-
-#### Step 1: Choose the component to migrate
+#### Choose the component to migrate
 
 Pick a specific dashboard component or report to migrate. You'll work through one component at a time.
-
-For this guide, we'll use an e-commerce order fulfillment report:
-
-- Dataset: `OrderFulfillment`
-- Purpose: Track order processing metrics by merchant and time period
 
 #### Phase 1: Parity translation (OLTP → ClickHouse parity function)
 
@@ -1079,7 +995,7 @@ Attach the following files as context alongside the prompt:
 - Your existing backend endpoint handler (e.g. Express route, Fastify handler) that serves the dashboard data
 - The OLTP query file(s) that the handler calls (e.g. SQL builder, ORM query, raw query function)
 
-Make sure you have your local development server running and seeded with sample data from your production ClickHouse database.
+Make sure you have your local development server running (`moose dev`).
 </CopilotCallout>
 
 :::include /shared/guides/performant-dashboards/phase-1-checkpoints.mdx
@@ -1103,7 +1019,7 @@ The end state is that your API reads from the serving table with lightweight, re
 Attach the following files as context alongside the prompt:
 
 - `moosestack/context/dashboard-migration/<component>/` — the context directory (context map, test cases from Phase 1)
-- The parity query function from Phase 1 (e.g. `moosestack/app/apis/<handler>.ts`)
+- The parity query function from Phase 1 (e.g. `moosestack/app/queries/<component>-olap-translation.ts`)
 - The MooseStack source table model files referenced in the parity query (e.g. `moosestack/app/models/*.ts`)
 
 If anything isn't captured in the context directory yet (access-pattern notes, source table model paths), attach those files too.

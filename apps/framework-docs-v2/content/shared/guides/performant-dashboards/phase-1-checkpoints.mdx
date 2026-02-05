@@ -9,8 +9,7 @@ Steps:
 3. Each file must include:
    - the `curl` request you used to call the endpoint (**GET or POST**)
    - the **expected response** JSON you got back — this must come from actually calling the running OLTP endpoint, not from approximation
-4. Only use requests that fall inside your seeded ClickHouse data window (e.g., “last 7–30 days” if you seeded recent rows).
-5. If a test case fails due to missing data later, re-run seeding with a larger `--limit` (or `--all`) and retry.
+4. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days). You will seed your local ClickHouse to match this window after identifying the source tables in Checkpoint 2.
 
 Template (keep only the request block that matches your endpoint method):
 
@@ -79,13 +78,47 @@ Steps:
    - Edge cases (null handling, division by zero, missing rows)
 3. Record these findings in `context-map.md` under Phase 1 Notes.
 
-##### Checkpoint 3 — ClickHouse parity function
+##### Checkpoint 3 — Seed your local ClickHouse database
+
+Goal: seed your local ClickHouse with enough production data to fully cover the test cases from Checkpoint 1. You now know the source tables (from Checkpoint 2) and the time windows and filter values (from Checkpoint 1 test cases).
+
+Prerequisites:
+- Your dev server is running (`moose dev`)
+- Export your production ClickHouse HTTPS connection string:
+
+```shell
+export CLICKHOUSE_PROD_URL="<YOUR_HTTPS_CONNECTION_STRING>"
+```
+
+Your connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
+
+Steps:
+
+1. For each source table identified in Checkpoint 2, seed the rows that cover your test case time windows:
+
+```shell
+moose seed clickhouse \
+  --connection-string "$CLICKHOUSE_PROD_URL" \
+  --table <TABLE_NAME> \
+  --order-by '<TIMESTAMP_COLUMN> DESC' \
+  --limit 100000
+```
+
+2. Verify the seeded data covers your test cases:
+
+```shell
+moose query -q "SELECT min(<TIMESTAMP_COLUMN>), max(<TIMESTAMP_COLUMN>), count() FROM <TABLE_NAME> FINAL"
+```
+
+If any test case falls outside the seeded range, re-seed with a larger `--limit` or use `--all`.
+
+##### Checkpoint 4 — ClickHouse parity function
 
 Goal: implement a direct translation of the OLTP query into ClickHouse SQL that returns the exact same response shape.
 
 Steps:
 
-1. Create `moosestack/app/<component>-olap-translation.ts`.
+1. Create `moosestack/app/queries/<component>-olap-translation.ts`.
 2. Write a function that:
    - accepts the exact same parameters as the existing handler/query logic
    - builds the translated query with the `sql` tagged template literal
@@ -96,11 +129,9 @@ Steps:
 
 Use the [ClickHouse SQL reference](https://clickhouse.com/docs/en/sql-reference) as you translate.
 
-Example (order fulfillment):
+Example:
 
-```ts
-// File: moosestack/app/order-fulfillment-olap-translation.ts
-
+```ts filename="moosestack/app/queries/order-fulfillment-olap-translation.ts" copy
 import { sql, MooseClient } from "@514labs/moose-lib";
 import { Orders } from "./models/Orders.model";
 
@@ -137,7 +168,7 @@ export async function runOrderFulfillmentParity(
 }
 ```
 
-##### Checkpoint 4 — Verification
+##### Checkpoint 5 — Verification
 
 Goal: prove the parity function returns the exact same response as the existing OLTP endpoint for every test case.
 
