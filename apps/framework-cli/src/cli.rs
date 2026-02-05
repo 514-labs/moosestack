@@ -214,16 +214,50 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
     }
 }
 
+/// Custom help text for `moose --help` (Graphite-style curated guide)
+const CUSTOM_HELP: &str = r#"Moose is a developer framework for building data-intensive applications.
+It handles the infrastructure (ClickHouse, Kafka, Redis) so you can focus on
+your data models, transformations, and APIs.
+
+$ moose <command> [flags]
+
+Getting started:
+  moose init <name> <template>    Create a new Moose project (typescript or python)
+  moose dev                       Start local dev server with hot reload
+  moose check                     Validate your project configuration
+
+Working with data:
+  moose query "<sql>"             Run SQL queries against ClickHouse
+  moose peek <table>              Preview data from a table or stream
+  moose ls                        List all project primitives (tables, streams, APIs)
+
+Debugging:
+  moose logs --tail               Stream logs in real-time
+  moose ps                        Show running Moose processes
+  moose metrics                   Open live metrics dashboard
+
+Deploying:
+  moose build                     Build project for deployment
+  moose plan                      Preview infrastructure changes
+  moose migrate                   Apply migrations to production
+
+Run `moose <command> --help` for details on any command.
+Run `moose commands` for a full command reference.
+
+More documentation: https://docs.moosejs.com
+Quickstart guide:   https://docs.moosejs.com/quickstart
+"#;
+
 #[derive(Parser)]
 #[command(
     name = "moose",
     author,
     version = constants::CLI_VERSION,
-    about = "Build data-intensive apps and services with Moose",
+    about = "Developer framework for building data-intensive applications",
     long_about = None,
     arg_required_else_help(true),
     next_display_order = None,
-    after_help = "Learn more: https://docs.moosejs.com"
+    override_help = CUSTOM_HELP
 )]
 pub struct Cli {
     /// Turn debugging information on
@@ -415,12 +449,72 @@ async fn run_local_infrastructure_with_timeout(
     }
 }
 
+/// Full command reference for `moose commands`
+const FULL_COMMAND_REFERENCE: &str = r#"Moose CLI - Full Command Reference
+
+GETTING STARTED:
+  init <name> <template>     Create a new Moose project (typescript or python)
+  template list              List available project templates
+
+DEVELOPMENT:
+  dev                        Start local development server with hot reload
+  build                      Build project for deployment
+  check                      Validate project without starting servers
+  clean                      Stop dev server and clean up temporary data
+
+DATA & QUERIES:
+  query "<sql>"              Run SQL queries against ClickHouse
+  peek <name>                Preview data from a table or stream
+  seed clickhouse            Import sample data into your project
+  truncate [tables...]       Delete data from tables
+
+INFRASTRUCTURE & MONITORING:
+  ls                         List project primitives (tables, streams, APIs, etc.)
+  ps                         Show running Moose processes
+  logs                       View Moose logs (use --tail to stream)
+  metrics                    Open live metrics dashboard
+
+DEPLOYMENT & MIGRATION:
+  plan                       Preview infrastructure changes before deployment
+  migrate                    Apply migrations to remote ClickHouse database
+  prod                       Start production server for cloud deployments
+
+CODE GENERATION & UTILITIES:
+  generate hash-token        Generate API key hash and bearer token
+  generate migration         Generate migration files
+  refresh                    Sync tables from a remote Moose instance
+  db pull                    Update schema for externally managed tables
+  kafka pull                 Import Kafka topics as external streams
+
+WORKFLOWS:
+  workflow run <name>        Run a workflow
+  workflow list              List registered workflows
+  workflow status <name>     Get workflow status
+  workflow history           Show workflow execution history
+
+GLOBAL OPTIONS:
+  --backtrace                Print backtraces for all errors
+  -d, --debug                Turn debugging information on
+  -h, --help                 Print help
+  -V, --version              Print version
+
+Run `moose <command> --help` for details on any command.
+More documentation: https://docs.moosejs.com
+"#;
+
 pub async fn top_command_handler(
     settings: Settings,
     commands: &Commands,
     machine_id: String,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     match commands {
+        Commands::Commands {} => {
+            println!("{}", FULL_COMMAND_REFERENCE);
+            Ok(RoutineSuccess::success(Message::new(
+                "".to_string(),
+                "".to_string(),
+            )))
+        }
         Commands::Init {
             name,
             location,
