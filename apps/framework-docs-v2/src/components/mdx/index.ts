@@ -48,6 +48,9 @@ export { TemplateCard } from "./template-card";
 export { TemplateGrid } from "./template-grid";
 export { TemplatesGridServer } from "./templates-grid-server";
 
+// Copilot callout component (callout with "Copy as prompt" button)
+export { CopilotCallout } from "./copilot-callout";
+
 // Interactive components for dynamic guide customization
 export {
   SelectField,

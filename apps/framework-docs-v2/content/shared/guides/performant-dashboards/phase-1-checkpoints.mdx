@@ -1,0 +1,181 @@
+##### Checkpoint 1 — Capture test cases (curl + expected response)
+
+Goal: capture 2–5 replayable test cases from the **existing** OLTP endpoint and save them as your parity oracle for all later phases.
+
+Steps:
+
+1. Run the existing endpoint (your current OLTP implementation) and capture 2–5 representative requests + responses.
+2. For each test case, create a file under `moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md`.
+3. Each file must include:
+   - the `curl` request you used to call the endpoint (**GET or POST**)
+   - the **expected response** JSON you got back — this must come from actually calling the running OLTP endpoint, not from approximation
+4. Only use requests that fall inside your seeded ClickHouse data window (e.g., “last 7–30 days” if you seeded recent rows).
+5. If a test case fails due to missing data later, re-run seeding with a larger `--limit` (or `--all`) and retry.
+
+Template (keep only the request block that matches your endpoint method):
+
+````md
+# Test case: <short-name>
+
+## Request (curl)
+
+```bash
+# Method: GET|POST
+# Path: /api/<endpoint>
+# Expected: HTTP 200
+# Auth: Bearer token via $API_TOKEN (do not paste secrets)
+# Notes: <timezone/order/pagination assumptions if relevant>
+
+# Set once in your shell:
+# export API_BASE_URL="http://localhost:4000"
+# export API_TOKEN="..."
+
+# GET (query params)
+curl -sS -G "$API_BASE_URL/api/<endpoint>" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-urlencode "merchantId=123" \
+  --data-urlencode "startDate=2024-01-01" \
+  --data-urlencode "endDate=2024-01-31" \
+  | jq .
+
+# POST (JSON body)
+curl -sS -X POST "$API_BASE_URL/api/<endpoint>" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @- << 'JSON' \
+  | jq .
+{
+  "merchantId": "123",
+  "startDate": "2024-01-01",
+  "endDate": "2024-01-31"
+}
+JSON
+```
+
+## Expected response
+
+```json
+{
+  "REPLACE_ME": "paste the full JSON response body here (verbatim)"
+}
+```
+````
+
+These test cases are your source of truth for validating parity in your ClickHouse-backed implementation.
+
+##### Checkpoint 2 — OLTP semantics
+
+Goal: extract the query logic from the existing endpoint so you have a precise spec to translate.
+
+Steps:
+
+1. Locate the SQL query or stored procedure that powers the existing endpoint (typically in the backend handler or a database layer).
+2. Document:
+   - Source tables and join conditions (including join type)
+   - Filter clauses (including implicit tenancy, soft-delete, or RBAC filters)
+   - Parameter substitution rules and defaults
+   - Group-by / aggregation logic
+   - Edge cases (null handling, division by zero, missing rows)
+3. Record these findings in `context-map.md` under Phase 1 Notes.
+
+##### Checkpoint 3 — ClickHouse parity function
+
+Goal: implement a direct translation of the OLTP query into ClickHouse SQL that returns the exact same response shape.
+
+Steps:
+
+1. Create `moosestack/app/<component>-olap-translation.ts`.
+2. Write a function that:
+   - accepts the exact same parameters as the existing handler/query logic
+   - builds the translated query with the `sql` tagged template literal
+   - executes the query via the Moose ClickHouse client against local `moose dev`
+3. Preserve column names, types, and ordering. Add explicit `ORDER BY` and casts where needed.
+4. Call out any ClickHouse differences (null handling, decimals, timestamp bucketing).
+5. Record the file path in `context-map.md`.
+
+Use the [ClickHouse SQL reference](https://clickhouse.com/docs/en/sql-reference) as you translate.
+
+Example (order fulfillment):
+
+```ts
+// File: moosestack/app/order-fulfillment-olap-translation.ts
+
+import { sql, MooseClient } from "@514labs/moose-lib";
+import { Orders } from "./models/Orders.model";
+
+interface OrderFulfillmentInput {
+  merchantId: string;
+  startDate: string;
+  endDate: string;
+}
+
+interface OrderFulfillmentRow {
+  day: string;
+  fulfilled: number;
+  total: number;
+}
+
+export async function runOrderFulfillmentParity(
+  params: OrderFulfillmentInput,
+  client: MooseClient,
+): Promise<OrderFulfillmentRow[]> {
+  const statement = sql`
+    SELECT
+      toDate(order_ts) AS day,
+      sumIf(1, status = 'fulfilled') AS fulfilled,
+      count() AS total
+    FROM ${Orders}
+    WHERE merchant_id = ${params.merchantId}
+      AND order_ts >= toDateTime(${params.startDate})
+      AND order_ts < toDateTime(${params.endDate})
+    GROUP BY day
+    ORDER BY day ASC
+  `;
+
+  return client.query<OrderFulfillmentRow>(statement);
+}
+```
+
+##### Checkpoint 4 — Verification
+
+Goal: prove the parity function returns the exact same response as the existing OLTP endpoint for every test case.
+
+Steps:
+
+1. Create a small script that imports the parity function, calls it with the parameters from a test case, and outputs JSON:
+
+```bash
+pnpm tsx -e "
+  import { runOrderFulfillmentParity } from './app/order-fulfillment-olap-translation';
+  import { getMooseUtils } from '@514labs/moose-lib';
+  const { client } = await getMooseUtils();
+  const result = await runOrderFulfillmentParity(
+    { merchantId: '123', startDate: '2024-01-01', endDate: '2024-01-31' },
+    client,
+  );
+  console.log(JSON.stringify(result));
+" | jq -S '.' > actual.json
+```
+
+2. Extract the expected response from the test case file:
+
+```bash
+awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
+  moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md \
+  | jq -S '.' > expected.json
+```
+
+3. Diff:
+
+```bash
+diff expected.json actual.json
+```
+
+4. Repeat for every test case. If there are differences:
+   - Check column names (case-sensitive in ClickHouse)
+   - Check data types (timestamps, decimals)
+   - Check sort order (add explicit `ORDER BY` if needed)
+   - If parity fails due to missing rows (seed slice too small), reseed with a larger `--limit` and retry
+
+Iterate until the diff is empty for all test cases. Once they pass, proceed to Phase 2.
