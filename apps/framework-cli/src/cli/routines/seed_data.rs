@@ -1,18 +1,22 @@
 use crate::cli::commands::SeedSubcommands;
 use crate::cli::display;
+use crate::cli::display::status::{format_error, format_success, format_warning};
 use crate::cli::display::{with_spinner_completion_async, Message, MessageType};
 use crate::cli::routines::RoutineFailure;
 use crate::cli::routines::RoutineSuccess;
+use crate::framework::core::infrastructure::table::Table;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use crate::infrastructure::olap::clickhouse::client::ClickHouseClient;
 use crate::infrastructure::olap::clickhouse::config::{
     parse_clickhouse_connection_string, ClickHouseConfig,
 };
+use crate::infrastructure::olap::clickhouse::mapper::std_table_to_clickhouse_table;
+use crate::infrastructure::olap::clickhouse::queries::create_table_query;
+use crate::infrastructure::olap::clickhouse::remote::ClickHouseRemote;
 use crate::project::Project;
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
-use crate::framework::core::infrastructure::table::Table;
 use std::cmp::min;
 use std::collections::HashSet;
 use tracing::{debug, info, warn};
@@ -632,6 +636,261 @@ pub async fn seed_clickhouse_tables(
 
     info!("ClickHouse seeding completed");
     Ok(summary)
+}
+
+// =============================================================================
+// External Table Mirroring Functions
+// =============================================================================
+
+/// Context for mirror table operations
+struct MirrorContext<'a> {
+    local_client: &'a ClickHouseClient,
+    local_db: String,
+    remote: &'a ClickHouseRemote,
+    sample_size: usize,
+    refresh_on_startup: bool,
+}
+
+/// Orchestrates create/drop/seed for a single mirror table.
+///
+/// Returns a status string using format_success/warning/error.
+async fn create_single_mirror(ctx: &MirrorContext<'_>, table: &Table) -> String {
+    let table_name = &table.name;
+    let remote_db = &ctx.remote.database;
+
+    // Check if table already exists
+    let exists = match ctx
+        .local_client
+        .table_exists(&ctx.local_db, table_name)
+        .await
+    {
+        Ok(exists) => exists,
+        Err(e) => {
+            return format_error(table_name, &format!("failed to check existence: {}", e));
+        }
+    };
+
+    // Skip if exists and not refreshing
+    if exists && !ctx.refresh_on_startup {
+        return format_warning(table_name, "already exists (skipped)");
+    }
+
+    // Drop existing table if refreshing
+    if exists {
+        debug!("Dropping existing mirror table: {}", table_name);
+        if let Err(e) = ctx
+            .local_client
+            .drop_table_if_exists(&ctx.local_db, table_name)
+            .await
+        {
+            return format_error(table_name, &format!("failed to drop: {}", e));
+        }
+    }
+
+    // Create schema from remote
+    if let Err(e) = ctx
+        .local_client
+        .create_mirror_table_from_remote(&ctx.local_db, table_name, ctx.remote, remote_db)
+        .await
+    {
+        return format_error(
+            table_name,
+            &format!("failed to create mirror schema: {}", e),
+        );
+    }
+
+    // Seed data if sample_size > 0
+    if ctx.sample_size > 0 {
+        match ctx
+            .local_client
+            .insert_from_remote(
+                &ctx.local_db,
+                table_name,
+                ctx.remote,
+                remote_db,
+                ctx.sample_size,
+            )
+            .await
+        {
+            Ok(()) => format_success(table_name, &format!("mirrored ({} rows)", ctx.sample_size)),
+            Err(e) => format_error(
+                table_name,
+                &format!("schema created but seeding failed: {}", e),
+            ),
+        }
+    } else {
+        format_success(table_name, "mirrored (schema only)")
+    }
+}
+
+/// Creates local mirror tables for EXTERNALLY_MANAGED tables.
+///
+/// Uses HTTP-based queries via `ClickHouseRemote` to fetch schema and sample data
+/// from a remote ClickHouse instance. Mirror tables use `MergeTree() ORDER BY tuple()`.
+///
+/// # Arguments
+/// * `project` - The current project configuration
+/// * `infra_map` - The infrastructure map containing table definitions
+/// * `remote` - The remote ClickHouse connection to mirror from
+///
+/// # Returns
+/// A vector of status messages for each table processed
+pub async fn create_external_table_mirrors(
+    project: &Project,
+    infra_map: &InfrastructureMap,
+    remote: &ClickHouseRemote,
+) -> Result<Vec<String>, RoutineFailure> {
+    let local_client = ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "CreateMirrors".to_string(),
+            format!("Failed to create local ClickHouse client: {}", e),
+        ))
+    })?;
+
+    let mirrorable_tables = infra_map.get_mirrorable_external_tables();
+    if mirrorable_tables.is_empty() {
+        debug!("No mirrorable external tables found");
+        return Ok(vec![]);
+    }
+
+    let config = &project.dev.externally_managed.tables;
+    let ctx = MirrorContext {
+        local_client: &local_client,
+        local_db: local_client.config().db_name.clone(),
+        remote,
+        sample_size: config.sample_size,
+        refresh_on_startup: config.refresh_on_startup,
+    };
+
+    info!(
+        "Mirroring {} external tables (sample_size={}, refresh={})",
+        mirrorable_tables.len(),
+        config.sample_size,
+        config.refresh_on_startup
+    );
+
+    let mut results = Vec::with_capacity(mirrorable_tables.len());
+    for table in mirrorable_tables {
+        let status = create_single_mirror(&ctx, table).await;
+        results.push(status);
+    }
+
+    Ok(results)
+}
+
+/// Creates empty local tables for EXTERNALLY_MANAGED tables using local schema definitions.
+///
+/// This is a fallback for when no remote ClickHouse is configured. Tables are created
+/// using the schema from user code, but no data is seeded.
+///
+/// # Arguments
+/// * `project` - The current project configuration
+/// * `infra_map` - The infrastructure map containing table definitions
+///
+/// # Returns
+/// A vector of status messages for each table processed
+pub async fn create_external_tables_from_local_schema(
+    project: &Project,
+    infra_map: &InfrastructureMap,
+) -> Result<Vec<String>, RoutineFailure> {
+    let local_client = ClickHouseClient::new(&project.clickhouse_config).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "CreateExternalTables".to_string(),
+            format!("Failed to create local ClickHouse client: {}", e),
+        ))
+    })?;
+
+    let mirrorable_tables = infra_map.get_mirrorable_external_tables();
+    if mirrorable_tables.is_empty() {
+        debug!("No mirrorable external tables found");
+        return Ok(vec![]);
+    }
+
+    let local_db = local_client.config().db_name.clone();
+    let refresh_on_startup = project.dev.externally_managed.tables.refresh_on_startup;
+    let is_dev = !project.is_production;
+
+    info!(
+        "Creating {} external tables from local schema (refresh={})",
+        mirrorable_tables.len(),
+        refresh_on_startup
+    );
+
+    let mut results = Vec::with_capacity(mirrorable_tables.len());
+
+    for table in mirrorable_tables {
+        let table_name = &table.name;
+
+        // Check if table already exists
+        let exists = match local_client.table_exists(&local_db, table_name).await {
+            Ok(exists) => exists,
+            Err(e) => {
+                results.push(format_error(
+                    table_name,
+                    &format!("failed to check existence: {}", e),
+                ));
+                continue;
+            }
+        };
+
+        // Skip if exists and not refreshing
+        if exists && !refresh_on_startup {
+            results.push(format_warning(table_name, "already exists (skipped)"));
+            continue;
+        }
+
+        // Drop existing table if refreshing
+        if exists {
+            debug!("Dropping existing table: {}", table_name);
+            if let Err(e) = local_client
+                .drop_table_if_exists(&local_db, table_name)
+                .await
+            {
+                results.push(format_error(table_name, &format!("failed to drop: {}", e)));
+                continue;
+            }
+        }
+
+        // Convert to ClickHouse table and generate DDL
+        let ch_table = match std_table_to_clickhouse_table(table) {
+            Ok(t) => t,
+            Err(e) => {
+                results.push(format_error(
+                    table_name,
+                    &format!("failed to convert schema: {}", e),
+                ));
+                continue;
+            }
+        };
+
+        let create_sql = match create_table_query(&local_db, ch_table, is_dev) {
+            Ok(sql) => sql,
+            Err(e) => {
+                results.push(format_error(
+                    table_name,
+                    &format!("failed to generate DDL: {}", e),
+                ));
+                continue;
+            }
+        };
+
+        // Execute the create table query
+        debug!("Creating table from local schema: {}", table_name);
+        if let Err(e) = local_client.execute_sql(&create_sql).await {
+            results.push(format_error(
+                table_name,
+                &format!("failed to create: {}", e),
+            ));
+            continue;
+        }
+
+        results.push(format_success(
+            table_name,
+            "created (empty, from local schema)",
+        ));
+    }
+
+    Ok(results)
 }
 
 #[cfg(test)]
