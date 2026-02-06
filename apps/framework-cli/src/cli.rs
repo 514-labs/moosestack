@@ -214,8 +214,21 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
     }
 }
 
+const AFTER_HELP: &str = "\
+LEARN MORE
+  Documentation:       https://docs.fiveonefour.com/moosestack
+  Troubleshooting:     https://docs.fiveonefour.com/moosestack/help/troubleshooting
+
+FEEDBACK
+  We'd love to hear your feedback! Join our Slack community at:
+      https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg
+
+  You can also submit feedback directly via `moose feedback`, which
+  has the ability to include log file locations if you're experiencing issues.
+";
+
 #[derive(Parser)]
-#[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
+#[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None, after_help = AFTER_HELP)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
