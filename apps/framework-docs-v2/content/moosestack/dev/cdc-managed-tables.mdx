@@ -172,12 +172,38 @@ Start the development server:
 moose dev
 ```
 
+### Credential Prompt (First Run)
+
+On first run, if no credentials are found in your keychain or environment variables, Moose prompts you interactively:
+
+```
+Credentials Remote ClickHouse credentials required:
+            Host:     your-clickhouse-host.example.com
+            Database: production_db
+
+Enter username (default: default)
+> your_username
+
+Enter password
+> ********
+
+Keychain Stored credentials securely for project 'my-analytics-app'
+```
+
+Credentials are stored in your OS keychain (macOS Keychain, Windows Credential Manager, or Linux Secret Service) and reused on subsequent runs. To skip the prompt, set environment variables instead:
+
+```bash
+export MOOSE_REMOTE_CLICKHOUSE_USER=your_username
+export MOOSE_REMOTE_CLICKHOUSE_PASSWORD=your_password
+```
+
 ### What Happens on Startup
 
-1. **Remote connected** - Moose connects to your remote ClickHouse
-2. **Local tables created** - Mirror tables are created in local ClickHouse matching remote schemas
-3. **Data seeded** - If `sample_size > 0`, rows are copied from remote for local testing
-4. **Server starts** - Your APIs and views work against local data
+1. **Credentials resolved** - From keychain or environment variables (prompts if missing)
+2. **Remote connected** - Moose connects to your remote ClickHouse
+3. **Local tables created** - Mirror tables are created in local ClickHouse matching remote schemas
+4. **Data seeded** - If `sample_size > 0`, rows are copied from remote for local testing
+5. **Server starts** - Your APIs and views work against local data
 
 ### Example Output
 
