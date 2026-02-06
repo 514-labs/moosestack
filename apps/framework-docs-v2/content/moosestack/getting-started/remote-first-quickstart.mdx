@@ -1,93 +1,74 @@
 ---
 title: Remote-First Quickstart
-description: Use ClickHouse Cloud and Redpanda Cloud for development while keeping a local Moose runtime
+description: Run Moose locally with ClickHouse Cloud and Redpanda Cloud
 order: 3
-tags:
-  - status:current
-  - status:planned
 ---
-
-import { Callout } from "@/components/mdx";
 
 # Remote-First Quickstart
 
-Use this guide if you want the Moose runtime locally, but want data infrastructure in cloud services:
+Use this guide when your team runs data infrastructure in cloud services.
+
+This flow uses:
 
 - ClickHouse Cloud for OLAP
 - Redpanda Cloud for streaming
+- Local Moose runtime for development loops
 
-## Status
-
-| Experience | Status |
-| --- | --- |
-| Local-first (`moose dev`) | Current |
-| Remote-first with `moose dev --no-infra` + cloud env vars | Current |
-| Profile-native remote flow (`remote_hybrid`, `remote_full`) | Planned (defined in RFC) |
-
-<Callout type="info" title="What ships in this docs update">
-This page documents both current commands and planned experience contract. Planned sections are marked explicitly.
-</Callout>
-
-## Current Workflow (Available Today)
-
-### 1) Configure cloud connections
-
-Set environment variables for your project:
+## 1. Set environment variables
 
 ```bash
-export MOOSE_CLICKHOUSE_CONFIG__URL="https://<user>:<password>@<host>:8443/<database>"
+export MOOSE_OLAP__ENGINE="clickhouse"
+export MOOSE_OLAP__PROFILE="remote"
+export MOOSE_OLAP__CONNECTION="https://<user>:<password>@<host>:8443/<database>"
+
+export MOOSE_DEV_INFRA__PROFILE="remote_hybrid"
 
 export MOOSE_REDPANDA_CONFIG__BROKER="<broker-host>:9092"
 export MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL="SASL_SSL"
 export MOOSE_REDPANDA_CONFIG__SASL_MECHANISM="SCRAM-SHA-256"
 export MOOSE_REDPANDA_CONFIG__SASL_USERNAME="<username>"
 export MOOSE_REDPANDA_CONFIG__SASL_PASSWORD="<password>"
-export MOOSE_REDPANDA_CONFIG__NAMESPACE="<team-or-branch-namespace>"
+export MOOSE_REDPANDA_CONFIG__NAMESPACE="<team-or-branch>"
 ```
 
-### 2) Start local runtime without local infra containers
+## 2. Start development
 
 ```bash
-moose dev --no-infra
-```
-
-### 3) Verify migration and schema flows
-
-```bash
-moose generate migration --clickhouse-url "$MOOSE_CLICKHOUSE_CONFIG__URL" --save
-moose migrate --clickhouse-url "$MOOSE_CLICKHOUSE_CONFIG__URL"
-```
-
-## Planned Workflow (RFC Contract)
-
-The RFC defines an explicit profile model for developer intent:
-
-- `local`
-- `remote_hybrid`
-- `remote_full`
-
-Illustrative contract (planned):
-
-```bash
-# planned contract example
 moose dev --infra-profile remote_hybrid
 ```
 
-The planned profile flow standardizes:
+## 3. Generate and apply migrations
 
-1. Remote preflight checks
-2. Profile-aware diagnostics
-3. Resource isolation guidance for cloud development
+```bash
+moose generate migration \
+  --olap-engine clickhouse \
+  --olap-url "$MOOSE_OLAP__CONNECTION" \
+  --save
 
-## Recommended Resource Isolation
+moose migrate \
+  --olap-engine clickhouse \
+  --olap-url "$MOOSE_OLAP__CONNECTION"
+```
 
-For shared environments, use deterministic isolation keys:
+## 4. Verify remote schema sync
 
-- ClickHouse: per-branch schema or per-branch database policy
-- Redpanda: per-branch namespace/topic prefix
+```bash
+moose plan \
+  --olap-engine clickhouse \
+  --olap-url "$MOOSE_OLAP__CONNECTION"
+```
 
-## Related Pages
+## Failure handling
 
-- [Engine and Dev Profile Contract](/moosestack/configuration/engine-and-dev-profile)
-- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
-- [Multi-Engine Migration Playbooks](/moosestack/migrate/multi-engine-migration-playbooks)
+| Error code                 | Meaning                                                | What to check first                                  |
+| -------------------------- | ------------------------------------------------------ | ---------------------------------------------------- |
+| `connection_error`         | Moose cannot connect to OLAP or streaming services     | URL, credentials, network rules                      |
+| `profile_misconfiguration` | Infra profile and connection setup conflict            | `MOOSE_DEV_INFRA__PROFILE`, local container settings |
+| `capability_mismatch`      | Requested feature is not supported for selected engine | Engine capability matrix                             |
+| `migration_contract_error` | Plan cannot be applied safely                          | Regenerate plan, review drift and lifecycle          |
+
+## Next steps
+
+- Read [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- Read [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- Read [Multi-Engine Migration Playbooks](/moosestack/migrate/multi-engine-migration-playbooks)

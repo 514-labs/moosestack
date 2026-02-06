@@ -1,291 +1,77 @@
 ---
 title: Troubleshooting
-description: Troubleshoot common issues
-order: 1
+description: Fix common MooseStack setup, connection, and migration issues
+order: 2
 category: help
 ---
 
-import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
-
 # Troubleshooting
 
-Common issues and their solutions when working with Moose.
+Use this page when setup, migrations, or runtime checks fail.
 
-## Development Environment
+## CLI does not run
 
-### Issue: `moose dev` fails to start
+1. Run `moose --version`.
+2. If command is missing, reload your shell.
+3. Re-run the install script.
 
-**Possible causes and solutions:**
-
-1. **Port conflicts**
-   - Check if ports 4000-4002 are already in use
-   - Solution: Kill the conflicting processes or configure different ports
-
-   ```bash
-   # Find processes using ports
-   lsof -i :4000-4002
-   
-   # Kill process by PID
-   kill <PID>
-   ```
-   
-   **Configuration Override:**
-   You can also change the ports Moose uses via environment variables:
-   ```bash
-   export MOOSE_HTTP_PORT=4040
-   export MOOSE_MANAGEMENT_PORT=5010
-   moose dev
-   ```
-
-2. **Missing dependencies**
-   - Solution: Ensure all dependencies are installed
-
-   <LanguageTabs>
-     <LanguageTabContent value="typescript" label="TypeScript">
-     ```bash
-     npm install
-     ```
-     </LanguageTabContent>
-     <LanguageTabContent value="python" label="Python">
-     ```bash
-     pip install .
-     ```
-     </LanguageTabContent>
-   </LanguageTabs>
-
-3. **Docker not running**
-   - Solution: Start Docker Desktop or Docker daemon
-
-   ```bash
-   # Check Docker status
-   docker info
-   
-   # Start Docker on Linux
-   sudo systemctl start docker
-   ```
-
-4. **Container Startup Failures**
-   - Check if specific containers failed to start.
-   - Solution: View container logs to debug service-specific issues.
-
-   ```bash
-   # View logs
-   moose logs
-   ```
-
-## Data Ingestion
-
-### Issue: Data not appearing in tables
-
-1. **Validation errors**
-   - Check logs for validation failures
-   - Solution: Ensure data matches schema
-
-   ```bash filename="Terminal" copy
-   moose logs
-   ```
-
-2. **Stream processing errors**
-   - Solution: Check transform functions for errors
-   
-   ```bash filename="Terminal" copy
-   moose logs --filter functions
-   ```
-
-3. **Database connectivity**
-   - Solution: Verify database credentials in `.moose/config.toml`
-   
-```toml filename=".moose/config.toml" copy
-[clickhouse_config]
-db_name = "local"
-user = "panda"
-password = "pandapass"
-use_ssl = false
-host = "localhost"
-host_port = 18123
-native_port = 9000
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ```
 
-## Stream Processing
+## `connection_error`
 
-### Issue: High processing latency
+Common causes:
 
-1. **Insufficient parallelism**
-   - Solution: Increase stream parallelism
-   
-   <LanguageTabs>
-     <LanguageTabContent value="typescript" label="TypeScript">
-     ```typescript
-     const stream = new Stream<Data>("high_volume", {
-       parallelism: 8  // Increase from default
-     });
-     ```
-     </LanguageTabContent>
-     <LanguageTabContent value="python" label="Python">
-     ```python
-     from moose_lib import Stream, StreamConfig
+- Wrong URL format in `MOOSE_OLAP__CONNECTION`
+- Invalid credentials
+- DNS, TLS, or firewall issues
 
-     stream = Stream[Data]("high_volume", StreamConfig(parallelism=8))
-     ```
-     </LanguageTabContent>
-   </LanguageTabs>
+Check:
 
-### Issue: Data transformations not working
+```bash
+echo "$MOOSE_OLAP__ENGINE"
+echo "$MOOSE_OLAP__CONNECTION"
+```
 
-1. **Transform function errors**
-   - Solution: Debug transformation logic
-   
-   <LanguageTabs>
-     <LanguageTabContent value="typescript" label="TypeScript">
-     ```typescript
-     // Add logging to transform
-     stream.addTransform(outputStream, (record) => {
-       console.log('Processing record:', record.id);
-       try {
-         // Your transformation logic
-         return transformedRecord;
-       } catch (error) {
-         console.error('Transform error:', error);
-         return undefined;  // Skip record on error
-       }
-     });
-     ```
-     </LanguageTabContent>
-     <LanguageTabContent value="python" label="Python">
-     ```python
-     # Add logging to transform
-     def transform(record: Data) -> Data:
-         print(f"Processing record: {record.id}")
-         try:
-             # Your transformation logic
-             return transformed_record   
-         except Exception as e:
-             print(f"Transform error: {e}")
-             return None  # Skip record on error        
-     ```
-     </LanguageTabContent>
-   </LanguageTabs>
+## `profile_misconfiguration`
 
-## Database Issues
+Common causes:
 
-### Issue: Slow queries
+- `moose dev --infra-profile ...` does not match config intent
+- Local profile used with remote-only dependencies
 
-1. **Missing or improper indexes**
-   - Solution: Check orderByFields configuration
-   
-   <LanguageTabs>
-     <LanguageTabContent value="typescript" label="TypeScript">
-     ```typescript
-     const table = new OlapTable<Data>("slow_table", {
-       orderByFields: ["frequently_queried_field", "timestamp"]
-     });
-     ```
-     </LanguageTabContent>
-     <LanguageTabContent value="python" label="Python">
-     ```python
-     from moose_lib import OlapTable, OlapConfig
+Check `moose.config.toml`:
 
-     table = OlapTable[Data]("slow_table", OlapConfig(
-         order_by_fields=["frequently_queried_field", "timestamp"]
-     ))
-     ```
-     </LanguageTabContent>
-   </LanguageTabs>
+```toml
+[olap]
+engine = "clickhouse"
+profile = "remote"
+connection = "https://user:password@host:8443/db"
 
-2. **Large result sets**
-   - Solution: Add limits and pagination
-   
-   <LanguageTabs>
-     <LanguageTabContent value="typescript" label="TypeScript">
-     ```typescript
-     // In query API
-     const results = await client.query.execute(sql`
-       SELECT * FROM large_table
-       WHERE category = 'example'
-       LIMIT 100
-     `);
-     ```
-     </LanguageTabContent>
-     <LanguageTabContent value="python" label="Python">
-     ```python
-     # In query API
-     results = client.query.execute(
-       # not an f-string, the values are provided in the dict
-       """
-       SELECT * FROM large_table
-       WHERE category = {category}
-       LIMIT {limit}
-       """, {"category": "example", "limit": 100}
-     )
-     ```
-     </LanguageTabContent>
-   </LanguageTabs>
+[dev_infra]
+profile = "remote_hybrid"
+```
 
-## Deployment Issues
+## `migration_contract_error`
 
-### Issue: Deployment fails
+Common causes:
 
-1. **Configuration errors**
-   - Solution: Check deployment configuration
-   
-   ```bash
-   # Validate configuration
-   moose validate --config
-   ```
+- Remote schema changed after plan generation
+- Local code changed after plan generation
 
-2. **Resource limitations**
-   - Solution: Increase resource allocation
-   
-   ```yaml
-   # In kubernetes manifest
-   resources:
-     requests:
-       memory: "1Gi"
-       cpu: "500m"
-     limits:
-       memory: "2Gi"
-       cpu: "1000m"
-   ```
+Fix:
 
-3. **Permission issues**
-   - Solution: Verify service account permissions
-   
-   ```bash
-   # Check permissions
-   moose auth check
-   ```
+```bash
+moose generate migration --olap-engine "$MOOSE_OLAP__ENGINE" --olap-url "$MOOSE_OLAP__CONNECTION" --save
+moose migrate --olap-engine "$MOOSE_OLAP__ENGINE" --olap-url "$MOOSE_OLAP__CONNECTION"
+```
 
-### Issue: Migration stuck with "Migration already in progress"
+## `capability_mismatch`
 
-**Cause:** A previous migration was interrupted without releasing its lock.
+This means a feature is not supported for the selected engine.
 
-**Solution:**
+Next step:
 
-1. **Wait 5 minutes** - locks expire automatically
-
-2. **Or manually clear the lock:**
-   ```sql
-   DELETE FROM _MOOSE_STATE WHERE key = 'migration_lock';
-   ```
-
-3. **Verify it worked:**
-   ```sql
-   SELECT * FROM _MOOSE_STATE WHERE key = 'migration_lock';
-   -- Should return no rows
-   ```
-
-<Callout type="info">
-The `_MOOSE_STATE` table uses ClickHouse's KeeperMap engine for distributed locking, ensuring only one migration runs at a time across multiple deployments.
-</Callout>
-
-## Getting Help
-
-If you can't resolve an issue:
-
-1. Ask for help on the [Moose community Slack channel](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
-2. Search existing [GitHub issues](https://github.com/514-labs/moose/issues)
-3. Open a new issue with:
-   - Moose version (`moose --version`)
-   - Error messages and logs
-   - Steps to reproduce
-   - Expected vs. actual behavior
+- Check [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- Move the model to common-core features or choose a different engine

@@ -1,0 +1,50 @@
+---
+title: DuckDB
+description: Use DuckDB for local analytics and light production workflows
+order: 2
+category: reference
+---
+
+# DuckDB
+
+DuckDB is the fastest way to iterate locally. It keeps setup small and feedback fast.
+
+## Recommended profile
+
+```toml
+[olap]
+engine = "duckdb"
+profile = "local"
+connection = "duckdb:///./.moose/dev.duckdb"
+
+[dev_infra]
+profile = "local"
+```
+
+## Typical commands
+
+```bash
+moose dev --infra-profile local
+moose plan --olap-engine duckdb --olap-url "duckdb:///./.moose/dev.duckdb"
+moose generate migration --olap-engine duckdb --olap-url "duckdb:///./.moose/dev.duckdb" --save
+moose migrate --olap-engine duckdb --olap-url "duckdb:///./.moose/dev.duckdb"
+```
+
+## MotherDuck path
+
+When your team needs managed remote execution:
+
+1. Keep the same models.
+2. Update `olap.connection` to your MotherDuck connection.
+3. Keep `--olap-engine duckdb` in CI and deploy commands.
+
+## Known differences
+
+- DuckDB focuses on local file-backed workflows.
+- Some engine-specific tuning differs from ClickHouse and Snowflake.
+- Use the capability matrix for portability checks.
+
+## Related pages
+
+- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- [Multi-Engine Migration Playbooks](/moosestack/migrate/multi-engine-migration-playbooks)

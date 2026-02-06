@@ -1,82 +1,40 @@
 ---
 title: Configuration
-description: Understand how MooseStack configuration works
+description: Configure MooseStack with an engine-neutral contract
 order: 10
 ---
 
 # Configuration
 
-MooseStack settings live in two places: a project config file and runtime environment variables. The config file is tracked in git and defines the shape of your app; env vars are per-environment values (often secrets) that override the file at runtime. Moose Runtime loads both at startup, with env vars winning when they overlap.
+MooseStack configuration has two layers:
 
-## Concept
+1. `moose.config.toml` for shared project contract.
+2. `MOOSE_*` environment variables for environment overrides and secrets.
 
-Two layers you configure:
+## Core contract
 
-1. **Project Definition (`moose.config.toml`)** — Project structure, languages, feature flags, and dev infrastructure. Tracked in git.
-2. **Runtime Configuration (Environment Variables)** — How you override the file for each environment (credentials, telemetry flags, hostnames, etc.). Use env vars (`.env.prod`, `.env.dev`, `.env.local`) or your platform’s secrets manager.
+```toml
+[olap]
+engine = "clickhouse" # clickhouse | duckdb | snowflake
+profile = "remote"    # local | remote
+connection = "https://user:password@host:8443/db"
 
-## Configuration Resolution
+[dev_infra]
+profile = "remote_hybrid" # local | remote_hybrid | remote_full
+```
 
-MooseStack resolves configuration values in the following order (highest priority first):
+## Environment variable mapping
 
-1. **System Env Vars** - `MOOSE_*` variables set in the shell or platform. Overrides everything.
-2. **`.env.local`** - Local overrides for development secrets. **Gitignored**.
-3. **`.env.{env}`** - Environment profiles (e.g., `.env.prod` or `.env.dev`).
-4. **`.env`** - Global shared defaults.
-5. **`moose.config.toml`** - Base project configuration file.
-6. **Defaults** - Framework built-in defaults.
+| Config key          | Environment variable       |
+| ------------------- | -------------------------- |
+| `olap.engine`       | `MOOSE_OLAP__ENGINE`       |
+| `olap.profile`      | `MOOSE_OLAP__PROFILE`      |
+| `olap.connection`   | `MOOSE_OLAP__CONNECTION`   |
+| `dev_infra.profile` | `MOOSE_DEV_INFRA__PROFILE` |
 
-## Environment Variables
+## Read next
 
-Environment variables are the primary mechanism for managing secrets and differentiating between environments.
-
-### Syntax
-
-**Pattern**: `moose.config.toml` → `MOOSE_{SECTION}__{KEY}`
-
-- All env vars are prefixed with `MOOSE_`.
-- `SECTION` is UPPER_CASE, underscore-separated name of the section in `moose.config.toml` (e.g., `clickhouse_config`, `features`, etc.)
-- `KEY` is the key in the section (e.g., `host`, `workflows`, etc.)
-- Double underscores (`__`) separate the section and key.
-
-### `.env` Files
-
-Moose Runtime automatically loads `.env` files in order of precedence. Files loaded later override values from earlier files.
-
-| File | Purpose | Committed? | When Loaded |
-|:-----|:--------|:-----------|:------------|
-| `.env` | Shared defaults (e.g., port numbers, feature flags) | ✅ Yes | Always |
-| `.env.dev` | Development-specific overrides | ✅ Yes | `moose dev` only |
-| `.env.prod` | Production-specific overrides | ✅ Yes | `moose prod`, `moose build` |
-| `.env.local` | **Local secrets** (passwords, API keys) and personal overrides | ❌ **NO** | `moose dev` only (gitignored) |
-
-<Callout type="warning" title="Production Security">
-  Never commit `.env.local` to version control. For production deployments, use platform-specific secret management (Kubernetes Secrets, AWS Secrets Manager) instead of `.env` files for sensitive data.
-</Callout>
-
-## Configuration Reference
-
-### Core Settings
-
-- **[Project Settings](/moosestack/configuration/project-settings)** - Top-level project settings and directory structure.
-- **[TypeScript](/moosestack/configuration/typescript)** - Specific settings for TypeScript projects.
-- **[Telemetry](/moosestack/configuration/telemetry)** - Data collection settings.
-- **[Git](/moosestack/configuration/git)** - Version control integration settings.
-- **[Features](/moosestack/configuration/features)** - Feature flags to enable or disable capabilities.
-- **[Migrations](/moosestack/configuration/migrations)** - Database migration behavior and operations.
-
-### Infrastructure
-
-- **[Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)** - Current and planned contract for engine selection and local/remote dev profiles.
-- **[ClickHouse](/moosestack/configuration/clickhouse)** - OLAP database connection and behavior.
-- **[Redpanda](/moosestack/configuration/redpanda)** - Streaming platform configuration.
-- **[Redis](/moosestack/configuration/redis)** - Caching and state management layer.
-- **[Temporal](/moosestack/configuration/temporal)** - Workflow orchestration engine.
-- **[HTTP Server](/moosestack/configuration/http-server)** - Local development server settings.
-- **[State Storage](/moosestack/configuration/state-storage)** - Migration state storage backend.
-
-### Security & Development
-
-- **[JWT](/moosestack/configuration/jwt)** - JSON Web Token validation settings.
-- **[Admin API](/moosestack/configuration/admin-api)** - Authentication for the Admin API.
-- **[Dev Environment](/moosestack/configuration/dev-environment)** - Local development scripts and networking.
+- [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- [Dev Environment](/moosestack/configuration/dev-environment)
+- [Redpanda Configuration](/moosestack/configuration/redpanda)
+- [Redis Configuration](/moosestack/configuration/redis)

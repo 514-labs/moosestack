@@ -1,0 +1,51 @@
+---
+title: Legacy ClickHouse Compatibility
+description: Map legacy ClickHouse-first config and flags to the canonical multi-engine contract
+order: 15
+category: migrate
+---
+
+# Legacy ClickHouse Compatibility
+
+Use this appendix when migrating old projects to the canonical engine-neutral contract.
+
+## Legacy to canonical mapping
+
+| Legacy surface | Canonical surface |
+| --- | --- |
+| `[clickhouse_config]` | `[olap]` with `engine = "clickhouse"` |
+| `MOOSE_CLICKHOUSE_CONFIG__URL` | `MOOSE_OLAP__CONNECTION` |
+| `moose plan --clickhouse-url ...` | `moose plan --olap-engine clickhouse --olap-url ...` |
+| `moose generate migration --clickhouse-url ...` | `moose generate migration --olap-engine clickhouse --olap-url ...` |
+| `moose migrate --clickhouse-url ...` | `moose migrate --olap-engine clickhouse --olap-url ...` |
+| `moose db pull --clickhouse-url ...` | `moose db pull --olap-engine clickhouse --olap-url ...` |
+
+## Example migration
+
+### Before
+
+```toml
+[clickhouse_config]
+db_name = "local"
+host = "localhost"
+host_port = 18123
+user = "panda"
+password = "pandapass"
+```
+
+### After
+
+```toml
+[olap]
+engine = "clickhouse"
+profile = "local"
+connection = "http://panda:pandapass@localhost:18123/local"
+
+[dev_infra]
+profile = "local"
+```
+
+## Notes
+
+- Keep this page as reference only.
+- All core docs use the canonical surface.

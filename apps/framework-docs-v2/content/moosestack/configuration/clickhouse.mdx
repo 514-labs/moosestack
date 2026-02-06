@@ -1,43 +1,43 @@
 ---
-title: ClickHouse Configuration
-description: Configure the OLAP database connection and behavior
+title: ClickHouse Engine Profile
+description: Configure ClickHouse as your selected OLAP engine
 order: 41
 ---
 
-import { Callout } from "@/components/mdx";
+# ClickHouse Engine Profile
 
-# ClickHouse Configuration
+This page shows the ClickHouse-specific profile using the canonical engine-neutral contract.
 
-Configure the OLAP database connection.
+## Recommended config
 
-<Callout type="warning" title="Security Warning">
-**NEVER put production credentials in `moose.config.toml`**. For production environments or when connecting to external infrastructure, **ALWAYS use environment variables** and/or secrets to securely inject credentials.
-</Callout>
+```toml
+[olap]
+engine = "clickhouse"
+profile = "remote"
+connection = "https://user:password@host:8443/db"
 
-```toml filename="moose.config.toml"
-[clickhouse_config]
-# Database name (Default: "local")
-db_name = "local"
-# ClickHouse user (Default: "panda")
-user = "panda"
-# ClickHouse password (Default: "pandapass")
-password = "pandapass"
-# Whether to use SSL for connection (Default: false)
-use_ssl = false
-# ClickHouse host (Default: "localhost")
-host = "localhost"
-# ClickHouse HTTP port (Default: 18123)
-host_port = 18123
-# ClickHouse native protocol port (Default: 9000)
-native_port = 9000
+[dev_infra]
+profile = "remote_hybrid"
 ```
 
-| Key | Env Variable | Default | Description |
-|:----|:-------------|:--------|:------------|
-| `db_name` | `MOOSE_CLICKHOUSE_CONFIG__DB_NAME` | "local" | The database name to use. |
-| `user` | `MOOSE_CLICKHOUSE_CONFIG__USER` | "panda" | Database user. |
-| `password` | `MOOSE_CLICKHOUSE_CONFIG__PASSWORD` | "pandapass" | **SECRET**. Use env var in prod. |
-| `use_ssl` | `MOOSE_CLICKHOUSE_CONFIG__USE_SSL` | false | Enable SSL connection. |
-| `host` | `MOOSE_CLICKHOUSE_CONFIG__HOST` | "localhost" | ClickHouse server host. |
-| `host_port` | `MOOSE_CLICKHOUSE_CONFIG__HOST_PORT` | 18123 | HTTP interface port (and Docker bind port in dev). |
-| `native_port` | `MOOSE_CLICKHOUSE_CONFIG__NATIVE_PORT` | 9000 | Native TCP protocol port. |
+## Environment variables
+
+```bash
+MOOSE_OLAP__ENGINE=clickhouse
+MOOSE_OLAP__PROFILE=remote
+MOOSE_OLAP__CONNECTION=https://user:password@host:8443/db
+MOOSE_DEV_INFRA__PROFILE=remote_hybrid
+```
+
+## Typical command set
+
+```bash
+moose dev --infra-profile remote_hybrid
+moose plan --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+moose migrate --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## Related pages
+
+- [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- [Legacy ClickHouse Compatibility](/moosestack/migrate/legacy-clickhouse-compatibility)

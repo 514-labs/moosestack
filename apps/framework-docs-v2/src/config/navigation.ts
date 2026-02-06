@@ -164,12 +164,19 @@ const moosestackNavigationConfig: NavigationConfig = [
     languages: ["typescript", "python"],
     external: true,
   },
-  // Connect to an existing ClickHouse
+  // Connect to an existing warehouse
+  {
+    type: "page",
+    slug: "moosestack/getting-started/from-existing-warehouse",
+    icon: IconDatabaseImport,
+    title: "Existing Warehouse",
+    languages: ["typescript", "python"],
+  },
   {
     type: "page",
     slug: "moosestack/getting-started/from-clickhouse",
     icon: IconDatabase,
-    title: "Existing ClickHouse",
+    title: "ClickHouse Onboarding",
     languages: ["typescript", "python"],
   },
   // Embed in an existing app
@@ -520,6 +527,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/migrate/legacy-clickhouse-compatibility",
+        title: "Legacy ClickHouse Compatibility",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/migrate/plan-format",
         title: "Plan Reference",
         languages: ["typescript", "python"],
@@ -759,10 +772,24 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/engines",
-    title: "Table Engines",
+    title: "Engine Guides",
     icon: IconServer,
     languages: ["typescript", "python"],
     children: [
+      {
+        type: "page",
+        slug: "moosestack/engines/duckdb",
+        title: "DuckDB",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/engines/snowflake",
+        title: "Snowflake",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "ClickHouse Engine Details" },
       {
         type: "page",
         slug: "moosestack/engines/merge-tree",

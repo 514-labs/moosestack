@@ -1,94 +1,53 @@
 ---
 title: Externally Managed Lifecycle
-description: Configure Moose to interact with existing, externally managed database schemas.
+description: Model external resources without taking ownership of schema lifecycle
 order: 23
 category: migrate
 ---
 
-import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
-
 # Externally Managed
 
-`LifeCycle.EXTERNALLY_MANAGED` tells MooseStack to interact with existing resources without managing their schema or lifecycle. In this mode, you are fully responsible for creating and maintaining the database schema outside the context of your code.
+Use `EXTERNALLY_MANAGED` when another system owns schema changes.
 
-## When to Use
+## When to use
 
-Mark a table `EXTERNALLY_MANAGED` when you want to connect to an existing database table where the schema is owned by another team, process, or tool (e.g., PeerDB, Debezium, ClickPipes).
+- CDC services create and evolve tables.
+- A platform team owns warehouse schema.
+- You only need typed models and query safety in Moose.
 
-## Why Model External Tables in MooseStack?
-
-Defining the table lets you write type-safe queries, create [Views](/moosestack/olap/model-view), [Materialized Views](/moosestack/olap/model-materialized-view), and [API endpoints](/moosestack/api) against schemas you don't own while still getting full IDE autocompletion.
-
-
-## Syncing External Models
-
-Because MooseStack doesn't manage the schema, your code definitions must match the database exactly. Mismatches can cause runtime errors.
-
-Use `moose db pull` to generate Moose OLAP models from your remote database:
+## Keep external models synced
 
 ```bash
-moose db pull --clickhouse-url <YOUR_CLICKHOUSE_URL>
+moose db pull --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
 ```
 
-## Configuration
+## TypeScript example
 
-<LanguageTabs>
-  <LanguageTabContent value="typescript" label="TypeScript">
+```ts
+import { OlapTable, LifeCycle, Key } from "@514labs/moose-lib";
 
-```ts title="ExternallyManagedExample.ts"
-import { Stream, OlapTable, LifeCycle, Key } from "@514labs/moose-lib";
-
-interface ExternalUserData {
+interface ExternalUser {
   userId: Key<string>;
-  fullName: string;
-  emailAddress: string;
-  createdAt: Date;
+  email: string;
 }
 
-// Connect to existing database table
-const legacyUserTable = new OlapTable<ExternalUserData>("legacy_users", {
-  lifeCycle: LifeCycle.EXTERNALLY_MANAGED
-});
-
-// Connect to existing Kafka topic
-const legacyStream = new Stream<ExternalUserData>("legacy_user_stream", {
+export const ExternalUsers = new OlapTable<ExternalUser>("external_users", {
   lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
-  destination: legacyUserTable
 });
 ```
 
-  </LanguageTabContent>
-  <LanguageTabContent value="python" label="Python">
+## Python example
 
-```py filename="ExternallyManagedExample.py" copy
-from moose_lib import Stream, OlapTable, OlapConfig, StreamConfig, LifeCycle, Key
+```python
 from pydantic import BaseModel
-from datetime import datetime
+from moose_lib import Key, LifeCycle, OlapConfig, OlapTable
 
-class ExternalUserData(BaseModel):
+class ExternalUser(BaseModel):
     user_id: Key[str]
-    full_name: str
-    email_address: str
-    created_at: datetime
+    email: str
 
-# Connect to existing database table
-legacy_user_table = OlapTable[ExternalUserData]("legacy_users", OlapConfig(
-    life_cycle=LifeCycle.EXTERNALLY_MANAGED
-))
-
-# Connect to existing Kafka topic
-legacy_stream = Stream[ExternalUserData]("legacy_user_stream", StreamConfig(
-    life_cycle=LifeCycle.EXTERNALLY_MANAGED,
-    destination=legacy_user_table
-))
+external_users = OlapTable[ExternalUser](
+    "external_users",
+    OlapConfig(life_cycle=LifeCycle.EXTERNALLY_MANAGED),
+)
 ```
-
-  </LanguageTabContent>
-</LanguageTabs>
-
-<Callout type="warning" title="Local Development Behavior">
-`moose dev` **WILL CREATE** `EXTERNALLY_MANAGED` tables in your local ClickHouse instance to enable development of queries and views against your schema.
-
-- **Local Updates**: Schema changes in code **WILL** update your local database.
-- **No Remote Impact**: These changes are **NEVER** applied to the remote database.
-</Callout>
