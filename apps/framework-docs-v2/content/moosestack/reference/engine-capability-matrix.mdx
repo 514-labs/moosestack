@@ -1,0 +1,56 @@
+---
+title: Engine Capability Matrix
+description: Compare portable and engine-specific behavior across ClickHouse, DuckDB, and Snowflake
+order: 1
+category: reference
+---
+
+# Engine Capability Matrix
+
+Use this matrix when you choose an engine or design a portable model.
+
+## Core portability
+
+| Capability                                         | ClickHouse | DuckDB | Snowflake |
+| -------------------------------------------------- | ---------- | ------ | --------- |
+| Engine selection in `moose.config.toml`            | Yes        | Yes    | Yes       |
+| `moose dev --infra-profile`                        | Yes        | Yes    | Yes       |
+| Common-core table modeling                         | Yes        | Yes    | Yes       |
+| View modeling                                      | Yes        | Yes    | Yes       |
+| Materialized view modeling                         | Yes        | Yes    | Yes       |
+| `moose plan` with `--olap-engine` and `--olap-url` | Yes        | Yes    | Yes       |
+| `moose generate migration` and `moose migrate`     | Yes        | Yes    | Yes       |
+| `moose db pull` external model sync                | Yes        | Yes    | Yes       |
+
+## Engine-specific differences
+
+| Area                       | ClickHouse                  | DuckDB                               | Snowflake                       |
+| -------------------------- | --------------------------- | ------------------------------------ | ------------------------------- |
+| Best fit                   | High-throughput analytics   | Local analytics and light production | Managed enterprise warehouse    |
+| Local-first development    | Strong                      | Strong                               | Not applicable                  |
+| Remote-first development   | Strong                      | MotherDuck path                      | Strong                          |
+| Warehouse compute controls | Cluster and engine settings | File and process model               | Warehouse and role model        |
+| Advanced tuning surface    | Table engines and TTL       | File layout and extensions           | Warehouse sizing and clustering |
+
+## Remote-first cloud support
+
+| Capability                             | ClickHouse Cloud | Redpanda Cloud |
+| -------------------------------------- | ---------------- | -------------- |
+| Auth and connection validation         | Yes              | Yes            |
+| Branch or namespace isolation guidance | Yes              | Yes            |
+| Profile-aware startup checks           | Yes              | Yes            |
+
+## Diagnostics behavior
+
+| Error code                 | Trigger                                         |
+| -------------------------- | ----------------------------------------------- |
+| `connection_error`         | Auth failure, DNS failure, TLS failure, timeout |
+| `profile_misconfiguration` | Infra profile conflicts with runtime config     |
+| `capability_mismatch`      | Feature not supported by selected engine        |
+| `migration_contract_error` | Plan cannot be applied safely                   |
+
+## Related pages
+
+- [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- [Remote-First Quickstart](/moosestack/getting-started/remote-first-quickstart)
+- [Engine Guides](/moosestack/engines)

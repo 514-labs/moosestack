@@ -24,6 +24,13 @@ export {
   SqlResource,
   View,
   MaterializedView,
+  CdcSource,
+  CdcSourceConfig,
+  CdcTable,
+  CdcTableConfig,
+  CdcEvent,
+  CdcOperation,
+  CdcRow,
   Task,
   Workflow,
   ETLPipeline,
@@ -52,6 +59,8 @@ export {
   getViews,
   getMaterializedView,
   getMaterializedViews,
+  getCdcSources,
+  getCdcSource,
 } from "./dmv2";
 
 export {

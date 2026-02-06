@@ -757,6 +757,9 @@ pub fn show_process_changes(process_changes: &[ProcessChange]) {
         }) => {
             infra_updated("Reloading Orchestration worker...");
         }
+        ProcessChange::CdcSource(cdc_change) => {
+            handle_standard_change!(cdc_change);
+        }
     });
 }
 

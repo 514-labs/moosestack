@@ -1,0 +1,74 @@
+---
+title: Remote-First Quickstart
+description: Run Moose locally with ClickHouse Cloud and Redpanda Cloud
+order: 3
+---
+
+# Remote-First Quickstart
+
+Use this guide when your team runs data infrastructure in cloud services.
+
+This flow uses:
+
+- ClickHouse Cloud for OLAP
+- Redpanda Cloud for streaming
+- Local Moose runtime for development loops
+
+## 1. Set environment variables
+
+```bash
+export MOOSE_OLAP__ENGINE="clickhouse"
+export MOOSE_OLAP__PROFILE="remote"
+export MOOSE_OLAP__CONNECTION="https://<user>:<password>@<host>:8443/<database>"
+
+export MOOSE_DEV_INFRA__PROFILE="remote_hybrid"
+
+export MOOSE_REDPANDA_CONFIG__BROKER="<broker-host>:9092"
+export MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL="SASL_SSL"
+export MOOSE_REDPANDA_CONFIG__SASL_MECHANISM="SCRAM-SHA-256"
+export MOOSE_REDPANDA_CONFIG__SASL_USERNAME="<username>"
+export MOOSE_REDPANDA_CONFIG__SASL_PASSWORD="<password>"
+export MOOSE_REDPANDA_CONFIG__NAMESPACE="<team-or-branch>"
+```
+
+## 2. Start development
+
+```bash
+moose dev --infra-profile remote_hybrid
+```
+
+## 3. Generate and apply migrations
+
+```bash
+moose generate migration \
+  --olap-engine clickhouse \
+  --olap-url "$MOOSE_OLAP__CONNECTION" \
+  --save
+
+moose migrate \
+  --olap-engine clickhouse \
+  --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## 4. Verify remote schema sync
+
+```bash
+moose plan \
+  --olap-engine clickhouse \
+  --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## Failure handling
+
+| Error code                 | Meaning                                                | What to check first                                  |
+| -------------------------- | ------------------------------------------------------ | ---------------------------------------------------- |
+| `connection_error`         | Moose cannot connect to OLAP or streaming services     | URL, credentials, network rules                      |
+| `profile_misconfiguration` | Infra profile and connection setup conflict            | `MOOSE_DEV_INFRA__PROFILE`, local container settings |
+| `capability_mismatch`      | Requested feature is not supported for selected engine | Engine capability matrix                             |
+| `migration_contract_error` | Plan cannot be applied safely                          | Regenerate plan, review drift and lifecycle          |
+
+## Next steps
+
+- Read [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- Read [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- Read [Multi-Engine Migration Playbooks](/moosestack/migrate/multi-engine-migration-playbooks)

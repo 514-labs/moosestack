@@ -151,18 +151,39 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "moosestack/getting-started/remote-first-quickstart",
+    title: "Remote-First Quickstart",
+    icon: IconDeviceLaptop,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/getting-started/branch-based-development",
+    title: "Branch-Based Development",
+    icon: IconGitCompare,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
     slug: "templates",
     title: "Browse Templates",
     icon: IconCode,
     languages: ["typescript", "python"],
     external: true,
   },
-  // Connect to an existing ClickHouse
+  // Connect to an existing warehouse
+  {
+    type: "page",
+    slug: "moosestack/getting-started/from-existing-warehouse",
+    icon: IconDatabaseImport,
+    title: "Existing Warehouse",
+    languages: ["typescript", "python"],
+  },
   {
     type: "page",
     slug: "moosestack/getting-started/from-clickhouse",
     icon: IconDatabase,
-    title: "Existing ClickHouse",
+    title: "ClickHouse Onboarding",
     languages: ["typescript", "python"],
   },
   // Embed in an existing app
@@ -514,6 +535,18 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/migrate/multi-engine-migration-playbooks",
+        title: "Multi-Engine Playbooks",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/migrate/legacy-clickhouse-compatibility",
+        title: "Legacy ClickHouse Compatibility",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/migrate/plan-format",
         title: "Plan Reference",
         languages: ["typescript", "python"],
@@ -634,6 +667,13 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "moosestack/reference/engine-capability-matrix",
+    title: "Engine Capability Matrix",
+    icon: IconTarget,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
     slug: "moosestack/data-types",
     title: "Data Types",
     icon: IconAtom,
@@ -746,10 +786,24 @@ const moosestackNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "moosestack/engines",
-    title: "Table Engines",
+    title: "Engine Guides",
     icon: IconServer,
     languages: ["typescript", "python"],
     children: [
+      {
+        type: "page",
+        slug: "moosestack/engines/duckdb",
+        title: "DuckDB",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/engines/snowflake",
+        title: "Snowflake",
+        languages: ["typescript", "python"],
+      },
+      { type: "separator" },
+      { type: "label", title: "ClickHouse Engine Details" },
       {
         type: "page",
         slug: "moosestack/engines/merge-tree",
@@ -871,6 +925,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "State Storage",
         languages: ["typescript", "python"],
       },
+      {
+        type: "page",
+        slug: "moosestack/configuration/engine-and-dev-profile",
+        title: "Engine and Dev Profile",
+        languages: ["typescript", "python"],
+      },
       { type: "separator" },
       { type: "label", title: "Security" },
       {
@@ -930,6 +990,24 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconFileReport,
     languages: ["typescript", "python"],
     children: [
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-02-06",
+        title: "February 6, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-01-30",
+        title: "January 30, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-01-23",
+        title: "January 23, 2026",
+        languages: ["typescript", "python"],
+      },
       {
         type: "page",
         slug: "moosestack/release-notes/2026-01-16",

@@ -1,125 +1,33 @@
 ---
-title: Table Engines
-description: Reference for ClickHouse table engines supported in Moose
+title: Engine Guides
+description: Engine-specific behavior and tuning for ClickHouse, DuckDB, and Snowflake
 order: 1
 category: reference
 ---
 
-import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+# Engine Guides
 
-# Table Engines
+Start with the common contract, then use these guides for engine-specific behavior.
 
-ClickHouse table engines determine how data is stored, indexed, queried, and replicated.
+## Choose a guide
 
-MooseOLAP selects the engine in the `OlapTable` config:
+- [ClickHouse](/moosestack/olap) for high-throughput analytics and table engine tuning.
+- [DuckDB](/moosestack/engines/duckdb) for local analytics and MotherDuck expansion.
+- [Snowflake](/moosestack/engines/snowflake) for remote-first enterprise warehouse workflows.
 
-<LanguageTabs>
-  <LanguageTabContent value="typescript" label="TypeScript">
-  You set the engine in the `OlapTable` config with the `engine` property:
-```ts
-import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
+## Common contract for all engines
 
-interface EngineExampleRow {
-  id: string;
-  timestamp: Date;
-  updated_at: Date;
-  deleted: number;
-  date: Date;
-  page: string;
-  views: number;
-  click_sum: number;
-};
+```toml
+[olap]
+engine = "clickhouse" # clickhouse | duckdb | snowflake
+profile = "remote"    # local | remote
+connection = "..."
 
-// MergeTree (default, can omit engine property)
-const MergeTree = new OlapTable<EngineExampleRow>("merge_tree_table", {
-  orderByFields: ["timestamp", "id"],
-});
-
-// ReplacingMergeTree (deduplicate by key, optional version + soft delete)
-const ReplacingMergeTree = new OlapTable<EngineExampleRow>("replacing_merge_tree_table", {
-  engine: ClickHouseEngines.ReplacingMergeTree,
-  orderByFields: ["id"],
-  ver: "updated_at",
-  isDeleted: "deleted",
-});
-
-// SummingMergeTree (sum numeric columns for the same key)
-const SummingMergeTree = new OlapTable<EngineExampleRow>("summing_merge_tree_table", {
-  engine: ClickHouseEngines.SummingMergeTree,
-  orderByFields: ["date", "page"],
-  columns: ["views", "click_sum"],
-});
+[dev_infra]
+profile = "local"     # local | remote_hybrid | remote_full
 ```
-  </LanguageTabContent>
-  <LanguageTabContent value="python" label="Python">
-  You set the engine in the `OlapTable` config with the `engine` property:
-```py
-from datetime import date, datetime
-from moose_lib import OlapTable, OlapConfig
-from moose_lib.blocks import ReplacingMergeTreeEngine, SummingMergeTreeEngine
-from pydantic import BaseModel
 
-class EngineExampleRow(BaseModel):
-    id: str
-    timestamp: datetime
-    updated_at: datetime
-    deleted: int = 0
-    date: date
-    page: str
-    views: int
-    click_sum: int
+## Related pages
 
-## MergeTree (default, can omit engine property)
-MergeTree = OlapTable[EngineExampleRow]("merge_tree_table", OlapConfig(
-  order_by_fields=["timestamp", "id"], 
-));
-
-## ReplacingMergeTree (deduplicate by key, optional version + soft delete)
-ReplacingMergeTree = OlapTable[EngineExampleRow]("replacing_merge_tree_table", OlapConfig(
-  engine=ReplacingMergeTreeEngine(),
-  order_by_fields=["id"],
-  ver="updated_at",
-  is_deleted="deleted",
-));
-
-## SummingMergeTree (sum numeric columns for the same key)
-SummingMergeTree = OlapTable[EngineExampleRow]("summing_merge_tree_table", OlapConfig(
-  engine=SummingMergeTreeEngine(),
-  order_by_fields=["date", "page"],
-  columns=["views", "click_sum"],
-));
-```
-  </LanguageTabContent>
-</LanguageTabs>
-
-## Options
-
-`ClickHouseEngines` includes the following categories:
-
-### MergeTree Family
-
-- [`MergeTree`](/moosestack/engines/merge-tree)
-- [`ReplacingMergeTree`](/moosestack/engines/replacing-merge-tree)
-- [`SummingMergeTree`](/moosestack/engines/summing-merge-tree)
-- [`AggregatingMergeTree`](/moosestack/engines/aggregating-merge-tree)
-- [`CollapsingMergeTree`](/moosestack/engines/collapsing-merge-tree)
-- [`VersionedCollapsingMergeTree`](/moosestack/engines/versioned-collapsing-merge-tree)
-
-### Replicated
-
-- See [`Replicated Engines`](/moosestack/engines/replicated)
-
-### Special Purpose
-
-- [`S3Queue`](/moosestack/engines/s3queue)
-- [`S3`](/moosestack/engines/s3)
-- [`IcebergS3`](/moosestack/engines/iceberg-s3)
-- [`Buffer`](/moosestack/engines/buffer)
-- [`Distributed`](/moosestack/engines/distributed)
-- [`Kafka`](/moosestack/engines/kafka)
-
-## See Also
-
-- [Tables](/moosestack/olap/model-table) — Full table configuration reference
-- [Aggregate Types](/moosestack/data-types/aggregates) — Using `SimpleAggregateFunction` with AggregatingMergeTree
-
+- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)

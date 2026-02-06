@@ -212,6 +212,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             // Add test credentials for S3Queue tests
             TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
             TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+            // Dummy CDC connection string for template CDC sources
+            TEST_CDC_CONNECTION:
+              "postgres://test_user:test_pass@localhost:5432/test_db",
             MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
             MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
           }
@@ -220,6 +223,9 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
             // Add test credentials for S3Queue tests
             TEST_AWS_ACCESS_KEY_ID: "test-access-key-id",
             TEST_AWS_SECRET_ACCESS_KEY: "test-secret-access-key",
+            // Dummy CDC connection string for template CDC sources
+            TEST_CDC_CONNECTION:
+              "postgres://test_user:test_pass@localhost:5432/test_db",
             MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
             MOOSE_AUTHENTICATION__ADMIN_API_KEY: TEST_ADMIN_API_KEY_HASH,
           };

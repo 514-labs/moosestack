@@ -7,4 +7,158 @@ category: streaming
 
 # Connect to CDC Services
 
-Coming Soon!
+Moose supports CDC-as-code so you can configure change data capture directly in TypeScript or Python with full types and autocomplete.
+
+## TypeScript
+
+```ts
+import {
+  CdcSource,
+  CdcTable,
+  DateTime,
+  Stream,
+  mooseRuntimeEnv,
+} from "@514labs/moose-lib";
+
+export interface OrderRow {
+  id: string;
+  customerId: string;
+  totalCents: number;
+  status: string;
+  createdAt: DateTime;
+}
+
+const ordersDb = new CdcSource("orders_cdc", {
+  kind: "postgresql",
+  connection: mooseRuntimeEnv.get("ORDERS_DB_URL"),
+});
+
+export const orders = new CdcTable<OrderRow>("orders", ordersDb, {
+  sourceTable: "public.orders",
+  primaryKey: ["id"],
+  stream: true,
+  table: true,
+  snapshot: "initial",
+});
+
+export interface OrdersIngestRow {
+  orderId: string;
+  totalUsd: number;
+  status: string;
+  updatedAt: DateTime;
+  op: string;
+}
+
+export const ordersIngest = new Stream<OrdersIngestRow>("orders_ingest");
+
+orders.changes?.addTransform(ordersIngest, (event) => {
+  const row = event.after ?? event.before;
+  if (!row) return null;
+  return {
+    orderId: row.id,
+    totalUsd: row.totalCents / 100,
+    status: row.status,
+    updatedAt: row.createdAt,
+    op: event.op,
+  };
+});
+```
+
+## Python
+
+```python
+from datetime import datetime
+from pydantic import BaseModel
+
+from moose_lib import (
+    CdcSource,
+    CdcSourceConfig,
+    CdcTable,
+    CdcTableConfig,
+    Stream,
+    moose_runtime_env,
+)
+
+
+class OrderRow(BaseModel):
+    id: str
+    customer_id: str
+    total_cents: int
+    status: str
+    created_at: datetime
+
+
+orders_db = CdcSource(
+    "orders_cdc",
+    CdcSourceConfig(
+        kind="postgresql",
+        connection=moose_runtime_env.get("ORDERS_DB_URL"),
+    ),
+)
+
+orders = CdcTable[OrderRow](
+    "orders",
+    orders_db,
+    CdcTableConfig(
+        source_table="public.orders",
+        primary_key=["id"],
+        stream=True,
+        table=True,
+        snapshot="initial",
+    ),
+)
+
+
+class OrdersIngestRow(BaseModel):
+    order_id: str
+    total_usd: float
+    status: str
+    updated_at: datetime
+    op: str
+
+
+orders_ingest = Stream[OrdersIngestRow]("orders_ingest")
+
+
+def to_orders_ingest(event):
+    row = event.after or event.before
+    if row is None:
+        return None
+    return OrdersIngestRow(
+        order_id=row.id,
+        total_usd=row.total_cents / 100,
+        status=row.status,
+        updated_at=row.created_at,
+        op=event.op,
+    )
+
+
+if orders.changes is not None:
+    orders.changes.add_transform(orders_ingest, to_orders_ingest)
+```
+
+## CDC Event Shape
+
+`orders.changes` is a `Stream<CdcEvent<T>>` that includes:
+
+- `op`: `"insert" | "update" | "delete"`
+- `before`: the previous row (nullable)
+- `after`: the new row (nullable)
+- `ts`: event timestamp
+- `lsn`: log sequence / version marker
+- `source`: source identifier
+
+## Destination Tables
+
+If you enable `table: true`, Moose creates a CDC destination table that defaults to:
+
+- ClickHouse `ReplacingMergeTree`
+- Version column `__cdc_lsn`
+- Delete marker `__cdc_is_deleted`
+- Metadata columns: `__cdc_op`, `__cdc_lsn`, `__cdc_ts`, `__cdc_is_deleted`
+
+You can override the table config via `table: { ... }` if you need custom engines or settings.
+
+## Runtime Env and Sign-Off
+
+Use `mooseRuntimeEnv.get("ORDERS_DB_URL")` or `moose_runtime_env.get("ORDERS_DB_URL")` so credentials come from `.env` files or your deployment environment. Run `moose plan` to review CDC sources and tables before applying changes. Plan output masks secrets by default.

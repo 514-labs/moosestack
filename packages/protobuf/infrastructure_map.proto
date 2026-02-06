@@ -31,6 +31,8 @@ message InfrastructureMap {
   map<string, View> views = 17;
   // Workflow definitions
   map<string, Workflow> workflows = 18;
+  // CDC source definitions
+  map<string, CdcSource> cdc_sources = 19;
 }
 
 message SourceLocation {
@@ -516,4 +518,24 @@ message Workflow {
   string timeout = 4;
   // Programming language of the workflow
   string language = 5;
+}
+
+message CdcSource {
+  string name = 1;
+  string kind = 2;
+  string connection = 3;
+  repeated CdcTable tables = 4;
+  optional Metadata metadata = 5;
+  LifeCycle life_cycle = 6;
+}
+
+message CdcTable {
+  string name = 1;
+  string source_table = 2;
+  repeated string primary_key = 3;
+  optional string stream = 4;
+  optional string table = 5;
+  optional string snapshot = 6;
+  optional string version = 7;
+  optional Metadata metadata = 8;
 }

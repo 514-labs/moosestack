@@ -975,6 +975,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         };
 
         // Create reality checker
@@ -1047,6 +1048,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         };
 
         infra_map
@@ -1125,6 +1127,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         };
 
         infra_map
@@ -1194,6 +1197,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         };
 
         infra_map
@@ -1265,6 +1269,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         };
 
         infra_map
@@ -1352,6 +1357,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         };
 
         infra_map
@@ -1556,6 +1562,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         };
 
         infra_map
@@ -1622,6 +1629,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            cdc_sources: HashMap::new(),
         };
 
         infra_map

@@ -1,0 +1,52 @@
+---
+title: Snowflake
+description: Use Snowflake with a remote-first Moose workflow
+order: 3
+category: reference
+---
+
+# Snowflake
+
+Snowflake is a remote-first engine in MooseStack. Use it when your warehouse is managed and shared.
+
+## Recommended profile
+
+```toml
+[olap]
+engine = "snowflake"
+profile = "remote"
+connection = "snowflake://<user>:<password>@<account>/<database>/<schema>?warehouse=<warehouse>&role=<role>"
+
+[dev_infra]
+profile = "remote_full"
+```
+
+## Typical commands
+
+```bash
+moose dev --infra-profile remote_full
+
+moose plan --olap-engine snowflake --olap-url "$MOOSE_OLAP__CONNECTION"
+moose generate migration --olap-engine snowflake --olap-url "$MOOSE_OLAP__CONNECTION" --save
+moose migrate --olap-engine snowflake --olap-url "$MOOSE_OLAP__CONNECTION"
+moose db pull --olap-engine snowflake --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## Isolation guidance
+
+Use deterministic schema isolation for each environment and branch:
+
+- `dev_<branch>` schemas for feature work
+- stable shared schema for staging
+- protected production schema with controlled migration windows
+
+## Failure handling
+
+- `connection_error`: check account locator, role, warehouse, and credentials.
+- `capability_mismatch`: confirm feature support for Snowflake.
+- `migration_contract_error`: regenerate plan against current remote state.
+
+## Related pages
+
+- [Remote-First Quickstart](/moosestack/getting-started/remote-first-quickstart)
+- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)

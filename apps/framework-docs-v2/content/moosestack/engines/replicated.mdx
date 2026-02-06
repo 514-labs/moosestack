@@ -1,6 +1,7 @@
 import { LanguageTabs, LanguageTabContent, Callout } from "@/components/mdx";
 
 #### Replicated Engines
+
 Replicated engines provide high availability and data replication across multiple ClickHouse nodes. MooseStack supports all standard replicated MergeTree variants:
 
 - `ReplicatedMergeTree` - Replicated version of MergeTree
@@ -17,28 +18,29 @@ import { OlapTable, ClickHouseEngines } from "@514labs/moose-lib";
 
 // Basic replicated table with explicit paths
 const replicatedTable = new OlapTable<Record>("records", {
-  engine: ClickHouseEngines.ReplicatedMergeTree,
-  keeperPath: "/clickhouse/tables/{database}/{shard}/records",
-  replicaName: "{replica}",
-  orderByFields: ["id"]
+engine: ClickHouseEngines.ReplicatedMergeTree,
+keeperPath: "/clickhouse/tables/{database}/{shard}/records",
+replicaName: "{replica}",
+orderByFields: ["id"]
 });
 
 // Replicated with deduplication
 const replicatedDedup = new OlapTable<Record>("dedup_records", {
-  engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
-  keeperPath: "/clickhouse/tables/{database}/{shard}/dedup_records",
-  replicaName: "{replica}",
-  ver: "updated_at",
-  isDeleted: "deleted",
-  orderByFields: ["id"]
+engine: ClickHouseEngines.ReplicatedReplacingMergeTree,
+keeperPath: "/clickhouse/tables/{database}/{shard}/dedup_records",
+replicaName: "{replica}",
+ver: "updated_at",
+isDeleted: "deleted",
+orderByFields: ["id"]
 });
 
 // For ClickHouse Cloud or Boreal (no parameters needed)
 const cloudReplicated = new OlapTable<Record>("cloud_records", {
-  engine: ClickHouseEngines.ReplicatedMergeTree,
-  orderByFields: ["id"]
+engine: ClickHouseEngines.ReplicatedMergeTree,
+orderByFields: ["id"]
 });
-```
+
+````
   </LanguageTabContent>
   <LanguageTabContent value="python">
 ```py filename="ReplicatedEngines.py" copy
@@ -80,7 +82,8 @@ cloud_replicated = OlapTable[Record]("cloud_records", OlapConfig(
     order_by_fields=["id"],
     engine=ReplicatedMergeTreeEngine()
 ))
-```
+````
+
   </LanguageTabContent>
 </LanguageTabs>
 
@@ -140,12 +143,14 @@ table = OlapTable[Record]("my_table", OlapConfig(
 </LanguageTabs>
 
 **Configuration in `moose.config.toml`:**
+
 ```toml
-[[clickhouse_config.clusters]]
+[[olap.clickhouse.clusters]]
 name = "default"
 ```
 
 **Use when:**
+
 - Running multi-node self-managed ClickHouse with cluster configuration
 - Need `ON CLUSTER` DDL for distributed operations
 
@@ -178,13 +183,15 @@ table = OlapTable[Record]("my_table", OlapConfig(
 </LanguageTabs>
 
 **Use when:**
+
 - Need custom replication paths for advanced configurations
 - Both parameters must be provided together
 
 <Callout type="warning">
 **Cannot mix approaches:** Specifying both `cluster` and explicit `keeper_path`/`replica_name` will cause an error. Choose one approach.
 
-**Cluster is a deployment directive:** Changing `cluster` won't recreate your table -— it only affects future DDL operations.
+**Cluster is a deployment directive:** Changing `cluster` does not recreate your table. It only affects future DDL operations.
+
 </Callout>
 
 For more details, see the [ClickHouse documentation on data replication](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication).

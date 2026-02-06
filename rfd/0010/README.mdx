@@ -1,0 +1,103 @@
+---
+authors: Moose Team <engineering@fiveonefour.com>
+title: Multi-Engine and Remote-First Developer Experience
+state: accepted
+---
+
+## Summary
+
+MooseStack supports three OLAP engines with one user contract:
+
+- ClickHouse
+- DuckDB
+- Snowflake
+
+MooseStack also supports three development infrastructure profiles:
+
+- `local`
+- `remote_hybrid`
+- `remote_full`
+
+This RFC records the final contract and links to the docs pack that ships it.
+
+## Final Decisions
+
+| Area                            | Decision                                         |
+| ------------------------------- | ------------------------------------------------ |
+| Portability model               | `common core first`                              |
+| Engine set                      | ClickHouse, DuckDB, Snowflake                    |
+| Snowflake dev model             | Remote-first                                     |
+| DuckDB positioning              | Local and light production, with MotherDuck path |
+| Remote cloud focus              | ClickHouse Cloud and Redpanda Cloud              |
+| Legacy ClickHouse-first surface | Migration appendix only                          |
+
+## Canonical User Contract
+
+### Configuration
+
+`moose.config.toml` uses this engine-neutral contract:
+
+```toml
+[olap]
+engine = "clickhouse" # clickhouse | duckdb | snowflake
+profile = "remote"    # local | remote
+connection = "https://user:password@host:8443/db"
+
+[dev_infra]
+profile = "remote_hybrid" # local | remote_hybrid | remote_full
+```
+
+### CLI
+
+```bash
+moose init my-app typescript --olap-engine clickhouse
+moose dev --infra-profile remote_hybrid
+
+moose plan --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+moose generate migration --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION" --save
+moose migrate --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+moose db pull --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+### Diagnostics
+
+Diagnostics map to four stable categories:
+
+1. `connection_error`
+2. `profile_misconfiguration`
+3. `capability_mismatch`
+4. `migration_contract_error`
+
+### Capability Policy
+
+MooseStack ships portable defaults first. Engine-specific features stay explicit and opt-in.
+
+## Backward Compatibility Policy
+
+Legacy ClickHouse-first flags and config are documented only in:
+
+- `/moosestack/migrate/legacy-clickhouse-compatibility`
+
+Core docs and examples use only the canonical engine-neutral contract.
+
+## Docs Parity Checklist
+
+- [x] `/moosestack/getting-started/remote-first-quickstart`
+- [x] `/moosestack/getting-started/from-existing-warehouse`
+- [x] `/moosestack/configuration/engine-and-dev-profile`
+- [x] `/moosestack/reference/engine-capability-matrix`
+- [x] `/moosestack/migrate/multi-engine-migration-playbooks`
+- [x] `/moosestack/migrate/legacy-clickhouse-compatibility`
+- [x] `/moosestack/engines/duckdb`
+- [x] `/moosestack/engines/snowflake`
+
+## RFC to Docs Mapping
+
+| RFC section                   | Docs page                                              |
+| ----------------------------- | ------------------------------------------------------ |
+| Remote-first workflows        | `/moosestack/getting-started/remote-first-quickstart`  |
+| Existing warehouse onboarding | `/moosestack/getting-started/from-existing-warehouse`  |
+| Config and CLI contract       | `/moosestack/configuration/engine-and-dev-profile`     |
+| Capabilities and limits       | `/moosestack/reference/engine-capability-matrix`       |
+| Migration operations          | `/moosestack/migrate/multi-engine-migration-playbooks` |
+| Legacy migration              | `/moosestack/migrate/legacy-clickhouse-compatibility`  |

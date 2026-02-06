@@ -49,6 +49,16 @@ from .ingest_pipeline import (
     IngestPipeline,
 )
 
+from .cdc_source import (
+    CdcSourceConfig,
+    CdcTableConfig,
+    CdcSource,
+    CdcTable,
+    CdcEvent,
+    CdcRow,
+    CdcOperation,
+)
+
 from .consumption import (
     ApiConfig,
     Api,
@@ -115,6 +125,8 @@ from .registry import (
     get_materialized_view,
     get_views,
     get_view,
+    get_cdc_sources,
+    get_cdc_source,
     # Backward compatibility aliases
     get_consumption_apis,
     get_consumption_api,
@@ -152,6 +164,14 @@ __all__ = [
     "IngestPipelineConfig",
     "IngestApi",
     "IngestPipeline",
+    # CDC
+    "CdcSourceConfig",
+    "CdcTableConfig",
+    "CdcSource",
+    "CdcTable",
+    "CdcEvent",
+    "CdcRow",
+    "CdcOperation",
     # Consumption
     "ApiConfig",
     "Api",
@@ -199,6 +219,8 @@ __all__ = [
     "get_materialized_view",
     "get_views",
     "get_view",
+    "get_cdc_sources",
+    "get_cdc_source",
     # Backward compatibility aliases (deprecated)
     "get_consumption_apis",
     "get_consumption_api",

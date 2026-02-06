@@ -1,0 +1,66 @@
+---
+title: Start from an Existing Warehouse
+description: Bootstrap a Moose project from an existing ClickHouse, DuckDB, or Snowflake warehouse
+order: 4
+category: getting-started
+---
+
+# Start from an Existing Warehouse
+
+Use this guide when you already have warehouse tables and want Moose to manage models and migrations.
+
+## 1. Initialize with your engine
+
+```bash
+# TypeScript example
+moose init analytics-app typescript --olap-engine clickhouse
+cd analytics-app
+pnpm install
+```
+
+## 2. Configure OLAP and dev profile
+
+```toml
+[olap]
+engine = "clickhouse" # clickhouse | duckdb | snowflake
+profile = "remote"
+connection = "https://user:password@host:8443/db"
+
+[dev_infra]
+profile = "remote_hybrid"
+```
+
+## 3. Pull external models from the warehouse
+
+```bash
+moose db pull --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## 4. Generate and review migration plan
+
+```bash
+moose generate migration \
+  --olap-engine clickhouse \
+  --olap-url "$MOOSE_OLAP__CONNECTION" \
+  --save
+```
+
+## 5. Apply migration
+
+```bash
+moose migrate --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## Engine examples
+
+| Engine | Example connection |
+| --- | --- |
+| ClickHouse | `https://user:password@host:8443/db` |
+| DuckDB | `duckdb:///./warehouse.duckdb` |
+| Snowflake | `snowflake://user:password@account/database/schema?warehouse=wh&role=role` |
+
+## Related pages
+
+- [Remote-First Quickstart](/moosestack/getting-started/remote-first-quickstart)
+- [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- [DB Pull](/moosestack/olap/db-pull)

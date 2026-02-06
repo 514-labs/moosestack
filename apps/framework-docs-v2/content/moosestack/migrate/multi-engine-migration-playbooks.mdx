@@ -1,0 +1,57 @@
+---
+title: Multi-Engine Migration Playbooks
+description: Move safely across engines and dev profiles with deterministic migration workflows
+order: 14
+category: migrate
+---
+
+# Multi-Engine Migration Playbooks
+
+Use these playbooks to ship value fast while keeping migration risk low.
+
+## Playbook 1: ClickHouse Cloud with remote hybrid dev
+
+Best for teams already using ClickHouse in production.
+
+1. Set `olap.engine = "clickhouse"` and `dev_infra.profile = "remote_hybrid"`.
+2. Generate a plan with `moose generate migration --olap-engine clickhouse --olap-url ... --save`.
+3. Review `migrations/plan.yaml` and apply with `moose migrate --olap-engine clickhouse --olap-url ...`.
+
+## Playbook 2: DuckDB local development, MotherDuck expansion
+
+Best for teams that want fast local loops and optional managed growth.
+
+1. Set `olap.engine = "duckdb"` and `dev_infra.profile = "local"`.
+2. Keep models in the common core to preserve portability.
+3. Run `moose plan`, `moose generate migration`, and `moose migrate` with `--olap-engine duckdb`.
+4. Move `olap.connection` from local file path to MotherDuck connection when needed.
+
+## Playbook 3: Snowflake remote-first
+
+Best for teams with Snowflake as production warehouse.
+
+1. Set `olap.engine = "snowflake"` and `dev_infra.profile = "remote_full"`.
+2. Use role and warehouse settings in `olap.connection`.
+3. Run plan and migration commands with `--olap-engine snowflake` and `--olap-url ...`.
+4. Enforce branch schema isolation per environment.
+
+## Playbook 4: Existing project moving to canonical contract
+
+1. Move config to `[olap]` and `[dev_infra]`.
+2. Replace legacy flags with `--olap-engine` and `--olap-url`.
+3. Keep changes in one PR with migration plan artifacts.
+4. Use the compatibility appendix only for legacy reference.
+
+## Checklist before production
+
+- Engine and profile are explicit in `moose.config.toml`.
+- Plan was generated against the target environment.
+- Drift checks pass in CI.
+- Rollback path is documented.
+- Capability checks pass for selected engine.
+
+## Related pages
+
+- [Planned Migrations](/moosestack/migrate/planned-migrations)
+- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- [Legacy ClickHouse Compatibility](/moosestack/migrate/legacy-clickhouse-compatibility)

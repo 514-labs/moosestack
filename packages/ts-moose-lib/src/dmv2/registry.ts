@@ -16,6 +16,7 @@ import { Workflow } from "./sdk/workflow";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
+import { CdcSource } from "./sdk/cdcSource";
 import { getMooseInternal } from "./internal";
 
 /**
@@ -210,4 +211,21 @@ export function getViews(): Map<string, View> {
  */
 export function getView(name: string): View | undefined {
   return getMooseInternal().views.get(name);
+}
+
+/**
+ * Get all registered CDC sources.
+ * @returns A Map of CDC source name to CdcSource instance
+ */
+export function getCdcSources(): Map<string, CdcSource> {
+  return getMooseInternal().cdcSources;
+}
+
+/**
+ * Get a registered CDC source by name.
+ * @param name - The name of the CDC source
+ * @returns The CdcSource instance or undefined if not found
+ */
+export function getCdcSource(name: string): CdcSource | undefined {
+  return getMooseInternal().cdcSources.get(name);
 }

@@ -26,6 +26,7 @@ from moose_lib.dmv2 import (
     get_web_apps,
     get_materialized_views,
     get_views,
+    get_cdc_sources,
     OlapTable,
     OlapConfig,
     SqlResource,
@@ -534,6 +535,34 @@ class ViewJson(BaseModel):
     metadata: Optional[dict] = None
 
 
+class CdcTableJson(BaseModel):
+    """JSON representation of a CDC table definition."""
+
+    model_config = model_config
+
+    name: str
+    source_table: str
+    primary_key: List[str]
+    stream: Optional[str] = None
+    table: Optional[str] = None
+    snapshot: Optional[str] = None
+    version: Optional[str] = None
+    metadata: Optional[dict] = None
+
+
+class CdcSourceJson(BaseModel):
+    """JSON representation of a CDC source definition."""
+
+    model_config = model_config
+
+    name: str
+    kind: str
+    connection: str
+    tables: List[CdcTableJson]
+    metadata: Optional[dict] = None
+    life_cycle: Optional[str] = None
+
+
 class InfrastructureMap(BaseModel):
     """Top-level model holding the configuration for all defined Moose resources.
 
@@ -563,6 +592,7 @@ class InfrastructureMap(BaseModel):
     web_apps: dict[str, WebAppJson]
     materialized_views: dict[str, MaterializedViewJson]
     views: dict[str, ViewJson]
+    cdc_sources: dict[str, CdcSourceJson]
     unloaded_files: list[str] = []
 
 
@@ -965,6 +995,7 @@ def to_infra_map() -> dict:
     web_apps = {}
     materialized_views = {}
     views = {}
+    cdc_sources = {}
 
     for _registry_key, table in get_tables().items():
         # Convert engine configuration to new format
@@ -1151,6 +1182,31 @@ def to_infra_map() -> dict:
             metadata=getattr(view, "metadata", None),
         )
 
+    for name, source in get_cdc_sources().items():
+        tables = [
+            CdcTableJson(
+                name=table.name,
+                source_table=table.source_table,
+                primary_key=table.config.primary_key,
+                stream=table.stream.name if table.stream else None,
+                table=table.table.name if table.table else None,
+                snapshot=table.config.snapshot,
+                version=table.config.version,
+                metadata=table.metadata,
+            )
+            for table in source.tables.values()
+        ]
+        cdc_sources[name] = CdcSourceJson(
+            name=source.name,
+            kind=source.config.kind,
+            connection=source.config.connection,
+            tables=tables,
+            metadata=source.metadata,
+            life_cycle=(
+                source.config.life_cycle.value if source.config.life_cycle else None
+            ),
+        )
+
     infra_map = InfrastructureMap(
         tables=tables,
         topics=topics,
@@ -1161,6 +1217,7 @@ def to_infra_map() -> dict:
         web_apps=web_apps,
         materialized_views=materialized_views,
         views=views,
+        cdc_sources=cdc_sources,
     )
 
     return infra_map.model_dump(by_alias=True, exclude_none=False)

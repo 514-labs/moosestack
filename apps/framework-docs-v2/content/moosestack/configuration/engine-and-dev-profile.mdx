@@ -1,0 +1,95 @@
+---
+title: Engine and Dev Profile
+description: Configure OLAP engine selection and local or remote development profiles
+order: 47
+---
+
+# Engine and Dev Profile
+
+MooseStack uses one config contract across ClickHouse, DuckDB, and Snowflake.
+
+## Config contract
+
+```toml
+[olap]
+engine = "clickhouse" # clickhouse | duckdb | snowflake
+profile = "remote"    # local | remote
+connection = "https://user:password@host:8443/db"
+
+[dev_infra]
+profile = "remote_hybrid" # local | remote_hybrid | remote_full
+```
+
+## Environment variable mapping
+
+| Config key          | Environment variable       |
+| ------------------- | -------------------------- |
+| `olap.engine`       | `MOOSE_OLAP__ENGINE`       |
+| `olap.profile`      | `MOOSE_OLAP__PROFILE`      |
+| `olap.connection`   | `MOOSE_OLAP__CONNECTION`   |
+| `dev_infra.profile` | `MOOSE_DEV_INFRA__PROFILE` |
+
+## CLI contract
+
+```bash
+moose init my-app typescript --olap-engine clickhouse
+moose dev --infra-profile remote_hybrid
+
+moose plan --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+moose generate migration --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION" --save
+moose migrate --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+moose db pull --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## Engine examples
+
+### ClickHouse Cloud
+
+```toml
+[olap]
+engine = "clickhouse"
+profile = "remote"
+connection = "https://user:password@host:8443/analytics"
+
+[dev_infra]
+profile = "remote_hybrid"
+```
+
+### DuckDB local
+
+```toml
+[olap]
+engine = "duckdb"
+profile = "local"
+connection = "duckdb:///./.moose/dev.duckdb"
+
+[dev_infra]
+profile = "local"
+```
+
+### Snowflake remote
+
+```toml
+[olap]
+engine = "snowflake"
+profile = "remote"
+connection = "snowflake://<user>:<password>@<account>/<database>/<schema>?warehouse=<warehouse>&role=<role>"
+
+[dev_infra]
+profile = "remote_full"
+```
+
+## Diagnostics
+
+Moose emits one of these categories for engine and profile issues:
+
+- `connection_error`
+- `profile_misconfiguration`
+- `capability_mismatch`
+- `migration_contract_error`
+
+## Related pages
+
+- [Remote-First Quickstart](/moosestack/getting-started/remote-first-quickstart)
+- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- [Legacy ClickHouse Compatibility](/moosestack/migrate/legacy-clickhouse-compatibility)
