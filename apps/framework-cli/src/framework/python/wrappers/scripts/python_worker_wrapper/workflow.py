@@ -104,21 +104,11 @@ class ScriptWorkflow:
         self._state.current_step = activity_name
 
         try:
-            # Execute the activity directly — no polling monitor.
-            # A running activity does not generate workflow history events, so the
-            # history stays small even for long-running (timeout: "never") tasks.
-            result = await self._execute_single_activity(wf, task, input_data)
-
-            # Normal task completion
-            results = [result]
-            self._state.completed_steps.append(activity_name)
-
-            # Check history limits BETWEEN activities, before starting child tasks.
-            # This handles workflows that chain many sequential activities (e.g. ETL
-            # extract loops) where each activity completion adds history events.
+            # Check history limits BEFORE starting the task, so continue_from_task
+            # points to a task that hasn't run yet (avoids duplicate execution).
             info = workflow.info()
             if info.is_continue_as_new_suggested():
-                log.info(f"ContinueAsNew suggested by Temporal after task {task.name}")
+                log.info(f"ContinueAsNew suggested by Temporal before task {task.name}")
                 return await workflow.continue_as_new(
                     args=[
                         WorkflowRequest(
@@ -129,6 +119,15 @@ class ScriptWorkflow:
                         input_data,
                     ]
                 )
+
+            # Execute the activity directly — no polling monitor.
+            # A running activity does not generate workflow history events, so the
+            # history stays small even for long-running (timeout: "never") tasks.
+            result = await self._execute_single_activity(wf, task, input_data)
+
+            # Normal task completion
+            results = [result]
+            self._state.completed_steps.append(activity_name)
 
             if task.config.on_complete:
                 for child_task in task.config.on_complete:

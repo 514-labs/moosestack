@@ -108,18 +108,10 @@ async function handleTask(
 
   const { executeTask } = proxyActivities(activityOptions);
 
-  // Execute the activity directly — no polling monitor.
-  // A running activity does not generate workflow history events, so the
-  // history stays small even for long-running (timeout: "never") tasks.
-  const result = await executeTask(workflow, task, inputData);
-
-  const results = [result];
-
-  // Check history limits BETWEEN activities, before starting child tasks.
-  // This handles workflows that chain many sequential activities (e.g. ETL
-  // extract loops) where each activity completion adds history events.
+  // Check history limits BEFORE starting the task, so continue_from_task
+  // points to a task that hasn't run yet (avoids duplicate execution).
   if (workflowInfo().continueAsNewSuggested) {
-    logger.info(`ContinueAsNew suggested by Temporal after task ${task.name}`);
+    logger.info(`ContinueAsNew suggested by Temporal before task ${task.name}`);
     await continueAsNew(
       {
         workflow_name: workflow.name,
@@ -129,6 +121,13 @@ async function handleTask(
       inputData,
     );
   }
+
+  // Execute the activity directly — no polling monitor.
+  // A running activity does not generate workflow history events, so the
+  // history stays small even for long-running (timeout: "never") tasks.
+  const result = await executeTask(workflow, task, inputData);
+
+  const results = [result];
 
   if (!task.config.onComplete?.length) {
     return results;
