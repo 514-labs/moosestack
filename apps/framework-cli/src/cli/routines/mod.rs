@@ -163,6 +163,7 @@ pub mod code_generation;
 pub mod dev;
 pub mod docker_packager;
 pub mod format_query;
+pub mod help;
 pub mod kafka_pull;
 pub mod logs;
 pub mod ls;

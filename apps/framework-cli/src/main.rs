@@ -19,6 +19,18 @@ use std::process::ExitCode;
 use clap::Parser;
 use cli::display::{Message, MessageType};
 
+/// Known CLI subcommands - used to determine if --help is at top level or subcommand level
+fn is_known_subcommand(args: &[String]) -> bool {
+    const SUBCOMMANDS: &[&str] = &[
+        "help", "init", "build", "check", "plan", "migrate", "peek", "dev", "prod", "generate",
+        "clean", "logs", "ps", "ls", "metrics", "workflow", "template", "db", "refresh", "seed",
+        "truncate", "kafka", "query",
+    ];
+    args.iter()
+        .skip(1) // skip the program name
+        .any(|arg| SUBCOMMANDS.contains(&arg.as_str()))
+}
+
 /// Ensures terminal is properly reset on exit using crossterm
 fn ensure_terminal_cleanup() {
     use crossterm::terminal::disable_raw_mode;
@@ -68,9 +80,29 @@ fn main() -> ExitCode {
                 eprintln!("To view available templates, run:");
                 eprintln!("\n  moose template list");
                 std::process::exit(1)
+            } else if e.kind() == clap::error::ErrorKind::DisplayHelp {
+                // Check if --help was passed at the top level (no subcommand)
+                // by examining the command line arguments
+                let args: Vec<String> = std::env::args().collect();
+                let is_top_level_help = args.len() == 2 && (args[1] == "--help" || args[1] == "-h")
+                    || (args.len() == 3
+                        && (args[1] == "--help"
+                            || args[1] == "-h"
+                            || args[2] == "--help"
+                            || args[2] == "-h")
+                        && !is_known_subcommand(&args));
+
+                if is_top_level_help {
+                    // Show our custom help for top-level --help
+                    cli::routines::help::display_help();
+                    std::process::exit(0)
+                } else {
+                    // For subcommand help, use clap's default help
+                    e.exit()
+                }
             } else {
                 // For other errors, use Clap's default error format
-                // this includes the --version and --help string
+                // this includes the --version string
                 e.exit()
             }
         }

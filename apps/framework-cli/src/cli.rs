@@ -215,7 +215,16 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
 }
 
 #[derive(Parser)]
-#[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
+#[command(
+    author,
+    version = constants::CLI_VERSION,
+    about = "Build data-intensive apps and services with Moose",
+    long_about = None,
+    arg_required_else_help(true),
+    next_display_order = None,
+    disable_help_subcommand = true,
+    after_help = "Run 'moose help' for detailed documentation and links"
+)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
@@ -412,6 +421,13 @@ pub async fn top_command_handler(
     machine_id: String,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     match commands {
+        Commands::Help {} => {
+            routines::help::display_help();
+            Ok(RoutineSuccess::success(Message::new(
+                "".to_string(),
+                "".to_string(),
+            )))
+        }
         Commands::Init {
             name,
             location,

@@ -7,6 +7,9 @@ use clap::{Args, Subcommand};
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Display help information with links to documentation
+    Help {},
+
     // Initializes the developer environment with all the necessary directories including temporary ones for data storage
     /// Initialize your data-intensive app or service
     Init {
