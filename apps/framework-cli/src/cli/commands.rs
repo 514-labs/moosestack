@@ -216,14 +216,15 @@ pub enum Commands {
     /// Submit feedback, report issues, or join the community
     Feedback {
         /// Feedback message to send (e.g. moose feedback "loving the DX!")
+        #[arg(conflicts_with_all = ["bug", "community"])]
         message: Option<String>,
 
         /// Report a bug (opens GitHub Issues with system info)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "community")]
         bug: bool,
 
         /// Join the Moose community on Slack
-        #[arg(long)]
+        #[arg(long, conflicts_with = "bug")]
         community: bool,
 
         /// Include path to log files in the bug report (use with --bug)
