@@ -966,12 +966,9 @@ The goal of this phase is to reproduce your existing API behavior exactly by tra
 <CopilotCallout
   title="Copy Checkpoints as Copilot Prompt"
   contentFile="/shared/guides/performant-dashboards/phase-1-checkpoints.mdx"
-  systemPrompt="You are an expert backend engineer helping me migrate a single dashboard
-endpoint from an OLTP database to ClickHouse using MooseStack.
-
-Goal: Phase 1 parity — translate the existing handler/query logic into
+  systemPrompt="Goal: translate the existing handler/query logic into
 ClickHouse SQL that returns byte-for-byte identical JSON to the current
-OLTP endpoint.
+OLTP endpoint using MooseStack.
 
 Context you have been given:
 - The context directory for this component (context-map.md, test case
@@ -1017,14 +1014,12 @@ The end state is that your API reads from the serving table with lightweight, re
 <CopilotCallout
   title="Copy Checkpoints as Copilot Prompt"
   contentFile="/shared/guides/performant-dashboards/phase-2-checkpoints.mdx"
-  systemPrompt="You are an expert backend engineer helping me optimize a ClickHouse query by designing a serving table and Materialized View that pre-computes the joins and aggregations at write time.
-
-Goal: Phase 2 — replace the Phase 1 parity query with an OLAP-native serving table + MV so reads are lightweight (filters and column selection only, no joins or CTEs).
+  systemPrompt="Goal: optimize the provided unoptimized ClickHouse query function by designing a serving table and Materialized View that pre-computes the joins and aggregations at write time.
 
 Context you have been given:
 - The context directory for this component (context-map.md with Phase 1 notes, test cases, and an example migration for reference)
-- The parity query function from Phase 1
-- The MooseStack source table model files referenced in the parity query
+- The unoptimized ClickHouse query from Phase 1
+- The MooseStack source table model files referenced in the unoptimized ClickHouse query function
 
 Rules:
 1. Work through the checkpoints below sequentially. After completing each checkpoint, stop and summarize what you did so I can confirm before you continue.
@@ -1036,7 +1031,7 @@ Rules:
 **Copy checkpoints as prompt** copies all the checkpoints below into a ready-to-use copilot prompt. Attach the following files as context alongside the prompt:
 
 - `moosestack/context/dashboard-migration/<component>/` — the context directory (context map, test cases from Phase 1)
-- The parity query function from Phase 1 (e.g. `moosestack/app/queries/<component>-olap-translation.ts`)
+- The unoptimized parity query from Phase 1 (e.g. `moosestack/app/queries/<component>-olap-translation.ts`)
 - The MooseStack source table model files referenced in the parity query (e.g. `moosestack/app/models/*.ts`)
 
 If anything isn't captured in the context directory yet (access-pattern notes, source table model paths), attach those files too.
