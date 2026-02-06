@@ -1,0 +1,38 @@
+---
+title: February 6, 2026
+description: Release notes for February 6, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# February 6, 2026
+
+<Callout type="info" title="Highlights">
+* **New:** Published a full RFC + docs pack for multi-engine and remote-first developer experience
+* **New:** Added remote-first quickstart, capability matrix, and migration playbooks
+</Callout>
+
+## Moose
+
+### New Documentation
+
+**RFC: Multi-Engine and Remote-First Developer Experience**
+
+Published a decision-complete RFC that defines the product contract for:
+
+- engine selection across ClickHouse, DuckDB, and Snowflake
+- remote-first development workflows for ClickHouse Cloud and Redpanda Cloud
+- common-core compatibility model and backward-compatibility/deprecation policy
+
+RFC: [rfd/0010/README.mdx](https://github.com/514-labs/moose/blob/main/rfd/0010/README.mdx)
+
+**Remote-First and Multi-Engine Docs Pack**
+
+Published user-facing docs that map directly to the RFC contract:
+
+- [Remote-First Quickstart](/moosestack/getting-started/remote-first-quickstart)
+- [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- [Multi-Engine Migration Playbooks](/moosestack/migrate/multi-engine-migration-playbooks)
+
+Also updated MooseStack navigation and index pages to surface these guides from core entry points.

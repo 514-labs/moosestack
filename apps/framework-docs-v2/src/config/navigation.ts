@@ -151,6 +151,13 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "moosestack/getting-started/remote-first-quickstart",
+    title: "Remote-First Quickstart",
+    icon: IconDeviceLaptop,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
     slug: "templates",
     title: "Browse Templates",
     icon: IconCode,
@@ -507,6 +514,12 @@ const moosestackNavigationConfig: NavigationConfig = [
       },
       {
         type: "page",
+        slug: "moosestack/migrate/multi-engine-migration-playbooks",
+        title: "Multi-Engine Playbooks",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/migrate/plan-format",
         title: "Plan Reference",
         languages: ["typescript", "python"],
@@ -623,6 +636,13 @@ const moosestackNavigationConfig: NavigationConfig = [
     slug: "moosestack/reference",
     title: "API Reference",
     icon: IconBook,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
+    slug: "moosestack/reference/engine-capability-matrix",
+    title: "Engine Capability Matrix",
+    icon: IconTarget,
     languages: ["typescript", "python"],
   },
   {
@@ -864,6 +884,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "State Storage",
         languages: ["typescript", "python"],
       },
+      {
+        type: "page",
+        slug: "moosestack/configuration/engine-and-dev-profile",
+        title: "Engine and Dev Profile",
+        languages: ["typescript", "python"],
+      },
       { type: "separator" },
       { type: "label", title: "Security" },
       {
@@ -923,6 +949,24 @@ const moosestackNavigationConfig: NavigationConfig = [
     icon: IconFileReport,
     languages: ["typescript", "python"],
     children: [
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-02-06",
+        title: "February 6, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-01-30",
+        title: "January 30, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-01-23",
+        title: "January 23, 2026",
+        languages: ["typescript", "python"],
+      },
       {
         type: "page",
         slug: "moosestack/release-notes/2026-01-16",

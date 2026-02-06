@@ -1,0 +1,72 @@
+---
+title: Multi-Engine Migration Playbooks
+description: Adoption playbooks for ClickHouse-first projects moving toward multi-engine and remote-first workflows
+order: 14
+category: migrate
+tags:
+  - status:current
+  - status:planned
+---
+
+import { Callout } from "@/components/mdx";
+
+# Multi-Engine Migration Playbooks
+
+Use these playbooks to sequence adoption with the lowest risk.
+
+## Playbook 1: Stay ClickHouse-First (No Changes Required)
+
+**Best for:** teams that need stability now.
+
+Current path:
+
+1. Continue existing `clickhouse_config`-based workflows.
+2. Keep using `moose generate migration --clickhouse-url ...` and `moose migrate --clickhouse-url ...`.
+3. Optionally use lifecycle controls to reduce migration risk in production.
+
+## Playbook 2: Adopt Remote-First Cloud Development
+
+**Best for:** teams standardizing on ClickHouse Cloud + Redpanda Cloud.
+
+Current path:
+
+1. Configure cloud env vars for ClickHouse and Redpanda.
+2. Run local runtime with `moose dev --no-infra`.
+3. Keep migration workflow explicit with existing `--clickhouse-url` flags.
+
+## Playbook 3: Prepare for DuckDB + MotherDuck
+
+**Best for:** teams that want lightweight local iteration and optional managed expansion.
+
+Planned path (RFC-defined):
+
+1. Move toward engine-neutral contract surfaces.
+2. Use common-core modeling where possible.
+3. Keep engine-specific features isolated behind explicit extension usage.
+
+## Playbook 4: Prepare for Snowflake Remote-First
+
+**Best for:** teams whose production OLAP target is Snowflake.
+
+Planned path (RFC-defined):
+
+1. Treat Snowflake as remote-first from day one.
+2. Adopt deterministic branch isolation policy (schema/database/account strategy).
+3. Validate capability-mismatch diagnostics before rollout.
+
+<Callout type="warning" title="Current vs Planned">
+This page includes both available workflows and RFC-defined planned workflows. Planned workflows are not runtime-implemented in this release.
+</Callout>
+
+## Decision Checklist Before Migration
+
+1. Which dev profile do we need now (`local` vs remote-first)?
+2. Which features must remain portable across engines?
+3. Which engine-specific features are acceptable and explicit?
+4. What is our backward compatibility window for legacy flags/config?
+
+## Related Pages
+
+- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- [Remote-First Quickstart](/moosestack/getting-started/remote-first-quickstart)

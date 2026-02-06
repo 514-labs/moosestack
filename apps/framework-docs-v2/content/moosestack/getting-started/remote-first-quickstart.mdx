@@ -1,0 +1,93 @@
+---
+title: Remote-First Quickstart
+description: Use ClickHouse Cloud and Redpanda Cloud for development while keeping a local Moose runtime
+order: 3
+tags:
+  - status:current
+  - status:planned
+---
+
+import { Callout } from "@/components/mdx";
+
+# Remote-First Quickstart
+
+Use this guide if you want the Moose runtime locally, but want data infrastructure in cloud services:
+
+- ClickHouse Cloud for OLAP
+- Redpanda Cloud for streaming
+
+## Status
+
+| Experience | Status |
+| --- | --- |
+| Local-first (`moose dev`) | Current |
+| Remote-first with `moose dev --no-infra` + cloud env vars | Current |
+| Profile-native remote flow (`remote_hybrid`, `remote_full`) | Planned (defined in RFC) |
+
+<Callout type="info" title="What ships in this docs update">
+This page documents both current commands and planned experience contract. Planned sections are marked explicitly.
+</Callout>
+
+## Current Workflow (Available Today)
+
+### 1) Configure cloud connections
+
+Set environment variables for your project:
+
+```bash
+export MOOSE_CLICKHOUSE_CONFIG__URL="https://<user>:<password>@<host>:8443/<database>"
+
+export MOOSE_REDPANDA_CONFIG__BROKER="<broker-host>:9092"
+export MOOSE_REDPANDA_CONFIG__SECURITY_PROTOCOL="SASL_SSL"
+export MOOSE_REDPANDA_CONFIG__SASL_MECHANISM="SCRAM-SHA-256"
+export MOOSE_REDPANDA_CONFIG__SASL_USERNAME="<username>"
+export MOOSE_REDPANDA_CONFIG__SASL_PASSWORD="<password>"
+export MOOSE_REDPANDA_CONFIG__NAMESPACE="<team-or-branch-namespace>"
+```
+
+### 2) Start local runtime without local infra containers
+
+```bash
+moose dev --no-infra
+```
+
+### 3) Verify migration and schema flows
+
+```bash
+moose generate migration --clickhouse-url "$MOOSE_CLICKHOUSE_CONFIG__URL" --save
+moose migrate --clickhouse-url "$MOOSE_CLICKHOUSE_CONFIG__URL"
+```
+
+## Planned Workflow (RFC Contract)
+
+The RFC defines an explicit profile model for developer intent:
+
+- `local`
+- `remote_hybrid`
+- `remote_full`
+
+Illustrative contract (planned):
+
+```bash
+# planned contract example
+moose dev --infra-profile remote_hybrid
+```
+
+The planned profile flow standardizes:
+
+1. Remote preflight checks
+2. Profile-aware diagnostics
+3. Resource isolation guidance for cloud development
+
+## Recommended Resource Isolation
+
+For shared environments, use deterministic isolation keys:
+
+- ClickHouse: per-branch schema or per-branch database policy
+- Redpanda: per-branch namespace/topic prefix
+
+## Related Pages
+
+- [Engine and Dev Profile Contract](/moosestack/configuration/engine-and-dev-profile)
+- [Engine Capability Matrix](/moosestack/reference/engine-capability-matrix)
+- [Multi-Engine Migration Playbooks](/moosestack/migrate/multi-engine-migration-playbooks)

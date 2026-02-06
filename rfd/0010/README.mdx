@@ -1,0 +1,165 @@
+---
+authors: Moose Team <engineering@fiveonefour.com>
+title: Multi-Engine and Remote-First Developer Experience
+state: discussion
+---
+
+## Objective
+
+Define and publish a decision-complete user experience for:
+
+1. Multi-engine OLAP selection (`ClickHouse`, `DuckDB`, `Snowflake`)
+2. Remote-first developer workflows (`ClickHouse Cloud`, `Redpanda Cloud`)
+
+This RFC intentionally ships product contract and docs only. It does not include runtime implementation.
+
+## Goals
+
+- Publish a single, consistent experience contract for engine selection and dev profiles
+- Provide immediate user guidance through docs pages that match the contract
+- Preserve backward compatibility for current ClickHouse-first projects
+- Standardize how current behavior vs planned behavior is communicated
+
+## Non-Goals
+
+- Implementing engine adapters in CLI/runtime
+- Introducing new runtime-only features in this cycle
+- Removing legacy ClickHouse flags/config in this cycle
+
+## User Benefit
+
+Users get immediate clarity on:
+
+1. What they can do today in production and development
+2. What is planned, and how it will look when shipped
+3. How to prepare existing projects for multi-engine and remote-first migration paths
+
+## Definitions
+
+### Engine Model
+
+- **Current default**: ClickHouse-centric runtime
+- **Target model**: Engine-neutral contract with portable common core and explicit engine-specific extensions
+
+### Dev Profiles
+
+- `local`: local infrastructure managed by Moose
+- `remote_hybrid`: local Moose runtime + remote ClickHouse/Redpanda
+- `remote_full`: remote-first managed environment
+
+## Decision Table
+
+| Decision Area | Decision |
+| --- | --- |
+| Compatibility strategy | `common core first` |
+| Snowflake dev model | `remote first` |
+| DuckDB positioning | `dev + light production` with MotherDuck expansion path |
+| Remote-first cloud focus | `ClickHouse Cloud + Redpanda Cloud` |
+| Scope for this cycle | RFC + docs only |
+
+## Experience Contract
+
+### 1) Engine Selection Contract
+
+Users choose an OLAP engine through a single contract surface. During transition, legacy ClickHouse config remains valid.
+
+Current and planned behavior:
+
+- **Current**: ClickHouse configuration and commands are primary
+- **Planned contract**: Engine-neutral config and CLI options with explicit legacy aliases
+
+### 2) Dev Profile Contract
+
+Users select how development infrastructure is sourced.
+
+- **Current**: local infrastructure with optional `--no-infra` flow
+- **Planned contract**: explicit profile choice (`local`, `remote_hybrid`, `remote_full`) and profile-aware diagnostics
+
+### 3) Capability Contract
+
+The documentation and CLI surface should consistently communicate:
+
+- Portable features available across engines
+- Engine-specific features that are intentionally non-portable
+- Deterministic errors for unsupported combinations
+
+### 4) Backward Compatibility Contract
+
+- Existing ClickHouse projects remain functional without forced migration
+- Legacy options remain supported during transition window
+- Deprecation messaging is explicit and paired with replacement paths
+
+## Diagnostics Contract
+
+User-facing diagnostics should map to one of these categories:
+
+1. `connection_error` - cannot connect or authenticate
+2. `profile_misconfiguration` - invalid local/remote profile wiring
+3. `capability_mismatch` - requested feature not supported for selected engine
+4. `migration_contract_error` - migration intent cannot be represented safely
+
+## Migration Metadata Contract
+
+Planned migration artifacts should include engine/profile context so generated intent is deterministic and auditable.
+
+## Shipping Artifacts
+
+### RFC
+
+- `/rfd/0010/README.mdx`
+
+### Docs Pages
+
+- `/apps/framework-docs-v2/content/moosestack/getting-started/remote-first-quickstart.mdx`
+- `/apps/framework-docs-v2/content/moosestack/configuration/engine-and-dev-profile.mdx`
+- `/apps/framework-docs-v2/content/moosestack/reference/engine-capability-matrix.mdx`
+- `/apps/framework-docs-v2/content/moosestack/migrate/multi-engine-migration-playbooks.mdx`
+
+### Navigation and Release Notes
+
+- Updated MooseStack index and section index pages
+- New release note linking this RFC and docs pack
+
+## Acceptance Criteria
+
+1. RFC terminology and docs terminology match exactly
+2. Each docs command/config example maps to this RFC contract
+3. Every new docs page clearly separates current vs planned behavior
+4. Capability matrix separates portable vs engine-specific behavior
+5. Release notes link to both RFC and docs pages
+
+## Risks and Mitigations
+
+- **Risk**: Users interpret planned contract as already implemented
+  - **Mitigation**: all new pages include explicit current/planned status sections
+- **Risk**: Contract drift between RFC and docs
+  - **Mitigation**: docs parity checklist in this RFC and publish-gate verification
+
+## Appendix A: Docs Parity Checklist
+
+- [x] Remote-first quickstart page published
+- [x] Engine/dev profile contract page published
+- [x] Engine capability matrix page published
+- [x] Multi-engine migration playbooks page published
+- [x] MooseStack index page updated
+- [x] Getting Started index page updated
+- [x] Configuration index page updated
+- [x] Reference index page updated
+- [x] Migrate index page updated
+- [x] Release note published with RFC/docs links
+
+## Appendix B: RFC to Docs Mapping
+
+| RFC Section | Docs Page |
+| --- | --- |
+| Dev profile contract | `/moosestack/getting-started/remote-first-quickstart` |
+| Config and CLI transition contract | `/moosestack/configuration/engine-and-dev-profile` |
+| Capability model | `/moosestack/reference/engine-capability-matrix` |
+| Migration and adoption guidance | `/moosestack/migrate/multi-engine-migration-playbooks` |
+
+## Appendix C: Publish Checklist
+
+1. Verify new docs pages render and appear in navigation
+2. Verify release note links resolve
+3. Run docs validation/build checks
+4. Confirm RFC/docs naming and terms are consistent

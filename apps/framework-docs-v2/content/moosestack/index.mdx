@@ -25,7 +25,7 @@ Type-safe, code-first tooling for building real-time analytical backends--OLAP D
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ```
 
-<CTACards rows={3} columns={1}>
+<CTACards rows={4} columns={1}>
   <CTACard
     title="5-minute Quickstart"
     description="Start with a simple demo app to get a feel for Moose"
@@ -47,6 +47,14 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
     description="Start with a reference application for integrating Moose with complex microservices architectures"
     ctaLink="https://github.com/514-labs/area-code"
     Icon="BrandGithub"
+    variant="default"
+    orientation="horizontal"
+  />
+  <CTACard
+    title="Remote-First Quickstart"
+    description="Run Moose locally while using ClickHouse Cloud and Redpanda Cloud"
+    ctaLink="/moosestack/getting-started/remote-first-quickstart"
+    Icon="DeviceLaptop"
     variant="default"
     orientation="horizontal"
   />
@@ -420,4 +428,3 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
 <Callout type="info" title="Managed Moose in Production" href="https://www.fiveonefour.com/boreal" ctaLabel="Boreal Cloud" compact>
   Want this managed in production for you? Check out Boreal Cloud (from the makers of the Moose Stack).
 </Callout>
-
