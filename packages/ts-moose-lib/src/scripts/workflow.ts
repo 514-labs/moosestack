@@ -4,7 +4,6 @@ import {
   proxyActivities,
   workflowInfo,
   continueAsNew,
-  sleep,
 } from "@temporalio/workflow";
 import { Duration } from "@temporalio/common";
 import { Task, Workflow } from "../dmv2";
@@ -96,7 +95,7 @@ async function handleTask(
   };
 
   // Temporal requires either startToCloseTimeout OR scheduleToCloseTimeout to be set
-  // For unlimited timeout (timeout = "none"), we use scheduleToCloseTimeout with a very large value
+  // For unlimited timeout (timeout = "never"), we use scheduleToCloseTimeout with a very large value
   // For normal timeouts, we use startToCloseTimeout for single execution timeout
   if (taskTimeout) {
     // Normal timeout - limit each individual execution attempt
@@ -109,55 +108,31 @@ async function handleTask(
 
   const { executeTask } = proxyActivities(activityOptions);
 
-  let taskCompleted = false;
+  // Execute the activity directly — no polling monitor.
+  // A running activity does not generate workflow history events, so the
+  // history stays small even for long-running (timeout: "never") tasks.
+  const result = await executeTask(workflow, task, inputData);
 
-  const monitorTask = async () => {
-    logger.info(`Monitor task starting for ${task.name}`);
-    while (!taskCompleted) {
-      const info = workflowInfo();
+  const results = [result];
 
-      // Continue-as-new only when suggested by Temporal
-      if (info.continueAsNewSuggested) {
-        logger.info(`ContinueAsNew suggested by Temporal`);
-        return await continueAsNew({
-          workflow_name: workflow.name,
-          execution_mode: "continue_as_new" as const,
-          continue_from_task: task.name,
-        });
-      }
-
-      await sleep(100);
-    }
-    logger.info(`Monitor task exiting because main task completed`);
-  };
-
-  const result = await Promise.race([
-    executeTask(workflow, task, inputData)
-      .then((taskResult) => {
-        return {
-          type: "task_completed" as const,
-          data: taskResult,
-        };
-      })
-      .finally(() => {
-        taskCompleted = true;
-      }),
-    monitorTask().then(() => {
-      return { type: "continue_as_new" as const, data: undefined };
-    }),
-  ]);
-
-  if (result.type !== "task_completed") {
-    return [];
+  // Check history limits BETWEEN activities, before starting child tasks.
+  // This handles workflows that chain many sequential activities (e.g. ETL
+  // extract loops) where each activity completion adds history events.
+  if (workflowInfo().continueAsNewSuggested) {
+    logger.info(`ContinueAsNew suggested by Temporal after task ${task.name}`);
+    await continueAsNew({
+      workflow_name: workflow.name,
+      execution_mode: "continue_as_new" as const,
+      continue_from_task: task.name,
+    });
   }
 
-  const results = [result.data];
   if (!task.config.onComplete?.length) {
     return results;
   }
 
   for (const childTask of task.config.onComplete) {
-    const childResult = await handleTask(workflow, childTask, result.data);
+    const childResult = await handleTask(workflow, childTask, result);
     results.push(...childResult);
   }
 
@@ -167,10 +142,8 @@ async function handleTask(
     task.name.endsWith("_extract") &&
     result &&
     typeof result === "object" &&
-    result.data &&
-    typeof result.data === "object" &&
-    "hasMore" in result.data &&
-    (result.data as any).hasMore === true
+    "hasMore" in result &&
+    (result as any).hasMore === true
   ) {
     logger.info(`Extract task ${task.name} has more data, restarting chain...`);
 
