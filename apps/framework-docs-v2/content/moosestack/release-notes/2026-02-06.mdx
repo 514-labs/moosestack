@@ -7,126 +7,107 @@ import { Callout } from "@/components/mdx";
 
 # February 6, 2026
 
-
+<Callout type="info" title="Highlights">
+* **Breaking:** Workflow API routes now require admin authentication
+* **New:** Live logs view with structured logging and automatic fallback
+* **New:** Streamlined project creation with one-click deployment
+</Callout>
 
 ## 🐻 Boreal
 
 ### New Features
 **Live logs view with automatic fallback** ([@LucioFranco](https://github.com/LucioFranco))
-  Added a new live logs view that shows the last 15 minutes of logs with real-time updates every second. The logs system now automatically falls back from new structured logs to legacy parsed logs when needed, ensuring compatibility during the transition period.
+  New live logs view showing the last 15 minutes of logs with real-time updates every second. Automatically falls back from structured logs to legacy parsed logs when needed for compatibility during the transition.
 
-  📸 *[Screenshot needed: Added a new live logs view that shows the last 15 minutes of logs with real-time updates every second. The logs system now automatically falls back from new structured logs to legacy parsed logs when needed, ensuring compatibility during the transition period.]*
+  ![Live logs list view](/live-logs-list.png)
 
-  PR: [#3446](https://github.com/514-labs/moose/pull/3446), [#3448](https://github.com/514-labs/moose/pull/3448), [#3447](https://github.com/514-labs/moose/pull/3447), [#3425](https://github.com/514-labs/moose/pull/3425), [#3433](https://github.com/514-labs/moose/pull/3433), [#3424](https://github.com/514-labs/moose/pull/3424), [#1389](https://github.com/514-labs/moose/pull/1389), [#1373](https://github.com/514-labs/moose/pull/1373), [#1376](https://github.com/514-labs/moose/pull/1376)
+  ![Live logs detail view](/live-logs-detail.png)
 
-**Add Vercel integration for automatic environment variable sync** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
-  Adds the foundation for Vercel integration in Boreal, enabling automatic syncing of environment variables (like MOOSE_API_URL) to linked Vercel projects when deployments are created. This integration will help users connect their frontend applications deployed on Vercel with their Moose data infrastructure without manual configuration.
+  PR: [#3446](https://github.com/514-labs/moose/pull/3446), [#3447](https://github.com/514-labs/moose/pull/3447), [#3425](https://github.com/514-labs/moose/pull/3425), [#3433](https://github.com/514-labs/moose/pull/3433), [#3424](https://github.com/514-labs/moose/pull/3424)
+
+**Vercel integration for environment variable sync** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+  Boreal can now automatically sync environment variables (like `MOOSE_API_URL`) to linked Vercel projects when deployments are created, removing the need for manual configuration when connecting frontends to Moose infrastructure.
 
 **Track Moose CLI versions in deployments** ([@LucioFranco](https://github.com/LucioFranco))
-  Deployments now track and display the version of Moose CLI used to build them, providing better visibility into deployment compatibility and version history. This helps users understand which Moose features are available in their deployed applications and troubleshoot version-related issues.
+  Deployments now track and display the Moose CLI version used to build them, making it easier to troubleshoot version-related issues.
 
-  📸 *[Screenshot needed: Deployments now track and display the version of Moose CLI used to build them, providing better visibility into deployment compatibility and version history. This helps users understand which Moose features are available in their deployed applications and troubleshoot version-related issues.]*
 
 **Streamlined project creation with one-click deployment** ([@groy-514](https://github.com/groy-514))
-  The project creation flow has been completely redesigned with a new multi-step wizard that simplifies deploying MooseStack applications. Users can now create projects through an intuitive guided process that includes repository selection, data services configuration, and deployment settings. The new flow supports both GitHub repository imports and template-based deployments, making it easier to get started with new projects.
-
-  📸 *[Screenshot needed: The project creation flow has been completely redesigned with a new multi-step wizard that simplifies deploying MooseStack applications. Users can now create projects through an intuitive guided process that includes repository selection, data services configuration, and deployment settings. The new flow supports both GitHub repository imports and template-based deployments, making it easier to get started with new projects.]*
+  Redesigned project creation flow with a multi-step wizard covering repository selection, data services configuration, and deployment settings. Supports both GitHub repository imports and template-based deployments.
 
 ### Improvements
-- Skip building projects with no relevant changes in PRs: Pull request builds now skip projects that haven't changed, reducing unnecessary build times and providing clearer feedback about which projects are affected by changes. ([@onelesd](https://github.com/onelesd))
-- Improve log readability in deployed applications: Log output from deployed MooseStack applications now displays without ANSI color codes for cleaner, more readable logs in the dashboard. ([@LucioFranco](https://github.com/LucioFranco))
-- Update moose to 0.6.365: Updated the underlying moose framework to version 0.6.365, bringing the latest improvements and fixes to the Boreal platform. ([@LucioFranco](https://github.com/LucioFranco))
-- Replace old logs interface with improved new logs system: The logs interface in the project dashboard has been updated with a new, improved system that replaces the previous logging implementation. ([@groy-514](https://github.com/groy-514))
-- Improve command center navigation with group organization: The command center now organizes commands into groups with drill-down navigation, adds a "New Project" command, and shows command counts for better discoverability. ([@groy-514](https://github.com/groy-514))
+- Skip building projects with no relevant changes in PRs, reducing unnecessary build times. ([@onelesd](https://github.com/onelesd))
+- Strip ANSI color codes from deployed application logs for cleaner readability in the dashboard. ([@LucioFranco](https://github.com/LucioFranco))
+- Update moose to 0.6.362. ([@LucioFranco](https://github.com/LucioFranco))
+- Replace old logs interface with the new structured logs system. ([@groy-514](https://github.com/groy-514))
+- Organize command center into groups with drill-down navigation, add a "New Project" command, and show command counts. ([@groy-514](https://github.com/groy-514))
 
 ### Bug Fixes
-- Temporarily disable one-click deploy for MCP template: Temporarily disabled the one-click deploy feature for the TypeScript MCP template in Boreal. PR: [#3442](https://github.com/514-labs/moose/pull/3442) ([@onelesd](https://github.com/onelesd))
-- Fix environment variable management validation: Fixed validation and type handling issues in environment variable management that could cause errors when updating project configurations. ([@georgevanderson](https://github.com/georgevanderson))
+- Temporarily disable one-click deploy for the TypeScript MCP template. PR: [#3442](https://github.com/514-labs/moose/pull/3442) ([@onelesd](https://github.com/onelesd))
+- Fix validation and type handling in environment variable management that could cause errors when updating project configurations. ([@georgevanderson](https://github.com/georgevanderson))
 
 ## 🦌 Moose
 
 ### ⚠️ Breaking Changes
 **Move workflow routes behind admin authentication** ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
-  Workflow API endpoints now require admin authentication for security. The workflow trigger and history endpoints have been moved under `/admin/` paths and require a valid admin bearer token. This affects users who programmatically trigger workflows or query workflow history - they'll need to update their API calls to include proper authentication headers and use the new admin endpoints.
+  Workflow trigger, history, and terminate endpoints have moved under `/admin/` and now require a bearer token. Authentication is enforced in both dev and production modes.
 
-  **Updating workflow API calls for admin authentication**
+  **Migration example**
 
   ```typescript
-  // Before: Workflow operations without authentication
-  // const response = await fetch('http://localhost:4000/workflows/my-pipeline/trigger', {
-  //   method: 'POST',
-  //   body: JSON.stringify({ data: userData })
-  // });
-  
-  // After: Workflow operations require admin authentication
-  const ADMIN_TOKEN = process.env.MOOSE_ADMIN_TOKEN; // Set your admin bearer token
-  
-  // Trigger a workflow with admin authentication
-  async function triggerDataPipeline(workflowName: string, inputData: any) {
-    const response = await fetch(`http://localhost:4000/admin/workflows/${workflowName}/trigger`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${ADMIN_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(inputData)
-    });
-  
-    if (!response.ok) {
-      throw new Error(`Failed to trigger workflow: ${response.statusText}`);
-    }
-  
-    return response.json();
-  }
-  
-  // Query workflow execution history with admin authentication
-  async function getWorkflowHistory(workflowName?: string) {
-    const url = workflowName 
-      ? `http://localhost:4000/admin/workflows/history?workflow_name=${workflowName}`
-      : 'http://localhost:4000/admin/workflows/history';
-  
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${ADMIN_TOKEN}`
-      }
-    });
-  
-    if (!response.ok) {
-      throw new Error(`Failed to fetch workflow history: ${response.statusText}`);
-    }
-  
-    return response.json();
-  }
-  
-  // Example usage
-  await triggerDataPipeline('user-analytics-pipeline', { userId: '12345', event: 'signup' });
-  const history = await getWorkflowHistory('user-analytics-pipeline');
-  ```
+  // Before
+  fetch('http://localhost:4000/workflows/my-pipeline/trigger', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
 
-  This example shows how to update existing workflow API calls to use the new admin-protected endpoints. All workflow trigger and history operations now require admin authentication via bearer token and use `/admin/` prefixed routes.
+  // After — all workflow routes require admin auth
+  const ADMIN_TOKEN = process.env.MOOSE_ADMIN_TOKEN;
+
+  fetch('http://localhost:4000/admin/workflows/my-pipeline/trigger', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${ADMIN_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(data)
+  });
+
+  // History endpoint also moved
+  fetch('http://localhost:4000/admin/workflows/history', {
+    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+  });
+  ```
 
   PR: [#3432](https://github.com/514-labs/moose/pull/3432) | Docs: [/moosestack/workflows](https://docs.moosejs.com/moosestack/workflows)
 
 ### New Features
-**Add Language Server documentation for IDE integration** ([@onelesd](https://github.com/onelesd))
-  New documentation page explains how to use the MooseStack Language Server for real-time ClickHouse SQL intelligence in TypeScript projects. The LSP provides syntax validation, auto-completions, hover documentation, and code formatting for sql tagged template literals in your editor.
+**Language Server documentation for IDE integration** ([@onelesd](https://github.com/onelesd))
+  New docs page covering the MooseStack Language Server, which provides ClickHouse SQL intelligence (syntax validation, auto-completions, hover docs, formatting) for `sql` tagged template literals in TypeScript projects.
 
-  📸 *[Screenshot needed: New documentation page explains how to use the MooseStack Language Server for real-time ClickHouse SQL intelligence in TypeScript projects. The LSP provides syntax validation, auto-completions, hover documentation, and code formatting for sql tagged template literals in your editor.]*
+  📸 *[Screenshot needed]*
 
   PR: [#3453](https://github.com/514-labs/moose/pull/3453) | Docs: [/moosestack/language-server](https://docs.moosejs.com/moosestack/language-server)
 
+**Feedback command for submitting issues and joining community** ([@oatsandsugar](https://github.com/oatsandsugar))
+  New `moose feedback` command with three modes:
+  - `moose feedback "message"` — sends feedback directly via telemetry
+  - `moose feedback --bug "description"` — opens GitHub Issues pre-filled with environment info and log paths
+  - `moose feedback --community` — opens Slack community invite
+
+  PR: [#3462](https://github.com/514-labs/moose/pull/3462)
+
 ### Improvements
-- Improve moose --help output with better organization and docs link: The `moose --help` command now displays a more organized help screen with links to documentation, community resources, and hosting options for better user experience. PR: [#3461](https://github.com/514-labs/moose/pull/3461) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) ([@oatsandsugar](https://github.com/oatsandsugar))
-- Improve ClickPipes CDC documentation clarity: Clarified the ClickPipes CDC section in the performant dashboards guide with better structure, clearer explanations of CDC workflows, and improved callouts for different user scenarios. PR: [#3451](https://github.com/514-labs/moose/pull/3451) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) ([@okane16](https://github.com/okane16))
-- Improve performant dashboards guide with clearer structure and Boreal setup: The performant dashboards guide now includes better organization with clearer symptoms of slow dashboards, interactive configuration options for different databases and operating systems, and step-by-step Boreal deployment instructions to help users migrate from OLTP to ClickHouse more effectively. PR: [#3441](https://github.com/514-labs/moose/pull/3441) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) ([@okane16](https://github.com/okane16))
-- Enhance static report generation guide with PDF API endpoint options: Added comprehensive documentation for generating PDF reports via API endpoints in addition to local scripts, including new WebApp-based PDF generation with binary responses, updated architecture diagrams, and improved troubleshooting guidance. PR: [#3407](https://github.com/514-labs/moose/pull/3407) | Docs: [/guides/static-report-generation](https://docs.moosejs.com/guides/static-report-generation) ([@cjus](https://github.com/cjus))
-- Optimize Temporal connections when workflows are disabled: The framework now skips attempting to connect to Temporal when workflows are disabled, reducing startup time and avoiding unnecessary error messages. PR: [#3436](https://github.com/514-labs/moose/pull/3436) | Docs: [/moosestack/workflows](https://docs.moosejs.com/moosestack/workflows) ([@LucioFranco](https://github.com/LucioFranco))
-- Add shared MCP install instructions: Added reusable MCP (Model Context Protocol) installation documentation that can be shared across multiple guides, making it easier for developers to set up AI copilot integrations with their MooseStack development environment. PR: [#3419](https://github.com/514-labs/moose/pull/3419) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) ([@okane16](https://github.com/okane16))
-- Improve QVD pipeline installation and add install configuration: Installation instructions for the QVD to ClickHouse pipeline are now clearer and include a new install.config.toml file that provides guided setup steps after installation. ([@514Ben](https://github.com/514Ben))
-- Improve QVD pipeline installation with registry install script: Installation documentation now shows how to use the 514 registry install script instead of manual setup, making QVD pipeline deployment faster and more reliable. ([@514Ben](https://github.com/514Ben))
+- Reorganize `moose --help` output with grouped commands and links to docs, community, and hosting. PR: [#3461](https://github.com/514-labs/moose/pull/3461) | Docs: [/moosestack/moose-cli](https://docs.moosejs.com/moosestack/moose-cli) ([@oatsandsugar](https://github.com/oatsandsugar))
+- Clarify ClickPipes CDC section in the performant dashboards guide with better structure and scenario-specific callouts. PR: [#3451](https://github.com/514-labs/moose/pull/3451) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) ([@okane16](https://github.com/okane16))
+- Improve performant dashboards guide with interactive configuration options and step-by-step Boreal deployment instructions. PR: [#3441](https://github.com/514-labs/moose/pull/3441) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) ([@okane16](https://github.com/okane16))
+- Add PDF API endpoint documentation to the static report generation guide, including WebApp-based PDF generation with binary responses. PR: [#3407](https://github.com/514-labs/moose/pull/3407) | Docs: [/guides/static-report-generation](https://docs.moosejs.com/guides/static-report-generation) ([@cjus](https://github.com/cjus))
+- Skip Temporal connection attempts when workflows are disabled, reducing startup time. PR: [#3436](https://github.com/514-labs/moose/pull/3436) | Docs: [/moosestack/workflows](https://docs.moosejs.com/moosestack/workflows) ([@LucioFranco](https://github.com/LucioFranco))
+- Add reusable MCP install instructions shared across guides. PR: [#3419](https://github.com/514-labs/moose/pull/3419) | Docs: [/guides/performant-dashboards](https://docs.moosejs.com/guides/performant-dashboards) ([@okane16](https://github.com/okane16))
+- Auto-detect CI/CD environments for improved behavior and diagnostics in automated pipelines. PR: [#3411](https://github.com/514-labs/moose/pull/3411), [#3450](https://github.com/514-labs/moose/pull/3450) ([@callicles](https://github.com/callicles))
+- Add table existence check and drop utilities to the ClickHouse client. PR: [#3422](https://github.com/514-labs/moose/pull/3422) ([@callicles](https://github.com/callicles))
+- Add remote ClickHouse connection utilities with HTTP protocol support. PR: [#3423](https://github.com/514-labs/moose/pull/3423) ([@callicles](https://github.com/callicles))
 
 ### Bug Fixes
-- Fix SQL parsing for ClickHouse tables with engine-named columns: Fixed an issue where the SQL parser would incorrectly identify column names containing "engine" as ENGINE clauses when processing ClickHouse CREATE TABLE statements. PR: [#3440](https://github.com/514-labs/moose/pull/3440) ([@callicles](https://github.com/callicles))
-- Fix SAP HANA CDC connector documentation: Fixed incorrect command and removed non-existent documentation references in the SAP HANA CDC connector getting-started guide. ([@514Ben](https://github.com/514Ben))
-
-
+- Fix SQL parser incorrectly treating column names containing "engine" as ENGINE clauses in CREATE TABLE statements. PR: [#3440](https://github.com/514-labs/moose/pull/3440) ([@callicles](https://github.com/callicles))
+- Fix incorrect resource name generation for OLAP tables. PR: [#3448](https://github.com/514-labs/moose/pull/3448) ([@LucioFranco](https://github.com/LucioFranco))
