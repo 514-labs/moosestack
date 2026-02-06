@@ -1512,11 +1512,21 @@ pub async fn top_command_handler(
             }
         },
         Commands::Feedback {
+            message,
             bug,
-            idea,
             community,
             logs,
-        } => routines::feedback::feedback(*bug, *idea, *community, *logs),
+        } => {
+            if *community {
+                routines::feedback::join_community()
+            } else if *bug {
+                routines::feedback::report_bug(*logs)
+            } else if let Some(msg) = message {
+                routines::feedback::send_feedback(msg, &settings, machine_id).await
+            } else {
+                routines::feedback::show_help()
+            }
+        }
         Commands::Query {
             query: sql,
             file,

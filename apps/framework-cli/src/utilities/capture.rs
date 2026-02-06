@@ -92,6 +92,8 @@ pub enum ActivityType {
     RefreshListCommand,
     #[serde(rename = "dbPullCommand")]
     DbPullCommand,
+    #[serde(rename = "feedbackCommand")]
+    FeedbackCommand,
 }
 
 pub fn capture_usage(

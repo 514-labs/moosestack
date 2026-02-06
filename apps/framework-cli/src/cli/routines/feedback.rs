@@ -1,137 +1,110 @@
-//! Feedback command routines for submitting feedback, reporting issues, and joining the community.
+//! Feedback command: send feedback via PostHog, report bugs, or join the community.
 
-use crate::cli::display::{Message, MessageType};
+use crate::cli::display::Message;
 use crate::cli::routines::{RoutineFailure, RoutineSuccess};
-use crate::cli::settings::user_directory;
-use crate::utilities::constants::{
-    CLI_VERSION, DOCS_URL, GITHUB_DISCUSSIONS_URL, GITHUB_ISSUES_URL, SLACK_COMMUNITY_URL,
-    TROUBLESHOOTING_URL,
-};
+use crate::cli::settings::{user_directory, Settings};
+use crate::utilities::capture::{capture_usage, wait_for_usage_capture, ActivityType};
+use crate::utilities::constants::{CLI_VERSION, GITHUB_ISSUES_URL, SLACK_COMMUNITY_URL};
+use std::collections::HashMap;
 
-/// Error type for feedback operations
-#[derive(thiserror::Error, Debug)]
-pub enum FeedbackError {
-    #[error("Failed to open URL: {0}")]
-    OpenUrlError(String),
-}
-
-/// Opens a URL in the default browser
-fn open_url(url: &str) -> Result<(), FeedbackError> {
-    open::that(url).map_err(|e| FeedbackError::OpenUrlError(e.to_string()))
-}
-
-/// Get the path to CLI log files
-fn get_log_path() -> String {
-    user_directory().to_string_lossy().to_string()
-}
-
-/// Build a GitHub issue URL with pre-filled information
+/// Build a GitHub issue URL with pre-filled environment info
 fn build_issue_url(include_logs: bool) -> String {
-    let version = CLI_VERSION;
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-
     let log_section = if include_logs {
+        let path = user_directory().to_string_lossy().to_string();
         format!(
-            "\n\n## Logs\nLog files are located at: `{}`\n\nPlease attach relevant log files if applicable.",
-            get_log_path()
+            "\n\n## Logs\nLog files are located at: `{}`\n\nPlease attach relevant log files.",
+            path
         )
     } else {
         String::new()
     };
 
     let body = format!(
-        "## Description\n\n<!-- Please describe the issue or bug you encountered -->\n\n## Environment\n- CLI Version: {}\n- OS: {}\n- Architecture: {}{}",
-        version, os, arch, log_section
+        "## Description\n\n<!-- Describe the issue -->\n\n## Environment\n- CLI Version: {}\n- OS: {}\n- Architecture: {}{}",
+        CLI_VERSION,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        log_section
     );
 
-    let encoded_body = urlencoding::encode(&body);
-    format!("{}?body={}", GITHUB_ISSUES_URL, encoded_body)
+    format!("{}?body={}", GITHUB_ISSUES_URL, urlencoding::encode(&body))
 }
 
-/// Execute the feedback command
-pub fn feedback(
-    bug: bool,
-    idea: bool,
-    community: bool,
-    logs: bool,
+/// Send feedback message as a PostHog telemetry event
+pub async fn send_feedback(
+    message: &str,
+    settings: &Settings,
+    machine_id: String,
 ) -> Result<RoutineSuccess, RoutineFailure> {
-    // Determine action based on flags (if none specified, show interactive menu)
-    if community {
-        open_url(SLACK_COMMUNITY_URL).map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Failed".to_string(), "to open Slack community".to_string()),
-                e,
-            )
-        })?;
+    let mut params = HashMap::new();
+    params.insert("feedback_message".to_string(), message.to_string());
 
-        return Ok(RoutineSuccess::success(Message::new(
-            "Opening".to_string(),
-            "Moose community Slack in your browser".to_string(),
-        )));
-    }
-
-    if idea {
-        open_url(GITHUB_DISCUSSIONS_URL).map_err(|e| {
-            RoutineFailure::new(
-                Message::new(
-                    "Failed".to_string(),
-                    "to open GitHub Discussions".to_string(),
-                ),
-                e,
-            )
-        })?;
-
-        return Ok(RoutineSuccess::success(Message::new(
-            "Opening".to_string(),
-            "GitHub Discussions for feature requests and ideas".to_string(),
-        )));
-    }
-
-    if bug {
-        let url = build_issue_url(logs);
-        open_url(&url).map_err(|e| {
-            RoutineFailure::new(
-                Message::new("Failed".to_string(), "to open GitHub Issues".to_string()),
-                e,
-            )
-        })?;
-
-        let log_msg = if logs {
-            format!(" Log files are at: {}", get_log_path())
-        } else {
-            String::new()
-        };
-
-        return Ok(RoutineSuccess::success(Message::new(
-            "Opening".to_string(),
-            format!("GitHub Issues to report a bug.{}", log_msg),
-        )));
-    }
-
-    // Default: show feedback options and resources
-    crate::cli::display::show_message_wrapper(
-        MessageType::Info,
-        Message::new("Feedback".to_string(), "Ways to reach us:".to_string()),
+    let handle = capture_usage(
+        ActivityType::FeedbackCommand,
+        None,
+        settings,
+        machine_id,
+        params,
     );
 
+    wait_for_usage_capture(handle).await;
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Sent".to_string(),
+        "Thank you for your feedback!".to_string(),
+    )))
+}
+
+/// Open GitHub Issues for bug reporting
+pub fn report_bug(logs: bool) -> Result<RoutineSuccess, RoutineFailure> {
+    let url = build_issue_url(logs);
+
+    open::that(&url).map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Failed".to_string(), "to open GitHub Issues".to_string()),
+            anyhow::anyhow!("{}", e),
+        )
+    })?;
+
+    let details = if logs {
+        let path = user_directory().to_string_lossy().to_string();
+        format!("Opening GitHub Issues. Log files are at: {}", path)
+    } else {
+        "Opening GitHub Issues in your browser".to_string()
+    };
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Bug report".to_string(),
+        details,
+    )))
+}
+
+/// Open Slack community invite
+pub fn join_community() -> Result<RoutineSuccess, RoutineFailure> {
+    open::that(SLACK_COMMUNITY_URL).map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Failed".to_string(), "to open Slack community".to_string()),
+            anyhow::anyhow!("{}", e),
+        )
+    })?;
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Community".to_string(),
+        "Opening Moose Slack community in your browser".to_string(),
+    )))
+}
+
+/// Show usage help when no args are provided
+pub fn show_help() -> Result<RoutineSuccess, RoutineFailure> {
     println!();
+    println!("  Send feedback:         moose feedback \"loving the DX!\"");
     println!("  Report a bug:          moose feedback --bug");
-    println!("  Request a feature:     moose feedback --idea");
+    println!("  Report with logs:      moose feedback --bug --logs");
     println!("  Join the community:    moose feedback --community");
-    println!();
-    println!("  Include logs:          moose feedback --bug --logs");
-    println!();
-    println!("Resources:");
-    println!("  Documentation:         {}", DOCS_URL);
-    println!("  Troubleshooting:       {}", TROUBLESHOOTING_URL);
-    println!("  GitHub Issues:         {}", GITHUB_ISSUES_URL);
-    println!("  GitHub Discussions:    {}", GITHUB_DISCUSSIONS_URL);
-    println!("  Slack Community:       {}", SLACK_COMMUNITY_URL);
     println!();
 
     Ok(RoutineSuccess::success(Message::new(
         "Feedback".to_string(),
-        "Use the commands above to submit feedback".to_string(),
+        "Use the commands above to get in touch".to_string(),
     )))
 }

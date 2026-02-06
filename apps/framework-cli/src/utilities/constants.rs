@@ -124,12 +124,8 @@ pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json"
 
 // Feedback URLs
 pub const GITHUB_ISSUES_URL: &str = "https://github.com/514-labs/moosestack/issues/new";
-pub const GITHUB_DISCUSSIONS_URL: &str = "https://github.com/514-labs/moosestack/discussions";
 pub const SLACK_COMMUNITY_URL: &str =
     "https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg";
-pub const DOCS_URL: &str = "https://docs.fiveonefour.com/moosestack";
-pub const TROUBLESHOOTING_URL: &str =
-    "https://docs.fiveonefour.com/moosestack/help/troubleshooting";
 
 pub const STORE_CRED_PROMPT: &str = r#"You have externally managed tables in your code base.
 Ensure your code is up to date with `moose db pull`.
