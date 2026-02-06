@@ -234,6 +234,20 @@ pub enum Commands {
         #[arg(short = 'p', long = "prettify", requires = "format_query")]
         prettify: bool,
     },
+    /// Fetch and display LLM-optimized documentation for AI agents
+    Docs {
+        /// Language for documentation: typescript (ts) or python (py)
+        #[arg(value_name = "LANGUAGE")]
+        language: Option<String>,
+
+        /// Filter docs by path (e.g., 'getting-started', 'api')
+        #[arg(long)]
+        path: Option<String>,
+
+        /// Output raw content without formatting (for piping to other tools)
+        #[arg(long)]
+        raw: bool,
+    },
 }
 
 #[derive(Debug, Args)]
