@@ -6,7 +6,7 @@
 use crate::infrastructure::olap::clickhouse::model::ClickHouseIndex;
 use sqlparser::ast::{
     CreateTableOptions, Expr, ObjectName, ObjectNamePart, Query, Select, SelectItem, SetExpr,
-    SqlOption, Statement, TableFactor, TableWithJoins, ToSql, Value, VisitMut, VisitorMut,
+    SqlOption, Statement, TableFactor, TableWithJoins, ToSql, VisitMut, VisitorMut,
 };
 use sqlparser::dialect::ClickHouseDialect;
 use sqlparser::keywords::Keyword;
@@ -662,31 +662,6 @@ impl<'a> VisitorMut for Normalizer<'a> {
                     }
                     ident.quote_style = None;
                     ident.value = ident.value.replace('`', "");
-                }
-            }
-            Expr::Value(value_with_span) => {
-                // Normalize numeric literals: "100." -> "100.0"
-                if let Value::Number(ref mut num_str, _long) = value_with_span.value {
-                    // If number ends with '.' (like "100."), append "0"
-                    if num_str.ends_with('.') {
-                        num_str.push('0');
-                    }
-                }
-            }
-            Expr::Nested(inner) => {
-                // Unwrap unnecessary parentheses around simple expressions.
-                // This handles cases where ClickHouse adds parens like "(sum(x) * 100.0)"
-                // but user code has "sum(x) * 100.0" without parens.
-                // We unwrap if the inner expression is a binary op, function, or literal.
-                let should_unwrap = matches!(
-                    inner.as_ref(),
-                    Expr::BinaryOp { .. }
-                        | Expr::Function(_)
-                        | Expr::Value(_)
-                        | Expr::Identifier(_)
-                );
-                if should_unwrap {
-                    *expr = inner.as_ref().clone();
                 }
             }
             _ => {}
