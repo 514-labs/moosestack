@@ -1566,6 +1566,28 @@ pub async fn top_command_handler(
 
             result
         }
+        Commands::Docs {
+            language,
+            path,
+            raw,
+        } => {
+            info!("Running docs command");
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::DocsCommand,
+                None,
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+
+            let result =
+                routines::docs::fetch_docs(language.as_deref(), path.as_deref(), *raw).await;
+
+            wait_for_usage_capture(capture_handle).await;
+
+            result
+        }
     }
 }
 

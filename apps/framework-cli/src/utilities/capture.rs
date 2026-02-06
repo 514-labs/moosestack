@@ -38,6 +38,8 @@ pub enum ActivityType {
     CheckCommand,
     #[serde(rename = "devCommand")]
     DevCommand,
+    #[serde(rename = "docsCommand")]
+    DocsCommand,
     #[serde(rename = "dockerCommand")]
     DockerCommand,
     #[serde(rename = "initCommand")]
