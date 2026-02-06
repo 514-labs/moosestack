@@ -13,8 +13,8 @@ use super::metrics::Metrics;
 use crate::utilities::{constants, docker::DockerClient};
 use clap::Parser;
 use commands::{
-    Commands, DbCommands, GenerateCommand, KafkaArgs, KafkaCommands, TemplateSubCommands,
-    WorkflowCommands,
+    Commands, DbCommands, DocsCommands, GenerateCommand, KafkaArgs, KafkaCommands,
+    TemplateSubCommands, WorkflowCommands,
 };
 use config::ConfigError;
 use display::with_spinner_completion;
@@ -1551,11 +1551,7 @@ pub async fn top_command_handler(
 
             result
         }
-        Commands::Docs {
-            language,
-            path,
-            raw,
-        } => {
+        Commands::Docs(docs_args) => {
             info!("Running docs command");
 
             let capture_handle = crate::utilities::capture::capture_usage(
@@ -1566,8 +1562,18 @@ pub async fn top_command_handler(
                 HashMap::new(),
             );
 
-            let result =
-                routines::docs::fetch_docs(language.as_deref(), path.as_deref(), *raw).await;
+            let lang = routines::docs::resolve_language(docs_args.lang.as_deref(), &settings)?;
+
+            let result = match &docs_args.command {
+                None => routines::docs::show_toc(docs_args.expand, docs_args.raw).await,
+                Some(DocsCommands::Search { query }) => {
+                    routines::docs::search_toc(query, docs_args.raw).await
+                }
+                Some(DocsCommands::Show(args)) => {
+                    let slug = args.join("/");
+                    routines::docs::fetch_page(&slug, lang, docs_args.raw).await
+                }
+            };
 
             wait_for_usage_capture(capture_handle).await;
 
