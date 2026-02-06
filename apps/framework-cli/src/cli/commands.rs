@@ -215,21 +215,17 @@ pub enum Commands {
     Kafka(KafkaArgs),
     /// Submit feedback, report issues, or join the community
     Feedback {
-        /// Feedback message to send (e.g. moose feedback "loving the DX!")
-        #[arg(conflicts_with_all = ["bug", "community"])]
+        /// Feedback message (e.g. moose feedback "loving the DX!" or moose feedback --bug "crash on startup")
+        #[arg(conflicts_with = "community")]
         message: Option<String>,
 
-        /// Report a bug (opens GitHub Issues with system info)
+        /// Report a bug (opens GitHub Issues with system info and log paths)
         #[arg(long, conflicts_with = "community")]
         bug: bool,
 
         /// Join the Moose community on Slack
-        #[arg(long, conflicts_with = "bug")]
+        #[arg(long, conflicts_with_all = ["bug", "message"])]
         community: bool,
-
-        /// Include path to log files in the bug report (use with --bug)
-        #[arg(long, requires = "bug")]
-        logs: bool,
     },
     /// Execute SQL queries against ClickHouse
     Query {

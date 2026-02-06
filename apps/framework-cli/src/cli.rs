@@ -1515,12 +1515,11 @@ pub async fn top_command_handler(
             message,
             bug,
             community,
-            logs,
         } => {
             if *community {
                 routines::feedback::join_community()
             } else if *bug {
-                routines::feedback::report_bug(*logs)
+                routines::feedback::report_bug(message.as_deref())
             } else if let Some(msg) = message {
                 routines::feedback::send_feedback(msg, &settings, machine_id).await
             } else {

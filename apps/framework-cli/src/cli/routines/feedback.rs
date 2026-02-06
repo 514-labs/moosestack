@@ -7,27 +7,31 @@ use crate::utilities::capture::{capture_usage, wait_for_usage_capture, ActivityT
 use crate::utilities::constants::{CLI_VERSION, GITHUB_ISSUES_URL, SLACK_COMMUNITY_URL};
 use std::collections::HashMap;
 
-/// Build a GitHub issue URL with pre-filled environment info
-fn build_issue_url(include_logs: bool) -> String {
-    let log_section = if include_logs {
-        let path = user_directory().to_string_lossy().to_string();
-        format!(
-            "\n\n## Logs\nLog files are located at: `{}`\n\nPlease attach relevant log files.",
-            path
-        )
-    } else {
-        String::new()
+/// Build a GitHub issue URL with pre-filled environment info, log paths, and optional description
+fn build_issue_url(description: Option<&str>) -> String {
+    let description_text = match description {
+        Some(msg) => msg.to_string(),
+        None => "<!-- Describe the issue -->".to_string(),
     };
 
+    let log_path = user_directory().to_string_lossy().to_string();
+
     let body = format!(
-        "## Description\n\n<!-- Describe the issue -->\n\n## Environment\n- CLI Version: {}\n- OS: {}\n- Architecture: {}{}",
+        "## Description\n\n{}\n\n## Environment\n- CLI Version: {}\n- OS: {}\n- Architecture: {}\n\n## Logs\nLog files are located at: `{}`\n\nPlease attach relevant log files if applicable.",
+        description_text,
         CLI_VERSION,
         std::env::consts::OS,
         std::env::consts::ARCH,
-        log_section
+        log_path
     );
 
-    format!("{}?body={}", GITHUB_ISSUES_URL, urlencoding::encode(&body))
+    let title = description.unwrap_or_default();
+    let encoded_body = urlencoding::encode(&body);
+    let encoded_title = urlencoding::encode(title);
+    format!(
+        "{}?title={}&body={}",
+        GITHUB_ISSUES_URL, encoded_title, encoded_body
+    )
 }
 
 const SUPPORT_EMAIL: &str = "support@fiveonefour.com";
@@ -68,8 +72,8 @@ pub async fn send_feedback(
 }
 
 /// Open GitHub Issues for bug reporting
-pub fn report_bug(logs: bool) -> Result<RoutineSuccess, RoutineFailure> {
-    let url = build_issue_url(logs);
+pub fn report_bug(description: Option<&str>) -> Result<RoutineSuccess, RoutineFailure> {
+    let url = build_issue_url(description);
 
     open::that(&url).map_err(|e| {
         RoutineFailure::new(
@@ -78,16 +82,10 @@ pub fn report_bug(logs: bool) -> Result<RoutineSuccess, RoutineFailure> {
         )
     })?;
 
-    let details = if logs {
-        let path = user_directory().to_string_lossy().to_string();
-        format!("Opening GitHub Issues. Log files are at: {}", path)
-    } else {
-        "Opening GitHub Issues in your browser".to_string()
-    };
-
+    let path = user_directory().to_string_lossy().to_string();
     Ok(RoutineSuccess::success(Message::new(
         "Bug report".to_string(),
-        details,
+        format!("Opening GitHub Issues. Log files are at: {}", path),
     )))
 }
 
@@ -110,8 +108,7 @@ pub fn join_community() -> Result<RoutineSuccess, RoutineFailure> {
 pub fn show_help() -> Result<RoutineSuccess, RoutineFailure> {
     println!();
     println!("  Send feedback:         moose feedback \"loving the DX!\"");
-    println!("  Report a bug:          moose feedback --bug");
-    println!("  Report with logs:      moose feedback --bug --logs");
+    println!("  Report a bug:          moose feedback --bug \"crash on startup\"");
     println!("  Join the community:    moose feedback --community");
     println!();
 
