@@ -158,6 +158,13 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "moosestack/getting-started/branch-based-development",
+    title: "Branch-Based Development",
+    icon: IconGitCompare,
+    languages: ["typescript", "python"],
+  },
+  {
+    type: "page",
     slug: "templates",
     title: "Browse Templates",
     icon: IconCode,

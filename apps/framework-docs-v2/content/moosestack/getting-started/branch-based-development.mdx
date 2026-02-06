@@ -1,0 +1,213 @@
+---
+title: Branch-Based Development
+description: Build isolated branch environments for local and remote development
+order: 5
+category: getting-started
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Branch-Based Development
+
+Use this guide when each Git branch needs its own safe data environment.
+
+A branch environment gives you:
+
+- isolated schema state per branch
+- deterministic migration planning per branch
+- clean preview lifecycle from branch create to branch cleanup
+
+## Base configuration
+
+Start with one branch environment policy for your project.
+
+```toml title="moose.config.toml"
+[olap]
+engine = "clickhouse" # clickhouse | duckdb | snowflake
+profile = "remote"
+connection = "https://user:password@host:8443/analytics"
+
+[dev_infra]
+profile = "remote_hybrid" # local | remote_hybrid | remote_full
+
+[branch_environments]
+enabled = true
+name_template = "{repo}_{branch}"
+default_ttl_hours = 72
+cleanup_on_branch_delete = true
+
+[branch_environments.segmentation]
+clickhouse = "database_per_branch"
+duckdb = "file_per_branch"
+snowflake = "schema_per_branch"
+```
+
+## Segmentation defaults
+
+| Engine     | Default strategy      | Isolation unit |
+| ---------- | --------------------- | -------------- |
+| ClickHouse | `database_per_branch` | Database       |
+| DuckDB     | `file_per_branch`     | DuckDB file    |
+| Snowflake  | `schema_per_branch`   | Schema         |
+
+## 1. Working locally
+
+Use this mode when you want all branch resources on your machine.
+
+```toml title="moose.config.toml"
+[olap]
+engine = "duckdb"
+profile = "local"
+connection = "duckdb:///./.moose/dev.duckdb"
+
+[dev_infra]
+profile = "local"
+```
+
+```bash
+git checkout -b feature/add-cohort-retention
+moose dev --infra-profile local
+```
+
+Expected startup experience:
+
+```text
+[branch-env] branch=feature/add-cohort-retention
+[branch-env] strategy=file_per_branch
+[branch-env] segment=.moose/branches/feature_add_cohort_retention.duckdb
+[branch-env] state=ready
+```
+
+Generate and apply branch migrations:
+
+```bash
+moose generate migration --olap-engine duckdb --olap-url "duckdb:///./.moose/branches/feature_add_cohort_retention.duckdb" --save
+moose migrate --olap-engine duckdb --olap-url "duckdb:///./.moose/branches/feature_add_cohort_retention.duckdb"
+```
+
+## 2. Working locally from remote
+
+Use this mode when your runtime stays local, but your branch data segment is remote.
+
+```toml title="moose.config.toml"
+[olap]
+engine = "clickhouse"
+profile = "remote"
+connection = "https://user:password@host:8443/analytics"
+
+[dev_infra]
+profile = "remote_hybrid"
+```
+
+```bash
+git checkout -b feature/pricing-events-v2
+export MOOSE_OLAP__ENGINE="clickhouse"
+export MOOSE_OLAP__CONNECTION="https://user:password@host:8443/analytics"
+moose dev --infra-profile remote_hybrid
+```
+
+Expected startup experience:
+
+```text
+[branch-env] branch=feature/pricing-events-v2
+[branch-env] strategy=database_per_branch
+[branch-env] segment=analytics_feature_pricing_events_v2
+[branch-env] bootstrap=clone_from_main
+[branch-env] state=ready
+```
+
+Branch-scoped migration flow:
+
+```bash
+moose plan --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+moose generate migration --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION" --save
+moose migrate --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## 3. Working remote from local
+
+Use this mode when your local machine controls a fully remote branch environment.
+
+This is the default Snowflake-style workflow.
+
+```toml title="moose.config.toml"
+[olap]
+engine = "snowflake"
+profile = "remote"
+connection = "snowflake://<user>:<password>@<account>/<database>/<schema>?warehouse=<warehouse>&role=<role>"
+
+[dev_infra]
+profile = "remote_full"
+```
+
+```bash
+git checkout -b feature/audit-controls
+moose dev --infra-profile remote_full
+```
+
+Expected startup experience:
+
+```text
+[branch-env] branch=feature/audit-controls
+[branch-env] strategy=schema_per_branch
+[branch-env] segment=DEV_FEATURE_AUDIT_CONTROLS
+[branch-env] runtime=remote
+[branch-env] state=ready
+```
+
+Then run the same branch-scoped migration flow:
+
+```bash
+moose generate migration --olap-engine snowflake --olap-url "$MOOSE_OLAP__CONNECTION" --save
+moose migrate --olap-engine snowflake --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+## What users see in code
+
+Your app can log branch context for debugging and preview verification.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```ts
+import { mooseRuntimeEnv } from "@514labs/moose-lib";
+
+export const branch = mooseRuntimeEnv.get("MOOSE_BRANCH_ENV__NAME");
+export const segment = mooseRuntimeEnv.get("MOOSE_BRANCH_ENV__SEGMENT");
+
+console.log({ branch, segment });
+
+````
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python
+from moose_lib import moose_runtime_env
+
+branch = moose_runtime_env.get("MOOSE_BRANCH_ENV__NAME")
+segment = moose_runtime_env.get("MOOSE_BRANCH_ENV__SEGMENT")
+
+print({"branch": branch, "segment": segment})
+````
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+## Branch lifecycle behavior
+
+| Event                         | Engine action                         | User impact                 |
+| ----------------------------- | ------------------------------------- | --------------------------- |
+| Branch created                | Provision segment from strategy       | New isolated environment    |
+| First `moose dev` on branch   | Resolve connection and run preflight  | Fast readiness check        |
+| Migration apply               | Plan and apply in branch segment only | No cross-branch drift       |
+| Branch deleted or TTL reached | Cleanup segment by policy             | Lower cost and less clutter |
+
+<Callout type="info" title="Start small">
+  Use one strategy per engine first. Add custom overrides after your team
+  confirms naming, permissions, and cleanup policy.
+</Callout>
+
+## Related pages
+
+- [5-Minute Quickstart](/moosestack/getting-started/quickstart)
+- [Remote-First Quickstart](/moosestack/getting-started/remote-first-quickstart)
+- [Engine and Dev Profile](/moosestack/configuration/engine-and-dev-profile)
+- [Multi-Engine Migration Playbooks](/moosestack/migrate/multi-engine-migration-playbooks)
