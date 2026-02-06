@@ -120,6 +120,29 @@ MOOSE_TEMPORAL_CONFIG__API_KEY=<your_temporal_api_key>
 MOOSE_TEMPORAL_CONFIG__TEMPORAL_HOST=<your_temporal_namespace>.tmprl.cloud
 ```
 
+#### CDC Connections (Optional)
+
+If you define CDC sources in code, keep credentials in environment variables and load them using runtime env helpers:
+
+```
+# Example CDC connection string
+ORDERS_DB_URL=postgres://user:pass@host:5432/orders
+```
+
+TypeScript:
+
+```ts
+connection: mooseRuntimeEnv.get("ORDERS_DB_URL")
+```
+
+Python:
+
+```python
+connection=moose_runtime_env.get("ORDERS_DB_URL")
+```
+
+Moose loads `.env` files using the same precedence rules described in the configuration docs. In cloud environments, set the variables in your platform’s secret manager or runtime env settings. `moose plan` surfaces CDC resources for sign‑off and masks secrets in output.
+
 ## Securing Sensitive Information
 
 When deploying to cloud environments, it's important to handle sensitive information like passwords and API keys securely. Each cloud provider offers mechanisms for this:

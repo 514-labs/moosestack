@@ -25,6 +25,7 @@ from ._registry import (
     _web_apps,
     _materialized_views,
     _views,
+    _cdc_sources,
 )
 from .materialized_view import MaterializedView
 from .view import View
@@ -135,6 +136,16 @@ def get_views() -> Dict[str, "View"]:
 def get_view(name: str) -> Optional["View"]:
     """Get a registered view by name."""
     return _views.get(name)
+
+
+def get_cdc_sources() -> Dict[str, "CdcSource"]:
+    """Get all registered CDC sources."""
+    return _cdc_sources
+
+
+def get_cdc_source(name: str) -> Optional["CdcSource"]:
+    """Get a registered CDC source by name."""
+    return _cdc_sources.get(name)
 
 
 # Backward compatibility aliases (deprecated)

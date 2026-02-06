@@ -7,6 +7,7 @@ export interface PlanOutput {
   target_infra_map: {
     default_database: string;
     tables: any;
+    cdc_sources?: Record<string, any>;
   };
   changes: {
     olap_changes: Array<Record<string, any>>;

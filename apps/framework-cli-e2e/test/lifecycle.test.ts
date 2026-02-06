@@ -64,6 +64,8 @@ const TEST_ENV = {
   // Dummy values for S3 secrets tests
   TEST_AWS_ACCESS_KEY_ID: "test-access-key",
   TEST_AWS_SECRET_ACCESS_KEY: "test-secret-key",
+  // Dummy CDC connection string for template CDC sources
+  TEST_CDC_CONNECTION: "postgres://test_user:test_pass@localhost:5432/test_db",
   // Suppress the prompt for externally managed tables setup
   MOOSE_DEV__SUPPRESS_DEV_SETUP_PROMPT: "true",
   // Admin token for moose plan --url authentication
@@ -237,6 +239,34 @@ describe("LifeCycle Management Tests", function () {
   before(async function () {
     console.log("\n=== LifeCycle Tests - Starting ===");
     console.log("Each test will run in its own isolated environment\n");
+  });
+
+  describe("CDC resources", function () {
+    it("should surface CDC sources in moose plan output", async function () {
+      this.timeout(TIMEOUTS.TEST_SETUP_MS + TIMEOUTS.MIGRATION_MS);
+
+      const { testProjectDir, cleanup } =
+        await setupTestEnvironment("cdc-plan-output");
+
+      try {
+        console.log("\n--- Testing CDC sources appear in plan output ---");
+
+        const plan = await runMoosePlanJson(testProjectDir);
+
+        const cdcSources = plan.target_infra_map.cdc_sources ?? {};
+        expect(Object.keys(cdcSources).length).to.be.greaterThan(0);
+        expect(Object.keys(cdcSources)).to.include("orders_cdc");
+
+        const hasCdcChange = plan.changes.processes_changes.some(
+          (change) => change.CdcSource !== undefined,
+        );
+        expect(hasCdcChange).to.be.true;
+
+        console.log("✓ CDC sources present in plan output");
+      } finally {
+        await cleanup();
+      }
+    });
   });
 
   describe("EXTERNALLY_MANAGED tables", function () {

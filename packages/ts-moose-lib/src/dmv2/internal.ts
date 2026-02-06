@@ -41,6 +41,7 @@ import { compilerLog } from "../commons";
 import { WebApp } from "./sdk/webApp";
 import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
+import { CdcSource } from "./sdk/cdcSource";
 import {
   getSourceDir,
   shouldUseCompiled,
@@ -145,6 +146,7 @@ const moose_internal = {
   webApps: new Map<string, WebApp>(),
   materializedViews: new Map<string, MaterializedView<any>>(),
   views: new Map<string, View>(),
+  cdcSources: new Map<string, CdcSource>(),
 };
 /**
  * Default retention period for streams if not specified (7 days in seconds).
@@ -543,6 +545,26 @@ interface ViewJson {
   metadata?: { [key: string]: any };
 }
 
+interface CdcTableJson {
+  name: string;
+  sourceTable: string;
+  primaryKey: string[];
+  stream?: string;
+  table?: string;
+  snapshot?: string;
+  version?: string;
+  metadata?: { [key: string]: any };
+}
+
+interface CdcSourceJson {
+  name: string;
+  kind: string;
+  connection: string;
+  tables: CdcTableJson[];
+  metadata?: { [key: string]: any };
+  lifeCycle?: string;
+}
+
 /**
  * Type guard: Check if config is S3QueueConfig
  */
@@ -923,6 +945,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   const webApps: { [key: string]: WebAppJson } = {};
   const materializedViews: { [key: string]: MaterializedViewJson } = {};
   const views: { [key: string]: ViewJson } = {};
+  const cdcSources: { [key: string]: CdcSourceJson } = {};
 
   registry.tables.forEach((table) => {
     const id =
@@ -1218,6 +1241,28 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     };
   });
 
+  registry.cdcSources.forEach((source) => {
+    const tables = Array.from(source.tables.values()).map((table) => ({
+      name: table.name,
+      sourceTable: table.sourceTable,
+      primaryKey: table.config.primaryKey as string[],
+      stream: table.stream?.name,
+      table: table.table?.name,
+      snapshot: table.config.snapshot,
+      version: table.config.version,
+      metadata: table.metadata,
+    }));
+
+    cdcSources[source.name] = {
+      name: source.name,
+      kind: source.config.kind,
+      connection: source.config.connection,
+      tables,
+      metadata: source.metadata,
+      lifeCycle: source.config.lifeCycle,
+    };
+  });
+
   return {
     topics,
     tables,
@@ -1228,6 +1273,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
     webApps,
     materializedViews,
     views,
+    cdcSources,
     unloadedFiles: [] as string[], // Will be populated by dumpMooseInternal
   };
 };
@@ -1290,6 +1336,7 @@ const loadIndex = async () => {
     registry.webApps.clear();
     registry.materializedViews.clear();
     registry.views.clear();
+    registry.cdcSources.clear();
 
     // Clear require cache for app directory to pick up changes
     const appDir = `${process.cwd()}/${getSourceDir()}`;

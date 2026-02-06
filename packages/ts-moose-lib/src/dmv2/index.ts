@@ -71,6 +71,15 @@ export {
 export { IngestPipeline, IngestPipelineConfig } from "./sdk/ingestPipeline";
 export { ETLPipeline, ETLPipelineConfig } from "./sdk/etlPipeline";
 export {
+  CdcSource,
+  CdcSourceConfig,
+  CdcTable,
+  CdcTableConfig,
+  CdcEvent,
+  CdcOperation,
+  CdcRow,
+} from "./sdk/cdcSource";
+export {
   MaterializedView,
   MaterializedViewConfig,
 } from "./sdk/materializedView";
@@ -103,4 +112,6 @@ export {
   getMaterializedView,
   getViews,
   getView,
+  getCdcSources,
+  getCdcSource,
 } from "./registry";

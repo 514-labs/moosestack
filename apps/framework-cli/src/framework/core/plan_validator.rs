@@ -13,6 +13,9 @@ pub enum ValidationError {
 
     #[error("Cluster validation failed: {0}")]
     ClusterValidation(String),
+
+    #[error("CDC validation failed: {0}")]
+    CdcValidation(String),
 }
 
 /// Validates that all tables with cluster_name reference clusters defined in the config
@@ -71,6 +74,41 @@ pub fn validate(project: &Project, plan: &InfraPlan) -> Result<(), ValidationErr
 
     // Validate cluster references
     validate_cluster_references(project, plan)?;
+
+    // Validate CDC sources
+    for source in plan.target_infra_map.cdc_sources.values() {
+        if source.name.trim().is_empty() {
+            return Err(ValidationError::CdcValidation(
+                "CDC source name cannot be empty".to_string(),
+            ));
+        }
+        if source.connection.trim().is_empty() {
+            return Err(ValidationError::CdcValidation(format!(
+                "CDC source '{}' must provide a connection string",
+                source.name
+            )));
+        }
+        for table in source.tables.iter() {
+            if table.name.trim().is_empty() {
+                return Err(ValidationError::CdcValidation(format!(
+                    "CDC source '{}' has a table with an empty name",
+                    source.name
+                )));
+            }
+            if table.source_table.trim().is_empty() {
+                return Err(ValidationError::CdcValidation(format!(
+                    "CDC table '{}' must define a source_table",
+                    table.name
+                )));
+            }
+            if table.primary_key.is_empty() {
+                return Err(ValidationError::CdcValidation(format!(
+                    "CDC table '{}' must define a non-empty primary_key",
+                    table.name
+                )));
+            }
+        }
+    }
 
     // Check for validation errors in OLAP changes
     for change in &plan.changes.olap_changes {
@@ -200,6 +238,7 @@ mod tests {
                 web_apps: HashMap::new(),
                 materialized_views: HashMap::new(),
                 views: HashMap::new(),
+                cdc_sources: HashMap::new(),
             },
             changes: Default::default(),
         }
