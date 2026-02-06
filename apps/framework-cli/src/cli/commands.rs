@@ -213,6 +213,20 @@ pub enum Commands {
     },
     /// Manage Kafka-related operations
     Kafka(KafkaArgs),
+    /// Submit feedback, report issues, or join the community
+    Feedback {
+        /// Feedback message (e.g. moose feedback "loving the DX!" or moose feedback --bug "crash on startup")
+        #[arg(conflicts_with = "community")]
+        message: Option<String>,
+
+        /// Report a bug (opens GitHub Issues with system info and log paths)
+        #[arg(long, conflicts_with = "community")]
+        bug: bool,
+
+        /// Join the Moose community on Slack
+        #[arg(long, conflicts_with_all = ["bug", "message"])]
+        community: bool,
+    },
     /// Execute SQL queries against ClickHouse
     Query {
         /// SQL query to execute

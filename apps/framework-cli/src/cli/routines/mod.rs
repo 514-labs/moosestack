@@ -162,6 +162,7 @@ pub mod clean;
 pub mod code_generation;
 pub mod dev;
 pub mod docker_packager;
+pub mod feedback;
 pub mod format_query;
 pub mod kafka_pull;
 pub mod logs;

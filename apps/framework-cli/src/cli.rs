@@ -224,12 +224,12 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
     next_display_order = None,
     after_help = "\x1b[1;4mLEARN MORE\x1b[0m
   Documentation:         https://docs.fiveonefour.com/moosestack
-  Implementation guides: https://docs.fiveonefour.com/guides?lang=typescript
+  Implementation guides: https://docs.fiveonefour.com/guides
 
 \x1b[1;4mFEEDBACK\x1b[0m
-  We'd love to hear from you! Join our Slack community:
-    https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg
-  Or email us at: hello@fiveonefour.com
+  Send feedback:  moose feedback
+  Join Slack:     moose feedback --community
+  Email:          hello@fiveonefour.com
 
 \x1b[1;4mHOSTING\x1b[0m
   Try Boreal, Fiveonefour's hosting platform built for MooseStack apps.
@@ -1517,6 +1517,21 @@ pub async fn top_command_handler(
                 )))
             }
         },
+        Commands::Feedback {
+            message,
+            bug,
+            community,
+        } => {
+            if *community {
+                routines::feedback::join_community(&settings, machine_id).await
+            } else if *bug {
+                routines::feedback::report_bug(message.as_deref(), &settings, machine_id).await
+            } else if let Some(msg) = message {
+                routines::feedback::send_feedback(msg, &settings, machine_id).await
+            } else {
+                routines::feedback::show_help()
+            }
+        }
         Commands::Query {
             query: sql,
             file,
