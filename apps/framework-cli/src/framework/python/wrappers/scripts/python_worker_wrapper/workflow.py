@@ -98,7 +98,11 @@ class ScriptWorkflow:
             return timedelta(seconds=humanfriendly.parse_timespan(timeout_str))
 
     async def _execute_activity_with_state(
-        self, wf: Workflow, task: Task, input_data: Optional[Dict] = None
+        self,
+        wf: Workflow,
+        task: Task,
+        input_data: Optional[Dict] = None,
+        original_workflow_input: Optional[Dict] = None,
     ) -> List[Any]:
         activity_name = f"{wf.name}/{task.name}"
         self._state.current_step = activity_name
@@ -106,6 +110,7 @@ class ScriptWorkflow:
         try:
             # Check history limits BEFORE starting the task, so continue_from_task
             # points to a task that hasn't run yet (avoids duplicate execution).
+            # Pass the original raw input_data so run() doesn't double-process it.
             info = workflow.info()
             if info.is_continue_as_new_suggested():
                 log.info(f"ContinueAsNew suggested by Temporal before task {task.name}")
@@ -116,7 +121,7 @@ class ScriptWorkflow:
                             execution_mode="continue_as_new",
                             continue_from_task=task.name,
                         ),
-                        input_data,
+                        original_workflow_input,
                     ]
                 )
 
@@ -135,6 +140,7 @@ class ScriptWorkflow:
                         wf,
                         child_task,
                         result.data if hasattr(result, "data") else result,
+                        original_workflow_input,
                     )
                     results.extend(child_result)
 
@@ -255,7 +261,9 @@ class ScriptWorkflow:
             current_task = wf.config.starting_task
             log.info(f"Starting workflow: {wf.name} from beginning")
 
-        # Execute workflow
-        result = await self._execute_activity_with_state(wf, current_task, current_data)
+        # Execute workflow — pass both processed data and original raw input
+        result = await self._execute_activity_with_state(
+            wf, current_task, current_data, original_workflow_input=input_data
+        )
 
         return result

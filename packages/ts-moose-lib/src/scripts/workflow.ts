@@ -17,6 +17,10 @@ interface WorkflowRequest {
   continue_from_task?: string; // Only for continue_as_new
 }
 
+interface HandleTaskContext {
+  originalWorkflowInput?: any;
+}
+
 const { getWorkflowByName, getTaskForWorkflow } = proxyActivities({
   startToCloseTimeout: "1 minutes",
   retry: {
@@ -49,7 +53,9 @@ export async function ScriptWorkflow(
       request.execution_mode === "start" ?
         workflow.config.startingTask
       : await getTaskForWorkflow(workflowName, request.continue_from_task!);
-    const result = await handleTask(workflow, task, currentData);
+    const result = await handleTask(workflow, task, currentData, {
+      originalWorkflowInput: inputData,
+    });
     results.push(...result);
 
     return results;
@@ -63,6 +69,7 @@ async function handleTask(
   workflow: Workflow,
   task: Task<any, any>,
   inputData: any,
+  ctx: HandleTaskContext = {},
 ): Promise<any[]> {
   // Handle timeout configuration
   const configTimeout = task.config.timeout;
@@ -110,6 +117,7 @@ async function handleTask(
 
   // Check history limits BEFORE starting the task, so continue_from_task
   // points to a task that hasn't run yet (avoids duplicate execution).
+  // Pass the original raw inputData so run() doesn't double-process it.
   if (workflowInfo().continueAsNewSuggested) {
     logger.info(`ContinueAsNew suggested by Temporal before task ${task.name}`);
     return await continueAsNew(
@@ -118,7 +126,7 @@ async function handleTask(
         execution_mode: "continue_as_new" as const,
         continue_from_task: task.name,
       },
-      inputData,
+      ctx.originalWorkflowInput,
     );
   }
 
@@ -134,7 +142,7 @@ async function handleTask(
   }
 
   for (const childTask of task.config.onComplete) {
-    const childResult = await handleTask(workflow, childTask, result);
+    const childResult = await handleTask(workflow, childTask, result, ctx);
     results.push(...childResult);
   }
 
@@ -150,7 +158,7 @@ async function handleTask(
     logger.info(`Extract task ${task.name} has more data, restarting chain...`);
 
     // Recursively call the extract task again to get the next batch
-    const nextBatchResults = await handleTask(workflow, task, null);
+    const nextBatchResults = await handleTask(workflow, task, null, ctx);
     results.push(...nextBatchResults);
   }
 
