@@ -249,19 +249,7 @@ pub enum Commands {
         prettify: bool,
     },
     /// Fetch and display LLM-optimized documentation for AI agents
-    Docs {
-        /// Language for documentation: typescript (ts) or python (py)
-        #[arg(value_name = "LANGUAGE")]
-        language: Option<String>,
-
-        /// Filter docs by path (e.g., 'getting-started', 'api')
-        #[arg(long)]
-        path: Option<String>,
-
-        /// Output raw content without formatting (for piping to other tools)
-        #[arg(long)]
-        raw: bool,
-    },
+    Docs(DocsArgs),
 }
 
 #[derive(Debug, Args)]
@@ -466,6 +454,46 @@ pub enum DbCommands {
 pub struct KafkaArgs {
     #[command(subcommand)]
     pub command: KafkaCommands,
+}
+
+/// Arguments for the docs command
+#[derive(Debug, Args)]
+#[command(after_help = "\
+Examples:
+  moose docs                          Show documentation index (collapsed)
+  moose docs --expand                 Show full index with all pages
+  moose docs moosestack/olap          View the OLAP documentation page
+  moose docs moosestack/streaming     View the Streaming documentation page
+  moose docs search \"materialized\"    Search for pages matching a query
+  moose docs --lang py moosestack/olap  View page in Python")]
+pub struct DocsArgs {
+    #[command(subcommand)]
+    pub command: Option<DocsCommands>,
+
+    /// Language for documentation: typescript (ts) or python (py)
+    #[arg(long, short = 'l')]
+    pub lang: Option<String>,
+
+    /// Output raw content without formatting (for piping to other tools)
+    #[arg(long)]
+    pub raw: bool,
+
+    /// Show full expanded tree with all leaf pages
+    #[arg(long)]
+    pub expand: bool,
+}
+
+/// Subcommands for the docs command
+#[derive(Debug, Subcommand)]
+pub enum DocsCommands {
+    /// Search documentation by title or description
+    Search {
+        /// Search query to filter documentation entries
+        query: String,
+    },
+    /// Catch-all for slug-based page fetching (e.g., `moose docs moosestack/olap`)
+    #[command(external_subcommand)]
+    Show(Vec<String>),
 }
 
 #[derive(Debug, Subcommand)]

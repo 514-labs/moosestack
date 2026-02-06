@@ -124,6 +124,10 @@ pub struct Settings {
     #[serde(default)]
     pub dev: DevSettings,
 
+    /// Documentation command settings
+    #[serde(default)]
+    pub docs: DocsSettings,
+
     /// Release channel for downloading CLI binaries (stable or dev)
     /// This can be set via the MOOSE_RELEASE_CHANNEL environment variable
     /// Defaults to "stable" if not specified
@@ -169,6 +173,14 @@ impl Default for DevSettings {
             suppress_dev_setup_prompt: false,
         }
     }
+}
+
+/// Documentation command settings
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct DocsSettings {
+    /// Default language for documentation (typescript or python)
+    #[serde(default)]
+    pub default_language: Option<String>,
 }
 
 fn default_infrastructure_timeout() -> u64 {
@@ -411,6 +423,37 @@ pub fn set_suppress_dev_setup_prompt(value_to_set: bool) -> Result<(), std::io::
         Entry::Occupied(entry) => *entry.into_mut() = value(value_to_set),
         Entry::Vacant(entry) => {
             entry.insert(value(value_to_set));
+        }
+    }
+
+    std::fs::write(path, doc.to_string())
+}
+
+/// Updates the global CLI config (~/.moose/config.toml) to set the
+/// docs.default_language value using toml_edit. Creates the
+/// [docs] table if missing.
+pub fn set_docs_default_language(language: &str) -> Result<(), std::io::Error> {
+    let path = config_path();
+    let contents = std::fs::read_to_string(&path)?;
+    let mut doc: DocumentMut = contents
+        .parse()
+        .map_err(|_| std::io::Error::other("Failed to parse CLI config"))?;
+
+    let docs_table = match doc.get_mut("docs") {
+        Some(Item::Table(t)) => t,
+        Some(_) => {
+            return Err(std::io::Error::other("docs in config is not a table."));
+        }
+        None => {
+            doc["docs"] = table();
+            doc["docs"].as_table_mut().unwrap()
+        }
+    };
+
+    match docs_table.entry("default_language") {
+        Entry::Occupied(entry) => *entry.into_mut() = value(language),
+        Entry::Vacant(entry) => {
+            entry.insert(value(language));
         }
     }
 
