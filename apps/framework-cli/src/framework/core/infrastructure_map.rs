@@ -2974,11 +2974,14 @@ impl InfrastructureMap {
     /// that support SELECT queries (excludes Kafka, S3Queue which are write-only).
     /// Useful for operations like mirroring, seeding, and creating local copies.
     pub fn get_mirrorable_external_tables(&self) -> Vec<&Table> {
-        self.tables
+        let mut tables: Vec<&Table> = self
+            .tables
             .values()
             .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
             .filter(|t| t.engine.supports_select())
-            .collect()
+            .collect();
+        tables.sort_by_key(|t| &t.name);
+        tables
     }
 
     /// Masks sensitive credentials before exporting to JSON migration files.

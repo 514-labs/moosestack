@@ -291,6 +291,7 @@ impl ClickHouseClient {
     ) -> anyhow::Result<()> {
         validate_clickhouse_identifier(local_database, "Local database name")?;
         validate_clickhouse_identifier(table_name, "Table name")?;
+        validate_clickhouse_identifier(remote_database, "Remote database name")?;
 
         let select_query = format!(
             "SELECT * FROM `{}`.`{}` LIMIT 0",
@@ -336,6 +337,7 @@ impl ClickHouseClient {
     ) -> anyhow::Result<()> {
         validate_clickhouse_identifier(local_database, "Local database name")?;
         validate_clickhouse_identifier(table_name, "Table name")?;
+        validate_clickhouse_identifier(remote_database, "Remote database name")?;
 
         let select_query = format!(
             "SELECT * FROM `{}`.`{}` LIMIT {}",

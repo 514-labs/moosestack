@@ -138,8 +138,8 @@ fn store_credentials(
     Ok(())
 }
 
-fn get_stored_credentials(
-    repo: &KeyringSecretRepository,
+fn get_stored_credentials<R: SecretRepository>(
+    repo: &R,
     project_name: &str,
 ) -> Result<Option<(String, String)>, RoutineFailure> {
     let user = repo
@@ -169,5 +169,207 @@ fn get_stored_credentials(
             debug!("No stored credentials for '{}'", project_name);
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utilities::keyring::SecretError;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    /// Mock secret repository for testing
+    struct MockSecretRepository {
+        secrets: Mutex<HashMap<(String, String), String>>,
+        fail_on_get: bool,
+    }
+
+    impl MockSecretRepository {
+        fn new() -> Self {
+            Self {
+                secrets: Mutex::new(HashMap::new()),
+                fail_on_get: false,
+            }
+        }
+
+        fn with_credentials(project: &str, user: &str, password: &str) -> Self {
+            let repo = Self::new();
+            {
+                let mut secrets = repo.secrets.lock().unwrap();
+                secrets.insert(
+                    (project.to_string(), KEY_REMOTE_CLICKHOUSE_USER.to_string()),
+                    user.to_string(),
+                );
+                secrets.insert(
+                    (
+                        project.to_string(),
+                        KEY_REMOTE_CLICKHOUSE_PASSWORD.to_string(),
+                    ),
+                    password.to_string(),
+                );
+            }
+            repo
+        }
+
+        fn failing() -> Self {
+            Self {
+                secrets: Mutex::new(HashMap::new()),
+                fail_on_get: true,
+            }
+        }
+    }
+
+    impl SecretRepository for MockSecretRepository {
+        fn get(&self, service: &str, key: &str) -> Result<Option<String>, SecretError> {
+            if self.fail_on_get {
+                return Err(SecretError::StorageError(
+                    "Simulated keychain error".to_string(),
+                ));
+            }
+            let secrets = self.secrets.lock().unwrap();
+            Ok(secrets
+                .get(&(service.to_string(), key.to_string()))
+                .cloned())
+        }
+
+        fn store(&self, service: &str, key: &str, value: &str) -> Result<(), SecretError> {
+            let mut secrets = self.secrets.lock().unwrap();
+            secrets.insert((service.to_string(), key.to_string()), value.to_string());
+            Ok(())
+        }
+
+        fn delete(&self, service: &str, key: &str) -> Result<(), SecretError> {
+            let mut secrets = self.secrets.lock().unwrap();
+            secrets.remove(&(service.to_string(), key.to_string()));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn test_get_stored_credentials_returns_both() {
+        let repo = MockSecretRepository::with_credentials("test-project", "admin", "secret123");
+
+        let result = get_stored_credentials(&repo, "test-project").unwrap();
+
+        assert!(result.is_some());
+        let (user, password) = result.unwrap();
+        assert_eq!(user, "admin");
+        assert_eq!(password, "secret123");
+    }
+
+    #[test]
+    fn test_get_stored_credentials_returns_none_when_missing() {
+        let repo = MockSecretRepository::new();
+
+        let result = get_stored_credentials(&repo, "test-project").unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_stored_credentials_returns_none_when_only_user() {
+        let repo = MockSecretRepository::new();
+        {
+            let mut secrets = repo.secrets.lock().unwrap();
+            secrets.insert(
+                (
+                    "test-project".to_string(),
+                    KEY_REMOTE_CLICKHOUSE_USER.to_string(),
+                ),
+                "admin".to_string(),
+            );
+        }
+
+        let result = get_stored_credentials(&repo, "test-project").unwrap();
+
+        assert!(
+            result.is_none(),
+            "Should return None when only user is stored"
+        );
+    }
+
+    #[test]
+    fn test_get_stored_credentials_returns_none_when_only_password() {
+        let repo = MockSecretRepository::new();
+        {
+            let mut secrets = repo.secrets.lock().unwrap();
+            secrets.insert(
+                (
+                    "test-project".to_string(),
+                    KEY_REMOTE_CLICKHOUSE_PASSWORD.to_string(),
+                ),
+                "secret".to_string(),
+            );
+        }
+
+        let result = get_stored_credentials(&repo, "test-project").unwrap();
+
+        assert!(
+            result.is_none(),
+            "Should return None when only password is stored"
+        );
+    }
+
+    #[test]
+    fn test_get_stored_credentials_error_on_keychain_failure() {
+        let repo = MockSecretRepository::failing();
+
+        let result = get_stored_credentials(&repo, "test-project");
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_port_defaults_ssl() {
+        // When use_ssl is true, default port should be 8443
+        let config = RemoteClickHouseConfig {
+            host: Some("example.com".to_string()),
+            port: None,
+            database: Some("db".to_string()),
+            use_ssl: true,
+            protocol: ClickHouseProtocol::Http,
+        };
+
+        let port = config
+            .port
+            .unwrap_or(if config.use_ssl { 8443 } else { 8123 });
+
+        assert_eq!(port, 8443);
+    }
+
+    #[test]
+    fn test_port_defaults_non_ssl() {
+        // When use_ssl is false, default port should be 8123
+        let config = RemoteClickHouseConfig {
+            host: Some("example.com".to_string()),
+            port: None,
+            database: Some("db".to_string()),
+            use_ssl: false,
+            protocol: ClickHouseProtocol::Http,
+        };
+
+        let port = config
+            .port
+            .unwrap_or(if config.use_ssl { 8443 } else { 8123 });
+
+        assert_eq!(port, 8123);
+    }
+
+    #[test]
+    fn test_port_explicit_overrides_default() {
+        let config = RemoteClickHouseConfig {
+            host: Some("example.com".to_string()),
+            port: Some(9000),
+            database: Some("db".to_string()),
+            use_ssl: true,
+            protocol: ClickHouseProtocol::Http,
+        };
+
+        let port = config
+            .port
+            .unwrap_or(if config.use_ssl { 8443 } else { 8123 });
+
+        assert_eq!(port, 9000);
     }
 }

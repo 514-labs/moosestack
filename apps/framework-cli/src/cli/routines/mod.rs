@@ -615,9 +615,16 @@ pub async fn start_development_mode(
                     }
 
                     // Create ClickHouseRemote for mirror creation
-                    let remote_ch = parse_clickhouse_connection_string(remote_url)
-                        .ok()
-                        .map(|config| ClickHouseRemote::from_config(&config, Protocol::Http));
+                    let remote_ch = match parse_clickhouse_connection_string(remote_url) {
+                        Ok(config) => Some(ClickHouseRemote::from_config(&config, Protocol::Http)),
+                        Err(e) => {
+                            warn!(
+                                "Failed to parse remote ClickHouse URL, falling back to local schema: {}",
+                                e
+                            );
+                            None
+                        }
+                    };
                     create_external_mirrors(&project, &plan.target_infra_map, remote_ch.as_ref())
                         .await;
                 } else {

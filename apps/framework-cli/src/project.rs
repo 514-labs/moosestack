@@ -271,6 +271,7 @@ pub struct DevExternallyManagedConfig {
 /// Configuration for externally managed tables in development mode
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct DevExternallyManagedTablesConfig {
+    /// Settings for creating local mirror tables from externally managed tables
     #[serde(default)]
     pub tables: DevExternallyManagedConfig,
 }
@@ -295,7 +296,7 @@ pub struct RemoteClickHouseConfig {
     /// Remote ClickHouse host
     pub host: Option<String>,
 
-    /// Port (default: 8443 for SSL, 8123 for non-SSL with HTTP)
+    /// Optional port (resolved to 8443 for SSL or 8123 for non-SSL during config resolution)
     #[serde(default)]
     pub port: Option<u16>,
 
