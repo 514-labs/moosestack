@@ -11,14 +11,17 @@ This page demonstrates the interactive MDX components for creating dynamic, cust
 
 Select a language below and watch the content change:
 
-<CustomizePanel title="Choose Your Language" description="The guide content below will update based on your selection.">
+<CustomizePanel
+  title="Choose Your Language"
+  description="The guide content below will update based on your selection."
+>
   <CustomizeGrid columns={2}>
     <SelectField
       id="demo-language"
       label="Programming Language"
       options={[
         { value: "typescript", label: "TypeScript" },
-        { value: "python", label: "Python" }
+        { value: "python", label: "Python" },
       ]}
       defaultValue="typescript"
       persist
@@ -29,7 +32,7 @@ Select a language below and watch the content change:
       options={[
         { value: "nextjs", label: "Next.js" },
         { value: "express", label: "Express" },
-        { value: "fastapi", label: "FastAPI" }
+        { value: "fastapi", label: "FastAPI" },
       ]}
       defaultValue="nextjs"
       persist
@@ -61,6 +64,7 @@ export interface UserEvent extends DataModel {
   metadata: Record<string, unknown>;
 }
 ```
+
 </ConditionalContent>
 
 <ConditionalContent whenId="demo-language" whenValue="python">
@@ -86,6 +90,7 @@ class UserEvent(DataModel):
     timestamp: datetime
     metadata: Dict[str, Any]
 ```
+
 </ConditionalContent>
 
 ### Framework-Specific Setup
@@ -107,6 +112,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ success: true });
 }
 ```
+
 </ConditionalContent>
 
 <ConditionalContent whenId="demo-framework" whenValue="express">
@@ -128,6 +134,7 @@ router.post("/events", async (req, res) => {
 
 export default router;
 ```
+
 </ConditionalContent>
 
 <ConditionalContent whenId="demo-framework" whenValue="fastapi">
@@ -153,6 +160,7 @@ async def create_event(event: EventRequest):
     await moose.ingest("UserEvent", event.dict())
     return {"success": True}
 ```
+
 </ConditionalContent>
 
 ---
@@ -161,7 +169,10 @@ async def create_event(event: EventRequest):
 
 Check the boxes below to reveal additional content sections:
 
-<CustomizePanel title="Feature Options" description="Enable features to see their documentation.">
+<CustomizePanel
+  title="Feature Options"
+  description="Enable features to see their documentation."
+>
   <CustomizeGrid columns={2}>
     <CheckboxGroup
       id="demo-features"
@@ -169,7 +180,7 @@ Check the boxes below to reveal additional content sections:
       options={[
         { value: "analytics", label: "Analytics Dashboard" },
         { value: "streaming", label: "Real-time Streaming" },
-        { value: "auth", label: "Authentication" }
+        { value: "auth", label: "Authentication" },
       ]}
       persist
     />
@@ -178,7 +189,7 @@ Check the boxes below to reveal additional content sections:
       label="Extra Options"
       options={[
         { value: "docker", label: "Docker Setup" },
-        { value: "testing", label: "Testing Guide" }
+        { value: "testing", label: "Testing Guide" },
       ]}
       persist
     />
@@ -189,7 +200,7 @@ Check the boxes below to reveal additional content sections:
 ### Analytics Dashboard
 
 <Callout type="info">
-You've enabled the **Analytics Dashboard** feature.
+  You've enabled the **Analytics Dashboard** feature.
 </Callout>
 
 The analytics dashboard provides real-time insights into your data pipeline:
@@ -211,13 +222,14 @@ export default async function Dashboard() {
   return <DashboardChart data={stats} />;
 }
 ```
+
 </ConditionalContent>
 
 <ConditionalContent whenId="demo-features" whenValue="streaming" match="includes">
 ### Real-time Streaming
 
 <Callout type="info">
-You've enabled the **Real-time Streaming** feature.
+  You've enabled the **Real-time Streaming** feature.
 </Callout>
 
 Set up real-time event streaming with WebSockets:
@@ -231,20 +243,19 @@ export async function GET() {
   const stream = moose.subscribe("UserEvent", {
     onEvent: (event) => {
       console.log("New event:", event);
-    }
+    },
   });
 
   return new Response(stream);
 }
 ```
+
 </ConditionalContent>
 
 <ConditionalContent whenId="demo-features" whenValue="auth" match="includes">
 ### Authentication
 
-<Callout type="info">
-You've enabled the **Authentication** feature.
-</Callout>
+<Callout type="info">You've enabled the **Authentication** feature.</Callout>
 
 Secure your Moose endpoints with authentication:
 
@@ -256,7 +267,7 @@ import { verifyToken } from "./lib/auth";
 export async function middleware(request: NextRequest) {
   const token = request.headers.get("authorization");
 
-  if (!token || !await verifyToken(token)) {
+  if (!token || !(await verifyToken(token))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -267,14 +278,13 @@ export const config = {
   matcher: "/api/:path*",
 };
 ```
+
 </ConditionalContent>
 
 <ConditionalContent whenId="demo-extras" whenValue="docker" match="includes">
 ### Docker Setup
 
-<Callout type="success">
-You've enabled the **Docker Setup** guide.
-</Callout>
+<Callout type="success">You've enabled the **Docker Setup** guide.</Callout>
 
 Run Moose in a Docker container:
 
@@ -293,7 +303,7 @@ CMD ["npm", "start"]
 ```
 
 ```yaml filename="docker-compose.yml"
-version: '3.8'
+version: "3.8"
 services:
   moose:
     build: .
@@ -309,14 +319,13 @@ services:
     ports:
       - "8123:8123"
 ```
+
 </ConditionalContent>
 
 <ConditionalContent whenId="demo-extras" whenValue="testing" match="includes">
 ### Testing Guide
 
-<Callout type="success">
-You've enabled the **Testing Guide**.
-</Callout>
+<Callout type="success">You've enabled the **Testing Guide**.</Callout>
 
 Write tests for your Moose data models:
 
@@ -333,18 +342,19 @@ describe("UserEvent", () => {
       userId: "user-123",
       eventType: "click",
       timestamp: new Date(),
-      metadata: { page: "/home" }
+      metadata: { page: "/home" },
     };
 
     await moose.ingest("UserEvent", event);
 
     const result = await moose.query(
-      "SELECT * FROM UserEvent WHERE id = 'test-1'"
+      "SELECT * FROM UserEvent WHERE id = 'test-1'",
     );
     expect(result[0]).toMatchObject(event);
   });
 });
 ```
+
 </ConditionalContent>
 
 ---
@@ -353,14 +363,17 @@ describe("UserEvent", () => {
 
 Check the steps as you complete them to track your progress:
 
-<CustomizePanel title="Tutorial Progress" description="Check steps to mark them complete and reveal content.">
+<CustomizePanel
+  title="Tutorial Progress"
+  description="Check steps to mark them complete and reveal content."
+>
   <CheckboxGroup
     id="tutorial-steps"
     label="Completed Steps"
     options={[
       { value: "step1", label: "Step 1: Project Setup", defaultChecked: true },
       { value: "step2", label: "Step 2: Data Models" },
-      { value: "step3", label: "Step 3: Deployment" }
+      { value: "step3", label: "Step 3: Deployment" },
     ]}
     persist
   />
@@ -377,6 +390,7 @@ Check the steps as you complete them to track your progress:
     ```
 
     Your Moose project is now running at `http://localhost:4000`.
+
   </NumberedAccordion.Item>
 
   <NumberedAccordion.Item id="step2" number={2} title="Data Models">
@@ -395,6 +409,7 @@ Check the steps as you complete them to track your progress:
     ```
 
     Run `moose generate` to create the ingestion endpoints.
+
   </NumberedAccordion.Item>
 
   <NumberedAccordion.Item id="step3" number={3} title="Deployment">
@@ -409,8 +424,57 @@ Check the steps as you complete them to track your progress:
     ```
 
     Your application is now live and ready to receive events.
+
   </NumberedAccordion.Item>
 </NumberedAccordion>
+
+---
+
+## GuideStepper with Nested Checkpoints + Prompt Copy
+
+Use `GuideStepper` for multi-phase guides where each phase has sub-checkpoints.
+Each step now includes a **Copy Prompt** action that concatenates pre-checkpoint
+instructions and all checkpoint tab content into markdown.
+Inside `GuideStepper.AtAGlance`, write regular markdown directly (no React tags required).
+
+<GuideStepper id="demo-guide-stepper" persist>
+  <GuideStepper.Step
+    id="phase1"
+    number={1}
+    title="Parity"
+    summary="Translate existing logic first, then optimize."
+  >
+    <GuideStepper.AtAGlance title="Before You Run Checkpoints">
+      Attach these files to your copilot context before running checkpoints:
+
+      - `context-map.md`
+      - endpoint handler file
+      - parity query file
+    </GuideStepper.AtAGlance>
+
+    <GuideStepper.Checkpoint id="phase1-context" title="Collect context files">
+      Gather endpoint handler, source queries, and 2-5 replayable test cases.
+    </GuideStepper.Checkpoint>
+    <GuideStepper.Checkpoint id="phase1-verify" title="Verify parity output">
+      Run your parity query and diff against expected JSON from the original endpoint.
+    </GuideStepper.Checkpoint>
+
+  </GuideStepper.Step>
+
+  <GuideStepper.Step
+    id="phase2"
+    number={2}
+    title="Precompute"
+    summary="Move heavy joins/aggregations to write-time materializations."
+  >
+    <GuideStepper.Checkpoint id="phase2-serving" title="Design serving table">
+      Define read-friendly schema for request-time filters/grouping.
+    </GuideStepper.Checkpoint>
+    <GuideStepper.Checkpoint id="phase2-mv" title="Build materialized view">
+      Keep serving table updated continuously from source tables.
+    </GuideStepper.Checkpoint>
+  </GuideStepper.Step>
+</GuideStepper>
 
 ---
 
@@ -443,10 +507,14 @@ Check the steps as you complete them to track your progress:
 ### NumberedAccordion controlled by CheckboxGroup
 
 ```mdx
-<CheckboxGroup id="steps" options={[
-  { value: "step1", label: "Step 1" },
-  { value: "step2", label: "Step 2" }
-]} persist />
+<CheckboxGroup
+  id="steps"
+  options={[
+    { value: "step1", label: "Step 1" },
+    { value: "step2", label: "Step 2" },
+  ]}
+  persist
+/>
 
 <NumberedAccordion controlledBy="steps">
   <NumberedAccordion.Item id="step1" number={1} title="Step 1">
@@ -456,4 +524,31 @@ Check the steps as you complete them to track your progress:
     Content for step 2...
   </NumberedAccordion.Item>
 </NumberedAccordion>
+```
+
+### GuideStepper with include-fragment orchestration
+
+```mdx
+### Migration tutorial
+
+::: include /shared/guides/<guide>/migration-intro.mdx
+
+<GuideStepper id="migration-steps" persist>
+  <GuideStepper.Step id="phase-1" number={1} title="Parity" summary="Match existing API output.">
+    <GuideStepper.AtAGlance title="Attach Context Before Prompting">
+      Attach these files to your copilot prompt:
+
+      - `context-map.md`
+      - endpoint handler
+      - source query files
+    </GuideStepper.AtAGlance>
+    <GuideStepper.Checkpoint id="phase-1-context" title="Prepare context">
+      ::: include /shared/guides/<guide>/phase-1-context.mdx
+    </GuideStepper.Checkpoint>
+    <GuideStepper.Checkpoint id="phase-1-run" title="Run checkpoints">
+      ::: include /shared/guides/<guide>/phase-1-checkpoints.mdx
+    </GuideStepper.Checkpoint>
+
+  </GuideStepper.Step>
+</GuideStepper>
 ```
