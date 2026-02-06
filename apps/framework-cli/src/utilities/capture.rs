@@ -168,3 +168,34 @@ pub async fn wait_for_usage_capture(handle: Option<tokio::task::JoinHandle<()>>)
         let _ = handle.await;
     }
 }
+
+/// Identifies a user with their email address using PostHog's identify call
+pub fn identify_user_with_email(
+    email: &str,
+    settings: &Settings,
+    machine_id: String,
+) -> Option<tokio::task::JoinHandle<()>> {
+    // Skip if telemetry is disabled
+    if !settings.telemetry.enabled {
+        return None;
+    }
+
+    let email = email.to_string();
+
+    Some(tokio::task::spawn(async move {
+        let client = match PostHog514Client::from_env(machine_id) {
+            Some(client) => client,
+            None => {
+                tracing::warn!("PostHog client not configured - missing POSTHOG_API_KEY");
+                return;
+            }
+        };
+
+        let mut properties = HashMap::new();
+        properties.insert("email".to_string(), serde_json::json!(email));
+
+        if let Err(e) = client.identify(properties).await {
+            tracing::warn!("Failed to identify user in PostHog: {:?}", e);
+        }
+    }))
+}

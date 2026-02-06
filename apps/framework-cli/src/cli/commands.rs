@@ -226,6 +226,10 @@ pub enum Commands {
         /// Join the Moose community on Slack
         #[arg(long, conflicts_with_all = ["bug", "message"])]
         community: bool,
+
+        /// Your email address for follow-up (optional)
+        #[arg(long, conflicts_with_all = ["bug", "community"])]
+        email: Option<String>,
     },
     /// Execute SQL queries against ClickHouse
     Query {

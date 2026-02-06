@@ -333,6 +333,53 @@ impl PostHog514Client {
             )),
         }
     }
+
+    /// Identifies a user with properties like email
+    /// This associates the given properties with the distinct_id (machine_id)
+    pub async fn identify(
+        &self,
+        properties: HashMap<String, serde_json::Value>,
+    ) -> Result<(), PostHogError> {
+        let url = format!("{}/capture/", self.host);
+        let payload = json!({
+            "api_key": self.api_key,
+            "event": "$identify",
+            "distinct_id": self.machine_id,
+            "properties": {
+                "$set": properties
+            }
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| {
+                PostHogError::send_event(
+                    "Failed to send identify request",
+                    Some(SendEventErrorKind::Network(e.to_string())),
+                )
+            })?;
+
+        match response.status() {
+            reqwest::StatusCode::OK | reqwest::StatusCode::ACCEPTED => Ok(()),
+            reqwest::StatusCode::UNAUTHORIZED => Err(PostHogError::send_event(
+                "Invalid API key",
+                Some(SendEventErrorKind::Authentication),
+            )),
+            reqwest::StatusCode::TOO_MANY_REQUESTS => Err(PostHogError::send_event(
+                "Too many requests",
+                Some(SendEventErrorKind::RateLimited),
+            )),
+            status => Err(PostHogError::send_event(
+                "Unexpected response from PostHog",
+                Some(SendEventErrorKind::Network(status.to_string())),
+            )),
+        }
+    }
 }
 
 #[cfg(test)]
