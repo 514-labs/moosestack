@@ -394,12 +394,7 @@ impl AtomicOlapOperation {
                     target_table: mv.target_table.clone(),
                     target_database: mv.target_database.clone(),
                     select_sql: mv.select_sql.clone(),
-                    // For refreshable MVs, include the full CREATE SQL with REFRESH clause
-                    create_sql: if mv.is_refreshable() {
-                        Some(mv.to_create_sql())
-                    } else {
-                        None
-                    },
+                    refresh_clause: mv.refresh_clause(),
                 }
             }
             AtomicOlapOperation::DropMaterializedView { mv, .. } => {

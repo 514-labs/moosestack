@@ -243,9 +243,8 @@ pub enum SerializableOlapOperation {
         target_database: Option<String>,
         /// The SELECT SQL statement
         select_sql: String,
-        /// Optional full CREATE SQL (includes REFRESH clause for refreshable MVs)
-        /// If provided, this is used instead of building the SQL from individual fields
-        create_sql: Option<String>,
+        /// Optional REFRESH clause for refreshable MVs (e.g. "REFRESH EVERY 1 HOUR")
+        refresh_clause: Option<String>,
     },
     /// Drop a materialized view
     DropMaterializedView {
@@ -794,7 +793,7 @@ pub async fn execute_atomic_operation(
             target_table,
             target_database,
             select_sql,
-            create_sql,
+            refresh_clause,
         } => {
             execute_create_materialized_view(
                 db_name,
@@ -803,7 +802,7 @@ pub async fn execute_atomic_operation(
                 target_table,
                 target_database.as_deref(),
                 select_sql,
-                create_sql.as_deref(),
+                refresh_clause.as_deref(),
                 client,
             )
             .await?;
@@ -1577,26 +1576,24 @@ async fn execute_create_materialized_view(
     target_table: &str,
     target_database: Option<&str>,
     select_sql: &str,
-    create_sql: Option<&str>,
+    refresh_clause: Option<&str>,
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let target_db = view_database.unwrap_or(db_name);
 
-    // Use full CREATE SQL if provided (for refreshable MVs), otherwise build it
-    let sql = if let Some(full_sql) = create_sql {
-        full_sql.to_string()
-    } else {
-        // Strip any existing backticks from target_table to avoid double-backticks
-        let clean_target_table = strip_backticks(target_table);
-        let to_target = match target_database {
-            Some(tdb) => format!("`{}`.`{}`", tdb, clean_target_table),
-            None => format!("`{}`.`{}`", target_db, clean_target_table),
-        };
-        format!(
-            "CREATE MATERIALIZED VIEW IF NOT EXISTS `{}`.`{}` TO {} AS {}",
-            target_db, view_name, to_target, select_sql
-        )
+    // Strip any existing backticks from target_table to avoid double-backticks
+    let clean_target_table = strip_backticks(target_table);
+    let to_target = match target_database {
+        Some(tdb) => format!("`{}`.`{}`", tdb, clean_target_table),
+        None => format!("`{}`.`{}`", target_db, clean_target_table),
     };
+    let refresh = refresh_clause
+        .map(|r| format!(" {}", r))
+        .unwrap_or_default();
+    let sql = format!(
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS `{}`.`{}`{} TO {} AS {}",
+        target_db, view_name, refresh, to_target, select_sql
+    );
 
     tracing::info!("Creating materialized view: {}.{}", target_db, view_name);
     tracing::debug!("MV SQL: {}", sql);
