@@ -25,7 +25,7 @@ message InfrastructureMap {
 
   // Version of Moose CLI that created or last updated this infrastructure map
   // Helps with debugging, compatibility tracking, and migration planning
-  string moose_version = 14;
+  string moose_version = 19;
 
   string default_database = 15;
 
