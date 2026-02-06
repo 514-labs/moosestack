@@ -1498,6 +1498,12 @@ pub async fn top_command_handler(
                 )))
             }
         },
+        Commands::Feedback {
+            bug,
+            idea,
+            community,
+            logs,
+        } => routines::feedback::feedback(*bug, *idea, *community, *logs),
         Commands::Query {
             query: sql,
             file,
