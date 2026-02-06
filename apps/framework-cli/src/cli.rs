@@ -215,7 +215,26 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
 }
 
 #[derive(Parser)]
-#[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None)]
+#[command(
+    author,
+    version = constants::CLI_VERSION,
+    about = "MooseStack is a type-safe code-first developer framework for building real-time analytical backends, by the team at Fiveonefour.",
+    long_about = None,
+    arg_required_else_help(true),
+    next_display_order = None,
+    after_help = "\x1b[1;4mLEARN MORE\x1b[0m
+  Documentation:         https://docs.fiveonefour.com/moosestack
+  Implementation guides: https://docs.fiveonefour.com/guides?lang=typescript
+
+\x1b[1;4mFEEDBACK\x1b[0m
+  We'd love to hear from you! Join our Slack community:
+    https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg
+  Or email us at: hello@fiveonefour.com
+
+\x1b[1;4mHOSTING\x1b[0m
+  Try Boreal, Fiveonefour's hosting platform built for MooseStack apps.
+  Sign up for a free trial: https://fiveonefour.boreal.cloud/sign-up"
+)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
