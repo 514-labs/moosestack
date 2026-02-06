@@ -214,6 +214,8 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
     }
 }
 
+// NOTE: Slack URL below is duplicated from SLACK_COMMUNITY_URL in constants.rs
+// because Rust const strings can't interpolate. Update both if the link changes.
 const AFTER_HELP: &str = "\
 LEARN MORE
   Documentation:       https://docs.fiveonefour.com/moosestack
@@ -1517,9 +1519,9 @@ pub async fn top_command_handler(
             community,
         } => {
             if *community {
-                routines::feedback::join_community()
+                routines::feedback::join_community(&settings, machine_id).await
             } else if *bug {
-                routines::feedback::report_bug(message.as_deref())
+                routines::feedback::report_bug(message.as_deref(), &settings, machine_id).await
             } else if let Some(msg) = message {
                 routines::feedback::send_feedback(msg, &settings, machine_id).await
             } else {

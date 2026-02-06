@@ -4,7 +4,9 @@ use crate::cli::display::Message;
 use crate::cli::routines::{RoutineFailure, RoutineSuccess};
 use crate::cli::settings::{user_directory, Settings};
 use crate::utilities::capture::{capture_usage, wait_for_usage_capture, ActivityType};
-use crate::utilities::constants::{CLI_VERSION, GITHUB_ISSUES_URL, SLACK_COMMUNITY_URL};
+use crate::utilities::constants::{
+    CLI_VERSION, GITHUB_ISSUES_URL, SLACK_COMMUNITY_URL, SUPPORT_EMAIL,
+};
 use std::collections::HashMap;
 
 /// Build a GitHub issue URL with pre-filled environment info, log paths, and optional description
@@ -33,8 +35,6 @@ fn build_issue_url(description: Option<&str>) -> String {
         GITHUB_ISSUES_URL, encoded_title, encoded_body
     )
 }
-
-const SUPPORT_EMAIL: &str = "support@fiveonefour.com";
 
 /// Send feedback message as a PostHog telemetry event
 pub async fn send_feedback(
@@ -72,15 +72,33 @@ pub async fn send_feedback(
 }
 
 /// Open GitHub Issues for bug reporting
-pub fn report_bug(description: Option<&str>) -> Result<RoutineSuccess, RoutineFailure> {
+pub async fn report_bug(
+    description: Option<&str>,
+    settings: &Settings,
+    machine_id: String,
+) -> Result<RoutineSuccess, RoutineFailure> {
     let url = build_issue_url(description);
 
     open::that(&url).map_err(|e| {
         RoutineFailure::new(
             Message::new("Failed".to_string(), "to open GitHub Issues".to_string()),
-            anyhow::anyhow!("{}", e),
+            e,
         )
     })?;
+
+    let mut params = HashMap::new();
+    params.insert("action".to_string(), "report_bug".to_string());
+    if let Some(desc) = description {
+        params.insert("description".to_string(), desc.to_string());
+    }
+    let handle = capture_usage(
+        ActivityType::FeedbackCommand,
+        None,
+        settings,
+        machine_id,
+        params,
+    );
+    wait_for_usage_capture(handle).await;
 
     let path = user_directory().to_string_lossy().to_string();
     Ok(RoutineSuccess::success(Message::new(
@@ -90,13 +108,27 @@ pub fn report_bug(description: Option<&str>) -> Result<RoutineSuccess, RoutineFa
 }
 
 /// Open Slack community invite
-pub fn join_community() -> Result<RoutineSuccess, RoutineFailure> {
+pub async fn join_community(
+    settings: &Settings,
+    machine_id: String,
+) -> Result<RoutineSuccess, RoutineFailure> {
     open::that(SLACK_COMMUNITY_URL).map_err(|e| {
         RoutineFailure::new(
             Message::new("Failed".to_string(), "to open Slack community".to_string()),
-            anyhow::anyhow!("{}", e),
+            e,
         )
     })?;
+
+    let mut params = HashMap::new();
+    params.insert("action".to_string(), "join_community".to_string());
+    let handle = capture_usage(
+        ActivityType::FeedbackCommand,
+        None,
+        settings,
+        machine_id,
+        params,
+    );
+    wait_for_usage_capture(handle).await;
 
     Ok(RoutineSuccess::success(Message::new(
         "Community".to_string(),
