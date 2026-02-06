@@ -37,6 +37,11 @@ import {
   CustomizeGrid,
   NumberedAccordion,
   NumberedAccordionItem,
+  GuideStepper,
+  GuideStepperStep,
+  GuideStepperCheckpoint,
+  GuideStepperAtAGlance,
+  GuideStepperPrompt,
   TabbedCode,
   TabbedCodeContent,
   ConditionalContent,
@@ -80,6 +85,12 @@ const CheckboxGroupWithSubcomponents = Object.assign(CheckboxGroup, {
 });
 const NumberedAccordionWithSubcomponents = Object.assign(NumberedAccordion, {
   Item: NumberedAccordionItem,
+});
+const GuideStepperWithSubcomponents = Object.assign(GuideStepper, {
+  Step: GuideStepperStep,
+  Checkpoint: GuideStepperCheckpoint,
+  AtAGlance: GuideStepperAtAGlance,
+  Prompt: GuideStepperPrompt,
 });
 const TabbedCodeWithSubcomponents = Object.assign(TabbedCode, {
   Content: TabbedCodeContent,
@@ -173,6 +184,11 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     CustomizeGrid,
     NumberedAccordion: NumberedAccordionWithSubcomponents,
     "NumberedAccordion.Item": NumberedAccordionItem,
+    GuideStepper: GuideStepperWithSubcomponents,
+    "GuideStepper.Step": GuideStepperStep,
+    "GuideStepper.Checkpoint": GuideStepperCheckpoint,
+    "GuideStepper.AtAGlance": GuideStepperAtAGlance,
+    "GuideStepper.Prompt": GuideStepperPrompt,
     TabbedCode: TabbedCodeWithSubcomponents,
     "TabbedCode.Content": TabbedCodeContent,
     ConditionalContent,
