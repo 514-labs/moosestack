@@ -112,7 +112,7 @@ async function handleTask(
   // points to a task that hasn't run yet (avoids duplicate execution).
   if (workflowInfo().continueAsNewSuggested) {
     logger.info(`ContinueAsNew suggested by Temporal before task ${task.name}`);
-    await continueAsNew(
+    return await continueAsNew(
       {
         workflow_name: workflow.name,
         execution_mode: "continue_as_new" as const,
