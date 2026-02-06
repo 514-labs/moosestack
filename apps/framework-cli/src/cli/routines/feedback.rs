@@ -30,12 +30,24 @@ fn build_issue_url(include_logs: bool) -> String {
     format!("{}?body={}", GITHUB_ISSUES_URL, urlencoding::encode(&body))
 }
 
+const SUPPORT_EMAIL: &str = "support@fiveonefour.com";
+
 /// Send feedback message as a PostHog telemetry event
 pub async fn send_feedback(
     message: &str,
     settings: &Settings,
     machine_id: String,
 ) -> Result<RoutineSuccess, RoutineFailure> {
+    if !settings.telemetry.enabled {
+        return Err(RoutineFailure::error(Message::new(
+            "Telemetry disabled".to_string(),
+            format!(
+                "Feedback requires telemetry to be enabled. You can email us instead at {}",
+                SUPPORT_EMAIL
+            ),
+        )));
+    }
+
     let mut params = HashMap::new();
     params.insert("feedback_message".to_string(), message.to_string());
 
