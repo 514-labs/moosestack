@@ -1,13 +1,21 @@
 ---
 title: 5-Minute Quickstart
-description: Create your first MooseStack project with an engine-neutral setup
+description: Create your first MooseStack project with the engine you plan to run
 order: 1
 category: getting-started
 ---
 
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+  Callout,
+} from "@/components/mdx";
+
 # 5-Minute Quickstart
 
-This quickstart creates a new project with the canonical multi-engine contract.
+Start with the OLAP engine you plan to use.
 
 ## 1. Install CLI
 
@@ -15,7 +23,18 @@ This quickstart creates a new project with the canonical multi-engine contract.
 bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
 ```
 
-## 2. Create a project
+## 2. Choose your engine
+
+<Tabs defaultValue="clickhouse">
+  <TabsList>
+    <TabsTrigger value="clickhouse">ClickHouse</TabsTrigger>
+    <TabsTrigger value="duckdb">DuckDB</TabsTrigger>
+    <TabsTrigger value="snowflake">Snowflake</TabsTrigger>
+  </TabsList>
+
+  <TabsContent value="clickhouse">
+
+### Create project
 
 ```bash
 moose init my-analytics-app typescript --olap-engine clickhouse
@@ -23,25 +42,25 @@ cd my-analytics-app
 pnpm install
 ```
 
-## 3. Configure engine and profile
+### Configure project
 
 ```toml title="moose.config.toml"
 [olap]
-engine = "clickhouse" # clickhouse | duckdb | snowflake
+engine = "clickhouse"
 profile = "local"
 connection = "http://panda:pandapass@localhost:18123/local"
 
 [dev_infra]
-profile = "local" # local | remote_hybrid | remote_full
+profile = "local"
 ```
 
-## 4. Start development
+### Start development
 
 ```bash
 moose dev --infra-profile local
 ```
 
-## 5. Create and apply a migration plan
+### Plan and apply migrations
 
 ```bash
 export MOOSE_OLAP__CONNECTION="http://panda:pandapass@localhost:18123/local"
@@ -49,6 +68,89 @@ export MOOSE_OLAP__CONNECTION="http://panda:pandapass@localhost:18123/local"
 moose generate migration --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION" --save
 moose migrate --olap-engine clickhouse --olap-url "$MOOSE_OLAP__CONNECTION"
 ```
+
+  </TabsContent>
+
+  <TabsContent value="duckdb">
+
+### Create project
+
+```bash
+moose init my-analytics-app typescript --olap-engine duckdb
+cd my-analytics-app
+pnpm install
+```
+
+### Configure project
+
+```toml title="moose.config.toml"
+[olap]
+engine = "duckdb"
+profile = "local"
+connection = "duckdb:///./.moose/dev.duckdb"
+
+[dev_infra]
+profile = "local"
+```
+
+### Start development
+
+```bash
+moose dev --infra-profile local
+```
+
+### Plan and apply migrations
+
+```bash
+moose generate migration --olap-engine duckdb --olap-url "duckdb:///./.moose/dev.duckdb" --save
+moose migrate --olap-engine duckdb --olap-url "duckdb:///./.moose/dev.duckdb"
+```
+
+  </TabsContent>
+
+  <TabsContent value="snowflake">
+
+<Callout type="info" title="Snowflake is remote-first">
+  Use remote credentials and run with a remote profile.
+</Callout>
+
+### Create project
+
+```bash
+moose init my-analytics-app typescript --olap-engine snowflake
+cd my-analytics-app
+pnpm install
+```
+
+### Configure project
+
+```toml title="moose.config.toml"
+[olap]
+engine = "snowflake"
+profile = "remote"
+connection = "snowflake://<user>:<password>@<account>/<database>/<schema>?warehouse=<warehouse>&role=<role>"
+
+[dev_infra]
+profile = "remote_full"
+```
+
+### Start development
+
+```bash
+moose dev --infra-profile remote_full
+```
+
+### Plan and apply migrations
+
+```bash
+export MOOSE_OLAP__CONNECTION="snowflake://<user>:<password>@<account>/<database>/<schema>?warehouse=<warehouse>&role=<role>"
+
+moose generate migration --olap-engine snowflake --olap-url "$MOOSE_OLAP__CONNECTION" --save
+moose migrate --olap-engine snowflake --olap-url "$MOOSE_OLAP__CONNECTION"
+```
+
+  </TabsContent>
+</Tabs>
 
 ## Next steps
 
