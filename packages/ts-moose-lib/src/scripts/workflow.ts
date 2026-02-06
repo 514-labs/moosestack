@@ -120,11 +120,14 @@ async function handleTask(
   // extract loops) where each activity completion adds history events.
   if (workflowInfo().continueAsNewSuggested) {
     logger.info(`ContinueAsNew suggested by Temporal after task ${task.name}`);
-    await continueAsNew({
-      workflow_name: workflow.name,
-      execution_mode: "continue_as_new" as const,
-      continue_from_task: task.name,
-    });
+    await continueAsNew(
+      {
+        workflow_name: workflow.name,
+        execution_mode: "continue_as_new" as const,
+        continue_from_task: task.name,
+      },
+      inputData,
+    );
   }
 
   if (!task.config.onComplete?.length) {

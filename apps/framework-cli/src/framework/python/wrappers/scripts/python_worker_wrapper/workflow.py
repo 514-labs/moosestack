@@ -140,7 +140,7 @@ class ScriptWorkflow:
                     results.extend(child_result)
 
             return results
-        except Exception as e:
+        except Exception:
             self._state.failed_step = activity_name
             raise
 
