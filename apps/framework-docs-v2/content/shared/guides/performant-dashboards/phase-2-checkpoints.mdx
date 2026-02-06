@@ -1,41 +1,24 @@
 ##### Checkpoint 1 — Serving table design
 
-Goal: define the serving table’s **grain**, **columns**, and **orderByFields**. This table will be populated by the Materialized View and becomes the table your API reads from.
+Goal: define the serving table's **grain**, **columns**, and **orderByFields**. This table will be populated by the Materialized View and becomes the table your API reads from.
 
-Checklist:
+Steps:
 
-1. **Output columns**: copy the final `SELECT` list from your existing query function. Those columns become the serving table schema.
-2. **Grain**: decide what uniquely identifies one row (e.g., `merchant_id` + `day`). This is the table’s grain.
-3. **orderByFields**: start with the grain columns, then add the most common filter/group-by fields from your access patterns.
+1. **Output columns**: take the final `SELECT` list from the Phase 1 parity query function. Those columns become the serving table schema.
+2. **Grain**: decide what uniquely identifies one row (e.g. `merchant_id` + `day`). This is the table's grain.
+3. **orderByFields**: start with the grain columns, then append the most common filter/group-by fields from your access patterns.
+4. Record the grain, columns, and `orderByFields` in `context-map.md`.
 
-Record the grain, columns, and `orderByFields` in `context-map.md`.
+Example (adapt to your component — do not copy names literally):
 
-Example: if your existing query function looks like this:
+If your parity query selects `merchant_id, merchant_name, day, total_orders, fulfilled_orders, fulfillment_rate`, then the serving table mirrors those columns and the `orderByFields` match the grain:
 
-```typescript
-import { sql } from "@514labs/moose-lib";
-
-const existingQuery = sql`
-SELECT
-  merchant_id,
-  merchant_name,
-  day,
-  total_orders,
-  fulfilled_orders,
-  fulfillment_rate
-FROM OrderMetrics om
-JOIN Merchants m ON m.id = om.merchant_id
-WHERE om.merchant_id = ${merchantId}
-GROUP BY om.merchant_id, m.merchant_name, toDate(om.created_at)`
-```
-
-Then your serving table should contain the columns from the existing query function, and `orderByFields` should match the grain (here, `["merchant_id", "day"]`).
 ```ts
-// File: moosestack/app/models/OrderFulfillmentServing-mv.ts
+// File: moosestack/app/models/<ServingTable>-mv.ts
 
 import { OlapTable, Int64 } from "@514labs/moose-lib";
 
-interface OrderFulfillmentServing {
+interface ServingTableSchema {
   merchant_id: string;
   merchant_name: string;
   day: Date;
@@ -43,101 +26,106 @@ interface OrderFulfillmentServing {
   fulfilled_orders: Int64;
   fulfillment_rate: number;
 }
-export const OrderFulfillmentServing = new OlapTable<OrderFulfillmentServing>("OrderFulfillmentServing", {
+
+export const ServingTable = new OlapTable<ServingTableSchema>("<ServingTable>", {
   orderByFields: ["merchant_id", "day"],
 });
 ```
 
-##### Checkpoint 2 — Define the Materialized View (MV) plan
+**Done when:** `context-map.md` documents the grain, column list, and `orderByFields`. You have a clear mapping from every parity query output column to a serving table column.
 
-Goal: decide how data gets into the serving table before you write code.
+##### Checkpoint 2 — Materialized View plan
+
+Goal: decide how data flows into the serving table before writing code.
 
 Rule of thumb:
 
 - **Single MV** — 1 source table, no CTEs, straightforward aggregation
 - **Staged pipeline** — multiple CTEs, 3+ joined tables, or cascading aggregations (create intermediate staging tables/MVs that feed the final serving table)
 
-Anything not driven by request parameters belongs in write-time MVs. Keep only truly dynamic filters (from the API request) for the final read query.
+Everything not driven by request parameters belongs in write-time MVs. Only truly dynamic filters (from the API request) stay in the final read query.
 
 Steps:
 
-1. Decide single MV vs staged pipeline using the heuristic above.
-2. List the source table models that must be imported and included in `selectTables`.
-3. Record the MV plan in `context-map.md`.
+1. Decide single MV vs staged pipeline using the heuristic above. If it is ambiguous, present both options with tradeoffs and ask.
+2. List every source table model that must be imported and included in `selectTables`.
+3. Sketch the `selectStatement` logic: which joins, aggregations, and transformations move from read-time to write-time.
+4. Record the MV plan in `context-map.md`: chosen approach (single or staged), source table list, and a summary of the write-time logic.
+
+**Done when:** `context-map.md` contains the MV plan — approach, source table list, and a description of the write-time logic. You should be able to implement the MV from this plan alone.
 
 ##### Checkpoint 3 — Implement the serving table + MV
 
-Write the MooseStack file that defines the serving table and the MV that populates it.
+Goal: write the MooseStack file that defines the serving table and the MV that populates it.
 
-- Put the serving table and MV in the same file.
-- Ensure the column names and types align between the `SELECT` statement of the existing query function and the serving table.
-- If you are implementing a staged pipeline of intermediate tables/views, ensure the column names and types align between the intermediate tables/views and the serving table.
-- Use the `sql` tagged template literal to build the `selectStatement` for the MV.
-- Do not forget to import the source tables from the paths listed in your `context-map.md`.
+Steps:
 
-Example:
+1. Put the serving table and MV definition in the same file: `moosestack/app/models/<ServingTable>-mv.ts`.
+2. Ensure column names and types align exactly between the MV `selectStatement` output and the serving table schema.
+3. If implementing a staged pipeline, ensure intermediate tables/views also align.
+4. Use the `sql` tagged template literal to build the `selectStatement`.
+5. Import every source table from the paths listed in `context-map.md` and include them in `selectTables`.
+6. Record the file path in `context-map.md`.
+
+Example (adapt to your component — do not copy names literally):
+
 ```ts
-// File: moosestack/app/models/OrderFulfillmentServing-mv.ts
+// File: moosestack/app/models/<ServingTable>-mv.ts
 
 import { Int64, MaterializedView, OlapTable, sql } from "@514labs/moose-lib";
-import { OrderMetrics } from "../models/OrderMetrics.model";
-import { Merchants } from "../models/Merchants.model";
+import { SourceTableA } from "./SourceTableA.model";
+import { SourceTableB } from "./SourceTableB.model";
 
-interface OrderFulfillmentServing {
-  merchant_id: string;
-  merchant_name: string;
-  day: Date;
-  total_orders: Int64;
-  fulfilled_orders: Int64;
-  fulfillment_rate: number;
-}
+// ... serving table interface and OlapTable definition from Checkpoint 1 ...
 
-export const OrderFulfillmentServing = new OlapTable<OrderFulfillmentServing>("OrderFulfillmentServing", {
-  orderByFields: ["merchant_id", "day"],
-});
-
-export const OrderFulfillmentMV = new MaterializedView<OrderFulfillmentServing>({
+export const ServingMV = new MaterializedView<ServingTableSchema>({
   selectStatement: sql`
     SELECT
-      om.merchant_id,
-      m.merchant_name,
-      toDate(om.created_at) AS day,
-      om.total_orders,
-      om.fulfilled_orders,
-      round(100 * om.fulfilled_orders / nullIf(om.total_orders, 0), 2) AS fulfillment_rate
-    FROM ${OrderMetrics} om
-    JOIN ${Merchants} m ON m.id = om.merchant_id
+      a.id,
+      b.name,
+      toDate(a.created_at) AS day,
+      count() AS total,
+      sumIf(1, a.status = 'complete') AS completed
+    FROM ${SourceTableA} a
+    JOIN ${SourceTableB} b ON b.id = a.ref_id
+    GROUP BY a.id, b.name, day
   `,
-  targetTable: OrderFulfillmentServing,
-  materializedViewName: "OrderFulfillmentMV",
-  selectTables: [OrderMetrics, Merchants],
+  targetTable: ServingTable,
+  materializedViewName: "<ServingTable>MV",
+  selectTables: [SourceTableA, SourceTableB],
 });
 ```
+
+**Done when:** the file compiles and is saved. The file path is recorded in `context-map.md`.
 
 ##### Checkpoint 4 — Verification
 
-Save your files and watch the `moose dev` logs for the creation of the serving table and the Materialized View:
+Goal: confirm the serving table and MV are created and populated correctly.
+
+Steps:
+
+1. Save your files and watch the `moose dev` logs for successful creation:
 
 ```
-[INFO] Created table: OrderFulfillmentServing
-[INFO] Created materialized view: OrderFulfillmentMV
+[INFO] Created table: <ServingTable>
+[INFO] Created materialized view: <ServingTable>MV
 ```
 
 If you see errors, check:
-- Column names match between the `selectStatement` of the existing query function and the serving table.
-- The column types from `selectTables` line up with the casts/expressions used in the `selectStatement`.
-- Every source table referenced in `selectTables` exists and is registered.
+- Column names match between the `selectStatement` and the serving table schema
+- Column types from `selectTables` align with the casts/expressions in the `selectStatement`
+- Every source table in `selectTables` exists and is registered
 
-The `moose dev` server automatically populates the serving table when you create or update a Materialized View by running the `selectStatement` defined in the Materialized View. Do not backfill the serving table manually.
-
-Use `moose query` to verify the serving table is populated for a few test cases:
+2. Verify the serving table is populated. The `moose dev` server automatically runs the `selectStatement` when the MV is created — do not backfill manually.
 
 ```bash
-# Check row count in serving table
-moose query "SELECT count() FROM OrderFulfillmentServing"
+# Row count
+moose query -q "SELECT count() FROM <ServingTable> FINAL"
 
-# Check a specific slice of the serving table
-moose query "SELECT * FROM OrderFulfillmentServing WHERE merchant_id = '123' ORDER BY day DESC LIMIT 5"
+# Spot-check a slice that matches a Phase 1 test case
+moose query -q "SELECT * FROM <ServingTable> FINAL WHERE <filter_from_test_case> LIMIT 5"
 ```
 
-At this stage you are only checking that the data is present. Once the Materialized View is created and the serving table is populated, you can proceed to Phase 3. Phase 3 will rewire the existing API endpoint to read from the serving table.
+3. Confirm the serving table has data for every Phase 1 test case time window. If rows are missing, check the MV logic and source table data.
+
+**Done when:** `moose dev` logs show no errors, the serving table has rows, and spot-checks against Phase 1 test case filters return data. Proceed to Phase 3.
