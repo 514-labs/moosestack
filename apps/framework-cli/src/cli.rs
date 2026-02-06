@@ -214,23 +214,27 @@ pub fn prompt_password(prompt_text: &str) -> Result<String, RoutineFailure> {
     }
 }
 
-// NOTE: Slack URL below is duplicated from SLACK_COMMUNITY_URL in constants.rs
-// because Rust const strings can't interpolate. Update both if the link changes.
-const AFTER_HELP: &str = "\
-LEARN MORE
-  Documentation:       https://docs.fiveonefour.com/moosestack
-  Troubleshooting:     https://docs.fiveonefour.com/moosestack/help/troubleshooting
-
-FEEDBACK
-  We'd love to hear your feedback! Join our Slack community at:
-      https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg
-
-  You can also submit feedback directly via `moose feedback`, which
-  has the ability to include log file locations if you're experiencing issues.
-";
-
 #[derive(Parser)]
-#[command(author, version = constants::CLI_VERSION, about, long_about = None, arg_required_else_help(true), next_display_order = None, after_help = AFTER_HELP)]
+#[command(
+    author,
+    version = constants::CLI_VERSION,
+    about = "MooseStack is a type-safe code-first developer framework for building real-time analytical backends, by the team at Fiveonefour.",
+    long_about = None,
+    arg_required_else_help(true),
+    next_display_order = None,
+    after_help = "\x1b[1;4mLEARN MORE\x1b[0m
+  Documentation:         https://docs.fiveonefour.com/moosestack
+  Implementation guides: https://docs.fiveonefour.com/guides?lang=typescript
+
+\x1b[1;4mFEEDBACK\x1b[0m
+  We'd love to hear from you! Join our Slack community:
+    https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg
+  Or email us at: hello@fiveonefour.com
+
+\x1b[1;4mHOSTING\x1b[0m
+  Try Boreal, Fiveonefour's hosting platform built for MooseStack apps.
+  Sign up for a free trial: https://fiveonefour.boreal.cloud/sign-up"
+)]
 pub struct Cli {
     /// Turn debugging information on
     #[arg(short, long)]
