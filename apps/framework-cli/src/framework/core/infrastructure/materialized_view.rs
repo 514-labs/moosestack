@@ -487,6 +487,13 @@ impl MaterializedView {
         )
     }
 
+    /// Returns the REFRESH clause (e.g. "REFRESH EVERY 1 HOUR OFFSET 5 MINUTE")
+    /// for use in CREATE MATERIALIZED VIEW statements. Returns None for incremental MVs.
+    pub fn refresh_clause(&self) -> Option<String> {
+        self.refreshable_config()
+            .map(|config| format!("REFRESH {}", Self::format_refresh_clause(config)))
+    }
+
     /// Generates the ALTER TABLE MODIFY REFRESH SQL statement.
     /// Only valid for refreshable MVs.
     pub fn to_alter_refresh_sql(&self) -> Option<String> {
