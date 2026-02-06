@@ -1,4 +1,4 @@
-import { LifeCycle, OlapTable } from "@514-labs/moose-lib";
+import { LifeCycle, OlapTable } from "@514labs/moose-lib";
 
 export interface OrdersModel {
   merchant_id: string;
@@ -6,7 +6,7 @@ export interface OrdersModel {
   status: string;
 }
 
-export const Orders = OlapTable<OrdersModel>("Orders", {
+export const Orders = new OlapTable<OrdersModel>("Orders", {
   orderByFields: ["merchant_id", "order_ts"],
   lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
 });
