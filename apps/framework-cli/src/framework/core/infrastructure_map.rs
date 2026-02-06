@@ -585,6 +585,12 @@ pub struct InfrastructureMap {
     /// Collection of views indexed by view name
     #[serde(default)]
     pub views: HashMap<String, View>,
+
+    /// Version of Moose CLI that created or last updated this infrastructure map.
+    /// Populated automatically during storage operations.
+    /// None for maps created by older CLI versions (pre-version-tracking).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moose_version: Option<String>,
 }
 
 impl InfrastructureMap {
@@ -622,6 +628,7 @@ impl InfrastructureMap {
             web_apps: Default::default(),
             materialized_views: Default::default(),
             views: Default::default(),
+            moose_version: None,
         }
     }
 
@@ -2654,6 +2661,7 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            moose_version: self.moose_version.clone().unwrap_or_default(),
             special_fields: Default::default(),
         }
     }
@@ -2803,6 +2811,11 @@ impl InfrastructureMap {
                 .collect(),
             materialized_views,
             views,
+            moose_version: if proto.moose_version.is_empty() {
+                None // Backward compat: empty string = not set
+            } else {
+                Some(proto.moose_version)
+            },
         })
     }
 
@@ -3577,6 +3590,7 @@ impl Default for InfrastructureMap {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None, // Not set until storage
         }
     }
 }
@@ -3611,6 +3625,8 @@ impl serde::Serialize for InfrastructureMap {
             materialized_views:
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
             views: &'a HashMap<String, super::infrastructure::view::View>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            moose_version: &'a Option<String>,
         }
 
         // Mask credentials before serialization (for JSON migration files)
@@ -3633,6 +3649,7 @@ impl serde::Serialize for InfrastructureMap {
             web_apps: &masked_inframap.web_apps,
             materialized_views: &masked_inframap.materialized_views,
             views: &masked_inframap.views,
+            moose_version: &masked_inframap.moose_version,
         };
 
         // Serialize to JSON value, sort keys, then serialize that
@@ -7771,5 +7788,82 @@ mod diff_workflow_tests {
             .collect();
         assert!(added_names.contains(&"workflow_a"));
         assert!(added_names.contains(&"workflow_b"));
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    #[test]
+    fn test_proto_roundtrip_with_version() {
+        let map = InfrastructureMap {
+            moose_version: Some("0.3.45".to_string()),
+            ..Default::default()
+        };
+
+        let bytes = map.to_proto_bytes();
+        let decoded = InfrastructureMap::from_proto(bytes).unwrap();
+
+        assert_eq!(decoded.moose_version, Some("0.3.45".to_string()));
+    }
+
+    #[test]
+    fn test_proto_roundtrip_without_version() {
+        let map = InfrastructureMap {
+            moose_version: None,
+            ..Default::default()
+        };
+
+        let bytes = map.to_proto_bytes();
+        let decoded = InfrastructureMap::from_proto(bytes).unwrap();
+
+        assert_eq!(decoded.moose_version, None);
+    }
+
+    #[test]
+    fn test_backward_compatibility_json() {
+        let old_json = r#"{
+            "default_database": "test_db",
+            "topics": {},
+            "tables": {},
+            "api_endpoints": {},
+            "dmv1_views": {},
+            "topic_to_table_sync_processes": {},
+            "topic_to_topic_sync_processes": {},
+            "function_processes": {},
+            "consumption_api_web_server": {},
+            "orchestration_workers": {},
+            "sql_resources": {},
+            "workflows": {},
+            "web_apps": {},
+            "materialized_views": {},
+            "views": {}
+        }"#;
+
+        let map: InfrastructureMap = serde_json::from_str(old_json).unwrap();
+        assert_eq!(map.moose_version, None);
+    }
+
+    #[test]
+    fn test_version_serialization_skips_none() {
+        let map = InfrastructureMap {
+            moose_version: None,
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&map).unwrap();
+        assert!(!json.contains("moose_version"), "None should be skipped");
+    }
+
+    #[test]
+    fn test_version_serialization_includes_some() {
+        let map = InfrastructureMap {
+            moose_version: Some("1.2.3".to_string()),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&map).unwrap();
+        assert!(json.contains("\"moose_version\":\"1.2.3\""));
     }
 }

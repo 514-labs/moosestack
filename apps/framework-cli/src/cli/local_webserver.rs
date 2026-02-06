@@ -3305,10 +3305,16 @@ async fn store_updated_inframap(
     infra_map: &InfrastructureMap,
     redis_client: Arc<RedisClient>,
 ) -> Result<(), IntegrationError> {
+    use crate::utilities::constants::CLI_VERSION;
+
     debug!("Storing updated inframap");
 
+    // Set moose_version before storing (consistent with StateStorage implementations)
+    let mut versioned_map = infra_map.clone();
+    versioned_map.moose_version = Some(CLI_VERSION.to_string());
+
     // Store in Redis
-    if let Err(e) = infra_map.store_in_redis(&redis_client).await {
+    if let Err(e) = versioned_map.store_in_redis(&redis_client).await {
         debug!("Failed to store inframap in Redis: {}", e);
         return Err(IntegrationError::InternalError(format!(
             "Failed to store updated inframap in Redis: {e}"
