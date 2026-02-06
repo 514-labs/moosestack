@@ -1,4 +1,4 @@
-import { sql } from "@514-labs/moose-lib";
+import { sql } from "@514labs/moose-lib";
 import { Orders } from "./source-orders";
 
 export interface OrderFulfillmentOlapTranslationInput {
