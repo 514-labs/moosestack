@@ -35,6 +35,20 @@ Attach these files:
     expect(output).toContain("Attach these files:");
   });
 
+  it("injects rawContent into GuideStepper.Prompt blocks", () => {
+    const input = `
+<GuideStepper.Prompt>
+Use concise bullets and include file paths.
+</GuideStepper.Prompt>
+`;
+
+    const output = processGuideStepperPrompts(input);
+
+    expect(output).toContain("<GuideStepper.Prompt");
+    expect(output).toContain("rawContent={");
+    expect(output).toContain("Use concise bullets and include file paths.");
+  });
+
   it("does not overwrite existing rawContent props", () => {
     const input = `
 <GuideStepper.Checkpoint rawContent={"existing"} id="phase-1" title="Run checkpoints">
@@ -61,5 +75,22 @@ Attach these files:
 
     expect(output).not.toContain('rawContent={"### Checkpoint 1"}');
     expect(output).toContain('<GuideStepper.Checkpoint id="phase-1"');
+  });
+
+  it("injects rawContent for repeated identical blocks", () => {
+    const input = `
+<GuideStepper.Checkpoint id="phase-1" title="Run checkpoints">
+### Checkpoint 1
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint id="phase-1" title="Run checkpoints">
+### Checkpoint 1
+</GuideStepper.Checkpoint>
+`;
+
+    const output = processGuideStepperPrompts(input);
+    const rawContentMatches = output.match(/rawContent=\{/g) ?? [];
+
+    expect(rawContentMatches).toHaveLength(2);
   });
 });
