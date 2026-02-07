@@ -210,8 +210,8 @@ function HighlightedCodeBlockContent({
         const html = await codeToHtml(code, {
           lang: mappedLanguage,
           themes: {
-            light: "github-light",
-            dark: "github-dark",
+            light: "vitesse-light",
+            dark: "vitesse-dark",
           },
           transformers: [
             {
@@ -240,8 +240,8 @@ function HighlightedCodeBlockContent({
           const html = await codeToHtml(code, {
             lang: "text",
             themes: {
-              light: "github-light",
-              dark: "github-dark",
+              light: "vitesse-light",
+              dark: "vitesse-dark",
             },
           });
           setHighlightedCode(html);
@@ -406,8 +406,8 @@ export function CodeSnippet({
                 : <CodeBlockContent
                     language={item.language as any}
                     themes={{
-                      light: "github-light",
-                      dark: "github-dark",
+                      light: "vitesse-light",
+                      dark: "vitesse-dark",
                     }}
                     syntaxHighlighting={true}
                   >

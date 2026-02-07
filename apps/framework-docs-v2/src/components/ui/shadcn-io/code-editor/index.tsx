@@ -76,8 +76,8 @@ function CodeEditor({
   children: code,
   lang,
   themes = {
-    light: "github-light",
-    dark: "github-dark",
+    light: "vitesse-light",
+    dark: "vitesse-dark",
   },
   duration = 5,
   delay = 0,

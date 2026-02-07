@@ -80,8 +80,8 @@ export function CodeEditorWrapper({
           cursor={terminalWriting}
           className="h-full"
           themes={{
-            light: "github-light",
-            dark: "github-dark",
+            light: "vitesse-light",
+            dark: "vitesse-dark",
           }}
         >
           {codeContent}
