@@ -310,11 +310,14 @@ function GuideStepperInner({
   className,
   children,
 }: GuideStepperProps) {
-  const steps = Children.toArray(children).filter(
-    isGuideStepperStepElement,
-  ) as ReactElement<GuideStepperStepProps>[];
-  const stepIds = steps.map((step) => step.props.id);
-  const stepIdsKey = stepIds.join("|");
+  const steps = useMemo(
+    () =>
+      Children.toArray(children).filter(
+        isGuideStepperStepElement,
+      ) as ReactElement<GuideStepperStepProps>[],
+    [children],
+  );
+  const stepIds = useMemo(() => steps.map((step) => step.props.id), [steps]);
 
   const [storedCompletedStepIds, setStoredCompletedStepIds] = usePersistedState<
     string[]
@@ -352,7 +355,7 @@ function GuideStepperInner({
       const sanitized = getSanitizedOpenStepIds(prev, stepIds);
       return hasSameItems(prev, sanitized) ? prev : sanitized;
     });
-  }, [stepIdsKey]);
+  }, [stepIds]);
 
   const progress = useMemo(
     () => calculateProgress(stepIds, completedStepIds),

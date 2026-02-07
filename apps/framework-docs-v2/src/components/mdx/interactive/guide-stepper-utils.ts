@@ -24,13 +24,6 @@ interface GuideCheckpointLikeProps {
   rawContent?: unknown;
 }
 
-interface GuidePromptLikeProps {
-  rawContent?: unknown;
-  id?: unknown;
-  title?: unknown;
-  number?: unknown;
-}
-
 interface GuideAtAGlanceLikeProps {
   rawContent?: unknown;
   id?: unknown;
@@ -180,5 +173,3 @@ export function isGuideStepperAtAGlanceElement(
     typeof props.number === "undefined"
   );
 }
-
-export const isGuideStepperPromptElement = isGuideStepperAtAGlanceElement;

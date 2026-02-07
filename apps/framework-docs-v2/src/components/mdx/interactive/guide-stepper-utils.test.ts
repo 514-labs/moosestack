@@ -76,22 +76,21 @@ describe("guide-stepper utils", () => {
   });
 
   it("recognizes step elements by required props instead of component identity", () => {
-    const node = createElement("div", {
-      id: "phase-1",
-      number: 1,
-      title: "Parity",
-      children: "content",
-    });
+    const node = createElement(
+      "div",
+      { id: "phase-1", number: 1, title: "Parity" },
+      "content",
+    );
 
     expect(isGuideStepperStepElement(node)).toBe(true);
   });
 
   it("recognizes checkpoint elements by required props", () => {
-    const node = createElement("div", {
-      id: "checkpoint-1",
-      title: "Prepare context",
-      children: "content",
-    });
+    const node = createElement(
+      "div",
+      { id: "checkpoint-1", title: "Prepare context" },
+      "content",
+    );
 
     expect(isGuideStepperCheckpointElement(node)).toBe(true);
   });
@@ -105,20 +104,24 @@ describe("guide-stepper utils", () => {
   });
 
   it("recognizes at-a-glance blocks by rawContent prop", () => {
-    const node = createElement("div", {
-      rawContent: "Attach these files first",
-      children: "Attach these files first",
-    });
+    const node = createElement(
+      "div",
+      { rawContent: "Attach these files first" },
+      "Attach these files first",
+    );
 
     expect(isGuideStepperAtAGlanceElement(node)).toBe(true);
   });
 
   it("recognizes at-a-glance blocks with custom title prop", () => {
-    const node = createElement("div", {
-      title: "Before you run checkpoints",
-      rawContent: "Attach these files first",
-      children: "Attach these files first",
-    });
+    const node = createElement(
+      "div",
+      {
+        title: "Before you run checkpoints",
+        rawContent: "Attach these files first",
+      },
+      "Attach these files first",
+    );
 
     expect(isGuideStepperAtAGlanceElement(node)).toBe(true);
   });
