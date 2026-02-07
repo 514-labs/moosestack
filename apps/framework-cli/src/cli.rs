@@ -1565,13 +1565,36 @@ pub async fn top_command_handler(
             let lang = routines::docs::resolve_language(docs_args.lang.as_deref(), &settings)?;
 
             let result = match &docs_args.command {
-                None => routines::docs::show_toc(docs_args.expand, docs_args.raw).await,
+                None => routines::docs::show_toc(docs_args.expand, docs_args.raw, lang).await,
+                Some(DocsCommands::Browse {}) => {
+                    routines::docs::browse_docs(lang, docs_args.raw, docs_args.web).await
+                }
                 Some(DocsCommands::Search { query }) => {
                     routines::docs::search_toc(query, docs_args.raw).await
                 }
                 Some(DocsCommands::Show(args)) => {
                     let slug = args.join("/");
-                    routines::docs::fetch_page(&slug, lang, docs_args.raw).await
+                    // Split on # to separate slug from section anchor
+                    let (page_slug, section) = match slug.split_once('#') {
+                        Some((s, anchor)) => (s.to_string(), Some(anchor.to_string())),
+                        None => (slug, None),
+                    };
+                    if docs_args.web {
+                        // For --web, pass the full slug including any #anchor
+                        let web_slug = match &section {
+                            Some(anchor) => format!("{}#{}", page_slug, anchor),
+                            None => page_slug,
+                        };
+                        routines::docs::open_in_browser(&web_slug)
+                    } else {
+                        routines::docs::fetch_page(
+                            &page_slug,
+                            lang,
+                            docs_args.raw,
+                            section.as_deref(),
+                        )
+                        .await
+                    }
                 }
             };
 
