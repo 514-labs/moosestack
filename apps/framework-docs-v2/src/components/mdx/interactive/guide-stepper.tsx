@@ -24,9 +24,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { usePersistedState } from "./use-persisted-state";
+import { VerticalProgressSteps } from "./vertical-progress-steps";
 import {
   buildGuideStepPromptMarkdown,
   calculateProgress,
@@ -52,6 +52,7 @@ export interface GuideStepperStepProps {
   number: number;
   title: string;
   summary?: string;
+  checkpointVariant?: "numbered" | "bulleted";
   children: ReactNode;
 }
 
@@ -130,6 +131,7 @@ function GuideStepperStepComponent({
   number,
   title,
   summary,
+  checkpointVariant = "numbered",
   children,
 }: GuideStepperStepProps) {
   const { completedStepIds, toggleStepComplete } = useGuideStepperContext();
@@ -264,51 +266,35 @@ function GuideStepperStepComponent({
 
         {checkpoints.length > 0 && (
           <Card className="border-border/60">
-            <CardContent className="p-0">
-              <Tabs defaultValue={checkpoints[0]!.props.id} className="w-full">
-                <div className="border-b border-border/60 bg-muted/30 px-3 py-2">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Checkpoints
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 gap-1.5 px-2 text-xs"
-                      onClick={handleCopyPrompt}
-                      disabled={!promptToCopy.trim()}
-                    >
-                      {copied ?
-                        <IconCheck className="h-3.5 w-3.5" />
-                      : <IconCopy className="h-3.5 w-3.5" />}
-                      {copied ? "Copied!" : "Copy Prompt"}
-                    </Button>
-                  </div>
-                  <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto bg-transparent p-0">
-                    {checkpoints.map((checkpoint) => (
-                      <TabsTrigger
-                        key={checkpoint.props.id}
-                        value={checkpoint.props.id}
-                        className="h-8 shrink-0 px-2.5 text-xs sm:text-sm data-[state=active]:bg-background"
-                      >
-                        {checkpoint.props.title}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </div>
-
+            <CardContent className="px-4 py-3">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Checkpoints
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 gap-1.5 px-2 text-xs"
+                  onClick={handleCopyPrompt}
+                  disabled={!promptToCopy.trim()}
+                >
+                  {copied ?
+                    <IconCheck className="h-3.5 w-3.5" />
+                  : <IconCopy className="h-3.5 w-3.5" />}
+                  {copied ? "Copied!" : "Copy Prompt"}
+                </Button>
+              </div>
+              <VerticalProgressSteps variant={checkpointVariant}>
                 {checkpoints.map((checkpoint) => (
-                  <TabsContent
+                  <VerticalProgressSteps.Item
                     key={checkpoint.props.id}
-                    value={checkpoint.props.id}
-                    className="m-0 px-4 py-4"
+                    id={checkpoint.props.id}
+                    title={checkpoint.props.title}
                   >
-                    <div className="text-sm space-y-3">
-                      {checkpoint.props.children}
-                    </div>
-                  </TabsContent>
+                    {checkpoint.props.children}
+                  </VerticalProgressSteps.Item>
                 ))}
-              </Tabs>
+              </VerticalProgressSteps>
             </CardContent>
           </Card>
         )}

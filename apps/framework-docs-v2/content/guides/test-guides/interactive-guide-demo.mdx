@@ -434,8 +434,9 @@ Check the steps as you complete them to track your progress:
 
 Use `GuideStepper` for multi-phase guides where each phase has sub-checkpoints.
 Each step now includes a **Copy Prompt** action that concatenates pre-checkpoint
-instructions and all checkpoint tab content into markdown.
+instructions and all checkpoint content into markdown.
 Inside `GuideStepper.AtAGlance`, write regular markdown directly (no React tags required).
+Checkpoints render as a shared vertical progress steps list by default.
 
 <GuideStepper id="demo-guide-stepper" persist>
   <GuideStepper.Step
@@ -457,6 +458,21 @@ Inside `GuideStepper.AtAGlance`, write regular markdown directly (no React tags 
     </GuideStepper.Checkpoint>
     <GuideStepper.Checkpoint id="phase1-verify" title="Verify parity output">
       Run your parity query and diff against expected JSON from the original endpoint.
+
+      ```ts filename="parity-query.ts"
+      const parityQuery = `
+      SELECT * FROM UserEvent
+      WHERE eventType = 'click'
+      `;
+      const expectedOutput = {
+        id: "test-1",
+      };
+      ```
+
+      ```bash
+      moose query -f parity-query.ts
+      ```
+      
     </GuideStepper.Checkpoint>
 
   </GuideStepper.Step>
@@ -475,6 +491,24 @@ Inside `GuideStepper.AtAGlance`, write regular markdown directly (no React tags 
     </GuideStepper.Checkpoint>
   </GuideStepper.Step>
 </GuideStepper>
+
+---
+
+## VerticalProgressSteps as a Standalone Component
+
+Use the same vertical checklist UI outside `GuideStepper` in any guide section.
+
+<VerticalProgressSteps variant="bulleted">
+  <VerticalProgressSteps.Item title="Gather context">
+    Add architecture notes, failing examples, and expected output.
+  </VerticalProgressSteps.Item>
+  <VerticalProgressSteps.Item title="Run migration prompt">
+    Paste the generated prompt into your copilot and capture the proposed diff.
+  </VerticalProgressSteps.Item>
+  <VerticalProgressSteps.Item title="Validate results">
+    Run the same replay cases and compare output before merging.
+  </VerticalProgressSteps.Item>
+</VerticalProgressSteps>
 
 ---
 
@@ -551,4 +585,17 @@ Inside `GuideStepper.AtAGlance`, write regular markdown directly (no React tags 
 
   </GuideStepper.Step>
 </GuideStepper>
+```
+
+### VerticalProgressSteps in regular MDX sections
+
+```mdx
+<VerticalProgressSteps variant="numbered">
+  <VerticalProgressSteps.Item title="Checkpoint one">
+    Content for checkpoint one...
+  </VerticalProgressSteps.Item>
+  <VerticalProgressSteps.Item title="Checkpoint two">
+    Content for checkpoint two...
+  </VerticalProgressSteps.Item>
+</VerticalProgressSteps>
 ```

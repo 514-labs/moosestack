@@ -42,6 +42,8 @@ import {
   GuideStepperCheckpoint,
   GuideStepperAtAGlance,
   GuideStepperPrompt,
+  VerticalProgressSteps,
+  VerticalProgressStepItem,
   TabbedCode,
   TabbedCodeContent,
   ConditionalContent,
@@ -92,6 +94,12 @@ const GuideStepperWithSubcomponents = Object.assign(GuideStepper, {
   AtAGlance: GuideStepperAtAGlance,
   Prompt: GuideStepperPrompt,
 });
+const VerticalProgressStepsWithSubcomponents = Object.assign(
+  VerticalProgressSteps,
+  {
+    Item: VerticalProgressStepItem,
+  },
+);
 const TabbedCodeWithSubcomponents = Object.assign(TabbedCode, {
   Content: TabbedCodeContent,
 });
@@ -189,6 +197,8 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     "GuideStepper.Checkpoint": GuideStepperCheckpoint,
     "GuideStepper.AtAGlance": GuideStepperAtAGlance,
     "GuideStepper.Prompt": GuideStepperPrompt,
+    VerticalProgressSteps: VerticalProgressStepsWithSubcomponents,
+    "VerticalProgressSteps.Item": VerticalProgressStepItem,
     TabbedCode: TabbedCodeWithSubcomponents,
     "TabbedCode.Content": TabbedCodeContent,
     ConditionalContent,

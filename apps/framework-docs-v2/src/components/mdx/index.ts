@@ -65,4 +65,6 @@ export {
   GuideStepperCheckpoint,
   GuideStepperAtAGlance,
   GuideStepperPrompt,
+  VerticalProgressSteps,
+  VerticalProgressStepItem,
 } from "./interactive";
