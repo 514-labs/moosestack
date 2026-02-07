@@ -433,8 +433,9 @@ Check the steps as you complete them to track your progress:
 ## GuideStepper with Nested Checkpoints + Prompt Copy
 
 Use `GuideStepper` for multi-phase guides where each phase has sub-checkpoints.
-Each step now includes a **Copy Prompt** action that concatenates pre-checkpoint
-instructions and all checkpoint content into markdown.
+Each step now includes a **Copy Prompt** action that concatenates checkpoint
+content into markdown.
+`GuideStepper.AtAGlance` remains visible reference guidance and is not copied.
 Inside `GuideStepper.AtAGlance`, write regular markdown directly (no React tags required).
 Checkpoints render as a shared vertical progress steps list by default.
 
@@ -472,7 +473,7 @@ Checkpoints render as a shared vertical progress steps list by default.
       ```bash
       moose query -f parity-query.ts
       ```
-      
+
     </GuideStepper.Checkpoint>
 
   </GuideStepper.Step>

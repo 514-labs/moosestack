@@ -153,11 +153,9 @@ describe("guide-stepper utils", () => {
     ).toEqual(["phase-1"]);
   });
 
-  it("builds prompt markdown by concatenating pre-checkpoint instructions and checkpoint content", () => {
+  it("builds prompt markdown from checkpoint content only", () => {
     expect(
       buildGuideStepPromptMarkdown({
-        atAGlanceRawContent:
-          "Attach `context-map.md` before running checkpoints.",
         checkpointRawContents: [
           "### Checkpoint 1\n\nDo thing 1.",
           "### Checkpoint 2\n\nDo thing 2.",
@@ -165,7 +163,6 @@ describe("guide-stepper utils", () => {
       }),
     ).toBe(
       [
-        "Attach `context-map.md` before running checkpoints.",
         "### Checkpoint 1\n\nDo thing 1.",
         "### Checkpoint 2\n\nDo thing 2.",
       ].join("\n\n"),

@@ -32,7 +32,6 @@ interface GuideAtAGlanceLikeProps {
 }
 
 interface BuildGuideStepPromptInput {
-  atAGlanceRawContent?: string;
   checkpointRawContents: string[];
 }
 
@@ -77,13 +76,9 @@ export function getOpenStepIdsAfterCompletionToggle(
 }
 
 export function buildGuideStepPromptMarkdown({
-  atAGlanceRawContent,
   checkpointRawContents,
 }: BuildGuideStepPromptInput): string {
-  const segments = [
-    ...(atAGlanceRawContent ? [atAGlanceRawContent] : []),
-    ...checkpointRawContents,
-  ]
+  const segments = checkpointRawContents
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
 
