@@ -1377,6 +1377,7 @@ pub async fn browse_docs(
     // Hierarchical drill-down navigation
     let mut section_idx: Option<usize> = None;
     let mut group_idx: Option<usize> = None;
+    let mut auto_drilled = false;
 
     loop {
         if section_idx.is_none() {
@@ -1411,6 +1412,7 @@ pub async fn browse_docs(
                     }
                 } else {
                     group_idx = Some(0);
+                    auto_drilled = true;
                     continue;
                 }
             }
@@ -1463,7 +1465,14 @@ pub async fn browse_docs(
                         }
                     }
                 }
-                PickerResult::Back => group_idx = None,
+                PickerResult::Back => {
+                    if auto_drilled {
+                        // Skip back to section selection to avoid re-entering auto-drill loop
+                        section_idx = None;
+                        auto_drilled = false;
+                    }
+                    group_idx = None;
+                }
                 PickerResult::Cancelled => {
                     return Ok(RoutineSuccess::success(Message::new(
                         "Docs".to_string(),
