@@ -352,9 +352,12 @@ $ moose db pull
          Git created commit a1b2c3d
 ```
 
-Your `externalModels.ts` now includes:
+Your external models file now includes the new column:
 
-```ts
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```ts filename="app/externalModels.ts"
 export interface users {
   id: string;
   email: string;
@@ -366,6 +369,24 @@ export interface users {
 ```
 
 TypeScript immediately catches any code that now needs updating.
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```py filename="app/external_models.py"
+class Users(BaseModel):
+    id: str
+    email: str
+    name: str
+    phone: str  # <-- New column!
+    created_at: datetime
+    # ...
+```
+
+Pydantic will validate data against the updated schema automatically.
+
+  </LanguageTabContent>
+</LanguageTabs>
 
 ### Automatic Sync on Dev Start
 
