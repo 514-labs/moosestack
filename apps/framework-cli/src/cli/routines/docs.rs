@@ -1366,6 +1366,24 @@ pub async fn browse_docs(
             let section = &sections[si];
             let items = group_items(section);
 
+            // Auto-drill when there's only one group (e.g., Guides section)
+            if items.len() == 1 {
+                let groups = group_entries_by_parent(&section.entries);
+                if groups[0].entries.len() == 1 {
+                    let slug = &groups[0].entries[0].slug;
+                    if slug.starts_with("guides/") {
+                        return browse_guide_page(slug, lang, raw, web).await;
+                    } else if web {
+                        return open_in_browser(slug);
+                    } else {
+                        return fetch_page(slug, lang, raw, None).await;
+                    }
+                } else {
+                    group_idx = Some(0);
+                    continue;
+                }
+            }
+
             // If a group has only 1 entry (detail contains a slug not "N pages"),
             // selecting it should go directly to the page
             match run_picker(&items, &section.name)? {
