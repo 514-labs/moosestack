@@ -22,7 +22,7 @@ By the end of this guide, you'll understand how to:
 ## Prerequisites
 
 - A ClickHouse database with CDC-replicated tables
-- Your ClickHouse connection URL (e.g., `clickhouse://user:pass@host:8443/database?secure=true`)
+- Your ClickHouse connection URL (e.g., `https://user:pass@host:8443/database`)
 - Node.js 20+ (TypeScript) or Python 3.10+ (Python)
 
 ---
@@ -39,7 +39,7 @@ The fastest way to get started is with `moose init --from-remote`. This single c
 - Stores credentials securely in your OS keychain
 
 ```bash
-moose init my-analytics-app --from-remote "clickhouse://user:pass@host:8443/database?secure=true" --language typescript
+moose init my-analytics-app --from-remote "https://user:pass@host:8443/database" --language typescript
 ```
 
 You'll see output like:
@@ -47,7 +47,6 @@ You'll see output like:
 ```
    Creating my-analytics-app from typescript-empty template
     Success Project created at my-analytics-app
-   Protocol native protocol detected. Converting to HTTP(s): https://host:8443
   Highlight Table(s) with types unsupported: _system_tables
      Config Wrote [dev.remote_clickhouse] to moose.config.toml (host: host, database: database)
    Keychain Stored credentials securely for project 'my-analytics-app'
