@@ -481,10 +481,21 @@ fn heading_to_anchor(text: &str) -> String {
 }
 
 /// Extract H2 and H3 headings from markdown content.
+///
+/// Skips headings inside fenced code blocks (``` ``` ```) to avoid false positives
+/// from code examples containing markdown.
 fn parse_page_headings(content: &str) -> Vec<PageHeading> {
     let mut headings = Vec::new();
+    let mut in_code_block = false;
     for line in content.lines() {
         let trimmed = line.trim();
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if in_code_block {
+            continue;
+        }
         if let Some(title) = trimmed.strip_prefix("### ") {
             headings.push(PageHeading {
                 title: title.to_string(),
@@ -511,9 +522,17 @@ fn extract_section(content: &str, anchor: &str) -> Option<String> {
     let mut start = None;
     let mut matched_level = 0u8;
     let anchor_lower = anchor.to_lowercase();
+    let mut in_code_block = false;
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
+        if trimmed.starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if in_code_block {
+            continue;
+        }
         let (level, title) = if let Some(t) = trimmed.strip_prefix("### ") {
             (3u8, t)
         } else if let Some(t) = trimmed.strip_prefix("## ") {
@@ -1074,6 +1093,15 @@ fn clear_picker(stdout: &mut std::io::Stdout, prev_lines: usize) {
     }
 }
 
+/// RAII guard that disables terminal raw mode on drop (including panics).
+struct RawModeGuard;
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        let _ = terminal::disable_raw_mode();
+    }
+}
+
 /// Run the interactive picker on a list of items.
 ///
 /// Returns `Selected(index)` when user picks an item, `Back` when they
@@ -1147,6 +1175,7 @@ fn run_picker(items: &[PickerItem], header: &str) -> Result<PickerResult, Routin
             e,
         )
     })?;
+    let _raw_guard = RawModeGuard;
 
     let result = loop {
         match read() {
@@ -1209,7 +1238,7 @@ fn run_picker(items: &[PickerItem], header: &str) -> Result<PickerResult, Routin
         }
     };
 
-    let _ = terminal::disable_raw_mode();
+    drop(_raw_guard);
     clear_picker(&mut stdout, prev_lines);
     Ok(result)
 }
@@ -1297,13 +1326,15 @@ pub async fn browse_docs(
     raw: bool,
     web: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
-    show_message!(
-        MessageType::Info,
-        Message::new(
-            "Docs".to_string(),
-            "Fetching documentation index...".to_string()
-        )
-    );
+    if !raw {
+        show_message!(
+            MessageType::Info,
+            Message::new(
+                "Docs".to_string(),
+                "Fetching documentation index...".to_string()
+            )
+        );
+    }
 
     let content = fetch_toc_content().await?;
     let sections = parse_toc(&content);
@@ -1453,13 +1484,15 @@ async fn browse_guide_page(
 ) -> Result<RoutineSuccess, RoutineFailure> {
     let slug_display = slug.trim_start_matches('/').trim_end_matches(".md");
 
-    show_message!(
-        MessageType::Info,
-        Message::new(
-            "Docs".to_string(),
-            format!("Fetching sections for {}...", slug_display)
-        )
-    );
+    if !raw {
+        show_message!(
+            MessageType::Info,
+            Message::new(
+                "Docs".to_string(),
+                format!("Fetching sections for {}...", slug_display)
+            )
+        );
+    }
 
     let content = fetch_page_content(slug, lang).await?;
     let headings = parse_page_headings(&content);
@@ -1742,6 +1775,25 @@ Some intro text here.
         let section = extract_section(content, "last").unwrap();
         assert!(section.starts_with("## Last"));
         assert!(section.contains("Final text."));
+    }
+
+    #[test]
+    fn test_parse_page_headings_skips_code_blocks() {
+        let content =
+            "## Real Heading\n\nText.\n\n```markdown\n## Fake Heading\n```\n\n## Another Real\n";
+        let headings = parse_page_headings(content);
+        assert_eq!(headings.len(), 2);
+        assert_eq!(headings[0].title, "Real Heading");
+        assert_eq!(headings[1].title, "Another Real");
+    }
+
+    #[test]
+    fn test_extract_section_skips_code_blocks() {
+        let content = "## Overview\n\nIntro.\n\n```bash\n## This is not a heading\n```\n\nMore overview text.\n\n## Tutorial\n\nContent.\n";
+        let section = extract_section(content, "overview").unwrap();
+        assert!(section.contains("Intro."));
+        assert!(section.contains("More overview text."));
+        assert!(!section.contains("## Tutorial"));
     }
 
     #[test]
