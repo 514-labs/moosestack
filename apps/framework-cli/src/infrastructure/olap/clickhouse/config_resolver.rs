@@ -138,6 +138,19 @@ fn store_credentials(
     Ok(())
 }
 
+/// Stores remote ClickHouse credentials in the OS keychain.
+///
+/// This is a public wrapper around the internal store_credentials function,
+/// used by `moose init --from-remote` to persist credentials.
+pub fn store_remote_clickhouse_credentials(
+    project_name: &str,
+    user: &str,
+    password: &str,
+) -> Result<(), RoutineFailure> {
+    let repo = KeyringSecretRepository;
+    store_credentials(&repo, project_name, user, password)
+}
+
 fn get_stored_credentials<R: SecretRepository>(
     repo: &R,
     project_name: &str,
