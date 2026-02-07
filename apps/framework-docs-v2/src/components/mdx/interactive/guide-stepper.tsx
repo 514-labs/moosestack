@@ -155,14 +155,11 @@ function GuideStepperStepComponent({
   const promptToCopy = useMemo(
     () =>
       buildGuideStepPromptMarkdown({
-        atAGlanceRawContent: atAGlanceBlocks
-          .map((atAGlanceBlock) => atAGlanceBlock.props.rawContent ?? "")
-          .join("\n\n"),
         checkpointRawContents: checkpoints.map(
           (checkpoint) => checkpoint.props.rawContent ?? "",
         ),
       }),
-    [atAGlanceBlocks, checkpoints],
+    [checkpoints],
   );
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
