@@ -460,12 +460,21 @@ pub struct KafkaArgs {
 #[derive(Debug, Args)]
 #[command(after_help = "\
 Examples:
-  moose docs                          Show documentation index (collapsed)
-  moose docs --expand                 Show full index with all pages
-  moose docs moosestack/olap          View the OLAP documentation page
-  moose docs moosestack/streaming     View the Streaming documentation page
-  moose docs search \"materialized\"    Search for pages matching a query
-  moose docs --lang py moosestack/olap  View page in Python")]
+  moose docs                              Show documentation index (collapsed)
+  moose docs --expand                     Show full index with all pages and guide sections
+  moose docs moosestack/olap              View the OLAP documentation page
+  moose docs search \"materialized\"        Search for pages matching a query
+  moose docs --lang py moosestack/olap    View page in Python (default: auto-detected)
+  moose docs browse                       Interactively browse and select a page
+  moose docs browse --web                 Browse and open selection in your browser
+  moose docs moosestack/olap --web        Open a page directly in the browser
+
+Guide sections (guides are large — navigate to specific sections):
+  moose docs guides/chat-in-your-app#overview       View just the Overview section
+  moose docs guides/chat-in-your-app#setup          View just the Setup section
+  moose docs guides/performant-dashboards --web     Open full guide in the browser
+
+Slugs are case-insensitive. Run `moose docs` to see all available slugs.")]
 pub struct DocsArgs {
     #[command(subcommand)]
     pub command: Option<DocsCommands>,
@@ -481,11 +490,17 @@ pub struct DocsArgs {
     /// Show full expanded tree with all leaf pages
     #[arg(long)]
     pub expand: bool,
+
+    /// Open documentation page in your web browser instead of printing
+    #[arg(long)]
+    pub web: bool,
 }
 
 /// Subcommands for the docs command
 #[derive(Debug, Subcommand)]
 pub enum DocsCommands {
+    /// Interactively browse and select a documentation page
+    Browse {},
     /// Search documentation by title or description
     Search {
         /// Search query to filter documentation entries
