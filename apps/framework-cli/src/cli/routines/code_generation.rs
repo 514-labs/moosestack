@@ -7,6 +7,7 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
+use crate::infrastructure::olap::clickhouse::remote::ClickHouseRemote;
 use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient};
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
@@ -460,6 +461,94 @@ pub async fn db_pull(
     file_path: Option<&str>,
 ) -> Result<(), RoutineFailure> {
     let (client, db) = create_client_and_db(remote_url).await?;
+
+    debug!("Loading InfrastructureMap from user code (DMV2)");
+    // Don't resolve credentials for code generation - only needs structure
+    let infra_map = InfrastructureMap::load_from_user_code(project, false)
+        .await
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Failure".to_string(),
+                format!("loading infra map: {e:?}"),
+            ))
+        })?;
+
+    let externally_managed_names: std::collections::HashSet<String> = infra_map
+        .tables
+        .values()
+        .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
+        .map(|t| t.name.clone())
+        .collect();
+
+    // Names of all known tables in the project (managed or external)
+    let known_table_names: std::collections::HashSet<String> =
+        infra_map.tables.values().map(|t| t.name.clone()).collect();
+
+    let (tables, _unsupported) = client.list_tables(&db, project).await.map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Failure".to_string(), "listing tables".to_string()),
+            e,
+        )
+    })?;
+
+    // Overwrite the external models file with:
+    // - existing external tables (from infra map)
+    // - plus any unknown (not present in infra map) tables, marked as external
+    let mut tables_for_external_file: Vec<Table> = tables
+        .into_iter()
+        .filter(|t| {
+            externally_managed_names.contains(&t.name) || !known_table_names.contains(&t.name)
+        })
+        .collect();
+
+    // Keep a stable ordering for deterministic output
+    tables_for_external_file.sort_by(|a, b| a.name.cmp(&b.name));
+
+    write_external_models_file(
+        project.language,
+        &tables_for_external_file,
+        file_path,
+        &project.source_dir,
+    )?;
+
+    match create_code_generation_commit(
+        ".".as_ref(),
+        "chore(cli): commit db pull external model refresh",
+    ) {
+        Ok(Some(oid)) => {
+            show_message!(
+                MessageType::Info,
+                Message {
+                    action: "Git".to_string(),
+                    details: format!("created commit {}", &oid.to_string()[..7]),
+                }
+            );
+        }
+        Ok(None) => {}
+        Err(e) => {
+            return Err(RoutineFailure::new(
+                Message::new(
+                    "Failure".to_string(),
+                    "creating code generation commit".to_string(),
+                ),
+                e,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Pulls schema for ExternallyManaged tables using a ClickHouseRemote struct directly.
+///
+/// This avoids the URL-to-struct conversion and allows using credentials resolved
+/// from `[dev.remote_clickhouse]` config with keychain credentials.
+pub async fn db_pull_from_remote(
+    remote: &ClickHouseRemote,
+    project: &Project,
+    file_path: Option<&str>,
+) -> Result<(), RoutineFailure> {
+    let (client, db) = remote.create_client();
 
     debug!("Loading InfrastructureMap from user code (DMV2)");
     // Don't resolve credentials for code generation - only needs structure
