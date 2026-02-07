@@ -1580,15 +1580,17 @@ pub async fn top_command_handler(
             let lang = routines::docs::resolve_language(docs_args.lang.as_deref(), &settings)?;
 
             let result = match &docs_args.command {
-                None => routines::docs::show_toc(docs_args.expand, docs_args.raw, lang).await,
                 Some(DocsCommands::Browse {}) => {
                     routines::docs::browse_docs(lang, docs_args.raw, docs_args.web).await
                 }
                 Some(DocsCommands::Search { query }) => {
                     routines::docs::search_toc(query, docs_args.raw).await
                 }
-                Some(DocsCommands::Show(args)) => {
-                    let slug = args.join("/");
+                None if docs_args.slug.is_none() => {
+                    routines::docs::show_toc(docs_args.expand, docs_args.raw, lang).await
+                }
+                None => {
+                    let slug = docs_args.slug.as_deref().unwrap_or_default().to_string();
                     // Split on # to separate slug from section anchor
                     let (page_slug, section) = match slug.split_once('#') {
                         Some((s, anchor)) => (s.to_string(), Some(anchor.to_string())),

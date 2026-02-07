@@ -479,12 +479,15 @@ pub struct DocsArgs {
     #[command(subcommand)]
     pub command: Option<DocsCommands>,
 
+    /// Documentation page slug (e.g., moosestack/olap, guides/chat-in-your-app#overview)
+    pub slug: Option<String>,
+
     /// Language for documentation: typescript (ts) or python (py)
-    #[arg(long, short = 'l')]
+    #[arg(long, short = 'l', global = true)]
     pub lang: Option<String>,
 
     /// Output raw content without formatting (for piping to other tools)
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub raw: bool,
 
     /// Show full expanded tree with all leaf pages
@@ -492,7 +495,7 @@ pub struct DocsArgs {
     pub expand: bool,
 
     /// Open documentation page in your web browser instead of printing
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub web: bool,
 }
 
@@ -506,9 +509,6 @@ pub enum DocsCommands {
         /// Search query to filter documentation entries
         query: String,
     },
-    /// Catch-all for slug-based page fetching (e.g., `moose docs moosestack/olap`)
-    #[command(external_subcommand)]
-    Show(Vec<String>),
 }
 
 #[derive(Debug, Subcommand)]
