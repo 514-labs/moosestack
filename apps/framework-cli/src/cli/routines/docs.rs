@@ -754,10 +754,17 @@ pub async fn fetch_page(
         match extract_section(&content, anchor) {
             Some(section_content) => {
                 println!("{}", section_content);
-                Ok(RoutineSuccess::success(Message::new(
-                    "Docs".to_string(),
-                    format!("Fetched {}#{}", display_slug, anchor),
-                )))
+                if raw {
+                    Ok(RoutineSuccess::success(Message::new(
+                        String::new(),
+                        String::new(),
+                    )))
+                } else {
+                    Ok(RoutineSuccess::success(Message::new(
+                        "Docs".to_string(),
+                        format!("Fetched {}#{}", display_slug, anchor),
+                    )))
+                }
             }
             None => {
                 let headings = parse_page_headings(&content);
@@ -782,10 +789,17 @@ pub async fn fetch_page(
         }
     } else {
         println!("{}", content);
-        Ok(RoutineSuccess::success(Message::new(
-            "Docs".to_string(),
-            format!("Fetched {}", display_slug),
-        )))
+        if raw {
+            Ok(RoutineSuccess::success(Message::new(
+                String::new(),
+                String::new(),
+            )))
+        } else {
+            Ok(RoutineSuccess::success(Message::new(
+                "Docs".to_string(),
+                format!("Fetched {}", display_slug),
+            )))
+        }
     }
 }
 
