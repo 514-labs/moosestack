@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { cn } from "@/lib/utils";
 import {
   Snippet,
   SnippetCopyButton,
@@ -30,8 +31,8 @@ export function ShellSnippet({ code, language }: ShellSnippetProps) {
         let html = await codeToHtml(code, {
           lang: language,
           themes: {
-            light: "vitesse-light",
-            dark: "vitesse-dark",
+            light: "github-light",
+            dark: "github-dark",
           },
         });
 
@@ -79,7 +80,12 @@ export function ShellSnippet({ code, language }: ShellSnippetProps) {
       </SnippetHeader>
       <div className="mt-0 bg-muted/50 overflow-x-auto">
         <div
-          className="[&_pre]:m-0 [&_pre]:p-4 [&_pre]:bg-transparent [&_code]:text-sm"
+          className={cn(
+            "[&_pre]:m-0 [&_pre]:p-4 [&_pre]:bg-transparent [&_code]:text-sm",
+            "dark:[&_.shiki]:!text-[var(--shiki-dark)]",
+            "dark:[&_.shiki]:!bg-[var(--shiki-dark-bg)]",
+            "dark:[&_.shiki_span]:!text-[var(--shiki-dark)]",
+          )}
           dangerouslySetInnerHTML={{ __html: highlightedCode }}
         />
       </div>

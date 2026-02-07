@@ -37,8 +37,8 @@ export function InlineCode({ code, language, className }: InlineCodeProps) {
         const html = await codeToHtml(code, {
           lang: language,
           themes: {
-            light: "vitesse-light",
-            dark: "vitesse-dark",
+            light: "github-light",
+            dark: "github-dark",
           },
         });
 
