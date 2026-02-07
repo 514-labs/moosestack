@@ -24,19 +24,17 @@ Use `moose db pull` to refresh the definitions of tables you marked as `EXTERNAL
 ## Requirements
 
 - Tables are defined with `lifeCycle: EXTERNALLY_MANAGED` (TypeScript) or `life_cycle=LifeCycle.EXTERNALLY_MANAGED` (Python)
-- A ClickHouse connection string (native or HTTP/S)
+- A ClickHouse connection URL
 
 ## Connection strings
 
-`db pull` accepts both native and HTTP(S) URLs. Native strings are automatically converted to HTTP(S) with the appropriate ports.
-
-Examples:
+`db pull` accepts HTTP(S) URLs. Examples:
 
 ```bash filename="Terminal" copy
-# Native (auto-converted to HTTPS + 8443)
-moose db pull --clickhouse-url "clickhouse://explorer@play.clickhouse.com:9440/default"
+# HTTPS with credentials in URL
+moose db pull --clickhouse-url "https://user:pass@your-instance.clickhouse.cloud:8443/database"
 
-# HTTPS (explicit database via query param)
+# HTTPS with query params
 moose db pull --clickhouse-url "https://play.clickhouse.com/?user=explorer&database=default"
 
 # Local HTTP
@@ -103,7 +101,7 @@ When you run `db pull` the CLI does the following:
 moose db pull [--clickhouse-url <URL>] [--file-path <OUTPUT_PATH>]
 ```
 
-- **--clickhouse-url**: Optional. ClickHouse URL (e.g., `clickhouse://user:pass@host:port/database` or `https://user:pass@host:port/database`). If not provided, the URL is resolved in this order:
+- **--clickhouse-url**: Optional. ClickHouse URL (e.g., `https://user:pass@host:8443/database`). If not provided, the URL is resolved in this order:
   1. `CLICKHOUSE_URL` environment variable
   2. Saved URL from `moose init --from-remote` (stored in keychain)
   3. `[dev.remote_clickhouse]` config in `moose.config.toml` (with keychain credentials)
@@ -154,7 +152,7 @@ moose db pull [--clickhouse-url <URL>] [--file-path <OUTPUT_PATH>]
 
 - **No changes written**: Ensure tables are actually marked as `EXTERNALLY_MANAGED` and names match remote.
 - **Unsupported types**: The CLI will list tables with unsupported types; they're skipped in the generated file.
-- **Auth/TLS errors**: Verify scheme/ports (8123 or 8443) and credentials; try HTTPS if native URL fails.
+- **Auth/TLS errors**: Verify scheme/ports (8123 for HTTP, 8443 for HTTPS) and credentials.
 - **Git commit issues**: The command attempts a lightweight commit; commit manually if your working tree is dirty.
 
 ## Related
