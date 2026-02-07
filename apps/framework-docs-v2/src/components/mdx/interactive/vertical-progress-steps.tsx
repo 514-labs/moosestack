@@ -21,6 +21,8 @@ export interface VerticalProgressStepItemProps {
   children: ReactNode;
 }
 
+// Parent reads `id` and `title` from each item's element props while this
+// component only renders the body content.
 function VerticalProgressStepItemComponent({
   children,
 }: VerticalProgressStepItemProps) {

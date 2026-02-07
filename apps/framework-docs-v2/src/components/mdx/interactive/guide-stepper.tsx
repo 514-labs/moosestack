@@ -39,7 +39,7 @@ import {
   sanitizeCompletedStepIds,
 } from "./guide-stepper-utils";
 
-interface GuideStepperProps {
+export interface GuideStepperProps {
   id?: string;
   persist?: boolean;
   defaultExpanded?: string[];
@@ -455,4 +455,3 @@ export { GuideStepperStepComponent as GuideStepperStep };
 export { GuideStepperCheckpointComponent as GuideStepperCheckpoint };
 export { GuideStepperAtAGlanceComponent as GuideStepperAtAGlance };
 export { GuideStepperPromptComponent as GuideStepperPrompt };
-export type { GuideStepperProps };
