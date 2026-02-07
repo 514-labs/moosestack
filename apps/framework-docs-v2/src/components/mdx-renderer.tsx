@@ -199,8 +199,8 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
               rehypePrettyCode,
               {
                 theme: {
-                  light: "vitesse-light",
-                  dark: "vitesse-dark",
+                  light: "github-light",
+                  dark: "github-dark",
                 },
                 keepBackground: false,
                 defaultLang: "plaintext",
