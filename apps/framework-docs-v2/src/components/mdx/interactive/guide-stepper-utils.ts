@@ -47,28 +47,28 @@ export function sanitizeCompletedStepIds(
   completedStepIds: string[],
   validStepIds: string[],
 ): string[] {
-  const validIds = new Set(validStepIds);
-  const uniqueOrdered: string[] = [];
-
-  for (const id of completedStepIds) {
-    if (!validIds.has(id)) continue;
-    if (uniqueOrdered.includes(id)) continue;
-    uniqueOrdered.push(id);
-  }
-
-  return uniqueOrdered;
+  return sanitizeStepIds(completedStepIds, validStepIds);
 }
 
 export function getSanitizedOpenStepIds(
   openStepIds: string[],
   validStepIds: string[],
 ): string[] {
+  return sanitizeStepIds(openStepIds, validStepIds);
+}
+
+export function sanitizeStepIds(
+  ids: string[],
+  validStepIds: string[],
+): string[] {
   const validIds = new Set(validStepIds);
   const uniqueOrdered: string[] = [];
+  const seen = new Set<string>();
 
-  for (const id of openStepIds) {
+  for (const id of ids) {
     if (!validIds.has(id)) continue;
-    if (uniqueOrdered.includes(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
     uniqueOrdered.push(id);
   }
 

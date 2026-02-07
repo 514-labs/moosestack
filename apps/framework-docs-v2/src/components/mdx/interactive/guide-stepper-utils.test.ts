@@ -9,6 +9,7 @@ import {
   isGuideStepperAtAGlanceElement,
   isGuideStepperCheckpointElement,
   isGuideStepperStepElement,
+  sanitizeStepIds,
   sanitizeCompletedStepIds,
 } from "./guide-stepper-utils";
 
@@ -63,6 +64,15 @@ describe("guide-stepper utils", () => {
     expect(
       sanitizeCompletedStepIds(["s1", "s1", "x", "s3"], ["s1", "s2", "s3"]),
     ).toEqual(["s1", "s3"]);
+  });
+
+  it("sanitizes arbitrary step IDs while preserving order", () => {
+    expect(
+      sanitizeStepIds(
+        ["phase-2", "phase-1", "phase-2", "unknown", "phase-3"],
+        ["phase-1", "phase-2", "phase-3"],
+      ),
+    ).toEqual(["phase-2", "phase-1", "phase-3"]);
   });
 
   it("recognizes step elements by required props instead of component identity", () => {
