@@ -43,3 +43,10 @@ export {
   type GuideStepperAtAGlanceProps,
   type GuideStepperPromptProps,
 } from "./guide-stepper";
+export {
+  VerticalProgressSteps,
+  VerticalProgressStepItem,
+  type VerticalProgressStepsProps,
+  type VerticalProgressStepItemProps,
+} from "./vertical-progress-steps";
+export { type ProgressStepsVariant } from "./vertical-progress-steps-utils";
