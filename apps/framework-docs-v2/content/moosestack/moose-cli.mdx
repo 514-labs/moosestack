@@ -398,4 +398,40 @@ moose refresh [--url <url>] [--token <token>]
 - `--url`: Remote Moose instance URL (default: http://localhost:4000)
 - `--token`: API token for authentication
 
+## Documentation & Feedback
+
+### Docs
+Fetch and display LLM-optimized documentation in the terminal.
+```bash
+moose docs [<slug>] [-l <LANG>] [--raw] [--expand] [--web]
+```
+- `<slug>`: Documentation page slug (e.g., `moosestack/olap`). Omit to show the table of contents. Slugs are case-insensitive.
+- `-l, --lang <LANG>`: Language for documentation: `typescript` (ts) or `python` (py). Auto-detected from your project language or saved preference.
+- `--raw`: Output raw content without formatting (for piping to other tools)
+- `--expand`: Show full expanded tree with all leaf pages and guide section headings
+- `--web`: Open documentation page in your web browser instead of printing
+
+#### Subcommands
+
+- `moose docs browse [--web]`: Interactively browse and select a documentation page with a hierarchical drill-down picker
+- `moose docs search <query>`: Search documentation by title or description
+
+#### Guide Section Navigation
+
+Guide pages are large and support section navigation with `#anchor` syntax:
+```bash
+moose docs guides/chat-in-your-app#overview
+moose docs guides/chat-in-your-app#setup
+```
+If the section is not found, available sections are listed. When using `browse` on a guide page, a secondary section picker is shown.
+
+### Feedback
+Submit feedback, report bugs, or join the community.
+```bash
+moose feedback [MESSAGE] [--bug] [--community]
+```
+- `[MESSAGE]`: Feedback message (e.g., `moose feedback "loving the DX!"`)
+- `--bug`: Report a bug (opens GitHub Issues with system info and log paths)
+- `--community`: Join the Moose community on Slack
+
 This reference reflects the current state of the Moose CLI based on the source code in the framework-cli directory. The commands are organized by their primary functions and include all available options and flags.
