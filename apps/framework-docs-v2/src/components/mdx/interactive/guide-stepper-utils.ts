@@ -149,6 +149,8 @@ export function isGuideStepperCheckpointElement(
 ): node is ReactElement<GuideCheckpointLikeProps> {
   if (!isValidElement(node)) return false;
   const props = node.props as GuideCheckpointLikeProps;
+  // Checkpoints do not define `number`; steps do. Keep this invariant unless we
+  // add an explicit discriminant prop across GuideStepper child components.
   return (
     typeof props.id === "string" &&
     typeof props.title === "string" &&

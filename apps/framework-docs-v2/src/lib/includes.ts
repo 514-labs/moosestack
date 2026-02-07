@@ -7,8 +7,8 @@ import fs from "fs";
 import path from "path";
 
 export const CONTENT_ROOT = path.join(process.cwd(), "content");
-// Allow optional leading whitespace so include directives work inside JSX blocks.
-export const INCLUDE_REGEX = /^\s*:::include\s+(.+)$/gm;
+// Allow optional leading spaces so include directives work inside JSX blocks.
+export const INCLUDE_REGEX = /^ *:::include +(\S+)\s*$/gm;
 export const MAX_INCLUDE_DEPTH = 3;
 
 export interface ProcessIncludesOptions {
