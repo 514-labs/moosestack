@@ -48,9 +48,20 @@ fn is_valid_email(email: &str) -> bool {
     }
 }
 
-/// Handle invalid email with user prompts
-fn handle_invalid_email(_invalid_email: &str) -> Option<String> {
-    use std::io::{self, Write};
+/// Handle invalid email with user prompts (with retry limit)
+fn handle_invalid_email_with_depth(_invalid_email: &str, depth: u8) -> Option<String> {
+    use std::io::{self, IsTerminal, Write};
+
+    // Only prompt if stdin is a TTY (interactive terminal)
+    if !io::stdin().is_terminal() {
+        return None;
+    }
+
+    // Prevent stack overflow - limit retry depth to 3 attempts
+    if depth >= 3 {
+        println!("\nToo many invalid attempts. Sending without email.");
+        return None;
+    }
 
     println!("\nWhat would you like to do?");
     println!("  1. Send anyway");
@@ -73,8 +84,8 @@ fn handle_invalid_email(_invalid_email: &str) -> Option<String> {
                         if is_valid_email(trimmed) {
                             return Some(trimmed.to_string());
                         } else {
-                            // Recursive call for another invalid email
-                            return handle_invalid_email(trimmed);
+                            // Recursive call with incremented depth
+                            return handle_invalid_email_with_depth(trimmed, depth + 1);
                         }
                     }
                 }
@@ -85,6 +96,11 @@ fn handle_invalid_email(_invalid_email: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// Handle invalid email with user prompts
+fn handle_invalid_email(invalid_email: &str) -> Option<String> {
+    handle_invalid_email_with_depth(invalid_email, 0)
 }
 
 /// Prompt user for optional email input with validation
