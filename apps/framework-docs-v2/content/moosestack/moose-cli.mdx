@@ -372,6 +372,50 @@ Available workflow commands:
 - `unpause <name>`: Unpause a workflow
 - `status <name> [--id <run-id>] [--verbose] [--json]`: Get workflow status
 
+## Help & Support Commands
+
+### Feedback
+Send feedback, report bugs, or join the Moose community.
+```bash
+moose feedback [message] [--email <email>] [--bug] [--community]
+```
+
+**Send feedback:**
+```bash
+# Send feedback (will prompt for optional email)
+moose feedback "loving the DX!"
+
+# Include email for follow-up
+moose feedback "great tool!" --email you@example.com
+```
+
+**Report a bug:**
+```bash
+# Open GitHub Issues with system info pre-filled
+moose feedback --bug "crash on startup"
+
+# Bug report without description
+moose feedback --bug
+```
+
+**Join the community:**
+```bash
+# Open Moose Slack community in your browser
+moose feedback --community
+```
+
+**Options:**
+- `[message]`: Your feedback message (required for feedback and bug reports)
+- `--email <email>`: Optional email address for follow-up on feedback
+- `--bug`: Open GitHub Issues for bug reporting with environment details
+- `--community`: Open Moose Slack community invite
+
+**Notes:**
+- Feedback requires telemetry to be enabled
+- Email is optional and only used if you want the team to follow up
+- Bug reports include CLI version, OS, architecture, and log file paths
+- If email is not provided via flag, you'll be prompted interactively (optional)
+
 ## Planning and Deployment
 
 ### Plan
