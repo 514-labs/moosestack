@@ -63,6 +63,7 @@ fn handle_invalid_email_with_depth(_invalid_email: &str, depth: u8) -> Option<St
         return None;
     }
 
+    println!("\nInvalid email");
     println!("\nWhat would you like to do?");
     println!("  1. Send anyway");
     println!("  2. Enter a different email");
