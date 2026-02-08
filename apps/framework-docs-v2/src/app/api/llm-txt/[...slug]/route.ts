@@ -8,9 +8,8 @@ type ParsedContent = Awaited<ReturnType<typeof parseMarkdownContent>>;
 // --- Helpers ---
 
 function cleanMarkdown(content: ParsedContent, lang?: string): string {
-  return content.isMDX ?
-      cleanContent(filterLanguageContent(content.content, lang))
-    : content.content;
+  const filtered = filterLanguageContent(content.content, lang);
+  return content.isMDX ? cleanContent(filtered) : filtered;
 }
 
 function textResponse(content: string): NextResponse {
