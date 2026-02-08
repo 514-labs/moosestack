@@ -228,7 +228,7 @@ pub enum Commands {
         community: bool,
 
         /// Your email address for follow-up (optional)
-        #[arg(long, conflicts_with_all = ["bug", "community"])]
+        #[arg(long, conflicts_with_all = ["bug", "community"], requires = "message")]
         email: Option<String>,
     },
     /// Execute SQL queries against ClickHouse

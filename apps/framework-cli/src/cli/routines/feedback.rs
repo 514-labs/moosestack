@@ -38,9 +38,65 @@ fn build_issue_url(description: Option<&str>) -> String {
     )
 }
 
-/// Prompt user for optional email input
-fn prompt_for_email() -> Option<String> {
+/// Validates email format (basic check for @ with characters before and after)
+fn is_valid_email(email: &str) -> bool {
+    if let Some(at_pos) = email.find('@') {
+        // Check there are characters before and after @
+        at_pos > 0 && at_pos < email.len() - 1
+    } else {
+        false
+    }
+}
+
+/// Handle invalid email with user prompts
+fn handle_invalid_email(invalid_email: &str) -> Option<String> {
     use std::io::{self, Write};
+
+    println!("\n❌ Invalid email format: {}", invalid_email);
+    println!("\nWhat would you like to do?");
+    println!("  1. Send feedback without email");
+    println!("  2. Enter a different email");
+    println!("  3. Cancel");
+    print!("\nChoice (1-3): ");
+    let _ = io::stdout().flush();
+
+    let mut choice = String::new();
+    if io::stdin().read_line(&mut choice).is_ok() {
+        match choice.trim() {
+            "1" => None, // Send without email
+            "2" => {
+                // Prompt for new email
+                print!("\nEnter email: ");
+                let _ = io::stdout().flush();
+                let mut new_email = String::new();
+                if io::stdin().read_line(&mut new_email).is_ok() {
+                    let trimmed = new_email.trim();
+                    if !trimmed.is_empty() {
+                        if is_valid_email(trimmed) {
+                            return Some(trimmed.to_string());
+                        } else {
+                            // Recursive call for another invalid email
+                            return handle_invalid_email(trimmed);
+                        }
+                    }
+                }
+                None
+            }
+            _ => None, // Cancel or invalid choice - send without email
+        }
+    } else {
+        None
+    }
+}
+
+/// Prompt user for optional email input with validation
+fn prompt_for_email() -> Option<String> {
+    use std::io::{self, IsTerminal, Write};
+
+    // Only prompt if stdin is a TTY (interactive terminal)
+    if !io::stdin().is_terminal() {
+        return None;
+    }
 
     print!("Your email (optional, press Enter to skip):\n> ");
     let _ = io::stdout().flush();
@@ -49,7 +105,11 @@ fn prompt_for_email() -> Option<String> {
     if io::stdin().read_line(&mut input).is_ok() {
         let trimmed = input.trim();
         if !trimmed.is_empty() {
-            return Some(trimmed.to_string());
+            if is_valid_email(trimmed) {
+                return Some(trimmed.to_string());
+            } else {
+                return handle_invalid_email(trimmed);
+            }
         }
     }
     None
@@ -72,9 +132,16 @@ pub async fn send_feedback(
         )));
     }
 
-    // Use email from flag if provided, otherwise prompt the user
+    // Use email from flag if provided (with validation), otherwise prompt the user
     let email = match email_flag {
-        Some(e) => Some(e.to_string()),
+        Some(e) => {
+            if is_valid_email(e) {
+                Some(e.to_string())
+            } else {
+                // Email from flag is invalid - prompt user for options
+                handle_invalid_email(e)
+            }
+        }
         None => prompt_for_email(),
     };
 

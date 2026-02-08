@@ -169,6 +169,16 @@ pub async fn wait_for_usage_capture(handle: Option<tokio::task::JoinHandle<()>>)
     }
 }
 
+/// Validates email format (basic check for @ with characters before and after)
+fn is_valid_email(email: &str) -> bool {
+    if let Some(at_pos) = email.find('@') {
+        // Check there are characters before and after @
+        at_pos > 0 && at_pos < email.len() - 1
+    } else {
+        false
+    }
+}
+
 /// Identifies a user with their email address using PostHog's identify call
 pub fn identify_user_with_email(
     email: &str,
@@ -183,6 +193,12 @@ pub fn identify_user_with_email(
     let email = email.to_string();
 
     Some(tokio::task::spawn(async move {
+        // Validate email format before sending
+        if !is_valid_email(&email) {
+            tracing::warn!("Invalid email format: skipping PostHog identify");
+            return;
+        }
+
         let client = match PostHog514Client::from_env(machine_id) {
             Some(client) => client,
             None => {

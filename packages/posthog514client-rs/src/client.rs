@@ -225,6 +225,31 @@ impl PostHog514Client {
         None
     }
 
+    /// Creates a new PostHog514Client with a custom host URL (for testing)
+    #[cfg(test)]
+    pub fn with_host(
+        api_key: impl Into<String>,
+        machine_id: impl Into<String>,
+        host: impl Into<String>,
+    ) -> Result<Self, PostHogError> {
+        let client = ReqwestClient::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| {
+                PostHogError::configuration(
+                    "Failed to create HTTP client",
+                    Some(ConfigErrorKind::InvalidUrl(e.to_string())),
+                )
+            })?;
+
+        Ok(Self {
+            api_key: api_key.into(),
+            client: Arc::new(client),
+            host: host.into(),
+            machine_id: machine_id.into(),
+        })
+    }
+
     /// Captures a custom event
     pub async fn capture_event(
         &self,
@@ -291,17 +316,13 @@ impl PostHog514Client {
         }
     }
 
-    async fn capture(&self, event: Event514) -> Result<(), PostHogError> {
-        event.validate()?;
-
+    /// Shared helper to post JSON payload to PostHog's capture endpoint
+    async fn post_to_capture(
+        &self,
+        payload: serde_json::Value,
+        error_prefix: &str,
+    ) -> Result<(), PostHogError> {
         let url = format!("{}/capture/", self.host);
-        let payload = json!({
-            "api_key": self.api_key,
-            "event": event.event,
-            "properties": event.properties,
-            "timestamp": event.timestamp,
-            "distinct_id": event.distinct_id,
-        });
 
         let response = self
             .client
@@ -312,7 +333,7 @@ impl PostHog514Client {
             .await
             .map_err(|e| {
                 PostHogError::send_event(
-                    "Failed to send request",
+                    error_prefix,
                     Some(SendEventErrorKind::Network(e.to_string())),
                 )
             })?;
@@ -334,13 +355,27 @@ impl PostHog514Client {
         }
     }
 
+    async fn capture(&self, event: Event514) -> Result<(), PostHogError> {
+        event.validate()?;
+
+        let payload = json!({
+            "api_key": self.api_key,
+            "event": event.event,
+            "properties": event.properties,
+            "timestamp": event.timestamp,
+            "distinct_id": event.distinct_id,
+        });
+
+        self.post_to_capture(payload, "Failed to send request")
+            .await
+    }
+
     /// Identifies a user with properties like email
     /// This associates the given properties with the distinct_id (machine_id)
     pub async fn identify(
         &self,
         properties: HashMap<String, serde_json::Value>,
     ) -> Result<(), PostHogError> {
-        let url = format!("{}/capture/", self.host);
         let payload = json!({
             "api_key": self.api_key,
             "event": "$identify",
@@ -350,35 +385,8 @@ impl PostHog514Client {
             }
         });
 
-        let response = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&payload)
-            .send()
+        self.post_to_capture(payload, "Failed to send identify request")
             .await
-            .map_err(|e| {
-                PostHogError::send_event(
-                    "Failed to send identify request",
-                    Some(SendEventErrorKind::Network(e.to_string())),
-                )
-            })?;
-
-        match response.status() {
-            reqwest::StatusCode::OK | reqwest::StatusCode::ACCEPTED => Ok(()),
-            reqwest::StatusCode::UNAUTHORIZED => Err(PostHogError::send_event(
-                "Invalid API key",
-                Some(SendEventErrorKind::Authentication),
-            )),
-            reqwest::StatusCode::TOO_MANY_REQUESTS => Err(PostHogError::send_event(
-                "Too many requests",
-                Some(SendEventErrorKind::RateLimited),
-            )),
-            status => Err(PostHogError::send_event(
-                "Unexpected response from PostHog",
-                Some(SendEventErrorKind::Network(status.to_string())),
-            )),
-        }
     }
 }
 
@@ -465,5 +473,79 @@ mod tests {
         // PostHog actually accepts events even with invalid API keys,
         // so we just verify the call completes without panicking
         assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_identify_success() {
+        let mut server = Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/capture/")
+            .match_body(mockito::Matcher::PartialJson(json!({
+                "api_key": "test_key",
+                "event": "$identify",
+                "distinct_id": "machine123",
+                "properties": {
+                    "$set": {
+                        "email": "test@example.com"
+                    }
+                }
+            })))
+            .with_status(200)
+            .create_async()
+            .await;
+
+        let client = PostHog514Client::with_host("test_key", "machine123", server.url()).unwrap();
+
+        let mut properties = HashMap::new();
+        properties.insert("email".to_string(), json!("test@example.com"));
+
+        let result = client.identify(properties).await;
+        assert!(
+            result.is_ok(),
+            "Failed to identify user: {:?}",
+            result.err()
+        );
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_identify_authentication_error() {
+        let mut server = Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/capture/")
+            .with_status(401)
+            .create_async()
+            .await;
+
+        let client = PostHog514Client::with_host("test_key", "machine123", server.url()).unwrap();
+
+        let mut properties = HashMap::new();
+        properties.insert("email".to_string(), json!("test@example.com"));
+
+        let result = client.identify(properties).await;
+        assert!(result.is_err(), "Expected authentication error");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_identify_rate_limit() {
+        let mut server = Server::new_async().await;
+
+        let mock = server
+            .mock("POST", "/capture/")
+            .with_status(429)
+            .create_async()
+            .await;
+
+        let client = PostHog514Client::with_host("test_key", "machine123", server.url()).unwrap();
+
+        let mut properties = HashMap::new();
+        properties.insert("email".to_string(), json!("test@example.com"));
+
+        let result = client.identify(properties).await;
+        assert!(result.is_err(), "Expected rate limit error");
+        mock.assert_async().await;
     }
 }
