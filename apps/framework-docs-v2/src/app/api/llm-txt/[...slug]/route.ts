@@ -87,10 +87,8 @@ async function handleGuide(
 
     for (const step of steps) {
       if (step.content) {
-        const cleaned =
-          step.isMDX ?
-            cleanContent(filterLanguageContent(step.content, lang))
-          : step.content;
+        const filtered = filterLanguageContent(step.content, lang);
+        const cleaned = step.isMDX ? cleanContent(filtered) : filtered;
         parts.push(formatStep(step.stepNumber, step.title, cleaned));
       }
     }
