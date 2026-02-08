@@ -460,6 +460,13 @@ pub async fn db_pull(
     project: &Project,
     file_path: Option<&str>,
 ) -> Result<(), RoutineFailure> {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Connecting".to_string(),
+            details: "to remote ClickHouse...".to_string(),
+        }
+    );
     let (client, db) = create_client_and_db(remote_url).await?;
 
     debug!("Loading InfrastructureMap from user code (DMV2)");
@@ -484,6 +491,13 @@ pub async fn db_pull(
     let known_table_names: std::collections::HashSet<String> =
         infra_map.tables.values().map(|t| t.name.clone()).collect();
 
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Introspecting".to_string(),
+            details: "remote tables...".to_string(),
+        }
+    );
     let (tables, _unsupported) = client.list_tables(&db, project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),
@@ -510,6 +524,14 @@ pub async fn db_pull(
         file_path,
         &project.source_dir,
     )?;
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "External models".to_string(),
+            details: format!("refreshed ({} table(s))", tables_for_external_file.len()),
+        }
+    );
 
     match create_code_generation_commit(
         ".".as_ref(),
@@ -548,6 +570,13 @@ pub async fn db_pull_from_remote(
     project: &Project,
     file_path: Option<&str>,
 ) -> Result<(), RoutineFailure> {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Connecting".to_string(),
+            details: "to remote ClickHouse...".to_string(),
+        }
+    );
     let (client, db) = remote.create_client();
 
     debug!("Loading InfrastructureMap from user code (DMV2)");
@@ -572,6 +601,13 @@ pub async fn db_pull_from_remote(
     let known_table_names: std::collections::HashSet<String> =
         infra_map.tables.values().map(|t| t.name.clone()).collect();
 
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Introspecting".to_string(),
+            details: "remote tables...".to_string(),
+        }
+    );
     let (tables, _unsupported) = client.list_tables(&db, project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),
@@ -598,6 +634,14 @@ pub async fn db_pull_from_remote(
         file_path,
         &project.source_dir,
     )?;
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "External models".to_string(),
+            details: format!("refreshed ({} table(s))", tables_for_external_file.len()),
+        }
+    );
 
     match create_code_generation_commit(
         ".".as_ref(),
