@@ -49,7 +49,7 @@ fn is_valid_email(email: &str) -> bool {
 }
 
 /// Handle invalid email with user prompts (with retry limit)
-fn handle_invalid_email_with_depth(_invalid_email: &str, depth: u8) -> Option<String> {
+fn handle_invalid_email_with_depth(depth: u8) -> Option<String> {
     use std::io::{self, IsTerminal, Write};
 
     // Only prompt if stdin is a TTY (interactive terminal)
@@ -86,7 +86,7 @@ fn handle_invalid_email_with_depth(_invalid_email: &str, depth: u8) -> Option<St
                             return Some(trimmed.to_string());
                         } else {
                             // Recursive call with incremented depth
-                            return handle_invalid_email_with_depth(trimmed, depth + 1);
+                            return handle_invalid_email_with_depth(depth + 1);
                         }
                     }
                 }
@@ -100,8 +100,8 @@ fn handle_invalid_email_with_depth(_invalid_email: &str, depth: u8) -> Option<St
 }
 
 /// Handle invalid email with user prompts
-fn handle_invalid_email(invalid_email: &str) -> Option<String> {
-    handle_invalid_email_with_depth(invalid_email, 0)
+fn handle_invalid_email() -> Option<String> {
+    handle_invalid_email_with_depth(0)
 }
 
 /// Prompt user for optional email input with validation
@@ -123,7 +123,7 @@ fn prompt_for_email() -> Option<String> {
             if is_valid_email(trimmed) {
                 return Some(trimmed.to_string());
             } else {
-                return handle_invalid_email(trimmed);
+                return handle_invalid_email();
             }
         }
     }
@@ -154,7 +154,7 @@ pub async fn send_feedback(
                 Some(e.to_string())
             } else {
                 // Email from flag is invalid - prompt user for options
-                handle_invalid_email(e)
+                handle_invalid_email()
             }
         }
         None => prompt_for_email(),
