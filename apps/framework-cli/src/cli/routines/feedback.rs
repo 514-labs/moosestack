@@ -49,15 +49,13 @@ fn is_valid_email(email: &str) -> bool {
 }
 
 /// Handle invalid email with user prompts
-fn handle_invalid_email(invalid_email: &str) -> Option<String> {
+fn handle_invalid_email(_invalid_email: &str) -> Option<String> {
     use std::io::{self, Write};
 
-    println!("\n❌ Invalid email format: {}", invalid_email);
     println!("\nWhat would you like to do?");
-    println!("  1. Send feedback without email");
+    println!("  1. Send anyway");
     println!("  2. Enter a different email");
-    println!("  3. Cancel");
-    print!("\nChoice (1-3): ");
+    print!("\nChoice (1-2): ");
     let _ = io::stdout().flush();
 
     let mut choice = String::new();
@@ -82,7 +80,7 @@ fn handle_invalid_email(invalid_email: &str) -> Option<String> {
                 }
                 None
             }
-            _ => None, // Cancel or invalid choice - send without email
+            _ => None, // Invalid choice - send without email
         }
     } else {
         None
