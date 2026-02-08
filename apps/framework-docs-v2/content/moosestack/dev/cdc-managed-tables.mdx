@@ -34,7 +34,7 @@ The fastest way to get started is with `moose init --from-remote`. This single c
 - Creates a new Moose project
 - Connects to your ClickHouse and introspects all tables
 - Generates type-safe models for every table
-- Automatically detects CDC-managed tables and marks them appropriately
+- Automatically detects PeerDB-managed tables (via `_peerdb_*` columns) and marks them as `EXTERNALLY_MANAGED`. Tables managed by other CDC tools (ClickPipes, Debezium, etc.) can be manually marked with `lifeCycle: LifeCycle.EXTERNALLY_MANAGED`
 - Saves your connection config to `moose.config.toml`
 - Stores credentials securely in your OS keychain
 
@@ -294,19 +294,14 @@ Enter password
 Keychain Stored credentials securely for project 'my-analytics-app'
 ```
 
-Credentials are stored in your OS keychain and reused automatically. To skip prompts, set environment variables:
-
-```bash
-export MOOSE_REMOTE_CLICKHOUSE_USER=your_username
-export MOOSE_REMOTE_CLICKHOUSE_PASSWORD=your_password
-```
+Credentials are stored in your OS keychain and reused automatically on subsequent runs—no additional configuration needed.
 
 ### What Happens on Startup
 
-1. **Credentials resolved** from keychain or environment
-2. **Remote connected** to fetch schemas and sample data
-3. **Local mirrors created** matching remote table structures
-4. **Data seeded** (if `sample_size > 0`)
+1. **Local infrastructure starts** — Docker containers for ClickHouse, Redpanda, etc.
+2. **External tables detected** — credentials resolved from OS keychain (you'll be prompted if missing)
+3. **Remote schema compared** — local mirrors created if `create_local_mirrors = true`
+4. **Data seeded** (if `sample_size > 0` and remote is reachable)
 5. **Dev server starts** at `http://localhost:4000`
 
 ### Developing Locally
@@ -343,13 +338,11 @@ This:
 
 Say your CDC pipeline starts syncing a new `phone` column to the `users` table:
 
-```bash
-$ moose db pull
-
-   Connecting to remote ClickHouse...
-   Introspecting tables...
-        Info External models refreshed (1 table updated)
-         Git created commit a1b2c3d
+```
+     Connecting to remote ClickHouse...
+  Introspecting remote tables...
+External models refreshed (3 table(s))
+            Git created commit a1b2c3d
 ```
 
 Your external models file now includes the new column:

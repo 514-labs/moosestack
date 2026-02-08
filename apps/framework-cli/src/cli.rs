@@ -585,13 +585,25 @@ pub async fn top_command_handler(
                     &parsed.config.user,
                     &parsed.config.password,
                 ) {
-                    warn!("Failed to store credentials in keychain: {:?}", e);
+                    display::show_message_wrapper(
+                        MessageType::Warning,
+                        Message::new(
+                            "Keychain".to_string(),
+                            format!("Failed to store credentials: {e:?}. You'll be prompted again next time."),
+                        ),
+                    );
                 }
 
                 // Also store the full URL for backwards compatibility
                 let repo = KeyringSecretRepository;
                 if let Err(e) = repo.store(name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
-                    warn!("Failed to store connection URL: {e:?}");
+                    display::show_message_wrapper(
+                        MessageType::Warning,
+                        Message::new(
+                            "Keychain".to_string(),
+                            format!("Failed to store connection URL: {e:?}. You'll be prompted again next time."),
+                        ),
+                    );
                 }
             }
 
