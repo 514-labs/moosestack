@@ -49,7 +49,7 @@ fn is_valid_email(email: &str) -> bool {
 }
 
 /// Handle invalid email with user prompts (with retry limit)
-fn handle_invalid_email_with_depth(_invalid_email: &str, depth: u8) -> Option<String> {
+fn handle_invalid_email_with_depth(invalid_email: &str, depth: u8) -> Option<String> {
     use std::io::{self, IsTerminal, Write};
 
     // Only prompt if stdin is a TTY (interactive terminal)
@@ -63,6 +63,7 @@ fn handle_invalid_email_with_depth(_invalid_email: &str, depth: u8) -> Option<St
         return None;
     }
 
+    println!("\nInvalid email: {}", invalid_email);
     println!("\nWhat would you like to do?");
     println!("  1. Send anyway");
     println!("  2. Enter a different email");
