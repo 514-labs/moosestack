@@ -10,10 +10,12 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
-// Helpers (inlined from vertical-progress-steps-utils)
+// Discriminant tag & type guard
 // ---------------------------------------------------------------------------
 
 export type ProgressStepsVariant = "numbered" | "bulleted";
+
+const VERTICAL_PROGRESS_STEP_ITEM_TYPE = "vertical-progress-step-item";
 
 function getProgressStepsVariant(value?: string): ProgressStepsVariant {
   return value === "bulleted" ? "bulleted" : "numbered";
@@ -23,11 +25,8 @@ function isVerticalProgressStepItemElement(
   node: ReactNode,
 ): node is ReactElement<VerticalProgressStepItemProps> {
   if (!isValidElement(node)) return false;
-  const props = node.props as VerticalProgressStepItemProps;
-  return (
-    typeof props.title === "string" &&
-    (typeof props.id === "undefined" || typeof props.id === "string")
-  );
+  const componentType = node.type as unknown as Record<string, unknown>;
+  return componentType?._type === VERTICAL_PROGRESS_STEP_ITEM_TYPE;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +56,7 @@ function VerticalProgressStepItemComponent({
 }: VerticalProgressStepItemProps) {
   return <>{children}</>;
 }
+VerticalProgressStepItemComponent._type = VERTICAL_PROGRESS_STEP_ITEM_TYPE;
 
 function VerticalProgressStepsRoot({
   variant = "numbered",
