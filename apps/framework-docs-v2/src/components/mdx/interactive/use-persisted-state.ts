@@ -8,19 +8,19 @@ const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 export const INTERACTIVE_STATE_CHANGE_EVENT = "moose-interactive-state-change";
 
 // Custom event detail type
-export interface InteractiveStateChangeDetail {
+export interface InteractiveStateChangeDetail<T = string | string[] | null> {
   key: string;
-  value: unknown;
+  value: T;
 }
 
 /**
  * Dispatch a custom event for same-page state synchronization.
  * This replaces the need for polling in ConditionalContent.
  */
-function dispatchStateChange(key: string, value: unknown): void {
+function dispatchStateChange<T>(key: string, value: T): void {
   if (typeof window === "undefined") return;
 
-  const event = new CustomEvent<InteractiveStateChangeDetail>(
+  const event = new CustomEvent<InteractiveStateChangeDetail<T>>(
     INTERACTIVE_STATE_CHANGE_EVENT,
     {
       detail: { key, value },

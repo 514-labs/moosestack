@@ -12,23 +12,23 @@ interface CompletionToggleInput {
 }
 
 interface GuideStepLikeProps {
-  id?: unknown;
-  number?: unknown;
-  title?: unknown;
+  id?: string;
+  number?: number;
+  title?: string;
 }
 
 interface GuideCheckpointLikeProps {
-  id?: unknown;
-  title?: unknown;
-  number?: unknown;
-  rawContent?: unknown;
+  id?: string;
+  title?: string;
+  number?: number;
+  rawContent?: string;
 }
 
 interface GuideAtAGlanceLikeProps {
-  rawContent?: unknown;
-  id?: unknown;
-  title?: unknown;
-  number?: unknown;
+  rawContent?: string;
+  id?: string;
+  title?: string;
+  number?: number;
 }
 
 interface BuildGuideStepPromptInput {

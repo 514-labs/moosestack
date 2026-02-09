@@ -3,8 +3,8 @@ import { type ReactElement, type ReactNode, isValidElement } from "react";
 export type ProgressStepsVariant = "numbered" | "bulleted";
 
 interface VerticalProgressStepLikeProps {
-  id?: unknown;
-  title?: unknown;
+  id?: string;
+  title?: string;
 }
 
 export function getProgressStepsVariant(value?: string): ProgressStepsVariant {
