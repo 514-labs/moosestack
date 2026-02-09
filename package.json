@@ -25,7 +25,7 @@
   "packageManager": "pnpm@9.9.0",
   "pnpm": {
     "overrides": {
-      "tar": "^7.5.7"
+      "tar": "7.5.7"
     }
   },
   "lint-staged": {
