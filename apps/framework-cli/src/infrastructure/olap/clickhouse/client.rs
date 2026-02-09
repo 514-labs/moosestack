@@ -315,7 +315,9 @@ impl ClickHouseClient {
     /// Inserts sample data from a remote ClickHouse table into a local table.
     ///
     /// Uses the HTTP-based `url()` table function to fetch rows from the remote
-    /// and insert them into the local table.
+    /// and insert them into the local table. When `columns` is provided, only those
+    /// columns are selected from the remote and inserted into the local table,
+    /// avoiding schema mismatch errors when local and remote tables differ.
     ///
     /// # Arguments
     /// * `local_database` - The local database name
@@ -323,6 +325,7 @@ impl ClickHouseClient {
     /// * `remote` - The remote ClickHouse connection
     /// * `remote_database` - The database name on the remote server
     /// * `limit` - Maximum number of rows to insert
+    /// * `columns` - Column names to select/insert (uses `*` if empty)
     ///
     /// # Returns
     /// `Ok(())` on success, `Err` on failure
@@ -334,20 +337,31 @@ impl ClickHouseClient {
         remote: &ClickHouseRemote,
         remote_database: &str,
         limit: usize,
+        columns: &[String],
     ) -> anyhow::Result<()> {
         validate_clickhouse_identifier(local_database, "Local database name")?;
         validate_clickhouse_identifier(table_name, "Table name")?;
         validate_clickhouse_identifier(remote_database, "Remote database name")?;
 
+        let col_list = if columns.is_empty() {
+            "*".to_string()
+        } else {
+            columns
+                .iter()
+                .map(|c| format!("`{}`", c))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
         let select_query = format!(
-            "SELECT * FROM `{}`.`{}` LIMIT {}",
-            remote_database, table_name, limit
+            "SELECT {} FROM `{}`.`{}` LIMIT {} FORMAT JSONEachRow",
+            col_list, remote_database, table_name, limit
         );
-        let remote_func = remote.query_function(&select_query);
+        let remote_func = remote.query_function_with_format(&select_query, "JSONEachRow");
 
         let insert_sql = format!(
-            "INSERT INTO `{}`.`{}` SELECT * FROM {}",
-            local_database, table_name, remote_func
+            "INSERT INTO `{}`.`{}` ({}) SELECT * FROM {}",
+            local_database, table_name, col_list, remote_func
         );
 
         debug!(
@@ -643,6 +657,8 @@ mod tests {
         assert!(validate_clickhouse_identifier("my_table", "Table").is_ok());
         assert!(validate_clickhouse_identifier("Table123", "Table").is_ok());
         assert!(validate_clickhouse_identifier("_private", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("my-table", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("project-db-main-123", "Database").is_ok());
     }
 
     #[test]
@@ -654,15 +670,12 @@ mod tests {
 
     #[test]
     fn test_validate_identifier_invalid_characters() {
-        let result = validate_clickhouse_identifier("my-table", "Table");
+        let result = validate_clickhouse_identifier("my.table", "Table");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
             .contains("invalid characters"));
-
-        let result = validate_clickhouse_identifier("my.table", "Table");
-        assert!(result.is_err());
 
         let result = validate_clickhouse_identifier("my table", "Table");
         assert!(result.is_err());

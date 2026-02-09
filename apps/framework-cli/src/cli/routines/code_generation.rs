@@ -197,6 +197,13 @@ fn write_external_models_file(
 }
 
 pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFailure> {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Connecting".to_string(),
+            details: "to remote ClickHouse...".to_string(),
+        }
+    );
     let (client, db) = create_client_and_db(remote_url).await?;
     env::set_current_dir(dir_path).map_err(|e| {
         RoutineFailure::new(
@@ -225,12 +232,28 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
     })?;
     // TODO: Also call list_sql_resources to fetch Views/MVs and generate code for them.
     // Currently we only generate code for Tables.
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Introspecting".to_string(),
+            details: format!("tables in '{db}'..."),
+        }
+    );
     let (tables, unsupported) = client.list_tables(&db, &project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),
             e,
         )
     })?;
+
+    if tables.is_empty() && unsupported.is_empty() {
+        return Err(RoutineFailure::error(Message::new(
+            "No tables".to_string(),
+            format!(
+                "found in database '{db}'. Check that the URL includes the correct database name."
+            ),
+        )));
+    }
 
     if !unsupported.is_empty() {
         show_message!(
@@ -249,8 +272,14 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
         );
     }
 
-    let (externally_managed, managed): (Vec<_>, Vec<_>) =
-        tables.into_iter().partition(should_be_externally_managed);
+    // Clear the remote database name so generated code uses the local default database
+    let (externally_managed, managed): (Vec<_>, Vec<_>) = tables
+        .into_iter()
+        .map(|mut t| {
+            t.database = None;
+            t
+        })
+        .partition(should_be_externally_managed);
 
     match project.language {
         SupportedLanguages::Typescript => {
@@ -508,10 +537,15 @@ pub async fn db_pull(
     // Overwrite the external models file with:
     // - existing external tables (from infra map)
     // - plus any unknown (not present in infra map) tables, marked as external
+    // Clear remote database name so generated code uses the local default
     let mut tables_for_external_file: Vec<Table> = tables
         .into_iter()
         .filter(|t| {
             externally_managed_names.contains(&t.name) || !known_table_names.contains(&t.name)
+        })
+        .map(|mut t| {
+            t.database = None;
+            t
         })
         .collect();
 
@@ -618,10 +652,15 @@ pub async fn db_pull_from_remote(
     // Overwrite the external models file with:
     // - existing external tables (from infra map)
     // - plus any unknown (not present in infra map) tables, marked as external
+    // Clear remote database name so generated code uses the local default
     let mut tables_for_external_file: Vec<Table> = tables
         .into_iter()
         .filter(|t| {
             externally_managed_names.contains(&t.name) || !known_table_names.contains(&t.name)
+        })
+        .map(|mut t| {
+            t.database = None;
+            t
         })
         .collect();
 

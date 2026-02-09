@@ -538,14 +538,7 @@ pub async fn top_command_handler(
                         )
                     })?;
 
-                // Load the project to update it
-                std::env::set_current_dir(dir_path).map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new("Failure".to_string(), "changing directory".to_string()),
-                        e,
-                    )
-                })?;
-
+                // db_to_dmv2 already changed into dir_path, so just load the project
                 let mut project = crate::cli::load_project_dev()?;
 
                 // Set up [dev.remote_clickhouse] config
@@ -609,14 +602,7 @@ pub async fn top_command_handler(
 
             wait_for_usage_capture(capture_handle).await;
 
-            let success_message = if let Some(connection_string) = normalized_url {
-                format!(
-                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse --clickhouse-url \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
-                    connection_string, connection_string, connection_string
-                )
-            } else {
-                format!("\n\n{post_install_message}")
-            };
+            let success_message = format!("\n\n{post_install_message}");
 
             Ok(RoutineSuccess::highlight(Message::new(
                 "Get Started".to_string(),
