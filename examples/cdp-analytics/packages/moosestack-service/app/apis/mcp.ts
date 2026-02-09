@@ -284,21 +284,24 @@ const serverFactory = (mooseUtils: MooseUtils) => {
    * Results are limited to max 1000 rows to prevent excessive data transfer.
    * Security is enforced at the database level using ClickHouse readonly mode.
    */
-  server.tool(
+  server.registerTool(
     "query_clickhouse",
-    "Execute a read-only query against the ClickHouse OLAP database and return results as JSON. Use SELECT, SHOW, DESCRIBE, or EXPLAIN queries only. Data modification queries (INSERT, UPDATE, DELETE, ALTER, CREATE, etc.) are prohibited.",
-    {
-      query: z.string().describe("SQL query to execute against ClickHouse"),
-      limit: z
-        .number()
-        .min(1)
-        .max(1000)
-        .default(100)
-        .optional()
-        .describe("Maximum number of rows to return (default: 100, max: 1000)"),
-    },
     {
       title: "Query ClickHouse Database",
+      description:
+        "Execute a read-only query against the ClickHouse OLAP database and return results as JSON. Use SELECT, SHOW, DESCRIBE, or EXPLAIN queries only. Data modification queries (INSERT, UPDATE, DELETE, ALTER, CREATE, etc.) are prohibited.",
+      inputSchema: {
+        query: z.string().describe("SQL query to execute against ClickHouse"),
+        limit: z
+          .number()
+          .min(1)
+          .max(1000)
+          .default(100)
+          .optional()
+          .describe(
+            "Maximum number of rows to return (default: 100, max: 1000)",
+          ),
+      },
     },
     async ({ query, limit = 100 }) => {
       try {
@@ -349,30 +352,31 @@ const serverFactory = (mooseUtils: MooseUtils) => {
    * Allows AI to discover available tables, views, and materialized views
    * with their schema information.
    */
-  server.tool(
+  server.registerTool(
     "get_data_catalog",
-    "Discover available tables and materialized views in the ClickHouse database with their schema information. Use this to learn what data exists before writing queries.",
-    {
-      component_type: z
-        .enum(["tables", "materialized_views"])
-        .optional()
-        .describe(
-          "Filter by component type: 'tables' for regular tables, 'materialized_views' for pre-aggregated views",
-        ),
-      search: z
-        .string()
-        .optional()
-        .describe("Regex pattern to search for in component names"),
-      format: z
-        .enum(["summary", "detailed"])
-        .default("summary")
-        .optional()
-        .describe(
-          "Output format: 'summary' shows names and column counts, 'detailed' shows full schemas",
-        ),
-    },
     {
       title: "Get Data Catalog",
+      description:
+        "Discover available tables and materialized views in the ClickHouse database with their schema information. Use this to learn what data exists before writing queries.",
+      inputSchema: {
+        component_type: z
+          .enum(["tables", "materialized_views"])
+          .optional()
+          .describe(
+            "Filter by component type: 'tables' for regular tables, 'materialized_views' for pre-aggregated views",
+          ),
+        search: z
+          .string()
+          .optional()
+          .describe("Regex pattern to search for in component names"),
+        format: z
+          .enum(["summary", "detailed"])
+          .default("summary")
+          .optional()
+          .describe(
+            "Output format: 'summary' shows names and column counts, 'detailed' shows full schemas",
+          ),
+      },
     },
     async ({ component_type, search, format = "summary" }) => {
       try {
