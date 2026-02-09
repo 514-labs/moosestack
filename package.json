@@ -23,6 +23,11 @@
     "turbo": "^2.5.5"
   },
   "packageManager": "pnpm@9.9.0",
+  "pnpm": {
+    "overrides": {
+      "tar": "^7.5.7"
+    }
+  },
   "lint-staged": {
     "*.rs": "rustfmt --edition 2021",
     "**/*.{ts,tsx,js,jsx,json,md}": "prettier --write",
