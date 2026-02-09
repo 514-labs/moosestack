@@ -262,6 +262,8 @@ pub struct GenerateArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum GenerateCommand {
+    /// Generate the Dockerfile without building the Docker image
+    Dockerfile {},
     /// Generate an API key hash and bearer token pair for authentication
     HashToken {
         /// Output in JSON format
