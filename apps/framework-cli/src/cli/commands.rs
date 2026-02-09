@@ -50,6 +50,9 @@ pub enum Commands {
         /// Build for docker
         #[arg(short, long, default_value = "false")]
         docker: bool,
+        /// Generate the Dockerfile without building the Docker image
+        #[arg(long, conflicts_with = "docker")]
+        dockerfile: bool,
         /// Build for amd64 architecture
         #[arg(long)]
         amd64: bool,

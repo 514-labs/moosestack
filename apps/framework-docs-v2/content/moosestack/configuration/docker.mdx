@@ -60,7 +60,19 @@ dockerfile_path = "./Dockerfile"
 
 Then run `moose build --docker` to generate the initial Dockerfile.
 
-## Architecture Flags
+## CLI Flags
+
+### Generate Dockerfile Only
+
+To generate the Dockerfile without building a Docker image, use the `--dockerfile` flag:
+
+```bash
+moose build --dockerfile
+```
+
+This requires `custom_dockerfile = true` in your `moose.config.toml`. If it's not enabled, the CLI will prompt you to set it up first. This is useful when you want to inspect or customize the generated Dockerfile before building.
+
+### Architecture Flags
 
 You can target specific architectures when building:
 
