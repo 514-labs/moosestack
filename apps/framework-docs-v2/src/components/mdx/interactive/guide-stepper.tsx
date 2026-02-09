@@ -152,15 +152,11 @@ function GuideStepperStepComponent({
       !isGuideStepperCheckpointElement(child) &&
       !isGuideStepperAtAGlanceElement(child),
   );
-  const promptToCopy = useMemo(
-    () =>
-      buildGuideStepPromptMarkdown({
-        checkpointRawContents: checkpoints.map(
-          (checkpoint) => checkpoint.props.rawContent ?? "",
-        ),
-      }),
-    [checkpoints],
-  );
+  const promptToCopy = buildGuideStepPromptMarkdown({
+    checkpointRawContents: checkpoints.map(
+      (checkpoint) => checkpoint.props.rawContent ?? "",
+    ),
+  });
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
