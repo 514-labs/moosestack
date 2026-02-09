@@ -1,14 +1,18 @@
 ---
 title: Docker Configuration
-description: Configure custom Dockerfile support for deployment
+description: Configure custom Dockerfile support for deployment packaging
 order: 50
 ---
+
+import { Callout } from "@/components/mdx";
 
 # Docker Configuration
 
 Configure how Moose generates and manages Dockerfiles for deployment packaging.
 
-By default, `moose build --docker` generates and builds a Dockerfile internally. Enable `custom_dockerfile` to have Moose place the Dockerfile at your project root so you can customize it.
+<Callout type="info" title="Configuration Source">
+Docker build settings can be configured in `moose.config.toml` for project-wide defaults, or overridden via environment variables (e.g., `MOOSE_DOCKER_CONFIG__CUSTOM_DOCKERFILE=true`) for specific environments.
+</Callout>
 
 ```toml filename="moose.config.toml"
 [docker_config]
@@ -23,46 +27,30 @@ dockerfile_path = "./Dockerfile"
 | `custom_dockerfile` | `MOOSE_DOCKER_CONFIG__CUSTOM_DOCKERFILE` | `false` | When `true`, Moose writes the Dockerfile to your project root on first build and preserves it on subsequent builds so you can customize it. |
 | `dockerfile_path` | `MOOSE_DOCKER_CONFIG__DOCKERFILE_PATH` | `"./Dockerfile"` | Path to the Dockerfile relative to the project root. Only used when `custom_dockerfile` is `true`. |
 
-## How It Works
+## Behavior
 
-### Default Behavior (`custom_dockerfile = false`)
+By default, `moose build --docker` generates a Dockerfile internally (in `.moose/packager/`), builds the Docker image(s), and cleans up. The Dockerfile is never exposed for editing.
 
-Running `moose build --docker` generates a Dockerfile internally (in `.moose/packager/`), builds the Docker image(s), and cleans up. The Dockerfile is never exposed for editing.
+When `custom_dockerfile = true`:
 
-### Custom Dockerfile Mode (`custom_dockerfile = true`)
-
-1. **First run** of `moose build --docker`: Moose generates a Dockerfile at `dockerfile_path` (default: `./Dockerfile` in your project root) and then builds the image.
-2. **Subsequent runs**: Moose detects the existing Dockerfile, skips generation to preserve your customizations, and builds the image from your Dockerfile.
+1. **First build**: Moose generates a Dockerfile at `dockerfile_path` and builds the image.
+2. **Subsequent builds**: Moose detects the existing Dockerfile, skips generation to preserve your customizations, and builds from your Dockerfile.
 
 This lets you iterate on the Dockerfile — add system dependencies, configure caching, adjust build stages — while still using `moose build --docker` to build images.
 
-## Setup
+## Related CLI Commands
 
-You can enable custom Dockerfile mode in two ways:
-
-### Option 1: During Project Init
+To generate the Dockerfile without building a Docker image:
 
 ```bash
-moose init my-app typescript --custom-dockerfile
+moose generate dockerfile
 ```
 
-This sets `custom_dockerfile = true` in `moose.config.toml` automatically.
+<Callout type="warning" title="Requires Custom Dockerfile Mode">
+The `generate dockerfile` command requires `custom_dockerfile = true` in your `moose.config.toml`. If it's not enabled, the CLI will prompt you to set it up first.
+</Callout>
 
-### Option 2: Edit Config Manually
-
-Add or update the `[docker_config]` section in your `moose.config.toml`:
-
-```toml filename="moose.config.toml"
-[docker_config]
-custom_dockerfile = true
-dockerfile_path = "./Dockerfile"
-```
-
-Then run `moose build --docker` to generate the initial Dockerfile.
-
-## Architecture Flags
-
-You can target specific architectures when building:
+To build Docker images:
 
 ```bash
 # Build for both architectures (default)
@@ -73,4 +61,10 @@ moose build --docker --amd64
 
 # Build for ARM64 only
 moose build --docker --arm64
+```
+
+You can also enable custom Dockerfile mode during project initialization:
+
+```bash
+moose init my-app typescript --custom-dockerfile
 ```

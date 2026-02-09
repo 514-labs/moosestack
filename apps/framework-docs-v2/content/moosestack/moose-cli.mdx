@@ -35,7 +35,7 @@ Builds your Moose project.
 ```bash
 moose build [--docker] [--amd64] [--arm64]
 ```
-- `--docker`: Build for Docker
+- `--docker`: Generate a Dockerfile and build Docker image(s)
 - `--amd64`: Build for AMD64 architecture
 - `--arm64`: Build for ARM64 architecture
 
@@ -301,6 +301,13 @@ EOF
 **Use case:** Iterate on SQL queries in the CLI, then format and paste into your application code without manual escaping. Use `--prettify` to clean up messy one-line queries.
 
 ## Generation Commands
+
+### Generate Dockerfile
+Generate a Dockerfile for your project without building Docker images.
+```bash
+moose generate dockerfile
+```
+Requires `custom_dockerfile = true` in `moose.config.toml`. The generated Dockerfile is placed at `dockerfile_path` (default: `./Dockerfile`) and can be customized for your deployment needs.
 
 ### Generate Hash Token
 Generate authentication tokens for API access.
