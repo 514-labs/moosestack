@@ -10,7 +10,7 @@
     "@514labs/moose-lib": "0.6.353",
     "@514labs/express-pbkdf2-api-key-auth": "^1.0.4",
     "@cfworker/json-schema": "4.1.1",
-    "@modelcontextprotocol/sdk": "1.24.2",
+    "@modelcontextprotocol/sdk": "1.26.0",
     "express": "^5.1.0",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
