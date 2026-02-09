@@ -627,50 +627,65 @@ pub async fn top_command_handler(
         }
         Commands::Build {
             docker,
+            dockerfile,
             amd64,
             arm64,
         } => {
             info!("Running build command");
             let project_arc = Arc::new(load_project(commands)?);
-
             check_project_name(&project_arc.name())?;
 
-            // docker flag is true then build docker images
-            if *docker {
-                let capture_handle = crate::utilities::capture::capture_usage(
-                    ActivityType::DockerCommand,
-                    Some(project_arc.name()),
-                    &settings,
-                    machine_id.clone(),
-                    HashMap::new(),
-                );
+            let activity = if *dockerfile || *docker {
+                ActivityType::DockerCommand
+            } else {
+                ActivityType::BuildCommand
+            };
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                activity,
+                Some(project_arc.name()),
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+
+            let result = if *dockerfile || *docker {
+                // --dockerfile requires custom_dockerfile to be enabled,
+                // otherwise the generated file would be overwritten on the next build
+                if *dockerfile && !project_arc.docker_config.custom_dockerfile {
+                    return Err(RoutineFailure::error(Message::new(
+                        "Error".to_string(),
+                        "--dockerfile requires custom_dockerfile to be enabled in moose.config.toml.\n\
+                         \n  Enable it by adding:\n\
+                         \n    [docker_config]\n    custom_dockerfile = true\n\
+                         \n  Or re-initialize with: moose init --custom-dockerfile"
+                            .to_string(),
+                    )));
+                }
 
                 let docker_client = DockerClient::new(&settings);
                 create_dockerfile(&project_arc, &docker_client)?.show();
-                let _: RoutineSuccess = build_dockerfile(
-                    &project_arc,
-                    &docker_client,
-                    *amd64,
-                    *arm64,
-                    settings.release_channel(),
-                )?;
 
-                wait_for_usage_capture(capture_handle).await;
+                if *docker {
+                    let _ = build_dockerfile(
+                        &project_arc,
+                        &docker_client,
+                        *amd64,
+                        *arm64,
+                        settings.release_channel(),
+                    )?;
+                }
 
-                Ok(RoutineSuccess::success(Message::new(
-                    "Built".to_string(),
-                    "Docker image(s)".to_string(),
-                )))
+                if *docker {
+                    RoutineSuccess::success(Message::new(
+                        "Built".to_string(),
+                        "Docker image(s)".to_string(),
+                    ))
+                } else {
+                    // create_dockerfile already displayed the path
+                    RoutineSuccess::success(Message::new(String::new(), String::new()))
+                }
             } else {
-                let capture_handle = crate::utilities::capture::capture_usage(
-                    ActivityType::BuildCommand,
-                    Some(project_arc.name()),
-                    &settings,
-                    machine_id.clone(),
-                    HashMap::new(),
-                );
-
-                // Use the new build_package function instead of Docker build
                 let package_path = with_spinner_completion(
                     "Bundling deployment package",
                     "Package bundled successfully",
@@ -685,13 +700,14 @@ pub async fn top_command_handler(
                     !project_arc.is_production,
                 )?;
 
-                wait_for_usage_capture(capture_handle).await;
-
-                Ok(RoutineSuccess::success(Message::new(
+                RoutineSuccess::success(Message::new(
                     "Built".to_string(),
                     format!("Package available at {}", package_path.display()),
-                )))
-            }
+                ))
+            };
+
+            wait_for_usage_capture(capture_handle).await;
+            Ok(result)
         }
         Commands::Dev {
             no_infra,

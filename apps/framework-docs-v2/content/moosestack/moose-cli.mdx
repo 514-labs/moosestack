@@ -33,9 +33,10 @@ moose template list
 ### Build
 Builds your Moose project.
 ```bash
-moose build [--docker] [--amd64] [--arm64]
+moose build [--docker] [--dockerfile] [--amd64] [--arm64]
 ```
-- `--docker`: Build for Docker
+- `--docker`: Generate a Dockerfile and build Docker image(s)
+- `--dockerfile`: Generate the Dockerfile only, without building the Docker image (requires `custom_dockerfile = true` in `moose.config.toml`)
 - `--amd64`: Build for AMD64 architecture
 - `--arm64`: Build for ARM64 architecture
 
