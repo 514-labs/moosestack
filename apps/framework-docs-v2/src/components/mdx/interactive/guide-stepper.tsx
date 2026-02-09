@@ -3,8 +3,9 @@
 import {
   Children,
   createContext,
-  ReactElement,
-  ReactNode,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
   Suspense,
   useCallback,
   useContext,
@@ -27,17 +28,148 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { usePersistedState } from "./use-persisted-state";
 import { VerticalProgressSteps } from "./vertical-progress-steps";
-import {
-  buildGuideStepPromptMarkdown,
-  calculateProgress,
-  getOpenStepIdsAfterCompletionToggle,
-  getSanitizedOpenStepIds,
-  getDefaultExpandedValues,
-  isGuideStepperAtAGlanceElement,
-  isGuideStepperCheckpointElement,
-  isGuideStepperStepElement,
-  sanitizeCompletedStepIds,
-} from "./guide-stepper-utils";
+
+// ---------------------------------------------------------------------------
+// Discriminant tags & type guards
+// ---------------------------------------------------------------------------
+
+/**
+ * Discriminant tags attached as static `_type` properties on GuideStepper
+ * child component functions. Type guards below check this field instead of
+ * duck-typing props, which avoids false positives and removes the dependency
+ * on preprocessor-injected props like `rawContent`.
+ */
+const GUIDE_STEPPER_STEP_TYPE = "guide-stepper-step";
+const GUIDE_STEPPER_CHECKPOINT_TYPE = "guide-stepper-checkpoint";
+const GUIDE_STEPPER_AT_A_GLANCE_TYPE = "guide-stepper-at-a-glance";
+
+function hasComponentType(node: ReactElement, type: string): boolean {
+  const componentType = node.type as unknown as Record<string, unknown>;
+  return componentType?._type === type;
+}
+
+function isGuideStepperStepElement(
+  node: ReactNode,
+): node is ReactElement<GuideStepperStepProps> {
+  if (!isValidElement(node)) return false;
+  return hasComponentType(node, GUIDE_STEPPER_STEP_TYPE);
+}
+
+function isGuideStepperCheckpointElement(
+  node: ReactNode,
+): node is ReactElement<GuideStepperCheckpointProps> {
+  if (!isValidElement(node)) return false;
+  return hasComponentType(node, GUIDE_STEPPER_CHECKPOINT_TYPE);
+}
+
+function isGuideStepperAtAGlanceElement(
+  node: ReactNode,
+): node is ReactElement<GuideStepperAtAGlanceProps> {
+  if (!isValidElement(node)) return false;
+  return hasComponentType(node, GUIDE_STEPPER_AT_A_GLANCE_TYPE);
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+function sanitizeStepIds(ids: string[], validStepIds: string[]): string[] {
+  const validIds = new Set(validStepIds);
+  const uniqueOrdered: string[] = [];
+  const seen = new Set<string>();
+
+  for (const id of ids) {
+    if (!validIds.has(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    uniqueOrdered.push(id);
+  }
+
+  return uniqueOrdered;
+}
+
+function sanitizeCompletedStepIds(
+  completedStepIds: string[],
+  validStepIds: string[],
+): string[] {
+  return sanitizeStepIds(completedStepIds, validStepIds);
+}
+
+function getSanitizedOpenStepIds(
+  openStepIds: string[],
+  validStepIds: string[],
+): string[] {
+  return sanitizeStepIds(openStepIds, validStepIds);
+}
+
+function getOpenStepIdsAfterCompletionToggle(
+  openStepIds: string[],
+  { stepId, checked }: { stepId: string; checked: boolean },
+): string[] {
+  if (!checked) return openStepIds;
+  return openStepIds.filter((openStepId) => openStepId !== stepId);
+}
+
+function buildGuideStepPromptMarkdown(checkpointRawContents: string[]): string {
+  const segments = checkpointRawContents
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+
+  return segments.join("\n\n");
+}
+
+function calculateProgress(stepIds: string[], completedStepIds: string[]) {
+  const safeCompleted = sanitizeCompletedStepIds(completedStepIds, stepIds);
+  const total = stepIds.length;
+  const completed = safeCompleted.length;
+
+  if (total === 0) {
+    return { completed: 0, total: 0, percentage: 0 };
+  }
+
+  return {
+    completed,
+    total,
+    percentage: Math.round((completed / total) * 100),
+  };
+}
+
+function getDefaultExpandedValues({
+  stepIds,
+  completedStepIds,
+  defaultExpanded,
+}: {
+  stepIds: string[];
+  completedStepIds: string[];
+  defaultExpanded?: string[];
+}): string[] {
+  if (defaultExpanded && defaultExpanded.length > 0) {
+    const validDefaults = defaultExpanded.filter((id) => stepIds.includes(id));
+    if (validDefaults.length > 0) {
+      return validDefaults;
+    }
+  }
+
+  if (stepIds.length === 0) {
+    return [];
+  }
+
+  const safeCompleted = new Set(
+    sanitizeCompletedStepIds(completedStepIds, stepIds),
+  );
+  const firstIncomplete = stepIds.find((id) => !safeCompleted.has(id));
+
+  return [firstIncomplete || stepIds[0]!];
+}
+
+function hasSameItems(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((item, index) => item === b[index]);
+}
+
+// ---------------------------------------------------------------------------
+// Public prop types
+// ---------------------------------------------------------------------------
 
 export interface GuideStepperProps {
   id?: string;
@@ -71,6 +203,10 @@ export interface GuideStepperAtAGlanceProps extends GuideStepperPromptProps {
   title?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Context
+// ---------------------------------------------------------------------------
+
 interface GuideStepperContextValue {
   completedStepIds: Set<string>;
   toggleStepComplete: (stepId: string, checked: boolean) => void;
@@ -88,10 +224,9 @@ function useGuideStepperContext(): GuideStepperContextValue {
   return context;
 }
 
-function hasSameItems(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((item, index) => item === b[index]);
-}
+// ---------------------------------------------------------------------------
+// Child components
+// ---------------------------------------------------------------------------
 
 function GuideStepperCheckpointComponent({
   id: _id,
@@ -105,6 +240,7 @@ function GuideStepperCheckpointComponent({
     </div>
   );
 }
+GuideStepperCheckpointComponent._type = GUIDE_STEPPER_CHECKPOINT_TYPE;
 
 function GuideStepperPromptComponent({ children }: GuideStepperPromptProps) {
   return <div className="space-y-3 text-sm">{children}</div>;
@@ -125,6 +261,11 @@ function GuideStepperAtAGlanceComponent({
     </div>
   );
 }
+GuideStepperAtAGlanceComponent._type = GUIDE_STEPPER_AT_A_GLANCE_TYPE;
+
+// ---------------------------------------------------------------------------
+// Step component
+// ---------------------------------------------------------------------------
 
 function GuideStepperStepComponent({
   id,
@@ -152,11 +293,9 @@ function GuideStepperStepComponent({
       !isGuideStepperCheckpointElement(child) &&
       !isGuideStepperAtAGlanceElement(child),
   );
-  const promptToCopy = buildGuideStepPromptMarkdown({
-    checkpointRawContents: checkpoints.map(
-      (checkpoint) => checkpoint.props.rawContent ?? "",
-    ),
-  });
+  const promptToCopy = buildGuideStepPromptMarkdown(
+    checkpoints.map((checkpoint) => checkpoint.props.rawContent ?? ""),
+  );
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -295,6 +434,11 @@ function GuideStepperStepComponent({
     </AccordionItem>
   );
 }
+GuideStepperStepComponent._type = GUIDE_STEPPER_STEP_TYPE;
+
+// ---------------------------------------------------------------------------
+// Root component
+// ---------------------------------------------------------------------------
 
 function GuideStepperInner({
   id,
@@ -439,6 +583,10 @@ function GuideStepperRoot(props: GuideStepperProps) {
     </Suspense>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 export const GuideStepper = Object.assign(GuideStepperRoot, {
   Step: GuideStepperStepComponent,

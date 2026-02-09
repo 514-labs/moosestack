@@ -1,13 +1,38 @@
 "use client";
 
-import { Children, type ReactElement, type ReactNode } from "react";
+import {
+  Children,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import {
-  type ProgressStepsVariant,
-  getProgressStepsVariant,
-  isVerticalProgressStepItemElement,
-} from "./vertical-progress-steps-utils";
+
+// ---------------------------------------------------------------------------
+// Helpers (inlined from vertical-progress-steps-utils)
+// ---------------------------------------------------------------------------
+
+export type ProgressStepsVariant = "numbered" | "bulleted";
+
+function getProgressStepsVariant(value?: string): ProgressStepsVariant {
+  return value === "bulleted" ? "bulleted" : "numbered";
+}
+
+function isVerticalProgressStepItemElement(
+  node: ReactNode,
+): node is ReactElement<VerticalProgressStepItemProps> {
+  if (!isValidElement(node)) return false;
+  const props = node.props as VerticalProgressStepItemProps;
+  return (
+    typeof props.title === "string" &&
+    (typeof props.id === "undefined" || typeof props.id === "string")
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Public prop types
+// ---------------------------------------------------------------------------
 
 export interface VerticalProgressStepsProps {
   variant?: ProgressStepsVariant;
@@ -20,6 +45,10 @@ export interface VerticalProgressStepItemProps {
   title: string;
   children: ReactNode;
 }
+
+// ---------------------------------------------------------------------------
+// Components
+// ---------------------------------------------------------------------------
 
 // Parent reads `id` and `title` from each item's element props while this
 // component only renders the body content.
@@ -84,6 +113,10 @@ function VerticalProgressStepsRoot({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 export const VerticalProgressSteps = Object.assign(VerticalProgressStepsRoot, {
   Item: VerticalProgressStepItemComponent,

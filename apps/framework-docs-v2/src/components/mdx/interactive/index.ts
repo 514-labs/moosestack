@@ -48,5 +48,5 @@ export {
   VerticalProgressStepItem,
   type VerticalProgressStepsProps,
   type VerticalProgressStepItemProps,
+  type ProgressStepsVariant,
 } from "./vertical-progress-steps";
-export { type ProgressStepsVariant } from "./vertical-progress-steps-utils";
