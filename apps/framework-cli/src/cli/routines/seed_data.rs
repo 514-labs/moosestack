@@ -687,20 +687,28 @@ async fn create_single_mirror(ctx: &MirrorContext<'_>, table: &Table) -> String 
         }
     }
 
-    // Create schema from remote
-    if let Err(e) = ctx
-        .local_client
-        .create_mirror_table_from_remote(&ctx.local_db, table_name, ctx.remote, remote_db)
-        .await
-    {
-        return format_error(
-            table_name,
-            &format!("failed to create mirror schema: {}", e),
-        );
+    // Create schema from local table definition (avoids LIMIT 0 empty-response issues with remote)
+    let ch_table = match std_table_to_clickhouse_table(table) {
+        Ok(t) => t,
+        Err(e) => {
+            return format_error(table_name, &format!("failed to convert schema: {}", e));
+        }
+    };
+
+    let create_sql = match create_table_query(&ctx.local_db, ch_table, true) {
+        Ok(sql) => sql,
+        Err(e) => {
+            return format_error(table_name, &format!("failed to generate DDL: {}", e));
+        }
+    };
+
+    if let Err(e) = ctx.local_client.execute_sql(&create_sql).await {
+        return format_error(table_name, &format!("failed to create mirror table: {}", e));
     }
 
     // Seed data if sample_size > 0
     if ctx.sample_size > 0 {
+        let columns: Vec<String> = table.columns.iter().map(|c| c.name.clone()).collect();
         match ctx
             .local_client
             .insert_from_remote(
@@ -709,6 +717,7 @@ async fn create_single_mirror(ctx: &MirrorContext<'_>, table: &Table) -> String 
                 ctx.remote,
                 remote_db,
                 ctx.sample_size,
+                &columns,
             )
             .await
         {
