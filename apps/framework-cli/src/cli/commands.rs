@@ -213,6 +213,24 @@ pub enum Commands {
     },
     /// Manage Kafka-related operations
     Kafka(KafkaArgs),
+    /// Submit feedback, report issues, or join the community
+    Feedback {
+        /// Feedback message (e.g. moose feedback "loving the DX!" or moose feedback --bug "crash on startup")
+        #[arg(conflicts_with = "community")]
+        message: Option<String>,
+
+        /// Report a bug (opens GitHub Issues with system info and log paths)
+        #[arg(long, conflicts_with = "community")]
+        bug: bool,
+
+        /// Join the Moose community on Slack
+        #[arg(long, conflicts_with_all = ["bug", "message"])]
+        community: bool,
+
+        /// Your email address for follow-up (optional)
+        #[arg(long, conflicts_with_all = ["bug", "community"], requires = "message")]
+        email: Option<String>,
+    },
     /// Execute SQL queries against ClickHouse
     Query {
         /// SQL query to execute
@@ -244,6 +262,8 @@ pub struct GenerateArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum GenerateCommand {
+    /// Generate the Dockerfile without building the Docker image
+    Dockerfile {},
     /// Generate an API key hash and bearer token pair for authentication
     HashToken {
         /// Output in JSON format

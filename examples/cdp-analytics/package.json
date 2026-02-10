@@ -11,6 +11,9 @@
     "onlyBuiltDependencies": [
       "@confluentinc/kafka-javascript",
       "@514labs/kafka-javascript"
-    ]
+    ],
+    "overrides": {
+      "tar": "7.5.7"
+    }
   }
 }

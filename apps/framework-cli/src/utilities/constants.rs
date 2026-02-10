@@ -122,6 +122,16 @@ pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
 pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json";
 
+// Feedback
+/// GitHub Issues URL for bug reports filed via `moose feedback --bug`
+pub(crate) const GITHUB_ISSUES_URL: &str = "https://github.com/514-labs/moosestack/issues/new";
+/// Slack community invite URL for `moose feedback --community`
+/// NOTE: also duplicated in AFTER_HELP in cli.rs (Rust const can't interpolate)
+pub(crate) const SLACK_COMMUNITY_URL: &str =
+    "https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg";
+/// Support email shown when telemetry is disabled
+pub(crate) const SUPPORT_EMAIL: &str = "support@fiveonefour.com";
+
 pub const STORE_CRED_PROMPT: &str = r#"You have externally managed tables in your code base.
 Ensure your code is up to date with `moose db pull`.
 You can also configure `moose dev` to automatically check each time you start the dev server,

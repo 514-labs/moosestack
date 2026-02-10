@@ -18,6 +18,7 @@ import type {
 } from "@/lib/content-types";
 
 import { CONTENT_ROOT, processIncludes } from "./includes";
+import { processGuideStepperPrompts } from "./guide-stepper-prompt-preprocessor";
 
 /**
  * Get all content files from the content directory
@@ -97,8 +98,11 @@ export async function parseMarkdownContent(
   const fileContents = fs.readFileSync(fullPath, "utf8");
   const { data, content: rawContent } = matter(fileContents);
 
-  // Process include directives for both MD and MDX
-  const processedContent = processIncludes(rawContent);
+  // Process include directives for both MD and MDX, then inject GuideStepper
+  // rawContent props for prompt-copy support.
+  const processedContent = processGuideStepperPrompts(
+    processIncludes(rawContent),
+  );
 
   let content: string;
 
