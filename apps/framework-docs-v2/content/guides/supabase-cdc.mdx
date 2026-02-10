@@ -1,263 +1,251 @@
 ---
-title: Real-Time CDC from Supabase
-description: Sync your Supabase PostgreSQL data to ClickHouse in real-time using Moose workflows
+title: Durable Source Connectors in Moose
+description: Clean connector architecture for durable ETL from websocket, API, and database-change sources
 languages: ["typescript"]
 ---
 
-import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
+import { FileTree, CTACards, CTACard, Callout } from "@/components/mdx";
 
-# Real-Time CDC from Supabase to ClickHouse
+# Durable Source Connectors (Supabase + Coinbase examples)
 
-<Callout type="info" title="TL;DR">
-* Sync Supabase PostgreSQL changes to ClickHouse using Supabase Realtime
-* Single Moose project: workflow listens for changes, inserts directly to ClickHouse
+<Callout type="info" title="Status">
+This architecture is currently published as an **example**, not a `moose init` template.
 
-This guide will:
+Use:
 
-1. Walk through setting up Supabase Realtime for CDC
-2. Build a Moose workflow that captures changes and inserts directly into ClickHouse
-3. Create analytics APIs for your dashboards
+- `examples/websocket-ingestion-poc/moose`
+
+This keeps the connector API surface out of template release paths while we iterate.
 </Callout>
 
 <CTACards columns={3}>
   <CTACard
-    title="Overview"
-    description="Understand the architecture and when this pattern fits"
-    ctaLink="#overview"
-    ctaLabel="Read first"
+    title="Runtime"
+    description="Shared durable ingestion primitive"
+    ctaLink="#shared-durable-runtime"
+    ctaLabel="Open"
     Icon="Eye"
   />
   <CTACard
-    title="The Scenario"
-    description="Workforce platform with labor cost dashboards"
-    ctaLink="#the-scenario"
-    ctaLabel="See example"
-    Icon="BinaryTree"
+    title="Supabase"
+    description="Postgres changes connector"
+    ctaLink="#supabase-connector"
+    ctaLabel="View"
+    Icon="Rocket"
   />
   <CTACard
-    title="Tutorial"
-    description="Step-by-step: Supabase → Moose → ClickHouse"
-    ctaLink="#tutorial"
-    ctaLabel="Build now"
-    Icon="Rocket"
+    title="Coinbase"
+    description="Websocket connector"
+    ctaLink="#coinbase-connector"
+    ctaLabel="View"
+    Icon="BinaryTree"
   />
 </CTACards>
 
 ---
 
-## Overview
+## Shared durable runtime
 
-{/*
-CONTENT TO WRITE:
-- What is CDC and why it matters (brief)
-- Why Supabase Realtime is a good fit (built-in, no extra infrastructure)
-- Link to data-warehouses/performant-dashboards guides for OLTP vs OLAP deep dive
+Shared primitive files:
 
-WHEN THIS MAKES SENSE (be honest - PostgreSQL handles a lot):
-- Threshold: ~10-50M rows + complex joins + concurrent dashboard users
-- "OLTP-backed analytics can look 'fine' until data volume and concurrency cross a threshold"
-- Trigger: engineering can't deliver small dashboard changes without risking transactional workloads
-- Reference performant-dashboards "Why you haven't solved it yet" section for nuance
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/types.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/runner.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/checkpoint-store.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/sink-writer.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/connector-pipeline.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/connector-definition.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/source-definition.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/pipeline-workflow.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/backoff.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/disconnect-signal.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/event-processor.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/run-loop.ts`
 
-TONE REFERENCE (from performant-dashboards):
-- "analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, competing with the core transactional workloads"
-- "Load times creep up. Customers complain."
-*/}
+What this runtime is responsible for:
 
-### The Scenario
+1. Start/reconnect loop.
+2. At-least-once processing.
+3. Persist checkpoint only after successful sink write.
+4. Clean stop on workflow cancellation.
 
-{/*
-CONTENT TO WRITE:
-- Expand on the scenario: workforce platform, time tracking, labor cost dashboards
-- Problem: dashboard queries (joins, aggregations) compete with transactional workload
-- Data model: projects table, time_entries table (keep simple - 2 tables)
-*/}
+What it is **not** responsible for:
 
-You're building a construction workforce platform on Supabase. Workers clock hours from job sites, managers track labor costs against project budgets. The app handles day-to-day operations fine, but dashboard queries — joining time entries with projects, aggregating by week, calculating costs — compete with the transactional workload and slow down the whole app.
+1. Source protocol details.
+2. Source-specific payload mapping.
+3. Source-specific destination routing choices.
 
-**Goal:** Fast labor cost analytics without impacting the operational database.
+---
 
-### Architecture
+## Connector shape (clear boundaries)
 
-```mermaid
-flowchart LR
-    subgraph supabase["Supabase"]
-        PG[(PostgreSQL)]
-        RT[Realtime]
-    end
+Each connector folder follows the same file roles:
 
-    subgraph moose["Moose Project"]
-        WF[Workflow<br/>CDC Listener]
-        OT[OlapTable]
-        CH[(ClickHouse)]
-        API[API]
-    end
+1. `sinks.ts`
+- Define Moose destination resources (`OlapTable`, `Stream`).
+- Define the `resources` map:
+  - `destination` (`Stream` or `OlapTable`)
+  - optional `transform(payload, envelope)` when payload is not directly writable
 
-    PG --> RT
-    RT -->|WebSocket| WF
-    WF -->|.insert| OT
-    OT --> CH
-    CH --> API
+2. `source.ts`
+- Connect/auth/subscribe/poll.
+- Emit canonical envelopes: `{ resource, payload, checkpoint? }`.
+- Handle provider disconnect/error and map to runtime `onDisconnect(...)`.
+
+3. `connector.ts`
+- Single composition point.
+- Resolve connector env.
+- Instantiate `runDurablePipeline(...)`.
+- Configure where data is written via `resources`.
+- Configure checkpoint persistence.
+- Expose long-running workflow (`timeout: "never"`) with cleanup hooks.
+- Use `defineConnector(...)` so this composition shape is consistent across sources.
+
+This structure works for websocket feeds, polling APIs, and database change streams.
+
+---
+
+## Supabase connector
+
+Code:
+
+- `examples/websocket-ingestion-poc/moose/app/connectors/supabase`
+
+Workflow:
+
+- `supabase-cdc-listener`
+
+Run:
+
+```bash
+cd examples/websocket-ingestion-poc/moose
+npm install
+moose dev
 ```
 
-**Key design decisions:**
-
-- **OlapTable.insert()** - Direct inserts to ClickHouse, schema managed by Moose
-- **ReplacingMergeTree** - Handles UPDATE/DELETE by keeping latest version per record
-- **Single Moose project** - Workflow, tables, and APIs all in one place
-
----
-
-## Prerequisites
-
-{/*
-- Supabase project (free tier works)
-- Node.js 20+, Docker Desktop, pnpm
-- Environment setup instructions
-*/}
-
----
-
-## Tutorial
-
-### Part 1: Set up Supabase
-
-{/*
-CONTENT TO WRITE:
-- SQL to create projects and time_entries tables
-- Enable Realtime: `alter publication supabase_realtime add table ...`
-- Get credentials (URL, service key)
-*/}
-
-### Part 2: Initialize Moose project
-
-{/*
-CONTENT TO WRITE:
-- moose init, pnpm add @supabase/supabase-js
-- .env.local setup
-- Project structure overview
-*/}
-
-### Part 3: Create data models and tables
-
-{/*
-CONTENT TO WRITE:
-- CDC metadata pattern: cdc_id, cdc_operation, cdc_timestamp
-- Why ReplacingMergeTree (handles updates/deletes)
-- OlapTable definitions (not IngestPipeline - direct insert is simpler)
-
-Key code pattern:
-```typescript
-export const TimeEntryTable = new OlapTable<TimeEntryWithCDC>("time_entries", {
-  orderByFields: ["project_id", "id"],
-  engine: ClickHouseEngines.ReplacingMergeTree,
-});
+```bash
+export SUPABASE_URL="https://<project-ref>.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
+export SUPABASE_SCHEMA="public"
+moose workflow run supabase-cdc-listener
 ```
-*/}
 
-### Part 4: Build the CDC workflow
+Supabase SQL setup:
 
-{/*
-CONTENT TO WRITE:
-- Supabase Realtime subscription (channel, postgres_changes)
-- Transform payload to CDC format (add cdc_id, cdc_operation, cdc_timestamp)
-- Direct insert: `await TimeEntryTable.insert([record])`
-- Long-running workflow with Temporal (24h timeout, auto-restart)
+```sql
+create table if not exists public.projects (
+  id text primary key,
+  name text not null,
+  hourly_rate numeric not null,
+  updated_at timestamptz not null default now()
+);
 
-Key code pattern:
-```typescript
-const channel = supabase
-  .channel("cdc-changes")
-  .on("postgres_changes", { event: "*", table: "time_entries" },
-    async (payload) => {
-      const record = toCDCRecord(payload);
-      await TimeEntryTable.insert([record]);
-    }
-  )
-  .subscribe();
+create table if not exists public.time_entries (
+  id text primary key,
+  project_id text not null references public.projects(id),
+  worker_id text not null,
+  hours_worked numeric not null,
+  work_date timestamptz not null,
+  updated_at timestamptz not null default now()
+);
+
+alter publication supabase_realtime add table public.projects;
+alter publication supabase_realtime add table public.time_entries;
+
+alter table public.projects replica identity full;
+alter table public.time_entries replica identity full;
 ```
-*/}
-
-### Part 5: Create analytics API
-
-{/*
-CONTENT TO WRITE:
-- API for labor costs by project
-- Query pattern: filter out DELETEs, use FINAL for deduplication
-- Example endpoint: /api/labor-costs?days=30
-*/}
-
-### Part 6: Test the pipeline
-
-{/*
-CONTENT TO WRITE:
-- Start moose dev, trigger workflow
-- Insert data in Supabase, verify in ClickHouse
-- Query the analytics API
-*/}
 
 ---
 
-## How it works
+## Coinbase connector
 
-{/*
-CONTENT TO WRITE:
-- Supabase Realtime: logical replication → WebSocket
-- ReplacingMergeTree: keeps latest row by ORDER BY key, merges in background
-- Query patterns: WHERE cdc_operation != 'DELETE', use FINAL or argMax()
-*/}
+Code:
 
----
+- `examples/websocket-ingestion-poc/moose/app/connectors/coinbase`
 
-## Troubleshooting
+Workflow:
 
-{/*
-CONTENT TO WRITE:
-- Supabase Realtime connection issues
-- Workflow not starting
-- Data not appearing in ClickHouse
-- Duplicate records (expected before merge - use FINAL)
-*/}
+- `coinbase-trades-listener`
+
+Run:
+
+```bash
+cd examples/websocket-ingestion-poc/moose
+export COINBASE_PRODUCTS="BTC-USD,ETH-USD"
+export COINBASE_WS_URL="wss://ws-feed.exchange.coinbase.com"
+moose workflow run coinbase-trades-listener
+```
 
 ---
 
-## Next steps
+## Monorepo integration with existing TS backend/fullstack app
 
-- Add more tables to the workflow
-- Create materialized views for pre-aggregation
-- Deploy to Boreal Cloud
+If you already have a TypeScript backend/fullstack app with Supabase configured:
+
+1. Keep Moose as a sibling package in your monorepo:
+- `apps/backend` (or fullstack app)
+- `examples/websocket-ingestion-poc/moose` (or copied connector package)
+
+2. Reuse existing env/secrets flow:
+- Keep Supabase URL/service key managed by your current secrets system.
+- Pass them to the Moose connector process as environment variables.
+
+3. Reuse existing Supabase generated types:
+- Point `supabase.generated.ts` to your shared generated type package.
+- Keep source typing and mapping close to connector code.
+
+4. Keep responsibilities separated:
+- Source protocol logic in `source.ts`.
+- Envelope emission and checkpoint extraction in `source.ts`.
+- Destination routing and optional transform in `sinks.ts`.
+- Pipeline/workflow instantiation and resource configuration in `connector.ts`.
 
 ---
 
-## Reference
-
-### Project structure
+## Reference structure
 
 <FileTree>
-  <FileTree.Folder name="construction-analytics" defaultOpen>
-    <FileTree.Folder name="app" defaultOpen>
-      <FileTree.File name="index.ts" />
-      <FileTree.Folder name="models">
-        <FileTree.File name="types.ts" />
-      </FileTree.Folder>
-      <FileTree.Folder name="tables">
-        <FileTree.File name="index.ts" />
-      </FileTree.Folder>
-      <FileTree.Folder name="workflows">
-        <FileTree.File name="supabase-cdc.ts" />
-      </FileTree.Folder>
-      <FileTree.Folder name="apis">
-        <FileTree.File name="labor-costs.ts" />
+  <FileTree.Folder name="examples" defaultOpen>
+    <FileTree.Folder name="websocket-ingestion-poc" defaultOpen>
+      <FileTree.Folder name="moose" defaultOpen>
+        <FileTree.Folder name="app" defaultOpen>
+          <FileTree.Folder name="connectors" defaultOpen>
+            <FileTree.Folder name="shared" defaultOpen>
+              <FileTree.Folder name="durable-pipeline" defaultOpen>
+                <FileTree.File name="checkpoint-store.ts" />
+                <FileTree.File name="backoff.ts" />
+                <FileTree.File name="connector-definition.ts" />
+                <FileTree.File name="connector-pipeline.ts" />
+                <FileTree.File name="disconnect-signal.ts" />
+                <FileTree.File name="event-processor.ts" />
+                <FileTree.File name="pipeline-workflow.ts" />
+                <FileTree.File name="run-loop.ts" />
+                <FileTree.File name="runner.ts" />
+                <FileTree.File name="source-definition.ts" />
+                <FileTree.File name="sink-writer.ts" />
+                <FileTree.File name="types.ts" />
+              </FileTree.Folder>
+            </FileTree.Folder>
+            <FileTree.Folder name="supabase" defaultOpen>
+              <FileTree.File name="sinks.ts" />
+              <FileTree.File name="source.ts" />
+              <FileTree.File name="connector.ts" />
+            </FileTree.Folder>
+            <FileTree.Folder name="coinbase" defaultOpen>
+              <FileTree.File name="sinks.ts" />
+              <FileTree.File name="source.ts" />
+              <FileTree.File name="connector.ts" />
+            </FileTree.Folder>
+          </FileTree.Folder>
+        </FileTree.Folder>
       </FileTree.Folder>
     </FileTree.Folder>
-    <FileTree.File name="moose.config.toml" />
-    <FileTree.File name=".env.local" />
   </FileTree.Folder>
 </FileTree>
 
-### Resources
+## Resources
 
-- [Supabase Realtime documentation](https://supabase.com/docs/guides/realtime/postgres-changes)
-- [Moose Workflows documentation](/moosestack/workflows)
-- [Moose OlapTable documentation](/moosestack/olap)
-- [ClickHouse ReplacingMergeTree](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replacingmergetree)
+- [Supabase Realtime Postgres Changes](https://supabase.com/docs/guides/realtime/postgres-changes)
+- [Coinbase WebSocket Feed](https://docs.cdp.coinbase.com/exchange/websocket-feed/overview)
+- [Moose Workflows](/moosestack/workflows)
+- [Moose Olap Tables](/moosestack/olap)
