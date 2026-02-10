@@ -1,26 +1,52 @@
 import {
   Checkpoint,
-  SourceAdapter,
-  SourceHandle,
-  SourceStartContext,
+  WebSocketSourceAdapter,
+  WebSocketSourceStartContext,
 } from "./types";
 
-export interface SourceDefinition<
-  TEvent,
-  TCheckpoint extends Checkpoint = Checkpoint,
+export interface WebSocketSourceDefinition<
+  TResource extends string,
+  TRawMessage,
+  TPayload,
+  TCheckpoint extends Checkpoint,
 > {
+  name: string;
+  resources: WebSocketSourceAdapter<
+    TResource,
+    TRawMessage,
+    TPayload,
+    TCheckpoint
+  >["resources"];
   start: (
-    context: SourceStartContext<TEvent, TCheckpoint>,
-  ) => Promise<SourceHandle>;
+    context: WebSocketSourceStartContext<TResource, TRawMessage, TCheckpoint>,
+  ) => ReturnType<
+    WebSocketSourceAdapter<
+      TResource,
+      TRawMessage,
+      TPayload,
+      TCheckpoint
+    >["start"]
+  >;
 }
 
-export function defineSource<
-  TEvent,
-  TCheckpoint extends Checkpoint = Checkpoint,
+export function defineWebSocketSource<
+  TResource extends string,
+  TRawMessage,
+  TPayload,
+  TCheckpoint extends Checkpoint,
 >(
-  definition: SourceDefinition<TEvent, TCheckpoint>,
-): SourceAdapter<TEvent, TCheckpoint> {
+  definition: WebSocketSourceDefinition<
+    TResource,
+    TRawMessage,
+    TPayload,
+    TCheckpoint
+  >,
+): WebSocketSourceAdapter<TResource, TRawMessage, TPayload, TCheckpoint> {
   return {
+    name: definition.name,
+    resources: definition.resources,
     start: (context) => definition.start(context),
   };
 }
+
+export const defineSource = defineWebSocketSource;

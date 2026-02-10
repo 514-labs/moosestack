@@ -1,32 +1,28 @@
 import { ConnectorPipelineOptions } from "../shared/durable-pipeline/connector-pipeline";
-import { defineConnector } from "../shared/durable-pipeline/connector-definition";
-import { COINBASE_RESOURCES } from "./sinks";
+import { defineWebSocketConnector } from "../shared/durable-pipeline/connector-definition";
 import { coinbaseSource } from "./source";
 import {
   CoinbaseCheckpoint,
-  CoinbaseMatchRecord,
+  CoinbaseMatchPayload,
   CoinbaseResourceName,
 } from "./types";
 
 const PIPELINE_ID = "coinbase-trades-listener";
 
-export type CoinbasePipelineOptions = ConnectorPipelineOptions<
-  CoinbaseResourceName,
-  CoinbaseMatchRecord,
-  CoinbaseCheckpoint
->;
+export type CoinbasePipelineOptions =
+  ConnectorPipelineOptions<CoinbaseCheckpoint>;
 
-const coinbaseConnector = defineConnector<
+export const coinbaseConnector = defineWebSocketConnector<
   CoinbaseResourceName,
-  CoinbaseMatchRecord,
+  unknown,
+  CoinbaseMatchPayload,
   CoinbaseCheckpoint
 >({
   pipelineId: PIPELINE_ID,
   workflowName: "coinbase-trades-listener",
   taskName: "run-coinbase-trades-listener",
   source: coinbaseSource,
-  defaultResources: COINBASE_RESOURCES,
-  defaultCheckpointKeyPrefix: "coinbase-matches-checkpoint",
+  checkpointStoreKeyPrefix: "coinbase-matches-checkpoint",
   reconnectPolicy: {
     initialMs: 1_000,
     maxMs: 30_000,
@@ -40,4 +36,3 @@ const coinbaseConnector = defineConnector<
 
 export const createCoinbasePipeline = coinbaseConnector.createPipeline;
 export const startCoinbasePipeline = coinbaseConnector.startPipeline;
-export const coinbaseTradesListenerWorkflow = coinbaseConnector.workflow;

@@ -3,128 +3,106 @@
 Status: Draft taxonomy for MVP scope.
 
 ## Purpose
-Define a shared vocabulary for the durable ingest component model so implementation, docs, and project planning use the same terms.
-This taxonomy is also the copilot-facing contract for where to read, where to extend, and which invariants must hold.
+
+Define a shared vocabulary for durable ingest so implementation, docs, and copilot usage all follow the same model.
 
 ## Core Components
 
 ### 1. Source
-A long-running adapter that connects to an external system (websocket, API poll, or change feed), handles provider protocol details, and emits canonical envelopes.
 
-Responsibilities:
-- auth and connection setup
-- subscription or polling
-- provider error/disconnect handling
-- emitting normalized events to runtime
+A long-running adapter that connects to an external system and emits source events.
 
-Non-responsibilities:
-- writing to Moose destinations
-- runtime retry policy decisions
+- Declared with `defineSource(...)`
+- Owns the canonical `resources` list
+- Handles auth, connection, subscription/polling, and protocol errors
+- Does not write to sinks
 
-### 2. Source Envelope
-Canonical event contract emitted by a source:
-- `resource`
-- `payload`
-- optional `checkpoint`
+### 2. Resource
 
-Purpose:
-- define the clean boundary between source logic and shared runtime
-- ensure all connectors follow one handoff contract
+A named mapping unit declared with `defineResource(...)`.
 
-### 3. Resource
-A named routing unit (for example `projects`, `time_entries`, `matches`) resolved by the runtime.
+- `name`: source resource key (for example `projects`, `time_entries`, `matches`)
+- `sink`: Moose destination (`Stream` or `OlapTable`)
+- `process`: maps payload to `{ records, checkpoint? } | null`
 
-A resource definition includes:
-- `destination`: Moose `Stream` or `OlapTable`
-- optional `transform(payload, envelope)`
+### 3. Source Event
 
-### 4. Sink / Destination
-The Moose write target for transformed records.
+The boundary between source and durable runtime.
 
-Allowed destination types in MVP:
+- Shape: `{ resource, payload }`
+- Emitted from `source.start(...).onEvent(...)`
+
+### 4. Sink
+
+Moose destination object for writes.
+
+MVP supported sinks:
 - `Stream`
 - `OlapTable`
 
-### 5. Transform (Optional)
-Per-resource mapping function:
-- input: `payload`, `envelope`
-- output: `record`, `record[]`, or `null`
+### 5. Checkpoint
 
-Semantics:
-- `null` drops event (no write, no checkpoint save)
-- `record[]` enables fan-out
-- omitted transform defaults to direct payload write when payload is record-like
-
-### 6. Checkpoint
-Durability cursor attached to an envelope that indicates resume position.
+Durability cursor returned by resource processing.
 
 Guarantee:
-- checkpoint persists only after successful sink write
+- persisted only after successful sink write
 
-### 7. Checkpoint Store
-Persistence layer for checkpoints.
+### 6. Checkpoint Store
+
+Persistence backend for checkpoints.
 
 MVP default:
 - MooseCache-backed store
 
-### 8. Durable Runtime
-Shared engine that processes envelopes and enforces durability semantics.
+### 7. Durable Runtime
 
-Responsibilities:
+Shared runtime that enforces:
+
 - sequential processing
-- reconnect/backoff loop
+- reconnect/backoff
 - write-then-checkpoint ordering
-- cancellation and cleanup behavior
+- cancellation cleanup
 
-### 9. Connector
-Composition unit that wires:
-- one source
-- one resource map
-- checkpoint store config
-- workflow entrypoint
+### 8. Connector Composition
 
-Purpose:
-- source-specific setup with shared runtime behavior
+Pipeline and workflow wiring for one source.
 
-### 10. Workflow Wrapper
-Long-running workflow/task boundary (`timeout: "never"`) that starts and stops connector pipelines safely.
+- `pipeline.ts`: `defineConnector(...)`, pipeline creation/start
+- `workflow.ts`: long-running workflow export
 
 ## Copilot Discovery Contract
-To make extension easy for AI copilots and engineers, each connector should expose the same top-level structure:
-1. `source.ts`: provider connection and envelope emission only.
-2. `resources.ts`: resource-to-destination mapping plus optional transforms.
-3. `pipeline.ts`: runtime wiring of source + resources + checkpoint store.
-4. `workflow.ts`: long-running workflow/task entrypoint and cancellation behavior.
 
-Required copilot extension flow:
-1. Add or edit source protocol logic in `source.ts`.
-2. Add or edit resource definitions in `resources.ts`.
-3. Keep durability semantics unchanged in shared runtime (`write -> checkpoint`).
-4. Add or update runtime/smoke tests for new resource behavior.
+Each connector folder should expose:
 
-Required invariants for generated/copilot-authored changes:
+1. `source.ts`
+2. `resources/*.ts` (one resource per file)
+3. `pipeline.ts`
+4. `workflow.ts`
+
+Extension flow:
+
+1. Update source protocol logic in `source.ts`.
+2. Add/update resource files in `resources/`.
+3. Keep runtime durability invariants unchanged.
+4. Add/update runtime and smoke tests.
+
+Required invariants:
+
 1. At-least-once delivery preserved.
 2. Checkpoint persists only after successful sink write.
 3. Unknown resource fails clearly.
-4. Transform output types stay within `null | record | record[]`.
+4. `process` output is `null` or `{ records, checkpoint? }`.
 
 ## In-Scope Components for MVP
+
 1. Shared durable runtime modules.
-2. Source envelope contract.
-3. Resource map and destination wiring.
-4. Connector composition helpers.
-5. Supabase example source implementation.
-6. Coinbase example source implementation.
-7. Beta docs and tests.
+2. `defineSource` / `defineResource` contracts.
+3. Source-owned resources with per-resource processing.
+4. Supabase and Coinbase examples.
+5. Beta docs and tests.
 
 ## Out-of-Scope Components for MVP
+
 1. Registry install and `moose add` integration.
-2. Production SLO and hardening surfaces.
-3. Generic plugin marketplace behavior.
-
-## Relationship to Component Registry Project
-This taxonomy and runtime pattern define the artifact that the Component Registry project will package and install later.
-
-Dependency:
-- This project is blocked by registry packaging readiness.
-- This project provides the first component set intended for registry distribution.
+2. Production SLO hardening.
+3. Marketplace/plugin packaging.

@@ -1,16 +1,10 @@
-import WebSocket from "ws";
-import { defineSource } from "../shared/durable-pipeline/source-definition";
-import {
-  CoinbaseCheckpoint,
-  CoinbaseErrorMessage,
-  CoinbaseInboundMessage,
-  CoinbaseMatchMessage,
-  CoinbaseMatchRecord,
-  CoinbaseSourceEnvelope,
-} from "./types";
+import { WebsocketClient, WsDataEvent } from "coinbase-api";
+import { defineWebSocketSource } from "../shared/durable-pipeline/source-definition";
+import { CoinbaseCheckpoint, CoinbaseMatchPayload } from "./types";
+import { matchesResource } from "./resources/matches";
 
 export interface CoinbaseConnectorEnv {
-  coinbaseWsUrl: string;
+  coinbaseWsUrl?: string;
   coinbaseProducts: string[];
 }
 
@@ -27,8 +21,7 @@ function parseProducts(value: string | undefined): string[] {
 
 export function getCoinbaseConnectorEnv(): CoinbaseConnectorEnv {
   return {
-    coinbaseWsUrl:
-      process.env.COINBASE_WS_URL ?? "wss://ws-feed.exchange.coinbase.com",
+    coinbaseWsUrl: process.env.COINBASE_WS_URL,
     coinbaseProducts: parseProducts(process.env.COINBASE_PRODUCTS),
   };
 }
@@ -37,109 +30,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-export function parseCoinbaseInboundMessage(
-  rawData: WebSocket.RawData,
-): CoinbaseInboundMessage | null {
+function toErrorMessage(value: unknown): string {
+  if (value instanceof Error) {
+    return value.message;
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (isRecord(value) && typeof value.message === "string") {
+    return value.message;
+  }
+
   try {
-    const text =
-      typeof rawData === "string" ? rawData : rawData.toString("utf8");
-    const parsed = JSON.parse(text);
-    return isRecord(parsed) ? (parsed as CoinbaseInboundMessage) : null;
+    return JSON.stringify(value);
   } catch {
-    return null;
+    return "Unknown Coinbase websocket error";
   }
 }
 
-export function isCoinbaseMatchMessage(
-  value: unknown,
-): value is CoinbaseMatchMessage {
-  if (!isRecord(value) || value.type !== "match") {
-    return false;
-  }
-
-  const requiredStringFields = [
-    "maker_order_id",
-    "taker_order_id",
-    "time",
-    "product_id",
-    "size",
-    "price",
-  ] as const;
-
-  for (const field of requiredStringFields) {
-    if (typeof value[field] !== "string") {
-      return false;
-    }
-  }
-
-  return (
-    typeof value.trade_id === "number" &&
-    typeof value.sequence === "number" &&
-    (value.side === "buy" || value.side === "sell")
-  );
+function toError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(toErrorMessage(value));
 }
 
-export function isCoinbaseErrorMessage(
-  value: unknown,
-): value is CoinbaseErrorMessage {
-  return (
-    isRecord(value) &&
-    value.type === "error" &&
-    typeof value.message === "string"
-  );
-}
-
-function parseNumberOrThrow(fieldName: string, value: string): number {
-  const parsed = Number.parseFloat(value);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`Invalid Coinbase ${fieldName}: ${value}`);
-  }
-
-  return parsed;
-}
-
-function toCoinbaseMatchRecord(
-  message: CoinbaseMatchMessage,
-  receivedAt: Date,
-): CoinbaseMatchRecord {
-  const eventTime = new Date(message.time);
-  if (Number.isNaN(eventTime.getTime())) {
-    throw new Error(`Invalid Coinbase match timestamp: ${message.time}`);
-  }
-
-  return {
-    trade_id: String(message.trade_id),
-    sequence: message.sequence,
-    product_id: message.product_id,
-    side: message.side,
-    price: parseNumberOrThrow("price", message.price),
-    size: parseNumberOrThrow("size", message.size),
-    maker_order_id: message.maker_order_id,
-    taker_order_id: message.taker_order_id,
-    event_time: eventTime,
-    received_at: receivedAt,
-    payload_json: JSON.stringify(message),
-    cdc_operation: "INSERT",
-    cdc_timestamp: eventTime,
-    is_deleted: false,
-  };
-}
-
-function checkpointFromCoinbaseMessage(
-  message: CoinbaseMatchMessage,
-): CoinbaseCheckpoint {
-  return {
-    product_id: message.product_id,
-    sequence: message.sequence,
-    event_time: message.time,
-  };
-}
-
-export const coinbaseSource = defineSource<
-  CoinbaseSourceEnvelope,
+export const coinbaseSource = defineWebSocketSource<
+  "matches",
+  unknown,
+  CoinbaseMatchPayload,
   CoinbaseCheckpoint
 >({
-  start: async ({ fromCheckpoint, onDisconnect, onEvent, signal }) => {
+  name: "coinbase",
+  resources: [matchesResource],
+  start: async ({ fromCheckpoint, onDisconnect, emitRaw, signal }) => {
     const { coinbaseProducts, coinbaseWsUrl } = getCoinbaseConnectorEnv();
 
     if (fromCheckpoint) {
@@ -148,99 +71,75 @@ export const coinbaseSource = defineSource<
       );
     }
 
-    const socket = new WebSocket(coinbaseWsUrl);
-
-    await new Promise<void>((resolve, reject) => {
-      const onOpen = () => {
-        socket.off("error", onErrorBeforeOpen);
-
-        socket.send(
-          JSON.stringify({
-            type: "subscribe",
-            product_ids: coinbaseProducts,
-            channels: ["matches"],
-          }),
-        );
-
-        resolve();
-      };
-
-      const onErrorBeforeOpen = (error: Error) => {
-        socket.off("open", onOpen);
-        reject(error);
-      };
-
-      socket.once("open", onOpen);
-      socket.once("error", onErrorBeforeOpen);
+    const websocket = new WebsocketClient({
+      ...(coinbaseWsUrl ? { wsUrl: coinbaseWsUrl } : {}),
     });
 
-    socket.on("message", async (rawData: WebSocket.RawData) => {
-      const message = parseCoinbaseInboundMessage(rawData);
-      if (!message) {
+    let didDisconnect = false;
+    const disconnect = (error?: unknown) => {
+      if (didDisconnect) {
         return;
       }
 
-      if (isCoinbaseErrorMessage(message)) {
-        onDisconnect(
-          new Error(
-            [
-              "Coinbase websocket returned an error.",
-              message.message,
-              message.reason,
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          ),
-        );
-        return;
-      }
-
-      if (!isCoinbaseMatchMessage(message)) {
-        return;
-      }
-
-      try {
-        const receivedAt = new Date();
-        await onEvent({
-          resource: "matches",
-          payload: toCoinbaseMatchRecord(message, receivedAt),
-          checkpoint: checkpointFromCoinbaseMessage(message),
-        });
-      } catch (error) {
-        onDisconnect(error);
-      }
-    });
-
-    socket.on("error", (error: Error) => {
+      didDisconnect = true;
       onDisconnect(error);
-    });
+    };
 
-    socket.on("close", () => {
-      onDisconnect(new Error("Coinbase websocket closed."));
-    });
+    const handleUpdate = async (event: WsDataEvent<unknown>) => {
+      try {
+        await emitRaw(event.data);
+      } catch (error) {
+        disconnect(error);
+      }
+    };
 
-    signal.addEventListener(
-      "abort",
-      () => {
-        onDisconnect();
+    const updateListener = (event: WsDataEvent<unknown>) => {
+      void handleUpdate(event);
+    };
+
+    const errorListener = (error: unknown) => {
+      disconnect(toError(error));
+    };
+
+    const responseListener = (response: unknown) => {
+      if (isRecord(response) && response.type === "error") {
+        disconnect(
+          new Error(`Coinbase subscription error: ${toErrorMessage(response)}`),
+        );
+      }
+    };
+
+    const closeListener = () => {
+      disconnect(new Error("Coinbase websocket closed."));
+    };
+
+    websocket.on("update", updateListener);
+    websocket.on("error", errorListener);
+    websocket.on("exception", errorListener);
+    websocket.on("response", responseListener);
+    websocket.on("close", closeListener);
+
+    websocket.subscribe(
+      {
+        topic: "market_trades",
+        payload: {
+          product_ids: coinbaseProducts,
+        },
       },
-      { once: true },
+      "advTradeMarketData",
     );
+
+    const abortListener = () => {
+      disconnect();
+    };
+
+    signal.addEventListener("abort", abortListener, { once: true });
 
     return {
       stop: async () => {
-        socket.removeAllListeners();
-        if (
-          socket.readyState === WebSocket.CLOSED ||
-          socket.readyState === WebSocket.CLOSING
-        ) {
-          return;
-        }
-
-        await new Promise<void>((resolve) => {
-          socket.once("close", () => resolve());
-          socket.close();
-        });
+        signal.removeEventListener("abort", abortListener);
+        websocket.removeAllListeners();
+        websocket.closeAll(true);
       },
     };
   },

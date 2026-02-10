@@ -2,66 +2,77 @@ import { OlapTable, Stream } from "@514labs/moose-lib";
 
 export type Checkpoint = Record<string, unknown>;
 
-export type TableDestination = Pick<
-  OlapTable<any>,
-  "assertValidRecord" | "insert"
->;
-export type StreamDestination = Pick<Stream<any>, "send">;
-export type SinkDestination = TableDestination | StreamDestination;
+export type TableSink = Pick<OlapTable<any>, "assertValidRecord" | "insert">;
+export type StreamSink = Pick<Stream<any>, "send">;
+export type SinkDestination = TableSink | StreamSink;
 
-export interface SourceEnvelope<
+export interface ResourceProcessContext<TPayload = Record<string, unknown>> {
+  payload: TPayload;
+  receivedAt: Date;
+}
+
+export type TransformedRecord = Record<string, unknown>;
+
+export interface ResourceProcessResult<
+  TCheckpoint extends Checkpoint = Checkpoint,
+> {
+  records: TransformedRecord[];
+  checkpoint?: TCheckpoint | null;
+}
+
+export type ResourceParseResult<TPayload> =
+  | TPayload
+  | TPayload[]
+  | null
+  | undefined;
+
+export interface WebSocketResourceDefinition<
   TResource extends string = string,
+  TRawMessage = unknown,
   TPayload = Record<string, unknown>,
   TCheckpoint extends Checkpoint = Checkpoint,
 > {
-  resource: TResource;
-  payload: TPayload;
-  checkpoint?: TCheckpoint | null;
+  name: TResource;
+  sink: SinkDestination;
+  parse: (rawMessage: TRawMessage) => ResourceParseResult<TPayload>;
+  process: (
+    context: ResourceProcessContext<TPayload>,
+  ) => ResourceProcessResult<TCheckpoint> | null;
 }
 
 export interface SourceHandle {
   stop: () => Promise<void>;
 }
 
-export interface SourceStartContext<
-  TEnvelope,
-  TCheckpoint extends Checkpoint = Checkpoint,
+export interface WebSocketSourceStartContext<
+  TResource extends string,
+  TRawMessage,
+  TCheckpoint extends Checkpoint,
 > {
+  resources: readonly TResource[];
   fromCheckpoint: TCheckpoint | null;
-  onEvent: (event: TEnvelope) => Promise<void>;
+  emitRaw: (rawMessage: TRawMessage) => Promise<void>;
   onDisconnect: (error?: unknown) => void;
   signal: AbortSignal;
 }
 
-export interface SourceAdapter<
-  TEnvelope,
-  TCheckpoint extends Checkpoint = Checkpoint,
+export interface WebSocketSourceAdapter<
+  TResource extends string,
+  TRawMessage,
+  TPayload,
+  TCheckpoint extends Checkpoint,
 > {
+  name: string;
+  resources: readonly WebSocketResourceDefinition<
+    TResource,
+    TRawMessage,
+    TPayload,
+    TCheckpoint
+  >[];
   start: (
-    context: SourceStartContext<TEnvelope, TCheckpoint>,
+    context: WebSocketSourceStartContext<TResource, TRawMessage, TCheckpoint>,
   ) => Promise<SourceHandle>;
 }
-
-export type TransformedRecord = Record<string, unknown>;
-export type TransformResult = TransformedRecord | TransformedRecord[] | null;
-
-export interface ResourceDefinition<
-  TResource extends string = string,
-  TPayload = Record<string, unknown>,
-  TCheckpoint extends Checkpoint = Checkpoint,
-> {
-  destination: SinkDestination;
-  transform?: (
-    payload: TPayload,
-    envelope: SourceEnvelope<TResource, TPayload, TCheckpoint>,
-  ) => TransformResult;
-}
-
-export type ResourceDefinitions<
-  TResource extends string = string,
-  TPayload = Record<string, unknown>,
-  TCheckpoint extends Checkpoint = Checkpoint,
-> = Record<TResource, ResourceDefinition<TResource, TPayload, TCheckpoint>>;
 
 export interface CheckpointStore<TCheckpoint extends Checkpoint = Checkpoint> {
   load: (pipelineId: string) => Promise<TCheckpoint | null>;
@@ -76,17 +87,14 @@ export interface ReconnectPolicy {
 }
 
 export interface DurablePipelineConfig<
-  TResource extends string = string,
-  TPayload = Record<string, unknown>,
-  TCheckpoint extends Checkpoint = Checkpoint,
+  TResource extends string,
+  TRawMessage,
+  TPayload,
+  TCheckpoint extends Checkpoint,
 > {
   pipelineId: string;
-  source: SourceAdapter<
-    SourceEnvelope<TResource, TPayload, TCheckpoint>,
-    TCheckpoint
-  >;
+  source: WebSocketSourceAdapter<TResource, TRawMessage, TPayload, TCheckpoint>;
   checkpointStore: CheckpointStore<TCheckpoint>;
-  resources: ResourceDefinitions<TResource, TPayload, TCheckpoint>;
   onError?: (error: unknown) => void;
   reconnectPolicy?: ReconnectPolicy;
 }

@@ -26,10 +26,11 @@ async function stopSourceHandle(
 
 export function runDurablePipelineLoop<
   TResource extends string,
+  TRawMessage,
   TPayload,
-  TCheckpoint extends Checkpoint = Checkpoint,
+  TCheckpoint extends Checkpoint,
 >(
-  config: DurablePipelineConfig<TResource, TPayload, TCheckpoint>,
+  config: DurablePipelineConfig<TResource, TRawMessage, TPayload, TCheckpoint>,
   reconnectPolicy: ReconnectPolicy,
 ): PipelineControl {
   let shouldStop = false;
@@ -51,7 +52,7 @@ export function runDurablePipelineLoop<
       const eventProcessor = createEventProcessor({
         pipelineId: config.pipelineId,
         initialCheckpoint: checkpoint,
-        resources: config.resources,
+        resources: config.source.resources,
         checkpointStore: config.checkpointStore,
         onProcessingError: (error) => {
           disconnectSignal.resolve(error);
@@ -60,12 +61,13 @@ export function runDurablePipelineLoop<
 
       try {
         activeHandle = await config.source.start({
+          resources: config.source.resources.map((resource) => resource.name),
           fromCheckpoint: checkpoint,
           signal: abortController.signal,
           onDisconnect: (error?: unknown) => {
             disconnectSignal.resolve(error);
           },
-          onEvent: eventProcessor.onEvent,
+          emitRaw: eventProcessor.onRawMessage,
         });
 
         reconnectAttempt = 0;

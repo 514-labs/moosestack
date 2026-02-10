@@ -1,32 +1,33 @@
-# Durable Pipeline POC (Moose)
+# Durable WebSocket Pipeline POC (Moose)
 
-This example shows a clean, reusable connector API for durable ETL across websocket and non-websocket sources.
+This example shows a websocket-focused durable ingestion SDK for implementing API connectors.
 
 ## Design goals
 
-1. Make sink wiring explicit at pipeline instantiation.
-2. Keep source-specific logic isolated.
-3. Keep transform optional and local to each resource mapping.
+1. Define resources once in the source.
+2. Keep source connection logic separate from sink writes.
+3. Keep per-resource parsing/mapping explicit with `defineWebSocketResource(...)`.
 4. Keep durability/reconnect/checkpoint-after-write in one shared runtime.
 
 ## Connector file layout
 
 Each connector uses the same shape:
 
-- `sinks.ts`: Moose destinations and source-key -> destination object mapping.
-- `source.ts`: source connection/subscription/fetch logic and canonical envelope emission (`resource`, `payload`, `checkpoint`).
-- `connector.ts`: single composition point (env + pipeline + workflow wiring).
-- `types.ts`: connector source envelope/checkpoint/record types.
+- `source.ts`: websocket connection/subscription logic and raw emission (`emitRaw(rawMessage)`).
+- `resources/*.ts`: one resource per file (`defineWebSocketResource({ name, sink, parse, process })`).
+- `pipeline.ts`: connector composition (`defineWebSocketConnector`, checkpoint store defaults).
+- `workflow.ts`: long-running workflow export.
 
 ## Shared durable primitive
 
 - `app/connectors/shared/durable-pipeline/runner.ts`
 - `app/connectors/shared/durable-pipeline/types.ts`
+- `app/connectors/shared/durable-pipeline/source-definition.ts`
+- `app/connectors/shared/durable-pipeline/resource-definition.ts`
 - `app/connectors/shared/durable-pipeline/checkpoint-store.ts`
 - `app/connectors/shared/durable-pipeline/sink-writer.ts`
 - `app/connectors/shared/durable-pipeline/connector-pipeline.ts`
 - `app/connectors/shared/durable-pipeline/connector-definition.ts`
-- `app/connectors/shared/durable-pipeline/source-definition.ts`
 - `app/connectors/shared/durable-pipeline/pipeline-workflow.ts`
 - `app/connectors/shared/durable-pipeline/backoff.ts`
 - `app/connectors/shared/durable-pipeline/disconnect-signal.ts`
@@ -37,50 +38,31 @@ Delivery semantics: **at-least-once**
 
 Checkpoint rule: save checkpoint **only after successful sink write**.
 
-Connector composition helpers:
+## Event processing contract
 
-- `defineConnector(...)`: reusable connector factory (`createPipeline`, `startPipeline`, `workflow`).
-- `defineSource(...)`: explicit source contract wrapper for `start({ fromCheckpoint, onEvent, onDisconnect, signal })`.
-- `createConnectorPipeline(...)`: reusable pipeline config assembly.
-- `createLongRunningPipelineWorkflow(...)`: reusable workflow/task wrapper with cleanup.
-
-Event processing contract:
-
-- Source emits `SourceEnvelope { resource, payload, checkpoint? }`.
-- Runtime resolves `resources[resource]`.
-- `resource.transform?(payload, envelope)` is optional:
-  - `null` drops event (no write, no checkpoint save)
-  - `record` writes one row
-  - `record[]` writes fan-out rows
-- If no `transform` exists, runtime writes `payload` directly (payload must be record/record[]).
-- Checkpoint persists only after successful writes.
+- Source emits raw provider messages with `emitRaw(rawMessage)`.
+- Runtime iterates `source.resources` for each raw message.
+- Runtime executes `resource.parse(rawMessage)`.
+- For parsed payloads, runtime executes `resource.process({ payload, receivedAt })`.
+- `process` returns:
+  - `null` to drop payload
+  - `{ records }` to write without checkpoint
+  - `{ records, checkpoint }` to write and persist checkpoint after success
 
 ## Where to change what
 
-- Destination objects and sink routing:
-  - `app/connectors/supabase/sinks.ts`
-  - `app/connectors/coinbase/sinks.ts`
 - Source connectivity/auth/subscriptions:
   - `app/connectors/supabase/source.ts`
   - `app/connectors/coinbase/source.ts`
-- Resource routing and optional transform:
-  - `app/connectors/supabase/sinks.ts`
-  - `app/connectors/coinbase/sinks.ts`
-- Pipeline/workflow instantiation and env wiring:
-  - `app/connectors/supabase/connector.ts`
-  - `app/connectors/coinbase/connector.ts`
-
-## Instantiating with custom resources
-
-Pipelines accept options so destination logic is configured at instantiation time:
-
-- `createSupabasePipeline({ resources, checkpointStore })`
-- `createCoinbasePipeline({ resources, checkpointStore })`
-
-Each `resources` entry defines:
-
-- `destination`: Moose `Stream` or `OlapTable`
-- optional `transform(payload, envelope)` for custom mapping/fan-out/drop
+- Resource parse + sink mapping + checkpoint logic:
+  - `app/connectors/supabase/resources/projects.ts`
+  - `app/connectors/supabase/resources/time-entries.ts`
+  - `app/connectors/coinbase/resources/matches.ts`
+- Pipeline/workflow composition:
+  - `app/connectors/supabase/pipeline.ts`
+  - `app/connectors/supabase/workflow.ts`
+  - `app/connectors/coinbase/pipeline.ts`
+  - `app/connectors/coinbase/workflow.ts`
 
 ## Run locally
 
@@ -107,15 +89,13 @@ export COINBASE_WS_URL="wss://ws-feed.exchange.coinbase.com"
 moose workflow run coinbase-trades-listener
 ```
 
-## Add a new source connector
+## Add a new websocket connector
 
-1. Copy one connector folder (`supabase` or `coinbase`) to a new source folder.
-2. Define sinks in `sinks.ts`.
-3. Emit canonical envelopes in `source.ts`.
-4. Add optional per-resource transforms in `sinks.ts` only when needed.
-5. Compose env + pipeline + workflow in `connector.ts`.
-
-This applies to websocket feeds, polling APIs, and database change streams.
+1. Create `source.ts` with `defineWebSocketSource({ name, resources, start })`.
+2. Create one file per resource under `resources/` with `defineWebSocketResource(...)`.
+3. Keep `start(...)` focused on websocket session lifecycle and `emitRaw(...)` only.
+4. Put parsing and sink mapping in `parse(...)`/`process(...)` inside resource files.
+5. Compose `pipeline.ts` and `workflow.ts` with shared helpers.
 
 ## Structure
 
@@ -124,27 +104,30 @@ app/
   connectors/
     shared/
       durable-pipeline/
-        checkpoint-store.ts
         backoff.ts
+        checkpoint-store.ts
         connector-definition.ts
         connector-pipeline.ts
         disconnect-signal.ts
         event-processor.ts
         pipeline-workflow.ts
+        resource-definition.ts
         run-loop.ts
         runner.ts
-        source-definition.ts
         sink-writer.ts
+        source-definition.ts
         types.ts
     supabase/
-      connector.ts
-      sinks.ts
+      pipeline.ts
       source.ts
-      supabase.generated.ts
-      types.ts
+      workflow.ts
+      resources/
+        projects.ts
+        time-entries.ts
     coinbase/
-      connector.ts
-      sinks.ts
+      pipeline.ts
       source.ts
-      types.ts
+      workflow.ts
+      resources/
+        matches.ts
 ```

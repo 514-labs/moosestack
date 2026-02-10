@@ -17,16 +17,14 @@
   "dependencies": {
     "@514labs/moose-lib": "0.6.309",
     "@supabase/supabase-js": "^2.54.0",
-    "axios": "^1.7.7",
+    "coinbase-api": "^1.1.11",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
-    "typia": "^9.6.1",
-    "ws": "^8.18.3"
+    "typia": "^9.6.1"
   },
   "devDependencies": {
     "@514labs/moose-cli": "0.6.309",
     "@types/node": "^20.12.12",
-    "@types/ws": "^8.18.1",
     "typescript": "^5.9.3"
   },
   "pnpm": {

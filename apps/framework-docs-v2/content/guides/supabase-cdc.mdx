@@ -1,6 +1,6 @@
 ---
 title: Durable Source Connectors in Moose
-description: Clean connector architecture for durable ETL from websocket, API, and database-change sources
+description: Readable durable ETL architecture for websocket, API, and database-change sources
 languages: ["typescript"]
 ---
 
@@ -49,58 +49,51 @@ This keeps the connector API surface out of template release paths while we iter
 Shared primitive files:
 
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/types.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/source-definition.ts`
+- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/resource-definition.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/runner.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/checkpoint-store.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/sink-writer.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/connector-pipeline.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/connector-definition.ts`
-- `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/source-definition.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/pipeline-workflow.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/backoff.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/disconnect-signal.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/event-processor.ts`
 - `examples/websocket-ingestion-poc/moose/app/connectors/shared/durable-pipeline/run-loop.ts`
 
-What this runtime is responsible for:
+Runtime guarantees:
 
 1. Start/reconnect loop.
 2. At-least-once processing.
-3. Persist checkpoint only after successful sink write.
+3. Checkpoint persisted only after successful sink write.
 4. Clean stop on workflow cancellation.
-
-What it is **not** responsible for:
-
-1. Source protocol details.
-2. Source-specific payload mapping.
-3. Source-specific destination routing choices.
 
 ---
 
-## Connector shape (clear boundaries)
+## Connector shape (source owns resources)
 
 Each connector folder follows the same file roles:
 
-1. `sinks.ts`
-- Define Moose destination resources (`OlapTable`, `Stream`).
-- Define the `resources` map:
-  - `destination` (`Stream` or `OlapTable`)
-  - optional `transform(payload, envelope)` when payload is not directly writable
+1. `source.ts`
+- Define source with `defineSource({ name, resources, start })`.
+- Connection/auth/subscription logic only.
+- Emit events with `onEvent({ resource, payload })`.
 
-2. `source.ts`
-- Connect/auth/subscribe/poll.
-- Emit canonical envelopes: `{ resource, payload, checkpoint? }`.
-- Handle provider disconnect/error and map to runtime `onDisconnect(...)`.
+2. `resources/*.ts`
+- One resource per file.
+- Declare resource with `defineResource({ name, sink, process })`.
+- `process` returns one of:
+  - `null` (drop)
+  - `{ records }`
+  - `{ records, checkpoint }`
 
-3. `connector.ts`
-- Single composition point.
-- Resolve connector env.
-- Instantiate `runDurablePipeline(...)`.
-- Configure where data is written via `resources`.
-- Configure checkpoint persistence.
-- Expose long-running workflow (`timeout: "never"`) with cleanup hooks.
-- Use `defineConnector(...)` so this composition shape is consistent across sources.
+3. `pipeline.ts`
+- Connector composition with `defineConnector(...)`.
+- Pipeline ID, workflow/task names, checkpoint store prefix, reconnect policy.
 
-This structure works for websocket feeds, polling APIs, and database change streams.
+4. `workflow.ts`
+- Export long-running workflow (`timeout: "never"`) for manual run.
 
 ---
 
@@ -182,23 +175,22 @@ moose workflow run coinbase-trades-listener
 
 If you already have a TypeScript backend/fullstack app with Supabase configured:
 
-1. Keep Moose as a sibling package in your monorepo:
+1. Keep Moose as a sibling package in your monorepo.
 - `apps/backend` (or fullstack app)
 - `examples/websocket-ingestion-poc/moose` (or copied connector package)
 
-2. Reuse existing env/secrets flow:
+2. Reuse existing env/secrets flow.
 - Keep Supabase URL/service key managed by your current secrets system.
-- Pass them to the Moose connector process as environment variables.
+- Pass them to Moose as environment variables.
 
-3. Reuse existing Supabase generated types:
+3. Reuse existing generated Supabase types.
 - Point `supabase.generated.ts` to your shared generated type package.
-- Keep source typing and mapping close to connector code.
+- Keep source payload typing and resource processing typed in the same repo.
 
-4. Keep responsibilities separated:
+4. Keep boundaries explicit.
 - Source protocol logic in `source.ts`.
-- Envelope emission and checkpoint extraction in `source.ts`.
-- Destination routing and optional transform in `sinks.ts`.
-- Pipeline/workflow instantiation and resource configuration in `connector.ts`.
+- Sink + mapping + checkpoint logic in `resources/*.ts`.
+- Pipeline/workflow wiring in `pipeline.ts` and `workflow.ts`.
 
 ---
 
@@ -219,6 +211,7 @@ If you already have a TypeScript backend/fullstack app with Supabase configured:
                 <FileTree.File name="disconnect-signal.ts" />
                 <FileTree.File name="event-processor.ts" />
                 <FileTree.File name="pipeline-workflow.ts" />
+                <FileTree.File name="resource-definition.ts" />
                 <FileTree.File name="run-loop.ts" />
                 <FileTree.File name="runner.ts" />
                 <FileTree.File name="source-definition.ts" />
@@ -227,14 +220,21 @@ If you already have a TypeScript backend/fullstack app with Supabase configured:
               </FileTree.Folder>
             </FileTree.Folder>
             <FileTree.Folder name="supabase" defaultOpen>
-              <FileTree.File name="sinks.ts" />
+              <FileTree.File name="pipeline.ts" />
               <FileTree.File name="source.ts" />
-              <FileTree.File name="connector.ts" />
+              <FileTree.File name="workflow.ts" />
+              <FileTree.Folder name="resources" defaultOpen>
+                <FileTree.File name="projects.ts" />
+                <FileTree.File name="time-entries.ts" />
+              </FileTree.Folder>
             </FileTree.Folder>
             <FileTree.Folder name="coinbase" defaultOpen>
-              <FileTree.File name="sinks.ts" />
+              <FileTree.File name="pipeline.ts" />
               <FileTree.File name="source.ts" />
-              <FileTree.File name="connector.ts" />
+              <FileTree.File name="workflow.ts" />
+              <FileTree.Folder name="resources" defaultOpen>
+                <FileTree.File name="matches.ts" />
+              </FileTree.Folder>
             </FileTree.Folder>
           </FileTree.Folder>
         </FileTree.Folder>

@@ -1,23 +1,19 @@
 import {
   SinkDestination,
-  StreamDestination,
-  TableDestination,
+  StreamSink,
+  TableSink,
   TransformedRecord,
 } from "./types";
 
-function isTableDestination(
-  destination: SinkDestination,
-): destination is TableDestination {
+function isTableSink(destination: SinkDestination): destination is TableSink {
   return (
-    typeof (destination as TableDestination).insert === "function" &&
-    typeof (destination as TableDestination).assertValidRecord === "function"
+    typeof (destination as TableSink).insert === "function" &&
+    typeof (destination as TableSink).assertValidRecord === "function"
   );
 }
 
-function isStreamDestination(
-  destination: SinkDestination,
-): destination is StreamDestination {
-  return typeof (destination as StreamDestination).send === "function";
+function isStreamSink(destination: SinkDestination): destination is StreamSink {
+  return typeof (destination as StreamSink).send === "function";
 }
 
 function assertPlainRecord(value: unknown): TransformedRecord {
@@ -30,7 +26,7 @@ function assertPlainRecord(value: unknown): TransformedRecord {
 
 async function writeToTable(
   resource: string,
-  destination: TableDestination,
+  destination: TableSink,
   records: TransformedRecord[],
 ): Promise<void> {
   const validatedRecords = records.map((record) =>
@@ -41,14 +37,14 @@ async function writeToTable(
     await destination.insert(validatedRecords as any[]);
   } catch (error) {
     throw new Error(
-      `Failed inserting records into table destination for resource '${resource}': ${String(error)}`,
+      `Failed inserting records into table sink for resource '${resource}': ${String(error)}`,
     );
   }
 }
 
 async function writeToStream(
   resource: string,
-  destination: StreamDestination,
+  destination: StreamSink,
   records: TransformedRecord[],
 ): Promise<void> {
   for (const record of records) {
@@ -56,7 +52,7 @@ async function writeToStream(
       await destination.send(assertPlainRecord(record));
     } catch (error) {
       throw new Error(
-        `Failed sending record to stream destination for resource '${resource}': ${String(error)}`,
+        `Failed sending record to stream sink for resource '${resource}': ${String(error)}`,
       );
     }
   }
@@ -71,17 +67,17 @@ export async function writeRecordsToDestination(
     return;
   }
 
-  if (isTableDestination(destination)) {
+  if (isTableSink(destination)) {
     await writeToTable(resource, destination, records);
     return;
   }
 
-  if (isStreamDestination(destination)) {
+  if (isStreamSink(destination)) {
     await writeToStream(resource, destination, records);
     return;
   }
 
   throw new Error(
-    `Destination for resource '${resource}' is not a supported Stream or OlapTable.`,
+    `Sink for resource '${resource}' is not a supported Stream or OlapTable.`,
   );
 }

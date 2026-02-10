@@ -1,5 +1,4 @@
 import { DateTime } from "@514labs/moose-lib";
-import { SourceEnvelope } from "../shared/durable-pipeline/types";
 
 export type SupabaseResourceName = "projects" | "time_entries";
 
@@ -31,9 +30,3 @@ export interface SupabaseChangeRecord extends Record<string, unknown> {
   payload_json: string;
   received_at: DateTime;
 }
-
-export type SupabaseSourceEnvelope = SourceEnvelope<
-  SupabaseResourceName,
-  SupabaseChangeRecord,
-  SupabaseCheckpoint
->;

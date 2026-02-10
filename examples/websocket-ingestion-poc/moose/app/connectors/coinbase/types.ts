@@ -1,44 +1,32 @@
 import { DateTime } from "@514labs/moose-lib";
-import { SourceEnvelope } from "../shared/durable-pipeline/types";
 
 export type CoinbaseResourceName = "matches";
 
-export interface CoinbaseSubscriptionsMessage {
-  type: "subscriptions";
-}
-
-export interface CoinbaseHeartbeatMessage {
-  type: "heartbeat";
-  sequence: number;
+export interface CoinbaseMarketTrade {
+  trade_id: string;
   product_id: string;
-  time: string;
-}
-
-export interface CoinbaseErrorMessage {
-  type: "error";
-  message: string;
-  reason?: string;
-}
-
-export interface CoinbaseMatchMessage {
-  type: "match";
-  trade_id: number;
-  sequence: number;
-  maker_order_id: string;
-  taker_order_id: string;
-  time: string;
-  product_id: string;
-  size: string;
   price: string;
-  side: "buy" | "sell";
+  size: string;
+  side: "BUY" | "SELL";
+  time: string;
 }
 
-export type CoinbaseInboundMessage =
-  | CoinbaseSubscriptionsMessage
-  | CoinbaseHeartbeatMessage
-  | CoinbaseErrorMessage
-  | CoinbaseMatchMessage
-  | Record<string, unknown>;
+export interface CoinbaseMarketTradesChannelEvent {
+  trades: CoinbaseMarketTrade[];
+}
+
+export interface CoinbaseMarketTradesUpdate {
+  channel: "market_trades";
+  sequence_num: number;
+  timestamp: string;
+  events: CoinbaseMarketTradesChannelEvent[];
+}
+
+export interface CoinbaseMatchPayload extends Record<string, unknown> {
+  sequence_num: number;
+  timestamp: string;
+  trade: CoinbaseMarketTrade;
+}
 
 export interface CoinbaseCheckpoint extends Record<string, unknown> {
   product_id: string;
@@ -53,8 +41,6 @@ export interface CoinbaseMatchRecord extends Record<string, unknown> {
   side: "buy" | "sell";
   price: number;
   size: number;
-  maker_order_id: string;
-  taker_order_id: string;
   event_time: DateTime;
   received_at: DateTime;
   payload_json: string;
@@ -62,9 +48,3 @@ export interface CoinbaseMatchRecord extends Record<string, unknown> {
   cdc_timestamp: DateTime;
   is_deleted: false;
 }
-
-export type CoinbaseSourceEnvelope = SourceEnvelope<
-  CoinbaseResourceName,
-  CoinbaseMatchRecord,
-  CoinbaseCheckpoint
->;

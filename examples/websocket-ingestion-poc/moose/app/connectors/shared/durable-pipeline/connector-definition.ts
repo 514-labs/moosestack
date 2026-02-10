@@ -8,60 +8,61 @@ import {
   Checkpoint,
   DurablePipelineConfig,
   PipelineControl,
-  ResourceDefinitions,
   ReconnectPolicy,
-  SourceEnvelope,
-  SourceAdapter,
+  WebSocketSourceAdapter,
 } from "./types";
 
-export interface DefineConnectorConfig<
+export interface DefineWebSocketConnectorConfig<
   TResource extends string,
+  TRawMessage,
   TPayload,
   TCheckpoint extends Checkpoint,
 > {
   pipelineId: string;
   workflowName: string;
   taskName: string;
-  source: SourceAdapter<
-    SourceEnvelope<TResource, TPayload, TCheckpoint>,
-    TCheckpoint
-  >;
-  defaultResources: ResourceDefinitions<TResource, TPayload, TCheckpoint>;
-  defaultCheckpointKeyPrefix: string;
+  source: WebSocketSourceAdapter<TResource, TRawMessage, TPayload, TCheckpoint>;
+  checkpointStoreKeyPrefix: string;
   reconnectPolicy?: ReconnectPolicy;
   onError?: (error: unknown) => void;
 }
 
-export interface DefinedConnector<
+export interface DefinedWebSocketConnector<
   TResource extends string,
+  TRawMessage,
   TPayload,
   TCheckpoint extends Checkpoint,
 > {
   createPipeline: (
-    options?: ConnectorPipelineOptions<TResource, TPayload, TCheckpoint>,
-  ) => DurablePipelineConfig<TResource, TPayload, TCheckpoint>;
+    options?: ConnectorPipelineOptions<TCheckpoint>,
+  ) => DurablePipelineConfig<TResource, TRawMessage, TPayload, TCheckpoint>;
   startPipeline: (
-    options?: ConnectorPipelineOptions<TResource, TPayload, TCheckpoint>,
+    options?: ConnectorPipelineOptions<TCheckpoint>,
   ) => Promise<PipelineControl>;
   workflow: ReturnType<typeof createLongRunningPipelineWorkflow>;
 }
 
-export function defineConnector<
+export function defineWebSocketConnector<
   TResource extends string,
+  TRawMessage,
   TPayload,
   TCheckpoint extends Checkpoint,
 >(
-  config: DefineConnectorConfig<TResource, TPayload, TCheckpoint>,
-): DefinedConnector<TResource, TPayload, TCheckpoint> {
+  config: DefineWebSocketConnectorConfig<
+    TResource,
+    TRawMessage,
+    TPayload,
+    TCheckpoint
+  >,
+): DefinedWebSocketConnector<TResource, TRawMessage, TPayload, TCheckpoint> {
   const createPipeline = (
-    options?: ConnectorPipelineOptions<TResource, TPayload, TCheckpoint>,
-  ): DurablePipelineConfig<TResource, TPayload, TCheckpoint> =>
+    options?: ConnectorPipelineOptions<TCheckpoint>,
+  ): DurablePipelineConfig<TResource, TRawMessage, TPayload, TCheckpoint> =>
     createConnectorPipeline(
       {
         pipelineId: config.pipelineId,
         source: config.source,
-        defaultResources: config.defaultResources,
-        defaultCheckpointKeyPrefix: config.defaultCheckpointKeyPrefix,
+        checkpointStoreKeyPrefix: config.checkpointStoreKeyPrefix,
         reconnectPolicy: config.reconnectPolicy,
         onError: config.onError,
       },
@@ -69,7 +70,7 @@ export function defineConnector<
     );
 
   const startPipeline = async (
-    options?: ConnectorPipelineOptions<TResource, TPayload, TCheckpoint>,
+    options?: ConnectorPipelineOptions<TCheckpoint>,
   ): Promise<PipelineControl> => runDurablePipeline(createPipeline(options));
 
   const workflow = createLongRunningPipelineWorkflow({
@@ -84,3 +85,5 @@ export function defineConnector<
     workflow,
   };
 }
+
+export const defineConnector = defineWebSocketConnector;
