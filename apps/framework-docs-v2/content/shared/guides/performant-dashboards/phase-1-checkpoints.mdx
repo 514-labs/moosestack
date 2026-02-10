@@ -1,6 +1,6 @@
 <GuideStepper.Checkpoint
   id="phase-1-capture-test-cases"
-  title="Checkpoint 1 — Capture test cases"
+  title="Capture test cases"
 >
 Goal: capture 2–5 replayable test cases from the **existing** OLTP endpoint. These are your parity oracle for all later phases.
 
@@ -62,7 +62,7 @@ curl -sS -X POST "$API_BASE_URL/api/<endpoint>" \
 
 <GuideStepper.Checkpoint
   id="phase-1-oltp-semantics"
-  title="Checkpoint 2 — OLTP semantics"
+  title="OLTP semantics"
 >
 Goal: extract the query logic from the existing endpoint so you have a precise spec to translate.
 
@@ -82,7 +82,7 @@ Steps:
 
 <GuideStepper.Checkpoint
   id="phase-1-seed-local-clickhouse"
-  title="Checkpoint 3 — Seed local ClickHouse"
+  title="Seed local ClickHouse"
 >
 Goal: seed your local ClickHouse with enough production data to fully cover the test cases from Checkpoint 1. You now know the source tables (from Checkpoint 2) and the time windows and filter values (from Checkpoint 1).
 
@@ -121,7 +121,7 @@ If any test case falls outside the seeded range, re-seed with a larger `--limit`
 
 <GuideStepper.Checkpoint
   id="phase-1-clickhouse-parity-function"
-  title="Checkpoint 4 — ClickHouse parity function"
+  title="ClickHouse parity function"
 >
 Goal: write a direct translation of the OLTP query into ClickHouse SQL that returns the exact same response shape.
 
@@ -184,7 +184,7 @@ export async function runParity(
 
 <GuideStepper.Checkpoint
   id="phase-1-verification"
-  title="Checkpoint 5 — Verification"
+  title="Verification"
 >
 Goal: prove the parity function returns the exact same JSON as the OLTP endpoint for every test case.
 

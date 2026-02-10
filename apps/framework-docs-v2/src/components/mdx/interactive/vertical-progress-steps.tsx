@@ -104,7 +104,9 @@ function VerticalProgressStepsRoot({
                 <p className="font-medium text-sm leading-relaxed">
                   {item.props.title}
                 </p>
-                <div className="space-y-3 text-sm">{item.props.children}</div>
+                <div className="space-y-3 text-sm [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-1">
+                  {item.props.children}
+                </div>
               </div>
             </li>
           );

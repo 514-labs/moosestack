@@ -1,0 +1,71 @@
+### Prepare your local development environment
+
+In this section you'll create a feature branch, run the Moose development server (`moose dev`) so ClickHouse and Redpanda run locally in Docker, and optionally install the MCP server and LSP so your copilot can query the database. Once this is done, you'll use the connection string you copied from Boreal to seed your local ClickHouse and start the migration (translating OLTP queries, adding materialized views, and wiring the API). PRs from this branch will get a Boreal preview environment automatically.
+
+If you are not already in a terminal, open a new terminal and navigate to your repository.
+
+#### Step 1: Create a branch
+
+Create a new branch in your repo to isolate your changes. When you open a pull request from this branch, you’ll get a preview environment you can use to validate changes before merging.
+
+```shell
+git checkout -b <your-branch-name>
+```
+
+#### Step 2: Run your Moose development server
+
+Ensure Docker Desktop is running first.
+
+![Docker Desktop](/docker-desktop.png)
+
+Navigate to your MooseStack project directory and run the development server:
+
+```shell
+cd moosestack  # or wherever your moose project is
+pnpm install
+moose dev
+```
+
+If the development server runs correctly, you'll see a list of the available API endpoints print:
+
+```
+📍 Available Routes:
+  Base URL: http://localhost:4000
+
+  Static Routes:
+  METHOD  ENDPOINT                                           DESCRIPTION
+  ------  --------                                           -----------
+  GET     /admin/inframap                                    Admin: Get infrastructure map
+  GET     /admin/reality-check                               Admin: Reality check - provides a diff when drift is detected between the running instance of moose and the db it is connected to
+  GET     /health                                            Health check endpoint
+  GET     /ready                                             Readiness check endpoint
+...
+
+```
+
+And your local services will be running in Docker containers:
+
+![Docker Services](/docker-services.png)
+
+#### Step 3: Set up developer and agent tooling (optional)
+
+We optionally recommend setting up your development environment with the following add-ons to let your AI copilot query your local database, inspect infrastructure, and validate SQL directly. These are not required, but can help you get the most out of your development environment.
+
+**[Moose Dev MCP server](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript)**:
+
+Lets your AI copilot query your local ClickHouse database, inspect logs, and explore infrastructure using natural language. Your copilot can verify query results, debug issues, and validate migrations without you copying/pasting commands.
+
+:::include /shared/prerequisites/install-mcp.mdx
+
+**Language Server (LSP) for MooseStack TypeScript**:
+The [Moose LSP for Typescript](https://github.com/514-labs/moosestack-lsp) enables SQL validation and syntax highlighting for `sql` strings in Typescript objects in your Moose project.
+Install the extension via your IDE marketplace:
+
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=514-labs.moosestack-lsp)
+- [Cursor Marketplace](https://open-vsx.org/extension/514-labs/moosestack-lsp)
+
+<Callout type="info" title="Alpha release">
+  This feature is currently in alpha and has the following known limitation: -
+  Nested SQL and SQL fragments will be incorrectly highlighted as errors. If you
+  would like access to experiment with this feature, let us know!
+</Callout>
