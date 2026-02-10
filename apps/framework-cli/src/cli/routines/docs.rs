@@ -11,6 +11,9 @@ use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::Ordering;
 
+use futures::stream::{self, StreamExt};
+use reqwest::Url;
+
 use crossterm::cursor::{MoveToColumn, MoveUp};
 use crossterm::event::{read, Event, KeyCode, KeyModifiers};
 use crossterm::execute;
@@ -591,9 +594,26 @@ async fn fetch_page_content(slug: &str, lang: DocsLanguage) -> Result<String, Ro
         format!("{}.md", stripped)
     };
 
-    let url = format!("{}/{}?lang={}", DOCS_BASE_URL, with_ext, lang.query_param());
+    let mut url = Url::parse(DOCS_BASE_URL).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "Docs".to_string(),
+            format!("Invalid base URL: {}", e),
+        ))
+    })?;
 
-    let response = reqwest::get(&url).await.map_err(|e| {
+    url.path_segments_mut()
+        .map_err(|_| {
+            RoutineFailure::error(Message::new(
+                "Docs".to_string(),
+                "Cannot modify URL path".to_string(),
+            ))
+        })?
+        .push(&with_ext);
+
+    url.query_pairs_mut()
+        .append_pair("lang", lang.query_param());
+
+    let response = reqwest::get(url).await.map_err(|e| {
         RoutineFailure::new(
             Message::new(
                 "Docs".to_string(),
@@ -679,18 +699,17 @@ pub async fn show_toc(
             );
         }
 
-        let futures: Vec<_> = guide_slugs
-            .iter()
-            .map(|slug| {
-                let slug = slug.clone();
-                async move {
-                    let result = fetch_page_content(&slug, lang).await;
-                    (slug, result)
-                }
-            })
-            .collect();
+        let results = stream::iter(guide_slugs.iter().map(|slug| {
+            let slug = slug.clone();
+            async move {
+                let result = fetch_page_content(&slug, lang).await;
+                (slug, result)
+            }
+        }))
+        .buffer_unordered(10)
+        .collect::<Vec<_>>()
+        .await;
 
-        let results = futures::future::join_all(futures).await;
         for (slug, result) in results {
             if let Ok(content) = result {
                 let headings = parse_page_headings(&content);
@@ -914,10 +933,27 @@ pub fn open_in_browser(slug: &str) -> Result<RoutineSuccess, RoutineFailure> {
         Some((p, a)) => (p.trim_end_matches(".md"), Some(a)),
         None => (stripped.trim_end_matches(".md"), None),
     };
-    let url = match anchor {
-        Some(a) => format!("{}/{}#{}", DOCS_BASE_URL, path, a),
-        None => format!("{}/{}", DOCS_BASE_URL, path),
-    };
+    let mut url = Url::parse(DOCS_BASE_URL).map_err(|e| {
+        RoutineFailure::error(Message::new(
+            "Docs".to_string(),
+            format!("Invalid base URL: {}", e),
+        ))
+    })?;
+
+    url.path_segments_mut()
+        .map_err(|_| {
+            RoutineFailure::error(Message::new(
+                "Docs".to_string(),
+                "Cannot modify URL path".to_string(),
+            ))
+        })?
+        .push(path);
+
+    if let Some(a) = anchor {
+        url.set_fragment(Some(a));
+    }
+
+    let url = url.to_string();
     let stripped = anchor
         .map(|a| format!("{}#{}", path, a))
         .unwrap_or_else(|| path.to_string());
@@ -930,7 +966,7 @@ pub fn open_in_browser(slug: &str) -> Result<RoutineSuccess, RoutineFailure> {
 
     #[cfg(target_os = "windows")]
     let result = std::process::Command::new("cmd")
-        .args(["/c", "start", &url])
+        .args(["/c", "start", "", &url])
         .status();
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
