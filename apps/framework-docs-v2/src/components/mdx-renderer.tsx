@@ -73,6 +73,7 @@ import rehypePrettyCode from "rehype-pretty-code";
 import { rehypeCodeMeta } from "@/lib/rehype-code-meta";
 import { rehypeRestoreCodeMeta } from "@/lib/rehype-restore-code-meta";
 import { ensureCodeBlockSpacing } from "@/lib/remark-code-block-spacing";
+import { remarkGuideStepperMarkers } from "@/lib/remark-guide-stepper-markers";
 
 // Module-level component wiring (hoisted to avoid per-render allocations)
 // Create FileTree with nested components
@@ -215,7 +216,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
       components={components}
       options={{
         mdxOptions: {
-          remarkPlugins: [remarkGfm],
+          remarkPlugins: [remarkGfm, remarkGuideStepperMarkers],
           rehypePlugins: [
             rehypeSlug,
             [rehypeAutolinkHeadings, { behavior: "wrap" }],

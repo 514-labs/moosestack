@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { MARKDOWN_CONTENT_CLASS } from "./markdown-content-class";
 import { usePersistedState } from "./use-persisted-state";
 import { VerticalProgressSteps } from "./vertical-progress-steps";
 
@@ -35,80 +36,49 @@ import { VerticalProgressSteps } from "./vertical-progress-steps";
 
 /**
  * Discriminant tags attached as static `_type` properties on GuideStepper
- * child component functions. Type guards below check this field instead of
- * duck-typing props, which avoids false positives and removes the dependency
- * on preprocessor-injected props like `rawContent`.
+ * child component functions.
+ *
+ * MDX + RSC/client-reference pipelines can proxy/wrap `node.type`, so runtime
+ * checks based only on function identity are brittle. We therefore prefer
+ * compile-time marker props injected by a remark plugin.
  */
-const GUIDE_STEPPER_STEP_TYPE = "guide-stepper-step";
-const GUIDE_STEPPER_CHECKPOINT_TYPE = "guide-stepper-checkpoint";
-const GUIDE_STEPPER_AT_A_GLANCE_TYPE = "guide-stepper-at-a-glance";
-const MARKDOWN_CONTENT_CLASS =
-  "[&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-1";
+const GUIDE_TYPE_PROP = "__guideType";
+const GUIDE_STEPPER_STEP_MARKER = "step";
+const GUIDE_STEPPER_CHECKPOINT_MARKER = "checkpoint";
+const GUIDE_STEPPER_AT_A_GLANCE_MARKER = "at-a-glance";
 
 function hasComponentType(node: ReactElement, type: string): boolean {
   const componentType = node.type as unknown as Record<string, unknown>;
   return componentType?._type === type;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isCustomElement(node: ReactElement): boolean {
-  return typeof node.type !== "string";
-}
-
-function isGuideStepperStepPropsShape(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  return (
-    typeof value.id === "string" &&
-    typeof value.number === "number" &&
-    typeof value.title === "string"
-  );
-}
-
-function isGuideStepperCheckpointPropsShape(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  return typeof value.id === "string" && typeof value.title === "string";
-}
-
-function isGuideStepperAtAGlancePropsShape(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-
-  const hasNoId = !("id" in value) || value.id === undefined;
-  if (!hasNoId) return false;
-
-  const hasTitle = typeof value.title === "string";
-  const hasRawContent = typeof value.rawContent === "string";
-
-  return hasTitle || hasRawContent;
+function hasGuideTypeMarker(node: ReactElement, marker: string): boolean {
+  const props = node.props as Record<string, unknown>;
+  return props?.[GUIDE_TYPE_PROP] === marker;
 }
 
 function isGuideStepperStepElement(
   node: ReactNode,
 ): node is ReactElement<GuideStepperStepProps> {
   if (!isValidElement(node)) return false;
-  if (hasComponentType(node, GUIDE_STEPPER_STEP_TYPE)) return true;
-  if (!isCustomElement(node)) return false;
-  return isGuideStepperStepPropsShape(node.props);
+  if (hasGuideTypeMarker(node, GUIDE_STEPPER_STEP_MARKER)) return true;
+  return false;
 }
 
 function isGuideStepperCheckpointElement(
   node: ReactNode,
 ): node is ReactElement<GuideStepperCheckpointProps> {
   if (!isValidElement(node)) return false;
-  if (hasComponentType(node, GUIDE_STEPPER_CHECKPOINT_TYPE)) return true;
-  if (!isCustomElement(node)) return false;
-  return isGuideStepperCheckpointPropsShape(node.props);
+  if (hasGuideTypeMarker(node, GUIDE_STEPPER_CHECKPOINT_MARKER)) return true;
+  return false;
 }
 
 function isGuideStepperAtAGlanceElement(
   node: ReactNode,
 ): node is ReactElement<GuideStepperAtAGlanceProps> {
   if (!isValidElement(node)) return false;
-  if (hasComponentType(node, GUIDE_STEPPER_AT_A_GLANCE_TYPE)) return true;
-  if (!isCustomElement(node)) return false;
-  return isGuideStepperAtAGlancePropsShape(node.props);
+  if (hasGuideTypeMarker(node, GUIDE_STEPPER_AT_A_GLANCE_MARKER)) return true;
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +239,7 @@ export interface GuideStepperStepProps {
   title: string;
   summary?: string;
   checkpointVariant?: "numbered" | "bulleted";
+  __guideType?: string;
   children: ReactNode;
 }
 
@@ -276,11 +247,13 @@ export interface GuideStepperCheckpointProps {
   id: string;
   title: string;
   rawContent?: string;
+  __guideType?: string;
   children: ReactNode;
 }
 
 export interface GuideStepperPromptProps {
   rawContent?: string;
+  __guideType?: string;
   children: ReactNode;
 }
 export interface GuideStepperAtAGlanceProps extends GuideStepperPromptProps {
@@ -324,7 +297,6 @@ function GuideStepperCheckpointComponent({
     </div>
   );
 }
-GuideStepperCheckpointComponent._type = GUIDE_STEPPER_CHECKPOINT_TYPE;
 
 function GuideStepperPromptComponent({ children }: GuideStepperPromptProps) {
   return (
@@ -351,7 +323,6 @@ function GuideStepperAtAGlanceComponent({
     </div>
   );
 }
-GuideStepperAtAGlanceComponent._type = GUIDE_STEPPER_AT_A_GLANCE_TYPE;
 
 // ---------------------------------------------------------------------------
 // Step component
@@ -537,7 +508,6 @@ function GuideStepperStepComponent({
     </AccordionItem>
   );
 }
-GuideStepperStepComponent._type = GUIDE_STEPPER_STEP_TYPE;
 
 // ---------------------------------------------------------------------------
 // Root component

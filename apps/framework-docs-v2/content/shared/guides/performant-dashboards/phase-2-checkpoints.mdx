@@ -1,6 +1,6 @@
 <GuideStepper.Checkpoint
   id="phase-2-serving-table-design"
-  title="Checkpoint 1 — Serving table design"
+  title="Serving table design"
 >
 Goal: define the serving table's **grain**, **columns**, and **orderByFields**. This table will be populated by the Materialized View and becomes the table your API reads from.
 
@@ -39,7 +39,7 @@ export const ServingTable = new OlapTable<ServingTableSchema>("<ServingTable>", 
 
 <GuideStepper.Checkpoint
   id="phase-2-materialized-view-plan"
-  title="Checkpoint 2 — Materialized View plan"
+  title="Materialized View plan"
 >
 Goal: decide how data flows into the serving table before writing code.
 
@@ -62,7 +62,7 @@ Steps:
 
 <GuideStepper.Checkpoint
   id="phase-2-implement-serving-table-mv"
-  title="Checkpoint 3 — Implement the serving table + MV"
+  title="Implement the serving table + MV"
 >
 Goal: write the MooseStack file that defines the serving table and the MV that populates it.
 
@@ -109,7 +109,7 @@ export const ServingMV = new MaterializedView<ServingTableSchema>({
 
 <GuideStepper.Checkpoint
   id="phase-2-verification"
-  title="Checkpoint 4 — Verification"
+  title="Verification"
 >
 Goal: confirm the serving table and MV are created and populated correctly.
 

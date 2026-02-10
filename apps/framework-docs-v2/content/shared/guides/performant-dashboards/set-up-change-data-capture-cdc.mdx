@@ -98,7 +98,7 @@ From there, CDC events are explicitly fanned out based on their metadata. Each S
 
 This architecture implements a [Streaming Function](https://docs.fiveonefour.com/moosestack/streaming/consumer-functions?lang=typescript) that inspects each raw CDC event from the shared stream to identify the source table and routes it to the appropriate table-specific stream. Each of these streams feeds a corresponding ClickHouse table.
 
-To summarize, the high level data flow is:
+To summarize, the high-level data flow is:
 
 - Debezium → single ingest API endpoint
 - Ingest API → shared CDC stream

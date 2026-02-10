@@ -15,6 +15,7 @@ import {
   CustomizeGrid,
   SelectField,
   ConditionalContent,
+  VerticalProgressSteps,
   CommunityCallout,
 } from "@/components/mdx";
 
@@ -217,32 +218,60 @@ By the end of this guide you’ll have:
 You'll work through:
 
 <ConditionalContent whenId="source-database" whenValue="postgres">
-  1. [Set up ClickHouse Cloud
-  ClickPipes](#set-up-clickhouse-cloud-clickpipes-postgres-cdc) to replicate
-  your Postgres tables into ClickHouse. 2. [Add MooseStack to your
-  repo](#add-moosestack-to-your-project) and run `moose db pull` to generate
-  typed models for the ClickPipes-owned tables. 3. [Connect
-  Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get
-  preview environments and migration plans. 4. [Migrate one dashboard
-  component](#migrate-a-dashboard-component-to-clickhouse) using
-  ClickHouse-native resources (views, materialized views, serving tables). 5.
-  [Go to production](#going-to-production) using the preview environment and
-  reviewed migrations.
+  <VerticalProgressSteps variant="numbered">
+    <VerticalProgressSteps.Item title="Set up ClickHouse Cloud ClickPipes">
+      [Set up ClickHouse Cloud ClickPipes](#set-up-clickhouse-cloud-clickpipes-postgres-cdc)
+      to replicate your Postgres tables into ClickHouse.
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Add MooseStack to your repo">
+      [Add MooseStack to your repo](#add-moosestack-to-your-project) and run
+      `moose db pull` to generate typed models for the ClickPipes-owned tables.
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Connect Boreal">
+      [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull
+      requests get preview environments and migration plans.
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Migrate one dashboard component">
+      [Migrate one dashboard
+      component](#migrate-a-dashboard-component-to-clickhouse) using
+      ClickHouse-native resources (views, materialized views, serving tables).
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Go to production">
+      [Go to production](#going-to-production) using the preview environment and
+      reviewed migrations.
+    </VerticalProgressSteps.Item>
+  </VerticalProgressSteps>
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-  1. [Add MooseStack to your repo](#add-moosestack-to-your-project) (you’ll
-  define the Debezium ingest pipeline in this project). 2. [Connect
-  Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get
-  preview environments and migration plans. 3. [Prepare your local dev
-  environment](#prepare-your-local-development-environment) to work with
-  ClickHouse. 4. [Set up Debezium CDC](#set-up-change-data-capture-cdc) to
-  stream SQL Server changes into ClickHouse via your MooseStack ingest API. 5.
-  [Migrate one dashboard
-  component](#migrate-a-dashboard-component-to-clickhouse) using
-  ClickHouse-native resources (views, materialized views, serving tables). 6.
-  [Go to production](#going-to-production) using the preview environment and
-  reviewed migrations.
+  <VerticalProgressSteps variant="numbered">
+    <VerticalProgressSteps.Item title="Add MooseStack to your repo">
+      [Add MooseStack to your repo](#add-moosestack-to-your-project) (you’ll
+      define the Debezium ingest pipeline in this project).
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Connect Boreal">
+      [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull
+      requests get preview environments and migration plans.
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Prepare your local dev environment">
+      [Prepare your local dev
+      environment](#prepare-your-local-development-environment) to work with
+      ClickHouse.
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Set up Debezium CDC">
+      [Set up Debezium CDC](#set-up-change-data-capture-cdc) to stream SQL
+      Server changes into ClickHouse via your MooseStack ingest API.
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Migrate one dashboard component">
+      [Migrate one dashboard
+      component](#migrate-a-dashboard-component-to-clickhouse) using
+      ClickHouse-native resources (views, materialized views, serving tables).
+    </VerticalProgressSteps.Item>
+    <VerticalProgressSteps.Item title="Go to production">
+      [Go to production](#going-to-production) using the preview environment and
+      reviewed migrations.
+    </VerticalProgressSteps.Item>
+  </VerticalProgressSteps>
 </ConditionalContent>
 
 <Callout type="info" title="AI-assisted Development">

@@ -8,6 +8,7 @@ import {
 } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { MARKDOWN_CONTENT_CLASS } from "./markdown-content-class";
 
 // ---------------------------------------------------------------------------
 // Discriminant tag & type guard
@@ -104,7 +105,12 @@ function VerticalProgressStepsRoot({
                 <p className="font-medium text-sm leading-relaxed">
                   {item.props.title}
                 </p>
-                <div className="max-w-prose space-y-3 text-sm text-muted-foreground [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-1">
+                <div
+                  className={cn(
+                    "max-w-prose space-y-3 text-sm text-muted-foreground",
+                    MARKDOWN_CONTENT_CLASS,
+                  )}
+                >
                   {item.props.children}
                 </div>
               </div>
