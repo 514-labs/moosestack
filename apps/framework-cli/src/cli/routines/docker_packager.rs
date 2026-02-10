@@ -321,22 +321,8 @@ CMD ["moose", "prod"]
 ///
 /// If monorepo detection fails or path analysis encounters errors, gracefully falls back
 /// to standard single-project Docker build to ensure robustness.
-pub fn create_dockerfile(
-    project: &Project,
-    docker_client: &DockerClient,
-) -> Result<RoutineSuccess, RoutineFailure> {
+pub fn create_dockerfile(project: &Project) -> Result<RoutineSuccess, RoutineFailure> {
     let internal_dir = project.internal_dir_with_routine_failure_err()?;
-
-    ensure_docker_running(docker_client).map_err(|err| {
-        error!("Failed to ensure docker is running: {}", err);
-        RoutineFailure::new(
-            Message::new(
-                "Failed".to_string(),
-                "to ensure docker is running".to_string(),
-            ),
-            err,
-        )
-    })?;
 
     let versions_file_path = internal_dir.join("packager/versions/.gitkeep");
 

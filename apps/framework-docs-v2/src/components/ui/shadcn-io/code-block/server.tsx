@@ -40,8 +40,8 @@ export const CodeBlockContent = async ({
       await codeToHtml(children as string, {
         lang: mappedLanguage,
         themes: themes ?? {
-          light: "vitesse-light",
-          dark: "vitesse-dark",
+          light: "github-light",
+          dark: "github-dark",
         },
         transformers: [
           transformerNotationDiff({
@@ -65,8 +65,8 @@ export const CodeBlockContent = async ({
         return codeToHtml(children as string, {
           lang: "text",
           themes: themes ?? {
-            light: "vitesse-light",
-            dark: "vitesse-dark",
+            light: "github-light",
+            dark: "github-dark",
           },
           transformers: [
             transformerNotationDiff({

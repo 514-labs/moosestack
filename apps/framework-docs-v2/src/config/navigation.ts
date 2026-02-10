@@ -833,6 +833,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Migrations",
         languages: ["typescript", "python"],
       },
+      {
+        type: "page",
+        slug: "moosestack/configuration/docker",
+        title: "Docker",
+        languages: ["typescript", "python"],
+      },
       { type: "separator" },
       { type: "label", title: "Infrastructure" },
       {

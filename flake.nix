@@ -175,6 +175,12 @@
 
               # Set Python path for development
               export PYTHONPATH="$PWD/packages/py-moose-lib:$PYTHONPATH"
+
+              # Initialize husky git hooks if not already set up
+              if [ -d ".git" ] && [ ! -d ".husky/_" ]; then
+                echo "Setting up husky git hooks..."
+                husky install
+              fi
             '';
           };
 
