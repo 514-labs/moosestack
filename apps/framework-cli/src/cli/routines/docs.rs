@@ -26,10 +26,7 @@ use super::{RoutineFailure, RoutineSuccess};
 use crate::cli::display::{Message, MessageType};
 use crate::cli::settings::Settings;
 use crate::framework::languages::SupportedLanguages;
-use crate::utilities::constants::NO_ANSI;
-
-const DOCS_BASE_URL: &str = "https://docs.fiveonefour.com";
-const TOC_PATH: &str = "/llm.md";
+use crate::utilities::constants::{DOCS_BASE_URL, DOCS_TOC_PATH, NO_ANSI};
 
 // ── Language ────────────────────────────────────────────────────────────────
 
@@ -427,7 +424,7 @@ fn display_guide_headings(headings: &[PageHeading], continuation: &str, raw: boo
 
 /// Fetch the raw TOC markdown content from the docs site
 async fn fetch_toc_content() -> Result<String, RoutineFailure> {
-    let url = format!("{}{}", DOCS_BASE_URL, TOC_PATH);
+    let url = format!("{}{}", DOCS_BASE_URL, DOCS_TOC_PATH);
 
     let response = reqwest::get(&url).await.map_err(|e| {
         RoutineFailure::new(
@@ -927,11 +924,11 @@ pub async fn search_toc(query: &str, raw: bool) -> Result<RoutineSuccess, Routin
 ///
 /// Uses platform-specific commands: `open` (macOS), `xdg-open` (Linux), `cmd /c start` (Windows).
 pub fn open_in_browser(slug: &str) -> Result<RoutineSuccess, RoutineFailure> {
-    let stripped = slug.trim_start_matches('/');
+    let stripped = slug.trim_start_matches('/').to_lowercase();
     // Split off #anchor before stripping .md extension
     let (path, anchor) = match stripped.split_once('#') {
         Some((p, a)) => (p.trim_end_matches(".md"), Some(a)),
-        None => (stripped.trim_end_matches(".md"), None),
+        None => (stripped.as_str().trim_end_matches(".md"), None),
     };
     let mut url = Url::parse(DOCS_BASE_URL).map_err(|e| {
         RoutineFailure::error(Message::new(
