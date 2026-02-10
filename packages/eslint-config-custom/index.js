@@ -1,14 +1,26 @@
 // ESLint Flat Config for Next.js 16
 const nextConfig = require("eslint-config-next");
+const turboConfigModule = require("eslint-config-turbo/flat");
 const prettierConfig = require("eslint-config-prettier");
 const eslintJs = require("@eslint/js");
 const tseslint = require("typescript-eslint");
+
+// Extract the actual config from the turbo module
+const turboConfig = turboConfigModule.default || turboConfigModule;
 
 // Validate that nextConfig is a flat config (array)
 if (!Array.isArray(nextConfig)) {
   throw new Error(
     "eslint-config-next must export a flat config (array). Got: " +
       typeof nextConfig,
+  );
+}
+
+// Validate that turboConfig is a flat config (array)
+if (!Array.isArray(turboConfig)) {
+  throw new Error(
+    "eslint-config-turbo/flat must export a flat config (array). Got: " +
+      typeof turboConfig,
   );
 }
 
@@ -19,6 +31,9 @@ module.exports = [
 
   // Spread Next.js config (it's already an array of configs)
   ...nextConfig,
+
+  // Spread Turbo config for Turborepo-specific rules
+  ...turboConfig,
 
   // TypeScript ESLint recommended configs
   ...tseslint.configs.recommended,
