@@ -192,6 +192,8 @@ Steps:
 
 1. For each Checkpoint 1 test case, call the parity function with the same parameters and capture the output:
 
+   Run this command from your MooseStack project root (or whichever directory contains your `tsconfig.json` and `node_modules`). The inline `tsx` script uses a relative import (`./app/queries/<component>-olap-translation`) and `getMooseUtils()` from `@514labs/moose-lib`, so it depends on your project's TypeScript/module resolution context. If your query file lives elsewhere, adjust the import path accordingly so both `runParity` and `getMooseUtils` resolve.
+
 ```bash
 pnpm tsx -e "
   import { runParity } from './app/queries/<component>-olap-translation';
