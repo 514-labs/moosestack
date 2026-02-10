@@ -1,0 +1,143 @@
+<GuideStepper.Checkpoint
+  id="phase-2-serving-table-design"
+  title="Checkpoint 1 — Serving table design"
+>
+Goal: define the serving table's **grain**, **columns**, and **orderByFields**. This table will be populated by the Materialized View and becomes the table your API reads from.
+
+Steps:
+
+1. **Output columns**: take the final `SELECT` list from the Phase 1 parity query function. Those columns become the serving table schema.
+2. **Grain**: decide what uniquely identifies one row (e.g. `merchant_id` + `day`). This is the table's grain.
+3. **orderByFields**: start with the grain columns, then append the most common filter/group-by fields from your access patterns.
+4. Record the grain, columns, and `orderByFields` in `context-map.md`.
+
+Example (adapt to your component — do not copy names literally):
+
+If your parity query selects `merchant_id, merchant_name, day, total_orders, fulfilled_orders, fulfillment_rate`, then the serving table mirrors those columns and the `orderByFields` match the grain:
+
+```ts
+// File: moosestack/app/models/<ServingTable>-mv.ts
+
+import { OlapTable, Int64 } from "@514labs/moose-lib";
+
+interface ServingTableSchema {
+  merchant_id: string;
+  merchant_name: string;
+  day: Date;
+  total_orders: Int64;
+  fulfilled_orders: Int64;
+  fulfillment_rate: number;
+}
+
+export const ServingTable = new OlapTable<ServingTableSchema>("<ServingTable>", {
+  orderByFields: ["merchant_id", "day"],
+});
+```
+
+**Done when:** `context-map.md` documents the grain, column list, and `orderByFields`. You have a clear mapping from every parity query output column to a serving table column.
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint
+  id="phase-2-materialized-view-plan"
+  title="Checkpoint 2 — Materialized View plan"
+>
+Goal: decide how data flows into the serving table before writing code.
+
+Rule of thumb:
+
+- **Single MV** — 1 source table, no CTEs, straightforward aggregation
+- **Staged pipeline** — multiple CTEs, 3+ joined tables, or cascading aggregations (create intermediate staging tables/MVs that feed the final serving table)
+
+Everything not driven by request parameters belongs in write-time MVs. Only truly dynamic filters (from the API request) stay in the final read query.
+
+Steps:
+
+1. Decide single MV vs staged pipeline using the heuristic above. If it is ambiguous, present both options with tradeoffs and ask.
+2. List every source table model that must be imported and included in `selectTables`.
+3. Sketch the `selectStatement` logic: which joins, aggregations, and transformations move from read-time to write-time.
+4. Record the MV plan in `context-map.md`: chosen approach (single or staged), source table list, and a summary of the write-time logic.
+
+**Done when:** `context-map.md` contains the MV plan — approach, source table list, and a description of the write-time logic. You should be able to implement the MV from this plan alone.
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint
+  id="phase-2-implement-serving-table-mv"
+  title="Checkpoint 3 — Implement the serving table + MV"
+>
+Goal: write the MooseStack file that defines the serving table and the MV that populates it.
+
+Steps:
+
+1. Put the serving table and MV definition in the same file: `moosestack/app/models/<ServingTable>-mv.ts`.
+2. Ensure column names and types align exactly between the MV `selectStatement` output and the serving table schema.
+3. If implementing a staged pipeline, ensure intermediate tables/views also align.
+4. Use the `sql` tagged template literal to build the `selectStatement`.
+5. Import every source table from the paths listed in `context-map.md` and include them in `selectTables`.
+6. Record the file path in `context-map.md`.
+
+Example (adapt to your component — do not copy names literally):
+
+```ts
+// File: moosestack/app/models/<ServingTable>-mv.ts
+
+import { Int64, MaterializedView, OlapTable, sql } from "@514labs/moose-lib";
+import { SourceTableA } from "./SourceTableA.model";
+import { SourceTableB } from "./SourceTableB.model";
+
+// ... serving table interface and OlapTable definition from Checkpoint 1 ...
+
+export const ServingMV = new MaterializedView<ServingTableSchema>({
+  selectStatement: sql`
+    SELECT
+      a.id,
+      b.name,
+      toDate(a.created_at) AS day,
+      count() AS total,
+      sumIf(1, a.status = 'complete') AS completed
+    FROM ${SourceTableA} a
+    JOIN ${SourceTableB} b ON b.id = a.ref_id
+    GROUP BY a.id, b.name, day
+  `,
+  targetTable: ServingTable,
+  materializedViewName: "<ServingTable>MV",
+  selectTables: [SourceTableA, SourceTableB],
+});
+```
+
+**Done when:** the file compiles and is saved. The file path is recorded in `context-map.md`.
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint
+  id="phase-2-verification"
+  title="Checkpoint 4 — Verification"
+>
+Goal: confirm the serving table and MV are created and populated correctly.
+
+Steps:
+
+1. Save your files and watch the `moose dev` logs for successful creation:
+
+```
+[INFO] Created table: <ServingTable>
+[INFO] Created materialized view: <ServingTable>MV
+```
+
+If you see errors, check:
+- Column names match between the `selectStatement` and the serving table schema
+- Column types from `selectTables` align with the casts/expressions in the `selectStatement`
+- Every source table in `selectTables` exists and is registered
+
+2. Verify the serving table is populated. The `moose dev` server automatically runs the `selectStatement` when the MV is created — do not backfill manually.
+
+```bash
+# Row count
+moose query -q "SELECT count() FROM <ServingTable> FINAL"
+
+# Spot-check a slice that matches a Phase 1 test case
+moose query -q "SELECT * FROM <ServingTable> FINAL WHERE <filter_from_test_case> LIMIT 5"
+```
+
+3. Confirm the serving table has data for every Phase 1 test case time window. If rows are missing, check the MV logic and source table data.
+
+**Done when:** `moose dev` logs show no errors, the serving table has rows, and spot-checks against Phase 1 test case filters return data. Proceed to Phase 3.
+</GuideStepper.Checkpoint>
