@@ -117,10 +117,10 @@ All tools use `currentDatabase()` to automatically query the active database con
 
 ## Using with Claude Code
 
-You can configure Claude Code to connect to your MCP server by adding it to your Claude Code configuration:
+You can also configure any client to connect to this custom MCP server. Here's the command for adding it to your Claude Code configuration:
 
 ```bash
-claude mcp add --transport http clickhouse http://localhost:4000/tools
+claude mcp add --transport http my-clickhouse-mcp http://localhost:4000/tools --header "Authorization: Bearer <your_bearer_token>" 
 ```
 
 Once connected, you can ask Claude Code questions like:
