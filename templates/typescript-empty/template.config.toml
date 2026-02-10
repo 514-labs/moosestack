@@ -1,23 +1,30 @@
 language = "typescript" # Must be typescript or python
-description = "Empty typescript project."
+description = "Blank TypeScript MooseStack project."
 post_install_print = """
 Deploy on Boreal
 
-The easiest way to deploy your MooseStack Applications is to use Boreal
-from the creators of MooseStack.
+Boreal is the fastest way to deploy your MooseStack app, built by the MooseStack team.
 
 https://boreal.cloud
 
 ---------------------------------------------------------
 
+Run this next:
+
 📂 Go to your project directory:
     $ cd {project_dir}
 
-📦 Install Dependencies:
+📦 Install dependencies:
     $ npm install
 
-🛠️ Start dev server:
+🛠️ Start the dev server:
     $ moose dev
 """
 default_sloan_telemetry="standard"
 visible=true
+
+[boreal]
+enabled = true
+display_name = "Blank TypeScript Starter"
+short_description = "Start a blank TypeScript MooseStack project."
+featured = true
