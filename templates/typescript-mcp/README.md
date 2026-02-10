@@ -122,7 +122,7 @@ You can configure MCP clients to connect to this custom MCP server:
 ### Set up MCP with Claude Code using the CLI
 
 ```bash
-claude mcp add --transport http my-clickhouse-mcp http://localhost:4000/tools --header "Authorization: Bearer <your_bearer_token>"
+claude mcp add --transport http moose-tools http://localhost:4000/tools --header "Authorization: Bearer <your_bearer_token>"
 ```
 
 ### Set up MCP with other clients using mcp.json
