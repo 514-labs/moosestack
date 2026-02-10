@@ -1,22 +1,29 @@
 language = "typescript" # Must be typescript or python
-description = "TypeScript MooseStack project with embedded Fastify for high-performance analytical APIs with WebApp integration."
+description = "Build a ClickHouse-backed analytical API with Fastify and TypeScript."
 post_install_print = """
 Deploy on Boreal
 
-The easiest way to deploy your MooseStack Applications is to use Boreal
-from the creators of MooseStack.
+Boreal is the fastest way to deploy your MooseStack app, built by the MooseStack team.
 
 https://boreal.cloud
 
 ---------------------------------------------------------
 
+Run this next:
+
 📂 Go to your project directory:
     $ cd {project_dir}
 
-📦 Install Dependencies:
+📦 Install dependencies:
     $ pnpm install
 
-🛠️ Start dev server:
+🛠️ Start the dev server:
     $ moose dev
 """
 default_sloan_telemetry = "standard"
+
+[boreal]
+enabled = true
+display_name = "Fastify API Starter"
+short_description = "Expose ClickHouse analytics to apps through a high-performance Fastify + TypeScript API."
+featured = false
