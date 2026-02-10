@@ -3,7 +3,7 @@
  * Entry point for all DMV2 infrastructure components
  *
  * Migration completed from DMV1 to DMV2 following the official Moose documentation:
- * https://docs.fiveonefour.com/moose
+ * https://docs.fiveonefour.com/moosestack
  */
 
 // Data Models and Infrastructure Pipelines
@@ -43,6 +43,6 @@ import "./functions/UserActivity__ParsedActivity";
  * - ParsedActivityPipeline: Processed user activity (derived via streaming function)
  *
  * References:
- * - Moose DMV2 Documentation: https://docs.fiveonefour.com/moose
- * - TypeScript API Reference: https://docs.fiveonefour.com/moose/reference/typescript-api-reference
+ * - Moose DMV2 Documentation: https://docs.fiveonefour.com/moosestack
+ * - TypeScript API Reference: https://docs.fiveonefour.com/moosestack/reference/typescript-api-reference
  */

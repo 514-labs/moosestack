@@ -10,20 +10,22 @@ import {
 async function main() {
   console.log("Testing code snippets...\n");
 
-  const tsContentDir = path.join(__dirname, "../content/typescript");
-  const pyContentDir = path.join(__dirname, "../content/python");
+  const contentDir = path.join(__dirname, "../content");
 
-  // Extract snippets from both languages
-  console.log("Extracting TypeScript snippets...");
-  const tsSnippets = extractAllSnippets(tsContentDir);
+  // Extract snippets from content
+  console.log("Extracting snippets...");
+  const allSnippets = extractAllSnippets(contentDir);
+
+  const tsSnippets = allSnippets.filter(
+    (s) => s.language === "typescript" || s.language === "javascript",
+  );
+  const pySnippets = allSnippets.filter((s) => s.language === "python");
+
   console.log(`Found ${tsSnippets.length} TypeScript snippets\n`);
 
-  console.log("Extracting Python snippets...");
-  const pySnippets = extractAllSnippets(pyContentDir);
   console.log(`Found ${pySnippets.length} Python snippets\n`);
 
   // Test all snippets
-  const allSnippets = [...tsSnippets, ...pySnippets];
   console.log(`Testing ${allSnippets.length} total snippets...\n`);
 
   const results = await testSnippets(allSnippets);

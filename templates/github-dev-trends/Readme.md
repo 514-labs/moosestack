@@ -10,7 +10,7 @@ This template provides a real-time dashboard tracking trending repositories and 
 
 [![NPM Version](https://img.shields.io/npm/v/%40514labs%2Fmoose-cli?logo=npm)](https://www.npmjs.com/package/@514labs/moose-cli?activeTab=readme)
 [![Moose Community](https://img.shields.io/badge/slack-moose_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
-[![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
+[![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moosestack/getting-started/quickstart)
 [![MIT license](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 ## Getting Started
@@ -138,7 +138,7 @@ Once both backend and frontend are deployed and configured correctly, your live 
 
 The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose.
 
-Check out our [Moose deployment documentation](https://docs.fiveonefour.com/moose/deploying) for more details.
+Check out our [Moose deployment documentation](https://docs.fiveonefour.com/moosestack/deploying) for more details.
 
 ## Community
 

@@ -1,48 +1,54 @@
-# Template: Python
+# MooseStack Python Template
 
-This is a Python-based Moose template that provides a foundation for building data-intensive applications using Python.
+This is a MooseStack project created from the Python template.
 
-[![PyPI Version](https://img.shields.io/pypi/v/moose-cli?logo=python)](https://pypi.org/project/moose-cli/)
-[![Moose Community](https://img.shields.io/badge/slack-moose_community-purple.svg?logo=slack)](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg)
-[![Docs](https://img.shields.io/badge/quick_start-docs-blue.svg)](https://docs.fiveonefour.com/moose/getting-started/quickstart)
-[![MIT license](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+## Prerequisites
 
-## Getting Started
+- Python 3.12+
+- Docker Desktop
 
-### Prerequisites
+## Run locally
 
-* [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-* [Python](https://www.python.org/downloads/) (version 3.8+)
-* [An Anthropic API Key](https://docs.anthropic.com/en/api/getting-started)
-* [Cursor](https://www.cursor.com/) or [Claude Desktop](https://claude.ai/download)
+1. Install the Moose CLI:
 
-### Installation
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
 
-1. Install Moose CLI: `pip install moose-cli`
-2. Create project: `moose init <project-name> python`
-3. Install dependencies: `cd <project-name> && pip install -r requirements.txt`
-4. Run Moose: `moose dev`
+2. Create a virtualenv and install dependencies:
 
-You are ready to go! You can start editing the app by modifying primitives in the `app` subdirectory.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-## Learn More
+3. Start MooseStack:
 
-To learn more about Moose, take a look at the following resources:
+```bash
+moose dev
+```
 
-- [Moose Documentation](https://docs.fiveonefour.com/moose) - learn about Moose.
-- [Sloan Documentation](https://docs.fiveonefour.com/sloan) - learn about Sloan, the MCP interface for data engineering.
+## Verify
 
-## Community
+```bash
+curl http://localhost:4000/health
+```
 
-You can join the Moose community [on Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg). Check out the [MooseStack repo on GitHub](https://github.com/514-labs/moosestack).
+Logs are written to `~/.moose/*-cli.log`.
 
-## Deploy on Boreal
+## Where to start
 
-The easiest way to deploy your MooseStack Applications is to use [Boreal](https://www.fiveonefour.com/boreal) from 514 Labs, the creators of Moose.
+- Data models: `app/ingest/models.py`
+- Ingestion transforms: `app/ingest/transforms.py`
+- APIs: `app/apis/*`
+- Views: `app/views/*`
+- Workflows: `app/workflows/*`
 
-[Sign up](https://www.boreal.cloud/sign-up).
+## Docs
 
-## License
-
-This template is MIT licensed.
-
+- Quickstart: https://docs.fiveonefour.com/moosestack/getting-started/quickstart
+- Data modeling: https://docs.fiveonefour.com/moosestack/data-modeling
+- Ingest API: https://docs.fiveonefour.com/moosestack/apis/ingest-api
+- Analytics API: https://docs.fiveonefour.com/moosestack/apis/analytics-api
+- Workflows: https://docs.fiveonefour.com/moosestack/workflows
