@@ -43,7 +43,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "autoprefixer": "^10.0.1",
-    "eslint": "^8",
+    "eslint": "catalog:",
     "eslint-config-next": "catalog:",
     "postcss": "^8",
     "typescript": "^5"

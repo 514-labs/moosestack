@@ -17,6 +17,7 @@ catalog:
   "@types/node": "^20"
   axios: "1.7.9"
   chai: "4.5.0"
+  eslint: "9.39.2"
   eslint-config-next: "16.1.6"
   github-slugger: "2.0.0"
   js-yaml: "4.1.1"
