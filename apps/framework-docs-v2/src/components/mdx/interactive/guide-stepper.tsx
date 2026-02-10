@@ -457,17 +457,22 @@ function GuideStepperStepComponent({
 
       <AccordionContent className="pt-1 pb-4">
         {hasStepContent && (
-          <Card className="border-border/60 bg-muted/20">
-            <CardContent className="space-y-4 px-4 py-4">
+          <Card className="overflow-hidden border-border/60 bg-muted/20">
+            <CardContent className="divide-y divide-border/60 p-0">
               {checkpoints.length > 0 && (
-                <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Step Actions
-                  </p>
+                <div className="flex items-center justify-between gap-3 bg-background/50 px-4 py-3">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Step Actions
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Copy all checkpoint prompts for this step.
+                    </p>
+                  </div>
                   <Button
                     size="sm"
                     variant="secondary"
-                    className="h-7 gap-1.5 px-2 text-xs"
+                    className="h-8 gap-1.5 px-2.5 text-xs transition-colors hover:bg-secondary/80 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
                     onClick={handleCopyPrompt}
                     disabled={!hasPromptToCopy}
                   >
@@ -482,11 +487,11 @@ function GuideStepperStepComponent({
               )}
 
               {checkpointTitles.length > 0 && (
-                <div className="rounded-md border border-border/60 bg-muted/40 px-4 py-3">
+                <div className="px-4 py-4">
                   {atAGlanceBlocks.length > 0 ?
                     <div className="space-y-3">{atAGlanceBlocks}</div>
                   : <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                      <p className="mb-2 text-sm font-semibold leading-relaxed text-foreground/90">
                         Checkpoints At A Glance
                       </p>
                       <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
@@ -500,14 +505,16 @@ function GuideStepperStepComponent({
               )}
 
               {bodyChildren.length > 0 && (
-                <div className={cn("space-y-3", MARKDOWN_CONTENT_CLASS)}>
+                <div
+                  className={cn("space-y-3 px-4 py-4", MARKDOWN_CONTENT_CLASS)}
+                >
                   {bodyChildren}
                 </div>
               )}
 
               {checkpoints.length > 0 && (
-                <div className="rounded-md border border-border/60 bg-card px-4 py-3">
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <div className="bg-background/80 px-4 py-4">
+                  <p className="mb-3 text-sm font-semibold leading-relaxed text-foreground/90">
                     Checkpoints
                   </p>
                   <VerticalProgressSteps variant={checkpointVariant}>

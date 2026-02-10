@@ -75,17 +75,17 @@ function VerticalProgressStepsRoot({
 
   return (
     <div className={cn("w-full", className)}>
-      <ListTag className="list-none space-y-4 p-0">
+      <ListTag className="list-none space-y-5 p-0">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;
           const itemKey = item.props.id ?? `${index}-${item.props.title}`;
 
           return (
-            <li key={itemKey} id={item.props.id} className="relative pl-10">
+            <li key={itemKey} id={item.props.id} className="relative pl-11">
               {!isLast && (
                 <span
                   aria-hidden
-                  className="absolute left-[13px] top-7 h-[calc(100%-0.5rem)] w-px bg-border"
+                  className="absolute left-[15px] top-7 h-[calc(100%-0.25rem)] w-px bg-border"
                 />
               )}
               <span className="absolute left-0 top-0 inline-flex h-7 w-7 items-center justify-center">
@@ -100,11 +100,11 @@ function VerticalProgressStepsRoot({
                 }
               </span>
 
-              <div className="space-y-2">
+              <div className="max-w-prose space-y-2">
                 <p className="font-medium text-sm leading-relaxed">
                   {item.props.title}
                 </p>
-                <div className="space-y-3 text-sm [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-1">
+                <div className="max-w-prose space-y-3 text-sm text-muted-foreground [&_p]:leading-relaxed [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-1">
                   {item.props.children}
                 </div>
               </div>

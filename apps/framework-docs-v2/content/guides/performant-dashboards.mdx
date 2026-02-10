@@ -346,14 +346,10 @@ Pick a specific dashboard component or report to migrate. You'll work through on
     title="Performance optimization (Materialized Views)"
     summary="Move expensive read-time logic into serving tables and materialized views."
   >
-    <GuideStepper.AtAGlance title="Attach context before prompting">
-      Attach the following files as context alongside the prompt:
-
+    <GuideStepper.AtAGlance title="Attach context files to your prompt">
       - `moosestack/context/dashboard-migration/<component>/` — the context directory (context map, test cases from Phase 1)
       - The unoptimized parity query from Phase 1 (e.g. `moosestack/app/queries/<component>-olap-translation.ts`)
       - The MooseStack source table model files referenced in the parity query (e.g. `moosestack/app/models/*.ts`)
-
-      If anything isn't captured in the context directory yet (access-pattern notes, source table model paths), attach those files too.
     </GuideStepper.AtAGlance>
 
     :::include /shared/guides/performant-dashboards/phase-2-checkpoints.mdx
@@ -366,9 +362,7 @@ Pick a specific dashboard component or report to migrate. You'll work through on
     title="Serve the materialized view to your frontend"
     summary="Expose the serving table via Query Layer and preserve the existing API contract."
   >
-    <GuideStepper.AtAGlance title="Attach context before prompting">
-      Attach the following files as context alongside the prompt:
-
+    <GuideStepper.AtAGlance title="Attach context files to your prompt">
       - `moosestack/context/dashboard-migration/<component>/` — the context directory (test cases, context map)
       - `moosestack/app/models/<ServingTable>-mv.ts` — the serving table and MV file from Phase 2
       - Your existing backend endpoint handler that currently calls the OLTP or parity query (e.g. Express route, Fastify handler)

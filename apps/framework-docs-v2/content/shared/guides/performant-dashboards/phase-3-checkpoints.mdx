@@ -11,7 +11,7 @@ pnpm dlx tiged 514-labs/query-layer/src ./query-layer
 
 <GuideStepper.Checkpoint
   id="phase-3-define-implement-query-model"
-  title="Checkpoint 1 — Define and implement the QueryModel"
+  title="Define and implement the QueryModel"
 >
 Goal: map the existing endpoint contract to a QueryModel and implement it.
 
@@ -64,7 +64,7 @@ export const orderFulfillmentModel = defineQueryModel({
 
 <GuideStepper.Checkpoint
   id="phase-3-wire-handler"
-  title="Checkpoint 2 — Wire the handler"
+  title="Wire the handler"
 >
 Goal: rewire your existing query handler function to call the QueryModel and map results back to the exact response shape.
 
@@ -128,7 +128,7 @@ app.post("/api/order-fulfillment", async (req, res) => {
 
 <GuideStepper.Checkpoint
   id="phase-3-verification"
-  title="Checkpoint 3 — Verification"
+  title="Verification"
 >
 Goal: verify the endpoint response matches the saved Phase 1 fixtures.
 
