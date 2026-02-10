@@ -56,7 +56,7 @@
     "html-to-text": "^9.0.5",
     "mermaid": "catalog:",
     "motion": "^12.23.12",
-    "next": "^16.0.7",
+    "next": "16.1.6",
     "next-mdx-remote": "^5.0.0",
     "next-sitemap": "^4.2.3",
     "next-themes": "^0.2.1",
