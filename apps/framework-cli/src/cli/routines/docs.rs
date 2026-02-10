@@ -711,10 +711,17 @@ pub async fn show_toc(
         }
     }
 
-    Ok(RoutineSuccess::success(Message::new(
-        "Docs".to_string(),
-        "Documentation index displayed".to_string(),
-    )))
+    if raw {
+        Ok(RoutineSuccess::success(Message::new(
+            String::new(),
+            String::new(),
+        )))
+    } else {
+        Ok(RoutineSuccess::success(Message::new(
+            "Docs".to_string(),
+            "Documentation index displayed".to_string(),
+        )))
+    }
 }
 
 /// Fetch and display a single documentation page by slug, optionally extracting a section.
@@ -882,10 +889,17 @@ pub async fn search_toc(query: &str, raw: bool) -> Result<RoutineSuccess, Routin
         print_dim("  Tip: moose docs <slug> to view a page");
     }
 
-    Ok(RoutineSuccess::success(Message::new(
-        "Docs".to_string(),
-        format!("Search completed: {} result(s)", match_count),
-    )))
+    if raw {
+        Ok(RoutineSuccess::success(Message::new(
+            String::new(),
+            String::new(),
+        )))
+    } else {
+        Ok(RoutineSuccess::success(Message::new(
+            "Docs".to_string(),
+            format!("Search completed: {} result(s)", match_count),
+        )))
+    }
 }
 
 // ── Browser ─────────────────────────────────────────────────────────────────
@@ -1400,10 +1414,17 @@ pub async fn browse_docs(
             match run_picker(&items, "Documentation")? {
                 PickerResult::Selected(idx) => section_idx = Some(idx),
                 PickerResult::Back | PickerResult::Cancelled => {
-                    return Ok(RoutineSuccess::success(Message::new(
-                        "Docs".to_string(),
-                        "Browse cancelled".to_string(),
-                    )));
+                    return if raw {
+                        Ok(RoutineSuccess::success(Message::new(
+                            String::new(),
+                            String::new(),
+                        )))
+                    } else {
+                        Ok(RoutineSuccess::success(Message::new(
+                            "Docs".to_string(),
+                            "Browse cancelled".to_string(),
+                        )))
+                    };
                 }
             }
         } else if group_idx.is_none() {
@@ -1523,10 +1544,17 @@ async fn browse_guide_page(
     if headings.is_empty() || !std::io::stdout().is_terminal() {
         let cleaned = strip_images(&content);
         println!("{}", cleaned);
-        return Ok(RoutineSuccess::success(Message::new(
-            "Docs".to_string(),
-            format!("Fetched {}", slug_display),
-        )));
+        return if raw {
+            Ok(RoutineSuccess::success(Message::new(
+                String::new(),
+                String::new(),
+            )))
+        } else {
+            Ok(RoutineSuccess::success(Message::new(
+                "Docs".to_string(),
+                format!("Fetched {}", slug_display),
+            )))
+        };
     }
 
     let items = guide_section_items(&headings);
@@ -1538,10 +1566,17 @@ async fn browse_guide_page(
             } else {
                 let cleaned = strip_images(&content);
                 println!("{}", cleaned);
-                Ok(RoutineSuccess::success(Message::new(
-                    "Docs".to_string(),
-                    format!("Fetched {}", slug_display),
-                )))
+                if raw {
+                    Ok(RoutineSuccess::success(Message::new(
+                        String::new(),
+                        String::new(),
+                    )))
+                } else {
+                    Ok(RoutineSuccess::success(Message::new(
+                        "Docs".to_string(),
+                        format!("Fetched {}", slug_display),
+                    )))
+                }
             }
         }
         PickerResult::Selected(idx) => {
@@ -1555,18 +1590,32 @@ async fn browse_guide_page(
                 match extract_section(&cleaned, &heading.anchor) {
                     Some(section_content) => {
                         println!("{}", section_content);
-                        Ok(RoutineSuccess::success(Message::new(
-                            "Docs".to_string(),
-                            format!("Fetched {}#{}", slug_display, heading.anchor),
-                        )))
+                        if raw {
+                            Ok(RoutineSuccess::success(Message::new(
+                                String::new(),
+                                String::new(),
+                            )))
+                        } else {
+                            Ok(RoutineSuccess::success(Message::new(
+                                "Docs".to_string(),
+                                format!("Fetched {}#{}", slug_display, heading.anchor),
+                            )))
+                        }
                     }
                     None => {
                         // Fallback: print full page
                         println!("{}", cleaned);
-                        Ok(RoutineSuccess::success(Message::new(
-                            "Docs".to_string(),
-                            format!("Fetched {}", slug_display),
-                        )))
+                        if raw {
+                            Ok(RoutineSuccess::success(Message::new(
+                                String::new(),
+                                String::new(),
+                            )))
+                        } else {
+                            Ok(RoutineSuccess::success(Message::new(
+                                "Docs".to_string(),
+                                format!("Fetched {}", slug_display),
+                            )))
+                        }
                     }
                 }
             }
@@ -1576,11 +1625,16 @@ async fn browse_guide_page(
             if raw {
                 let cleaned = strip_images(&content);
                 println!("{}", cleaned);
+                Ok(RoutineSuccess::success(Message::new(
+                    String::new(),
+                    String::new(),
+                )))
+            } else {
+                Ok(RoutineSuccess::success(Message::new(
+                    "Docs".to_string(),
+                    "Browse cancelled".to_string(),
+                )))
             }
-            Ok(RoutineSuccess::success(Message::new(
-                "Docs".to_string(),
-                "Browse cancelled".to_string(),
-            )))
         }
     }
 }
