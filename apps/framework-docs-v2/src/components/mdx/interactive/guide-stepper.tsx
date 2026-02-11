@@ -29,8 +29,8 @@ import {
   GUIDE_STEPPER_AT_A_GLANCE_MARKER,
   GUIDE_STEPPER_CHECKPOINT_MARKER,
   GUIDE_STEPPER_STEP_MARKER,
+  GUIDE_STEPPER_PROMPT_MARKER,
   GUIDE_TYPE_PROP,
-  type GuideStepperMarker,
 } from "@/lib/remark-guide-stepper-markers";
 import { cn } from "@/lib/utils";
 import { MARKDOWN_CONTENT_CLASS } from "./markdown-content-class";
@@ -236,7 +236,7 @@ export interface GuideStepperStepProps {
   title: string;
   summary?: string;
   checkpointVariant?: "numbered" | "bulleted";
-  __guideType?: GuideStepperMarker;
+  __guideType?: typeof GUIDE_STEPPER_STEP_MARKER;
   children: ReactNode;
 }
 
@@ -244,17 +244,20 @@ export interface GuideStepperCheckpointProps {
   id: string;
   title: string;
   rawContent?: string;
-  __guideType?: GuideStepperMarker;
+  __guideType?: typeof GUIDE_STEPPER_CHECKPOINT_MARKER;
   children: ReactNode;
 }
 
 export interface GuideStepperPromptProps {
   rawContent?: string;
-  __guideType?: GuideStepperMarker;
+  __guideType?: typeof GUIDE_STEPPER_PROMPT_MARKER;
   children: ReactNode;
 }
-export interface GuideStepperAtAGlanceProps extends GuideStepperPromptProps {
+export interface GuideStepperAtAGlanceProps {
+  rawContent?: string;
+  children: ReactNode;
   title?: string;
+  __guideType?: typeof GUIDE_STEPPER_AT_A_GLANCE_MARKER;
 }
 
 // ---------------------------------------------------------------------------

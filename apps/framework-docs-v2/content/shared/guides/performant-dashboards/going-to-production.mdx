@@ -163,7 +163,7 @@ If the list of tables does not match what you reviewed in the migration plan, st
 Merge your PR and click the Boreal bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
-<GuideStepper.Step id="going-to-production-step-6" number={6} title="Backfill new materialized views">
+<GuideStepper.Step id="going-to-production-step-5" number={5} title="Backfill new materialized views">
 
 <GuideStepper.AtAGlance title="Only backfill new materialized views">
 If your migration introduces new Materialized Views, they populate only for new incoming data. Your dashboards will show incomplete or empty results for historical time ranges until you backfill. To make historical data available immediately, explicitly backfill the MVs from existing ClickHouse tables.
@@ -173,7 +173,7 @@ This step uses the same HTTPS + `curl` workflow as before, but targets the produ
 
 <GuideStepper.Checkpoint title="Identify which materialized views need a backfill">
 
-Open the migration `plan.yml` you just shipped and find the new materialized views you created (look for the `CREATE MATERIALIZED VIEW` statements in `SqlResource`).
+Open the migration `plan.yaml` you just shipped and find the new materialized views you created (look for the `CREATE MATERIALIZED VIEW` statements in `SqlResource`).
 
 For each one, note two things:
 

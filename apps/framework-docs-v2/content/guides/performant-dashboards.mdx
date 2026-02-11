@@ -212,6 +212,15 @@ By the end of this guide you’ll have:
       defaultValue="macos"
       persist
     />
+    <SelectField
+      id="Language"
+      label="Language"
+      options={[
+        { value: "typescript", label: "TypeScript" },
+      ]}
+      defaultValue="typescript"
+      persist
+    />
   </CustomizeGrid>
 </CustomizePanel>
 
@@ -243,11 +252,8 @@ You'll work through:
   workflow even faster.
 </Callout>
 
-**Language:** This guide is written for TypeScript developers. Python developers can follow along—the concepts translate directly, and MooseStack supports both languages. The main differences are syntax and framework-specific patterns.
-
 <CommunityCallout title="Want Python Examples?">
-  If you'd like to see Python-specific examples, let us know in our Slack
-  community and we'll prioritize creating them.
+This guide is written for TypeScript developers, but Python developers can follow along. The concepts translate directly, and MooseStack supports both languages. If you'd like Python-specific examples, let us know in our Slack community and we'll prioritize creating them.
 </CommunityCallout>
 
 <ConditionalContent whenId="source-database" whenValue="postgres">
@@ -305,7 +311,7 @@ This guide follows a three-phase migration pattern:
 Copy the starter kit to create a dedicated workspace to compile all the context your copilot needs to migrate each component. It includes a template for a `context-map.md` file (a worksheet that tracks the location of relevant files in your codebase for each component) and a full example to help your copilot complete each phase of the migration.
 
 ```bash
-pnpm dlx tiged 514-labs/moose/examples/dashboard-migration moosestack/context
+pnpm dlx tiged 514-labs/moosestack/examples/dashboard-migration moosestack/context
 ```
 
 As you complete each phase of this guide, you will attach the required input files in your initial prompt to your copilot. From there, the copilot will update the workspace files as it completes the steps in this guide. 
