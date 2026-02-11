@@ -4,11 +4,12 @@ import { GuideStepper } from "@/components/mdx/interactive/guide-stepper";
 
 In this section, you'll apply your local changes to production. Complete these steps in order:
 
-1. Generate and review the migration plan
-2. Push your branch and open a pull request
-3. Validate the preview environment
-4. Merge the PR to deploy to production
-5. Backfill new materialized views (if applicable)
+1. Generate a migration plan
+2. Review the migration plan
+3. Push your branch and open a pull request
+4. Validate the preview environment
+5. Merge the PR to deploy to production
+6. Backfill new materialized views (if applicable)
 
 <Callout type="info" title="Confirm Boreal project access">
   To deploy to production (and to create branch preview environments), you need
@@ -159,11 +160,13 @@ Confirm that the list of tables matches what you reviewed in the migration plan:
 If the list of tables does not match what you reviewed in the migration plan, stop here and fix the issue before proceeding. Do not merge until the preview environment reflects exactly the database resources and behavior you expect to see in production. 
 </GuideStepper.Checkpoint>
 
-<GuideStepper.Checkpoint title="Merge the PR to deploy to production">
+</GuideStepper.Step>
+<GuideStepper.Step id="going-to-production-step-5" number={5} title="Merge the PR to deploy to production" summary="Deploy your reviewed changes to production from the pull request.">
+<GuideStepper.Checkpoint title="Merge the PR and monitor deployment status">
 Merge your PR and click the Boreal bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
-<GuideStepper.Step id="going-to-production-step-5" number={5} title="Backfill new materialized views">
+<GuideStepper.Step id="going-to-production-step-6" number={6} title="Backfill new materialized views">
 
 <GuideStepper.AtAGlance title="Only backfill new materialized views">
 If your migration introduces new Materialized Views, they populate only for new incoming data. Your dashboards will show incomplete or empty results for historical time ranges until you backfill. To make historical data available immediately, explicitly backfill the MVs from existing ClickHouse tables.
@@ -207,7 +210,7 @@ After each backfill, sanity check that the backing table now has rows:
 
 ```bash
 curl -sS \
-  $BOREAL_CONNECTION_STRING \
+  "$BOREAL_CONNECTION_STRING" \
   --data-binary 'SELECT count() FROM <mv_backing_table>'
 ```
 
