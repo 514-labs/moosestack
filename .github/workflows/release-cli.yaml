@@ -295,8 +295,6 @@ jobs:
       RUSTC_WRAPPER: "sccache"
       POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
       TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
-      # Use system OpenSSL instead of building from source (fixes binutils >= 2.41 issue)
-      OPENSSL_NO_VENDOR: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -411,7 +409,6 @@ jobs:
             if [ -f /.dockerenv ]; then
               echo "Running in Docker container, installing required dependencies..."
               PROTOC_VERSION=24.4
-              PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-x86_64.zip
               export POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
               export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
               echo "MOOSE_CLI_VERSION set to: $MOOSE_CLI_VERSION"
@@ -420,10 +417,32 @@ jobs:
               # This fixes build failures with binutils >= 2.41
               export OPENSSL_NO_VENDOR=1
 
-              # Debian-based distribution
-              # Install libssl-dev and pkg-config for system OpenSSL
-              apt-get update
-              apt install -y curl unzip libssl-dev pkg-config
+              # Detect architecture for protoc download
+              ARCH=$(uname -m)
+              if [ "$ARCH" = "x86_64" ]; then
+                PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-x86_64.zip
+              elif [ "$ARCH" = "aarch64" ]; then
+                PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-aarch_64.zip
+              else
+                echo "Unsupported architecture: $ARCH"
+                exit 1
+              fi
+
+              # Install dependencies based on available package manager
+              if command -v apt-get &> /dev/null; then
+                # Debian-based (e.g., rust-cross manylinux container)
+                apt-get update
+                apt-get install -y curl unzip libssl-dev pkg-config
+              elif command -v dnf &> /dev/null; then
+                # RHEL/AlmaLinux-based (e.g., default manylinux_2_28)
+                dnf install -y curl unzip openssl-devel pkgconfig
+              elif command -v yum &> /dev/null; then
+                # Older CentOS-based
+                yum install -y curl unzip openssl-devel pkgconfig
+              else
+                echo "No supported package manager found"
+                exit 1
+              fi
 
               mkdir -p /usr/local/bin
               mkdir -p /usr/local/include
