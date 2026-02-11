@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use futures::stream::{self, StreamExt};
 use reqwest::Url;
@@ -422,11 +423,25 @@ fn display_guide_headings(headings: &[PageHeading], continuation: &str, raw: boo
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 
+/// Create an HTTP client with a reasonable timeout
+fn create_http_client() -> Result<reqwest::Client, RoutineFailure> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Docs".to_string(),
+                format!("Failed to create HTTP client: {}", e),
+            ))
+        })
+}
+
 /// Fetch the raw TOC markdown content from the docs site
 async fn fetch_toc_content() -> Result<String, RoutineFailure> {
     let url = format!("{}{}", DOCS_BASE_URL, DOCS_TOC_PATH);
+    let client = create_http_client()?;
 
-    let response = reqwest::get(&url).await.map_err(|e| {
+    let response = client.get(&url).send().await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Docs".to_string(), format!("Failed to fetch TOC: {}", e)),
             e,
@@ -610,7 +625,8 @@ async fn fetch_page_content(slug: &str, lang: DocsLanguage) -> Result<String, Ro
     url.query_pairs_mut()
         .append_pair("lang", lang.query_param());
 
-    let response = reqwest::get(url).await.map_err(|e| {
+    let client = create_http_client()?;
+    let response = client.get(url).send().await.map_err(|e| {
         RoutineFailure::new(
             Message::new(
                 "Docs".to_string(),
@@ -1284,7 +1300,7 @@ fn run_picker(items: &[PickerItem], header: &str) -> Result<PickerResult, Routin
                 if prev_lines > 1 {
                     execute!(stdout, MoveUp(prev_lines as u16 - 1)).ok();
                 }
-                execute!(stdout, MoveToColumn(0)).ok();
+                execute!(stdout, MoveToColumn(0), Clear(ClearType::FromCursorDown)).ok();
 
                 let filtered = filter_items(items, &query);
                 selected = selected.min(filtered.len().saturating_sub(1));
@@ -1575,18 +1591,22 @@ async fn browse_guide_page(
     let headings = parse_page_headings(&content);
 
     if headings.is_empty() || !std::io::stdout().is_terminal() {
-        let cleaned = strip_images(&content);
-        println!("{}", cleaned);
-        return if raw {
-            Ok(RoutineSuccess::success(Message::new(
-                String::new(),
-                String::new(),
-            )))
+        return if web {
+            open_in_browser(slug)
         } else {
-            Ok(RoutineSuccess::success(Message::new(
-                "Docs".to_string(),
-                format!("Fetched {}", slug_display),
-            )))
+            let cleaned = strip_images(&content);
+            println!("{}", cleaned);
+            if raw {
+                Ok(RoutineSuccess::success(Message::new(
+                    String::new(),
+                    String::new(),
+                )))
+            } else {
+                Ok(RoutineSuccess::success(Message::new(
+                    "Docs".to_string(),
+                    format!("Fetched {}", slug_display),
+                )))
+            }
         };
     }
 
