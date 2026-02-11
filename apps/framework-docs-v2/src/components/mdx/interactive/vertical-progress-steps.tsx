@@ -7,6 +7,10 @@ import {
   type ReactNode,
 } from "react";
 import { Badge } from "@/components/ui/badge";
+import {
+  GUIDE_TYPE_PROP,
+  VERTICAL_PROGRESS_STEP_ITEM_MARKER,
+} from "@/lib/remark-guide-stepper-markers";
 import { cn } from "@/lib/utils";
 import { MARKDOWN_CONTENT_CLASS } from "./markdown-content-class";
 
@@ -26,6 +30,11 @@ function isVerticalProgressStepItemElement(
   node: ReactNode,
 ): node is ReactElement<VerticalProgressStepItemProps> {
   if (!isValidElement(node)) return false;
+  // Prefer compile-time marker injected by remark plugin (survives MDX proxying)
+  const props = node.props as Record<string, unknown>;
+  if (props?.[GUIDE_TYPE_PROP] === VERTICAL_PROGRESS_STEP_ITEM_MARKER)
+    return true;
+  // Fallback: direct _type check (works outside MDX)
   const componentType = node.type as unknown as Record<string, unknown>;
   return componentType?._type === VERTICAL_PROGRESS_STEP_ITEM_TYPE;
 }
@@ -43,6 +52,7 @@ export interface VerticalProgressStepsProps {
 export interface VerticalProgressStepItemProps {
   id?: string;
   title: string;
+  __guideType?: string;
   children: ReactNode;
 }
 
