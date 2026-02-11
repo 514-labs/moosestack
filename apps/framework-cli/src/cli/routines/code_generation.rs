@@ -509,7 +509,7 @@ pub async fn db_pull_from_remote(
 /// Shared implementation for db pull operations.
 ///
 /// Introspects the remote ClickHouse, finds external/unknown tables,
-/// regenerates the external models file, and creates a git commit.
+/// and regenerates the external models file.
 async fn db_pull_with_client(
     client: ConfiguredDBClient,
     db: &str,
@@ -592,31 +592,6 @@ async fn db_pull_with_client(
             details: format!("refreshed ({} table(s))", tables_for_external_file.len()),
         }
     );
-
-    match create_code_generation_commit(
-        ".".as_ref(),
-        "chore(cli): commit db pull external model refresh",
-    ) {
-        Ok(Some(oid)) => {
-            show_message!(
-                MessageType::Info,
-                Message {
-                    action: "Git".to_string(),
-                    details: format!("created commit {}", &oid.to_string()[..7]),
-                }
-            );
-        }
-        Ok(None) => {}
-        Err(e) => {
-            return Err(RoutineFailure::new(
-                Message::new(
-                    "Failure".to_string(),
-                    "creating code generation commit".to_string(),
-                ),
-                e,
-            ));
-        }
-    }
 
     Ok(())
 }
