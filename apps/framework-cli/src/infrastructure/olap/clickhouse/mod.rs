@@ -70,6 +70,7 @@ use crate::project::Project;
 
 pub mod client;
 pub mod config;
+pub mod config_resolver;
 pub mod diagnostics;
 pub mod diff_strategy;
 pub mod errors;
@@ -1669,6 +1670,10 @@ async fn execute_drop_view(
 /// where version is in the format x_y_z (e.g., 1_0_0)
 /// For tables not following the convention: returns the full name and default_version
 ///
+/// Empty segments produced by consecutive underscores (e.g., `foo__1_0`) are
+/// filtered out during both base-name and version parsing, so they do not
+/// produce empty components or spurious version parts.
+///
 /// # Example
 /// ```rust
 /// let (base_name, version) = extract_version_from_table_name("users_1_0_0", "0.0.0");
@@ -1706,7 +1711,7 @@ pub fn extract_version_from_table_name(table_name: &str) -> (String, Option<Vers
     // Find the first numeric part - this marks the start of the version
     let mut version_start_idx = None;
     for (i, part) in parts.iter().enumerate() {
-        if part.chars().all(|c| c.is_ascii_digit()) {
+        if !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()) {
             version_start_idx = Some(i);
             debug!("Found version start at index {}: {}", i, part);
             break;
@@ -3206,6 +3211,15 @@ mod tests {
         let (base_name, version) = extract_version_from_table_name("Bar");
         assert_eq!(base_name, "Bar");
         assert!(version.is_none());
+
+        // PeerDB-style table names with UUIDs: digit-only segments are treated as versions.
+        // The leading underscore is lost because empty split parts are filtered out.
+        // This is why externally managed tables skip version extraction entirely in generate.rs.
+        let (base_name, version) = extract_version_from_table_name(
+            "_peerdb_raw_mirror_a1b2c3d4_e5f6_7890_abcd_ef1234567890",
+        );
+        assert_eq!(base_name, "peerdb_raw_mirror_a1b2c3d4_e5f6");
+        assert_eq!(version.unwrap().to_string(), "7890");
     }
 
     #[test]
