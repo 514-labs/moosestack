@@ -412,10 +412,6 @@ jobs:
               export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
               echo "MOOSE_CLI_VERSION set to: $MOOSE_CLI_VERSION"
 
-              # Disable OpenSSL assembly to avoid binutils >= 2.41 compatibility issues
-              # See: https://github.com/openssl/openssl/issues/21340
-              export OPENSSL_NO_ASM=1
-
               # Detect architecture for protoc download
               ARCH=$(uname -m)
               if [ "$ARCH" = "x86_64" ]; then
