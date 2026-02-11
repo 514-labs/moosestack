@@ -90,8 +90,42 @@ docker run hello-world
 
 The `hello-world` container should print a “Hello from Docker!” message and exit. You can also run `docker ps` to confirm the Docker daemon is reachable from WSL.
 
-**Troubleshooting:** If `docker run hello-world` fails, ensure Docker Desktop is running and WSL integration is enabled for your distro. Also verify Ubuntu is using WSL2 (Docker won’t work with WSL1).
+**Troubleshooting:** If `docker run hello-world` fails, ensure Docker Desktop is running and WSL integration is enabled for your distro. Also verify Ubuntu is using WSL2 (Docker won't work with WSL1).
 
-#### Step 4: Proceed with MooseStack requirements and installation
+#### Step 4: Install Node.js inside WSL2
 
-You now have a working Ubuntu instance on your Windows machine with Docker installed. You can proceed to install MooseStack and its requirements (Node.js 20+ and/or Python 3.12+) as if you were installing on a regular Linux machine. Just make sure to install from the Linux terminal prompt in the Ubuntu instance.
+You need to install Node.js inside the WSL2 Ubuntu environment—not the Windows version of Node.js. The recommended approach is to use **nvm** (Node Version Manager), which makes it easy to install and switch between Node.js versions.
+
+<Callout type="warning" title="Don't use the Windows Node.js installer">
+  If you download Node.js from nodejs.org using the default Windows installer, it installs Node.js on Windows, not inside your WSL2 Linux environment. MooseStack needs Node.js available in the Ubuntu terminal.
+</Callout>
+
+1. In your Ubuntu terminal, install nvm:
+
+   ```shell
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+   ```
+
+2. Close and reopen your terminal (or run `source ~/.bashrc`) to load nvm.
+
+3. Install Node.js 20 (LTS):
+
+   ```shell
+   nvm install 20
+   ```
+
+4. Verify the installation:
+
+   ```shell
+   node --version
+   ```
+
+   You should see a version like `v20.x.x`.
+
+<Callout type="info" title="Why nvm?">
+  Using nvm lets you easily switch Node.js versions and keeps your installation isolated to your user account. It's the approach recommended by Microsoft for [Node.js development on WSL](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl#install-nvm-nodejs-and-npm).
+</Callout>
+
+#### Step 5: Proceed with MooseStack installation
+
+You now have a working Ubuntu instance on your Windows machine with Docker and Node.js installed. Continue to the MooseStack CLI installation below—just make sure to run all commands in the Ubuntu terminal, not PowerShell or Command Prompt.
