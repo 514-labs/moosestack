@@ -78,6 +78,14 @@ function isGuideStepperAtAGlanceElement(
   return false;
 }
 
+function isGuideStepperPromptElement(
+  node: ReactNode,
+): node is ReactElement<GuideStepperPromptProps> {
+  if (!isValidElement(node)) return false;
+  if (hasGuideTypeMarker(node, GUIDE_STEPPER_PROMPT_MARKER)) return true;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
@@ -119,12 +127,31 @@ function getOpenStepIdsAfterCompletionToggle(
   return openStepIds.filter((openStepId) => openStepId !== stepId);
 }
 
-function buildGuideStepPromptMarkdown(checkpointRawContents: string[]): string {
+function buildGuideStepPromptMarkdown({
+  promptRawContents,
+  checkpointRawContents,
+}: {
+  promptRawContents: string[];
+  checkpointRawContents: string[];
+}): string {
+  const systemPromptSegments = promptRawContents
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
   const segments = checkpointRawContents
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
 
-  return segments.join("\n\n");
+  if (systemPromptSegments.length === 0) {
+    return segments.join("\n\n");
+  }
+
+  const systemPromptSection = `${systemPromptSegments.join("\n\n")}`;
+
+  if (segments.length === 0) {
+    return systemPromptSection;
+  }
+
+  return `${systemPromptSection}\n\n-------------\n${segments.join("\n\n")}`;
 }
 
 interface ParsedGuideStepperStepChildren {
@@ -143,6 +170,7 @@ function parseGuideStepperStepChildren(
   const bodyChildren: ReactNode[] = [];
   const checkpointTitles: string[] = [];
   const checkpointRawContents: string[] = [];
+  const promptRawContents: string[] = [];
 
   for (const child of Children.toArray(children)) {
     if (isGuideStepperCheckpointElement(child)) {
@@ -157,6 +185,13 @@ function parseGuideStepperStepChildren(
       continue;
     }
 
+    if (isGuideStepperPromptElement(child)) {
+      promptRawContents.push(child.props.rawContent ?? "");
+      // Prompt blocks are copy-only system prompt context.
+      // They should not render in the visible step content.
+      continue;
+    }
+
     bodyChildren.push(child);
   }
 
@@ -165,7 +200,10 @@ function parseGuideStepperStepChildren(
     atAGlanceBlocks,
     bodyChildren,
     checkpointTitles,
-    promptToCopy: buildGuideStepPromptMarkdown(checkpointRawContents),
+    promptToCopy: buildGuideStepPromptMarkdown({
+      promptRawContents,
+      checkpointRawContents,
+    }),
   };
 }
 
@@ -299,11 +337,8 @@ function GuideStepperCheckpointComponent({
 }
 
 function GuideStepperPromptComponent({ children }: GuideStepperPromptProps) {
-  return (
-    <div className={cn("space-y-3 text-sm", MARKDOWN_CONTENT_CLASS)}>
-      {children}
-    </div>
-  );
+  // Hidden on-page by design. Prompt text is consumed via rawContent for copy.
+  return <div className="hidden">{children}</div>;
 }
 
 function GuideStepperAtAGlanceComponent({
@@ -377,7 +412,7 @@ function GuideStepperStepComponent({
       }
       timeoutRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error("Failed to copy checkpoints prompt:", error);
+      console.error("Failed to copy step prompt:", error);
     }
   }, [hasPromptToCopy, promptToCopy]);
 
@@ -438,7 +473,8 @@ function GuideStepperStepComponent({
                       Step Actions
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Copy all checkpoint prompts for this step.
+                      Copy the system prompt and all checkpoint prompts for this
+                      step.
                     </p>
                   </div>
                   <Button
