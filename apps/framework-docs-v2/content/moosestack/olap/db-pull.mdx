@@ -24,19 +24,17 @@ Use `moose db pull` to refresh the definitions of tables you marked as `EXTERNAL
 ## Requirements
 
 - Tables are defined with `lifeCycle: EXTERNALLY_MANAGED` (TypeScript) or `life_cycle=LifeCycle.EXTERNALLY_MANAGED` (Python)
-- A ClickHouse connection string (native or HTTP/S)
+- A ClickHouse connection URL
 
 ## Connection strings
 
-`db pull` accepts both native and HTTP(S) URLs. Native strings are automatically converted to HTTP(S) with the appropriate ports.
-
-Examples:
+`db pull` accepts HTTP(S) URLs. Examples:
 
 ```bash filename="Terminal" copy
-# Native (auto-converted to HTTPS + 8443)
-moose db pull --clickhouse-url "clickhouse://explorer@play.clickhouse.com:9440/default"
+# HTTPS with credentials in URL
+moose db pull --clickhouse-url "https://user:pass@your-instance.clickhouse.cloud:8443/database"
 
-# HTTPS (explicit database via query param)
+# HTTPS with query params
 moose db pull --clickhouse-url "https://play.clickhouse.com/?user=explorer&database=default"
 
 # Local HTTP
@@ -100,10 +98,13 @@ When you run `db pull` the CLI does the following:
 ## Command
 
 ```bash filename="Terminal" copy
-moose db pull --clickhouse-url <URL> [--file-path <OUTPUT_PATH>]
+moose db pull [--clickhouse-url <URL>] [--file-path <OUTPUT_PATH>]
 ```
 
-- **--clickhouse-url**: ClickHouse URL (e.g., `clickhouse://user:pass@host:port/database` or `https://user:pass@host:port/database`). Can also be set via `CLICKHOUSE_URL` environment variable.
+- **--clickhouse-url**: Optional. ClickHouse URL (e.g., `https://user:pass@host:8443/database`). If not provided, the URL is resolved in this order:
+  1. `MOOSE_CLICKHOUSE_CONFIG__URL` environment variable
+  2. Saved URL from `moose init --from-remote` (stored in keychain)
+  3. `[dev.remote_clickhouse]` config in `moose.config.toml` (with keychain credentials)
 - **--file-path**: Optional. Override the default output file. The file at this path will be regenerated (overwritten) on each run.
 
 ## Typical Use Cases
@@ -117,15 +118,22 @@ moose db pull --clickhouse-url <URL> [--file-path <OUTPUT_PATH>]
 
 ### Automatically run on dev startup (keep local fresh)
   In active development, schemas can drift faster than you commit updates. Running `db pull` on dev startup helps ensure your local code matches the live schema you depend on.
-  ```bash filename="Terminal" copy
-  export CLICKHOUSE_URL="clickhouse://<user>:<password>@<host>:<port>/<database>"
-  ```
+
   Add to `moose.config.toml`:
   ```toml filename="moose.config.toml" copy
   [http_server_config]
   on_first_start_script = "moose db pull"
   ```
-  This runs once when the dev server first starts. The CLI will read the URL from the `CLICKHOUSE_URL` environment variable. To run after code reloads, use `on_reload_complete_script`.
+  This runs once when the dev server first starts. The CLI will resolve credentials from:
+  - `MOOSE_CLICKHOUSE_CONFIG__URL` environment variable
+  - Saved URL from `moose init --from-remote` (stored in keychain)
+  - `[dev.remote_clickhouse]` config (if configured) with credentials from keychain
+
+  To run after every code reload instead, use `on_reload_complete_script`:
+  ```toml filename="moose.config.toml" copy
+  [http_server_config]
+  on_reload_complete_script = "moose db pull"
+  ```
 
 ### New project from an existing DB
   If you're starting with an existing ClickHouse database, bootstrap code with `init --from-remote`, then use `db pull` over time to keep external models fresh:
@@ -148,7 +156,7 @@ moose db pull --clickhouse-url <URL> [--file-path <OUTPUT_PATH>]
 
 - **No changes written**: Ensure tables are actually marked as `EXTERNALLY_MANAGED` and names match remote.
 - **Unsupported types**: The CLI will list tables with unsupported types; they're skipped in the generated file.
-- **Auth/TLS errors**: Verify scheme/ports (8123 or 8443) and credentials; try HTTPS if native URL fails.
+- **Auth/TLS errors**: Verify scheme/ports (8123 for HTTP, 8443 for HTTPS) and credentials.
 - **Git commit issues**: The command attempts a lightweight commit; commit manually if your working tree is dirty.
 
 ## Related
