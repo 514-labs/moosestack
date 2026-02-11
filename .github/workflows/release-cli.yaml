@@ -408,6 +408,7 @@ jobs:
           before-script-linux: |
             if [ -f /.dockerenv ]; then
               echo "Running in Docker container, installing required dependencies..."
+              set -x  # Enable debug output
               PROTOC_VERSION=24.4
               export POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
               export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
@@ -419,6 +420,7 @@ jobs:
 
               # Detect architecture for protoc download
               ARCH=$(uname -m)
+              echo "Detected architecture: $ARCH"
               if [ "$ARCH" = "x86_64" ]; then
                 PROTOC_ZIP=protoc-$PROTOC_VERSION-linux-x86_64.zip
               elif [ "$ARCH" = "aarch64" ]; then
@@ -428,24 +430,42 @@ jobs:
                 exit 1
               fi
 
+              # Debug: show what package managers are available
+              echo "Checking available package managers..."
+              which apt-get || echo "apt-get not found"
+              which dnf || echo "dnf not found"
+              which yum || echo "yum not found"
+
               # Install dependencies based on available package manager
               if command -v apt-get >/dev/null 2>&1; then
                 # Debian-based (e.g., rust-cross manylinux container)
                 echo "Detected apt-get, installing packages..."
-                apt-get update
-                apt-get install -y curl unzip libssl-dev pkg-config
+                apt-get update || { echo "apt-get update failed"; exit 1; }
+                # Install packages, allowing some to fail if already present
+                apt-get install -y curl unzip pkg-config || true
+                # Try different SSL package names
+                apt-get install -y libssl-dev || apt-get install -y openssl-dev || echo "SSL dev package not found via apt"
               elif command -v dnf >/dev/null 2>&1; then
                 # RHEL/AlmaLinux-based (e.g., default manylinux_2_28)
                 echo "Detected dnf, installing packages..."
-                dnf install -y curl unzip openssl-devel pkgconfig
+                dnf install -y curl unzip pkgconfig || true
+                dnf install -y openssl-devel || echo "openssl-devel not found via dnf"
               elif command -v yum >/dev/null 2>&1; then
                 # Older CentOS-based
                 echo "Detected yum, installing packages..."
-                yum install -y curl unzip openssl-devel pkgconfig
+                yum install -y curl unzip pkgconfig || true
+                yum install -y openssl-devel || echo "openssl-devel not found via yum"
               else
                 echo "No supported package manager found"
                 exit 1
               fi
+
+              # Debug: Check if OpenSSL is available
+              echo "Checking OpenSSL availability..."
+              pkg-config --exists openssl && echo "OpenSSL found via pkg-config" || echo "OpenSSL NOT found via pkg-config"
+              pkg-config --modversion openssl || echo "Could not get OpenSSL version"
+              ls -la /usr/include/openssl/ 2>/dev/null || echo "/usr/include/openssl/ not found"
+              ls -la /usr/lib/*/libssl* 2>/dev/null || echo "libssl not found in /usr/lib/*/"
 
               mkdir -p /usr/local/bin
               mkdir -p /usr/local/include
@@ -457,6 +477,7 @@ jobs:
 
               # Verify protoc installation
               protoc --version
+              set +x  # Disable debug output
             fi
 
       - name: Upload wheels
