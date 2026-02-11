@@ -388,7 +388,7 @@ impl DockerClient {
             // Validate cluster name is a safe identifier to prevent XML injection
             if !is_valid_clickhouse_identifier(&cluster.name) {
                 warn!(
-                    "Skipping cluster '{}': cluster names must be alphanumeric with underscores only and cannot start with a digit",
+                    "Skipping cluster '{}': cluster names must be alphanumeric with underscores/hyphens only and cannot start with a digit",
                     cluster.name
                 );
                 continue;
