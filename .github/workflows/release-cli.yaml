@@ -411,8 +411,10 @@ jobs:
               export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
               echo "MOOSE_CLI_VERSION set to: $MOOSE_CLI_VERSION"
 
-              # Use system OpenSSL instead of vendored build to avoid binutils/assembly issues
-              export OPENSSL_NO_VENDOR=1
+              # Disable OpenSSL assembly to avoid binutils >= 2.41 compatibility issues
+              # This uses vendored build but skips problematic assembly code
+              # See: https://github.com/openssl/openssl/issues/21340
+              export OPENSSL_NO_ASM=1
 
               # Detect architecture for protoc download
               ARCH=$(uname -m)
@@ -425,12 +427,12 @@ jobs:
                 exit 1
               fi
 
-              # Install dependencies
+              # Install dependencies for protoc
               # rust-cross containers (for cross-compilation) are Debian-based, PyPA manylinux are RHEL-based
               if command -v apt-get >/dev/null 2>&1; then
-                apt-get update && apt-get install -y curl unzip libssl-dev pkg-config
+                apt-get update && apt-get install -y curl unzip
               elif command -v yum >/dev/null 2>&1; then
-                yum install -y curl unzip openssl-devel pkgconfig
+                yum install -y curl unzip
               else
                 echo "No supported package manager found"
                 exit 1
