@@ -295,6 +295,8 @@ jobs:
       RUSTC_WRAPPER: "sccache"
       POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
       TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
+      # Use system OpenSSL instead of building from source (fixes binutils >= 2.41 issue)
+      OPENSSL_NO_VENDOR: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -414,8 +416,14 @@ jobs:
               export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
               echo "MOOSE_CLI_VERSION set to: $MOOSE_CLI_VERSION"
 
+              # Use system OpenSSL instead of building from source
+              # This fixes build failures with binutils >= 2.41
+              export OPENSSL_NO_VENDOR=1
+
               # Debian-based distribution
-              apt install -y curl unzip
+              # Install libssl-dev and pkg-config for system OpenSSL
+              apt-get update
+              apt install -y curl unzip libssl-dev pkg-config
 
               mkdir -p /usr/local/bin
               mkdir -p /usr/local/include
