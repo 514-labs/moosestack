@@ -25,6 +25,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  GUIDE_STEPPER_AT_A_GLANCE_MARKER,
+  GUIDE_STEPPER_CHECKPOINT_MARKER,
+  GUIDE_STEPPER_STEP_MARKER,
+  GUIDE_TYPE_PROP,
+  type GuideStepperMarker,
+} from "@/lib/remark-guide-stepper-markers";
 import { cn } from "@/lib/utils";
 import { MARKDOWN_CONTENT_CLASS } from "./markdown-content-class";
 import { usePersistedState } from "./use-persisted-state";
@@ -42,16 +49,6 @@ import { VerticalProgressSteps } from "./vertical-progress-steps";
  * checks based only on function identity are brittle. We therefore prefer
  * compile-time marker props injected by a remark plugin.
  */
-const GUIDE_TYPE_PROP = "__guideType";
-const GUIDE_STEPPER_STEP_MARKER = "step";
-const GUIDE_STEPPER_CHECKPOINT_MARKER = "checkpoint";
-const GUIDE_STEPPER_AT_A_GLANCE_MARKER = "at-a-glance";
-
-function hasComponentType(node: ReactElement, type: string): boolean {
-  const componentType = node.type as unknown as Record<string, unknown>;
-  return componentType?._type === type;
-}
-
 function hasGuideTypeMarker(node: ReactElement, marker: string): boolean {
   const props = node.props as Record<string, unknown>;
   return props?.[GUIDE_TYPE_PROP] === marker;
@@ -239,7 +236,7 @@ export interface GuideStepperStepProps {
   title: string;
   summary?: string;
   checkpointVariant?: "numbered" | "bulleted";
-  __guideType?: string;
+  __guideType?: GuideStepperMarker;
   children: ReactNode;
 }
 
@@ -247,13 +244,13 @@ export interface GuideStepperCheckpointProps {
   id: string;
   title: string;
   rawContent?: string;
-  __guideType?: string;
+  __guideType?: GuideStepperMarker;
   children: ReactNode;
 }
 
 export interface GuideStepperPromptProps {
   rawContent?: string;
-  __guideType?: string;
+  __guideType?: GuideStepperMarker;
   children: ReactNode;
 }
 export interface GuideStepperAtAGlanceProps extends GuideStepperPromptProps {

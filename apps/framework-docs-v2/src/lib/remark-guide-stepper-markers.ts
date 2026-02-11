@@ -1,6 +1,24 @@
 import { visit } from "unist-util-visit";
 
-type GuideTypeMarker = "step" | "checkpoint" | "at-a-glance" | "prompt";
+export const GUIDE_TYPE_PROP = "__guideType";
+
+export const GUIDE_STEPPER_STEP_MARKER = "step";
+export const GUIDE_STEPPER_CHECKPOINT_MARKER = "checkpoint";
+export const GUIDE_STEPPER_AT_A_GLANCE_MARKER = "at-a-glance";
+export const GUIDE_STEPPER_PROMPT_MARKER = "prompt";
+
+export type GuideStepperMarker =
+  | typeof GUIDE_STEPPER_STEP_MARKER
+  | typeof GUIDE_STEPPER_CHECKPOINT_MARKER
+  | typeof GUIDE_STEPPER_AT_A_GLANCE_MARKER
+  | typeof GUIDE_STEPPER_PROMPT_MARKER;
+
+export const GUIDE_STEPPER_TAG_MARKERS: Record<string, GuideStepperMarker> = {
+  "GuideStepper.Step": GUIDE_STEPPER_STEP_MARKER,
+  "GuideStepper.Checkpoint": GUIDE_STEPPER_CHECKPOINT_MARKER,
+  "GuideStepper.AtAGlance": GUIDE_STEPPER_AT_A_GLANCE_MARKER,
+  "GuideStepper.Prompt": GUIDE_STEPPER_PROMPT_MARKER,
+};
 
 interface MdxJsxAttribute {
   type: "mdxJsxAttribute";
@@ -18,15 +36,6 @@ interface MdastRoot {
   type: "root";
   children: unknown[];
 }
-
-const GUIDE_STEPPER_TAG_MARKERS: Record<string, GuideTypeMarker> = {
-  "GuideStepper.Step": "step",
-  "GuideStepper.Checkpoint": "checkpoint",
-  "GuideStepper.AtAGlance": "at-a-glance",
-  "GuideStepper.Prompt": "prompt",
-};
-
-const GUIDE_TYPE_PROP = "__guideType";
 
 /**
  * Adds stable guide-stepper markers at compile time so runtime guards can
