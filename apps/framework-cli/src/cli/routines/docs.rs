@@ -1667,11 +1667,25 @@ async fn browse_guide_page(
                 }
             }
         }
-        PickerResult::Back | PickerResult::Cancelled => {
-            // For guide section back, just print full page as graceful fallback
+        PickerResult::Back => {
+            // For guide section back, print full page as graceful fallback
+            let cleaned = strip_images(&content);
+            println!("{}", cleaned);
             if raw {
-                let cleaned = strip_images(&content);
-                println!("{}", cleaned);
+                Ok(RoutineSuccess::success(Message::new(
+                    String::new(),
+                    String::new(),
+                )))
+            } else {
+                Ok(RoutineSuccess::success(Message::new(
+                    "Docs".to_string(),
+                    format!("Fetched {}", slug_display),
+                )))
+            }
+        }
+        PickerResult::Cancelled => {
+            // Ctrl+C: abort without printing content
+            if raw {
                 Ok(RoutineSuccess::success(Message::new(
                     String::new(),
                     String::new(),
