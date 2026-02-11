@@ -399,10 +399,11 @@ jobs:
           args: --release --features rdkafka/cmake-build --locked --target ${{ matrix.build.TARGET }} --out dist
           sccache: "true"
 
-          # https://github.com/briansmith/ring/issues/1728#issuecomment-1758180655
-          manylinux: ${{ (matrix.build.TARGET == 'aarch64-unknown-linux-gnu' || matrix.build.TARGET == 'x86_64-unknown-linux-gnu') && '2_28' || '' }}
+          # Use rust-cross Debian-based containers for consistent build environment
+          # These have apt-get available and avoid manylinux RHEL container issues
+          container: ${{ matrix.build.TARGET == 'aarch64-unknown-linux-gnu' && 'ghcr.io/rust-cross/manylinux_2_28-cross:aarch64' || (matrix.build.TARGET == 'x86_64-unknown-linux-gnu' && 'ghcr.io/rust-cross/manylinux_2_28-cross:x86_64' || '') }}
           working-directory: ./apps/framework-cli
-          # When running on manylinux we are inside a docker container and need to install protoc
+          # When running on Linux we are inside a docker container and need to install protoc
           before-script-linux: |
             if [ -f /.dockerenv ]; then
               echo "Running in Docker container, installing required dependencies..."
@@ -410,11 +411,6 @@ jobs:
               export POSTHOG_API_KEY=${{ secrets.POSTHOG_API_KEY }}
               export MOOSE_CLI_VERSION=${{ needs.version.outputs.version }}
               echo "MOOSE_CLI_VERSION set to: $MOOSE_CLI_VERSION"
-
-              # Disable OpenSSL assembly to avoid binutils >= 2.41 compatibility issues
-              # This uses vendored build but skips problematic assembly code
-              # See: https://github.com/openssl/openssl/issues/21340
-              export OPENSSL_NO_ASM=1
 
               # Detect architecture for protoc download
               ARCH=$(uname -m)
@@ -427,16 +423,8 @@ jobs:
                 exit 1
               fi
 
-              # Install dependencies for protoc
-              # rust-cross containers (for cross-compilation) are Debian-based, PyPA manylinux are RHEL-based
-              if command -v apt-get >/dev/null 2>&1; then
-                apt-get update && apt-get install -y curl unzip
-              elif command -v yum >/dev/null 2>&1; then
-                yum install -y curl unzip
-              else
-                echo "No supported package manager found"
-                exit 1
-              fi
+              # rust-cross containers are Debian-based
+              apt-get update && apt-get install -y curl unzip
 
               mkdir -p /usr/local/bin
               mkdir -p /usr/local/include
