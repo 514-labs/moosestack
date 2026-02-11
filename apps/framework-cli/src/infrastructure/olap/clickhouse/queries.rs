@@ -122,7 +122,7 @@ pub fn create_alias_for_table(
 
 static CREATE_TABLE_TEMPLATE: &str = r#"
 CREATE TABLE IF NOT EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}}
-ON CLUSTER {{cluster_name}}{{/if}}
+ON CLUSTER `{{cluster_name}}`{{/if}}
 (
 {{#each fields}} `{{field_name}}` {{{field_type}}} {{field_nullable}}{{#if field_default}} DEFAULT {{{field_default}}}{{/if}}{{#if field_materialized}} MATERIALIZED {{{field_materialized}}}{{/if}}{{#if field_codec}} CODEC({{{field_codec}}}){{/if}}{{#if field_ttl}} TTL {{{field_ttl}}}{{/if}}{{#if field_comment}} COMMENT '{{{field_comment}}}'{{/if}}{{#unless @last}},
 {{/unless}}{{/each}}{{#if has_indexes}}, {{#each indexes}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}{{/if}}
@@ -3430,7 +3430,7 @@ pub fn create_table_query(
 }
 
 pub static DROP_TABLE_TEMPLATE: &str = r#"
-DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}} SYNC{{/if}};
+DROP TABLE IF EXISTS `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}` SYNC{{/if}};
 "#;
 
 pub fn drop_table_query(
@@ -3451,12 +3451,12 @@ pub fn drop_table_query(
 }
 
 pub static ALTER_TABLE_MODIFY_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}}{{/if}}
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}`{{/if}}
 MODIFY SETTING {{settings}};
 "#;
 
 pub static ALTER_TABLE_RESET_SETTINGS_TEMPLATE: &str = r#"
-ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER {{cluster_name}}{{/if}}
+ALTER TABLE `{{db_name}}`.`{{table_name}}`{{#if cluster_name}} ON CLUSTER `{{cluster_name}}`{{/if}}
 RESET SETTING {{settings}};
 "#;
 
@@ -5757,7 +5757,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER test_cluster"),
+            query.contains("ON CLUSTER `test_cluster`"),
             "Query should contain ON CLUSTER clause"
         );
 
@@ -5816,7 +5816,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
 
         // Should include ON CLUSTER clause
         assert!(
-            query.contains("ON CLUSTER test_cluster"),
+            query.contains("ON CLUSTER `test_cluster`"),
             "DROP query should contain ON CLUSTER clause"
         );
 
@@ -5868,7 +5868,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         .unwrap();
 
         assert!(
-            query.contains("ON CLUSTER test_cluster"),
+            query.contains("ON CLUSTER `test_cluster`"),
             "MODIFY SETTING query should contain ON CLUSTER clause"
         );
         assert!(query.contains("ALTER TABLE"));
@@ -5891,7 +5891,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         };
 
         let cluster_clause = Some("test_cluster")
-            .map(|c| format!(" ON CLUSTER {}", c))
+            .map(|c| format!(" ON CLUSTER `{}`", c))
             .unwrap_or_default();
 
         let query = format!(
@@ -5900,7 +5900,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
         );
 
         assert!(
-            query.contains("ON CLUSTER test_cluster"),
+            query.contains("ON CLUSTER `test_cluster`"),
             "ADD COLUMN query should contain ON CLUSTER clause"
         );
         assert!(query.contains("ALTER TABLE"));
