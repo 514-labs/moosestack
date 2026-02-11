@@ -7,6 +7,7 @@ use crate::framework::core::partial_infrastructure_map::LifeCycle;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::generate::tables_to_python;
 use crate::framework::typescript::generate::tables_to_typescript;
+use crate::infrastructure::olap::clickhouse::remote::ClickHouseRemote;
 use crate::infrastructure::olap::clickhouse::{create_client, ConfiguredDBClient};
 use crate::infrastructure::olap::OlapOperations;
 use crate::project::Project;
@@ -196,6 +197,13 @@ fn write_external_models_file(
 }
 
 pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), RoutineFailure> {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Connecting".to_string(),
+            details: "to remote ClickHouse...".to_string(),
+        }
+    );
     let (client, db) = create_client_and_db(remote_url).await?;
     env::set_current_dir(dir_path).map_err(|e| {
         RoutineFailure::new(
@@ -224,12 +232,28 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
     })?;
     // TODO: Also call list_sql_resources to fetch Views/MVs and generate code for them.
     // Currently we only generate code for Tables.
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Introspecting".to_string(),
+            details: format!("tables in '{db}'..."),
+        }
+    );
     let (tables, unsupported) = client.list_tables(&db, &project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),
             e,
         )
     })?;
+
+    if tables.is_empty() && unsupported.is_empty() {
+        return Err(RoutineFailure::error(Message::new(
+            "No tables".to_string(),
+            format!(
+                "found in database '{db}'. Check that the URL includes the correct database name."
+            ),
+        )));
+    }
 
     if !unsupported.is_empty() {
         show_message!(
@@ -248,8 +272,14 @@ pub async fn db_to_dmv2(remote_url: &str, dir_path: &Path) -> Result<(), Routine
         );
     }
 
-    let (externally_managed, managed): (Vec<_>, Vec<_>) =
-        tables.into_iter().partition(should_be_externally_managed);
+    // Clear the remote database name so generated code uses the local default database
+    let (externally_managed, managed): (Vec<_>, Vec<_>) = tables
+        .into_iter()
+        .map(|mut t| {
+            t.database = None;
+            t
+        })
+        .partition(should_be_externally_managed);
 
     match project.language {
         SupportedLanguages::Typescript => {
@@ -459,6 +489,13 @@ pub async fn db_pull(
     project: &Project,
     file_path: Option<&str>,
 ) -> Result<(), RoutineFailure> {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Connecting".to_string(),
+            details: "to remote ClickHouse...".to_string(),
+        }
+    );
     let (client, db) = create_client_and_db(remote_url).await?;
 
     debug!("Loading InfrastructureMap from user code (DMV2)");
@@ -483,6 +520,13 @@ pub async fn db_pull(
     let known_table_names: std::collections::HashSet<String> =
         infra_map.tables.values().map(|t| t.name.clone()).collect();
 
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Introspecting".to_string(),
+            details: "remote tables...".to_string(),
+        }
+    );
     let (tables, _unsupported) = client.list_tables(&db, project).await.map_err(|e| {
         RoutineFailure::new(
             Message::new("Failure".to_string(), "listing tables".to_string()),
@@ -493,10 +537,15 @@ pub async fn db_pull(
     // Overwrite the external models file with:
     // - existing external tables (from infra map)
     // - plus any unknown (not present in infra map) tables, marked as external
+    // Clear remote database name so generated code uses the local default
     let mut tables_for_external_file: Vec<Table> = tables
         .into_iter()
         .filter(|t| {
             externally_managed_names.contains(&t.name) || !known_table_names.contains(&t.name)
+        })
+        .map(|mut t| {
+            t.database = None;
+            t
         })
         .collect();
 
@@ -509,6 +558,129 @@ pub async fn db_pull(
         file_path,
         &project.source_dir,
     )?;
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "External models".to_string(),
+            details: format!("refreshed ({} table(s))", tables_for_external_file.len()),
+        }
+    );
+
+    match create_code_generation_commit(
+        ".".as_ref(),
+        "chore(cli): commit db pull external model refresh",
+    ) {
+        Ok(Some(oid)) => {
+            show_message!(
+                MessageType::Info,
+                Message {
+                    action: "Git".to_string(),
+                    details: format!("created commit {}", &oid.to_string()[..7]),
+                }
+            );
+        }
+        Ok(None) => {}
+        Err(e) => {
+            return Err(RoutineFailure::new(
+                Message::new(
+                    "Failure".to_string(),
+                    "creating code generation commit".to_string(),
+                ),
+                e,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Pulls schema for ExternallyManaged tables using a ClickHouseRemote struct directly.
+///
+/// This avoids the URL-to-struct conversion and allows using credentials resolved
+/// from `[dev.remote_clickhouse]` config with keychain credentials.
+pub async fn db_pull_from_remote(
+    remote: &ClickHouseRemote,
+    project: &Project,
+    file_path: Option<&str>,
+) -> Result<(), RoutineFailure> {
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Connecting".to_string(),
+            details: "to remote ClickHouse...".to_string(),
+        }
+    );
+    let (client, db) = remote.create_client();
+
+    debug!("Loading InfrastructureMap from user code (DMV2)");
+    // Don't resolve credentials for code generation - only needs structure
+    let infra_map = InfrastructureMap::load_from_user_code(project, false)
+        .await
+        .map_err(|e| {
+            RoutineFailure::error(Message::new(
+                "Failure".to_string(),
+                format!("loading infra map: {e:?}"),
+            ))
+        })?;
+
+    let externally_managed_names: std::collections::HashSet<String> = infra_map
+        .tables
+        .values()
+        .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
+        .map(|t| t.name.clone())
+        .collect();
+
+    // Names of all known tables in the project (managed or external)
+    let known_table_names: std::collections::HashSet<String> =
+        infra_map.tables.values().map(|t| t.name.clone()).collect();
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "Introspecting".to_string(),
+            details: "remote tables...".to_string(),
+        }
+    );
+    let (tables, _unsupported) = client.list_tables(&db, project).await.map_err(|e| {
+        RoutineFailure::new(
+            Message::new("Failure".to_string(), "listing tables".to_string()),
+            e,
+        )
+    })?;
+
+    // Overwrite the external models file with:
+    // - existing external tables (from infra map)
+    // - plus any unknown (not present in infra map) tables, marked as external
+    // Clear remote database name so generated code uses the local default
+    let mut tables_for_external_file: Vec<Table> = tables
+        .into_iter()
+        .filter(|t| {
+            externally_managed_names.contains(&t.name) || !known_table_names.contains(&t.name)
+        })
+        .map(|mut t| {
+            t.database = None;
+            t
+        })
+        .collect();
+
+    // Keep a stable ordering for deterministic output
+    tables_for_external_file.sort_by(|a, b| a.name.cmp(&b.name));
+
+    write_external_models_file(
+        project.language,
+        &tables_for_external_file,
+        file_path,
+        &project.source_dir,
+    )?;
+
+    show_message!(
+        MessageType::Info,
+        Message {
+            action: "External models".to_string(),
+            details: format!("refreshed ({} table(s))", tables_for_external_file.len()),
+        }
+    );
 
     match create_code_generation_commit(
         ".".as_ref(),
