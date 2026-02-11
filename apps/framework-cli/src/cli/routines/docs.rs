@@ -620,7 +620,7 @@ async fn fetch_page_content(slug: &str, lang: DocsLanguage) -> Result<String, Ro
                 "Cannot modify URL path".to_string(),
             ))
         })?
-        .push(&with_ext);
+        .extend(with_ext.split('/'));
 
     url.query_pairs_mut()
         .append_pair("lang", lang.query_param());
@@ -938,7 +938,7 @@ pub async fn search_toc(query: &str, raw: bool) -> Result<RoutineSuccess, Routin
 
 /// Open a documentation page in the user's default web browser.
 ///
-/// Uses platform-specific commands: `open` (macOS), `xdg-open` (Linux), `cmd /c start` (Windows).
+/// Uses the `open` crate for cross-platform browser launching.
 pub fn open_in_browser(slug: &str) -> Result<RoutineSuccess, RoutineFailure> {
     let stripped = slug.trim_start_matches('/').to_lowercase();
     // Split off #anchor before stripping .md extension
@@ -960,7 +960,7 @@ pub fn open_in_browser(slug: &str) -> Result<RoutineSuccess, RoutineFailure> {
                 "Cannot modify URL path".to_string(),
             ))
         })?
-        .push(path);
+        .extend(path.split('/'));
 
     if let Some(a) = anchor {
         url.set_fragment(Some(a));
@@ -971,37 +971,17 @@ pub fn open_in_browser(slug: &str) -> Result<RoutineSuccess, RoutineFailure> {
         .map(|a| format!("{}#{}", path, a))
         .unwrap_or_else(|| path.to_string());
 
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(&url).status();
-
-    #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(&url).status();
-
-    #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd")
-        .args(["/c", "start", "", &url])
-        .status();
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    let result: Result<std::process::ExitStatus, std::io::Error> = Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "unsupported platform",
-    ));
-
-    match result {
-        Ok(status) if status.success() => Ok(RoutineSuccess::success(Message::new(
-            "Docs".to_string(),
-            format!("Opened {} in browser", stripped),
-        ))),
-        Ok(_) => Err(RoutineFailure::error(Message::new(
-            "Docs".to_string(),
-            format!("Failed to open browser for {}", url),
-        ))),
-        Err(e) => Err(RoutineFailure::new(
+    open::that(&url).map_err(|e| {
+        RoutineFailure::new(
             Message::new("Docs".to_string(), format!("Failed to open browser: {}", e)),
             e,
-        )),
-    }
+        )
+    })?;
+
+    Ok(RoutineSuccess::success(Message::new(
+        "Docs".to_string(),
+        format!("Opened {} in browser", stripped),
+    )))
 }
 
 // ── Browse (interactive picker) ─────────────────────────────────────────────
