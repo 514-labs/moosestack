@@ -662,7 +662,15 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
 
         let var_name = sanitize_typescript_identifier(&table.name);
 
-        let (base_name, version) = extract_version_from_table_name(&table.name);
+        // Skip version extraction for externally managed tables — they don't follow
+        // Moose's `tablename_version` naming convention, so parsing their names for
+        // version segments would corrupt the table name (e.g. UUIDs contain digit-only
+        // segments that look like versions).
+        let (base_name, version) = if life_cycle == Some(LifeCycle::ExternallyManaged) {
+            (table.name.clone(), table.version.clone())
+        } else {
+            extract_version_from_table_name(&table.name)
+        };
         let table_name = if version == table.version {
             &base_name
         } else {
@@ -927,8 +935,13 @@ pub fn tables_to_typescript(tables: &[Table], life_cycle: Option<LifeCycle>) -> 
                 writeln!(output, "    format: {:?},", format).unwrap();
             }
         }
-        if let Some(version) = &table.version {
-            writeln!(output, "    version: {:?},", version).unwrap();
+        // Skip version for externally managed tables — the infra map appends
+        // `_{version}` to the table name, which would corrupt external table names
+        // that don't follow Moose's naming convention.
+        if life_cycle != Some(LifeCycle::ExternallyManaged) {
+            if let Some(version) = &table.version {
+                writeln!(output, "    version: {:?},", version).unwrap();
+            }
         }
         // Add table settings if present (works for all engines)
         if let Some(settings) = &table.table_settings {
@@ -1915,6 +1928,60 @@ export const TaskTable = new OlapTable<Task>("Task", {
             tsdoc_count, 2,
             "Expected exactly 2 TSDoc comments. Got {}. Result: {}",
             tsdoc_count, result
+        );
+    }
+
+    #[test]
+    fn test_externally_managed_table_omits_version() {
+        use crate::framework::versions::Version;
+
+        let tables = vec![Table {
+            name: "ExternalEvents".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: Some(Version::from_string("1.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "ExternalEvents".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::ExternallyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        }];
+
+        let result = tables_to_typescript(&tables, Some(LifeCycle::ExternallyManaged));
+
+        assert!(
+            !result.contains("version:"),
+            "ExternallyManaged tables should not have a version field. Got: {}",
+            result
+        );
+        assert!(
+            result.contains("lifeCycle: LifeCycle.EXTERNALLY_MANAGED,"),
+            "Expected ExternallyManaged lifecycle. Got: {}",
+            result
         );
     }
 }
