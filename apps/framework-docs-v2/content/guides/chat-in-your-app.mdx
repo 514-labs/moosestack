@@ -8,6 +8,7 @@ tags: ["MCP"]
 
 import { FileTree, CTACards, CTACard, Callout, BulletPointsCard, ToggleBlock } from "@/components/mdx";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+import { SelectField, CheckboxGroup, ConditionalContent, CustomizePanel, CustomizeGrid } from "@/components/mdx/interactive";
 
 # Building a data-aware chat on top of your ClickHouse database with Next.js and MooseStack
 
@@ -39,9 +40,9 @@ This guide will:
     Icon="BinaryTree"
   />
   <CTACard
-    title="Tutorials"
-    description="Start from scratch or add chat to your existing Next.js app"
-    ctaLink="#tutorial-from-parquet-in-s3-to-chat-application"
+    title="Tutorial"
+    description="Customize and follow the step-by-step guide"
+    ctaLink="#customize-your-tutorial"
     ctaLabel="Build now"
     Icon="Rocket"
   />
@@ -150,6 +151,37 @@ The decisions below define the shape of your chat system. The template defaults 
 | **Deployment scope** | Internal only, Customer-facing | Ship internal with audit trail; add governance before customer-facing |
 | **Authentication** | No auth, API key, User JWT passthrough | Template uses PBKDF2 API key auth in mcp.ts; upgrade to JWT for user-scoped access |
 | **Access controls** | Tool allowlists, Scoped views, Row-level security | Template enforces ClickHouse readonly mode; add scoped views for tenants; plan RLS for enterprise |
+
+## Customize Your Tutorial
+
+<CustomizePanel
+  title="Select Your Setup"
+  description="Choose your starting point to see only the relevant instructions."
+>
+  <CustomizeGrid columns={2}>
+    <SelectField
+      id="starting-point"
+      label="Starting Point"
+      options={[
+        { value: "scratch", label: "New project from template" },
+        { value: "existing-nextjs", label: "Existing Next.js app" },
+        { value: "existing-moose", label: "Existing Next.js + MooseStack" }
+      ]}
+      defaultValue="scratch"
+      persist
+    />
+    <CheckboxGroup
+      id="options"
+      label="Options"
+      options={[
+        { value: "sample-dataset", label: "Use Amazon sample dataset" }
+      ]}
+      persist
+    />
+  </CustomizeGrid>
+</CustomizePanel>
+
+<ConditionalContent whenId="starting-point" whenValue="scratch">
 
 ## Tutorial: From Parquet in S3 to Chat Application
 
@@ -418,26 +450,28 @@ Make sure to then prompt the copilot to export the object to the it to `moosesta
 '<project-name>/packages/moosestack-service/app/index.ts' make sure the above is exported in the index
 ```
 
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
+<ConditionalContent whenId="options" whenValue="sample-dataset" match="includes">
+
 If you're using the Amazon dataset, your prompt would look like:
 
 ```text
-'<project-name>/packages/moosestack-service/app/ingest/models.ts' look at this 
-  file. It does two things, declares an interface "DataEvent", and then creates 
-  an IngestPipeline that declares a table, streaming topic and ingest API for 
+'<project-name>/packages/moosestack-service/app/ingest/models.ts' look at this
+  file. It does two things, declares an interface "DataEvent", and then creates
+  an IngestPipeline that declares a table, streaming topic and ingest API for
   that interface. I want to do this for Amazon Customer Reviews data.
 
 First, let's create the DataModel interface. The schema is documented here:
 https://clickhouse.com/docs/getting-started/example-datasets/amazon-reviews
 
-Use good OLAP data modeling practices (tight typing, LowCardinality where 
+Use good OLAP data modeling practices (tight typing, LowCardinality where
 appropriate, etc). MooseStack data modeling docs are here:
 https://docs.fiveonefour.com/moosestack/data-modeling
 Supported types: https://docs.fiveonefour.com/moosestack/supported-types
 
 Then, create the OlapTable object.
 ```
-</ToggleBlock>
+
+</ConditionalContent>
 
 #### Verify the tables were created correctly
 
@@ -477,7 +511,8 @@ INSERT INTO `local`.PlayerActivity
   );
 ```
 
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
+<ConditionalContent whenId="options" whenValue="sample-dataset" match="includes">
+
 ```sql
 --load-data.sql
 INSERT INTO `local`.AmazonReviews
@@ -486,10 +521,12 @@ INSERT INTO `local`.AmazonReviews
     'Parquet'
   );
 ```
+
 <Callout type="tip" title="Large dataset">
 This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
 </Callout>
-</ToggleBlock>
+
+</ConditionalContent>
 
 Make sure to properly apply any transformations to conform your S3 data to the data model you’ve created. ClickHouse will do many of these transformations naturally. Notably though:
 
@@ -595,7 +632,8 @@ FROM s3(
 );
 ```
 
-<ToggleBlock openText="Using the Amazon Customer Reviews dataset?" closeText="Hide Amazon dataset example">
+<ConditionalContent whenId="options" whenValue="sample-dataset" match="includes">
+
 ```sql
 INSERT INTO `<clickhouse-database>`.AmazonReviews
 SELECT * FROM s3(
@@ -603,10 +641,12 @@ SELECT * FROM s3(
   'Parquet'
 );
 ```
+
 <Callout type="tip" title="Large dataset">
 This loads all ~150M rows. For testing, use a single file like `amazon_reviews_2015.snappy.parquet` instead of the wildcard.
 </Callout>
-</ToggleBlock>
+
+</ConditionalContent>
 
 This will again return 0 rows. This is expected. You can validate that the transfer worked correctly as follows:
 
@@ -616,6 +656,10 @@ This will again return 0 rows. This is expected. You can validate that the trans
 ```
 
 :::include /shared/chat-guide/troubleshooting.mdx
+
+</ConditionalContent>
+
+<ConditionalContent whenId="starting-point" whenValue={["existing-nextjs", "existing-moose"]}>
 
 ## Tutorial: Adding Chat to Your Existing Next.js Application
 
@@ -669,8 +713,8 @@ flowchart LR
 
 #### Backend Setup: MooseStack Service with MCP Server
 
-<Callout type="info" title="Already have a MooseStack project?">
-<ToggleBlock openText="Show instructions to add MCP to existing project" closeText="Hide instructions">
+<ConditionalContent whenId="starting-point" whenValue="existing-moose">
+
 Add the MCP server to your existing MooseStack service:
 
 1. **Install dependencies** (versions from [template package.json](https://github.com/514-labs/moosestack/blob/main/templates/typescript-mcp/packages/moosestack-service/package.json)):
@@ -700,8 +744,10 @@ moose generate hash-token
 ```
 
 Then skip to [Frontend Setup](#frontend-setup).
-</ToggleBlock>
-</Callout>
+
+</ConditionalContent>
+
+<ConditionalContent whenId="starting-point" whenValue="existing-nextjs">
 
 #### Backend Setup: Add the MooseStack service to your project
 
@@ -776,6 +822,8 @@ MCP_API_KEY=<paste-the-ENV-API-KEY-here>
   }
 }
 ```
+
+</ConditionalContent>
 
 #### Frontend Setup
 
@@ -991,6 +1039,8 @@ You should see a response listing `query_clickhouse` and `get_data_catalog` tool
 :::include /shared/chat-guide/deploy-to-boreal-and-vercel.mdx
 
 :::include /shared/chat-guide/troubleshooting.mdx
+
+</ConditionalContent>
 
 ## Appendix: Data context as code
 
