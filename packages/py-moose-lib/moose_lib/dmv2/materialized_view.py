@@ -14,7 +14,7 @@ from typing import Any, Literal, Optional, Union, Generic, List
 
 from pydantic import BaseModel, ConfigDict
 
-from ..blocks import ClickHouseEngines
+from ..blocks import ClickHouseEngines, MergeTreeEngine
 from .types import BaseTypedResource, T
 from .olap_table import OlapTable, OlapConfig
 from ._registry import _materialized_views
@@ -334,7 +334,7 @@ class RefreshableMaterializedView(BaseTypedResource, Generic[T]):
             name=options.target_table_name,
             config=OlapConfig(
                 order_by_fields=options.order_by_fields or [],
-                engine=ClickHouseEngines.MergeTree,
+                engine=MergeTreeEngine(),
             ),
             t=self._t,
         )
