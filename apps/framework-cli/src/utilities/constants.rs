@@ -33,8 +33,8 @@ pub const CLI_DEV_CLICKHOUSE_VOLUME_DIR_CONFIG_SCRIPTS: &str = "clickhouse/confi
 pub const CLI_DEV_CLICKHOUSE_VOLUME_DIR_CONFIG_USERS: &str = "clickhouse/configs/users";
 pub const CLI_DEV_TEMPORAL_DYNAMIC_CONFIG_DIR: &str = "temporal/dynamicconfig";
 
-pub const DOCS_BASE_URL: &str = "https://docs.fiveonefour.com";
-pub const DOCS_TOC_PATH: &str = "/llm.md";
+pub(crate) const DOCS_BASE_URL: &str = "https://docs.fiveonefour.com";
+pub(crate) const DOCS_TOC_PATH: &str = "/llm.md";
 
 pub const SCHEMAS_DIR: &str = "datamodels";
 pub const VSCODE_DIR: &str = ".vscode";

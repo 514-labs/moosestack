@@ -1523,10 +1523,17 @@ pub async fn browse_docs(
                 }
                 PickerResult::Back => section_idx = None,
                 PickerResult::Cancelled => {
-                    return Ok(RoutineSuccess::success(Message::new(
-                        "Docs".to_string(),
-                        "Browse cancelled".to_string(),
-                    )));
+                    return if raw {
+                        Ok(RoutineSuccess::success(Message::new(
+                            String::new(),
+                            String::new(),
+                        )))
+                    } else {
+                        Ok(RoutineSuccess::success(Message::new(
+                            "Docs".to_string(),
+                            "Browse cancelled".to_string(),
+                        )))
+                    };
                 }
             }
         } else {
@@ -1558,10 +1565,17 @@ pub async fn browse_docs(
                     group_idx = None;
                 }
                 PickerResult::Cancelled => {
-                    return Ok(RoutineSuccess::success(Message::new(
-                        "Docs".to_string(),
-                        "Browse cancelled".to_string(),
-                    )));
+                    return if raw {
+                        Ok(RoutineSuccess::success(Message::new(
+                            String::new(),
+                            String::new(),
+                        )))
+                    } else {
+                        Ok(RoutineSuccess::success(Message::new(
+                            "Docs".to_string(),
+                            "Browse cancelled".to_string(),
+                        )))
+                    };
                 }
             }
         }
