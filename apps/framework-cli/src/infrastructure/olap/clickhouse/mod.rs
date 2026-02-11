@@ -1674,7 +1674,7 @@ pub fn extract_version_from_table_name(table_name: &str) -> (String, Option<Vers
     // Find the first numeric part - this marks the start of the version
     let mut version_start_idx = None;
     for (i, part) in parts.iter().enumerate() {
-        if part.chars().all(|c| c.is_ascii_digit()) {
+        if !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()) {
             version_start_idx = Some(i);
             debug!("Found version start at index {}: {}", i, part);
             break;
@@ -3174,6 +3174,15 @@ mod tests {
         let (base_name, version) = extract_version_from_table_name("Bar");
         assert_eq!(base_name, "Bar");
         assert!(version.is_none());
+
+        // PeerDB-style table names with UUIDs: digit-only segments are treated as versions.
+        // The leading underscore is lost because empty split parts are filtered out.
+        // This is why externally managed tables skip version extraction entirely in generate.rs.
+        let (base_name, version) = extract_version_from_table_name(
+            "_peerdb_raw_mirror_a1b2c3d4_e5f6_7890_abcd_ef1234567890",
+        );
+        assert_eq!(base_name, "peerdb_raw_mirror_a1b2c3d4_e5f6");
+        assert_eq!(version.unwrap().to_string(), "7890");
     }
 
     #[test]
