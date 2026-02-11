@@ -383,8 +383,8 @@ function GuideStepperStepComponent({
       value={id}
       className="border border-border rounded-lg px-4 bg-card mb-3"
     >
-      <AccordionTrigger className="hover:no-underline py-4">
-        <div className="flex w-full items-start gap-3 pr-2">
+      <div className="relative">
+        <div className="absolute left-0 top-4 z-10 h-6 flex items-center">
           <Checkbox
             checked={isComplete}
             onCheckedChange={(checked) =>
@@ -392,9 +392,10 @@ function GuideStepperStepComponent({
             }
             onClick={(event) => event.stopPropagation()}
             aria-label={`Mark ${title} complete`}
-            className="mt-1"
           />
-          <div className="min-w-0 flex-1 text-left">
+        </div>
+        <AccordionTrigger className="hover:no-underline py-4 pl-7">
+          <div className="min-w-0 flex-1 text-left pr-2">
             <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant={isComplete ? "default" : "secondary"}
@@ -420,8 +421,8 @@ function GuideStepperStepComponent({
               </p>
             )}
           </div>
-        </div>
-      </AccordionTrigger>
+        </AccordionTrigger>
+      </div>
 
       <AccordionContent className="pt-1 pb-4">
         {hasStepContent && (

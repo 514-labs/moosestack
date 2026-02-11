@@ -1,3 +1,5 @@
+import { GuideStepper } from "@/components/mdx/interactive/guide-stepper";
+
 ### Going to production
 
 In this section, you'll apply your local changes to production. Complete these steps in order:
@@ -16,19 +18,17 @@ In this section, you'll apply your local changes to production. Complete these s
   that setup first.
 </Callout>
 
-#### Step 1: Generate a migration plan
 
-Return to your IDE and confirm the following before moving on:
-
+<GuideStepper id="going-to-production-steps" persist>
+<GuideStepper.Step id="going-to-production-step-1" number={1} title="Generate a migration plan" summary="Review which tables and views will be created, modified, or deleted before shipping to production.">
+<GuideStepper.AtAGlance title="Confirm that your changes are ready to ship">
 - New queries and materialized views run locally successfully
 - `moose dev` starts without errors
 - All relevant APIs return the expected results
+</GuideStepper.AtAGlance>
 
-If all three checks pass, you're ready for the final pre-production step: ensuring your changes can deploy without breaking production. The migration plan shows exactly which database tables and views will be created, modified, or deleted. Review it to catch destructive changes (like accidental table drops) before they cause data loss.
-
+<GuideStepper.Checkpoint title="Run the migration plan generator">
 Open your terminal (ensure you `cd` to your MooseStack project root). Then run:
-
-**Command:**
 
 ```bash
 moose generate migration --save --url <BOREAL_HOST> --token <BOREAL_ADMIN_API_BEARER_TOKEN>
@@ -40,64 +40,62 @@ moose generate migration --save --url <BOREAL_HOST> --token <BOREAL_ADMIN_API_BE
   {/* image */}
 - `BOREAL_ADMIN_API_BEARER_TOKEN` is sent in the request header when calling the Boreal Admin API at `BOREAL_HOST`. This is the API key. It is a secret and must not be committed to source control. Store it securely in a password manager.
 
-After successfully running `moose generate migration` with the correct `--url` and `--token`, a new `/migrations` directory should appear at the root of your MooseStack project. Open the `plan.yaml` file in that directory and review it carefully.
 
-##### Review the migration plan
+</GuideStepper.Checkpoint>
 
-[Review the migration plan to confirm which SQL resources will be created or modified](https://docs.fiveonefour.com/moosestack/migrate/plan-format?). Make sure it matches exactly what you intend to ship. As a rule of thumb:
+<GuideStepper.Checkpoint title="Locate generated migration plan">
+The command should create a new `/migrations` directory at the root of your MooseStack project. Open the `plan.yaml` file in that directory and review it carefully to confirm which SQL resources will be created or modified.
+</GuideStepper.Checkpoint>
 
+</GuideStepper.Step>
+<GuideStepper.Step id="going-to-production-step-2" number={2} title="Review the migration plan">
+<GuideStepper.AtAGlance title="How to review the migration plan">
 - Expect mostly new tables and materialized views
 - Carefully review schema changes to existing tables
 - Avoid deleting existing tables at all costs
+</GuideStepper.AtAGlance>
 
-##### Look for new tables and materialized views
-
+<GuideStepper.Checkpoint title="Look for new tables and materialized views">
 This is expected when optimizing queries. Any new materialized view should result in:
 
-- A [`CreateTable` operation](https://docs.fiveonefour.com/moosestack/migrate/plan-format?lang=python#createtable) that creates the backing table for the view
-- A [`SqlResource` operation](https://docs.fiveonefour.com/moosestack/migrate/plan-format?lang=python#rawsql) containing the `CREATE MATERIALIZED VIEW` statement, with the view explicitly writing `TO` that backing table
+- A [`CreateTable` operation](/moosestack/migrate/plan-format#createtable) that creates the backing table for the view
+- A [`SqlResource` operation](/moosestack/migrate/plan-format#rawsql) containing the `CREATE MATERIALIZED VIEW` statement, with the view explicitly writing `TO` that backing table
 
 Seeing both confirms the Materialized View is being added cleanly and additively. For every new Materialized View in your branch, there should be exactly one `CreateTable` and one `SqlResource` defining it.
-
-##### Watch closely for column changes
-
-[Column-level changes](https://docs.fiveonefour.com/moosestack/migrate/plan-format#column-operations) are uncommon. If you encounter them:
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Watch closely for column changes">
+[Column-level changes](/moosestack/migrate/plan-format#column-operations) are uncommon. If you encounter them:
 
 - Pause and confirm the change is intentional
 - Double-check your code for queries that reference affected columns
 
-There are a [small number of cases where column changes are expected:](https://docs.fiveonefour.com/moosestack/migrate/plan-format#addtablecolumn)
+There are a [small number of cases where column changes are expected:](/moosestack/migrate/plan-format#addtablecolumn)
 
-- If you added a column to an existing materialized view, you should see a single [`AddTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#addtablecolumn) operation applied to the backing table for that view.
-- If you renamed a column, the plan may show a [`DropTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#droptablecolumn) followed by an [`AddTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#addtablecolumn). If this rename was intentional, replace those two operations with a single [`RenameTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#renametablecolumn) operation instead.
+- If you added a column to an existing materialized view, you should see a single [`AddTableColumn`](/moosestack/migrate/plan-format#addtablecolumn) operation applied to the backing table for that view.
+- If you renamed a column, the plan may show a [`DropTableColumn`](/moosestack/migrate/plan-format#droptablecolumn) followed by an [`AddTableColumn`](/moosestack/migrate/plan-format#addtablecolumn). If this rename was intentional, replace those two operations with a single [`RenameTableColumn`](/moosestack/migrate/plan-format#renametablecolumn) operation instead.
 
-Outside of these cases, column-level changes should be treated with caution, especially [`DropTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#droptablecolumn) or [`ModifyTableColumn`](https://docs.fiveonefour.com/moosestack/migrate/plan-format#modifytablecolumn) operations. These changes are strongly discouraged. Instead, stick to strictly additive migrations. Undo the delete or modification in your `OlapTable` object, and introduce a new column instead.
-
-##### Sanity-check for `DropTable` operations
-
-If you see any [`DropTable` operations](https://docs.fiveonefour.com/moosestack/migrate/plan-format?lang=python#droptable), proceed with extreme caution and review your changes carefully. They may indicate that an `OlapTable` or `MaterializedView` object defined in the codebase (and currently used in production) is being deleted, which can result in irreversible data loss if applied unintentionally.
+Outside of these cases, column-level changes should be treated with caution, especially [`DropTableColumn`](/moosestack/migrate/plan-format#droptablecolumn) or [`ModifyTableColumn`](/moosestack/migrate/plan-format#modifytablecolumn) operations. These changes are strongly discouraged. Instead, stick to strictly additive migrations. Undo the delete or modification in your `OlapTable` object, and introduce a new column instead.
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Sanity-check for `DropTable` operations">
+If you see any [`DropTable` operations](/moosestack/migrate/plan-format#droptable), proceed with extreme caution and review your changes carefully. They may indicate that an `OlapTable` or `MaterializedView` object defined in the codebase (and currently used in production) is being deleted, which can result in irreversible data loss if applied unintentionally.
 
 If the plan shows changes you did not anticipate, stop and resolve that before proceeding.
 
 Once the plan looks correct, you're ready to continue with preview and production rollout.
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
 
-#### Step 2: Push your branch and open a pull request
-
-Add the files you created above (or just the functional files if you don't want to commit your test scripts) and push to your version control. Create a Pull Request.
-
-This branch will later be used in Boreal for a Branch Deployment, automatically triggered by creating the PR.
-
-##### Open a pull request and inspect the preview environment
-
-At this point you should have:
-
+<GuideStepper.Step id="going-to-production-step-3" number={3} title="Create a PR and Preview Environment" summary="Validate your changes in a preview environment before merging into production.">
+<GuideStepper.AtAGlance title="At this point you should have">
 - a reviewed `plan.yaml` that matches your intended changes, and
 - a feature branch with your code changes ready to ship.
-
+</GuideStepper.AtAGlance>
+<GuideStepper.Checkpoint title="Commit your changes and push the branch to GitHub">
 Commit your changes, push the branch to GitHub, and open a pull request targeting `main`.
 
 When the PR is opened, Boreal creates an isolated preview environment for the branch. Your PR’s code and the generated `plan.yaml` are applied against a preview database so you can validate schema and behavior before you merge anything into `main`.
-
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Confirm the preview environment is ready">
 In the PR, confirm that **boreal-cloud bot** posts a comment.
 
 {/* image */}
@@ -108,46 +106,39 @@ This confirms that:
 - the preview deployment has started for this branch.
 
 If the bot does not appear, double-check that the Boreal GitHub app is authorized for this repository and that the Boreal project is connected to the correct repo/root directory.
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Click the link in the **Project** column">
 
 In the **boreal-cloud bot** comment, you’ll see a table. Click the link in the **Project** column (the link text will match your branch name). This opens the Boreal dashboard with the preview environment selected.
 
 {/* image */}
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+<GuideStepper.Step id="going-to-production-step-4" number={4} title="Inspect the preview environment" summary="Verify the database resources created by your migration plan match what you reviewed in `plan.yaml`.">
+<GuideStepper.AtAGlance title="Prerequisite: Staging Database Connection String">
+Before you can inspect the preview environment’s database state, you need to get the database HTTPS connection string from Boreal. Use the same steps you followed earlier to get the connection string.
 
-From here, inspect the preview environment’s database state and verify the resources created by your migration plan match what you reviewed in `plan.yaml` (tables, views, and materialized views) before proceeding.
+Importantly, make sure the Boreal dashboard is set to your feature branch, not `main`. You can confirm this by checking the branch selector in the left sidebar of the project dashboard.
+</GuideStepper.AtAGlance>
 
-#### Step 3: Validate the preview environment
-
-Query the staging ClickHouse database directly using ClickHouse's HTTPS interface to confirm tables and views match the migration plan.
-
-Get the database HTTPS connection string from Boreal using the same steps you followed earlier. Make sure the Boreal dashboard is set to your feature branch, not `main`. You can confirm this by checking the branch selector in the left sidebar of the project dashboard.
-
-##### Set the staging connection string locally
-
-Create a temporary environment variable for your staging database URL:
-
-**Command:**
+<GuideStepper.Checkpoint title="Set the staging connection string locally">
+Set the staging connection string locally by creating a temporary environment variable for your staging database URL:
 
 ```bash
-export STAGING_DB=<your-staging-db-connection>
+export STAGING_DB=<your-staging-db-connection-string>
 ```
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Inspect staging database tables">
 
-You can now safely use `$STAGING_DB` to run queries against the staging database via `curl`.
-
-##### Inspect staging database tables
-
-In a terminal, run:
-
-**Command:**
-
+Run this command:
 ```bash
 curl -sS \
   $STAGING_DB \
   --data-binary 'SHOW TABLES'
 ```
-
-**Expected Response:**
-
-You should see a plain-text list of all tables in the staging database if the command executed successfully:
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Review the list of tables">
+The command should return a plain-text list of all tables in the staging database:
 
 ```
 customers
@@ -159,29 +150,28 @@ order_metrics_daily
 ...
 ```
 
-Use this output to confirm that:
+Confirm that the list of tables matches what you reviewed in the migration plan:
 
 - All new tables and materialized views defined in `plan.yaml` exist
 - No unexpected tables were created
 - Existing tables remain unchanged unless explicitly intended
 
-If the list of tables does not match what you reviewed in the migration plan, stop here and fix the issue before proceeding.
+If the list of tables does not match what you reviewed in the migration plan, stop here and fix the issue before proceeding. Do not merge until the preview environment reflects exactly the database resources and behavior you expect to see in production. 
+</GuideStepper.Checkpoint>
 
-Do not merge until the preview environment reflects exactly the database resources and behavior you expect to see in production.
+<GuideStepper.Checkpoint title="Merge the PR to deploy to production">
+Merge your PR and click the Boreal bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+<GuideStepper.Step id="going-to-production-step-6" number={6} title="Backfill new materialized views">
 
-#### Step 4: Merge the PR to deploy to production
-
-If everything lines up as you expect, you're ready to merge!
-
-Merge your PR and now do the same thing: click the Boreal bot to view the deployment page. You should see the logs from the deployment and status there. The deployment should take a few minutes.
-
-#### Step 5: Backfill new materialized views
-
+<GuideStepper.AtAGlance title="Only backfill new materialized views">
 If your migration introduces new Materialized Views, they populate only for new incoming data. Your dashboards will show incomplete or empty results for historical time ranges until you backfill. To make historical data available immediately, explicitly backfill the MVs from existing ClickHouse tables.
 
 This step uses the same HTTPS + `curl` workflow as before, but targets the production (`main`) database and performs a write operation to apply the backfill.
+</GuideStepper.AtAGlance>
 
-##### Identify which materialized views need a backfill
+<GuideStepper.Checkpoint title="Identify which materialized views need a backfill">
 
 Open the migration `plan.yml` you just shipped and find the new materialized views you created (look for the `CREATE MATERIALIZED VIEW` statements in `SqlResource`).
 
@@ -189,14 +179,13 @@ For each one, note two things:
 
 - the materialized view name
 - the backing table name it writes `TO`
+</GuideStepper.Checkpoint>
 
-##### Run the backfill (one MV at a time)
+<GuideStepper.Checkpoint title="Run the backfill (one MV at a time)">
 
 Backfilling is done by inserting historical rows into the MV's backing table using the same `SELECT` logic used by the view.
 
 In a terminal, run:
-
-**Command:**
 
 ```bash
 curl -sS \
@@ -208,8 +197,9 @@ curl -sS \
 ```
 
 Use the exact `SELECT` statement from the `CREATE MATERIALIZED VIEW` definition (or the underlying `SELECT` you used when building it) and paste it in place of `SELECT ...`.
+</GuideStepper.Checkpoint>
 
-##### Confirm the backfill worked
+<GuideStepper.Checkpoint title="Confirm the backfill worked">
 
 After each backfill, sanity check that the backing table now has rows:
 
@@ -224,7 +214,10 @@ curl -sS \
 **Expected Response:**
 
 If the count is non-zero (and roughly matches what you expect), the backfill is complete.
-
-##### Repeat for each new MV you added
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Repeat for each new MV you added">
 
 Only backfill the MVs introduced in this change. Avoid reprocessing older MVs unless you intentionally want to rebuild them.
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+</GuideStepper>
