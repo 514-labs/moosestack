@@ -51,9 +51,12 @@ use crate::cli::{
 };
 use crate::framework::core::check::check_system_reqs;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
-use crate::infrastructure::olap::clickhouse::config::parse_clickhouse_connection_string;
+use crate::infrastructure::olap::clickhouse::config::{
+    parse_clickhouse_connection_string, parse_clickhouse_connection_string_with_metadata,
+};
+use crate::infrastructure::olap::clickhouse::config_resolver::store_remote_clickhouse_credentials;
 use crate::metrics::TelemetryMetadata;
-use crate::project::Project;
+use crate::project::{ClickHouseProtocol, Project, RemoteClickHouseConfig};
 use crate::utilities::capture::{wait_for_usage_capture, ActivityType};
 use crate::utilities::constants::KEY_REMOTE_CLICKHOUSE_URL;
 use crate::utilities::constants::{
@@ -63,11 +66,14 @@ use crate::utilities::constants::{
 use crate::utilities::keyring::{KeyringSecretRepository, SecretRepository};
 
 use crate::cli::commands::DbArgs;
-use crate::cli::routines::code_generation::{db_pull, db_to_dmv2, prompt_user_for_remote_ch_http};
+use crate::cli::routines::code_generation::{
+    db_pull, db_pull_from_remote, db_to_dmv2, prompt_user_for_remote_ch_http,
+};
 use crate::cli::routines::ls::ls;
 use crate::cli::routines::templates::create_project_from_template;
 use crate::framework::core::migration_plan::MIGRATION_SCHEMA;
 use crate::framework::languages::SupportedLanguages;
+use crate::infrastructure::olap::clickhouse::config_resolver::resolve_remote_clickhouse;
 use crate::utilities::constants::{QUIET_STDOUT, SHOW_TIMESTAMPS, SHOW_TIMING};
 use anyhow::Result;
 use std::sync::atomic::Ordering;
@@ -518,44 +524,85 @@ pub async fn top_command_handler(
                 }
             };
 
-            // Offer to store the connection string for future db pull convenience
+            // Write [dev.remote_clickhouse] config and store credentials
             if let Some(ref connection_string) = normalized_url {
-                let save_choice = prompt_user(
-                    "\n  Would you like to save this connection string to your system keychain for easy `moose db pull` later? [Y/n]",
-                    Some("Y"),
-                    Some("You can always pass --clickhouse-url explicitly to override."),
-                )?;
-
-                let save = save_choice.trim().is_empty()
-                    || matches!(save_choice.trim().to_lowercase().as_str(), "y" | "yes");
-                if save {
-                    let repo = KeyringSecretRepository;
-                    match repo.store(name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
-                        Ok(()) => display::show_message_wrapper(
-                            MessageType::Success,
+                // Parse the connection string to extract components
+                let parsed = parse_clickhouse_connection_string_with_metadata(connection_string)
+                    .map_err(|e| {
+                        RoutineFailure::new(
                             Message::new(
-                                "Keychain".to_string(),
-                                format!(
-                                    "Saved ClickHouse connection string for project '{}'.",
-                                    name
-                                ),
+                                "Parse Error".to_string(),
+                                "Failed to parse ClickHouse URL".to_string(),
                             ),
+                            e,
+                        )
+                    })?;
+
+                // db_to_dmv2 already changed into dir_path, so just load the project
+                let mut project = crate::cli::load_project_dev()?;
+
+                // Set up [dev.remote_clickhouse] config
+                project.dev.remote_clickhouse = Some(RemoteClickHouseConfig {
+                    protocol: ClickHouseProtocol::Http,
+                    host: Some(parsed.config.host.clone()),
+                    port: Some(parsed.config.host_port as u16),
+                    database: Some(parsed.config.db_name.clone()),
+                    use_ssl: parsed.config.use_ssl,
+                });
+
+                // Write updated config to disk
+                project.write_to_disk().map_err(|e| {
+                    RoutineFailure::new(
+                        Message::new(
+                            "Failure".to_string(),
+                            "writing remote_clickhouse config".to_string(),
                         ),
-                        Err(e) => warn!("Failed to store connection string: {e:?}"),
-                    }
+                        e,
+                    )
+                })?;
+
+                display::show_message_wrapper(
+                    MessageType::Success,
+                    Message::new(
+                        "Config".to_string(),
+                        format!(
+                            "Wrote [dev.remote_clickhouse] to moose.config.toml (host: {}, database: {})",
+                            parsed.config.host, parsed.config.db_name
+                        ),
+                    ),
+                );
+
+                // Store credentials in keychain
+                if let Err(e) = store_remote_clickhouse_credentials(
+                    name,
+                    &parsed.config.user,
+                    &parsed.config.password,
+                ) {
+                    display::show_message_wrapper(
+                        MessageType::Warning,
+                        Message::new(
+                            "Keychain".to_string(),
+                            format!("Failed to store credentials: {e:?}. You'll be prompted again next time."),
+                        ),
+                    );
+                }
+
+                // Also store the full URL for backwards compatibility
+                let repo = KeyringSecretRepository;
+                if let Err(e) = repo.store(name, KEY_REMOTE_CLICKHOUSE_URL, connection_string) {
+                    display::show_message_wrapper(
+                        MessageType::Warning,
+                        Message::new(
+                            "Keychain".to_string(),
+                            format!("Failed to store connection URL: {e:?}. You'll be prompted again next time."),
+                        ),
+                    );
                 }
             }
 
             wait_for_usage_capture(capture_handle).await;
 
-            let success_message = if let Some(connection_string) = normalized_url {
-                format!(
-                    "\n\n{post_install_message}\n\n🔗 Your ClickHouse connection string:\n{}\n\n📋 After setting up your development environment, open a new terminal and seed your local database:\n      moose seed clickhouse --clickhouse-url \"{}\" --limit 1000\n\n💡 Tip: Save the connection string as an environment variable for future use:\n   export MOOSE_REMOTE_CLICKHOUSE_URL=\"{}\"\n",
-                    connection_string, connection_string, connection_string
-                )
-            } else {
-                format!("\n\n{post_install_message}")
-            };
+            let success_message = format!("\n\n{post_install_message}");
 
             Ok(RoutineSuccess::highlight(Message::new(
                 "Get Started".to_string(),
@@ -1455,20 +1502,53 @@ pub async fn top_command_handler(
             let resolved_from_flag_or_env = resolve_clickhouse_url(clickhouse_url.as_deref());
 
             // Fall back to keyring if not provided via flag or env var
-            let resolved_clickhouse_url: String = match resolved_from_flag_or_env {
-                Some(url) => url,
+            match resolved_from_flag_or_env {
+                Some(url) => {
+                    db_pull(&url, &project, file_path.as_deref())
+                        .await
+                        .map_err(|e| {
+                            RoutineFailure::new(
+                                Message::new("DB Pull".to_string(), "failed".to_string()),
+                                e,
+                            )
+                        })?;
+                }
                 None => {
+                    // Try keychain URL first (from moose init --from-remote)
                     let repo = KeyringSecretRepository;
                     match repo.get(&project.name(), KEY_REMOTE_CLICKHOUSE_URL) {
-                        Ok(Some(s)) => s,
+                        Ok(Some(url)) => {
+                            db_pull(&url, &project, file_path.as_deref())
+                                .await
+                                .map_err(|e| {
+                                    RoutineFailure::new(
+                                        Message::new("DB Pull".to_string(), "failed".to_string()),
+                                        e,
+                                    )
+                                })?;
+                        }
                         Ok(None) => {
-                            return Err(RoutineFailure::error(Message {
-                                action: "DB Pull".to_string(),
-                                details: format!(
-                                    "No ClickHouse URL provided. Pass --clickhouse-url, set {} environment variable, or save one during `moose init --from-remote`.",
-                                    ENV_CLICKHOUSE_URL
-                                ),
-                            }));
+                            // Try [dev.remote_clickhouse] config with keychain credentials
+                            match resolve_remote_clickhouse(&project) {
+                                Ok(Some(remote)) => {
+                                    db_pull_from_remote(&remote, &project, file_path.as_deref())
+                                        .await?;
+                                }
+                                Ok(None) => {
+                                    return Err(RoutineFailure::error(Message {
+                                        action: "DB Pull".to_string(),
+                                        details: format!(
+                                            "No ClickHouse connection found. Options:\n\
+                                            1. Pass --clickhouse-url\n\
+                                            2. Set {} environment variable\n\
+                                            3. Configure [dev.remote_clickhouse] in moose.config.toml\n\
+                                            4. Run `moose init --from-remote` to save credentials",
+                                            ENV_CLICKHOUSE_URL
+                                        ),
+                                    }));
+                                }
+                                Err(e) => return Err(e),
+                            }
                         }
                         Err(e) => {
                             return Err(RoutineFailure::error(Message {
@@ -1481,15 +1561,6 @@ pub async fn top_command_handler(
                     }
                 }
             };
-
-            db_pull(&resolved_clickhouse_url, &project, file_path.as_deref())
-                .await
-                .map_err(|e| {
-                    RoutineFailure::new(
-                        Message::new("DB Pull".to_string(), "failed".to_string()),
-                        e,
-                    )
-                })?;
 
             wait_for_usage_capture(capture_handle).await;
             Ok(RoutineSuccess::success(Message::new(
