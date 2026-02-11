@@ -333,6 +333,13 @@ pub enum TableChange {
         after: Option<String>,
         table: Table,
     },
+    /// Table-level comment changed (can use ALTER TABLE MODIFY COMMENT)
+    CommentChanged {
+        name: String,
+        before: Option<String>,
+        after: Option<String>,
+        table: Table,
+    },
     /// A validation error occurred - the requested change is not allowed
     ValidationError {
         /// Name of the table
@@ -2021,6 +2028,23 @@ impl InfrastructureMap {
                             table_updates += 1;
                         }
 
+                        // Detect and emit table-level comment changes
+                        if normalized_table.table_comment != normalized_target.table_comment {
+                            tracing::debug!(
+                                "Table '{}' has table-level comment change: {:?} -> {:?}",
+                                table.name,
+                                table.table_comment,
+                                target_table.table_comment
+                            );
+                            olap_changes.push(OlapChange::Table(TableChange::CommentChanged {
+                                name: table.name.clone(),
+                                before: table.table_comment.clone(),
+                                after: target_table.table_comment.clone(),
+                                table: target_table.clone(),
+                            }));
+                            table_updates += 1;
+                        }
+
                         // Column-level TTL changes are handled as regular column modifications
                         // since ClickHouse requires the full column definition when modifying TTL
 
@@ -2235,11 +2259,15 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
+        // Detect table-level comment changes
+        let comment_changed = table.table_comment != target_table.table_comment;
+
         if !column_changes.is_empty()
             || order_by_changed
             || partition_by_changed
             || indexes_changed
             || ttl_changed
+            || comment_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -2329,12 +2357,16 @@ impl InfrastructureMap {
             &target_table.table_ttl_setting,
         );
 
+        // Detect table-level comment changes
+        let comment_changed = table.table_comment != target_table.table_comment;
+
         // Only return changes if there are actual differences to report
         if !column_changes.is_empty()
             || order_by_changed
             || partition_by_changed
             || indexes_changed
             || ttl_changed
+            || comment_changed
         {
             Some(TableChange::Updated {
                 name: table.name.clone(),
@@ -3741,6 +3773,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let after = Table {
@@ -3805,6 +3838,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let diff = compute_table_columns_diff(&before, &after);
@@ -4315,6 +4349,7 @@ mod diff_tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         }
     }
 
@@ -7192,6 +7227,7 @@ mod diff_orchestration_worker_tests {
             },
             life_cycle: LifeCycle::FullyManaged,
             database: None,
+            table_comment: None,
         };
 
         let mut kafka_settings = std::collections::HashMap::new();
@@ -7226,6 +7262,7 @@ mod diff_orchestration_worker_tests {
             },
             life_cycle: LifeCycle::FullyManaged,
             database: None,
+            table_comment: None,
         };
 
         map.tables.insert("s3queue_test".to_string(), s3queue_table);

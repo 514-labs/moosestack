@@ -245,6 +245,23 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
                             existing_table.table_ttl_setting = reality_ttl.clone();
                         }
                     }
+                    TableChange::CommentChanged {
+                        name,
+                        before: reality_comment,
+                        table,
+                        ..
+                    } => {
+                        debug!(
+                            "Updating table {} comment in infrastructure map to match reality: {:?}",
+                            name, reality_comment
+                        );
+                        if let Some(existing_table) = reconciled_map
+                            .tables
+                            .get_mut(&table.id(&reconciled_map.default_database))
+                        {
+                            existing_table.table_comment = reality_comment.clone();
+                        }
+                    }
                     TableChange::SettingsChanged {
                         name,
                         before_settings: reality_settings,
@@ -850,6 +867,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         }
     }
 

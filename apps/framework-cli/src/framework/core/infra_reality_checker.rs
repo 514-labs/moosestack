@@ -470,6 +470,16 @@ impl<T: OlapOperations + Sync> InfraRealityChecker<T> {
                     }));
                 }
 
+                // Table-level comment diff
+                if actual_table.table_comment != mapped_table.table_comment {
+                    mismatched_tables.push(OlapChange::Table(TableChange::CommentChanged {
+                        name: mapped_table.name.clone(),
+                        before: actual_table.table_comment.clone(),
+                        after: mapped_table.table_comment.clone(),
+                        table: mapped_table.clone(),
+                    }));
+                }
+
                 // Column-level TTL changes are detected as part of normal column diffs
                 // and handled via ModifyTableColumn operations
             }
@@ -941,6 +951,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         }
     }
 

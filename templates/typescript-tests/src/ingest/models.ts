@@ -1078,3 +1078,34 @@ export const enumColumnCommentsTestTable =
   new OlapTable<EnumColumnCommentsTest>("EnumColumnCommentsTest", {
     orderByFields: ["id", "timestamp"],
   });
+
+/** =======Table-Level Comments Test========= */
+// Test that TSDoc on the interface type flows through as a table-level COMMENT in ClickHouse
+
+/** Tracks test events for table comment verification */
+export interface TableCommentTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  value: string;
+}
+
+export const tableCommentTestTable = new OlapTable<TableCommentTest>(
+  "TableCommentTest",
+  {
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+export interface TableNoCommentTest {
+  id: Key<string>;
+  timestamp: DateTime;
+  value: string;
+}
+
+/** Table without TSDoc on the interface - should have no COMMENT clause */
+export const tableNoCommentTestTable = new OlapTable<TableNoCommentTest>(
+  "TableNoCommentTest",
+  {
+    orderByFields: ["id", "timestamp"],
+  },
+);

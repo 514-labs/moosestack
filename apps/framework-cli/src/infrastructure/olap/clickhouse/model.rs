@@ -663,6 +663,8 @@ pub struct ClickHouseTable {
     pub cluster_name: Option<String>,
     /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
     pub primary_key_expression: Option<String>,
+    /// Optional table-level comment
+    pub comment: Option<String>,
 }
 
 impl ClickHouseTable {

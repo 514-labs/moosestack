@@ -98,6 +98,13 @@ pub enum AtomicOlapOperation {
         after: Option<String>,
         dependency_info: DependencyInfo,
     },
+    /// Modify table-level comment
+    ModifyTableComment {
+        table: Table,
+        before: Option<String>,
+        after: Option<String>,
+        dependency_info: DependencyInfo,
+    },
     /// Add a secondary index to a table
     AddTableIndex {
         table: Table,
@@ -263,6 +270,18 @@ impl AtomicOlapOperation {
                 after,
                 ..
             } => SerializableOlapOperation::ModifyTableTtl {
+                table: table.name.clone(),
+                before: before.clone(),
+                after: after.clone(),
+                database: table.database.clone(),
+                cluster_name: table.cluster_name.clone(),
+            },
+            AtomicOlapOperation::ModifyTableComment {
+                table,
+                before,
+                after,
+                ..
+            } => SerializableOlapOperation::ModifyTableComment {
                 table: table.name.clone(),
                 before: before.clone(),
                 after: after.clone(),
@@ -435,6 +454,11 @@ impl AtomicOlapOperation {
             AtomicOlapOperation::ModifyTableTtl { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
+            AtomicOlapOperation::ModifyTableComment { table, .. } => {
+                InfrastructureSignature::Table {
+                    id: table.id(default_database),
+                }
+            }
             AtomicOlapOperation::AddTableIndex { table, .. } => InfrastructureSignature::Table {
                 id: table.id(default_database),
             },
@@ -509,6 +533,9 @@ impl AtomicOlapOperation {
                 dependency_info, ..
             }
             | AtomicOlapOperation::ModifyTableTtl {
+                dependency_info, ..
+            }
+            | AtomicOlapOperation::ModifyTableComment {
                 dependency_info, ..
             }
             | AtomicOlapOperation::AddTableIndex {
@@ -1240,6 +1267,9 @@ pub fn order_olap_changes(
                 TableChange::TtlChanged { table, .. } => {
                     tables.insert(table.name.clone(), table.clone());
                 }
+                TableChange::CommentChanged { table, .. } => {
+                    tables.insert(table.name.clone(), table.clone());
+                }
                 TableChange::ValidationError { .. } => {
                     // Validation errors should be caught by plan validator
                     // before reaching this code. Skip processing.
@@ -1287,6 +1317,22 @@ pub fn order_olap_changes(
                     after: after.clone(),
                     dependency_info: create_empty_dependency_info(),
                 });
+                plan
+            }
+            OlapChange::Table(TableChange::CommentChanged {
+                table,
+                before,
+                after,
+                ..
+            }) => {
+                let mut plan = OperationPlan::new();
+                plan.setup_ops
+                    .push(AtomicOlapOperation::ModifyTableComment {
+                        table: table.clone(),
+                        before: before.clone(),
+                        after: after.clone(),
+                        dependency_info: create_empty_dependency_info(),
+                    });
                 plan
             }
             OlapChange::Table(TableChange::ValidationError { .. }) => {
@@ -1559,6 +1605,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create some atomic operations
@@ -1638,6 +1685,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create table B - depends on table A
@@ -1663,6 +1711,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create view C - depends on table B
@@ -1760,6 +1809,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create table B - target for materialized view
@@ -1785,6 +1835,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create view C - depends on table B
@@ -1902,6 +1953,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let view = Dmv1View {
@@ -2063,6 +2115,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let table_b = Table {
@@ -2087,6 +2140,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let table_c = Table {
@@ -2111,6 +2165,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Test operations
@@ -2204,6 +2259,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let table_b = Table {
@@ -2228,6 +2284,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let table_c = Table {
@@ -2252,6 +2309,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let table_d = Table {
@@ -2276,6 +2334,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let table_e = Table {
@@ -2300,6 +2359,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let op_create_a = AtomicOlapOperation::CreateTable {
@@ -2456,6 +2516,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create table B - target for materialized view
@@ -2481,6 +2542,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2609,6 +2671,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create table B - target for materialized view
@@ -2634,6 +2697,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create SQL resource for a materialized view
@@ -2767,6 +2831,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let table_b = Table {
@@ -2791,6 +2856,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create SQL resource for materialized view
@@ -3004,6 +3070,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create a column
@@ -3118,6 +3185,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create operations with signatures that work with the current implementation
@@ -3244,6 +3312,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let after_table = Table {
@@ -3295,6 +3364,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Create column changes (remove old_column, add new_column)

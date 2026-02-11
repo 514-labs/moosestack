@@ -10,6 +10,7 @@ JSON format expected by the Moose infrastructure management system.
 from importlib import import_module
 from typing import Literal, Optional, List, Any, Dict, Union, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, AliasGenerator, Field
+import inspect
 import json
 import os
 import sys
@@ -311,6 +312,7 @@ class TableConfig(BaseModel):
     ttl: Optional[str] = None
     database: Optional[str] = None
     cluster: Optional[str] = None
+    table_comment: Optional[str] = None
 
 
 class TopicConfig(BaseModel):
@@ -1001,6 +1003,15 @@ def to_infra_map() -> dict:
             else table.config.order_by_fields
         )
 
+        # Extract table-level comment from model class docstring
+        table_comment = None
+        if hasattr(table, "_t") and table._t is not None:
+            raw_doc = table._t.__doc__
+            if raw_doc:
+                table_comment = inspect.cleandoc(raw_doc)
+                if not table_comment:
+                    table_comment = None
+
         tables[id_key] = TableConfig(
             name=table.name,
             columns=table._column_list,
@@ -1020,6 +1031,7 @@ def to_infra_map() -> dict:
             ttl=table.config.ttl,
             database=table.config.database,
             cluster=table.config.cluster,
+            table_comment=table_comment,
         )
 
     for name, stream in get_streams().items():

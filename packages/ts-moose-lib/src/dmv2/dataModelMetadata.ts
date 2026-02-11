@@ -1,4 +1,4 @@
-import ts, { factory } from "typescript";
+import ts, { displayPartsToString, factory } from "typescript";
 import { isMooseFile, type TransformContext } from "../compilerPluginHelper";
 import { toColumns } from "../dataModels/typeConvert";
 import {
@@ -167,6 +167,12 @@ export const transformNewMooseResource = (
     ...internalArguments,
   ];
 
+  // Extract TSDoc comment from the type parameter interface for table-level COMMENT
+  const typeSymbol = typeAtLocation.getSymbol();
+  const typeDocComment = typeSymbol?.getDocumentationComment(checker) ?? [];
+  const tableComment =
+    typeDocComment.length > 0 ? displayPartsToString(typeDocComment) : null;
+
   // For OlapTable and IngestPipeline, also inject typia validation functions
   if (resourceName === "OlapTable" || resourceName === "IngestPipeline") {
     // Create a single TypiaValidators object with all three validation functions
@@ -192,6 +198,16 @@ export const transformNewMooseResource = (
     );
 
     updatedArgs = [...updatedArgs, validatorsObject];
+
+    // For OlapTable, inject the table comment from TSDoc on the interface
+    if (resourceName === "OlapTable") {
+      updatedArgs = [
+        ...updatedArgs,
+        tableComment !== null ?
+          factory.createStringLiteral(tableComment)
+        : factory.createNull(),
+      ];
+    }
 
     // For IngestPipeline, also pass allowExtraFields so it can propagate to internal Stream/IngestApi
     if (resourceName === "IngestPipeline") {

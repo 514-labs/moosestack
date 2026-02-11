@@ -44,6 +44,9 @@ export class TypedBase<T, C> {
   /** Optional metadata for the resource, always present as an object. */
   metadata!: { [key: string]: any };
 
+  /** Table-level comment extracted from TSDoc on the type parameter interface. Injected by the compiler plugin. */
+  tableComment: string | null;
+
   /**
    * Whether this resource allows extra fields beyond the defined columns.
    * When true, extra fields in payloads are passed through to streaming functions.
@@ -68,6 +71,7 @@ export class TypedBase<T, C> {
     columns?: Column[],
     validators?: TypiaValidators<T>,
     allowExtraFields?: boolean,
+    tableComment?: string | null,
   ) {
     if (schema === undefined || columns === undefined) {
       throw new Error(
@@ -87,6 +91,7 @@ export class TypedBase<T, C> {
     this.config = config;
     this.validators = validators;
     this.allowExtraFields = allowExtraFields ?? false;
+    this.tableComment = tableComment ?? null;
 
     // Always ensure metadata is an object and attach stackTrace (last 10 lines only)
     this.metadata =

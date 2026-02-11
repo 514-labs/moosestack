@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import ts from "typescript";
+import ts, { displayPartsToString } from "typescript";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -436,6 +436,110 @@ describe("typeConvert mappings for helper types", function () {
 
       expect(byName.payload.comment).to.equal("Compressed payload data");
       expect(byName.payload.codec).to.equal("ZSTD(3)");
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("extracts TSDoc comment from interface declaration as table comment", function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+    try {
+      const source = `
+        /** Tracks all user click events across the platform */
+        export interface TestModel {
+          id: string;
+          timestamp: number;
+        }
+      `;
+      const srcFile = path.join(tempDir, "model.ts");
+      fs.writeFileSync(srcFile, source, "utf8");
+
+      const compilerOptions: ts.CompilerOptions = {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.CommonJS,
+        moduleResolution: ts.ModuleResolutionKind.Node10,
+        strict: true,
+        esModuleInterop: true,
+        skipLibCheck: true,
+        baseUrl: path.resolve(__dirname, ".."),
+        paths: {
+          "@514labs/moose-lib": [
+            path.resolve(__dirname, "../src/browserCompatible.ts"),
+          ],
+        },
+      };
+
+      const program = ts.createProgram({
+        rootNames: [
+          srcFile,
+          path.resolve(__dirname, "../src/browserCompatible.ts"),
+        ],
+        options: compilerOptions,
+      });
+
+      const checker = program.getTypeChecker();
+      const sourceFile = program.getSourceFile(srcFile)!;
+      const fileSymbol = checker.getSymbolAtLocation(sourceFile)!;
+      const exports = checker.getExportsOfModule(fileSymbol);
+
+      const exported = exports.find((e) => e.name === "TestModel")!;
+      const docComment = exported.getDocumentationComment(checker);
+      const comment =
+        docComment.length > 0 ? displayPartsToString(docComment) : null;
+
+      expect(comment).to.equal(
+        "Tracks all user click events across the platform",
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null comment for interface without TSDoc", function () {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "moose-typeconv-"));
+    try {
+      const source = `
+        export interface TestModel {
+          id: string;
+        }
+      `;
+      const srcFile = path.join(tempDir, "model.ts");
+      fs.writeFileSync(srcFile, source, "utf8");
+
+      const compilerOptions: ts.CompilerOptions = {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.CommonJS,
+        moduleResolution: ts.ModuleResolutionKind.Node10,
+        strict: true,
+        esModuleInterop: true,
+        skipLibCheck: true,
+        baseUrl: path.resolve(__dirname, ".."),
+        paths: {
+          "@514labs/moose-lib": [
+            path.resolve(__dirname, "../src/browserCompatible.ts"),
+          ],
+        },
+      };
+
+      const program = ts.createProgram({
+        rootNames: [
+          srcFile,
+          path.resolve(__dirname, "../src/browserCompatible.ts"),
+        ],
+        options: compilerOptions,
+      });
+
+      const checker = program.getTypeChecker();
+      const sourceFile = program.getSourceFile(srcFile)!;
+      const fileSymbol = checker.getSymbolAtLocation(sourceFile)!;
+      const exports = checker.getExportsOfModule(fileSymbol);
+
+      const exported = exports.find((e) => e.name === "TestModel")!;
+      const docComment = exported.getDocumentationComment(checker);
+      const comment =
+        docComment.length > 0 ? displayPartsToString(docComment) : null;
+
+      expect(comment).to.equal(null);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

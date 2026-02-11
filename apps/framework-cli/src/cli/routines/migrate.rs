@@ -303,6 +303,14 @@ fn validate_table_databases_and_clusters(
             } => {
                 validate(database, cluster_name, table);
             }
+            SerializableOlapOperation::ModifyTableComment {
+                table,
+                database,
+                cluster_name,
+                ..
+            } => {
+                validate(database, cluster_name, table);
+            }
             SerializableOlapOperation::AddTableIndex {
                 table,
                 database,
@@ -808,6 +816,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         }
     }
 

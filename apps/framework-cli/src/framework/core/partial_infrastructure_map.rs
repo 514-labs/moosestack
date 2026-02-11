@@ -340,6 +340,9 @@ struct PartialTable {
     /// Optional PRIMARY KEY expression (overrides column-level primary_key flags when specified)
     #[serde(default, alias = "primary_key_expression")]
     pub primary_key_expression: Option<String>,
+    /// Table-level comment for ClickHouse COMMENT clause
+    #[serde(default, alias = "table_comment")]
+    pub table_comment: Option<String>,
 }
 
 /// Represents a topic definition from user code before it's converted into a complete [`Topic`].
@@ -799,6 +802,7 @@ impl PartialInfrastructureMap {
                     database: partial_table.database.clone(),
                     cluster_name: partial_table.cluster.clone(),
                     primary_key_expression: partial_table.primary_key_expression.clone(),
+                    table_comment: partial_table.table_comment.clone(),
                 };
 
                 // Compute table_settings_hash for change detection, then canonicalize

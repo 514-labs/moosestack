@@ -173,6 +173,10 @@ message Table {
   // Hash of table settings for change detection (including sensitive settings)
   // Used to detect settings changes without storing plaintext sensitive values
   optional string table_settings_hash = 20;
+
+  // Optional table-level comment for ClickHouse COMMENT clause
+  // Extracted from TSDoc/PyDoc on the source type/class
+  optional string table_comment = 21;
 }
 
 // Structured representation of ORDER BY to support either explicit fields

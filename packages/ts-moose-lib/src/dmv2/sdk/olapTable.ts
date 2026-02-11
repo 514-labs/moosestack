@@ -658,6 +658,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     schema: IJsonSchemaCollection.IV3_1,
     columns: Column[],
     validators?: TypiaValidators<T>,
+    tableComment?: string | null,
   );
 
   constructor(
@@ -666,6 +667,7 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
     schema?: IJsonSchemaCollection.IV3_1,
     columns?: Column[],
     validators?: TypiaValidators<T>,
+    tableComment?: string | null,
   ) {
     // Handle legacy configuration by defaulting to MergeTree when no engine is specified
     const resolvedConfig =
@@ -702,7 +704,15 @@ export class OlapTable<T> extends TypedBase<T, OlapConfig<T>> {
       );
     }
 
-    super(name, resolvedConfig, schema, columns, validators);
+    super(
+      name,
+      resolvedConfig,
+      schema,
+      columns,
+      validators,
+      undefined,
+      tableComment,
+    );
     this.name = name;
 
     const tables = getMooseInternal().tables;

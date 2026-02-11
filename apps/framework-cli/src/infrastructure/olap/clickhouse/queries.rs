@@ -133,7 +133,8 @@ PARTITION BY {{partition_by}}{{/if}}{{#if sample_by}}
 SAMPLE BY {{sample_by}}{{/if}}{{#if order_by_string}}
 ORDER BY ({{order_by_string}}){{/if}}{{#if ttl_clause}}
 TTL {{ttl_clause}}{{/if}}{{#if settings}}
-SETTINGS {{settings}}{{/if}}"#;
+SETTINGS {{settings}}{{/if}}{{#if table_comment}}
+COMMENT '{{{table_comment}}}'{{/if}}"#;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct BufferEngine {
@@ -3423,7 +3424,8 @@ pub fn create_table_query(
         "sample_by": if supports_sample_by { table.sample_by.as_deref() } else { None },
         "engine": engine,
         "settings": settings,
-        "ttl_clause": table.table_ttl_setting.as_deref()
+        "ttl_clause": table.table_ttl_setting.as_deref(),
+        "table_comment": table.comment.as_ref().map(|c| c.replace('\\', "\\\\").replace('\'', "''")),
     });
 
     Ok(reg.render_template(CREATE_TABLE_TEMPLATE, &template_context)?)
@@ -3946,6 +3948,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -3987,6 +3990,7 @@ PRIMARY KEY (`id`)
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4027,6 +4031,7 @@ ENGINE = MergeTree
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4094,6 +4099,7 @@ ENGINE = MergeTree
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4138,6 +4144,7 @@ ENGINE = MergeTree
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4181,6 +4188,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -4233,6 +4241,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4303,6 +4312,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4348,6 +4358,7 @@ ORDER BY (`id`) "#;
             indexes: vec![],
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let result = create_table_query("test_db", table, false);
@@ -4515,6 +4526,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4583,6 +4595,7 @@ ORDER BY (`id`) "#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("(user_id, cityHash64(event_id))".to_string()),
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4626,6 +4639,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: Some("product_id".to_string()),
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -4689,6 +4703,7 @@ ORDER BY (user_id, cityHash64(event_id), timestamp)"#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -5165,6 +5180,7 @@ SETTINGS keeper_path = '/clickhouse/s3queue/test_table', mode = 'unordered', s3q
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -5751,6 +5767,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_ttl_setting: None,
             cluster_name: Some("test_cluster".to_string()),
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -5798,6 +5815,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -6818,6 +6836,7 @@ ENGINE = S3Queue('s3://my-bucket/data/*.csv', NOSIGN, 'CSV')"#;
             indexes: vec![],
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -6880,6 +6899,7 @@ ORDER BY (`id`)
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -6945,6 +6965,7 @@ ORDER BY (`event_time`)
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            comment: None,
         };
 
         let query = create_table_query("test_db", table, false).unwrap();
@@ -7191,5 +7212,122 @@ ORDER BY (`event_time`)
         let parsed: Result<ClickhouseEngine, _> = serialized.as_str().try_into();
         assert!(parsed.is_ok(), "Failed to parse '{}'", serialized);
         assert_eq!(parsed.unwrap(), engine);
+    }
+
+    #[test]
+    fn test_create_table_query_with_table_comment() {
+        let table = ClickHouseTable {
+            version: None,
+            name: "events".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::String,
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            comment: Some("Tracks all user click events".to_string()),
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        assert!(
+            query.contains("COMMENT 'Tracks all user click events'"),
+            "Expected COMMENT clause in: {}",
+            query
+        );
+    }
+
+    #[test]
+    fn test_create_table_query_without_table_comment() {
+        let table = ClickHouseTable {
+            version: None,
+            name: "events".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::String,
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            comment: None,
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        assert!(
+            !query.contains("COMMENT"),
+            "Should not contain COMMENT clause when comment is None: {}",
+            query
+        );
+    }
+
+    #[test]
+    fn test_create_table_query_with_special_chars_in_comment() {
+        let table = ClickHouseTable {
+            version: None,
+            name: "events".to_string(),
+            columns: vec![ClickHouseColumn {
+                name: "id".to_string(),
+                column_type: ClickHouseColumnType::String,
+                required: true,
+                primary_key: true,
+                unique: false,
+                default: None,
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            table_settings: None,
+            indexes: vec![],
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            comment: Some("User's events with \"quotes\" and \\backslash".to_string()),
+        };
+
+        let query = create_table_query("test_db", table, false).unwrap();
+        // Single quotes should be doubled, backslashes should be doubled
+        assert!(
+            query.contains("User''s events"),
+            "Single quotes should be escaped: {}",
+            query
+        );
+        assert!(
+            query.contains("\\\\backslash"),
+            "Backslashes should be escaped: {}",
+            query
+        );
     }
 }

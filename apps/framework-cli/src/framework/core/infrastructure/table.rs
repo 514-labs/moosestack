@@ -323,6 +323,10 @@ pub struct Table {
     /// Allows for complex primary keys using functions or different column ordering
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub primary_key_expression: Option<String>,
+    /// Table-level comment for ClickHouse COMMENT clause
+    /// Extracted from TSDoc/PyDoc on the source type/class
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub table_comment: Option<String>,
 }
 
 impl Table {
@@ -678,6 +682,7 @@ impl Table {
             },
             indexes: self.indexes.iter().map(|i| i.to_proto()).collect(),
             database: self.database.clone(),
+            table_comment: self.table_comment.clone(),
             special_fields: Default::default(),
         }
     }
@@ -797,6 +802,7 @@ impl Table {
             table_ttl_setting: proto.table_ttl_setting,
             cluster_name: proto.cluster_name,
             primary_key_expression: proto.primary_key_expression,
+            table_comment: proto.table_comment,
         }
     }
 }
@@ -1880,6 +1886,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
         assert_eq!(table1.id(DEFAULT_DATABASE_NAME), "local_users");
 
@@ -1983,6 +1990,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Target table from code: explicit order_by that matches primary key
@@ -2008,6 +2016,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // These should be equal because:
@@ -2126,6 +2135,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let canonicalized = table.canonicalize();
@@ -2196,6 +2206,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let canonicalized = table.canonicalize();
@@ -2265,6 +2276,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let canonicalized = table.canonicalize();
@@ -2340,6 +2352,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let first_canonicalize = table.clone().canonicalize();
@@ -2400,6 +2413,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Serialize to proto
@@ -2468,6 +2482,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: Some("clickhouse".to_string()),
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Serialize to proto

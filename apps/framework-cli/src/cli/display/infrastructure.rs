@@ -624,6 +624,23 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
             }
             infra_updated_detailed(&format!("Table TTL: {name}"), &details);
         }
+        OlapChange::Table(TableChange::CommentChanged {
+            name,
+            before,
+            after,
+            ..
+        }) => {
+            let mut details = Vec::new();
+            match (before, after) {
+                (None, Some(c)) => details.push(format!("  + COMMENT '{}'", c)),
+                (Some(_), None) => details.push("  - COMMENT (removed)".to_string()),
+                (Some(b), Some(a)) if b != a => {
+                    details.push(format!("  ~ COMMENT '{}' -> '{}'", b, a));
+                }
+                _ => {}
+            }
+            infra_updated_detailed(&format!("Table Comment: {name}"), &details);
+        }
         OlapChange::SqlResource(Change::Added(sql_resource)) => {
             infra_added(&format!("SQL Resource: {}", sql_resource.name));
         }

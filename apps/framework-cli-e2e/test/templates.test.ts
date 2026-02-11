@@ -549,6 +549,37 @@ const createTemplateTestSuite = (config: TemplateTestConfig) => {
       }
     });
 
+    it("should include table-level COMMENT from metadata.description or class docstring", async function () {
+      if (config.isTestsVariant) {
+        // Table with a description/docstring should have a COMMENT clause
+        const ddlWithComment = await getTableDDL("TableCommentTest", "local");
+        if (
+          !ddlWithComment.includes(
+            "COMMENT 'Tracks test events for table comment verification'",
+          )
+        ) {
+          throw new Error(
+            `Expected table TableCommentTest to have COMMENT 'Tracks test events for table comment verification'. DDL: ${ddlWithComment}`,
+          );
+        }
+
+        // Table without a description/docstring should NOT have a table-level COMMENT
+        const ddlNoComment = await getTableDDL("TableNoCommentTest", "local");
+        // Check that there's no table-level COMMENT (column-level COMMENTs may exist)
+        // Table-level COMMENT appears after the ENGINE clause, not inside column definitions
+        const engineMatch = ddlNoComment.match(/ENGINE\s*=\s*\S+[^]*$/);
+        if (engineMatch && engineMatch[0].includes("COMMENT '")) {
+          throw new Error(
+            `Expected table TableNoCommentTest to NOT have a table-level COMMENT. DDL after ENGINE: ${engineMatch[0]}`,
+          );
+        }
+
+        testLogger.info(
+          `✅ Table-level comment DDL validation passed for ${config.language}`,
+        );
+      }
+    });
+
     // Add versioned tables test for tests templates
     if (config.isTestsVariant) {
       it("should create versioned OlapTables correctly", async function () {

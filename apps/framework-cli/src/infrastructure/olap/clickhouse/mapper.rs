@@ -375,13 +375,17 @@ pub fn std_table_to_clickhouse_table(table: &Table) -> Result<ClickHouseTable, C
         table_ttl_setting: table.table_ttl_setting.clone(),
         cluster_name: table.cluster_name.clone(),
         primary_key_expression: table.primary_key_expression.clone(),
+        comment: table.table_comment.clone(),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::framework::core::infrastructure::table::{EnumMember, Nested};
+    use crate::framework::core::infrastructure::table::{EnumMember, Nested, OrderBy};
+    use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
+    use crate::framework::core::partial_infrastructure_map::LifeCycle;
+    use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
 
     #[test]
     fn test_enum_metadata_roundtrip() {
@@ -753,5 +757,94 @@ mod tests {
             clickhouse_column.comment,
             Some(r"Regex: \d+'\w+ matches digits then quote".to_string())
         );
+    }
+
+    #[test]
+    fn test_table_comment_flows_through_mapper() {
+        let table = Table {
+            name: "events".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Events".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            table_comment: Some("Tracks all user click events".to_string()),
+        };
+
+        let ch_table = std_table_to_clickhouse_table(&table).unwrap();
+        assert_eq!(
+            ch_table.comment,
+            Some("Tracks all user click events".to_string())
+        );
+    }
+
+    #[test]
+    fn test_table_comment_none_flows_through_mapper() {
+        let table = Table {
+            name: "events".to_string(),
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::String,
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            engine: ClickhouseEngine::MergeTree,
+            version: None,
+            source_primitive: PrimitiveSignature {
+                name: "Events".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::FullyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+            table_comment: None,
+        };
+
+        let ch_table = std_table_to_clickhouse_table(&table).unwrap();
+        assert_eq!(ch_table.comment, None);
     }
 }

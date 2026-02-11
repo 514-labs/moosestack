@@ -77,6 +77,7 @@ impl DataModel {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         };
 
         // Compute hash that includes both engine params and database

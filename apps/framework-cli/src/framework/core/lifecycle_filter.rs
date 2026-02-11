@@ -514,6 +514,9 @@ fn check_table_change_compliance(
         TableChange::TtlChanged { table, name, .. } => {
             check_ttl_change_compliance(table, name, violations);
         }
+        TableChange::CommentChanged { table, name, .. } => {
+            check_comment_change_compliance(table, name, violations);
+        }
         // Added and ValidationError are allowed
         _ => {}
     }
@@ -677,6 +680,19 @@ fn check_ttl_change_compliance(
     }
 }
 
+/// Checks if a table comment change violates lifecycle policies
+fn check_comment_change_compliance(
+    table: &Table,
+    table_name: &str,
+    violations: &mut Vec<LifecycleViolation>,
+) {
+    if table.life_cycle.is_any_modification_protected() {
+        violations.push(create_table_modification_violation(
+            table, table_name, "comment",
+        ));
+    }
+}
+
 /// Creates a violation for an illegal table modification (settings/TTL)
 fn create_table_modification_violation(
     table: &Table,
@@ -743,6 +759,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name: None,
             primary_key_expression: None,
+            table_comment: None,
         }
     }
 

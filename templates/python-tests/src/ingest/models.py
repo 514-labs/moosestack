@@ -1105,3 +1105,35 @@ enum_column_comments_test_table = OlapTable[EnumColumnCommentsTest](
     "EnumColumnCommentsTest",
     OlapConfig(order_by_fields=["id", "timestamp"]),
 )
+
+
+# =======Table-Level Comments Test=========
+# Test that class docstrings flow through as table-level COMMENTs in ClickHouse
+
+
+class TableCommentTest(BaseModel):
+    """Tracks test events for table comment verification"""
+
+    id: Key[str]
+    timestamp: datetime
+    value: str
+
+
+# Table with a class docstring that becomes a ClickHouse table COMMENT
+table_comment_test_table = OlapTable[TableCommentTest](
+    "TableCommentTest",
+    OlapConfig(order_by_fields=["id", "timestamp"]),
+)
+
+
+class TableNoCommentTest(BaseModel):
+    id: Key[str]
+    timestamp: datetime
+    value: str
+
+
+# Table without a docstring - should have no COMMENT clause
+table_no_comment_test_table = OlapTable[TableNoCommentTest](
+    "TableNoCommentTest",
+    OlapConfig(order_by_fields=["id", "timestamp"]),
+)

@@ -199,6 +199,16 @@ pub enum SerializableOlapOperation {
         /// Optional cluster name for ON CLUSTER support
         cluster_name: Option<String>,
     },
+    /// Modify table-level comment
+    ModifyTableComment {
+        table: String,
+        before: Option<String>,
+        after: Option<String>,
+        /// The database containing the table (None means use primary database)
+        database: Option<String>,
+        /// Optional cluster name for ON CLUSTER support
+        cluster_name: Option<String>,
+    },
     AddTableIndex {
         table: String,
         index: TableIndex,
@@ -521,6 +531,13 @@ pub fn describe_operation(operation: &SerializableOlapOperation) -> String {
                 format!("Removing table TTL from '{}'", table)
             }
         }
+        SerializableOlapOperation::ModifyTableComment { table, after, .. } => {
+            if after.is_some() {
+                format!("Modifying table comment for '{}'", table)
+            } else {
+                format!("Removing table comment from '{}'", table)
+            }
+        }
         SerializableOlapOperation::CreateMaterializedView {
             name, target_table, ..
         } => {
@@ -676,6 +693,37 @@ pub async fn execute_atomic_operation(
             } else {
                 format!(
                     "ALTER TABLE `{}`.`{}`{} REMOVE TTL",
+                    target_db, table, cluster_clause
+                )
+            };
+            run_query(&sql, client).await.map_err(|e| {
+                ClickhouseChangesError::ClickhouseClient {
+                    error: e,
+                    resource: Some(table.clone()),
+                }
+            })?;
+        }
+        SerializableOlapOperation::ModifyTableComment {
+            table,
+            before: _,
+            after,
+            database,
+            cluster_name,
+        } => {
+            let target_db = database.as_deref().unwrap_or(db_name);
+            let cluster_clause = cluster_name
+                .as_ref()
+                .map(|c| format!(" ON CLUSTER {}", c))
+                .unwrap_or_default();
+            let sql = if let Some(comment) = after {
+                let escaped = comment.replace('\\', "\\\\").replace('\'', "''");
+                format!(
+                    "ALTER TABLE `{}`.`{}`{} MODIFY COMMENT '{}'",
+                    target_db, table, cluster_clause, escaped
+                )
+            } else {
+                format!(
+                    "ALTER TABLE `{}`.`{}`{} MODIFY COMMENT ''",
                     target_db, table, cluster_clause
                 )
             };
@@ -2044,7 +2092,8 @@ impl OlapOperations for ConfiguredDBClient {
                 database,
                 engine,
                 create_table_query,
-                partition_key
+                partition_key,
+                comment
             FROM system.tables
             WHERE database = '{db_name}'
             AND engine != 'View'
@@ -2058,7 +2107,7 @@ impl OlapOperations for ConfiguredDBClient {
         let mut cursor = self
             .client
             .query(&query)
-            .fetch::<(String, String, String, String, String)>()
+            .fetch::<(String, String, String, String, String, String)>()
             .map_err(|e| {
                 debug!("Error fetching tables: {}", e);
                 OlapChangesError::DatabaseError(e.to_string())
@@ -2067,11 +2116,17 @@ impl OlapOperations for ConfiguredDBClient {
         let mut tables = Vec::new();
         let mut unsupported_tables = Vec::new();
 
-        'table_loop: while let Some((table_name, database, engine, create_query, partition_key)) =
-            cursor
-                .next()
-                .await
-                .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
+        'table_loop: while let Some((
+            table_name,
+            database,
+            engine,
+            create_query,
+            partition_key,
+            table_comment_raw,
+        )) = cursor
+            .next()
+            .await
+            .map_err(|e| OlapChangesError::DatabaseError(e.to_string()))?
         {
             debug!("Processing table: {}", table_name);
             debug!("Table engine: {}", engine);
@@ -2480,6 +2535,11 @@ impl OlapOperations for ConfiguredDBClient {
                 // in system tables. Users must manually specify cluster in their table configs.
                 cluster_name: None,
                 primary_key_expression: final_primary_key_expression,
+                table_comment: if table_comment_raw.is_empty() {
+                    None
+                } else {
+                    Some(table_comment_raw)
+                },
             };
             debug!("Created table object: {:?}", table);
 
@@ -4052,6 +4112,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let ignore_ops = vec![
@@ -4122,6 +4183,7 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
             cluster_name: None,
             table_ttl_setting: Some("created_at + INTERVAL 30 DAY".to_string()),
             primary_key_expression: None,
+            table_comment: None,
         };
 
         let ignore_ops = vec![];

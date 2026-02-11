@@ -174,6 +174,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name,
             primary_key_expression: None,
+            table_comment: None,
         }
     }
 
@@ -355,6 +356,7 @@ mod tests {
             table_ttl_setting: None,
             cluster_name,
             primary_key_expression: None,
+            table_comment: None,
         }
     }
 

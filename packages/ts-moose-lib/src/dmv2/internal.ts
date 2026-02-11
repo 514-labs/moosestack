@@ -352,6 +352,8 @@ interface TableJson {
   database?: string;
   /** Optional cluster name for ON CLUSTER support. */
   cluster?: string;
+  /** Table-level comment from TSDoc on the type parameter interface. */
+  tableComment?: string;
 }
 /**
  * Represents a target destination for data flow, typically a stream.
@@ -1018,6 +1020,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       ttl: table.config.ttl,
       database: table.config.database,
       cluster: table.config.cluster,
+      tableComment: table.tableComment ?? undefined,
     };
   });
 
