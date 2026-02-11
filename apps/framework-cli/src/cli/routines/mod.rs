@@ -120,6 +120,7 @@ use crate::framework::core::plan::InfraPlan;
 use crate::framework::core::state_storage::StateStorageBuilder;
 use crate::framework::languages::SupportedLanguages;
 use crate::infrastructure::olap::clickhouse::diff_strategy::ClickHouseTableDiffStrategy;
+use crate::infrastructure::olap::clickhouse::remote::{ClickHouseRemote, Protocol};
 use crate::infrastructure::olap::clickhouse::{check_ready, create_client};
 use crate::infrastructure::olap::OlapOperations;
 use crate::infrastructure::orchestration::temporal_client::{
@@ -355,6 +356,86 @@ async fn process_pubsub_message(
     Ok(())
 }
 
+/// Creates local tables for EXTERNALLY_MANAGED tables.
+/// Uses remote mirroring if config available, otherwise creates from local schema.
+async fn create_external_mirrors(
+    project: &Project,
+    infra_map: &InfrastructureMap,
+    remote: Option<&ClickHouseRemote>,
+) {
+    if !project.dev.externally_managed.tables.create_local_mirrors {
+        return;
+    }
+
+    match remote {
+        Some(r) => {
+            show_message!(
+                MessageType::Info,
+                Message {
+                    action: "Mirrors".to_string(),
+                    details: "Creating local mirror tables from remote...".to_string(),
+                }
+            );
+            match seed_data::create_external_table_mirrors(project, infra_map, r).await {
+                Ok(summary) if !summary.is_empty() => {
+                    show_message!(
+                        MessageType::Success,
+                        Message {
+                            action: "Mirrors".to_string(),
+                            details: format!("Created:\n{}", summary.join("\n")),
+                        }
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    warn!("Mirror creation from remote failed: {}", e.message.details);
+                    show_message!(
+                        MessageType::Error,
+                        Message {
+                            action: "Mirrors".to_string(),
+                            details: format!("Failed: {}", e.message.details),
+                        }
+                    );
+                }
+            }
+        }
+        None => {
+            show_message!(
+                MessageType::Info,
+                Message {
+                    action: "Tables".to_string(),
+                    details: "No remote access. Creating from local schema (empty)...".to_string(),
+                }
+            );
+            match seed_data::create_external_tables_from_local_schema(project, infra_map).await {
+                Ok(summary) if !summary.is_empty() => {
+                    show_message!(
+                        MessageType::Success,
+                        Message {
+                            action: "Tables".to_string(),
+                            details: format!("Created:\n{}", summary.join("\n")),
+                        }
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    warn!(
+                        "External table creation from local schema failed: {}",
+                        e.message.details
+                    );
+                    show_message!(
+                        MessageType::Error,
+                        Message {
+                            action: "Tables".to_string(),
+                            details: format!("Failed: {}", e.message.details),
+                        }
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Starts the application in development mode.
 /// This mode is optimized for development workflows and includes additional debugging features.
 ///
@@ -419,7 +500,22 @@ pub async fn start_development_mode(
         .values()
         .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
         .collect();
-    if !externally_managed.is_empty() {
+    let remote_for_mirrors: Option<ClickHouseRemote> = if !externally_managed.is_empty() {
+        if !project.dev.externally_managed.tables.create_local_mirrors {
+            show_message!(
+                MessageType::Highlight,
+                Message {
+                    action: "ExternalTables".to_string(),
+                    details: format!(
+                        "Detected {} EXTERNALLY_MANAGED table(s).\n\
+                         To create local dev tables, add to moose.config.toml:\n\n\
+                         [dev.externally_managed.tables]\n\
+                         create_local_mirrors = true",
+                        externally_managed.len()
+                    ),
+                }
+            );
+        }
         show_message!(
             MessageType::Info,
             Message::new(
@@ -523,6 +619,14 @@ pub async fn start_development_mode(
                             }
                         );
                     }
+
+                    // Reuse the already-parsed config instead of re-parsing the URL
+                    Some(ClickHouseRemote::from_config(
+                        &client.config,
+                        Protocol::Http,
+                    ))
+                } else {
+                    None
                 }
             }
             Err(e) => {
@@ -533,9 +637,12 @@ pub async fn start_development_mode(
                         details: format!("failed to fetch stored remote URL. {e:?}")
                     }
                 );
+                None
             }
-        };
-    }
+        }
+    } else {
+        None
+    };
 
     maybe_warmup_connections(&project, &redis_client).await;
 
@@ -559,6 +666,14 @@ pub async fn start_development_mode(
     .await?;
 
     let process_registry = Arc::new(RwLock::new(process_registry));
+
+    // Create mirrors after infra is set up (databases exist)
+    create_external_mirrors(
+        &project,
+        &plan.target_infra_map,
+        remote_for_mirrors.as_ref(),
+    )
+    .await;
 
     let openapi_file = openapi(&project, &plan.target_infra_map).await?;
 
