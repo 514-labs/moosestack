@@ -70,6 +70,7 @@ use crate::project::Project;
 
 pub mod client;
 pub mod config;
+pub mod config_resolver;
 pub mod diagnostics;
 pub mod diff_strategy;
 pub mod errors;
