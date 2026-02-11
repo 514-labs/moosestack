@@ -200,6 +200,10 @@ Moose will **not** apply schema changes to `EXTERNALLY_MANAGED` tables in produc
 For more on how migration plans are generated and what shows up in `plan.yaml`, see [/moosestack/olap/planned-migrations](/moosestack/olap/planned-migrations).
 </Callout>
 
+<Callout type="info" title="Automatic Local Mirroring">
+Configure Moose to automatically create and seed local mirror tables during `moose dev`. See [Dev Environment Configuration](/moosestack/configuration/dev-environment#externally-managed-tables) or the [CDC Managed Tables guide](/moosestack/dev/cdc-managed-tables) for setup.
+</Callout>
+
 ## Staying in sync with remote schema
 
 For `EXTERNALLY_MANAGED` tables, keep your code in sync with the live database by running DB Pull. You can do it manually or automate it in dev.
