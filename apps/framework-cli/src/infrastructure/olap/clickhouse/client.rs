@@ -551,6 +551,8 @@ mod tests {
         assert!(validate_clickhouse_identifier("my_table", "Table").is_ok());
         assert!(validate_clickhouse_identifier("Table123", "Table").is_ok());
         assert!(validate_clickhouse_identifier("_private", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("my-table", "Table").is_ok());
+        assert!(validate_clickhouse_identifier("project-db-main-123", "Database").is_ok());
     }
 
     #[test]
@@ -562,15 +564,12 @@ mod tests {
 
     #[test]
     fn test_validate_identifier_invalid_characters() {
-        let result = validate_clickhouse_identifier("my-table", "Table");
+        let result = validate_clickhouse_identifier("my.table", "Table");
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
             .contains("invalid characters"));
-
-        let result = validate_clickhouse_identifier("my.table", "Table");
-        assert!(result.is_err());
 
         let result = validate_clickhouse_identifier("my table", "Table");
         assert!(result.is_err());
@@ -588,6 +587,19 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("cannot start with a digit"));
+    }
+
+    #[test]
+    fn test_validate_identifier_starts_with_hyphen() {
+        let result = validate_clickhouse_identifier("-my-db", "Database");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("cannot start with a hyphen"));
+
+        let result = validate_clickhouse_identifier("--", "Table");
+        assert!(result.is_err());
     }
 
     #[test]
