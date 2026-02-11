@@ -1,0 +1,175 @@
+<GuideStepper.Checkpoint
+  id="phase-3-install-query-layer"
+  title="Install Query Layer source"
+>
+If you haven't already, run the following command to copy the Query Layer source code into your project:
+
+```bash
+pnpm dlx tiged 514-labs/query-layer/src ./query-layer
+```
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint
+  id="phase-3-define-implement-query-model"
+  title="Define and implement the QueryModel"
+>
+Goal: map the existing endpoint contract to a QueryModel and implement it.
+
+Steps:
+
+1. Identify the QueryModel requirements from the existing contract:
+   - **Dimensions:** fields the UI groups by (e.g. `merchantName`, `day`)
+   - **Metrics:** aggregates the UI needs (e.g. `totalOrders`, `fulfillmentRate`)
+   - **Filters:** request params + allowed operators (e.g. `merchantId in`, `day gte/lte`)
+   - **Sortable:** sortable fields + any tie-breakers
+2. Create `moosestack/app/query-models/<name>.model.ts` with `defineQueryModel(...)` over the serving table.
+3. Map the serving table columns to those requirements, keeping field names aligned with the existing API contract.
+
+```ts
+// File: moosestack/app/query-models/orderFulfillment.model.ts
+
+import { sql } from "@514labs/moose-lib";
+import { defineQueryModel } from "../query-layer";
+import { OrderFulfillmentServing } from "../models/OrderFulfillmentServing.model";
+
+export const orderFulfillmentModel = defineQueryModel({
+  table: OrderFulfillmentServing,
+
+  // Dimensions: fields users can group by
+  dimensions: {
+    merchantName: { column: "merchant_name" },
+    day: { column: "day" },
+  },
+
+  // Metrics: aggregations users can request
+  metrics: {
+    totalOrders: { agg: sql`sum(total_orders)` },
+    fulfilledOrders: { agg: sql`sum(fulfilled_orders)` },
+    fulfillmentRate: {
+      agg: sql`round(100 * sum(fulfilled_orders) / nullIf(sum(total_orders), 0), 2)`
+    },
+  },
+
+  // Filters: fields users can filter on
+  filters: {
+    merchantId: { column: "merchant_id", operators: ["eq", "in"] as const },
+    day: { column: "day", operators: ["gte", "lte"] as const },
+  },
+
+  // Sortable: fields users can sort by
+  sortable: ["merchantName", "day", "totalOrders", "fulfillmentRate"] as const,
+});
+```
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint
+  id="phase-3-wire-handler"
+  title="Wire the handler"
+>
+Goal: rewire your existing query handler function to call the QueryModel and map results back to the exact response shape.
+
+Steps:
+
+1. Build a QueryModel request from your endpoint inputs (filters, sort, pagination).
+2. Execute the QueryModel against ClickHouse using the `query` method.
+3. Map the QueryModel results back to the exact response shape the endpoint already produces.
+
+```ts
+// File: moosestack/app/apis/orderFulfillment.api.ts
+
+import { getMooseUtils } from "@514labs/moose-lib";
+import { orderFulfillmentModel } from "../query-models/orderFulfillment.model";
+
+interface OrderFulfillmentRequest {
+  merchantId?: string;
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+  offset?: number;
+  orderBy?: "merchantName" | "day" | "totalOrders" | "fulfillmentRate";
+}
+
+export async function getOrderFulfillment(
+  request: OrderFulfillmentRequest,
+) {
+  const { client } = await getMooseUtils();
+
+  return await orderFulfillmentModel.query(
+    {
+      dimensions: ["merchantName", "day"],
+      metrics: ["totalOrders", "fulfilledOrders", "fulfillmentRate"],
+      filters: {
+        ...(request.merchantId && { merchantId: { eq: request.merchantId } }),
+        ...(request.startDate && { day: { gte: request.startDate } }),
+        ...(request.endDate && { day: { lte: request.endDate } }),
+      },
+      sortBy: request.orderBy ?? "merchantName",
+      sortDir: "ASC",
+      limit: request.limit ?? 100,
+      offset: request.offset ?? 0,
+    },
+    client.query,
+  );
+}
+```
+
+**Integration point:** In your existing backend handler (Express, Fastify, Next.js, etc.), replace the OLTP query call with a call to this new function and return the result:
+
+```ts
+// In your existing backend handler (e.g. Express route)
+import { getOrderFulfillment } from "moosestack/app/apis/orderFulfillment.api";
+
+app.post("/api/order-fulfillment", async (req, res) => {
+  const result = await getOrderFulfillment(req.body);
+  res.json(result); // Same response shape as before
+});
+```
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint
+  id="phase-3-verification"
+  title="Verification"
+>
+Goal: verify the endpoint response matches the saved Phase 1 fixtures.
+
+Steps:
+
+1. Restart your backend with the updated handler so the endpoint now reads from ClickHouse via the QueryModel.
+2. Run a saved Phase 1 test case by copying the `curl` request from:
+   - `moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md`
+3. Save the live endpoint response:
+
+```bash
+# Paste the curl from the test case file and redirect the JSON response:
+<PASTE_CURL_HERE> | jq -S '.' > localhost-result.json
+```
+
+4. Extract the expected response JSON from the same test case file:
+
+```bash
+awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
+  moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md \
+  | jq -S '.' > expected.json
+```
+
+5. Compare:
+
+```bash
+diff expected.json localhost-result.json
+```
+
+Repeat for every recorded test case. If differences remain, fix the smallest possible issue (sorting, rounding/casting, date bucketing) and re-run.
+
+**Optional: Verify performance improvement**
+
+Measure response time for your heaviest test case (replace `test-case-heaviest.json` with the file you want to benchmark):
+
+```bash
+time curl -s -X POST http://localhost:4000/api/order-fulfillment \
+  -H "Content-Type: application/json" \
+  -d @test-case-heaviest.request.json
+```
+
+Verify the response time is significantly improved compared to the original OLTP query.
+</GuideStepper.Checkpoint>
+

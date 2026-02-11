@@ -1,0 +1,185 @@
+### Add MooseStack to your Project
+
+<BulletPointsCard
+  title="Prerequisites"
+  bulletStyle="check"
+  compact={true}
+  divider={false}
+  bullets={[
+    {
+      title: "Node.js 20+",
+      description: "Check your version with `node --version`.",
+      link: {
+        text: "Download",
+        href: "https://nodejs.org/en/download",
+        external: true,
+      },
+    },
+    {
+      title: "Docker Desktop",
+      description:
+        "For local ClickHouse and Redpanda. Make sure it's running before proceeding.",
+      link: {
+        text: "Download",
+        href: "https://docs.docker.com/desktop/",
+        external: true,
+      },
+    },
+    {
+      title: "Install Moose CLI",
+      description: "Install Moose CLI using the installer below.",
+    },
+  ]}
+/>
+
+<ConditionalContent whenId="os" whenValue="windows">
+  :::include /shared/prerequisites/wsl-setup.mdx
+</ConditionalContent>
+
+<Callout type="info" title="Install Moose CLI">
+Run the installer:
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+<Callout type="info" title="Make sure to restart your terminal after installing MooseStack.">
+MooseStack is installed globally, so you need to restart your terminal to make the `moose` command available.
+</Callout>
+</Callout>
+
+This guide assumes a monorepo with your existing application (for example, a Next.js frontend with an API backend). You'll add MooseStack as a workspace package in a subdirectory (we'll call it `moosestack/`).
+
+#### Step 1: Initialize MooseStack in a subdirectory
+
+First, decide where you want the `moosestack/` package to live in your monorepo. Then `cd` to that directory and run:
+
+```shell
+moose init moosestack typescript-empty
+```
+
+<Callout type="info" title="Different monorepo layouts">
+  If your repo keeps packages under a folder like `packages/`, `cd packages`
+  first (or update the `pnpm-workspace.yaml` entry in the next step to match
+  where you created `moosestack/`).
+</Callout>
+
+#### Step 2: Update your PNPM workspace configuration
+
+Edit your root `pnpm-workspace.yaml` to include the `moosestack` directory:
+
+```yaml
+packages:
+  - . # Your main app (e.g., Next.js)
+  - moosestack # MooseStack project
+```
+
+#### Step 3: Configure the MooseStack package
+
+Add or update these top-level fields in `moosestack/package.json` so other packages in your monorepo can import from `"moosestack"` cleanly. Leave the rest of the file unchanged.
+
+```json title="moosestack/package.json"
+{
+  "name": "moosestack",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  }
+}
+```
+
+<Callout type="info" title="When do you need to build?">
+If another workspace package imports from `"moosestack"`, run a build once so `dist/` exists:
+
+```bash
+pnpm -C moosestack build
+```
+
+</Callout>
+
+#### Step 4: Add the pnpm configuration to your root package.json
+
+Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section (this ensures required native/built dependencies are handled correctly by PNPM):
+
+```json
+{
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript"
+    ]
+  }
+}
+```
+
+<ConditionalContent whenId="source-database" whenValue="postgres">
+#### Step 5: Pull ClickPipes tables into your MooseStack project (external models)
+
+Now that your project directory exists, generate TypeScript models for the ClickPipes-owned tables in ClickHouse.
+
+From the `moosestack/` directory you created above:
+
+```shell
+# Save your ClickHouse credentials as an env var (treat this like a secret)
+export CLICKHOUSE_URL="<YOUR_CLICKHOUSE_CLOUD_HTTPS_URL>"
+
+# Pull ClickPipes-owned table schemas into a clearly named external models file
+moose db pull \
+  --clickhouse-url "$CLICKHOUSE_URL" \
+  --file-path app/clickpipesExternalModels.ts
+```
+
+<Callout type="info" title="Optional: store credentials in a .env file">
+If you prefer, you can store the URL in a `.env` file (for example, `moosestack/.env`). The Moose runtime loads `.env` at runtime, but the CLI does not automatically load it, so you still need to source/export it before running `moose db pull`:
+
+```bash
+echo "CLICKHOUSE_URL=<YOUR_CLICKHOUSE_CLOUD_HTTPS_URL>" >> .env
+set -a; source .env; set +a
+```
+
+</Callout>
+
+<Callout type="info" title="Make sure Moose loads your ClickPipes external models">
+`moose db pull` writes a file at `app/clickpipesExternalModels.ts`. Import it once from `app/index.ts` so Moose can discover those table definitions (we use an export here so other code can import these tables too):
+
+```ts filename="app/index.ts" copy
+export * from "./clickpipesExternalModels";
+```
+
+</Callout>
+
+<Callout type="info" title="These ClickPipes tables are externally managed">
+The tables replicated by ClickPipes are owned and mutated by ClickPipes, not your MooseStack project. `moose db pull` generates `EXTERNALLY_MANAGED` table definitions that mirror ClickPipes-owned schemas so you can write type-safe queries, views, and materialized views against them without taking ownership of their lifecycle.
+
+In TypeScript, you’ll see this reflected in the generated table config:
+
+```ts copy
+lifeCycle: LifeCycle.EXTERNALLY_MANAGED;
+```
+
+For details, see [External Tables](/moosestack/olap/external-tables).
+
+</Callout>
+
+To make this repeatable, add this script to the `scripts` section in `moosestack/package.json`:
+
+```json title="moosestack/package.json"
+{
+  "scripts": {
+    "db:pull:clickpipes": "moose db pull --clickhouse-url \"$CLICKHOUSE_URL\" --file-path app/clickpipesExternalModels.ts"
+  }
+}
+```
+
+</ConditionalContent>
+
+You should now have MooseStack configured in your monorepo and ready to deploy.
+
+Next you'll connect your repo (via GitHub) to [Boreal](https://boreal.cloud) so deployments happen through your normal Git workflow. When you open a pull request, Boreal deploys your `moosestack/` branch to a preview environment, creates a separate ClickHouse preview database (so you don’t touch your main one), and produces a migration plan of the ClickHouse changes your branch would apply.
+
+Later in this guide, you’ll use the preview environment + migration plan to validate your work. When you merge to `main`, Boreal applies the reviewed migrations to your main ClickHouse database.
