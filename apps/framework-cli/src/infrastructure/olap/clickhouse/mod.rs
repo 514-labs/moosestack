@@ -402,7 +402,7 @@ pub async fn execute_changes(
             // Database has tables with clusters - create on each cluster
             for cluster in clusters {
                 let create_db_query = format!(
-                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER {}",
+                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER `{}`",
                     database, cluster
                 );
                 info!("Creating database {} on cluster {}", database, cluster);
@@ -666,7 +666,7 @@ pub async fn execute_atomic_operation(
             // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
             let cluster_clause = cluster_name
                 .as_ref()
-                .map(|c| format!(" ON CLUSTER {}", c))
+                .map(|c| format!(" ON CLUSTER `{}`", c))
                 .unwrap_or_default();
             let sql = if let Some(expr) = after {
                 format!(
@@ -816,7 +816,7 @@ async fn execute_add_table_index(
         format!("({})", index.arguments.join(", "))
     };
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} ADD INDEX `{}` {} TYPE {}{} GRANULARITY {}",
@@ -845,7 +845,7 @@ async fn execute_drop_table_index(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} DROP INDEX `{}`",
@@ -867,7 +867,7 @@ async fn execute_modify_sample_by(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} MODIFY SAMPLE BY {}",
@@ -888,7 +888,7 @@ async fn execute_remove_sample_by(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} REMOVE SAMPLE BY",
@@ -964,7 +964,7 @@ async fn execute_add_table_column(
     let column_type_string = basic_field_type_to_string(&clickhouse_column.column_type)?;
 
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
 
     // Include DEFAULT clause if column has a default value
@@ -1044,7 +1044,7 @@ async fn execute_drop_table_column(
         column_name
     );
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let drop_column_query = format!(
         "ALTER TABLE `{}`.`{}`{} DROP COLUMN IF EXISTS `{}`",
@@ -1224,7 +1224,7 @@ fn build_modify_column_sql(
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
 
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
 
     let mut statements = vec![];
@@ -1344,7 +1344,7 @@ fn build_modify_column_comment_sql(
     // Escape for ClickHouse SQL: backslashes first, then single quotes
     let escaped_comment = comment.replace('\\', "\\\\").replace('\'', "''");
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     Ok(format!(
         "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` COMMENT '{}'",
@@ -1444,7 +1444,7 @@ async fn execute_rename_table_column(
         after_column_name
     );
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let rename_column_query = format!(
         "ALTER TABLE `{db_name}`.`{table_name}`{cluster_clause} RENAME COLUMN `{before_column_name}` TO `{after_column_name}`"
