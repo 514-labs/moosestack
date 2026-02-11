@@ -23,6 +23,7 @@
 use std::fmt;
 
 use super::config::ClickHouseConfig;
+use super::{create_client, ConfiguredDBClient};
 use urlencoding::encode;
 
 /// Escapes a string for use in a SQL string literal.
@@ -151,6 +152,34 @@ impl ClickHouseRemote {
             use_ssl,
             protocol,
         }
+    }
+
+    /// Creates a ClickHouse client from this remote configuration.
+    ///
+    /// Returns a tuple of (ConfiguredDBClient, database_name) for use with db_pull operations.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let remote = ClickHouseRemote::from_config(&config, Protocol::Http);
+    /// let (client, db) = remote.build_client();
+    /// // Use client for queries...
+    /// ```
+    pub fn build_client(&self) -> (ConfiguredDBClient, String) {
+        let config = ClickHouseConfig {
+            host: self.host.clone(),
+            host_port: self.port as i32,
+            native_port: if self.use_ssl { 9440 } else { 9000 },
+            db_name: self.database.clone(),
+            user: self.user.clone(),
+            password: self.password.clone(),
+            use_ssl: self.use_ssl,
+            host_data_path: None,
+            additional_databases: vec![],
+            clusters: None,
+        };
+
+        let client = create_client(config);
+        (client, self.database.clone())
     }
 
     /// Builds a table function call for executing a query on the remote server.
