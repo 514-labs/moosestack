@@ -746,7 +746,15 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
             OrderBy::SingleExpr(expr) => format!("order_by_expression={:?}", expr),
         };
 
-        let (base_name, version) = extract_version_from_table_name(&table.name);
+        // Skip version extraction for externally managed tables — they don't follow
+        // Moose's `tablename_version` naming convention, so parsing their names for
+        // version segments would corrupt the table name (e.g. UUIDs contain digit-only
+        // segments that look like versions).
+        let (base_name, version) = if life_cycle == Some(LifeCycle::ExternallyManaged) {
+            (table.name.clone(), table.version.clone())
+        } else {
+            extract_version_from_table_name(&table.name)
+        };
         let table_name = if version == table.version {
             &base_name
         } else {
@@ -1062,8 +1070,13 @@ pub fn tables_to_python(tables: &[Table], life_cycle: Option<LifeCycle>) -> Stri
                 writeln!(output, "    ),").unwrap();
             }
         }
-        if let Some(version) = &table.version {
-            writeln!(output, "    version={:?},", version).unwrap();
+        // Skip version for externally managed tables — the infra map appends
+        // `_{version}` to the table name, which would corrupt external table names
+        // that don't follow Moose's naming convention.
+        if life_cycle != Some(LifeCycle::ExternallyManaged) {
+            if let Some(version) = &table.version {
+                writeln!(output, "    version={:?},", version).unwrap();
+            }
         }
         // Add table settings if present (includes mode for S3Queue)
         if let Some(settings) = &table.table_settings {
