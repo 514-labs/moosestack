@@ -13,8 +13,8 @@ use super::metrics::Metrics;
 use crate::utilities::{constants, docker::DockerClient};
 use clap::Parser;
 use commands::{
-    Commands, DbCommands, GenerateCommand, KafkaArgs, KafkaCommands, TemplateSubCommands,
-    WorkflowCommands,
+    Commands, DbCommands, DocsCommands, GenerateCommand, KafkaArgs, KafkaCommands,
+    TemplateSubCommands, WorkflowCommands,
 };
 use config::ConfigError;
 use display::with_spinner_completion;
@@ -1593,6 +1593,59 @@ pub async fn top_command_handler(
                 *prettify,
             )
             .await;
+
+            wait_for_usage_capture(capture_handle).await;
+
+            result
+        }
+        Commands::Docs(docs_args) => {
+            info!("Running docs command");
+
+            let capture_handle = crate::utilities::capture::capture_usage(
+                ActivityType::DocsCommand,
+                None,
+                &settings,
+                machine_id.clone(),
+                HashMap::new(),
+            );
+
+            let lang = routines::docs::resolve_language(docs_args.lang.as_deref(), &settings)?;
+
+            let result = match &docs_args.command {
+                Some(DocsCommands::Browse {}) => {
+                    routines::docs::browse_docs(lang, docs_args.raw, docs_args.web).await
+                }
+                Some(DocsCommands::Search { query }) => {
+                    routines::docs::search_toc(query, docs_args.raw).await
+                }
+                None if docs_args.slug.is_none() => {
+                    routines::docs::show_toc(docs_args.expand, docs_args.raw, lang).await
+                }
+                None => {
+                    let slug = docs_args.slug.as_deref().unwrap_or_default().to_string();
+                    // Split on # to separate slug from section anchor
+                    let (page_slug, section) = match slug.split_once('#') {
+                        Some((s, anchor)) => (s.to_string(), Some(anchor.to_string())),
+                        None => (slug, None),
+                    };
+                    if docs_args.web {
+                        // For --web, pass the full slug including any #anchor
+                        let web_slug = match &section {
+                            Some(anchor) => format!("{}#{}", page_slug, anchor),
+                            None => page_slug,
+                        };
+                        routines::docs::open_in_browser(&web_slug)
+                    } else {
+                        routines::docs::fetch_page(
+                            &page_slug,
+                            lang,
+                            docs_args.raw,
+                            section.as_deref(),
+                        )
+                        .await
+                    }
+                }
+            };
 
             wait_for_usage_capture(capture_handle).await;
 

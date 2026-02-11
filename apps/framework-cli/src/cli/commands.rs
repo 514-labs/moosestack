@@ -252,6 +252,8 @@ pub enum Commands {
         #[arg(short = 'p', long = "prettify", requires = "format_query")]
         prettify: bool,
     },
+    /// Fetch and display LLM-optimized documentation for AI agents
+    Docs(DocsArgs),
 }
 
 #[derive(Debug, Args)]
@@ -458,6 +460,61 @@ pub enum DbCommands {
 pub struct KafkaArgs {
     #[command(subcommand)]
     pub command: KafkaCommands,
+}
+
+/// Arguments for the docs command
+#[derive(Debug, Args)]
+#[command(after_help = "\
+Examples:
+  moose docs                              Show documentation index (collapsed)
+  moose docs --expand                     Show full index with all pages and guide sections
+  moose docs moosestack/olap              View the OLAP documentation page
+  moose docs search \"materialized\"        Search for pages matching a query
+  moose docs --lang py moosestack/olap    View page in Python (default: auto-detected)
+  moose docs browse                       Interactively browse and select a page
+  moose docs browse --web                 Browse and open selection in your browser
+  moose docs moosestack/olap --web        Open a page directly in the browser
+
+Guide sections (guides are large — navigate to specific sections):
+  moose docs guides/chat-in-your-app#overview       View just the Overview section
+  moose docs guides/chat-in-your-app#setup          View just the Setup section
+  moose docs guides/performant-dashboards --web     Open full guide in the browser
+
+Slugs are case-insensitive. Run `moose docs` to see all available slugs.")]
+pub struct DocsArgs {
+    #[command(subcommand)]
+    pub command: Option<DocsCommands>,
+
+    /// Documentation page slug (e.g., moosestack/olap, guides/chat-in-your-app#overview)
+    pub slug: Option<String>,
+
+    /// Language for documentation: typescript (ts) or python (py)
+    #[arg(long, short = 'l', global = true)]
+    pub lang: Option<String>,
+
+    /// Output raw content without formatting (for piping to other tools)
+    #[arg(long, global = true)]
+    pub raw: bool,
+
+    /// Show full expanded tree with all leaf pages
+    #[arg(long)]
+    pub expand: bool,
+
+    /// Open documentation page in your web browser instead of printing
+    #[arg(long, global = true)]
+    pub web: bool,
+}
+
+/// Subcommands for the docs command
+#[derive(Debug, Subcommand)]
+pub enum DocsCommands {
+    /// Interactively browse and select a documentation page
+    Browse {},
+    /// Search documentation by title or description
+    Search {
+        /// Search query to filter documentation entries
+        query: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
