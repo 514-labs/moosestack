@@ -14,13 +14,13 @@ In this section, you'll apply your local changes to production. Complete these s
   To deploy to production (and to create branch preview environments), you need
   a Boreal project connected to the GitHub repo you’re working in. If you
   haven’t created a project yet, go back to [**Create your Boreal
-  project**](#create-your-boreal-project-production-access) above and complete
+  project**](#deploy-your-moosestack-project-to-boreal) above and complete
   that setup first.
 </Callout>
 
 
 <GuideStepper id="going-to-production-steps" persist>
-<GuideStepper.Step id="going-to-production-step-1" number={1} title="Generate a migration plan" summary="Review which tables and views will be created, modified, or deleted before shipping to production.">
+<GuideStepper.Step id="going-to-production-step-1" number={1} title="Generate a migration plan" summary="Preview which tables and views will be created, modified, or deleted before shipping to production.">
 <GuideStepper.AtAGlance title="Confirm that your changes are ready to ship">
 - New queries and materialized views run locally successfully
 - `moose dev` starts without errors
@@ -48,7 +48,7 @@ The command should create a new `/migrations` directory at the root of your Moos
 </GuideStepper.Checkpoint>
 
 </GuideStepper.Step>
-<GuideStepper.Step id="going-to-production-step-2" number={2} title="Review the migration plan">
+<GuideStepper.Step id="going-to-production-step-2" number={2} title="Review the migration plan" summary="Confirm the migration plan matches your intended changes.">
 <GuideStepper.AtAGlance title="How to review the migration plan">
 - Expect mostly new tables and materialized views
 - Carefully review schema changes to existing tables
