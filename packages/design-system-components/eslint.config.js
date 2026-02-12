@@ -4,4 +4,4 @@ const customConfig = require("@repo/eslint-config-custom");
 
 // Merge core-web-vitals with custom config
 // Custom config includes turbo rules, prettier overrides, and custom rules like _ prefix exemption
-module.exports = [...coreWebVitals, ...customConfig];
+module.exports = [...customConfig];
