@@ -72,3 +72,13 @@ export const showLinearIntegration = flag<boolean>({
   origin: "https://us.i.posthog.com",
   identify,
 });
+
+export const showBorealGuideSync = flag<boolean>({
+  key: "show-boreal-guide-sync",
+  adapter: postHogAdapter.isFeatureEnabled(),
+  defaultValue: false,
+  description:
+    "Show Boreal login and sync options in guide customization (experimental)",
+  origin: "https://us.i.posthog.com",
+  identify,
+});

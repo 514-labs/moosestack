@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { IconArrowRight } from "@tabler/icons-react";
+import { IconArrowRight, IconRefresh } from "@tabler/icons-react";
 
 interface FullPageCustomizerProps {
   title?: string;
@@ -18,6 +18,7 @@ interface FullPageCustomizerProps {
   children: React.ReactNode;
   onContinue: () => void;
   canContinue?: boolean;
+  showBorealSync?: boolean;
   onClose?: () => void;
 }
 
@@ -46,6 +47,7 @@ export function FullPageCustomizer({
   children,
   onContinue,
   canContinue = true,
+  showBorealSync = false,
   onClose,
 }: FullPageCustomizerProps): React.JSX.Element {
   return (
@@ -61,7 +63,21 @@ export function FullPageCustomizer({
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         <div className="space-y-6 py-4">{children}</div>
-        <DialogFooter>
+        <DialogFooter className="flex-col sm:flex-row gap-3">
+          {showBorealSync && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                // TODO: Implement Boreal OAuth
+                console.log("Login with Boreal");
+              }}
+              className="w-full sm:w-auto"
+              size="lg"
+            >
+              <IconRefresh className="mr-2 h-4 w-4" />
+              Login with Boreal
+            </Button>
+          )}
           <Button
             onClick={onContinue}
             disabled={!canContinue}

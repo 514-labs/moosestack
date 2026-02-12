@@ -3,7 +3,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { IconSettings } from "@tabler/icons-react";
+import { IconSettings, IconCloudUpload } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 interface SettingsSummaryProps {
@@ -11,6 +11,7 @@ interface SettingsSummaryProps {
   labels?: Record<string, string>;
   onChangeSettings: () => void;
   className?: string;
+  showBorealSync?: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export function SettingsSummary({
   labels = {},
   onChangeSettings,
   className,
+  showBorealSync = false,
 }: SettingsSummaryProps): React.JSX.Element {
   return (
     <div
@@ -58,6 +60,20 @@ export function SettingsSummary({
         ))}
       </div>
       <div className="flex gap-2 w-full">
+        {showBorealSync && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              // TODO: Implement Boreal sync
+              console.log("Boreal sync");
+            }}
+            className="flex-1"
+          >
+            <IconCloudUpload className="mr-1 h-3 w-3" />
+            Sync
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"

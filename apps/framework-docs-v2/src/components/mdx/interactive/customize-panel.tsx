@@ -93,6 +93,14 @@ export function CustomizePanel({
     null,
   );
   const [isClient, setIsClient] = useState(false);
+  const [showBorealSync, setShowBorealSync] = useState(false);
+
+  // Check URL parameters for Boreal sync flag
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    setShowBorealSync(params.get("boreal") === "true");
+  }, []);
 
   // Check for existing selections on mount
   useEffect(() => {
@@ -126,6 +134,7 @@ export function CustomizePanel({
           setShowCustomizer(false);
         }}
         canContinue={true} // Allow continue even if not all fields set (user can use defaults)
+        showBorealSync={showBorealSync}
       >
         {children}
       </FullPageCustomizer>
@@ -140,6 +149,7 @@ export function CustomizePanel({
         labels={fieldLabels}
         onChangeSettings={() => setShowCustomizer(true)}
         className={className}
+        showBorealSync={showBorealSync}
       />
     );
   }

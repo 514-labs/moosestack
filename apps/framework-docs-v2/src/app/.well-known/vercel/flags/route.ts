@@ -76,6 +76,15 @@ export const GET = createFlagsDiscoveryEndpoint(async () => {
           { value: true, label: "On" },
         ],
       },
+      "show-boreal-guide-sync": {
+        description:
+          "Show Boreal login and sync options in guide customization (experimental)",
+        origin: "https://us.i.posthog.com",
+        options: [
+          { value: false, label: "Off" },
+          { value: true, label: "On" },
+        ],
+      },
     },
   };
 });
