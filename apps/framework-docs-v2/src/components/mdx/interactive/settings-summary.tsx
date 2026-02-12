@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { IconSettings, IconCloudUpload } from "@tabler/icons-react";
+import { IconSettings, IconRefresh } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 interface SettingsSummaryProps {
@@ -98,8 +98,8 @@ export function SettingsSummary({
               }}
               className="flex-1"
             >
-              <IconCloudUpload className="mr-1 h-3 w-3" />
-              Sync
+              <IconRefresh className="mr-1 h-3 w-3" />
+              Boreal sync
             </Button>
           )}
           <Button
@@ -147,8 +147,8 @@ export function SettingsSummary({
               console.log("Boreal sync");
             }}
           >
-            <IconCloudUpload className="mr-1 h-3 w-3" />
-            Sync
+            <IconRefresh className="mr-1 h-3 w-3" />
+            Boreal sync
           </Button>
         )}
         <Button variant="outline" size="sm" onClick={onChangeSettings}>
