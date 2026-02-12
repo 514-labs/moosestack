@@ -1,7 +1,8 @@
-import { type ReactNode } from "react";
+import React, { type ReactNode } from "react";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import {
   IconBadge,
+  GuideBadges,
   CTACard,
   CTACards,
   StaggeredCard,
@@ -139,6 +140,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
   const components = {
     // Provide custom components to all MDX files
     IconBadge,
+    GuideBadges,
     CTACard,
     CTACards,
     StaggeredCard,
@@ -208,6 +210,16 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     figure: ServerFigure,
     pre: ServerCodeBlock,
     code: ServerInlineCode,
+
+    // Style images with border and rounded corners
+    img: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        {...props}
+        alt={props.alt || ""}
+        className="rounded-xl border border-border w-full h-auto my-4"
+      />
+    ),
   };
 
   return (

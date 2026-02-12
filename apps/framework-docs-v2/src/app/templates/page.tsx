@@ -3,8 +3,6 @@ import type { Metadata } from "next";
 import { parseMarkdownContent } from "@/lib/content";
 import { TOCNav } from "@/components/navigation/toc-nav";
 import { MDXRenderer } from "@/components/mdx-renderer";
-import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
-import { buildDocBreadcrumbs } from "@/lib/breadcrumbs";
 
 // export const dynamic = "force-dynamic";
 
@@ -36,18 +34,10 @@ export default async function TemplatesPage() {
     notFound();
   }
 
-  const breadcrumbs = buildDocBreadcrumbs(
-    "templates/index",
-    typeof content.frontMatter.title === "string" ?
-      content.frontMatter.title
-    : undefined,
-  );
-
   return (
     <>
-      <div className="flex w-full flex-col gap-6 pt-4">
-        <DocBreadcrumbs items={breadcrumbs} />
-        <article className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0">
+      <div className="flex w-full min-w-0 flex-col gap-6 pt-4">
+        <article className="prose dark:prose-invert max-w-none w-full min-w-0 overflow-x-auto">
           {content.isMDX ?
             <MDXRenderer source={content.content} />
           : <div dangerouslySetInnerHTML={{ __html: content.content }} />}

@@ -4,11 +4,11 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const alertVariants = cva(
-  "not-prose relative w-full rounded-lg border p-4 [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground",
+  "not-prose relative w-full rounded-xl border shadow p-4 [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground",
   {
     variants: {
       variant: {
-        default: "bg-background text-foreground [&>svg]:text-foreground",
+        default: "bg-card text-card-foreground [&>svg]:text-foreground",
         destructive:
           "border-destructive/50 text-destructive dark:border-red-500 dark:text-red-400 [&>svg]:text-destructive dark:[&>svg]:text-red-400",
         warning:
@@ -42,7 +42,10 @@ const AlertTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h5
     ref={ref}
-    className={cn("mb-1 font-medium leading-none tracking-tight", className)}
+    className={cn(
+      "font-mono text-sm font-light tracking-wider text-muted-foreground mb-4 uppercase",
+      className,
+    )}
     {...props}
   />
 ));
@@ -58,6 +61,7 @@ const AlertDescription = React.forwardRef<
       "text-sm [&_p]:leading-relaxed [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-6 [&_ol]:pl-6 [&_li]:my-1",
       className,
     )}
+    style={{ color: "var(--tw-prose-body)" }}
     {...props}
   />
 ));

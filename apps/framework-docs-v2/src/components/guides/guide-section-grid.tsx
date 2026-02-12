@@ -1,6 +1,5 @@
 import type { SerializableGuideSection } from "@/config/navigation";
 import { GuideCard } from "./guide-card";
-import type { PreviewVariant } from "./guide-preview";
 
 interface GuideSectionGridProps {
   sections: SerializableGuideSection[];
@@ -8,7 +7,7 @@ interface GuideSectionGridProps {
 
 /**
  * GuideSectionGrid - Server component for rendering guide sections
- * No client-side hooks needed - all data is pre-computed server-side
+ * Displays guides in compact card format with icons
  */
 export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
   if (sections.length === 0) {
@@ -20,11 +19,11 @@ export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
       {sections.map((section, sectionIndex) => (
         <div key={section.title || `section-${sectionIndex}`}>
           {section.title && (
-            <h2 className="text-xl font-semibold mb-4 text-foreground">
+            <h2 className="text-lg font-semibold mb-4 text-muted-foreground">
               {section.title}
             </h2>
           )}
-          <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+          <div className="rounded-xl border bg-card text-card-foreground shadow overflow-hidden">
             {section.items.map((guide, index) => {
               return (
                 <div key={guide.slug}>
@@ -32,8 +31,7 @@ export function GuideSectionGrid({ sections }: GuideSectionGridProps) {
                     title={guide.title}
                     description={guide.description}
                     href={`/${guide.slug}`}
-                    previewVariant={guide.previewVariant as PreviewVariant}
-                    previewImageIndexFile={guide.previewImageIndexFile}
+                    iconName={guide.iconName}
                     languages={guide.languages}
                     tags={guide.tags}
                   />

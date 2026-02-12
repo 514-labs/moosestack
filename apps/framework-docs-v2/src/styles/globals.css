@@ -79,19 +79,23 @@
   * {
     @apply border-border;
   }
+
   html {
     scroll-behavior: smooth;
     overscroll-behavior-y: none;
+    overflow-x: clip;
   }
   body {
     @apply bg-background text-foreground;
     overscroll-behavior-y: none;
+    overflow-x: clip;
+    min-width: 0;
   }
 }
 
 @layer components {
   .container {
-    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+    @apply max-w-5xl lg:max-w-6xl mx-auto px-4 sm:px-6 lg:px-8;
   }
 
   /* Search result highlights */

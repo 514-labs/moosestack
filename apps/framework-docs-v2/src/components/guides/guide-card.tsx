@@ -1,68 +1,71 @@
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { GuidePreview, type PreviewVariant } from "./guide-preview";
-
-const LANGUAGE_DISPLAY_NAMES: Record<string, string> = {
-  typescript: "TypeScript",
-  python: "Python",
-};
+import { Badge } from "@/components/ui/badge";
+import { getGuideIcon } from "./guide-icons";
+import { LANGUAGE_DISPLAY_NAMES } from "./guide-constants";
 
 interface GuideCardProps {
   title: string;
   description?: string;
   href: string;
-  previewVariant?: PreviewVariant;
-  previewImageIndexFile?: string;
+  iconName?: string;
   languages?: string[];
   tags?: string[];
 }
 
 /**
- * GuideCard - Server component for guide navigation cards
- * Uses static hrefs for optimal prefetching and no client-side hydration delays
+ * GuideCard - Compact card component for guide navigation
+ * Uses small icons instead of large preview images
  */
 export function GuideCard({
   title,
   description,
   href,
-  previewVariant,
-  previewImageIndexFile,
+  iconName,
   languages,
   tags,
 }: GuideCardProps) {
-  // Combine languages and tags for badge display
+  const IconComponent = getGuideIcon(iconName);
+
+  // Combine languages and tags for badge display with type prefix for unique keys
   const badges = [
     ...(languages?.map((lang) => ({
-      type: "lang",
+      type: "lang" as const,
       label: LANGUAGE_DISPLAY_NAMES[lang] || lang,
     })) || []),
-    ...(tags?.map((tag) => ({ type: "tag", label: tag })) || []),
+    ...(tags?.map((tag) => ({ type: "tag" as const, label: tag })) || []),
   ];
 
   return (
     <Link
       href={href}
       prefetch={true}
-      className="group relative flex flex-col md:flex-row md:items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors cursor-pointer"
+      className="group relative flex items-center gap-4 px-6 py-4 hover:bg-accent/50 transition-colors cursor-pointer"
     >
-      {/* Preview: Full width header on mobile, left media on desktop */}
-      <GuidePreview
-        variant={previewVariant}
-        imagePath={previewImageIndexFile}
-        title={title}
-      />
+      {/* Icon - decorative, hidden from assistive tech */}
+      {IconComponent && (
+        <div
+          className="flex items-center justify-center w-10 h-10 rounded-lg bg-muted text-muted-foreground shrink-0"
+          aria-hidden="true"
+        >
+          <IconComponent
+            className="h-5 w-5"
+            strokeWidth={1.5}
+            focusable={false}
+          />
+        </div>
+      )}
 
-      {/* Content: Full width on mobile, flex-1 on desktop */}
-      <div className="flex flex-1 flex-col gap-2">
-        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      {/* Content */}
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        <h3 className="text-base font-semibold text-foreground">{title}</h3>
         {badges.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {badges.map((badge) => (
               <Badge
                 key={`${badge.type}-${badge.label}`}
                 variant="outline"
-                className="bg-muted border-neutral-300 dark:border-neutral-700 text-foreground"
+                className="bg-muted border-border text-muted-foreground text-xs"
               >
                 {badge.label}
               </Badge>
@@ -70,25 +73,20 @@ export function GuideCard({
           </div>
         )}
         {description && (
-          <p className="text-sm text-muted-foreground leading-relaxed">
+          <p className="text-sm text-muted-foreground leading-relaxed truncate">
             {description}
           </p>
         )}
-
-        {/* Button: Inline on mobile, separate on desktop */}
-        <div className="md:hidden mt-2">
-          <Button variant="default" className="pointer-events-none">
-            Read
-          </Button>
-        </div>
       </div>
 
-      {/* Button: Side-aligned on desktop only */}
+      {/* Button - using asChild with span to avoid invalid <button> inside <a> */}
       <Button
         variant="default"
-        className="hidden md:block shrink-0 pointer-events-none"
+        size="sm"
+        className="shrink-0 pointer-events-none"
+        asChild
       >
-        Read
+        <span>Read</span>
       </Button>
     </Link>
   );

@@ -92,13 +92,36 @@ const config: Config = {
       typography: {
         DEFAULT: {
           css: {
+            "--tw-prose-body": "hsl(var(--muted-foreground))",
+            "--tw-prose-headings": "hsl(var(--foreground))",
+            "--tw-prose-lead": "hsl(var(--muted-foreground))",
+            "--tw-prose-links": "hsl(var(--primary))",
+            "--tw-prose-bold": "hsl(var(--foreground))",
+            "--tw-prose-counters": "hsl(var(--muted-foreground))",
+            "--tw-prose-bullets": "hsl(var(--muted-foreground))",
+            "--tw-prose-hr": "hsl(var(--border))",
+            "--tw-prose-quotes": "hsl(var(--muted-foreground))",
+            "--tw-prose-quote-borders": "hsl(var(--border))",
+            "--tw-prose-captions": "hsl(var(--muted-foreground))",
+            "--tw-prose-code": "hsl(var(--foreground))",
+            "--tw-prose-pre-code": "hsl(var(--foreground))",
+            "--tw-prose-pre-bg": "hsl(var(--muted))",
+            "--tw-prose-th-borders": "hsl(var(--border))",
+            "--tw-prose-td-borders": "hsl(var(--border))",
             maxWidth: "none",
-            color: "hsl(var(--foreground))",
+            color: "var(--tw-prose-body)",
+            fontSize: "0.875rem",
+            lineHeight: "1.5rem",
             h1: {
               fontSize: "2.25rem",
+              lineHeight: "2.5rem",
               fontWeight: "700",
-              marginTop: "2rem",
+              marginTop: "0",
               marginBottom: "1rem",
+              color: "hsl(var(--foreground))",
+            },
+            "h1:not(:first-child)": {
+              marginTop: "2rem",
             },
             h2: {
               fontSize: "1.875rem",
@@ -106,6 +129,7 @@ const config: Config = {
               marginTop: "1.5rem",
               marginBottom: "0.75rem",
               scrollMarginTop: "5rem",
+              color: "hsl(var(--foreground))",
             },
             h3: {
               fontSize: "1.5rem",
@@ -113,10 +137,17 @@ const config: Config = {
               marginTop: "1rem",
               marginBottom: "0.5rem",
               scrollMarginTop: "5rem",
+              color: "hsl(var(--foreground))",
+            },
+            h4: {
+              fontWeight: "600",
+              color: "hsl(var(--foreground))",
             },
             p: {
               marginBottom: "1rem",
-              lineHeight: "1.75rem",
+              fontSize: "0.875rem",
+              lineHeight: "1.5rem",
+              color: "var(--tw-prose-body)",
             },
             code: {
               backgroundColor: "hsl(var(--muted))",
@@ -158,15 +189,82 @@ const config: Config = {
               listStyleType: "disc",
               listStylePosition: "outside",
               marginBottom: "1rem",
+              fontSize: "0.875rem",
+              lineHeight: "1.5rem",
+              color: "var(--tw-prose-body)",
             },
             ol: {
               listStyleType: "decimal",
               listStylePosition: "outside",
               marginBottom: "1rem",
+              fontSize: "0.875rem",
+              lineHeight: "1.5rem",
+              color: "var(--tw-prose-body)",
             },
             li: {
               marginBottom: "0.5rem",
+              fontSize: "0.875rem",
+              lineHeight: "1.5rem",
+              color: "var(--tw-prose-body)",
             },
+            "li::marker": {
+              color: "var(--tw-prose-counters)",
+            },
+            "ol > li::marker": {
+              color: "var(--tw-prose-counters)",
+            },
+            strong: {
+              color: "hsl(var(--foreground))",
+              fontWeight: "600",
+            },
+            em: {
+              color: "hsl(var(--muted-foreground))",
+            },
+            blockquote: {
+              color: "hsl(var(--foreground))",
+              borderLeftColor: "hsl(var(--border))",
+            },
+            hr: {
+              borderColor: "hsl(var(--border))",
+            },
+            table: {
+              borderColor: "hsl(var(--border))",
+            },
+            thead: {
+              borderBottomColor: "hsl(var(--border))",
+            },
+            "thead th": {
+              color: "hsl(var(--foreground))",
+              borderColor: "hsl(var(--border))",
+            },
+            "tbody tr": {
+              borderBottomColor: "hsl(var(--border))",
+            },
+            "tbody td": {
+              color: "hsl(var(--muted-foreground))",
+              borderColor: "hsl(var(--border))",
+            },
+          },
+        },
+        // Dark mode uses the same CSS variables since they're theme-aware
+        invert: {
+          css: {
+            "--tw-prose-body": "hsl(var(--muted-foreground))",
+            "--tw-prose-headings": "hsl(var(--foreground))",
+            "--tw-prose-lead": "hsl(var(--muted-foreground))",
+            "--tw-prose-links": "hsl(var(--primary))",
+            "--tw-prose-bold": "hsl(var(--foreground))",
+            "--tw-prose-counters": "hsl(var(--muted-foreground))",
+            "--tw-prose-bullets": "hsl(var(--muted-foreground))",
+            "--tw-prose-hr": "hsl(var(--border))",
+            "--tw-prose-quotes": "hsl(var(--muted-foreground))",
+            "--tw-prose-quote-borders": "hsl(var(--border))",
+            "--tw-prose-captions": "hsl(var(--muted-foreground))",
+            "--tw-prose-code": "hsl(var(--foreground))",
+            "--tw-prose-pre-code": "hsl(var(--foreground))",
+            "--tw-prose-pre-bg": "hsl(var(--muted))",
+            "--tw-prose-th-borders": "hsl(var(--border))",
+            "--tw-prose-td-borders": "hsl(var(--border))",
           },
         },
       },

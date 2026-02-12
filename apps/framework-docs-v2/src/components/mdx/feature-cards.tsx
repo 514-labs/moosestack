@@ -25,7 +25,7 @@ export function FeatureCard({
   className,
 }: FeatureCardProps) {
   const cardClasses = cn(
-    "not-prose flex flex-col rounded-xl border border-border bg-card",
+    "not-prose flex flex-col rounded-xl border border-border bg-card text-card-foreground shadow",
     {
       "transition-colors cursor-pointer": !!href,
       "hover:border-primary hover:bg-primary/5":

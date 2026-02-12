@@ -1703,8 +1703,6 @@ export interface SerializableGuideItem {
   title: string;
   description?: string;
   iconName?: string;
-  previewVariant?: string;
-  previewImageIndexFile?: string;
   languages?: string[];
   tags?: string[];
 }
@@ -1741,6 +1739,7 @@ const iconToNameMap = new Map<TablerIcon, string>([
   [IconDatabase, "IconDatabase"],
   [IconServer, "IconServer"],
   [IconRocket, "IconRocket"],
+  [IconFileCode, "IconFileCode"],
 ]);
 
 /**
@@ -1793,10 +1792,10 @@ export function getVisibleGuideSections(flags: {
     }
   }
 
-  // Add top-level guides as first section (no title header)
+  // Add top-level guides as first section with "Popular" header
   if (topLevelGuides.length > 0) {
     sections.push({
-      title: "",
+      title: "Popular",
       items: topLevelGuides,
     });
   }
@@ -1829,4 +1828,39 @@ export function getVisibleGuideSections(flags: {
   }
 
   return sections;
+}
+
+/**
+ * Metadata for a guide, used by detail pages
+ */
+export interface GuideMetadata {
+  iconName?: string;
+}
+
+/**
+ * Get guide metadata by slug for detail pages
+ * Returns the icon name from the navigation config
+ */
+export function getGuideMetadataBySlug(
+  slug: string,
+): GuideMetadata | undefined {
+  // Normalize slug to match navigation config format
+  const normalizedSlug = slug.startsWith("guides/") ? slug : `guides/${slug}`;
+
+  // Search top-level guides
+  for (const item of guidesNavigationConfig) {
+    if (item.type === "page" && item.slug === normalizedSlug) {
+      return { iconName: getIconName(item.icon) };
+    }
+    // Search within sections
+    if (item.type === "section") {
+      for (const subItem of item.items) {
+        if (subItem.type === "page" && subItem.slug === normalizedSlug) {
+          return { iconName: getIconName(subItem.icon) };
+        }
+      }
+    }
+  }
+
+  return undefined;
 }

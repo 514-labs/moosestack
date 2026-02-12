@@ -328,24 +328,22 @@ Create alternating left-right layouts for showcasing features:
 - `children`: Code component (typically `CodeEditorWrapper`)
 - `language`: Language for syntax highlighting (default: `"ts"`)
 
-### IconBadge
+### Badges
 
-Small badges for highlighting features or technologies:
+Small badges for highlighting features or technologies. Use the standard shadcn Badge component:
 
 ```tsx
-import { IconBadge } from "@/components/mdx/icon-badge";
+import { Badge } from "@/components/ui/badge";
 
-<div className="flex items-center gap-4 my-8 flex-wrap">
-  <IconBadge Icon="Rocket" label="5 minute setup" variant="moose" />
-  <IconBadge Icon="Database" label="Pre-integrated ClickHouse" variant="moose" />
+<div className="flex items-center gap-2 mt-4 mb-4 flex-wrap">
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">5 minute setup</Badge>
+  <Badge variant="outline" className="bg-muted border-border text-muted-foreground">Pre-integrated ClickHouse</Badge>
 </div>
 ```
 
 **Props:**
-- `Icon`: Lucide icon name (string) or icon component (optional)
-- `label`: Badge text (required)
-- `variant`: `"moose" | "boreal" | "sloan" | "default"` (default: `"moose"`)
-- `rounded`: `"md" | "full"` (default: `"md"`)
+- `variant`: `"default" | "secondary" | "destructive" | "outline"` (use `"outline"` for standard doc badges)
+- `className`: Additional styling (use `"bg-muted border-border text-muted-foreground"` for consistent styling)
 
 ### CodeEditorWrapper
 
