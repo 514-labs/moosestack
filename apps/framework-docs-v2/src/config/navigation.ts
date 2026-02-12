@@ -938,6 +938,30 @@ const moosestackNavigationConfig: NavigationConfig = [
     children: [
       {
         type: "page",
+        slug: "moosestack/release-notes/2026-02-12",
+        title: "February 12, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-02-06",
+        title: "February 6, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-01-30",
+        title: "January 30, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/release-notes/2026-01-23",
+        title: "January 23, 2026",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
         slug: "moosestack/release-notes/2026-01-16",
         title: "January 16, 2026",
         languages: ["typescript", "python"],

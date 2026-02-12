@@ -1,0 +1,141 @@
+---
+title: February 12, 2026
+description: Release notes for February 12, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# February 12, 2026
+
+CLI developer experience takes center stage this week. A new `moose docs` command brings interactive documentation browsing directly into the terminal, remote ClickHouse support simplifies working with cloud-hosted databases in development, and `moose generate dockerfile` enables CI-friendly Docker workflows without a running daemon.
+
+<Callout type="info" title="Highlights">
+* **New:** Interactive `moose docs` command with browsing, search, and section navigation
+* **New:** Remote ClickHouse dev support with keychain credential storage
+* **New:** `moose generate dockerfile` subcommand for CI-friendly Docker builds
+</Callout>
+
+## Moose
+
+### New Features
+
+**Interactive `moose docs` command with browsing, search, and section navigation** ([@oatsandsugar](https://github.com/oatsandsugar))
+  Browse MooseStack documentation directly from the CLI with hierarchical navigation, search, and section-level deep links. Use `--web` to open any page in your browser, `--raw` to pipe content to other tools or LLMs, `--lang` to filter by TypeScript or Python, and `--expand` to show guide headings inline. Running `moose docs` with no arguments displays the full documentation table of contents, while `moose docs browse` launches an interactive picker that mirrors the docs site navigation.
+
+  The command also supports section-level navigation for large guide pages — use `slug#section` syntax to extract a specific H2/H3 section. Slugs and anchors are case-insensitive, and embedded base64 images are automatically stripped from output. Your language preference is persisted to `~/.moose/config.toml` so subsequent calls default to the same language.
+
+  ```bash
+  # Display the full table of contents
+  moose docs
+
+  # Interactive hierarchical browsing
+  moose docs browse
+
+  # Open a specific page in your browser
+  moose docs moosestack/workflows --web
+
+  # Pipe raw markdown to an LLM or pager
+  moose docs moosestack/apis --raw | less
+
+  # Search across all documentation
+  moose docs search "materialized view"
+
+  # Navigate to a specific section within a guide
+  moose docs guides/chat-in-your-app#overview --raw
+
+  # Show guide headings in the TOC
+  moose docs --expand
+
+  # Filter by language
+  moose docs moosestack/olap --lang python
+  ```
+
+  This is particularly useful for AI agents and agentic workflows — an AI assistant can discover docs via `moose docs --raw`, search for topics, and fetch specific sections without leaving the terminal.
+
+  Docs: [CLI Reference](/moosestack/moose-cli)
+
+**Remote ClickHouse dev support with keychain credential storage** ([@callicles](https://github.com/callicles))
+  Connect your local development environment to a remote ClickHouse instance using a new `[dev.remote_clickhouse]` configuration section in `moose.config.toml`. Connection details like host, port, and database are stored in the config file (safe to commit), while credentials are securely resolved from your OS keychain. On first use, the CLI prompts for username and password and stores them in the keychain with automatic rollback if the write partially fails.
+
+  This enables `moose dev` to introspect and generate code from externally managed tables — such as PeerDB CDC tables or cloud-hosted databases — without requiring a local ClickHouse instance. The config resolver validates connection parameters, defaults ports based on protocol (8443 for HTTPS, 8123 for HTTP), and constructs a fully authenticated client automatically.
+
+  ```toml
+  # moose.config.toml — safe to commit (no credentials)
+  [dev.remote_clickhouse]
+  host = "my-project-db.clickhouse.cloud"
+  port = 8443
+  protocol = "https"
+  database = "default"
+  # Username and password resolved from OS keychain at runtime
+  ```
+
+  ```bash
+  # First run prompts for credentials and stores them in the keychain
+  moose dev
+  # > Enter ClickHouse username: default
+  # > Enter ClickHouse password: ********
+  # > Credentials stored in keychain
+
+  # Subsequent runs resolve credentials automatically
+  moose dev
+  ```
+
+  This release also fixes code generation for externally managed tables with UUID-style names and adds support for hyphens in ClickHouse identifiers (e.g., `my-project-db-main`), which are common in cloud-hosted environments. Cluster names containing hyphens are now properly backtick-quoted in generated SQL.
+
+  Docs: [Dev Environment Configuration](/moosestack/configuration/dev-environment)
+
+**`moose generate dockerfile` subcommand for CI-friendly Docker builds** ([@jmsuzuki](https://github.com/jmsuzuki))
+  Generate a Dockerfile for your Moose project without requiring a running Docker daemon. This is useful in CI/CD pipelines where you want to produce the Dockerfile as a build artifact and handle the image build separately, or when you need to customize the generated Dockerfile before building. The command requires `custom_dockerfile = true` in your config and respects the `dockerfile_path` setting for output location.
+
+  ```toml
+  # moose.config.toml
+  [docker_config]
+  custom_dockerfile = true          # Required for generate dockerfile
+  dockerfile_path = "./Dockerfile"  # Optional, defaults to project root
+  # Environment variable overrides:
+  # MOOSE_DOCKER_CONFIG__CUSTOM_DOCKERFILE=true
+  # MOOSE_DOCKER_CONFIG__DOCKERFILE_PATH=./Dockerfile
+  ```
+
+  ```bash
+  # Generate the Dockerfile without building an image (no Docker daemon needed)
+  moose generate dockerfile
+
+  # Customize the generated Dockerfile if needed, then build separately
+  docker build -t my-moose-app .
+
+  # Or use moose build --docker to generate and build in one step
+  moose build --docker
+  ```
+
+  Docs: [Docker Configuration](/moosestack/configuration/docker-configuration)
+
+**Add /llm.txt plain-text endpoint for LLM documentation discovery** ([@oatsandsugar](https://github.com/oatsandsugar))
+  Added plain-text `.txt` documentation endpoints alongside the existing `.md` endpoints for broader LLM tool compatibility. Many AI tools search for `llm.txt` files by convention for documentation discovery. The `/llm.txt` root endpoint provides a table of contents with links to individual `.txt` pages, and each page is accessible at `/api/llm-txt/<slug>` returning `text/plain` content. Both endpoints use the same content cleaning and language filtering as the existing `.md` endpoints, including guide step expansion for multi-section guides.
+
+  ```bash
+  # Discover available documentation (table of contents)
+  curl https://docs.moosejs.com/llm.txt
+
+  # Fetch a specific page as plain text
+  curl https://docs.moosejs.com/api/llm-txt/moosestack/quickstart
+
+  # Existing .md endpoints continue to work
+  curl https://docs.moosejs.com/moosestack/quickstart.md
+  ```
+
+  Docs: [LLM-Optimized Documentation Feeds](/moosestack/moosedev-mcp#llm-optimized-documentation-feeds)
+
+### Improvements
+
+- Show short aliases for all CLI commands in help output: All CLI commands now display their short aliases in `moose --help` (e.g., `init [aliases: i]`, `dev [aliases: d]`, `build [aliases: b]`). Previously these aliases existed but were hidden. This makes it easier to discover shortcuts for faster terminal workflows, especially for developers using Moose commands frequently. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Add optional email prompt to moose feedback command: The `moose feedback` command now supports a `--email` flag or interactive prompt for providing contact information. When provided, the email is associated with your feedback via PostHog's `$identify` call so the team can follow up on reported issues. Use `moose feedback --email you@example.com "message"` to include it inline, or omit the flag to be prompted interactively. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Improved code syntax highlighting with GitHub theme: Replaced the Vitesse Light/Dark syntax highlighting theme with GitHub Light/Dark across all documentation pages. The new theme provides better contrast and readability, particularly for code blocks in dark mode where the previous theme had low-contrast issues. Affects all 8 code rendering components across the docs site. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Add application logging documentation with TS/Python examples: New "Application Logging" section in the observability docs explaining how Moose captures `stdout`/`stderr` from your application code and emits structured JSON logs with automatic span field inclusion. Includes tabbed TypeScript and Python examples showing `console.log`/`print` and structured logging patterns. The prior "Logging" heading has been renamed to "Infrastructure Logging" to distinguish the two. Docs: [Observability](/moosestack/metrics) ([@LucioFranco](https://github.com/LucioFranco))
+- Add explicit Node.js installation instructions for WSL2: Added a dedicated step-by-step guide for installing Node.js via `nvm` inside WSL2 Ubuntu, with a warning against using the Windows Node.js installer which installs to the Windows filesystem and causes path conflicts inside WSL. Covers `nvm install`, `nvm use`, and verification steps. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Interactive guide stepper with checkpoint prompts: Documentation guides now feature an interactive multi-phase stepper component with progress tracking, nested checkpoints, and a "Copy Prompt" action that generates context-aware prompts for AI-assisted development workflows. The performant dashboards guide has been refactored into this new format with reusable MDX partials for each phase. Docs: [Performant Dashboards Guide](/guides/performant-dashboards) ([@okane16](https://github.com/okane16))
+- Enable typescript-mcp template for Boreal one-click deploy: The MCP template now supports Boreal deployment with `[boreal].enabled = true`. When deployed, `MCP_API_KEY` and `MCP_API_TOKEN` are auto-provisioned via `moose generate hash-token --json`, so users don't need to manually configure authentication secrets for their MCP server. ([@onelesd](https://github.com/onelesd))
+
+### Bug Fixes
+
+- Fix workflow polling generating excessive history events: Fixed overly aggressive continue-as-new polling in both Python and TypeScript workflows. The previous implementation used background polling that checked event limits continuously, but each check itself created workflow history events — compounding the problem for long-running workflows. The runtime now checks continue-as-new once before starting each task, with `continue_from_task` pointing to the next unexecuted task to avoid duplicate runs on resume. The original raw workflow input is also threaded through to `continue_as_new` to prevent double-serialization on restart. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
