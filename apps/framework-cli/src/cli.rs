@@ -741,6 +741,7 @@ pub async fn top_command_handler(
             timestamps,
             timing,
             log_payloads,
+            experimental_tui,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -768,6 +769,32 @@ pub async fn top_command_handler(
 
             check_project_name(&project_arc.name())?;
 
+            // TUI mode: Launch TUI immediately and handle infrastructure inside
+            if *experimental_tui {
+                routines::dev_tui::run_dev_tui_with_infra(
+                    project_arc,
+                    &settings,
+                    *mcp,
+                    *no_infra,
+                    machine_id.clone(),
+                )
+                .await
+                .map_err(|e| {
+                    RoutineFailure::error(Message {
+                        action: "Dev".to_string(),
+                        details: format!("TUI mode failed: {e:?}"),
+                    })
+                })?;
+
+                wait_for_usage_capture(capture_handle).await;
+
+                return Ok(RoutineSuccess::success(Message::new(
+                    "Dev".to_string(),
+                    "TUI mode exited".to_string(),
+                )));
+            }
+
+            // Non-TUI mode: Run infrastructure first, then start development mode
             // Only run infrastructure if --no-infra flag is not set
             if !no_infra {
                 run_local_infrastructure_with_timeout(&project_arc, &settings)
@@ -815,6 +842,7 @@ pub async fn top_command_handler(
                 redis_client,
                 &settings,
                 *mcp,
+                false, // TUI mode already handled above
             )
             .await
             .map_err(|e| {

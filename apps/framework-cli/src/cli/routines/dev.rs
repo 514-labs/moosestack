@@ -169,7 +169,6 @@ pub fn create_docker_compose_file(
 
 /// Infrastructure boot error type for TUI mode
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub enum InfraBootError {
     #[error("Docker is not running")]
     DockerNotRunning,
@@ -190,7 +189,6 @@ pub enum InfraBootError {
 /// * `project` - The project configuration
 /// * `settings` - Application settings
 /// * `tx` - Channel sender for status updates
-#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub async fn run_infrastructure_with_updates(
     project: Arc<Project>,
     settings: Settings,
@@ -322,7 +320,6 @@ pub async fn run_infrastructure_with_updates(
 }
 
 /// Validate a service container with status updates
-#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 fn validate_service_with_updates<F>(
     project: &Project,
     docker_client: &DockerClient,

@@ -2,9 +2,6 @@
 //!
 //! This module processes keyboard events and updates the application state accordingly.
 
-// TODO(PR5): Remove this allow once mod.rs entry point uses these functions
-#![allow(dead_code)]
-
 use super::alert::AlertAction;
 use super::app::{DevTuiApp, LogFilter, LogSource, Panel};
 use super::DevTuiResult;
