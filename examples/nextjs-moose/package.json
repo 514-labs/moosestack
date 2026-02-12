@@ -45,7 +45,8 @@
       "@514labs/kafka-javascript"
     ],
     "overrides": {
-      "tar": "7.5.7"
+      "tar": "7.5.7",
+      "@isaacs/brace-expansion": "5.0.1"
     }
   }
 }
