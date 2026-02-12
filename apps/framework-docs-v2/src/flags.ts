@@ -72,3 +72,13 @@ export const showLinearIntegration = flag<boolean>({
   origin: "https://us.i.posthog.com",
   identify,
 });
+
+export const settingsSidebarPlacement = flag<boolean>({
+  key: "settings-sidebar-placement",
+  adapter: postHogAdapter.isFeatureEnabled(),
+  defaultValue: false,
+  description:
+    "Use sidebar placement for settings summary instead of sticky-top",
+  origin: "https://us.i.posthog.com",
+  identify,
+});

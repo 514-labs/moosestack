@@ -210,6 +210,8 @@ export function TOCNav({
   return (
     <aside className="fixed top-[--header-height] right-0 z-30 hidden h-[calc(100vh-var(--header-height))] w-64 shrink-0 xl:block pr-2">
       <div className="h-full overflow-y-auto pt-6 lg:pt-10 pb-6 pr-2">
+        {/* Portal target for sidebar settings summary */}
+        <div id="settings-summary-sidebar" />
         {visibleHeadings.length > 0 && (
           <div className="mb-6">
             <h4 className="mb-3 text-sm font-semibold">On this page</h4>

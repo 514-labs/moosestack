@@ -12,6 +12,30 @@ import { cn } from "@/lib/utils";
 import { FullPageCustomizer } from "./full-page-customizer";
 import { SettingsSummary } from "./settings-summary";
 
+/**
+ * Check if a Vercel Toolbar flag is enabled by reading from cookies
+ */
+function useVercelFlag(flagKey: string): boolean {
+  const [isEnabled, setIsEnabled] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    // Read from Vercel Toolbar cookie
+    const cookies = document.cookie.split(";");
+    const flagCookie = cookies.find((c) =>
+      c.trim().startsWith(`vercel-flag-${flagKey}=`),
+    );
+
+    if (flagCookie) {
+      const value = flagCookie.split("=")[1];
+      setIsEnabled(value === "1" || value === "true");
+    }
+  }, [flagKey]);
+
+  return isEnabled;
+}
+
 interface CustomizePanelProps {
   /** Panel title (default: "Customize") */
   title?: string;
@@ -113,6 +137,13 @@ export function CustomizePanel({
   );
   const [isClient, setIsClient] = useState(false);
 
+  // Check flag to override placement
+  const useSidebarPlacement = useVercelFlag("settings-sidebar-placement");
+  const effectivePlacement =
+    useSidebarPlacement && summaryPlacement === "sticky-top" ?
+      "sidebar"
+    : summaryPlacement;
+
   // Check for existing selections on mount
   useEffect(() => {
     setIsClient(true);
@@ -179,7 +210,7 @@ export function CustomizePanel({
         labels={fieldLabels}
         onChangeSettings={() => setShowCustomizer(true)}
         className={className}
-        placement={summaryPlacement}
+        placement={effectivePlacement}
       />
     );
   }
