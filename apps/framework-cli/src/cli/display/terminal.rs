@@ -4,6 +4,7 @@
 //! crate. It includes components for displaying styled text and managing
 //! terminal state during CLI operations.
 
+use crate::utilities::constants::SUPPRESS_DISPLAY;
 use crossterm::{
     execute,
     style::{
@@ -11,6 +12,7 @@ use crossterm::{
     },
 };
 use std::io::{stderr, stdout, Result as IoResult};
+use std::sync::atomic::Ordering;
 
 /// Width of the action column in terminal output
 pub const ACTION_WIDTH: usize = 15;
@@ -276,6 +278,11 @@ pub fn write_styled_line(
     show_timestamps: bool,
     quiet_stdout: bool,
 ) -> IoResult<()> {
+    // In TUI mode, suppress all direct terminal writes.
+    if SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
+        return Ok(());
+    }
+
     // When quiet_stdout is set, redirect messages to stderr to keep stdout clean
     // for structured/JSON output
     if quiet_stdout {
