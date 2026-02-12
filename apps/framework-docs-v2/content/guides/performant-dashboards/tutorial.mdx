@@ -40,8 +40,15 @@ By the end of this guide you'll have:
 ### Customize this tutorial
 
 <CustomizePanel
+  mode="wizard"
   title="Where does your current data live?"
   description="Select the database you use today so we can show the right way to replicate this data into ClickHouse"
+  fieldIds={["source-database", "os", "language"]}
+  fieldLabels={{
+    "source-database": "Database",
+    "os": "OS",
+    "language": "Language"
+  }}
 >
   <CustomizeGrid columns={1}>
     <SelectField
