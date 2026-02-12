@@ -1,0 +1,121 @@
+---
+title: Overview
+description: Why dashboard performance matters and when to migrate to OLAP
+languages: ["typescript"]
+---
+
+import {
+  Callout,
+  BulletPointsCard,
+} from "@/components/mdx";
+
+# Overview
+
+### What this guide is for
+
+The root cause of slow dashboards is usually analytical queries (aggregations, wide table scans, complex joins) running on your existing transactional database, competing with the core transactional workloads that power the rest of your application.
+
+You'll know you're hitting this when you see one (or more) of these symptoms:
+
+<BulletPointsCard
+  title="Common symptoms"
+  bulletStyle="x"
+  bullets={[
+    {
+      title: "Charts/metrics take 5+ seconds to load",
+      description:
+        "Users stare at spinners past the 3-second attention threshold, causing them to lose focus, abandon tasks, or complain about a slow product.",
+    },
+    {
+      title: "Small report changes are expensive",
+      description:
+        "Adding a new report or filter is too risky and complex to build, so engineering prioritizes other features instead.",
+    },
+    {
+      title: "Reporting traffic overwhelms production OLTP",
+      description:
+        "Analytics queries cause collateral damage to core app workflows.",
+    },
+  ]}
+/>
+
+This guide lays out a step-by-step path to offload those analytical workloads to a purpose-built analytical database (ClickHouse), incrementally, without needing to rearchitect your existing application.
+
+At a high level, you'll:
+
+1. Stand up ClickHouse and replicate the data your dashboards need
+2. Set up a local development workflow that supports ClickHouse-backed analytics
+3. Migrate one dashboard/report at a time by translating OLTP queries to ClickHouse
+4. Ship your changes to production on Boreal Cloud
+
+### Why this matters
+
+Customer-facing analytics becomes mission-critical once users depend on it to understand their behavior, progress, or outcomes. Slow or unreliable dashboards drive down engagement: lower retention, higher churn, and direct revenue impact as users stop trusting your product for insights. Fast dashboards do the opposite—they encourage exploration, increase repeat usage, and let customers interact with your data in ways you can't predict upfront.
+
+<Callout type="info" title="Case study: F45's LionHeart experience">
+LionHeart is where F45's most engaged members track workout performance and progress. Their original OLTP-backed implementation meant they had to ship reports as static images rather than interactive charts.
+
+After migrating the analytics backend to an OLAP architecture (Fiveonefour stack), LionHeart shipped fast, interactive dashboards in weeks:
+
+- **Outcome:** [70% increase in user satisfaction, and over 1 full star increase in the F45 App Store rating](https://www.fiveonefour.com/blog/case-study-f45)
+</Callout>
+
+### Why you haven't solved it yet
+
+Most teams don't start with a dedicated analytical database (OLAP), and it's often the right call early on.
+
+<BulletPointsCard
+  title="Why teams delay adopting OLAP"
+  bulletStyle="default"
+  bullets={[
+    {
+      title: "The OLTP path is the highest-ROI path early on",
+      description:
+        "Your transactional database already powers your core application workflows. Early on, it can handle analytics queries too, so adding a second database delivers little marginal value.",
+    },
+    {
+      title: "Performance doesn't degrade right away",
+      description:
+        'OLTP-backed analytics can look "fine" until data volume and concurrency cross a threshold (typically 10-50M rows, depending on query complexity and concurrent users).',
+    },
+    {
+      title: "Shipping the first version is fastest on existing infrastructure",
+      description:
+        "The quickest path to value is usually building reporting directly on the systems you already run and understand.",
+    },
+    {
+      title: "A second database is a real operational commitment",
+      description:
+        "Adding OLAP introduces new reliability, cost, security, and ownership concerns—not just a new query engine.",
+    },
+    {
+      title:
+        "Most OLAP stacks weren't built for modern software engineering workflows",
+      description:
+        "Tooling can feel data-engineering-native, slowing adoption when the builders are primarily software engineering teams building on a application stack (e.g., Next.js, React, Ruby on Rails, etc.).",
+    },
+  ]}
+/>
+
+While it's common to delay adopting OLAP, there's an inflection point at which it becomes a real business risk. OLAP migrations are non-trivial and can take months with traditional data engineering tooling. If you wait too long to start or choose tooling with a steep learning curve, you may not move fast enough to fix the problem before users start churning.
+
+<Callout type="info" title="Feeling daunted? This is designed to be incremental">
+You don't need to migrate your entire analytics stack at once. In this guide, you'll translate **one dashboard/report at a time**: replicate only the data you need, model it in ClickHouse, and cut over reads when you're confident.
+
+If you get stuck on a schema design decision or an especially complex query, join the [Moose community Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) and we'll help you map out the next step.
+
+</Callout>
+
+### When to pull the trigger
+
+Users want more metrics, filters, breakdowns, or longer time ranges in their dashboards, but engineering can't deliver these seemingly small changes without risking the transactional workloads your core product depends on. Load times creep up. Customers complain. Before long, those complaints surface in retention metrics, support tickets, and sales calls.
+
+Throwing more hardware at the problem either isn't possible or is prohibitively expensive. Even when feasible, this approach only buys temporary relief. The underlying issue is certain to resurface.
+
+### What success looks like
+
+You'll have migrated to ClickHouse successfully if you see a measurable impact on both product velocity and system reliability.
+
+Dashboards stay fast as data grows, instead of degrading over time. Analytical workloads run on dedicated infrastructure, so your transactional database can focus on what it does best.
+
+Engineering can ship new dashboards, metrics, and breakdowns as routine product work—not risky, backlog-bound projects. Features that used to require careful capacity planning become straightforward additions.

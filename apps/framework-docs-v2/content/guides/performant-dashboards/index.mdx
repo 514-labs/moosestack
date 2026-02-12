@@ -1,0 +1,45 @@
+---
+title: Improving the Performance of Your Dashboards
+description: Build fast dashboards using MooseStack and ClickHouse
+previewVariant: "dashboards"
+languages: ["typescript"]
+---
+
+import {
+  CTACards,
+  CTACard,
+  Callout,
+} from "@/components/mdx";
+
+# Improving the Performance of Your Dashboards
+
+<Callout type="info" title="TL;DR">
+* Slow dashboards are usually a database architecture problem, not a frontend or charting library problem.
+* Running analytical queries on your transactional database degrades your entire application's performance and reliability.
+* Moving these analytical queries to ClickHouse yields 10–100x faster dashboards
+
+This guide will:
+
+1. Help you recognize when OLTP has become your analytics bottleneck
+2. Show an incremental path to move analytical workloads to OLAP
+3. Walk through shipping the change end-to-end with MooseStack + ClickHouse
+</Callout>
+
+## Where to go
+
+<CTACards columns={2}>
+  <CTACard
+    title="Overview"
+    description="Business context, warning signs, and what success looks like"
+    ctaLink="/guides/performant-dashboards/overview"
+    ctaLabel="Read first"
+    Icon="Eye"
+  />
+  <CTACard
+    title="Tutorial"
+    description="Step-by-step: port dashboard logic to ClickHouse via MooseStack"
+    ctaLink="/guides/performant-dashboards/tutorial"
+    ctaLabel="Start building"
+    Icon="Rocket"
+  />
+</CTACards>
