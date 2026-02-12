@@ -2,6 +2,7 @@
 const coreWebVitals = require("eslint-config-next/core-web-vitals");
 const customConfig = require("@repo/eslint-config-custom");
 
-// Merge core-web-vitals with custom config
+// Merge custom config first, then core-web-vitals
+// This ensures core-web-vitals stricter rules are not overwritten by the base next config in customConfig
 // Custom config includes turbo rules, prettier overrides, and custom rules like _ prefix exemption
-module.exports = [...coreWebVitals, ...customConfig];
+module.exports = [...customConfig, ...coreWebVitals];
