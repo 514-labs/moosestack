@@ -36,7 +36,7 @@ use crate::framework::core::{
     },
     plan::InfraPlan,
 };
-use crate::utilities::constants::{NO_ANSI, QUIET_STDOUT, SHOW_TIMESTAMPS};
+use crate::utilities::constants::{NO_ANSI, QUIET_STDOUT, SHOW_TIMESTAMPS, SUPPRESS_DISPLAY};
 use crossterm::{execute, style::Print};
 use std::sync::atomic::Ordering;
 use tracing::info;
@@ -59,6 +59,9 @@ const DETAIL_INDENT: &str = {
 /// Helper function to write detail lines with proper indentation
 /// Respects QUIET_STDOUT flag to redirect to stderr when set
 fn write_detail_lines(details: &[String]) {
+    if SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
+        return;
+    }
     let quiet_stdout = QUIET_STDOUT.load(Ordering::Relaxed);
     if quiet_stdout {
         let mut stderr = std::io::stderr();
@@ -602,7 +605,9 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
         }
         OlapChange::Table(TableChange::ValidationError { message, .. }) => {
             // Display validation error - it's already formatted with box borders
-            eprintln!("{}", message);
+            if !SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
+                eprintln!("{}", message);
+            }
         }
         OlapChange::View(view_change) => {
             handle_standard_change!(view_change);
