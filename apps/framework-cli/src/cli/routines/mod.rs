@@ -161,6 +161,7 @@ pub mod build;
 pub mod clean;
 pub mod code_generation;
 pub mod dev;
+pub mod dev_tui;
 pub mod docker_packager;
 pub(crate) mod docs;
 pub mod feedback;
