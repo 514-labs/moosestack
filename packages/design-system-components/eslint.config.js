@@ -1,4 +1,7 @@
 // ESLint Flat Config for design-system-components
 const coreWebVitals = require("eslint-config-next/core-web-vitals");
+const customConfig = require("@repo/eslint-config-custom");
 
-module.exports = coreWebVitals;
+// Merge core-web-vitals with custom config
+// Custom config includes turbo rules, prettier overrides, and custom rules like _ prefix exemption
+module.exports = [...coreWebVitals, ...customConfig];
