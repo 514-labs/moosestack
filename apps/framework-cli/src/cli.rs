@@ -741,7 +741,7 @@ pub async fn top_command_handler(
             timestamps,
             timing,
             log_payloads,
-            tui,
+            experimental_tui,
         } => {
             info!("Running dev command");
             info!("Moose Version: {}", CLI_VERSION);
@@ -770,7 +770,7 @@ pub async fn top_command_handler(
             check_project_name(&project_arc.name())?;
 
             // TUI mode: Launch TUI immediately and handle infrastructure inside
-            if *tui {
+            if *experimental_tui {
                 routines::dev_tui::run_dev_tui_with_infra(
                     project_arc,
                     &settings,

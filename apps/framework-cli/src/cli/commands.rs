@@ -144,9 +144,9 @@ pub enum Commands {
         #[arg(long)]
         log_payloads: bool,
 
-        /// Launch interactive Terminal User Interface for development mode
+        /// Launch experimental interactive Terminal User Interface for development mode
         #[arg(long)]
-        tui: bool,
+        experimental_tui: bool,
     },
     /// Start a remote environment for use in cloud deployments
     #[command(visible_alias = "p")]
