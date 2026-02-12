@@ -3,7 +3,7 @@
 //! This module handles terminal events including keyboard input
 //! and periodic ticks for UI updates.
 
-// TODO(PR3): Remove this allow once tui.rs uses these types
+// TODO(PR5): Remove this allow once mod.rs entry point uses EventHandler
 #![allow(dead_code)]
 
 use super::DevTuiResult;
