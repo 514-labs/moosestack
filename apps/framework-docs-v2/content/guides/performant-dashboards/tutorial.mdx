@@ -37,11 +37,17 @@ By the end of this guide you’ll have:
   existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app).
 </Callout>
 
-### Customize this tutorial
-
 <CustomizePanel
-  title="Where does your current data live?"
+  mode="wizard"
+  title="What's your setup?"
   description="Select the database you use today so we can show the right way to replicate this data into ClickHouse"
+  fieldIds={["source-database", "os", "language"]}
+  fieldLabels={{
+    "source-database": "Database",
+    "os": "OS",
+    "language": "Language"
+  }}
+  summaryPlacement="sticky-top"
 >
   <CustomizeGrid columns={1}>
     <SelectField
