@@ -26,6 +26,8 @@ updates:
       - "workspace"
       - "dependencies"
     ignore:
+      # Keep @types/node at 20.x.x for backward compatibility
+      # Node.js 20 is LTS and we want to ensure compatibility
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
@@ -50,6 +52,8 @@ updates:
           - "@514labs/moose-cli"
           - "@514labs/moose-lib"
     ignore:
+      # Keep @types/node at 20.x.x for backward compatibility
+      # Node.js 20 is LTS and we want to ensure compatibility
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
