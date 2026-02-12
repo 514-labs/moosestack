@@ -6,11 +6,17 @@
 pub mod alert;
 mod app;
 mod event;
+mod handler;
 pub mod infra_status;
 pub mod log_collector;
 pub mod resource_panel;
+#[cfg(test)]
+mod testable_tui;
+mod tui;
+mod ui;
 
 /// Result type for Dev TUI operations
+#[allow(dead_code)] // TODO(PR5): Remove once entry points use this
 pub type DevTuiResult<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// Test utilities for the dev_tui module
