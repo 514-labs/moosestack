@@ -20,37 +20,22 @@ CLI developer experience takes center stage this week. A new `moose docs` comman
 ### New Features
 
 **Interactive `moose docs` command with browsing, search, and section navigation** ([@oatsandsugar](https://github.com/oatsandsugar))
-  Browse MooseStack documentation directly from the CLI with hierarchical navigation, search, and section-level deep links. Use `--web` to open any page in your browser, `--raw` to pipe content to other tools or LLMs, `--lang` to filter by TypeScript or Python, and `--expand` to show guide headings inline. Running `moose docs` with no arguments displays the full documentation table of contents, while `moose docs browse` launches an interactive picker that mirrors the docs site navigation.
+  Browse MooseStack documentation directly from the CLI. Interactive picker for humans, raw markdown output for AI copilots and agents needing context.
 
-  The command also supports section-level navigation for large guide pages — use `slug#section` syntax to extract a specific H2/H3 section. Slugs and anchors are case-insensitive, and embedded base64 images are automatically stripped from output. Your language preference is persisted to `~/.moose/config.toml` so subsequent calls default to the same language.
+  Section-level navigation extracts specific parts of long guides without downloading entire pages — useful for focused context in agentic workflows. Language preferences persist across sessions.
 
   ```bash
-  # Display the full table of contents
-  moose docs
-
-  # Interactive hierarchical browsing
-  moose docs browse
-
-  # Open a specific page in your browser
-  moose docs moosestack/workflows --web
-
-  # Pipe raw markdown to view in your terminal or send to an LLM
-  moose docs moosestack/apis --raw | less
+  # Browse documentation interactively and open in browser
+  moose docs browse --web
 
   # Search across all documentation
   moose docs search "materialized view"
 
-  # Navigate to a specific section within a guide
-  moose docs guides/chat-in-your-app#overview --raw
-
-  # Show guide headings in the TOC
-  moose docs --expand
-
-  # Filter by language
-  moose docs moosestack/olap --lang python
+  # Pipe content to other tools or LLMs
+  moose docs guides/performant-dashboards#prepare-your-local-development-environment --raw | claude "execute this step"
   ```
 
-  This is particularly useful for AI agents and agentic workflows — an AI assistant can discover docs via `moose docs --raw`, search for topics, and fetch specific sections without leaving the terminal.
+  Run `moose docs --help` to see all available options.
 
   Docs: [CLI Reference](/moosestack/moose-cli)
 
