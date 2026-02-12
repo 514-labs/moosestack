@@ -3,9 +3,6 @@
 //! This module handles terminal events including keyboard input
 //! and periodic ticks for UI updates.
 
-// TODO(PR5): Remove this allow once mod.rs entry point uses EventHandler
-#![allow(dead_code)]
-
 use super::DevTuiResult;
 use crossterm::event::{Event as CrosstermEvent, KeyEvent};
 use futures::{FutureExt, StreamExt};
