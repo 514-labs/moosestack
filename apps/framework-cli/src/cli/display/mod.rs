@@ -73,6 +73,7 @@
 #[macro_use]
 pub mod message_display;
 
+pub mod context;
 pub mod infrastructure;
 pub mod message;
 pub mod spinner;
@@ -82,6 +83,8 @@ pub mod terminal;
 pub mod timing;
 
 // Re-export commonly used types and functions for convenience
+#[allow(unused_imports)] // Will be used in TUI integration
+pub use context::{DisplayContext, DisplayMessage, DisplaySender, DISPLAY_CONTEXT};
 pub use infrastructure::show_changes;
 pub use message::{Message, MessageType};
 pub use message_display::{batch_inserted, show_message_wrapper};

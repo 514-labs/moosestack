@@ -5,7 +5,10 @@
 //! disappear completely when stopped or show a completion message with checkmark
 //! when finished successfully.
 
-use super::terminal::TerminalComponent;
+use super::{
+    context::{tui_channel, DisplayMessage},
+    terminal::TerminalComponent,
+};
 use crate::utilities::constants::SUPPRESS_DISPLAY;
 use crossterm::{
     cursor::{position, MoveTo, RestorePosition, SavePosition},
@@ -442,7 +445,9 @@ where
     F: FnOnce() -> R,
 {
     let suppressed = SUPPRESS_DISPLAY.load(Ordering::Relaxed);
-    let sp = if activate && !suppressed && stdout().is_terminal() {
+    let has_tui = tui_channel().is_some();
+
+    let sp = if activate && !suppressed && !has_tui && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
         let _ = spinner.start();
         Some(spinner)
@@ -455,10 +460,17 @@ where
     if let Some(mut spinner) = sp {
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
-    } else if activate && !suppressed {
+    } else if activate && !suppressed && !has_tui {
         // In non-TTY mode (e.g., CI), still print the completion message
         // so tests can detect when operations complete
         println!("✓ {completion_message}");
+    } else if activate && has_tui {
+        // Send completion message to TUI
+        if let Some(sender) = tui_channel() {
+            sender.send(DisplayMessage::SpinnerCompletion {
+                message: completion_message.to_string(),
+            });
+        }
     }
 
     res
@@ -559,7 +571,9 @@ where
     F: Future<Output = R>,
 {
     let suppressed = SUPPRESS_DISPLAY.load(Ordering::Relaxed);
-    let sp = if activate && !suppressed && stdout().is_terminal() {
+    let has_tui = tui_channel().is_some();
+
+    let sp = if activate && !suppressed && !has_tui && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
         let _ = spinner.start();
         Some(spinner)
@@ -572,10 +586,17 @@ where
     if let Some(mut spinner) = sp {
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
-    } else if activate && !suppressed {
+    } else if activate && !suppressed && !has_tui {
         // In non-TTY mode (e.g., CI), still print the completion message
         // so tests can detect when operations complete
         println!("✓ {completion_message}");
+    } else if activate && has_tui {
+        // Send completion message to TUI
+        if let Some(sender) = tui_channel() {
+            sender.send(DisplayMessage::SpinnerCompletion {
+                message: completion_message.to_string(),
+            });
+        }
     }
 
     res

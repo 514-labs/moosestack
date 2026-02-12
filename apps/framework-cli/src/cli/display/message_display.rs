@@ -4,6 +4,7 @@
 //! the show_message macro and related display functions for CLI output.
 
 use super::{
+    context::{tui_channel, DisplayMessage},
     message::{Message, MessageType},
     terminal::{write_styled_line, StyledText},
 };
@@ -106,6 +107,22 @@ pub fn show_message_impl(
     show_timestamps: bool,
     quiet_stdout: bool,
 ) -> std::io::Result<()> {
+    // Check for TUI context first - route messages to TUI if available
+    if let Some(sender) = tui_channel() {
+        sender.send(DisplayMessage::Message {
+            message_type,
+            action: message.action.clone(),
+            details: message.details.clone(),
+        });
+
+        if should_log {
+            let log_action = message.action.replace('\n', " ");
+            let log_details = message.details.replace('\n', " ");
+            info!("{} {}", log_action.trim(), log_details.trim());
+        }
+        return Ok(());
+    }
+
     // In TUI mode, suppress all terminal output — the TUI manages its own display.
     // We still log via tracing so the information is captured in log files.
     if SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
