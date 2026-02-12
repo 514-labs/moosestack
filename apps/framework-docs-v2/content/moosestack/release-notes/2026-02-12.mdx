@@ -139,3 +139,21 @@ CLI developer experience takes center stage this week. A new `moose docs` comman
 ### Bug Fixes
 
 - Fix workflow polling generating excessive history events: Fixed overly aggressive continue-as-new polling in both Python and TypeScript workflows. The previous implementation used background polling that checked event limits continuously, but each check itself created workflow history events — compounding the problem for long-running workflows. The runtime now checks continue-as-new once before starting each task, with `continue_from_task` pointing to the next unexecuted task to avoid duplicate runs on resume. The original raw workflow input is also threaded through to `continue_as_new` to prevent double-serialization on restart. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+
+## Boreal
+
+### New Features
+
+**Project creation flow revamp** ([@groy-514](https://github.com/groy-514))
+  The project creation experience has been completely redesigned with a new multi-step wizard. The flow now starts with an origin picker featuring template browsing with search and featured templates alongside GitHub repo import. The project configuration step auto-discovers `moose.config.toml` locations in your repository, and a new infrastructure step provides a services summary with a right-hand "Customize" panel for storage, streaming, and workflow configuration.
+
+  Infrastructure selection uses a new expandable radio group with "Managed" and "External" badges, and external ClickHouse/Kafka connections must be tested and validated before proceeding. Environment variables can now be edited and validated inline during infrastructure configuration. Step transitions use `framer-motion` animations, and the deployment step only renders UI on failure — showing an error card with a Back action — instead of displaying an "initializing" spinner. GitHub account linking is no longer required to begin the template configuration flow.
+
+### Improvements
+
+- Faster deployment startup with reduced probe times: Kubernetes startup probe budgets have been tightened from ~20 minutes to ~3 minutes, and Pulumi deployment timeouts now scale based on replica count instead of using a fixed ~22 minute window. This means deployments surface failures faster instead of waiting through long timeout periods. ([@LucioFranco](https://github.com/LucioFranco))
+- Warm node pool for faster deployment scheduling: A cluster-level warm pool now keeps a configurable number of GKE Autopilot nodes pre-provisioned with low-priority placeholder pods. When a new Moose deployment is created, it can be scheduled onto an already-provisioned node rather than waiting for node spin-up. Pod anti-affinity rules ensure org-level isolation in multi-tenant clusters, and pod disruption budgets protect running deployments during cluster maintenance. ([@jmsuzuki](https://github.com/jmsuzuki))
+
+### Bug Fixes
+
+- Fix log row selection with duplicate composite keys: Fixed an issue where multiple log entries sharing the same timestamp, trace ID, and span ID would break row selection and highlighting in the logs viewer. Each log row now receives a unique `stableKey` (based on the composite identity plus an occurrence counter), ensuring correct selection behavior even when multiple logs share identical metadata. ([@LucioFranco](https://github.com/LucioFranco))
