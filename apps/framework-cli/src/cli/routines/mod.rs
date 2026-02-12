@@ -459,6 +459,8 @@ async fn create_external_mirrors(
 /// * `metrics` - Arc wrapped Metrics instance for monitoring
 /// * `redis_client` - Arc and Mutex wrapped RedisClient for caching
 /// * `settings` - Reference to application Settings
+/// * `enable_mcp` - Whether to enable the MCP server
+/// * `enable_tui` - Whether to enable the interactive TUI mode
 ///
 /// # Returns
 /// * `anyhow::Result<()>` - Success or error result
@@ -468,12 +470,25 @@ pub async fn start_development_mode(
     redis_client: Arc<RedisClient>,
     settings: &Settings,
     enable_mcp: bool,
+    enable_tui: bool,
 ) -> anyhow::Result<()> {
     // Set global flag so ensure_typescript_compiled knows to skip
     // (tspc --watch handles compilation in dev mode)
     use crate::utilities::constants::IS_DEV_MODE;
     use std::sync::atomic::Ordering;
     IS_DEV_MODE.store(true, Ordering::Relaxed);
+
+    // TUI mode: launch interactive terminal interface
+    if enable_tui {
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "TUI".to_string(),
+                details: "Launching interactive terminal interface...".to_string(),
+            },
+        );
+        return dev_tui::run_dev_tui(project, metrics, redis_client, settings, enable_mcp).await;
+    }
 
     display::show_message_wrapper(
         MessageType::Info,

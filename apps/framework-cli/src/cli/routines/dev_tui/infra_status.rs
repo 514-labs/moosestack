@@ -203,11 +203,9 @@ pub enum InfraStatusUpdate {
 pub type InfraStatusSender = mpsc::UnboundedSender<InfraStatusUpdate>;
 
 /// Receiver for infrastructure status updates
-#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub type InfraStatusReceiver = mpsc::UnboundedReceiver<InfraStatusUpdate>;
 
 /// Creates a new channel for infrastructure status updates
-#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub fn infra_status_channel() -> (InfraStatusSender, InfraStatusReceiver) {
     mpsc::unbounded_channel()
 }

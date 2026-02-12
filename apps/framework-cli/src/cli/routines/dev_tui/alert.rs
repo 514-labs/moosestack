@@ -3,9 +3,6 @@
 //! This module provides alert dialogs for displaying important messages,
 //! errors, and confirmations to the user during development mode.
 
-// TODO(PR5): Remove this allow once entry points use these Alert constructors
-#![allow(dead_code)]
-
 /// Alert severity level
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlertLevel {

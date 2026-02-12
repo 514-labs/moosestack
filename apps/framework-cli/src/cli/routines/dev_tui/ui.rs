@@ -4,9 +4,6 @@
 //! The design is inspired by k9s and lazygit with a focus on information density
 //! and keyboard-driven navigation.
 
-// Some helper functions are only used conditionally or in tests
-#![allow(dead_code)]
-
 use super::alert::{Alert, AlertLevel};
 use super::app::{DevTuiApp, HotReloadStatus, LogFilter, LogLevel, LogSource, Panel};
 use super::infra_status::{BootPhase, ServiceStatus};
