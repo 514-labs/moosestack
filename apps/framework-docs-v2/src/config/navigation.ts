@@ -1291,6 +1291,26 @@ const guidesNavigationConfig: NavigationConfig = [
       "Build a data-aware chat on top of your ClickHouse database with Next.js and MooseStack.",
     icon: IconMessageChatbot,
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/chat-in-your-app/overview",
+        title: "Overview",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/chat-in-your-app/build",
+        title: "Build",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/chat-in-your-app/tutorial",
+        title: "Tutorial",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
