@@ -11,7 +11,6 @@ import {
 import { cn } from "@/lib/utils";
 import { FullPageCustomizer } from "./full-page-customizer";
 import { SettingsSummary } from "./settings-summary";
-import { useFlag } from "flags/next";
 
 interface CustomizePanelProps {
   /** Panel title (default: "Customize") */
@@ -113,9 +112,15 @@ export function CustomizePanel({
     null,
   );
   const [isClient, setIsClient] = useState(false);
+  const [useSidebarPlacement, setUseSidebarPlacement] = useState(false);
 
-  // Check flag to override placement
-  const useSidebarPlacement = useFlag("settings-sidebar-placement");
+  // Check URL parameter to override placement (simpler than Vercel flags for testing)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    setUseSidebarPlacement(params.get("sidebar") === "true");
+  }, []);
+
   const effectivePlacement =
     useSidebarPlacement && summaryPlacement === "sticky-top" ?
       "sidebar"
