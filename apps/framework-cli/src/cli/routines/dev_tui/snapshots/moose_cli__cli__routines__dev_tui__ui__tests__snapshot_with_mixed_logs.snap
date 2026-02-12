@@ -1,0 +1,28 @@
+---
+source: apps/framework-cli/src/cli/routines/dev_tui/ui.rs
+expression: output
+---
+" MOOSE DEV  test-project  Typescript  localhost:4000                            "
+"                                                                                "
+"┌ [1] LOGS (4) ────────────────────────────────┐┌ [2] INFRASTRUCTURE ──────────┐"
+"│12:00:00 WATCH File changed: models/User.ts   ││  BOOT STATUS                 │"
+"│12:00:01 INFRA Creating table User            ││  ○ Initializing...           │"
+"│12:00:02 API   Route registered POST /ingest/U││                              │"
+"│12:00:03 SYS   Failed to connect to database  ││  SERVICES                    │"
+"│                                              ││  ○ Docker      Pending       │"
+"│                                              ││  ○ ClickHouse  Pending       │"
+"│                                              │└──────────────────────────────┘"
+"│                                              │┌ [3] RESOURCES (0) ───────────┐"
+"│                                              ││                              │"
+"│                                              ││  No resources yet.           │"
+"│                                              ││  Waiting for infrastructure..│"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"│                                              ││                              │"
+"└──────────────────────────────────────────────┘└──────────────────────────────┘"
+" Filter: [a]All [w]Watch [i]Infra [s]API [e]Error                               "
+" Nav: [1-3]Panel [j/k]Scroll [Enter]Select [Space]Expand [W]Wrap [q]Quit        "
