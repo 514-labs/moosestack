@@ -30,12 +30,47 @@ function dispatchStateChange<T>(key: string, value: T): void {
 }
 
 /**
- * Custom hook for persistent state with localStorage support.
+ * Read value from URL search params
+ */
+function getValueFromURL<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const value = params.get(key);
+    if (value !== null) {
+      return JSON.parse(value) as T;
+    }
+  } catch {
+    // Ignore parsing errors, return null
+  }
+
+  return null;
+}
+
+/**
+ * Update URL search params without adding to history
+ */
+function updateURLParam(key: string, value: string): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set(key, value);
+    window.history.replaceState({}, "", url.toString());
+  } catch {
+    // Ignore URL update errors
+  }
+}
+
+/**
+ * Custom hook for persistent state with localStorage and URL support.
  * Provides automatic sync across components using the same key.
+ * Priority order: URL params → localStorage → defaultValue
  *
  * @param key - Unique identifier for this state (without prefix). If undefined, persistence is disabled.
  * @param defaultValue - Default value when no stored value exists
- * @param persist - Whether to actually persist to localStorage (default: false)
+ * @param persist - Whether to actually persist to localStorage and URL (default: false)
  */
 export function usePersistedState<T>(
   key: string | undefined,
@@ -45,38 +80,57 @@ export function usePersistedState<T>(
   // Build full storage key
   const storageKey = key ? `${STORAGE_KEY_PREFIX}-${key}` : undefined;
 
-  // Initialize state - check localStorage on first render if persisting
+  // Initialize state - check URL params first, then localStorage, then default
   const [value, setValue] = useState<T>(() => {
-    if (!persist || !storageKey || typeof window === "undefined") {
+    if (!persist || !key || typeof window === "undefined") {
       return defaultValue;
     }
 
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored !== null) {
-        return JSON.parse(stored) as T;
-      }
-    } catch {
-      // Ignore parsing errors, use default
+    // Priority 1: Check URL params
+    const urlValue = getValueFromURL<T>(key);
+    if (urlValue !== null) {
+      return urlValue;
     }
 
+    // Priority 2: Check localStorage
+    if (storageKey) {
+      try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored !== null) {
+          return JSON.parse(stored) as T;
+        }
+      } catch {
+        // Ignore parsing errors, use default
+      }
+    }
+
+    // Priority 3: Use default
     return defaultValue;
   });
 
-  // Sync to localStorage when value changes
+  // Sync to localStorage and URL when value changes
   useEffect(() => {
-    if (!persist || !storageKey || typeof window === "undefined") {
+    if (!persist || !key || typeof window === "undefined") {
       return;
     }
 
     try {
-      localStorage.setItem(storageKey, JSON.stringify(value));
+      // Update localStorage
+      if (storageKey) {
+        localStorage.setItem(storageKey, JSON.stringify(value));
+      }
+
+      // Update URL param (for deep linking)
+      updateURLParam(key, JSON.stringify(value));
+
       // Dispatch custom event for same-page synchronization
-      dispatchStateChange(storageKey, value);
+      if (storageKey) {
+        dispatchStateChange(storageKey, value);
+      }
     } catch {
       // Ignore storage errors (quota exceeded, etc.)
     }
-  }, [persist, storageKey, value]);
+  }, [persist, key, storageKey, value]);
 
   // Listen for changes from other components/tabs
   useEffect(() => {
