@@ -3,7 +3,9 @@
 //! This module provides utilities for displaying data in formatted tables
 //! with consistent styling and layout.
 
+use crate::utilities::constants::SUPPRESS_DISPLAY;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
+use std::sync::atomic::Ordering;
 
 /// Displays a formatted table with headers and data rows.
 ///
@@ -41,7 +43,9 @@ pub fn show_table(title: String, headers: Vec<String>, rows: Vec<Vec<String>>) {
         table.add_row(row);
     }
 
-    println!("{title}\n{table}");
+    if !SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
+        println!("{title}\n{table}");
+    }
 }
 
 #[cfg(test)]

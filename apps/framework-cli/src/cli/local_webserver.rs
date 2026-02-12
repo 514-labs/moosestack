@@ -1769,7 +1769,7 @@ async fn ingest_route(
         .await),
         None => {
             if !is_prod {
-                println!(
+                tracing::warn!(
                     "Ingestion route {:?} not found. Available routes: {:?}",
                     route,
                     route_table_read.keys()
@@ -2345,67 +2345,57 @@ async fn print_available_routes(
         || !webapp_routes.is_empty()
     {
         let base_url = project.http_server_config.url();
-        println!("\n📍 Available Routes:");
-        println!("  Base URL: {}\n", base_url);
-
-        // Calculate column widths for alignment across all sections
-        let method_width = 6; // "METHOD" or "POST"/"GET"
-        let all_routes: Vec<_> = static_routes
-            .iter()
-            .chain(ingest_routes.iter())
-            .chain(consumption_routes.iter())
-            .chain(webapp_routes.iter())
-            .collect();
-        let endpoint_width = all_routes
-            .iter()
-            .map(|(_, endpoint, _)| endpoint.len())
-            .max()
-            .unwrap_or(30)
-            .min(60);
-
-        // Helper function to print a section
-        let print_section = |title: &str, routes: &[(&str, String, String)]| {
-            if !routes.is_empty() {
-                println!("  {}", title);
-                println!(
-                    "  {:<method_width$}  {:<endpoint_width$}  DESCRIPTION",
-                    "METHOD",
-                    "ENDPOINT",
-                    method_width = method_width,
-                    endpoint_width = endpoint_width
-                );
-                println!(
-                    "  {:<method_width$}  {:<endpoint_width$}  -----------",
-                    "------",
-                    "--------",
-                    method_width = method_width,
-                    endpoint_width = endpoint_width
-                );
-
-                for (method, endpoint, description) in routes {
-                    let truncated_endpoint = if endpoint.len() > 60 {
-                        format!("{}...", &endpoint[..57])
-                    } else {
-                        endpoint.clone()
-                    };
-                    println!(
-                        "  {:<method_width$}  {:<endpoint_width$}  {}",
-                        method,
-                        truncated_endpoint,
-                        description,
-                        method_width = method_width,
-                        endpoint_width = endpoint_width
-                    );
-                }
-                println!(); // Empty line after section
+        show_message!(
+            MessageType::Info,
+            Message {
+                action: "Routes".to_string(),
+                details: format!("Base URL: {}", base_url),
             }
+        );
+
+        let format_section = |title: &str, routes: &[(&str, String, String)]| -> String {
+            if routes.is_empty() {
+                return String::new();
+            }
+            let mut lines = vec![format!("  {}", title)];
+            for (method, endpoint, description) in routes {
+                let truncated_endpoint = if endpoint.chars().count() > 60 {
+                    let truncated: String = endpoint.chars().take(57).collect();
+                    format!("{}...", truncated)
+                } else {
+                    endpoint.clone()
+                };
+                lines.push(format!(
+                    "  {:<6}  {}  {}",
+                    method, truncated_endpoint, description
+                ));
+            }
+            lines.join("\n")
         };
 
-        // Print each section
-        print_section("Static Routes:", &static_routes);
-        print_section("Ingestion Routes:", &ingest_routes);
-        print_section("Consumption Routes:", &consumption_routes);
-        print_section("WebApp Routes:", &webapp_routes);
+        let sections = [
+            format_section("Static Routes:", &static_routes),
+            format_section("Ingestion Routes:", &ingest_routes),
+            format_section("Consumption Routes:", &consumption_routes),
+            format_section("WebApp Routes:", &webapp_routes),
+        ];
+
+        let details = sections
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        if !details.is_empty() {
+            show_message!(
+                MessageType::Info,
+                Message {
+                    action: "Routes".to_string(),
+                    details,
+                }
+            );
+        }
     }
 }
 
