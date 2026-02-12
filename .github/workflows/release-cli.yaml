@@ -291,8 +291,6 @@ jobs:
       contents: "write"
       id-token: "write"
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
       POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
       TAG_LATEST: ${{ needs.version.outputs.is_ci_build == 'false' }}
     strategy:
@@ -397,7 +395,7 @@ jobs:
         with:
           target: ${{ matrix.build.TARGET }}
           args: --release --features rdkafka/cmake-build --locked --target ${{ matrix.build.TARGET }} --out dist
-          sccache: "true"
+          sccache: ${{ matrix.build.OS != 'ubuntu-22-8-core' }}
 
           # https://github.com/briansmith/ring/issues/1728#issuecomment-1758180655
           manylinux: ${{ (matrix.build.TARGET == 'aarch64-unknown-linux-gnu' || matrix.build.TARGET == 'x86_64-unknown-linux-gnu') && '2_28' || '' }}

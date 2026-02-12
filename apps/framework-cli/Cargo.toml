@@ -19,6 +19,10 @@ posthog514client-rs = { path = "../../packages/posthog514client-rs" }
 sqlparser = { git = "https://github.com/514-labs/datafusion-sqlparser-rs", rev = "f84bd06", features = ["visitor"] }
 itertools = "0.13.0"
 openssl = { version = "0.10", features = ["vendored"] }
+# OpenSSL 3.5.x generates AVX-512 assembly incompatible with manylinux_2_28 binutils.
+# Pin to 3.4.x LTS until manylinux containers ship newer binutils.
+# See: https://github.com/openssl/openssl/issues/27049
+openssl-src = ">=300.4, <300.5"
 clap = { version = "4.3.17", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
 thiserror = "1.0.59"
