@@ -110,22 +110,6 @@ CLI developer experience takes center stage this week. A new `moose docs` comman
 
   Docs: [Docker Configuration](/moosestack/configuration/docker-configuration)
 
-**Add /llm.txt plain-text endpoint for LLM documentation discovery** ([@oatsandsugar](https://github.com/oatsandsugar))
-  Added plain-text `.txt` documentation endpoints alongside the existing `.md` endpoints for broader LLM tool compatibility. Many AI tools search for `llm.txt` files by convention for documentation discovery. The `/llm.txt` root endpoint provides a table of contents with links to individual `.txt` pages, and each page is accessible at `/api/llm-txt/<slug>` returning `text/plain` content. Both endpoints use the same content cleaning and language filtering as the existing `.md` endpoints, including guide step expansion for multi-section guides.
-
-  ```bash
-  # Discover available documentation (table of contents)
-  curl https://docs.moosejs.com/llm.txt
-
-  # Fetch a specific page as plain text
-  curl https://docs.moosejs.com/api/llm-txt/moosestack/quickstart
-
-  # Existing .md endpoints continue to work
-  curl https://docs.moosejs.com/moosestack/quickstart.md
-  ```
-
-  Docs: [LLM-Optimized Documentation Feeds](/moosestack/moosedev-mcp#llm-optimized-documentation-feeds)
-
 ### Improvements
 
 - Show short aliases for all CLI commands in help output: All CLI commands now display their short aliases in `moose --help` (e.g., `init [aliases: i]`, `dev [aliases: d]`, `build [aliases: b]`). Previously these aliases existed but were hidden. This makes it easier to discover shortcuts for faster terminal workflows, especially for developers using Moose commands frequently. ([@oatsandsugar](https://github.com/oatsandsugar))
