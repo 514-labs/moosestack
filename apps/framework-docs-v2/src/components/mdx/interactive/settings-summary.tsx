@@ -11,6 +11,8 @@ interface SettingsSummaryProps {
   labels?: Record<string, string>;
   onChangeSettings: () => void;
   className?: string;
+  /** Where to render the summary: inline (default), sticky-top, or sidebar */
+  placement?: "inline" | "sticky-top" | "sidebar";
 }
 
 /**
@@ -33,14 +35,20 @@ export function SettingsSummary({
   labels = {},
   onChangeSettings,
   className,
+  placement = "inline",
 }: SettingsSummaryProps): React.JSX.Element {
+  const baseClasses =
+    "flex items-center justify-between gap-4 rounded-lg border bg-muted/30 px-4 py-3";
+
+  const placementClasses = {
+    inline: "mb-6",
+    "sticky-top":
+      "sticky top-[var(--header-height)] z-20 backdrop-blur-sm bg-background/95 border-b shadow-sm mb-6 -mx-4 rounded-none border-x-0",
+    sidebar: "mb-4 flex-col items-start gap-2", // Compact for sidebar
+  };
+
   return (
-    <div
-      className={cn(
-        "flex items-center justify-between gap-4 rounded-lg border bg-muted/30 px-4 py-3 mb-6",
-        className,
-      )}
-    >
+    <div className={cn(baseClasses, placementClasses[placement], className)}>
       <div className="flex items-center gap-2 flex-wrap">
         <IconSettings className="h-4 w-4 text-muted-foreground" />
         <span className="text-sm font-medium text-muted-foreground">

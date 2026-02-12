@@ -27,6 +27,8 @@ interface CustomizePanelProps {
   fieldIds?: string[];
   /** Labels for fields to show in settings summary */
   fieldLabels?: Record<string, string>;
+  /** Where to render settings summary: inline, sticky-top, or sidebar */
+  summaryPlacement?: "inline" | "sticky-top" | "sidebar";
 }
 
 /**
@@ -103,6 +105,7 @@ export function CustomizePanel({
   mode = "inline",
   fieldIds = [],
   fieldLabels = {},
+  summaryPlacement = "inline",
 }: CustomizePanelProps): React.JSX.Element {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [selections, setSelections] = useState<Record<string, string> | null>(
@@ -176,6 +179,7 @@ export function CustomizePanel({
         labels={fieldLabels}
         onChangeSettings={() => setShowCustomizer(true)}
         className={className}
+        placement={summaryPlacement}
       />
     );
   }

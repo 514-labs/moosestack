@@ -52,11 +52,11 @@ export function FullPageCustomizer({
   return (
     <div
       className={cn(
-        "min-h-[60vh] flex items-center justify-center py-12",
+        "fixed inset-0 z-50 bg-background flex items-center justify-center py-12 overflow-auto",
         className,
       )}
     >
-      <Card className="w-full max-w-2xl">
+      <Card className="w-full max-w-2xl mx-4">
         <CardHeader>
           <CardTitle className="text-2xl">{title}</CardTitle>
           {description && <CardDescription>{description}</CardDescription>}
