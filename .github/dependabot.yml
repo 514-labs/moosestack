@@ -12,26 +12,6 @@ updates:
       - "toolchain"
 
   # =============================================================================
-  # Workspace packages - Monitor dependencies in apps/* and packages/*
-  # =============================================================================
-
-  # TypeScript workspace packages
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    labels:
-      - "typescript"
-      - "workspace"
-      - "dependencies"
-    ignore:
-      # Keep @types/node at 20.x.x for backward compatibility
-      # Node.js 20 is LTS and we want to ensure compatibility
-      - dependency-name: "@types/node"
-        update-types: ["version-update:semver-major"]
-
-  # =============================================================================
   # Templates - Monitor all dependencies using glob patterns
   # =============================================================================
 
