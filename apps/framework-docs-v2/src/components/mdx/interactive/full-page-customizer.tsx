@@ -3,15 +3,14 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { IconArrowRight } from "@tabler/icons-react";
-import { cn } from "@/lib/utils";
 
 interface FullPageCustomizerProps {
   title?: string;
@@ -19,7 +18,7 @@ interface FullPageCustomizerProps {
   children: React.ReactNode;
   onContinue: () => void;
   canContinue?: boolean;
-  className?: string;
+  onClose?: () => void;
 }
 
 /**
@@ -47,33 +46,33 @@ export function FullPageCustomizer({
   children,
   onContinue,
   canContinue = true,
-  className,
+  onClose,
 }: FullPageCustomizerProps): React.JSX.Element {
   return (
-    <div
-      className={cn(
-        "fixed inset-0 z-50 bg-background flex items-center justify-center py-12 overflow-auto",
-        className,
-      )}
+    <Dialog
+      open={true}
+      onOpenChange={(open) => {
+        if (!open && onClose) onClose();
+      }}
     >
-      <Card className="w-full max-w-2xl mx-4">
-        <CardHeader>
-          <CardTitle className="text-2xl">{title}</CardTitle>
-          {description && <CardDescription>{description}</CardDescription>}
-        </CardHeader>
-        <CardContent className="space-y-6">{children}</CardContent>
-        <CardFooter>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-2xl">{title}</DialogTitle>
+          {description && <DialogDescription>{description}</DialogDescription>}
+        </DialogHeader>
+        <div className="space-y-6 py-4">{children}</div>
+        <DialogFooter>
           <Button
             onClick={onContinue}
             disabled={!canContinue}
-            className="w-full sm:w-auto sm:ml-auto"
+            className="w-full sm:w-auto"
             size="lg"
           >
             Continue to tutorial
             <IconArrowRight className="ml-2 h-4 w-4" />
           </Button>
-        </CardFooter>
-      </Card>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
