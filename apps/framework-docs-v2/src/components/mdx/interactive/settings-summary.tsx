@@ -69,7 +69,7 @@ export function SettingsSummary({
         <div className="flex items-center gap-2 flex-wrap">
           <IconSettings className="h-4 w-4 text-muted-foreground" />
           <span className="text-xs font-medium text-muted-foreground">
-            Tutorial settings
+            Guide config
           </span>
         </div>
         <div className="flex flex-col gap-2 w-full">
