@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { IconSettings } from "@tabler/icons-react";
+import { IconSettings, IconCloudUpload } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 interface SettingsSummaryProps {
@@ -14,6 +14,7 @@ interface SettingsSummaryProps {
   className?: string;
   /** Where to render the summary: inline (default), sticky-top, sidebar, or bottom-left */
   placement?: "inline" | "sticky-top" | "sidebar" | "bottom-left";
+  showBorealSync?: boolean;
 }
 
 /**
@@ -37,6 +38,7 @@ export function SettingsSummary({
   onChangeSettings,
   className,
   placement = "inline",
+  showBorealSync = false,
 }: SettingsSummaryProps): React.JSX.Element {
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
@@ -85,14 +87,30 @@ export function SettingsSummary({
             </div>
           ))}
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onChangeSettings}
-          className="w-full"
-        >
-          Change
-        </Button>
+        <div className="flex gap-2 w-full">
+          {showBorealSync && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                // TODO: Implement Boreal sync
+                console.log("Boreal sync");
+              }}
+              className="flex-1"
+            >
+              <IconCloudUpload className="mr-1 h-3 w-3" />
+              Sync
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onChangeSettings}
+            className="flex-1"
+          >
+            Change
+          </Button>
+        </div>
       </div>
     );
 
@@ -119,14 +137,24 @@ export function SettingsSummary({
           </Badge>
         ))}
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onChangeSettings}
-        className="shrink-0"
-      >
-        Change
-      </Button>
+      <div className="flex gap-2 shrink-0">
+        {showBorealSync && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              // TODO: Implement Boreal sync
+              console.log("Boreal sync");
+            }}
+          >
+            <IconCloudUpload className="mr-1 h-3 w-3" />
+            Sync
+          </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={onChangeSettings}>
+          Change
+        </Button>
+      </div>
     </div>
   );
 }

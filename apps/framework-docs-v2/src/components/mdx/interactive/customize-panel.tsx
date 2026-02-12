@@ -115,15 +115,21 @@ export function CustomizePanel({
   const [placementOverride, setPlacementOverride] = useState<string | null>(
     null,
   );
+  const [showBorealSync, setShowBorealSync] = useState(false);
 
-  // Check URL parameter to override placement
+  // Check URL parameters
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+
+    // Check placement override
     const placement = params.get("placement");
     if (placement === "sidebar" || placement === "bottom-left") {
       setPlacementOverride(placement);
     }
+
+    // Check Boreal sync flag
+    setShowBorealSync(params.get("boreal") === "true");
   }, []);
 
   const effectivePlacement =
@@ -186,6 +192,7 @@ export function CustomizePanel({
           setShowCustomizer(false);
         }}
         canContinue={true} // Allow continue even if not all fields set (user can use defaults)
+        showBorealSync={showBorealSync}
       >
         {children}
       </FullPageCustomizer>
@@ -201,6 +208,7 @@ export function CustomizePanel({
         onChangeSettings={() => setShowCustomizer(true)}
         className={className}
         placement={effectivePlacement}
+        showBorealSync={showBorealSync}
       />
     );
   }
