@@ -20,7 +20,7 @@
   "devDependencies": {
     "@514labs/moose-cli": "0.6.309",
     "@faker-js/faker": "^9.7.0",
-    "@types/node": "^20.12.12"
+    "@types/node": "^25.2.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
