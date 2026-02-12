@@ -76,15 +76,6 @@ export const GET = createFlagsDiscoveryEndpoint(async () => {
           { value: true, label: "On" },
         ],
       },
-      "settings-sidebar-placement": {
-        description:
-          "Use sidebar placement for settings summary instead of sticky-top",
-        origin: "https://us.i.posthog.com",
-        options: [
-          { value: false, label: "Off (sticky-top)" },
-          { value: true, label: "On (sidebar)" },
-        ],
-      },
     },
   };
 });
