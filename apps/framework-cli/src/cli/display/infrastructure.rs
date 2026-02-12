@@ -27,7 +27,10 @@
 //! formatting patterns into reusable helper functions and macros. The refactoring ensures
 //! consistent display formatting while reducing code duplication and maintenance overhead.
 
-use super::terminal::{write_styled_line, StyledText, ACTION_WIDTH};
+use super::{
+    context::{tui_channel, DisplayMessage},
+    terminal::{write_styled_line, StyledText, ACTION_WIDTH},
+};
 use crate::framework::core::{
     infrastructure::table::{ColumnType, EnumValue},
     infrastructure_map::{
@@ -59,6 +62,14 @@ const DETAIL_INDENT: &str = {
 /// Helper function to write detail lines with proper indentation
 /// Respects QUIET_STDOUT flag to redirect to stderr when set
 fn write_detail_lines(details: &[String]) {
+    // Check for TUI context first - route to TUI if available
+    if let Some(sender) = tui_channel() {
+        sender.send(DisplayMessage::InfrastructureDetail {
+            lines: details.to_vec(),
+        });
+        return;
+    }
+
     if SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
         return;
     }

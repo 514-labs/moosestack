@@ -3,6 +3,7 @@
 //! This module provides utilities for displaying data in formatted tables
 //! with consistent styling and layout.
 
+use super::context::{tui_channel, DisplayMessage};
 use crate::utilities::constants::SUPPRESS_DISPLAY;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
 use std::sync::atomic::Ordering;
@@ -32,6 +33,16 @@ use std::sync::atomic::Ordering;
 /// );
 /// ```
 pub fn show_table(title: String, headers: Vec<String>, rows: Vec<Vec<String>>) {
+    // Check for TUI context first - route to TUI if available
+    if let Some(sender) = tui_channel() {
+        sender.send(DisplayMessage::Table {
+            title,
+            headers,
+            rows,
+        });
+        return;
+    }
+
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
