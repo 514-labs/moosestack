@@ -40,12 +40,12 @@ export function SettingsSummary({
 }: SettingsSummaryProps): React.JSX.Element {
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
-  // Find portal target for sidebar placement
+  // Find portal target for sidebar placement only
   useEffect(() => {
-    if (placement === "sidebar") {
-      const target = document.getElementById("settings-summary-sidebar");
-      setPortalTarget(target);
-    }
+    if (placement !== "sidebar") return;
+
+    const target = document.getElementById("settings-summary-sidebar");
+    setPortalTarget(target);
   }, [placement]);
 
   const baseClasses =
@@ -58,39 +58,71 @@ export function SettingsSummary({
     sidebar: "mb-6 flex-col items-start gap-3",
   };
 
-  const content = (
+  // For sidebar placement, use compact vertical layout
+  if (placement === "sidebar") {
+    const sidebarContent = (
+      <div className={cn(baseClasses, placementClasses.sidebar, className)}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <IconSettings className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs font-medium text-muted-foreground">
+            Tutorial settings
+          </span>
+        </div>
+        <div className="flex flex-col gap-2 w-full">
+          {Object.entries(selections).map(([key, value]) => (
+            <div
+              key={key}
+              className="flex items-center justify-between text-xs"
+            >
+              <span className="text-muted-foreground">
+                {labels[key] || key}:
+              </span>
+              <Badge variant="secondary" className="font-normal text-xs">
+                {value}
+              </Badge>
+            </div>
+          ))}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onChangeSettings}
+          className="w-full"
+        >
+          Change
+        </Button>
+      </div>
+    );
+
+    // Use portal if target is available
+    if (portalTarget) {
+      return createPortal(sidebarContent, portalTarget);
+    }
+    return sidebarContent;
+  }
+
+  // For inline and sticky-top, use horizontal layout
+  return (
     <div className={cn(baseClasses, placementClasses[placement], className)}>
       <div className="flex items-center gap-2 flex-wrap">
         <IconSettings className="h-4 w-4 text-muted-foreground" />
-        <span className="text-xs font-medium text-muted-foreground">
-          Tutorial settings
+        <span className="text-sm font-medium text-muted-foreground">
+          Tutorial customized for:
         </span>
-      </div>
-      <div className="flex flex-col gap-2 w-full">
         {Object.entries(selections).map(([key, value]) => (
-          <div key={key} className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground">{labels[key] || key}:</span>
-            <Badge variant="secondary" className="font-normal text-xs">
-              {value}
-            </Badge>
-          </div>
+          <Badge key={key} variant="secondary" className="font-normal">
+            {labels[key] ? `${labels[key]}: ${value}` : value}
+          </Badge>
         ))}
       </div>
       <Button
         variant="outline"
         size="sm"
         onClick={onChangeSettings}
-        className="w-full"
+        className="shrink-0"
       >
         Change
       </Button>
     </div>
   );
-
-  // Use portal for sidebar placement
-  if (placement === "sidebar" && portalTarget) {
-    return createPortal(content, portalTarget);
-  }
-
-  return content;
 }
