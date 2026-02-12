@@ -3,9 +3,6 @@
 //! This module provides types for displaying and filtering infrastructure resources
 //! in the Dev TUI.
 
-// TODO(PR4): Remove this allow once watcher.rs uses these types
-#![allow(dead_code)]
-
 use crate::framework::core::infrastructure::api_endpoint::APIType;
 use crate::framework::core::infrastructure_map::InfrastructureMap;
 use std::collections::HashSet;
@@ -284,9 +281,11 @@ impl ChangeType {
 /// Sender for resource updates
 pub type ResourceUpdateSender = mpsc::UnboundedSender<ResourceUpdate>;
 /// Receiver for resource updates
+#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub type ResourceUpdateReceiver = mpsc::UnboundedReceiver<ResourceUpdate>;
 
 /// Create a new resource update channel
+#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub fn resource_update_channel() -> (ResourceUpdateSender, ResourceUpdateReceiver) {
     mpsc::unbounded_channel()
 }
