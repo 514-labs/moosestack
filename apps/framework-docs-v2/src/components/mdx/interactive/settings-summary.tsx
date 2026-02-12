@@ -12,8 +12,8 @@ interface SettingsSummaryProps {
   labels?: Record<string, string>;
   onChangeSettings: () => void;
   className?: string;
-  /** Where to render the summary: inline (default), sticky-top, or sidebar */
-  placement?: "inline" | "sticky-top" | "sidebar";
+  /** Where to render the summary: inline (default), sticky-top, sidebar, or bottom-left */
+  placement?: "inline" | "sticky-top" | "sidebar" | "bottom-left";
 }
 
 /**
@@ -56,12 +56,14 @@ export function SettingsSummary({
     "sticky-top":
       "sticky top-[var(--header-height)] z-20 backdrop-blur-sm bg-background/95 border-b shadow-sm mb-6 -mx-4 rounded-none border-x-0",
     sidebar: "mb-6 flex-col items-start gap-3",
+    "bottom-left":
+      "fixed bottom-6 left-6 z-30 shadow-lg backdrop-blur-md bg-background/95 max-w-sm flex-col items-start gap-3",
   };
 
-  // For sidebar placement, use compact vertical layout
-  if (placement === "sidebar") {
-    const sidebarContent = (
-      <div className={cn(baseClasses, placementClasses.sidebar, className)}>
+  // For sidebar and bottom-left placement, use compact vertical layout
+  if (placement === "sidebar" || placement === "bottom-left") {
+    const compactContent = (
+      <div className={cn(baseClasses, placementClasses[placement], className)}>
         <div className="flex items-center gap-2 flex-wrap">
           <IconSettings className="h-4 w-4 text-muted-foreground" />
           <span className="text-xs font-medium text-muted-foreground">
@@ -94,11 +96,13 @@ export function SettingsSummary({
       </div>
     );
 
-    // Use portal if target is available
-    if (portalTarget) {
-      return createPortal(sidebarContent, portalTarget);
+    // Use portal only for sidebar placement
+    if (placement === "sidebar" && portalTarget) {
+      return createPortal(compactContent, portalTarget);
     }
-    return sidebarContent;
+
+    // bottom-left uses fixed positioning, no portal needed
+    return compactContent;
   }
 
   // For inline and sticky-top, use horizontal layout

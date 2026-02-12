@@ -112,18 +112,23 @@ export function CustomizePanel({
     null,
   );
   const [isClient, setIsClient] = useState(false);
-  const [useSidebarPlacement, setUseSidebarPlacement] = useState(false);
+  const [placementOverride, setPlacementOverride] = useState<string | null>(
+    null,
+  );
 
-  // Check URL parameter to override placement (simpler than Vercel flags for testing)
+  // Check URL parameter to override placement
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    setUseSidebarPlacement(params.get("sidebar") === "true");
+    const placement = params.get("placement");
+    if (placement === "sidebar" || placement === "bottom-left") {
+      setPlacementOverride(placement);
+    }
   }, []);
 
   const effectivePlacement =
-    useSidebarPlacement && summaryPlacement === "sticky-top" ?
-      "sidebar"
+    placementOverride && summaryPlacement === "sticky-top" ?
+      (placementOverride as "sidebar" | "bottom-left")
     : summaryPlacement;
 
   // Check for existing selections on mount
@@ -176,8 +181,11 @@ export function CustomizePanel({
           setSelections(newSelections);
           setShowCustomizer(false);
         }}
+        onClose={() => {
+          // Dismiss customizer without saving
+          setShowCustomizer(false);
+        }}
         canContinue={true} // Allow continue even if not all fields set (user can use defaults)
-        className={className}
       >
         {children}
       </FullPageCustomizer>
