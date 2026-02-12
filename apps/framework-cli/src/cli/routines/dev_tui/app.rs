@@ -3,7 +3,7 @@
 //! This module contains the main application state struct and related types
 //! for managing the TUI's data and behavior.
 
-// TODO(PR3): Remove this allow once ui.rs and handler.rs use these types
+// TODO(PR5): Remove this allow once mod.rs entry point uses DevTuiApp fully
 #![allow(dead_code)]
 
 use crate::project::Project;
