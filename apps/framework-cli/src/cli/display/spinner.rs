@@ -443,9 +443,9 @@ pub fn with_spinner_completion<F, R>(
 where
     F: FnOnce() -> R,
 {
-    let has_tui = tui_channel().is_some();
+    let tui_sender = tui_channel();
 
-    let sp = if activate && !has_tui && stdout().is_terminal() {
+    let sp = if activate && tui_sender.is_none() && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
         let _ = spinner.start();
         Some(spinner)
@@ -458,13 +458,13 @@ where
     if let Some(mut spinner) = sp {
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
-    } else if activate && !has_tui {
+    } else if activate && tui_sender.is_none() {
         // In non-TTY mode (e.g., CI), still print the completion message
         // so tests can detect when operations complete
         println!("✓ {completion_message}");
-    } else if activate && has_tui {
+    } else if activate && tui_sender.is_some() {
         // Send completion message to TUI
-        if let Some(sender) = tui_channel() {
+        if let Some(sender) = tui_sender {
             sender.send(DisplayMessage::SpinnerCompletion {
                 message: completion_message.to_string(),
             });
@@ -568,9 +568,9 @@ pub async fn with_spinner_completion_async<F, R>(
 where
     F: Future<Output = R>,
 {
-    let has_tui = tui_channel().is_some();
+    let tui_sender = tui_channel();
 
-    let sp = if activate && !has_tui && stdout().is_terminal() {
+    let sp = if activate && tui_sender.is_none() && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
         let _ = spinner.start();
         Some(spinner)
@@ -583,13 +583,13 @@ where
     if let Some(mut spinner) = sp {
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
-    } else if activate && !has_tui {
+    } else if activate && tui_sender.is_none() {
         // In non-TTY mode (e.g., CI), still print the completion message
         // so tests can detect when operations complete
         println!("✓ {completion_message}");
-    } else if activate && has_tui {
+    } else if activate && tui_sender.is_some() {
         // Send completion message to TUI
-        if let Some(sender) = tui_channel() {
+        if let Some(sender) = tui_sender {
             sender.send(DisplayMessage::SpinnerCompletion {
                 message: completion_message.to_string(),
             });
