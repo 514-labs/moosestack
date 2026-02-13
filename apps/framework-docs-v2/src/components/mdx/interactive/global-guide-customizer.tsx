@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { IconArrowRight } from "@tabler/icons-react";
 import { CustomizeGrid } from "./customize-grid";
 import { SelectField } from "./select-field";
-import { CheckboxGroup } from "./checkbox-group";
 import { useGuideSettings } from "@/contexts/guide-settings-context";
 
 interface GlobalGuideCustomizerProps {
@@ -87,17 +86,18 @@ export function GlobalGuideCustomizer({
               persist
               globalSetting
             />
-            <CheckboxGroup
+            <SelectField
               id="sources"
               label="Sources"
               options={[
-                { value: "postgres", label: "Postgres", defaultChecked: true },
+                { value: "postgres", label: "Postgres" },
                 { value: "sqlserver", label: "SQL Server" },
                 // { value: "mysql", label: "MySQL" },
                 // { value: "api", label: "REST APIs" },
                 // { value: "kafka", label: "Kafka" },
                 // { value: "s3", label: "S3 / Parquet" },
               ]}
+              defaultValue="postgres"
               persist
               globalSetting
             />

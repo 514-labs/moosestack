@@ -10,7 +10,7 @@ const STORAGE_KEY = "moose-docs-guide-settings";
 export interface GuideSettings {
   language?: "typescript" | "python";
   os?: "macos" | "windows";
-  sources?: string[]; // Multiple sources: postgres, mysql, api, kafka, etc.
+  sources?: string; // Single source for now: postgres, sqlserver, etc.
   monorepo?: "yes" | "no";
   existingApp?: "yes" | "no";
 }
