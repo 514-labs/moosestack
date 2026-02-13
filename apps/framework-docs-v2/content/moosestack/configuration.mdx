@@ -339,6 +339,16 @@ workflows = false
 olap = true
 # Enable Analytics APIs server (Default: true)
 apis = true
+
+# Docker build configuration
+[docker_config]
+# Use a custom Dockerfile instead of auto-generating one (Default: false)
+# When true, Moose writes the Dockerfile to your project root on first build
+# and preserves it on subsequent builds so you can customize it.
+# custom_dockerfile = false
+# Path to the Dockerfile relative to project root (Default: "./Dockerfile")
+# Only used when custom_dockerfile is true.
+# dockerfile_path = "./Dockerfile"
 ```
 
 ## Common Environment Variables
@@ -389,6 +399,12 @@ MOOSE_FEATURES__APIS=true
 MOOSE_LOGGER__LEVEL=info
 MOOSE_LOGGER__STDOUT=true
 MOOSE_LOGGER__FORMAT=Json
+```
+
+### Docker
+```bash
+MOOSE_DOCKER_CONFIG__CUSTOM_DOCKERFILE=true
+MOOSE_DOCKER_CONFIG__DOCKERFILE_PATH=./Dockerfile
 ```
 
 For a complete list of all available configuration options, see the [moose.config.toml Reference](#mooseconfigtoml-reference) above.

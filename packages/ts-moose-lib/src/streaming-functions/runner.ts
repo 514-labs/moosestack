@@ -784,15 +784,13 @@ const startConsumer = async (
 const buildLogger = (args: StreamingFunctionArgs, workerId: number): Logger => {
   // Get base stream names without namespace prefix or version suffix
   const sourceBaseName = topicNameToStreamName(args.sourceTopic);
-  const targetBaseName = args.targetTopic
-    ? topicNameToStreamName(args.targetTopic)
-    : undefined;
+  const targetBaseName =
+    args.targetTopic ? topicNameToStreamName(args.targetTopic) : undefined;
 
   // Function name matches source_primitive.name in infrastructure map
   // Uses double underscore separator for transforms, plain name for consumers
-  const functionName = targetBaseName
-    ? `${sourceBaseName}__${targetBaseName}`
-    : sourceBaseName;
+  const functionName =
+    targetBaseName ? `${sourceBaseName}__${targetBaseName}` : sourceBaseName;
 
   // Human-readable log prefix includes worker ID for debugging
   const logPrefix = `${functionName} (worker ${workerId})`;

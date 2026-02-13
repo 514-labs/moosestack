@@ -74,7 +74,13 @@ impl ConsumptionProcessRegistry {
 
         let start_child: StartChildFn<ConsumptionError> = match self.language {
             SupportedLanguages::Python => Box::new(move || {
-                python::consumption::run(&project, &clickhouse_config, &jwt_config, proxy_port)
+                python::consumption::run(
+                    &project,
+                    &clickhouse_config,
+                    &jwt_config,
+                    proxy_port,
+                    project.is_production,
+                )
             }),
             SupportedLanguages::Typescript => {
                 let project_path = self.project_path.clone();
@@ -85,6 +91,7 @@ impl ConsumptionProcessRegistry {
                         &jwt_config,
                         &project_path,
                         proxy_port,
+                        project.is_production,
                     )
                 })
             }

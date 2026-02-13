@@ -903,6 +903,7 @@ mod tests {
             source_dir: crate::project::default_source_dir(),
             docker_config: crate::project::DockerConfig::default(),
             watcher_config: crate::cli::watcher::WatcherConfig::default(),
+            dev: crate::project::DevConfig::default(),
         }
     }
 
@@ -975,6 +976,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None,
         };
 
         // Create reality checker
@@ -1047,6 +1049,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None,
         };
 
         infra_map
@@ -1125,6 +1128,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None,
         };
 
         infra_map
@@ -1194,6 +1198,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None,
         };
 
         infra_map
@@ -1265,6 +1270,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None,
         };
 
         infra_map
@@ -1352,6 +1358,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None,
         };
 
         infra_map
@@ -1556,6 +1563,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None,
         };
 
         infra_map
@@ -1622,6 +1630,7 @@ mod tests {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None,
         };
 
         infra_map

@@ -23,6 +23,7 @@ pub fn run(
     jwt_config: &Option<JwtConfig>,
     project_path: &Path,
     proxy_port: Option<u16>,
+    is_prod: bool,
 ) -> Result<Child, ConsumptionError> {
     let host_port = clickhouse_config.host_port.to_string();
     let temporal_url = project.temporal_config.temporal_url();
@@ -123,6 +124,7 @@ pub fn run(
         "api_name",
         crate::cli::logger::resource_type::CONSUMPTION_API,
         Some("API"),
+        is_prod,
     );
 
     Ok(consumption_process)

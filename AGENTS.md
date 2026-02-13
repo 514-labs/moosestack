@@ -89,7 +89,7 @@ rm -rf node_modules && pnpm install
 
 ## Repository Structure
 
-- **`apps/`**: CLI (`framework-cli/`), docs (`framework-docs/`), E2E tests (`framework-cli-e2e/`)
+- **`apps/`**: CLI (`framework-cli/`), docs (`framework-docs-v2/`, see its own CLAUDE.md for details), E2E tests (`framework-cli-e2e/`)
 - **`packages/`**: Libraries (`ts-moose-lib/`, `py-moose-lib/`), shared deps, protobuf definitions
 - **`templates/`**: Standalone Moose apps used by E2E tests (NOT for unit tests)
 

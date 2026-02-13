@@ -9,6 +9,7 @@ import {
   StaggeredContent,
   StaggeredCode,
   Callout,
+  CommunityCallout,
   LanguageTabs,
   LanguageTabContent,
   CodeEditorWrapper,
@@ -36,6 +37,13 @@ import {
   CustomizeGrid,
   NumberedAccordion,
   NumberedAccordionItem,
+  GuideStepper,
+  GuideStepperStep,
+  GuideStepperCheckpoint,
+  GuideStepperAtAGlance,
+  GuideStepperPrompt,
+  VerticalProgressSteps,
+  VerticalProgressStepItem,
   TabbedCode,
   TabbedCodeContent,
   ConditionalContent,
@@ -65,6 +73,7 @@ import rehypePrettyCode from "rehype-pretty-code";
 import { rehypeCodeMeta } from "@/lib/rehype-code-meta";
 import { rehypeRestoreCodeMeta } from "@/lib/rehype-restore-code-meta";
 import { ensureCodeBlockSpacing } from "@/lib/remark-code-block-spacing";
+import { remarkGuideStepperMarkers } from "@/lib/remark-guide-stepper-markers";
 
 // Module-level component wiring (hoisted to avoid per-render allocations)
 // Create FileTree with nested components
@@ -80,6 +89,18 @@ const CheckboxGroupWithSubcomponents = Object.assign(CheckboxGroup, {
 const NumberedAccordionWithSubcomponents = Object.assign(NumberedAccordion, {
   Item: NumberedAccordionItem,
 });
+const GuideStepperWithSubcomponents = Object.assign(GuideStepper, {
+  Step: GuideStepperStep,
+  Checkpoint: GuideStepperCheckpoint,
+  AtAGlance: GuideStepperAtAGlance,
+  Prompt: GuideStepperPrompt,
+});
+const VerticalProgressStepsWithSubcomponents = Object.assign(
+  VerticalProgressSteps,
+  {
+    Item: VerticalProgressStepItem,
+  },
+);
 const TabbedCodeWithSubcomponents = Object.assign(TabbedCode, {
   Content: TabbedCodeContent,
 });
@@ -125,6 +146,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     StaggeredContent,
     StaggeredCode,
     Callout,
+    CommunityCallout,
     LanguageTabs,
     LanguageTabContent,
     CodeEditorWrapper,
@@ -171,6 +193,13 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     CustomizeGrid,
     NumberedAccordion: NumberedAccordionWithSubcomponents,
     "NumberedAccordion.Item": NumberedAccordionItem,
+    GuideStepper: GuideStepperWithSubcomponents,
+    "GuideStepper.Step": GuideStepperStep,
+    "GuideStepper.Checkpoint": GuideStepperCheckpoint,
+    "GuideStepper.AtAGlance": GuideStepperAtAGlance,
+    "GuideStepper.Prompt": GuideStepperPrompt,
+    VerticalProgressSteps: VerticalProgressStepsWithSubcomponents,
+    "VerticalProgressSteps.Item": VerticalProgressStepItem,
     TabbedCode: TabbedCodeWithSubcomponents,
     "TabbedCode.Content": TabbedCodeContent,
     ConditionalContent,
@@ -186,8 +215,9 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
       source={processedSource}
       components={components}
       options={{
+        blockJS: false,
         mdxOptions: {
-          remarkPlugins: [remarkGfm],
+          remarkPlugins: [remarkGfm, remarkGuideStepperMarkers],
           rehypePlugins: [
             rehypeSlug,
             [rehypeAutolinkHeadings, { behavior: "wrap" }],
@@ -197,8 +227,8 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
               rehypePrettyCode,
               {
                 theme: {
-                  light: "vitesse-light",
-                  dark: "vitesse-dark",
+                  light: "github-light",
+                  dark: "github-dark",
                 },
                 keepBackground: false,
                 defaultLang: "plaintext",

@@ -202,6 +202,13 @@ const moosestackNavigationConfig: NavigationConfig = [
   },
   {
     type: "page",
+    slug: "moosestack/language-server",
+    title: "Language Server",
+    icon: IconFileCode,
+    languages: ["typescript"],
+  },
+  {
+    type: "page",
     slug: "moosestack/data-modeling",
     title: "Data Modeling",
     icon: IconDatabase,
@@ -485,6 +492,21 @@ const moosestackNavigationConfig: NavigationConfig = [
 
   // Deployment & Lifecycle section
   { type: "label", title: "Deployment & Lifecycle" },
+  {
+    type: "page",
+    slug: "moosestack/dev",
+    title: "Moose Dev",
+    icon: IconDeviceLaptop,
+    languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "moosestack/dev/cdc-managed-tables",
+        title: "CDC Managed Tables",
+        languages: ["typescript", "python"],
+      },
+    ],
+  },
   {
     type: "page",
     slug: "moosestack/migrate",
@@ -824,6 +846,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         type: "page",
         slug: "moosestack/configuration/migrations",
         title: "Migrations",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "moosestack/configuration/docker",
+        title: "Docker",
         languages: ["typescript", "python"],
       },
       { type: "separator" },

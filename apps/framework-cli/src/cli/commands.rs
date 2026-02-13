@@ -9,6 +9,7 @@ use clap::{Args, Subcommand};
 pub enum Commands {
     // Initializes the developer environment with all the necessary directories including temporary ones for data storage
     /// Initialize your data-intensive app or service
+    #[command(visible_alias = "i")]
     Init {
         /// Name of your app or service
         name: String,
@@ -46,6 +47,7 @@ pub enum Commands {
         custom_dockerfile: bool,
     },
     /// Builds your moose project
+    #[command(visible_alias = "b")]
     Build {
         /// Build for docker
         #[arg(short, long, default_value = "false")]
@@ -58,12 +60,14 @@ pub enum Commands {
         arm64: bool,
     },
     /// Checks the project for non-runtime errors
+    #[command(visible_alias = "c")]
     Check {
         #[arg(long, default_value = "false")]
         write_infra_map: bool,
     },
     /// Displays the changes that will be applied to the infrastructure during the next deployment
     /// to production, considering the current state of the project
+    #[command(visible_alias = "pl")]
     Plan {
         /// URL of the remote Moose instance (default: http://localhost:4000)
         #[arg(long, conflicts_with = "clickhouse_url")]
@@ -84,6 +88,7 @@ pub enum Commands {
     },
 
     /// Execute a migration plan against a remote ClickHouse database
+    #[command(visible_alias = "mg")]
     Migrate {
         /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
         /// Authentication credentials should be included in the URL
@@ -97,6 +102,7 @@ pub enum Commands {
     },
 
     /// View some data from a table or stream
+    #[command(visible_alias = "pk")]
     Peek {
         /// Name of the table or stream to peek
         name: String,
@@ -116,6 +122,7 @@ pub enum Commands {
         stream: bool,
     },
     /// Starts a local development environment to build your data-intensive app or service
+    #[command(visible_alias = "d")]
     Dev {
         /// Skip starting docker containers for infrastructure
         #[arg(long)]
@@ -138,16 +145,20 @@ pub enum Commands {
         log_payloads: bool,
     },
     /// Start a remote environment for use in cloud deployments
+    #[command(visible_alias = "p")]
     Prod {
         /// Include and manage dependencies (ClickHouse, Redpanda, etc.) using Docker containers
         #[arg(long)]
         start_include_dependencies: bool,
     },
     /// Generates helpers for your data models (i.e. sdk, api tokens)
+    #[command(visible_alias = "g")]
     Generate(GenerateArgs),
     /// Clears all temporary data and stops development infrastructure
+    #[command(visible_alias = "cl")]
     Clean {},
     /// View Moose logs
+    #[command(visible_alias = "l")]
     Logs {
         /// Follow the logs in real-time
         #[arg(short, long)]
@@ -175,14 +186,18 @@ pub enum Commands {
     },
 
     /// Opens metrics console for viewing live metrics from your moose app
+    #[command(visible_alias = "m")]
     Metrics {},
     /// Manage data processing workflows
+    #[command(visible_alias = "w")]
     Workflow(WorkflowArgs),
     /// Manage templates
+    #[command(visible_alias = "t")]
     Template(TemplateCommands),
     /// Manage database schema import
     Db(DbArgs),
     /// Integrate matching tables from a remote Moose instance into the local project
+    #[command(visible_alias = "r")]
     Refresh {
         /// URL of the remote Moose instance (default: http://localhost:4000)
         #[arg(long)]
@@ -196,8 +211,10 @@ pub enum Commands {
         // interactive: bool,
     },
     /// Seed data into your project
+    #[command(visible_alias = "s")]
     Seed(SeedCommands),
     /// Truncate tables or delete the last N rows
+    #[command(visible_alias = "tr")]
     Truncate {
         /// List of table names to target (omit when using --all)
         #[arg(value_name = "TABLE", num_args = 0.., value_delimiter = ',')]
@@ -212,8 +229,29 @@ pub enum Commands {
         rows: Option<u64>,
     },
     /// Manage Kafka-related operations
+    #[command(visible_alias = "k")]
     Kafka(KafkaArgs),
+    /// Submit feedback, report issues, or join the community
+    #[command(visible_alias = "f")]
+    Feedback {
+        /// Feedback message (e.g. moose feedback "loving the DX!" or moose feedback --bug "crash on startup")
+        #[arg(conflicts_with = "community")]
+        message: Option<String>,
+
+        /// Report a bug (opens GitHub Issues with system info and log paths)
+        #[arg(long, conflicts_with = "community")]
+        bug: bool,
+
+        /// Join the Moose community on Slack
+        #[arg(long, conflicts_with_all = ["bug", "message"])]
+        community: bool,
+
+        /// Your email address for follow-up (optional)
+        #[arg(long, conflicts_with_all = ["bug", "community"], requires = "message")]
+        email: Option<String>,
+    },
     /// Execute SQL queries against ClickHouse
+    #[command(visible_alias = "q")]
     Query {
         /// SQL query to execute
         query: Option<String>,
@@ -234,6 +272,9 @@ pub enum Commands {
         #[arg(short = 'p', long = "prettify", requires = "format_query")]
         prettify: bool,
     },
+    /// Fetch and display LLM-optimized documentation for AI agents
+    #[command(visible_alias = "do")]
+    Docs(DocsArgs),
 }
 
 #[derive(Debug, Args)]
@@ -244,13 +285,18 @@ pub struct GenerateArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum GenerateCommand {
+    /// Generate the Dockerfile without building the Docker image
+    #[command(visible_alias = "d")]
+    Dockerfile {},
     /// Generate an API key hash and bearer token pair for authentication
+    #[command(visible_alias = "h")]
     HashToken {
         /// Output in JSON format
         #[arg(long)]
         json: bool,
     },
     /// Generate migration files
+    #[command(visible_alias = "m")]
     Migration {
         /// URL of the remote Moose instance (use with --token)
         #[arg(long, conflicts_with = "clickhouse_url")]
@@ -286,6 +332,7 @@ pub struct WorkflowArgs {
 #[derive(Debug, Subcommand)]
 pub enum WorkflowCommands {
     /// Run a workflow
+    #[command(visible_alias = "r")]
     Run {
         /// Name of the workflow to run
         name: String,
@@ -295,6 +342,7 @@ pub enum WorkflowCommands {
         input: Option<String>,
     },
     /// Resume a workflow from a specific task
+    #[command(visible_alias = "rs")]
     Resume {
         /// Name of the workflow to resume
         name: String,
@@ -304,12 +352,14 @@ pub enum WorkflowCommands {
         from: String,
     },
     /// List registered workflows
+    #[command(visible_alias = "l")]
     List {
         /// Output in JSON format
         #[arg(long)]
         json: bool,
     },
     /// Show workflow history
+    #[command(visible_alias = "h")]
     History {
         /// Filter workflows by status (running, completed, failed)
         #[arg(short, long)]
@@ -330,21 +380,25 @@ pub enum WorkflowCommands {
         name: String,
     },
     /// Cancel a workflow & allow tasks to execute cleanup
+    #[command(visible_alias = "c")]
     Cancel {
         /// Name of the workflow to cancel
         name: String,
     },
     /// Pause a workflow
+    #[command(visible_alias = "p")]
     Pause {
         /// Name of the workflow to pause
         name: String,
     },
     /// Unpause a workflow
+    #[command(visible_alias = "u")]
     Unpause {
         /// Name of the workflow to unpause
         name: String,
     },
     /// Get the status of a workflow
+    #[command(visible_alias = "s")]
     Status {
         /// Name of the workflow
         name: String,
@@ -373,6 +427,7 @@ pub struct TemplateCommands {
 #[derive(Debug, Subcommand)]
 pub enum TemplateSubCommands {
     /// List available templates
+    #[command(visible_alias = "l")]
     List {},
 }
 
@@ -386,6 +441,7 @@ pub struct SeedCommands {
 #[derive(Debug, Subcommand)]
 pub enum SeedSubcommands {
     /// Seed ClickHouse tables with data
+    #[command(visible_alias = "c")]
     Clickhouse {
         /// ClickHouse connection URL (e.g. 'clickhouse://explorer@play.clickhouse.com:9440/default')
         #[arg(long, alias = "connection-string")]
@@ -423,6 +479,7 @@ pub struct DbArgs {
 #[derive(Debug, Subcommand)]
 pub enum DbCommands {
     /// Update DB schema for EXTERNALLY_MANAGED tables
+    #[command(visible_alias = "p")]
     Pull {
         /// ClickHouse connection URL (e.g., clickhouse://user:pass@host:port/database or https://user:pass@host:port/database)
         #[arg(long)]
@@ -440,11 +497,69 @@ pub struct KafkaArgs {
     pub command: KafkaCommands,
 }
 
+/// Arguments for the docs command
+#[derive(Debug, Args)]
+#[command(after_help = "\
+Examples:
+  moose docs                              Show documentation index (collapsed)
+  moose docs --expand                     Show full index with all pages and guide sections
+  moose docs moosestack/olap              View the OLAP documentation page
+  moose docs search \"materialized\"        Search for pages matching a query
+  moose docs --lang py moosestack/olap    View page in Python (default: auto-detected)
+  moose docs browse                       Interactively browse and select a page
+  moose docs browse --web                 Browse and open selection in your browser
+  moose docs moosestack/olap --web        Open a page directly in the browser
+
+Guide sections (guides are large — navigate to specific sections):
+  moose docs guides/chat-in-your-app#overview       View just the Overview section
+  moose docs guides/chat-in-your-app#setup          View just the Setup section
+  moose docs guides/performant-dashboards --web     Open full guide in the browser
+
+Slugs are case-insensitive. Run `moose docs` to see all available slugs.")]
+pub struct DocsArgs {
+    #[command(subcommand)]
+    pub command: Option<DocsCommands>,
+
+    /// Documentation page slug (e.g., moosestack/olap, guides/chat-in-your-app#overview)
+    pub slug: Option<String>,
+
+    /// Language for documentation: typescript (ts) or python (py)
+    #[arg(long, short = 'l', global = true)]
+    pub lang: Option<String>,
+
+    /// Output raw content without formatting (for piping to other tools)
+    #[arg(long, global = true)]
+    pub raw: bool,
+
+    /// Show full expanded tree with all leaf pages
+    #[arg(long)]
+    pub expand: bool,
+
+    /// Open documentation page in your web browser instead of printing
+    #[arg(long, global = true)]
+    pub web: bool,
+}
+
+/// Subcommands for the docs command
+#[derive(Debug, Subcommand)]
+pub enum DocsCommands {
+    /// Interactively browse and select a documentation page
+    #[command(visible_alias = "b")]
+    Browse {},
+    /// Search documentation by title or description
+    #[command(visible_alias = "s")]
+    Search {
+        /// Search query to filter documentation entries
+        query: String,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 pub enum KafkaCommands {
     /// Discover topics and generate external stream declarations;
     /// optionally fetch JSON Schemas (Avro support coming soon)
     /// from Schema Registry to emit typed models.
+    #[command(visible_alias = "p")]
     Pull {
         /// Kafka bootstrap servers, e.g. localhost:9092
         bootstrap: String,

@@ -96,6 +96,59 @@ services:
 **Do not** use this file to configure Moose-managed services (ClickHouse, Redpanda, Redis, Temporal). Use `moose.config.toml` for those components to avoid configuration conflicts.
 </Callout>
 
+## Externally Managed Tables
+
+When working with tables marked as `EXTERNALLY_MANAGED` (tables that exist in a production database but are managed outside Moose), you can configure the dev environment to create local mirror tables for development and testing.
+
+### Configuration
+
+```toml
+[dev.externally_managed.tables]
+# Create local mirror tables for EXTERNALLY_MANAGED tables
+create_local_mirrors = true
+
+# Number of sample rows to seed (0 = schema only, no data)
+sample_size = 1000
+
+# Re-create tables on every dev server start
+refresh_on_startup = false
+```
+
+| Key | Type | Default | Description |
+|:----|:-----|:--------|:------------|
+| `create_local_mirrors` | Boolean | `false` | When `true`, creates local tables matching the schema of externally managed tables. |
+| `sample_size` | Integer | `0` | Number of rows to copy from the remote database. Set to `0` to create empty tables (schema only). |
+| `refresh_on_startup` | Boolean | `false` | When `true`, drops and recreates mirror tables on each `moose dev` start. |
+
+<Callout type="info" title="Remote Credentials">
+If you have a remote ClickHouse URL configured, Moose will mirror table schemas and sample data from the remote database. Without remote access, tables are created using local schema definitions (empty).
+</Callout>
+
+### Remote ClickHouse Connection
+
+To mirror data from a production or staging database, configure a remote ClickHouse connection:
+
+```toml
+[dev.remote_clickhouse]
+host = "your-clickhouse-host.example.com"
+port = 8443
+database = "production_db"
+use_ssl = true
+protocol = "http"
+```
+
+| Key | Type | Default | Description |
+|:----|:-----|:--------|:------------|
+| `host` | String | - | Hostname of the remote ClickHouse server. |
+| `port` | Integer | `8443` (SSL) / `8123` (non-SSL) | HTTP port for the remote server. |
+| `database` | String | - | Default database to query on the remote server. |
+| `use_ssl` | Boolean | `true` | Whether to use TLS (HTTPS) for connections. |
+| `protocol` | String | `http` | ClickHouse interface protocol — `http` selects the HTTP interface (vs native). TLS is controlled separately by `use_ssl`. |
+
+<Callout type="warning" title="Credential Storage">
+Credentials (username/password) are **not** stored in `moose.config.toml`. On first run, Moose will prompt for credentials and store them securely in your OS keychain. You can also set `MOOSE_REMOTE_CLICKHOUSE_USER` and `MOOSE_REMOTE_CLICKHOUSE_PASSWORD` environment variables.
+</Callout>
+
 ## Networking Reference
 
 Reference for default ports and URLs used by the Moose Runtime in development mode.

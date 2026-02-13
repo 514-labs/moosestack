@@ -7,27 +7,17 @@ use prometheus_client::{
     registry::Registry,
 };
 use serde::Deserialize;
-use serde_json::json;
 use serde_json::Value;
-use std::env;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time;
 
 use crate::infrastructure::redis::redis_client::RedisClient;
 use crate::metrics_inserter::MetricsInserter;
-use crate::utilities::constants::{CLI_VERSION, CONTEXT, CTX_SESSION_ID};
 use crate::utilities::decode_object;
 use chrono::{DateTime, Utc};
-use tracing::{trace, warn};
+use tracing::trace;
 
-const DEFAULT_ANONYMOUS_METRICS_URL: &str =
-    "https://moosefood.514.dev/ingest/MooseSessionTelemetry/0.6";
-static ANONYMOUS_METRICS_URL: LazyLock<String> = LazyLock::new(|| {
-    env::var("MOOSE_METRICS_DEST").unwrap_or_else(|_| DEFAULT_ANONYMOUS_METRICS_URL.to_string())
-});
-const ANONYMOUS_METRICS_REPORTING_INTERVAL: Duration = Duration::from_secs(10);
 pub const TOTAL_LATENCY: &str = "moose_total_latency";
 pub const LATENCY: &str = "moose_latency";
 pub const INGESTED_BYTES: &str = "moose_ingested_bytes";
@@ -88,7 +78,6 @@ pub enum MetricEvent {
 
 #[derive(Clone)]
 pub struct TelemetryMetadata {
-    pub anonymous_telemetry_enabled: bool,
     pub machine_id: String,
     pub is_moose_developer: bool,
     pub metric_labels: Option<String>,
@@ -317,8 +306,6 @@ impl Metrics {
             data.streaming_functions_processed_bytes_count.clone(),
         );
 
-        let cloned_data_ref = data.clone();
-
         let metrics_inserter = self.metrics_inserter.clone();
         let export_metrics = self.telemetry_metadata.export_metrics;
 
@@ -459,104 +446,8 @@ impl Metrics {
             }
         });
 
-        if self.telemetry_metadata.anonymous_telemetry_enabled {
-            let metric_labels = match self
-                .telemetry_metadata
-                .metric_labels
-                .as_deref()
-                .map(decode_object::decode_base64_to_json)
-            {
-                None => None,
-                Some(Ok(Value::Object(map))) => Some(map),
-                Some(Ok(v)) => {
-                    warn!("Unexpected JSON value for metric_labels {}", v);
-                    None
-                }
-                Some(Err(e)) => {
-                    warn!("Invalid JSON for metric_labels {}", e);
-                    None
-                }
-            };
-
-            let cloned_metadata = self.telemetry_metadata.clone();
-            tokio::spawn(async move {
-                let client = reqwest::Client::new();
-
-                let session_start = Utc::now();
-
-                let ip_response = client
-                    .get("https://api64.ipify.org?format=text")
-                    .timeout(Duration::from_secs(2))
-                    .send()
-                    .await
-                    .ok();
-
-                let ip = if let Some(response) = ip_response {
-                    Some(response.text().await.unwrap())
-                } else {
-                    None
-                };
-
-                loop {
-                    time::sleep(ANONYMOUS_METRICS_REPORTING_INTERVAL).await;
-
-                    let session_duration_in_sec = Utc::now()
-                        .signed_duration_since(session_start)
-                        .num_seconds();
-
-                    let ingested_avg_latency_in_ms =
-                        if cloned_data_ref.http_ingested_request_count.get() != 0 {
-                            cloned_data_ref.http_ingested_latency_sum_ms.get()
-                                / cloned_data_ref.http_ingested_request_count.get()
-                        } else {
-                            0
-                        };
-
-                    let consumed_avg_latency_in_ms =
-                        if cloned_data_ref.http_consumed_request_count.get() != 0 {
-                            cloned_data_ref.http_consumed_latency_sum_ms.get()
-                                / cloned_data_ref.http_consumed_request_count.get()
-                        } else {
-                            0
-                        };
-
-                    let mut telemetry_payload = json!({
-                        "timestamp": Utc::now(),
-                        "machineId": cloned_metadata.machine_id.clone(),
-                        "sequenceId": CONTEXT.get(CTX_SESSION_ID).unwrap(),
-                        "project": cloned_metadata.project_name.clone(),
-                        "isProd": cloned_metadata.is_production.clone(),
-                        "isMooseDeveloper": cloned_metadata.is_moose_developer.clone(),
-                        "cliVersion": CLI_VERSION,
-                        "sessionDurationInSec": session_duration_in_sec,
-                        "ingestedEventsCount": cloned_data_ref.http_ingested_request_count.get(),
-                        "ingestedEventsTotalBytes": cloned_data_ref.http_ingested_total_bytes.get(),
-                        "ingestAvgLatencyInMs": ingested_avg_latency_in_ms,
-                        "consumedRequestCount": cloned_data_ref.http_consumed_request_count.get(),
-                        "consumedAvgLatencyInMs": consumed_avg_latency_in_ms,
-                        "blocksCount": cloned_data_ref.blocks_count.get(),
-                        "streamingToOLAPEventSyncedCount": cloned_data_ref.topic_to_olap_event_total_count.get(),
-                        "streamingToOLAPEventSyncedBytesCount": cloned_data_ref.topic_to_olap_bytes_total_count.get(),
-                        "streamingFunctionsInputEventsProcessedCount": cloned_data_ref.streaming_functions_in_event_total_count.get(),
-                        "streamingFunctionsOutputEventsProcessedCount": cloned_data_ref.streaming_functions_out_event_total_count.get(),
-                        "streamingFunctionsEventsProcessedTotalBytes": cloned_data_ref.streaming_functions_processed_bytes_total_count.get(),
-                        "ip": ip,
-                    });
-
-                    // Merge metric_labels into telemetry_payload
-                    let payload_obj = telemetry_payload.as_object_mut().unwrap();
-                    if let Some(labels_obj) = &metric_labels {
-                        payload_obj.extend(labels_obj.iter().map(|(k, v)| (k.clone(), v.clone())));
-                    }
-
-                    let _ = client
-                        .post(ANONYMOUS_METRICS_URL.as_str())
-                        .json(&telemetry_payload)
-                        .send()
-                        .await;
-                }
-            });
-        }
+        // Anonymous telemetry to moosefood.514.dev has been disabled.
+        // CI/CD environment info is now sent via PostHog in capture.rs.
     }
 }
 

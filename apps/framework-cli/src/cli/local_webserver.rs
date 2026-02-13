@@ -43,7 +43,6 @@ use crate::utilities::auth::{get_claims, validate_jwt};
 use crate::utilities::constants::SHOW_TIMING;
 
 use crate::framework::core::infrastructure::topic::{KafkaSchemaKind, SchemaRegistryReference};
-use crate::framework::typescript::bin::CliMessage;
 use crate::infrastructure::olap::clickhouse;
 use crate::infrastructure::stream::kafka;
 use crate::infrastructure::stream::kafka::models::ConfiguredProducer;
@@ -748,18 +747,11 @@ struct WorkflowQueryParams {
 
 async fn workflows_history_route(
     req: Request<hyper::body::Incoming>,
-    is_prod: bool,
     project: Arc<Project>,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    if is_prod {
-        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return add_cors_headers(Response::builder())
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Full::new(Bytes::from(
-                    "Unauthorized: Invalid or missing token",
-                )));
-        }
+    let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+    if let Err(e) = validate_admin_auth(auth_header, &project.authentication.admin_api_key).await {
+        return e.to_response();
     }
 
     let query_params: WorkflowQueryParams = req
@@ -775,7 +767,7 @@ async fn workflows_history_route(
             let json_string =
                 serde_json::to_string(&workflows).unwrap_or_else(|_| "[]".to_string());
 
-            add_cors_headers(Response::builder())
+            Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(json_string)))
@@ -787,7 +779,7 @@ async fn workflows_history_route(
                 "details": format!("{:?}", e)
             });
 
-            add_cors_headers(Response::builder())
+            Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(
@@ -808,20 +800,13 @@ async fn workflows_history_route(
 )]
 async fn workflows_trigger_route(
     req: Request<hyper::body::Incoming>,
-    is_prod: bool,
     project: Arc<Project>,
     workflow_name: String,
     max_request_body_size: usize,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    if is_prod {
-        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return add_cors_headers(Response::builder())
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Full::new(Bytes::from(
-                    "Unauthorized: Invalid or missing token",
-                )));
-        }
+    let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+    if let Err(e) = validate_admin_auth(auth_header, &project.authentication.admin_api_key).await {
+        return e.to_response();
     }
 
     let mut reader = match to_reader(req, max_request_body_size).await {
@@ -834,7 +819,7 @@ async fn workflows_trigger_route(
         Err(e) => match e.classify() {
             serde_json::error::Category::Eof => None,
             _ => {
-                return add_cors_headers(Response::builder())
+                return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .header("Content-Type", "application/json")
                     .body(Full::new(Bytes::from(
@@ -853,20 +838,20 @@ async fn workflows_trigger_route(
             let namespace = project.temporal_config.get_temporal_namespace();
 
             let mut payload = serde_json::to_value(&info).unwrap();
-            if !is_prod {
+            if !project.is_production {
                 let dashboard_url =
                     temporal_dashboard_url(&namespace, &info.workflow_id, &info.run_id);
                 payload["dashboardUrl"] = serde_json::Value::String(dashboard_url);
             }
 
-            add_cors_headers(Response::builder())
+            Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(
                     serde_json::to_string(&payload).unwrap(),
                 )))
         }
-        Err(e) => add_cors_headers(Response::builder())
+        Err(e) => Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "application/json")
             .body(Full::new(Bytes::from(
@@ -890,23 +875,16 @@ async fn workflows_trigger_route(
 )]
 async fn workflows_terminate_route(
     req: Request<hyper::body::Incoming>,
-    is_prod: bool,
     project: Arc<Project>,
     workflow_name: String,
 ) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
-    if is_prod {
-        let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
-        if !check_authorization(auth_header, &MOOSE_CONSUMPTION_API_KEY, &None).await {
-            return add_cors_headers(Response::builder())
-                .status(StatusCode::UNAUTHORIZED)
-                .body(Full::new(Bytes::from(
-                    "Unauthorized: Invalid or missing token",
-                )));
-        }
+    let auth_header = req.headers().get(hyper::header::AUTHORIZATION);
+    if let Err(e) = validate_admin_auth(auth_header, &project.authentication.admin_api_key).await {
+        return e.to_response();
     }
 
     match terminate_workflow(&project, &workflow_name).await {
-        Ok(success) => add_cors_headers(Response::builder())
+        Ok(success) => Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "application/json")
             .body(Full::new(Bytes::from(
@@ -916,7 +894,7 @@ async fn workflows_terminate_route(
                 }))
                 .unwrap(),
             ))),
-        Err(err) => add_cors_headers(Response::builder())
+        Err(err) => Response::builder()
             .status(StatusCode::BAD_REQUEST)
             .header("Content-Type", "application/json")
             .body(Full::new(Bytes::from(
@@ -937,6 +915,73 @@ async fn workflows_terminate_route(
         // No resource_type/resource_name - infrastructure check
     )
 )]
+/// Lightweight liveness probe endpoint.
+/// Only checks if the Consumption API process is responsive (detects Node.js deadlocks).
+/// Does NOT check external dependencies - use /health for that.
+async fn live_route(project: &Project) -> Result<Response<Full<Bytes>>, hyper::http::Error> {
+    use std::time::Duration;
+
+    // Only check Consumption API if enabled
+    let (healthy, unhealthy) = if project.features.apis {
+        let consumption_api_port = project.http_server_config.proxy_port;
+        let health_url = format!(
+            "http://localhost:{}/_moose_internal/health",
+            consumption_api_port
+        );
+
+        let client = match reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Live check: Failed to create HTTP client: {}", e);
+                return Response::builder()
+                    .status(StatusCode::SERVICE_UNAVAILABLE)
+                    .header("Content-Type", "application/json")
+                    .body(Full::new(Bytes::from(
+                        r#"{"healthy":[],"unhealthy":["Consumption API"]}"#,
+                    )));
+            }
+        };
+
+        match client.get(&health_url).send().await {
+            Ok(response) if response.status().is_success() => (vec!["Consumption API"], Vec::new()),
+            Ok(response) => {
+                warn!(
+                    "Live check: Consumption API returned status {}",
+                    response.status()
+                );
+                (Vec::new(), vec!["Consumption API"])
+            }
+            Err(e) => {
+                warn!("Live check: Consumption API unavailable: {}", e);
+                (Vec::new(), vec!["Consumption API"])
+            }
+        }
+    } else {
+        // No Consumption API to check, just return alive
+        (Vec::new(), Vec::new())
+    };
+
+    let status = if unhealthy.is_empty() {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    let json_response = serde_json::to_string_pretty(&serde_json::json!({
+        "healthy": healthy,
+        "unhealthy": unhealthy
+    }))
+    .unwrap_or_else(|_| String::from(r#"{"error":"Failed to serialize response"}"#));
+
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "application/json")
+        .body(Full::new(Bytes::from(json_response)))
+}
+
 async fn health_route(
     project: &Project,
     redis_client: &Arc<RedisClient>,
@@ -1213,48 +1258,6 @@ async fn admin_reality_check_route(
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
         .body(Full::new(Bytes::from(response.to_string())))
-}
-
-async fn log_route(
-    req: Request<Incoming>,
-    is_prod: bool,
-    max_request_body_size: usize,
-) -> Response<Full<Bytes>> {
-    let body = match to_reader(req, max_request_body_size).await {
-        Ok(reader) => reader,
-        Err(response) => return response,
-    };
-
-    let parsed: Result<CliMessage, serde_json::Error> = serde_json::from_reader(body);
-    match parsed {
-        Ok(cli_message) => {
-            let message = Message {
-                action: cli_message.action,
-                details: cli_message.message,
-            };
-            if !is_prod {
-                show_message!(cli_message.message_type, message);
-            } else {
-                match cli_message.message_type {
-                    MessageType::Error => {
-                        error!("{}: {}", message.action, message.details);
-                    }
-                    MessageType::Warning => {
-                        warn!("{}: {}", message.action, message.details);
-                    }
-                    MessageType::Success | MessageType::Info | MessageType::Highlight => {
-                        info!("{}: {}", message.action, message.details);
-                    }
-                }
-            }
-        }
-        Err(e) => println!("Received unknown message: {e:?}"),
-    }
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .body(Full::new(Bytes::from("")))
-        .unwrap()
 }
 
 async fn metrics_log_route(
@@ -1960,6 +1963,7 @@ async fn router(
             }
         }
         (_, &hyper::Method::GET, ["health"]) => health_route(&project, &redis_client).await,
+        (_, &hyper::Method::GET, ["liveness"]) => live_route(&project).await,
         (_, &hyper::Method::GET, ["ready"]) => ready_route(&project, &redis_client).await,
         (_, &hyper::Method::GET, ["admin", "reality-check"]) => {
             admin_reality_check_route(
@@ -1970,23 +1974,26 @@ async fn router(
             )
             .await
         }
-        (_, &hyper::Method::GET, ["workflows", "history"]) if project.features.workflows => {
-            workflows_history_route(req, is_prod, project.clone()).await
+        (_, &hyper::Method::GET, ["admin", "workflows", "history"])
+            if project.features.workflows =>
+        {
+            workflows_history_route(req, project.clone()).await
         }
-        (_, &hyper::Method::POST, ["workflows", name, "trigger"]) if project.features.workflows => {
+        (_, &hyper::Method::POST, ["admin", "workflows", name, "trigger"])
+            if project.features.workflows =>
+        {
             workflows_trigger_route(
                 req,
-                is_prod,
                 project.clone(),
                 name.to_string(),
                 project.http_server_config.max_request_body_size,
             )
             .await
         }
-        (_, &hyper::Method::POST, ["workflows", name, "terminate"])
+        (_, &hyper::Method::POST, ["admin", "workflows", name, "terminate"])
             if project.features.workflows =>
         {
-            workflows_terminate_route(req, is_prod, project.clone(), name.to_string()).await
+            workflows_terminate_route(req, project.clone(), name.to_string()).await
         }
         (_, &hyper::Method::OPTIONS, _) => options_route(),
         (_, _method, _) => {
@@ -2178,7 +2185,6 @@ async fn management_router<I: InfraMapProvider>(
     let route = get_path_without_prefix(PathBuf::from(req.uri().path()), path_prefix);
     let route = route.to_str().unwrap();
     let res = match (req.method(), route) {
-        (&hyper::Method::POST, "logs") => Ok(log_route(req, is_prod, max_request_body_size).await),
         (&hyper::Method::POST, METRICS_LOGS_PATH) => {
             Ok(metrics_log_route(req, metrics.clone(), max_request_body_size).await)
         }
@@ -2261,6 +2267,11 @@ async fn print_available_routes(
         ),
         (
             "GET",
+            "/liveness".to_string(),
+            "Liveness probe endpoint (checks Consumption API only)".to_string(),
+        ),
+        (
+            "GET",
             "/ready".to_string(),
             "Readiness check endpoint".to_string(),
         ),
@@ -2271,17 +2282,17 @@ async fn print_available_routes(
         static_routes.extend_from_slice(&[
             (
                 "GET",
-                "/workflows/history".to_string(),
+                "/admin/workflows/history".to_string(),
                 "Workflow history".to_string(),
             ),
             (
                 "POST",
-                "/workflows/name/trigger".to_string(),
+                "/admin/workflows/name/trigger".to_string(),
                 "Trigger a workflow".to_string(),
             ),
             (
                 "POST",
-                "/workflows/name/terminate".to_string(),
+                "/admin/workflows/name/terminate".to_string(),
                 "Terminate a workflow".to_string(),
             ),
         ]);
@@ -3294,10 +3305,16 @@ async fn store_updated_inframap(
     infra_map: &InfrastructureMap,
     redis_client: Arc<RedisClient>,
 ) -> Result<(), IntegrationError> {
+    use crate::utilities::constants::CLI_VERSION;
+
     debug!("Storing updated inframap");
 
+    // Set moose_version before storing (consistent with StateStorage implementations)
+    let mut versioned_map = infra_map.clone();
+    versioned_map.moose_version = Some(CLI_VERSION.to_string());
+
     // Store in Redis
-    if let Err(e) = infra_map.store_in_redis(&redis_client).await {
+    if let Err(e) = versioned_map.store_in_redis(&redis_client).await {
         debug!("Failed to store inframap in Redis: {}", e);
         return Err(IntegrationError::InternalError(format!(
             "Failed to store updated inframap in Redis: {e}"

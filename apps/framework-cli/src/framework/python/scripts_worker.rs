@@ -18,7 +18,7 @@ pub enum WorkerProcessError {
     ProjectFileError(#[from] ProjectFileError),
 }
 
-pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
+pub fn start_worker(project: &Project, is_prod: bool) -> Result<Child, WorkerProcessError> {
     // Create the wrapper lib files inside the .moose directory
     let internal_dir = project.internal_dir()?;
     let python_worker_lib_dir = internal_dir.join(PYTHON_WORKER_WRAPPER_PACKAGE_NAME);
@@ -95,7 +95,6 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         .expect("Worker process did not have a handle to stderr");
 
     let mut stdout_reader = BufReader::new(stdout).lines();
-    let mut stderr_reader = BufReader::new(stderr).lines();
 
     tokio::spawn(async move {
         while let Ok(Some(line)) = stdout_reader.next_line().await {
@@ -122,18 +121,14 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         }
     });
 
-    tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_reader.next_line().await {
-            error!("{}", line);
-            show_message_wrapper(
-                MessageType::Error,
-                Message {
-                    action: "Workflow".to_string(),
-                    details: line.to_string(),
-                },
-            );
-        }
-    });
+    // Spawn stderr handler with UI display for errors using the centralized helper
+    crate::cli::logger::spawn_stderr_structured_logger_with_ui(
+        stderr,
+        "task_name",
+        crate::cli::logger::resource_type::TASK,
+        Some("Workflow"),
+        is_prod,
+    );
 
     Ok(worker_process)
 }

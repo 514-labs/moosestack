@@ -32,7 +32,7 @@
 
 use clickhouse::Client;
 
-use errors::ClickhouseError;
+use errors::{validate_clickhouse_identifier, ClickhouseError};
 use mapper::{std_column_to_clickhouse_column, std_table_to_clickhouse_table};
 use model::ClickHouseColumn;
 use queries::ClickhouseEngine;
@@ -70,6 +70,7 @@ use crate::project::Project;
 
 pub mod client;
 pub mod config;
+pub mod config_resolver;
 pub mod diagnostics;
 pub mod diff_strategy;
 pub mod errors;
@@ -77,6 +78,7 @@ pub mod inserter;
 pub mod mapper;
 pub mod model;
 pub mod queries;
+pub mod remote;
 pub mod sql_parser;
 pub mod type_parser;
 
@@ -330,6 +332,32 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
     normalized
 }
 
+/// Extracts the cluster name from an atomic OLAP operation, if present.
+fn extract_cluster_name(op: &AtomicOlapOperation) -> Option<&str> {
+    match op {
+        AtomicOlapOperation::CreateTable { table, .. }
+        | AtomicOlapOperation::DropTable { table, .. }
+        | AtomicOlapOperation::AddTableColumn { table, .. }
+        | AtomicOlapOperation::DropTableColumn { table, .. }
+        | AtomicOlapOperation::ModifyTableColumn { table, .. }
+        | AtomicOlapOperation::ModifyTableSettings { table, .. }
+        | AtomicOlapOperation::ModifyTableTtl { table, .. }
+        | AtomicOlapOperation::AddTableIndex { table, .. }
+        | AtomicOlapOperation::DropTableIndex { table, .. }
+        | AtomicOlapOperation::ModifySampleBy { table, .. }
+        | AtomicOlapOperation::RemoveSampleBy { table, .. } => table.cluster_name.as_deref(),
+        AtomicOlapOperation::PopulateMaterializedView { .. }
+        | AtomicOlapOperation::CreateDmv1View { .. }
+        | AtomicOlapOperation::DropDmv1View { .. }
+        | AtomicOlapOperation::RunSetupSql { .. }
+        | AtomicOlapOperation::RunTeardownSql { .. }
+        | AtomicOlapOperation::CreateMaterializedView { .. }
+        | AtomicOlapOperation::DropMaterializedView { .. }
+        | AtomicOlapOperation::CreateView { .. }
+        | AtomicOlapOperation::DropView { .. } => None,
+    }
+}
+
 /// Executes a series of changes to the ClickHouse database schema
 ///
 /// # Arguments
@@ -374,6 +402,13 @@ pub async fn execute_changes(
 
     let db_name = &project.clickhouse_config.db_name;
 
+    // Validate all cluster names before executing any SQL
+    for op in teardown_plan.iter().chain(setup_plan.iter()) {
+        if let Some(cluster) = extract_cluster_name(op) {
+            validate_clickhouse_identifier(cluster, "Cluster name")?;
+        }
+    }
+
     // Scan setup_plan to find which databases need which clusters
     let mut db_to_clusters: HashMap<String, HashSet<String>> = HashMap::new();
 
@@ -401,7 +436,7 @@ pub async fn execute_changes(
             // Database has tables with clusters - create on each cluster
             for cluster in clusters {
                 let create_db_query = format!(
-                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER {}",
+                    "CREATE DATABASE IF NOT EXISTS `{}` ON CLUSTER `{}`",
                     database, cluster
                 );
                 info!("Creating database {} on cluster {}", database, cluster);
@@ -665,7 +700,7 @@ pub async fn execute_atomic_operation(
             // Build ALTER TABLE ... [REMOVE TTL | MODIFY TTL expr]
             let cluster_clause = cluster_name
                 .as_ref()
-                .map(|c| format!(" ON CLUSTER {}", c))
+                .map(|c| format!(" ON CLUSTER `{}`", c))
                 .unwrap_or_default();
             let sql = if let Some(expr) = after {
                 format!(
@@ -779,7 +814,7 @@ pub async fn execute_atomic_operation(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %table.id(table.database.as_deref().unwrap_or(db_name)),
+        resource_name = %table.name,
     )
 )]
 async fn execute_create_table(
@@ -815,7 +850,7 @@ async fn execute_add_table_index(
         format!("({})", index.arguments.join(", "))
     };
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} ADD INDEX `{}` {} TYPE {}{} GRANULARITY {}",
@@ -844,7 +879,7 @@ async fn execute_drop_table_index(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} DROP INDEX `{}`",
@@ -866,7 +901,7 @@ async fn execute_modify_sample_by(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} MODIFY SAMPLE BY {}",
@@ -887,7 +922,7 @@ async fn execute_remove_sample_by(
     client: &ConfiguredDBClient,
 ) -> Result<(), ClickhouseChangesError> {
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let sql = format!(
         "ALTER TABLE `{}`.`{}`{} REMOVE SAMPLE BY",
@@ -907,7 +942,7 @@ async fn execute_remove_sample_by(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}_{}", table_database.unwrap_or(db_name), table_name),
+        resource_name = %table_name,
     )
 )]
 async fn execute_drop_table(
@@ -941,7 +976,7 @@ async fn execute_drop_table(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}_{}", db_name, table_name),
+        resource_name = %table_name,
     )
 )]
 async fn execute_add_table_column(
@@ -963,7 +998,7 @@ async fn execute_add_table_column(
     let column_type_string = basic_field_type_to_string(&clickhouse_column.column_type)?;
 
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
 
     // Include DEFAULT clause if column has a default value
@@ -1026,7 +1061,7 @@ async fn execute_add_table_column(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}_{}", db_name, table_name),
+        resource_name = %table_name,
     )
 )]
 async fn execute_drop_table_column(
@@ -1043,7 +1078,7 @@ async fn execute_drop_table_column(
         column_name
     );
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let drop_column_query = format!(
         "ALTER TABLE `{}`.`{}`{} DROP COLUMN IF EXISTS `{}`",
@@ -1071,7 +1106,7 @@ async fn execute_drop_table_column(
     fields(
         context = context::BOOT,
         resource_type = resource_type::OLAP_TABLE,
-        resource_name = %format!("{}_{}", db_name, table_name),
+        resource_name = %table_name,
     )
 )]
 async fn execute_modify_table_column(
@@ -1223,7 +1258,7 @@ fn build_modify_column_sql(
     let column_type_string = basic_field_type_to_string(&ch_col.column_type)?;
 
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
 
     let mut statements = vec![];
@@ -1343,7 +1378,7 @@ fn build_modify_column_comment_sql(
     // Escape for ClickHouse SQL: backslashes first, then single quotes
     let escaped_comment = comment.replace('\\', "\\\\").replace('\'', "''");
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     Ok(format!(
         "ALTER TABLE `{}`.`{}`{} MODIFY COLUMN `{}` COMMENT '{}'",
@@ -1443,7 +1478,7 @@ async fn execute_rename_table_column(
         after_column_name
     );
     let cluster_clause = cluster_name
-        .map(|c| format!(" ON CLUSTER {}", c))
+        .map(|c| format!(" ON CLUSTER `{}`", c))
         .unwrap_or_default();
     let rename_column_query = format!(
         "ALTER TABLE `{db_name}`.`{table_name}`{cluster_clause} RENAME COLUMN `{before_column_name}` TO `{after_column_name}`"
@@ -1497,7 +1532,7 @@ fn strip_backticks(s: &str) -> String {
     fields(
         context = context::BOOT,
         resource_type = resource_type::MATERIALIZED_VIEW,
-        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %view_name,
     )
 )]
 async fn execute_create_materialized_view(
@@ -1538,7 +1573,7 @@ async fn execute_create_materialized_view(
     fields(
         context = context::BOOT,
         resource_type = resource_type::VIEW,
-        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %view_name,
     )
 )]
 async fn execute_create_view(
@@ -1590,7 +1625,7 @@ async fn execute_drop_view_inner(
     fields(
         context = context::BOOT,
         resource_type = resource_type::MATERIALIZED_VIEW,
-        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %view_name,
     )
 )]
 async fn execute_drop_materialized_view(
@@ -1609,7 +1644,7 @@ async fn execute_drop_materialized_view(
     fields(
         context = context::BOOT,
         resource_type = resource_type::VIEW,
-        resource_name = %format!("{}_{}", view_database.unwrap_or(db_name), view_name),
+        resource_name = %view_name,
     )
 )]
 async fn execute_drop_view(
@@ -1634,6 +1669,10 @@ async fn execute_drop_view(
 /// For tables following the naming convention: {name}_{version}
 /// where version is in the format x_y_z (e.g., 1_0_0)
 /// For tables not following the convention: returns the full name and default_version
+///
+/// Empty segments produced by consecutive underscores (e.g., `foo__1_0`) are
+/// filtered out during both base-name and version parsing, so they do not
+/// produce empty components or spurious version parts.
 ///
 /// # Example
 /// ```rust
@@ -1672,7 +1711,7 @@ pub fn extract_version_from_table_name(table_name: &str) -> (String, Option<Vers
     // Find the first numeric part - this marks the start of the version
     let mut version_start_idx = None;
     for (i, part) in parts.iter().enumerate() {
-        if part.chars().all(|c| c.is_ascii_digit()) {
+        if !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()) {
             version_start_idx = Some(i);
             debug!("Found version start at index {}: {}", i, part);
             break;
@@ -3172,6 +3211,15 @@ mod tests {
         let (base_name, version) = extract_version_from_table_name("Bar");
         assert_eq!(base_name, "Bar");
         assert!(version.is_none());
+
+        // PeerDB-style table names with UUIDs: digit-only segments are treated as versions.
+        // The leading underscore is lost because empty split parts are filtered out.
+        // This is why externally managed tables skip version extraction entirely in generate.rs.
+        let (base_name, version) = extract_version_from_table_name(
+            "_peerdb_raw_mirror_a1b2c3d4_e5f6_7890_abcd_ef1234567890",
+        );
+        assert_eq!(base_name, "peerdb_raw_mirror_a1b2c3d4_e5f6");
+        assert_eq!(version.unwrap().to_string(), "7890");
     }
 
     #[test]

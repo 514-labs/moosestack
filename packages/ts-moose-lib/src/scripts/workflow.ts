@@ -4,7 +4,6 @@ import {
   proxyActivities,
   workflowInfo,
   continueAsNew,
-  sleep,
 } from "@temporalio/workflow";
 import { Duration } from "@temporalio/common";
 import { Task, Workflow } from "../dmv2";
@@ -16,6 +15,10 @@ interface WorkflowRequest {
   workflow_name: string;
   execution_mode: "start" | "continue_as_new";
   continue_from_task?: string; // Only for continue_as_new
+}
+
+interface HandleTaskContext {
+  originalWorkflowInput?: any;
 }
 
 const { getWorkflowByName, getTaskForWorkflow } = proxyActivities({
@@ -50,7 +53,9 @@ export async function ScriptWorkflow(
       request.execution_mode === "start" ?
         workflow.config.startingTask
       : await getTaskForWorkflow(workflowName, request.continue_from_task!);
-    const result = await handleTask(workflow, task, currentData);
+    const result = await handleTask(workflow, task, currentData, {
+      originalWorkflowInput: inputData,
+    });
     results.push(...result);
 
     return results;
@@ -64,6 +69,7 @@ async function handleTask(
   workflow: Workflow,
   task: Task<any, any>,
   inputData: any,
+  ctx: HandleTaskContext = {},
 ): Promise<any[]> {
   // Handle timeout configuration
   const configTimeout = task.config.timeout;
@@ -96,7 +102,7 @@ async function handleTask(
   };
 
   // Temporal requires either startToCloseTimeout OR scheduleToCloseTimeout to be set
-  // For unlimited timeout (timeout = "none"), we use scheduleToCloseTimeout with a very large value
+  // For unlimited timeout (timeout = "never"), we use scheduleToCloseTimeout with a very large value
   // For normal timeouts, we use startToCloseTimeout for single execution timeout
   if (taskTimeout) {
     // Normal timeout - limit each individual execution attempt
@@ -109,55 +115,34 @@ async function handleTask(
 
   const { executeTask } = proxyActivities(activityOptions);
 
-  let taskCompleted = false;
-
-  const monitorTask = async () => {
-    logger.info(`Monitor task starting for ${task.name}`);
-    while (!taskCompleted) {
-      const info = workflowInfo();
-
-      // Continue-as-new only when suggested by Temporal
-      if (info.continueAsNewSuggested) {
-        logger.info(`ContinueAsNew suggested by Temporal`);
-        return await continueAsNew({
-          workflow_name: workflow.name,
-          execution_mode: "continue_as_new" as const,
-          continue_from_task: task.name,
-        });
-      }
-
-      await sleep(100);
-    }
-    logger.info(`Monitor task exiting because main task completed`);
-  };
-
-  const result = await Promise.race([
-    executeTask(workflow, task, inputData)
-      .then((taskResult) => {
-        return {
-          type: "task_completed" as const,
-          data: taskResult,
-        };
-      })
-      .finally(() => {
-        taskCompleted = true;
-      }),
-    monitorTask().then(() => {
-      return { type: "continue_as_new" as const, data: undefined };
-    }),
-  ]);
-
-  if (result.type !== "task_completed") {
-    return [];
+  // Check history limits BEFORE starting the task, so continue_from_task
+  // points to a task that hasn't run yet (avoids duplicate execution).
+  // Pass the original raw inputData so run() doesn't double-process it.
+  if (workflowInfo().continueAsNewSuggested) {
+    logger.info(`ContinueAsNew suggested by Temporal before task ${task.name}`);
+    return await continueAsNew(
+      {
+        workflow_name: workflow.name,
+        execution_mode: "continue_as_new" as const,
+        continue_from_task: task.name,
+      },
+      ctx.originalWorkflowInput,
+    );
   }
 
-  const results = [result.data];
+  // Execute the activity directly — no polling monitor.
+  // A running activity does not generate workflow history events, so the
+  // history stays small even for long-running (timeout: "never") tasks.
+  const result = await executeTask(workflow, task, inputData);
+
+  const results = [result];
+
   if (!task.config.onComplete?.length) {
     return results;
   }
 
   for (const childTask of task.config.onComplete) {
-    const childResult = await handleTask(workflow, childTask, result.data);
+    const childResult = await handleTask(workflow, childTask, result, ctx);
     results.push(...childResult);
   }
 
@@ -167,15 +152,13 @@ async function handleTask(
     task.name.endsWith("_extract") &&
     result &&
     typeof result === "object" &&
-    result.data &&
-    typeof result.data === "object" &&
-    "hasMore" in result.data &&
-    (result.data as any).hasMore === true
+    "hasMore" in result &&
+    (result as any).hasMore === true
   ) {
     logger.info(`Extract task ${task.name} has more data, restarting chain...`);
 
     // Recursively call the extract task again to get the next batch
-    const nextBatchResults = await handleTask(workflow, task, null);
+    const nextBatchResults = await handleTask(workflow, task, null, ctx);
     results.push(...nextBatchResults);
   }
 

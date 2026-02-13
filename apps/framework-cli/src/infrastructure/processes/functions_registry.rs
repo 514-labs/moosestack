@@ -92,6 +92,7 @@ impl FunctionProcessRegistry {
                                 &source_topic,
                                 Some(&target_topic),
                                 &executable,
+                                project.is_production,
                             )?)
                         })
                     } else if function_process.is_ts_function_process() {
@@ -104,6 +105,7 @@ impl FunctionProcessRegistry {
                                 &project,
                                 &project_location,
                                 parallel_process_count,
+                                project.is_production,
                             )?)
                         })
                     } else {
@@ -145,6 +147,7 @@ impl FunctionProcessRegistry {
                                 &source_topic,
                                 None,
                                 &executable,
+                                project.is_production,
                             )?)
                         })
                     } else if function_process.is_ts_function_process() {
@@ -157,6 +160,7 @@ impl FunctionProcessRegistry {
                                 &project,
                                 &project_location,
                                 parallel_process_count,
+                                project.is_production,
                             )?)
                         })
                     } else {

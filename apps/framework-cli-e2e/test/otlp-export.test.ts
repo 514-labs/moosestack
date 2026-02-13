@@ -24,7 +24,12 @@ import * as fs from "fs";
 import * as path from "path";
 import axios from "axios";
 
-import { TIMEOUTS, SERVER_CONFIG } from "./constants";
+import {
+  TIMEOUTS,
+  SERVER_CONFIG,
+  TEST_ADMIN_BEARER_TOKEN,
+  TEST_ADMIN_API_KEY_HASH,
+} from "./constants";
 import {
   waitForServerStart,
   createTempTestDirectory,
@@ -44,13 +49,6 @@ const MOOSE_LIB_PATH = path.resolve(
 
 const TEST_SUITE = "otlp-export";
 const APP_NAME = "moose-ts-otlp-app";
-
-// Admin API bearer token for authentication (used in Authorization header)
-const TEST_ADMIN_BEARER_TOKEN =
-  "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
-
-// Admin API key hash (PBKDF2 hash of the bearer token, used in moose config)
-const TEST_ADMIN_API_KEY_HASH = "445fd4696cfc5c49e28995c4aba05de44303a112";
 
 /**
  * Infrastructure map types for querying primitive names

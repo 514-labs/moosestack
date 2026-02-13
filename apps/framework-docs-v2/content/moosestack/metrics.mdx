@@ -4,7 +4,7 @@ description: Unified observability for Moose across development and productionâ€
 order: 1
 ---
 
-import { Callout } from "@/components/mdx";
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
 
 # Observability
 
@@ -135,7 +135,58 @@ metadata:
     "sidecar.opentelemetry.io/inject": "true"
 ```
 
-### Logging
+### Application Logging
+
+Moose automatically captures logs from your application code and formats them as structured JSON. Use standard logging methods in your handlers, streaming functions, and other Moose code.
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+```typescript filename="Example.ts" copy
+// Use standard console methods
+console.log("Processing event", { eventId: "123" });
+console.info("User action recorded");
+console.warn("Rate limit approaching");
+console.error("Failed to process record", { error: err.message });
+console.debug("Detailed debug info");
+```
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+```python filename="Example.py" copy
+# Use print() for simple logs
+print("Processing event", {"eventId": "123"})
+
+# Or use standard logging for level control
+import logging
+logger = logging.getLogger(__name__)
+
+logger.info("User action recorded")
+logger.warning("Rate limit approaching")
+logger.error("Failed to process record", exc_info=True)
+logger.debug("Detailed debug info")
+```
+  </LanguageTabContent>
+</LanguageTabs>
+
+#### Structured Output
+
+Logs are automatically formatted as structured JSON with context about where they originated:
+
+```json
+{
+  "__moose_structured_log__": true,
+  "level": "info",
+  "message": "Processing event {\"eventId\": \"123\"}",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "context": {
+    "api": "UserActivity",
+    "requestId": "req_abc123"
+  }
+}
+```
+
+The `context` field includes metadata like the API name, streaming function, or task that generated the log, making it easy to trace and filter logs in your aggregation system.
+
+### Infrastructure Logging
 
 Configure structured logging via environment variables:
 

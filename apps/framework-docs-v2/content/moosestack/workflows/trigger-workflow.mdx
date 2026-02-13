@@ -5,8 +5,6 @@ order: 3
 category: workflows
 ---
 
-import { Callout } from "@/components/mdx";
-
 # Trigger Workflows
 
 ## Overview
@@ -32,7 +30,6 @@ When triggering workflows, you can pass input data that will be passed to the st
 ```bash filename="Terminal" copy
 moose workflow run data-processing --input '{
   "sourceUrl": "https://api.example.com/data",
-  "apiKey": "your-api-key",
   "batchSize": 100
 }'
 ```
@@ -41,86 +38,72 @@ The input is parsed as JSON and passed to the workflow's starting task.
 
 ## API-Triggered Workflows
 
-Trigger workflows directly via an HTTP POST endpoint exposed by the webserver.
+Trigger workflows directly via HTTP endpoints exposed by the webserver. These endpoints are protected by admin authentication.
 
-- Endpoint: `/workflows/{workflowName}/trigger`
-
-### Trigger Request
-
-- Body: optional JSON payload passed to the workflow's starting task.
-
-Example:
-
-```bash filename="Terminal" copy
-curl -X POST 'http://localhost:4000/workflows/data-processing/trigger' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "inputValue": "process-user-data",
-    "priority": "high"
-  }'
-```
+| Endpoint | Description |
+|----------|-------------|
+| `POST /admin/workflows/{workflowName}/trigger` | Start a workflow |
+| `POST /admin/workflows/{workflowName}/terminate` | Stop a running workflow |
+| `GET /admin/workflows/history` | List workflow executions |
 
 ### Authentication
 
-- Local development: no auth required.
-- Production: protect the endpoint using an API key. Follow these steps:
-  1. Generate a token and hashed key (see the Token Generation section in the API Auth docs):
-     ```bash filename="Terminal" copy
-     moose generate hash-token
-     # Outputs:
-     # - ENV API Key (hashed) → for environment/config
-     # - Bearer Token (plain) → for Authorization header
-     ```
-  2. Configure the server with the hashed key:
-     ```bash copy
-     MOOSE_CONSUMPTION_API_KEY="<hashed_key_from_output>"
-     ```
-  3. Call the endpoint using the plain Bearer token from step 1:
-     ```bash filename="Terminal" copy
-     curl -X POST 'https://your-host/workflows/data-processing/trigger' \
-       -H 'Authorization: Bearer <plain_token_from_output>' \
-       -H 'Content-Type: application/json' \
-       -d '{"inputValue":"process-user-data"}'
-     ```
+Workflow API endpoints require admin authentication in both development and production. If the admin API key is not configured, the endpoint returns `401 Unauthorized: Admin API key not configured`.
 
-For details, see the API Auth page under "Token Generation" and "API Endpoints".
+Generate credentials using the CLI:
 
-### Response
+```bash filename="Terminal" copy
+moose generate hash-token
+# Output:
+# ENV API Key: <hash>   ← store in config (safe to commit)
+# Bearer Token: <token> ← use in requests (keep secret)
+```
+
+Add the `ENV API Key` value to `moose.config.toml`:
+```toml filename="moose.config.toml" copy
+[authentication]
+admin_api_key = "<your-env-api-key>"
+```
+
+Use the `Bearer Token` value in your requests. For more details, see the [API Authentication docs](/moosestack/apis/auth).
+
+### Trigger Request
+
+```bash filename="Terminal" copy
+curl -X POST 'http://localhost:4000/admin/workflows/data-processing/trigger' \
+  -H 'Authorization: Bearer <your-bearer-token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "sourceUrl": "https://api.example.com/data",
+    "batchSize": 100
+  }'
+```
 
 ```json filename="Response"
 {
   "workflowId": "data-processing-<hash>",
   "runId": "<id>",
+  "dashboardUrl": "..."  // included in dev only
 }
 ```
-
-In local development, the response also includes a `dashboardUrl` to Temporal UI:
-
-```json filename="Response (dev)"
-{
-  "workflowId": "data-processing-<hash>",
-  "runId": "<id>",
-  "dashboardUrl": "http://localhost:8080/namespaces/<namespace>/workflows/data-processing-<hash>/<runId>/history"
-}
-```
-
-## Terminate a Running Workflow
-
-After triggering a workflow, you can terminate it via an HTTP endpoint.
-
-- Endpoint: `POST /workflows/{workflowId}/terminate`
 
 ### Terminate Request
 
-- Local development (no auth):
-
 ```bash filename="Terminal" copy
-curl -X POST 'http://localhost:4000/workflows/data-processing-<hash>/terminate'
+curl -X POST 'http://localhost:4000/admin/workflows/data-processing/terminate' \
+  -H 'Authorization: Bearer <your-bearer-token>'
 ```
 
-- Production (Bearer token required):
+### History Request
 
 ```bash filename="Terminal" copy
-curl -X POST 'https://your-host/workflows/data-processing-<hash>/terminate' \
-  -H 'Authorization: Bearer <plain_token_from_output>'
+curl -X GET 'http://localhost:4000/admin/workflows/history' \
+  -H 'Authorization: Bearer <your-bearer-token>'
+```
+
+With optional query parameters:
+
+```bash filename="Terminal" copy
+curl -X GET 'http://localhost:4000/admin/workflows/history?status=RUNNING&limit=20' \
+  -H 'Authorization: Bearer <your-bearer-token>'
 ```

@@ -22,7 +22,7 @@ interface TemporalConfig {
 }
 
 interface ScriptsConfig {
-  temporalConfig: TemporalConfig;
+  temporalConfig?: TemporalConfig;
 }
 
 // Maintain a global set of activity names we've already registered
@@ -115,6 +115,12 @@ async function registerWorkflows(
   config: ScriptsConfig,
 ): Promise<Worker | null> {
   logger.info(`Registering workflows`);
+
+  // If temporalConfig is not provided, workflows are disabled
+  if (!config.temporalConfig) {
+    logger.info(`Temporal config not provided, skipping workflow registration`);
+    return null;
+  }
 
   // Collect all TypeScript activities from registered workflows
   const allScriptPaths: string[] = [];

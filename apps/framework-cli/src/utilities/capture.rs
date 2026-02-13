@@ -3,6 +3,7 @@
 //! This module leverages moose to instrument moose. It includes a macro to easily capture data anywhere in the codebase.
 //!
 use crate::cli::settings::Settings;
+use crate::utilities::ci_detection::detect_ci_environment;
 use crate::utilities::constants::{CLI_VERSION, CONTEXT, CTX_SESSION_ID};
 use posthog514client_rs::PostHog514Client;
 use serde::Serialize;
@@ -37,6 +38,8 @@ pub enum ActivityType {
     CheckCommand,
     #[serde(rename = "devCommand")]
     DevCommand,
+    #[serde(rename = "docsCommand")]
+    DocsCommand,
     #[serde(rename = "dockerCommand")]
     DockerCommand,
     #[serde(rename = "initCommand")]
@@ -91,6 +94,8 @@ pub enum ActivityType {
     RefreshListCommand,
     #[serde(rename = "dbPullCommand")]
     DbPullCommand,
+    #[serde(rename = "feedbackCommand")]
+    FeedbackCommand,
 }
 
 pub fn capture_usage(
@@ -127,6 +132,14 @@ pub fn capture_usage(
         context.insert("flags".into(), json!(flags));
     }
 
+    // Add CI/CD and container environment information
+    let ci_env = detect_ci_environment();
+    context.insert("is_ci".into(), json!(ci_env.is_ci));
+    if let Some(provider) = ci_env.ci_provider {
+        context.insert("ci_provider".into(), json!(provider));
+    }
+    context.insert("is_docker".into(), json!(ci_env.is_docker));
+
     // Create PostHog client
     Some(tokio::task::spawn(async move {
         let client = match PostHog514Client::from_env(machine_id) {
@@ -156,4 +169,51 @@ pub async fn wait_for_usage_capture(handle: Option<tokio::task::JoinHandle<()>>)
     if let Some(handle) = handle {
         let _ = handle.await;
     }
+}
+
+/// Validates email format (basic check for @ with characters before and after)
+fn is_valid_email(email: &str) -> bool {
+    if let Some(at_pos) = email.find('@') {
+        // Check there are characters before and after @
+        at_pos > 0 && at_pos < email.len() - 1
+    } else {
+        false
+    }
+}
+
+/// Identifies a user with their email address using PostHog's identify call
+pub fn identify_user_with_email(
+    email: &str,
+    settings: &Settings,
+    machine_id: String,
+) -> Option<tokio::task::JoinHandle<()>> {
+    // Skip if telemetry is disabled
+    if !settings.telemetry.enabled {
+        return None;
+    }
+
+    let email = email.to_string();
+
+    Some(tokio::task::spawn(async move {
+        // Validate email format before sending
+        if !is_valid_email(&email) {
+            tracing::warn!("Invalid email format: skipping PostHog identify");
+            return;
+        }
+
+        let client = match PostHog514Client::from_env(machine_id) {
+            Some(client) => client,
+            None => {
+                tracing::warn!("PostHog client not configured - missing POSTHOG_API_KEY");
+                return;
+            }
+        };
+
+        let mut properties = HashMap::new();
+        properties.insert("email".to_string(), serde_json::json!(email));
+
+        if let Err(e) = client.identify(properties).await {
+            tracing::warn!("Failed to identify user in PostHog: {:?}", e);
+        }
+    }))
 }

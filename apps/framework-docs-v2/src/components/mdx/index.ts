@@ -6,7 +6,7 @@ export {
   StaggeredContent,
   StaggeredCode,
 } from "./staggered-card";
-export { Callout } from "./callout";
+export { Callout, CommunityCallout } from "./callout";
 export { LanguageTabs, LanguageTabContent } from "./language-tabs";
 export { CommandSnippet } from "./command-snippet";
 export { CodeSnippet } from "./code-snippet";
@@ -60,4 +60,11 @@ export {
   TabbedCode,
   TabbedCodeContent,
   ConditionalContent,
+  GuideStepper,
+  GuideStepperStep,
+  GuideStepperCheckpoint,
+  GuideStepperAtAGlance,
+  GuideStepperPrompt,
+  VerticalProgressSteps,
+  VerticalProgressStepItem,
 } from "./interactive";

@@ -2,45 +2,54 @@ import dataclasses
 import logging
 from datetime import datetime, timezone
 
-import requests
 import json
+import sys
 from typing import Optional, Literal, Any, Union, Callable
 import os
 from kafka import KafkaConsumer, KafkaProducer
+
+moose_management_port = int(os.environ.get("MOOSE_MANAGEMENT_PORT", "5001"))
 
 
 class CliLogData:
     INFO = "Info"
     SUCCESS = "Success"
     ERROR = "Error"
+    WARNING = "Warning"
     HIGHLIGHT = "Highlight"
 
     def __init__(
         self,
         action: str,
         message: str,
-        message_type: Optional[Literal[INFO, SUCCESS, ERROR, HIGHLIGHT]] = INFO,
+        message_type: Optional[
+            Literal[INFO, SUCCESS, ERROR, WARNING, HIGHLIGHT]
+        ] = INFO,
     ):
         self.message_type = message_type
         self.action = action
         self.message = message
 
 
-moose_management_port = int(os.environ.get("MOOSE_MANAGEMENT_PORT", "5001"))
-
-
 def cli_log(log: CliLogData) -> None:
-    try:
-        # When dmv2 starts up, it imports all the dmv2 definitions. In python,
-        # import_module executes code at the module level (but not inside functions).
-        # If the user has a function being called at the module level, and that function
-        # tries to send logs when moose hasn't fully started, the requests will fail.
-        # The try catch is to ignore those errors.
-        url = f"http://localhost:{moose_management_port}/logs"
-        headers = {"Content-Type": "application/json"}
-        requests.post(url, data=json.dumps(log.__dict__), headers=headers)
-    except:
-        pass
+    level = (
+        "error"
+        if log.message_type == CliLogData.ERROR
+        else "warn" if log.message_type == CliLogData.WARNING else "info"
+    )
+
+    structured_log = {
+        "__moose_structured_log__": True,
+        "level": level,
+        "message": log.message,
+        "resource_type": "runtime",
+        "cli_action": log.action,
+        "cli_message_type": log.message_type or CliLogData.INFO,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    sys.stderr.write(json.dumps(structured_log) + "\n")
+    sys.stderr.flush()
 
 
 class Logger:
@@ -58,9 +67,12 @@ class Logger:
             if message_type == CliLogData.INFO:
                 moose_scripts_logger.info(message)
             elif message_type == CliLogData.SUCCESS:
-                moose_scripts_logger.success(message)
+                # Standard Python logger doesn't have .success(), use info instead
+                moose_scripts_logger.info(message)
             elif message_type == CliLogData.ERROR:
                 moose_scripts_logger.error(message)
+            elif message_type == CliLogData.WARNING:
+                moose_scripts_logger.warning(message)
             elif message_type == CliLogData.HIGHLIGHT:
                 moose_scripts_logger.warning(message)
         else:
@@ -78,6 +90,9 @@ class Logger:
 
     def error(self, message: str) -> None:
         self._log(message, CliLogData.ERROR)
+
+    def warning(self, message: str) -> None:
+        self._log(message, CliLogData.WARNING)
 
     def highlight(self, message: str) -> None:
         self._log(message, CliLogData.HIGHLIGHT)

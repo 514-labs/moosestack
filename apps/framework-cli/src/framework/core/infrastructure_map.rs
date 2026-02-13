@@ -585,6 +585,12 @@ pub struct InfrastructureMap {
     /// Collection of views indexed by view name
     #[serde(default)]
     pub views: HashMap<String, View>,
+
+    /// Version of Moose CLI that created or last updated this infrastructure map.
+    /// Populated automatically during storage operations.
+    /// None for maps created by older CLI versions (pre-version-tracking).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moose_version: Option<String>,
 }
 
 impl InfrastructureMap {
@@ -622,6 +628,7 @@ impl InfrastructureMap {
             web_apps: Default::default(),
             materialized_views: Default::default(),
             views: Default::default(),
+            moose_version: None,
         }
     }
 
@@ -2654,6 +2661,7 @@ impl InfrastructureMap {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.to_proto()))
                 .collect(),
+            moose_version: self.moose_version.clone().unwrap_or_default(),
             special_fields: Default::default(),
         }
     }
@@ -2803,6 +2811,11 @@ impl InfrastructureMap {
                 .collect(),
             materialized_views,
             views,
+            moose_version: if proto.moose_version.is_empty() {
+                None // Backward compat: empty string = not set
+            } else {
+                Some(proto.moose_version)
+            },
         })
     }
 
@@ -2966,6 +2979,22 @@ impl InfrastructureMap {
     /// An Option containing a reference to the table if found
     pub fn find_table_by_name(&self, name: &str) -> Option<&Table> {
         self.tables.values().find(|table| table.name == name)
+    }
+
+    /// Returns EXTERNALLY_MANAGED tables that support SELECT operations
+    ///
+    /// Filters tables to find those marked as EXTERNALLY_MANAGED and have engines
+    /// that support SELECT queries (excludes Kafka, S3Queue which are write-only).
+    /// Useful for operations like mirroring, seeding, and creating local copies.
+    pub fn get_mirrorable_external_tables(&self) -> Vec<&Table> {
+        let mut tables: Vec<&Table> = self
+            .tables
+            .values()
+            .filter(|t| t.life_cycle == LifeCycle::ExternallyManaged)
+            .filter(|t| t.engine.supports_select())
+            .collect();
+        tables.sort_by_key(|t| &t.name);
+        tables
     }
 
     /// Masks sensitive credentials before exporting to JSON migration files.
@@ -3577,6 +3606,7 @@ impl Default for InfrastructureMap {
             web_apps: HashMap::new(),
             materialized_views: HashMap::new(),
             views: HashMap::new(),
+            moose_version: None, // Not set until storage
         }
     }
 }
@@ -3611,6 +3641,8 @@ impl serde::Serialize for InfrastructureMap {
             materialized_views:
                 &'a HashMap<String, super::infrastructure::materialized_view::MaterializedView>,
             views: &'a HashMap<String, super::infrastructure::view::View>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            moose_version: &'a Option<String>,
         }
 
         // Mask credentials before serialization (for JSON migration files)
@@ -3633,6 +3665,7 @@ impl serde::Serialize for InfrastructureMap {
             web_apps: &masked_inframap.web_apps,
             materialized_views: &masked_inframap.materialized_views,
             views: &masked_inframap.views,
+            moose_version: &masked_inframap.moose_version,
         };
 
         // Serialize to JSON value, sort keys, then serialize that
@@ -7771,5 +7804,219 @@ mod diff_workflow_tests {
             .collect();
         assert!(added_names.contains(&"workflow_a"));
         assert!(added_names.contains(&"workflow_b"));
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    #[test]
+    fn test_proto_roundtrip_with_version() {
+        let map = InfrastructureMap {
+            moose_version: Some("0.3.45".to_string()),
+            ..Default::default()
+        };
+
+        let bytes = map.to_proto_bytes();
+        let decoded = InfrastructureMap::from_proto(bytes).unwrap();
+
+        assert_eq!(decoded.moose_version, Some("0.3.45".to_string()));
+    }
+
+    #[test]
+    fn test_proto_roundtrip_without_version() {
+        let map = InfrastructureMap {
+            moose_version: None,
+            ..Default::default()
+        };
+
+        let bytes = map.to_proto_bytes();
+        let decoded = InfrastructureMap::from_proto(bytes).unwrap();
+
+        assert_eq!(decoded.moose_version, None);
+    }
+
+    #[test]
+    fn test_backward_compatibility_json() {
+        let old_json = r#"{
+            "default_database": "test_db",
+            "topics": {},
+            "tables": {},
+            "api_endpoints": {},
+            "dmv1_views": {},
+            "topic_to_table_sync_processes": {},
+            "topic_to_topic_sync_processes": {},
+            "function_processes": {},
+            "consumption_api_web_server": {},
+            "orchestration_workers": {},
+            "sql_resources": {},
+            "workflows": {},
+            "web_apps": {},
+            "materialized_views": {},
+            "views": {}
+        }"#;
+
+        let map: InfrastructureMap = serde_json::from_str(old_json).unwrap();
+        assert_eq!(map.moose_version, None);
+    }
+
+    #[test]
+    fn test_version_serialization_skips_none() {
+        let map = InfrastructureMap {
+            moose_version: None,
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&map).unwrap();
+        assert!(!json.contains("moose_version"), "None should be skipped");
+    }
+
+    #[test]
+    fn test_version_serialization_includes_some() {
+        let map = InfrastructureMap {
+            moose_version: Some("1.2.3".to_string()),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&map).unwrap();
+        assert!(json.contains("\"moose_version\":\"1.2.3\""));
+    }
+}
+
+#[cfg(test)]
+mod mirrorable_external_tables_tests {
+    use super::*;
+    use crate::framework::core::infrastructure::table::{Column, ColumnType, IntType};
+    use crate::framework::versions::Version;
+    use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
+
+    #[test]
+    fn test_get_mirrorable_external_tables() {
+        let mut map = InfrastructureMap::default();
+
+        // 1. ExternallyManaged table with MergeTree engine (supports SELECT) - SHOULD be returned
+        let external_mergetree = Table {
+            name: "external_mergetree".to_string(),
+            engine: ClickhouseEngine::MergeTree,
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: true,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec!["id".to_string()]),
+            partition_by: None,
+            sample_by: None,
+            version: Some(Version::from_string("1.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::ExternallyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        // 2. ExternallyManaged table with Kafka engine (write-only) - should NOT be returned
+        let external_kafka = Table {
+            name: "external_kafka".to_string(),
+            engine: ClickhouseEngine::Kafka {
+                broker_list: "localhost:9092".to_string(),
+                topic_list: "test_topic".to_string(),
+                group_name: "test_group".to_string(),
+                format: "JSONEachRow".to_string(),
+            },
+            columns: vec![Column {
+                name: "id".to_string(),
+                data_type: ColumnType::Int(IntType::Int64),
+                required: true,
+                unique: false,
+                primary_key: false,
+                default: None,
+                annotations: vec![],
+                comment: None,
+                ttl: None,
+                codec: None,
+                materialized: None,
+            }],
+            order_by: OrderBy::Fields(vec![]),
+            partition_by: None,
+            sample_by: None,
+            version: Some(Version::from_string("1.0".to_string())),
+            source_primitive: PrimitiveSignature {
+                name: "test".to_string(),
+                primitive_type: PrimitiveTypes::DataModel,
+            },
+            metadata: None,
+            life_cycle: LifeCycle::ExternallyManaged,
+            engine_params_hash: None,
+            table_settings_hash: None,
+            table_settings: None,
+            indexes: vec![],
+            database: None,
+            table_ttl_setting: None,
+            cluster_name: None,
+            primary_key_expression: None,
+        };
+
+        // 3. FullyManaged table with MergeTree (supports SELECT but wrong lifecycle) - should NOT be returned
+        let mut managed_mergetree = external_mergetree.clone();
+        managed_mergetree.name = "managed_mergetree".to_string();
+        managed_mergetree.life_cycle = LifeCycle::FullyManaged;
+
+        // Insert tables into the map
+        map.tables.insert(
+            external_mergetree.id(DEFAULT_DATABASE_NAME),
+            external_mergetree.clone(),
+        );
+        map.tables.insert(
+            external_kafka.id(DEFAULT_DATABASE_NAME),
+            external_kafka.clone(),
+        );
+        map.tables.insert(
+            managed_mergetree.id(DEFAULT_DATABASE_NAME),
+            managed_mergetree.clone(),
+        );
+
+        // Call the method under test
+        let mirrorable = map.get_mirrorable_external_tables();
+
+        // Assert: should only return the ExternallyManaged MergeTree table
+        assert_eq!(
+            mirrorable.len(),
+            1,
+            "Should return exactly 1 mirrorable table"
+        );
+        assert_eq!(
+            mirrorable[0].name, "external_mergetree",
+            "Should return the ExternallyManaged MergeTree table"
+        );
+
+        // Verify the Kafka table (write-only engine) is NOT included
+        assert!(
+            !mirrorable.iter().any(|t| t.name == "external_kafka"),
+            "Kafka table should not be mirrorable (write-only engine)"
+        );
+
+        // Verify the FullyManaged table is NOT included
+        assert!(
+            !mirrorable.iter().any(|t| t.name == "managed_mergetree"),
+            "FullyManaged table should not be mirrorable (wrong lifecycle)"
+        );
     }
 }

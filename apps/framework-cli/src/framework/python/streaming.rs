@@ -16,6 +16,7 @@ pub fn run(
     source_topic: &StreamConfig,
     target_topic: Option<&StreamConfig>,
     function_path: &Path,
+    is_prod: bool,
 ) -> Result<Child, std::io::Error> {
     let dir = function_path
         .parent()
@@ -82,6 +83,7 @@ pub fn run(
         "function_name",
         crate::cli::logger::resource_type::TRANSFORM,
         Some("Streaming"),
+        is_prod,
     );
 
     Ok(streaming_function_process)

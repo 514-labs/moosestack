@@ -18,7 +18,7 @@ pub enum WorkerProcessError {
 
 const SCRIPTS_BIN: &str = "scripts";
 
-pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
+pub fn start_worker(project: &Project, is_prod: bool) -> Result<Child, WorkerProcessError> {
     let project_path = project.project_location.clone();
     let temporal_url = project.temporal_config.temporal_url();
     let temporal_namespace = project.temporal_config.get_temporal_namespace();
@@ -101,6 +101,7 @@ pub fn start_worker(project: &Project) -> Result<Child, WorkerProcessError> {
         "task_name",
         crate::cli::logger::resource_type::TASK,
         Some("Workflow"),
+        is_prod,
     );
 
     Ok(scripts_process)

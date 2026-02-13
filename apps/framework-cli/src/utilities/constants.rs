@@ -33,6 +33,9 @@ pub const CLI_DEV_CLICKHOUSE_VOLUME_DIR_CONFIG_SCRIPTS: &str = "clickhouse/confi
 pub const CLI_DEV_CLICKHOUSE_VOLUME_DIR_CONFIG_USERS: &str = "clickhouse/configs/users";
 pub const CLI_DEV_TEMPORAL_DYNAMIC_CONFIG_DIR: &str = "temporal/dynamicconfig";
 
+pub(crate) const DOCS_BASE_URL: &str = "https://docs.fiveonefour.com";
+pub(crate) const DOCS_TOC_PATH: &str = "/llm.md";
+
 pub const SCHEMAS_DIR: &str = "datamodels";
 pub const VSCODE_DIR: &str = ".vscode";
 pub const SAMPLE_STREAMING_FUNCTION_SOURCE: &str = "Foo";
@@ -115,6 +118,10 @@ pub const KEY_REMOTE_CLICKHOUSE_URL: &str = "remote_clickhouse_url";
 pub const KEY_REMOTE_ADMIN_URL: &str = "remote_admin_url";
 pub const KEY_REMOTE_ADMIN_TOKEN: &str = "remote_admin_token";
 
+// Keychain keys for remote ClickHouse credentials (separate from URL)
+pub(crate) const KEY_REMOTE_CLICKHOUSE_USER: &str = "remote_clickhouse_user";
+pub(crate) const KEY_REMOTE_CLICKHOUSE_PASSWORD: &str = "remote_clickhouse_password";
+
 pub const ENV_CLICKHOUSE_URL: &str = "MOOSE_CLICKHOUSE_CONFIG__URL";
 pub const ENV_REDIS_URL: &str = "MOOSE_REDIS_CONFIG__URL";
 
@@ -122,12 +129,31 @@ pub const MIGRATION_FILE: &str = "./migrations/plan.yaml";
 pub const MIGRATION_BEFORE_STATE_FILE: &str = "./migrations/remote_state.json";
 pub const MIGRATION_AFTER_STATE_FILE: &str = "./migrations/local_infra_map.json";
 
+// Feedback
+/// GitHub Issues URL for bug reports filed via `moose feedback --bug`
+pub(crate) const GITHUB_ISSUES_URL: &str = "https://github.com/514-labs/moosestack/issues/new";
+/// Slack community invite URL for `moose feedback --community`
+/// NOTE: also duplicated in AFTER_HELP in cli.rs (Rust const can't interpolate)
+pub(crate) const SLACK_COMMUNITY_URL: &str =
+    "https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg";
+/// Support email shown when telemetry is disabled
+pub(crate) const SUPPORT_EMAIL: &str = "support@fiveonefour.com";
+
 pub const STORE_CRED_PROMPT: &str = r#"You have externally managed tables in your code base.
 Ensure your code is up to date with `moose db pull`.
-You can also configure `moose dev` to automatically check each time you start the dev server,
-so you're not developing with out-of-date data models/schemas.
 
-In order to set this up we will need your ClickHouse connection details:
-1. Host and port (e.g., from Boreal)
-2. Username and password
-3. Database name"#;
+To enable automatic schema drift detection, add to moose.config.toml:
+
+  [dev.remote_clickhouse]
+  protocol = "http"
+  host = "your-instance.boreal.cloud"
+  port = 8443
+  database = "production"
+  use_ssl = true
+
+Credentials are NOT stored in config files.
+You'll be prompted for username and password once, and they will be stored securely in your OS keychain.
+
+This config is safe to commit to git.
+
+Interactive setup:"#;

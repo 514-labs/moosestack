@@ -100,6 +100,12 @@ export const SERVER_CONFIG = {
     "Your local development server is running at: http://localhost:4000/ingest",
 } as const;
 
+// Admin API authentication for tests
+export const TEST_ADMIN_API_KEY_HASH =
+  "445fd4696cfc5c49e28995c4aba05de44303a112";
+export const TEST_ADMIN_BEARER_TOKEN =
+  "deadbeefdeadbeefdeadbeefdeadbeef.0123456789abcdef0123456789abcdef";
+
 // Template configurations
 export const TEMPLATE_NAMES = {
   TYPESCRIPT_DEFAULT: "typescript",
