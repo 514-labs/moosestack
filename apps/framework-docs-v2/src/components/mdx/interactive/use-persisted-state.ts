@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 
@@ -87,8 +87,8 @@ export function usePersistedState<T>(
   // Build full storage key
   const storageKey = key ? `${STORAGE_KEY_PREFIX}-${key}` : undefined;
 
-  // Track if this is the first render
-  const [isFirstRender, setIsFirstRender] = useState(true);
+  // Track if this is the first render using a ref (doesn't cause re-render)
+  const isFirstRenderRef = useRef(true);
 
   // Initialize state - check URL params first, then localStorage, then default
   const [value, setValue] = useState<T>(() => {
@@ -123,8 +123,8 @@ export function usePersistedState<T>(
     }
 
     // Skip on first render to avoid polluting URL with defaults
-    if (isFirstRender) {
-      setIsFirstRender(false);
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
       return;
     }
 
@@ -144,7 +144,7 @@ export function usePersistedState<T>(
     } catch {
       // Ignore storage errors (quota exceeded, etc.)
     }
-  }, [persist, key, storageKey, value, isFirstRender]);
+  }, [persist, key, storageKey, value]);
 
   // Listen for changes from other components/tabs and browser navigation
   useEffect(() => {
@@ -168,6 +168,18 @@ export function usePersistedState<T>(
       const urlValue = getValueFromURL<T>(key);
       if (urlValue !== null) {
         setValue(urlValue);
+      } else {
+        // URL param missing - check localStorage or use default
+        try {
+          const stored = localStorage.getItem(storageKey!);
+          if (stored !== null) {
+            setValue(JSON.parse(stored) as T);
+          } else {
+            setValue(defaultValue);
+          }
+        } catch {
+          setValue(defaultValue);
+        }
       }
     };
 
@@ -177,7 +189,7 @@ export function usePersistedState<T>(
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [persist, storageKey, key]);
+  }, [persist, storageKey, key, defaultValue]);
 
   // Wrapped setter that handles both direct values and updater functions
   const setPersistedValue = useCallback((newValue: T | ((prev: T) => T)) => {
