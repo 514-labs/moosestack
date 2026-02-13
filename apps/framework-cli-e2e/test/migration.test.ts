@@ -36,6 +36,10 @@ import {
 const execAsync = promisify(require("child_process").exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
+const MOOSE_LIB_PATH = path.resolve(
+  __dirname,
+  "../../../packages/ts-moose-lib",
+);
 const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
   "../../../templates/typescript-migrate-test",
@@ -69,6 +73,31 @@ describe("typescript template tests - migration", () => {
     testLogger.info("\nCopying template to temp directory...");
     fs.cpSync(TEMPLATE_SOURCE_DIR, testProjectDir, { recursive: true });
     testLogger.info("✓ Template copied");
+
+    // Update package.json files to use local moose-lib
+    testLogger.info("\nUpdating package.json to use local moose-lib...");
+    const outerPackageJsonPath = path.join(outerMooseDir, "package.json");
+    const outerPackageJson = JSON.parse(
+      fs.readFileSync(outerPackageJsonPath, "utf-8"),
+    );
+    outerPackageJson.dependencies["@514labs/moose-lib"] =
+      `file:${MOOSE_LIB_PATH}`;
+    fs.writeFileSync(
+      outerPackageJsonPath,
+      JSON.stringify(outerPackageJson, null, 2),
+    );
+
+    const innerPackageJsonPath = path.join(innerMooseDir, "package.json");
+    const innerPackageJson = JSON.parse(
+      fs.readFileSync(innerPackageJsonPath, "utf-8"),
+    );
+    innerPackageJson.dependencies["@514labs/moose-lib"] =
+      `file:${MOOSE_LIB_PATH}`;
+    fs.writeFileSync(
+      innerPackageJsonPath,
+      JSON.stringify(innerPackageJson, null, 2),
+    );
+    testLogger.info("✓ package.json updated");
 
     // Install dependencies for outer moose app
     testLogger.info("\nInstalling dependencies for outer moose app...");
