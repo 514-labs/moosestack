@@ -58,16 +58,6 @@ export async function generateMetadata({
 
   try {
     const content = await parseMarkdownContent(slug);
-
-    // Defensive check: ensure frontMatter exists
-    if (!content || !content.frontMatter) {
-      console.error(`Missing frontMatter for slug: ${slug}`);
-      return {
-        title: "MooseStack Documentation",
-        description: "Build data-intensive applications with MooseStack",
-      };
-    }
-
     return {
       title:
         content.frontMatter.title ?
@@ -78,7 +68,6 @@ export async function generateMetadata({
         "Build data-intensive applications with MooseStack",
     };
   } catch (error) {
-    console.error(`Error generating metadata for slug: ${slug}`, error);
     return {
       title: "MooseStack Documentation",
       description: "Build data-intensive applications with MooseStack",
@@ -106,13 +95,6 @@ export default async function DocPage({ params }: PageProps) {
   try {
     content = await parseMarkdownContent(slug);
   } catch (error) {
-    console.error(`Error parsing content for slug: ${slug}`, error);
-    notFound();
-  }
-
-  // Defensive check: ensure content and frontMatter exist
-  if (!content || !content.frontMatter) {
-    console.error(`Missing content or frontMatter for slug: ${slug}`);
     notFound();
   }
 
