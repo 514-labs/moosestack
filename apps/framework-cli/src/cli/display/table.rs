@@ -4,9 +4,7 @@
 //! with consistent styling and layout.
 
 use super::context::{tui_channel, DisplayMessage};
-use crate::utilities::constants::SUPPRESS_DISPLAY;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, ContentArrangement, Table};
-use std::sync::atomic::Ordering;
 
 /// Displays a formatted table with headers and data rows.
 ///
@@ -33,7 +31,7 @@ use std::sync::atomic::Ordering;
 /// );
 /// ```
 pub fn show_table(title: String, headers: Vec<String>, rows: Vec<Vec<String>>) {
-    // Check for TUI context first - route to TUI if available
+    // Check for TUI context - route to TUI if available
     if let Some(sender) = tui_channel() {
         sender.send(DisplayMessage::Table {
             title,
@@ -43,6 +41,7 @@ pub fn show_table(title: String, headers: Vec<String>, rows: Vec<Vec<String>>) {
         return;
     }
 
+    // Build and display table normally
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
@@ -54,9 +53,7 @@ pub fn show_table(title: String, headers: Vec<String>, rows: Vec<Vec<String>>) {
         table.add_row(row);
     }
 
-    if !SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
-        println!("{title}\n{table}");
-    }
+    println!("{title}\n{table}");
 }
 
 #[cfg(test)]

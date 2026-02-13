@@ -8,7 +8,7 @@ use super::{
     message::{Message, MessageType},
     terminal::{write_styled_line, StyledText},
 };
-use crate::utilities::constants::{NO_ANSI, QUIET_STDOUT, SHOW_TIMESTAMPS, SUPPRESS_DISPLAY};
+use crate::utilities::constants::{NO_ANSI, QUIET_STDOUT, SHOW_TIMESTAMPS};
 use std::sync::atomic::Ordering;
 use tracing::info;
 
@@ -107,7 +107,7 @@ pub fn show_message_impl(
     show_timestamps: bool,
     quiet_stdout: bool,
 ) -> std::io::Result<()> {
-    // Check for TUI context first - route messages to TUI if available
+    // Check for TUI context - route messages to TUI if available
     if let Some(sender) = tui_channel() {
         sender.send(DisplayMessage::Message {
             message_type,
@@ -115,17 +115,6 @@ pub fn show_message_impl(
             details: message.details.clone(),
         });
 
-        if should_log {
-            let log_action = message.action.replace('\n', " ");
-            let log_details = message.details.replace('\n', " ");
-            info!("{} {}", log_action.trim(), log_details.trim());
-        }
-        return Ok(());
-    }
-
-    // In TUI mode, suppress all terminal output — the TUI manages its own display.
-    // We still log via tracing so the information is captured in log files.
-    if SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
         if should_log {
             let log_action = message.action.replace('\n', " ");
             let log_details = message.details.replace('\n', " ");
