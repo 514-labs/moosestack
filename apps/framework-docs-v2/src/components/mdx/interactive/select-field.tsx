@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -11,6 +11,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { usePersistedState } from "./use-persisted-state";
+import { getSetting, updateSetting } from "@/lib/guide-settings";
 
 interface SelectOption {
   value: string;
@@ -32,6 +33,8 @@ interface SelectFieldProps {
   onChange?: (value: string) => void;
   /** Whether to persist selection to localStorage */
   persist?: boolean;
+  /** Use global guide settings storage instead of individual field storage */
+  globalSetting?: boolean;
   /** Additional CSS classes */
   className?: string;
   /** Placeholder text when no selection */
@@ -46,20 +49,40 @@ function SelectFieldInner({
   value: controlledValue,
   onChange,
   persist = false,
+  globalSetting = false,
   className,
   placeholder = "Select an option",
 }: SelectFieldProps) {
+  // For global settings, use useState + useEffect to load from global storage
+  const [globalValue, setGlobalValue] = useState<string>(() => {
+    if (!globalSetting || !id) return defaultValue ?? options[0]?.value ?? "";
+    const stored = getSetting(id as any);
+    return stored ?? defaultValue ?? options[0]?.value ?? "";
+  });
+
+  // For non-global settings, use the existing usePersistedState hook
   const [internalValue, setInternalValue] = usePersistedState<string>(
-    id,
+    globalSetting ? undefined : id,
     defaultValue ?? options[0]?.value ?? "",
-    persist,
+    persist && !globalSetting,
   );
+
+  // Update global storage when globalValue changes
+  useEffect(() => {
+    if (globalSetting && id) {
+      updateSetting(id as any, globalValue as any);
+    }
+  }, [globalSetting, id, globalValue]);
+
+  // Choose which value/setter to use based on globalSetting
+  const currentInternalValue = globalSetting ? globalValue : internalValue;
+  const setCurrentValue = globalSetting ? setGlobalValue : setInternalValue;
 
   // Validate that the internal value exists in options (in case options changed)
   const validOptionValues = options.map((o) => o.value);
-  const isValidInternalValue = validOptionValues.includes(internalValue);
+  const isValidInternalValue = validOptionValues.includes(currentInternalValue);
   const validatedInternalValue =
-    isValidInternalValue ? internalValue : (
+    isValidInternalValue ? currentInternalValue : (
       (defaultValue ?? options[0]?.value ?? "")
     );
 
@@ -68,7 +91,7 @@ function SelectFieldInner({
 
   const handleChange = (newValue: string) => {
     if (controlledValue === undefined) {
-      setInternalValue(newValue);
+      setCurrentValue(newValue);
     }
     onChange?.(newValue);
   };
