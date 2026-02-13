@@ -5,6 +5,7 @@ import {
   INTERACTIVE_STATE_CHANGE_EVENT,
   type InteractiveStateChangeDetail,
 } from "./use-persisted-state";
+import { getSetting, GuideSettings } from "@/lib/guide-settings";
 
 const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 
@@ -39,6 +40,14 @@ function ConditionalContentInner({
 
     const readStoredValue = () => {
       try {
+        // Priority 1: Check global guide settings
+        const globalValue = getSetting(whenId as keyof GuideSettings);
+        if (globalValue !== null) {
+          setCurrentValue(globalValue);
+          return;
+        }
+
+        // Priority 2: Check local storage (for per-page settings)
         const stored = localStorage.getItem(storageKey);
         if (stored !== null) {
           const value = JSON.parse(stored);
@@ -76,8 +85,18 @@ function ConditionalContentInner({
 
     window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
 
+    // Listen for global guide settings changes
+    const handleGlobalSettingsChange = (event: StorageEvent) => {
+      if (event.key === "moose-docs-guide-settings") {
+        readStoredValue();
+      }
+    };
+
+    window.addEventListener("storage", handleGlobalSettingsChange);
+
     return () => {
       window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("storage", handleGlobalSettingsChange);
       window.removeEventListener(
         INTERACTIVE_STATE_CHANGE_EVENT,
         handleStateChange,
