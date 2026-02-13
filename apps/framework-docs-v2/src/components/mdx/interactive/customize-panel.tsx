@@ -1,19 +1,11 @@
 "use client";
 
 import React, { ReactNode, useState, useEffect } from "react";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
-import { cn } from "@/lib/utils";
 import { FullPageCustomizer } from "./full-page-customizer";
 import { SettingsSummary } from "./settings-summary";
 
 interface CustomizePanelProps {
-  /** Panel title (default: "Customize") */
+  /** Panel title (default: "Customize this tutorial") */
   title?: string;
   /** Panel description text */
   description?: string;
@@ -21,14 +13,10 @@ interface CustomizePanelProps {
   children: ReactNode;
   /** Additional CSS classes */
   className?: string;
-  /** Display mode: inline (default) or wizard (full-page first-time experience) */
-  mode?: "inline" | "wizard";
-  /** Field IDs to check for existing selections (required for wizard mode) */
+  /** Field IDs to check for existing selections */
   fieldIds?: string[];
   /** Labels for fields to show in settings summary */
   fieldLabels?: Record<string, string>;
-  /** Where to render settings summary: inline, sticky-top, or sidebar */
-  summaryPlacement?: "inline" | "sticky-top" | "sidebar";
 }
 
 /**
@@ -73,99 +61,51 @@ function getSelections(fieldIds: string[]): Record<string, string> | null {
 }
 
 /**
- * CustomizePanel - A styled container for guide customization options.
+ * CustomizePanel - Wizard-style guide customization with persistent settings
  *
- * Supports two modes:
- * - "inline" (default): Always shows as a card in the content flow
- * - "wizard": Shows full-page customizer on first visit, then compact summary
+ * Shows a full-page modal on first visit for configuration, then displays
+ * a compact bottom-left summary panel with the selected options.
  *
  * @example
  * ```tsx
- * // Inline mode (default)
- * <CustomizePanel title="Customize">
- *   <SelectField ... />
- * </CustomizePanel>
- *
- * // Wizard mode (first-time experience)
  * <CustomizePanel
- *   mode="wizard"
+ *   title="Customize this tutorial"
+ *   description="Select your environment to see relevant instructions"
  *   fieldIds={["source-database", "os", "language"]}
- *   fieldLabels={{ "source-database": "Database", "os": "OS" }}
+ *   fieldLabels={{ "source-database": "Database", "os": "OS", "language": "Language" }}
  * >
  *   <SelectField id="source-database" ... />
  *   <SelectField id="os" ... />
+ *   <SelectField id="language" ... />
  * </CustomizePanel>
  * ```
  */
 export function CustomizePanel({
-  title = "Customize",
+  title = "Customize this tutorial",
   description,
   children,
   className,
-  mode = "inline",
   fieldIds = [],
   fieldLabels = {},
-  summaryPlacement = "inline",
 }: CustomizePanelProps): React.JSX.Element {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [selections, setSelections] = useState<Record<string, string> | null>(
     null,
   );
   const [isClient, setIsClient] = useState(false);
-  const [placementOverride, setPlacementOverride] = useState<string | null>(
-    null,
-  );
-
-  // Check URL parameter to override placement
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const placement = params.get("placement");
-    if (placement === "sidebar" || placement === "bottom-left") {
-      setPlacementOverride(placement);
-    }
-  }, []);
-
-  const effectivePlacement =
-    placementOverride && summaryPlacement === "sticky-top" ?
-      (placementOverride as "sidebar" | "bottom-left")
-    : summaryPlacement;
 
   // Check for existing selections on mount
   useEffect(() => {
     setIsClient(true);
-    if (mode === "wizard" && fieldIds.length > 0) {
+    if (fieldIds.length > 0) {
       const existingSelections = getSelections(fieldIds);
       setSelections(existingSelections);
       setShowCustomizer(!existingSelections); // Show customizer if no selections
     }
-  }, [mode, fieldIds]);
+  }, [fieldIds]);
 
-  // Inline mode - render traditional card
-  if (mode === "inline") {
-    return (
-      <Card
-        className={cn(
-          "my-6 bg-muted/50 dark:bg-zinc-900/50 border-border/50",
-          className,
-        )}
-      >
-        <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-semibold">{title}</CardTitle>
-          {description && (
-            <CardDescription className="text-muted-foreground">
-              {description}
-            </CardDescription>
-          )}
-        </CardHeader>
-        <CardContent className="flex flex-col gap-6">{children}</CardContent>
-      </Card>
-    );
-  }
-
-  // Wizard mode - handle first-time vs returning user
+  // SSR/initial render - show nothing to avoid hydration mismatch
   if (!isClient) {
-    // SSR/initial render - show nothing to avoid hydration mismatch
     return <div className="min-h-[60vh]" />;
   }
 
@@ -192,7 +132,7 @@ export function CustomizePanel({
     );
   }
 
-  // Has selections - show summary
+  // Has selections - show summary in bottom-left
   if (selections) {
     return (
       <SettingsSummary
@@ -200,7 +140,6 @@ export function CustomizePanel({
         labels={fieldLabels}
         onChangeSettings={() => setShowCustomizer(true)}
         className={className}
-        placement={effectivePlacement}
       />
     );
   }
