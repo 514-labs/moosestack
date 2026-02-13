@@ -26,7 +26,10 @@ export function getNavVariant(): NavVariant {
     return variant;
   }
 
-  // Default to base for both production and development
-  // Use NEXT_PUBLIC_NAV_VARIANT=full to see all content in dev
-  return "base";
+  // Default to base for production, full for development
+  if (process.env.NODE_ENV === "production") {
+    return "base";
+  }
+
+  return "full";
 }
