@@ -12,18 +12,17 @@ import {
   SelectField,
   ConditionalContent,
   CommunityCallout,
-  GuideStepper,
 } from "@/components/mdx";
 
-# Tutorial: Migrate Your Dashboard to ClickHouse
+## Tutorial: Migrate Your Dashboard to ClickHouse
 
 This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices.
 
 Your source database (Postgres or SQL Server) remains your transactional system of record, and your application continues writing to it as usual. CDC (ClickPipes or Debezium) streams changes into ClickHouse in real time so dashboards can read from ClickHouse instead of competing with OLTP workloads.
 
-MooseStack is where you define your ClickHouse analytics layer **in code**. You'll build views/materializations on top of the CDC-replicated raw tables and keep your existing dashboard APIs and request/response contracts the same—only the backing queries change.
+MooseStack is where you define your ClickHouse analytics layer **in code**. You’ll build views/materializations on top of the CDC-replicated raw tables and keep your existing dashboard APIs and request/response contracts the same—only the backing queries change.
 
-By the end of this guide you'll have:
+By the end of this guide you’ll have:
 
 1. A real-time replication pipeline feeding production ClickHouse from your source database.
 2. A MooseStack project that defines ClickHouse resources (views, materialized views, serving tables) on top of the CDC-replicated raw tables, plus the query/API handlers your dashboard will call.
@@ -35,7 +34,7 @@ By the end of this guide you'll have:
   href="/guides/chat-in-your-app"
   ctaLabel="Get started"
 >
-  If you're building a new dashboard or data-connected chat (not migrating an
+  If you’re building a new dashboard or data-connected chat (not migrating an
   existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app).
 </Callout>
 
@@ -90,7 +89,7 @@ You'll work through:
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-1. [Add MooseStack to your repo](#add-moosestack-to-your-project) (you'll define the Debezium ingest pipeline in this project).
+1. [Add MooseStack to your repo](#add-moosestack-to-your-project) (you’ll define the Debezium ingest pipeline in this project).
 2. [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get preview environments and migration plans.
 3. [Prepare your local dev environment](#prepare-your-local-development-environment) to work with ClickHouse.
 4. [Set up Debezium CDC](#set-up-change-data-capture-cdc) to stream SQL Server changes into ClickHouse via your MooseStack ingest API.
@@ -123,7 +122,7 @@ Set up ClickPipes first so the replicated raw tables exist in ClickHouse:
 <Callout type="info" title="ClickPipes owns the raw tables">
 ClickPipes creates and manages the replicated raw tables in ClickHouse. MooseStack reads from those tables and creates its own ClickHouse resources (views, materialized views, serving tables) alongside them. MooseStack does not rewrite or migrate ClickPipes-owned tables.
 
-In MooseStack, you'll treat ClickPipes tables as **externally managed**. See [External Tables](/moosestack/olap/external-tables).
+In MooseStack, you’ll treat ClickPipes tables as **externally managed**. See [External Tables](/moosestack/olap/external-tables).
 
 </Callout>
 
@@ -136,7 +135,7 @@ In MooseStack, you'll treat ClickPipes tables as **externally managed**. See [Ex
   community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg).
 </CommunityCallout>
 
-Once your ClickPipes pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project**](#add-moosestack-to-your-project). In that step, you'll initialize `moosestack/` and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
+Once your ClickPipes pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project**](#add-moosestack-to-your-project). In that step, you’ll initialize `moosestack/` and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
 
 </ConditionalContent>
 
@@ -168,7 +167,7 @@ Copy the starter kit to create a dedicated workspace to compile all the context 
 pnpm dlx tiged 514-labs/moosestack/examples/dashboard-migration moosestack/context
 ```
 
-As you complete each phase of this guide, you will attach the required input files in your initial prompt to your copilot. From there, the copilot will update the workspace files as it completes the steps in this guide.
+As you complete each phase of this guide, you will attach the required input files in your initial prompt to your copilot. From there, the copilot will update the workspace files as it completes the steps in this guide. 
 
 Pick a specific dashboard component or report to migrate. You'll work through one component at a time.
 
@@ -186,233 +185,7 @@ Pick a specific dashboard component or report to migrate. You'll work through on
       - The OLTP query file(s) that the handler calls (e.g. SQL builder, ORM query, raw query function)
     </GuideStepper.AtAGlance>
 
-    <GuideStepper.Checkpoint
-  id="phase-1-capture-test-cases"
-  title="Capture test cases"
->
-Goal: capture 2–5 replayable test cases from the **existing** OLTP endpoint. These are your parity oracle for all later phases.
-
-Steps:
-
-1. Identify 2–5 representative requests that exercise different filters, time ranges, and edge cases (e.g. empty results, large result sets, boundary dates).
-2. Run each request against the **live OLTP endpoint** and capture the exact response.
-3. For each test case, create a file: `moosestack/context/dashboard-migration/<component>/test-cases/0N-<short-name>.md`.
-4. Each file must include:
-   - the `curl` command (GET or POST)
-   - the **verbatim** JSON response — this must come from actually calling the running endpoint, not from approximation
-5. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days). You will seed your local ClickHouse to match this window after identifying the source tables in Checkpoint 2.
-
-Create a file for each test case with this structure:
-
-**File:** `moosestack/context/dashboard-migration/<component>/test-cases/01-example.md`
-
-**Request (curl):**
-
-```bash
-# Method: GET|POST
-# Path: /api/<endpoint>
-# Expected: HTTP 200
-# Auth: Bearer token via $API_TOKEN (do not paste secrets)
-
-# Set once in your shell:
-# export API_BASE_URL="http://localhost:4000"
-# export API_TOKEN="..."
-
-# GET example (query params)
-curl -sS -G "$API_BASE_URL/api/<endpoint>" \
-  -H "Authorization: Bearer $API_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data-urlencode "param1=value1" \
-  | jq .
-
-# POST example (JSON body)
-curl -sS -X POST "$API_BASE_URL/api/<endpoint>" \
-  -H "Authorization: Bearer $API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"param1": "value1"}' \
-  | jq .
-```
-
-**Expected response (paste verbatim JSON from running endpoint):**
-
-```json
-{
-  "example": "replace with actual response"
-}
-```
-
-**Done when:** 2–5 test case files exist under `test-cases/`, each with a runnable curl command and the actual JSON response from the OLTP endpoint. Record the file paths in `context-map.md`.
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-1-oltp-semantics"
-  title="OLTP semantics"
->
-Goal: extract the query logic from the existing endpoint so you have a precise spec to translate.
-
-Steps:
-
-1. Locate the SQL query or stored procedure that powers the existing endpoint (typically in the backend handler or a database layer).
-2. Document:
-   - Source tables and join conditions (including join type)
-   - Filter clauses (including implicit tenancy, soft-delete, or RBAC filters)
-   - Parameter substitution rules and defaults
-   - Group-by / aggregation logic
-   - Edge cases (null handling, division by zero, missing rows)
-3. Record these findings in `context-map.md` under Phase 1 Notes.
-
-**Done when:** `context-map.md` lists every source table, the join graph, all filter/aggregation logic, and any edge cases. You should be able to write the ClickHouse translation from this spec alone.
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-1-seed-local-clickhouse"
-  title="Seed local ClickHouse"
->
-Goal: seed your local ClickHouse with enough production data to fully cover the test cases from Checkpoint 1. You now know the source tables (from Checkpoint 2) and the time windows and filter values (from Checkpoint 1).
-
-Prerequisites:
-- Dev server is running (`moose dev`)
-- Production ClickHouse HTTPS connection string is exported:
-
-```shell
-export CLICKHOUSE_PROD_URL="<YOUR_HTTPS_CONNECTION_STRING>"
-```
-
-The connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
-
-Steps:
-
-1. For each source table from Checkpoint 2, generate and run a seed command that covers the test case time windows:
-
-```shell
-moose seed clickhouse \
-  --connection-string "$CLICKHOUSE_PROD_URL" \
-  --table <TABLE_NAME> \
-  --order-by '<TIMESTAMP_COLUMN> DESC' \
-  --limit 100000
-```
-
-2. Verify the seeded data covers every test case:
-
-```shell
-moose query -q "SELECT min(<TIMESTAMP_COLUMN>), max(<TIMESTAMP_COLUMN>), count() FROM <TABLE_NAME> FINAL"
-```
-
-If any test case falls outside the seeded range, re-seed with a larger `--limit` or use `--all`.
-
-**Done when:** every source table has local data that spans the time windows used in all Checkpoint 1 test cases.
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-1-clickhouse-parity-function"
-  title="ClickHouse parity function"
->
-Goal: write a direct translation of the OLTP query into ClickHouse SQL that returns the exact same response shape.
-
-Steps:
-
-1. Create `moosestack/app/queries/<component>-olap-translation.ts`.
-2. Write a function that:
-   - accepts the exact same parameters as the existing handler/query logic
-   - builds the translated query using the `sql` tagged template literal
-   - executes via the Moose ClickHouse client against local `moose dev`
-3. Preserve column names, types, and ordering exactly. Add explicit `ORDER BY` and casts where needed.
-4. Call out any ClickHouse-specific differences (null handling, decimal precision, timestamp bucketing) as comments in the code.
-5. Record the file path in `context-map.md`.
-
-Refer to the [ClickHouse SQL reference](https://clickhouse.com/docs/en/sql-reference) as you translate.
-
-Example (adapt to your component — do not copy names literally):
-
-```ts
-// File: moosestack/app/queries/<component>-olap-translation.ts
-
-import { sql, MooseClient } from "@514labs/moose-lib";
-import { Orders } from "./models/Orders.model";
-
-interface ParityInput {
-  merchantId: string;
-  startDate: string;
-  endDate: string;
-}
-
-interface ParityRow {
-  day: string;
-  fulfilled: number;
-  total: number;
-}
-
-export async function runParity(
-  params: ParityInput,
-  client: MooseClient,
-): Promise<ParityRow[]> {
-  const statement = sql`
-    SELECT
-      toDate(order_ts) AS day,
-      sumIf(1, status = 'fulfilled') AS fulfilled,
-      count() AS total
-    FROM ${Orders}
-    WHERE merchant_id = ${params.merchantId}
-      AND order_ts >= toDateTime(${params.startDate})
-      AND order_ts < toDateTime(${params.endDate})
-    GROUP BY day
-    ORDER BY day ASC
-  `;
-
-  return client.query<ParityRow>(statement);
-}
-```
-
-**Done when:** the parity function compiles, runs against local `moose dev`, and returns results. The file path is recorded in `context-map.md`.
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-1-verification"
-  title="Verification"
->
-Goal: prove the parity function returns the exact same JSON as the OLTP endpoint for every test case.
-
-Steps:
-
-1. For each Checkpoint 1 test case, call the parity function with the same parameters and capture the output:
-
-   Run this command from your MooseStack project root (or whichever directory contains your `tsconfig.json` and `node_modules`). The inline `tsx` script uses a relative import (`./app/queries/<component>-olap-translation`) and `getMooseUtils()` from `@514labs/moose-lib`, so it depends on your project's TypeScript/module resolution context. If your query file lives elsewhere, adjust the import path accordingly so both `runParity` and `getMooseUtils` resolve.
-
-```bash
-pnpm tsx -e "
-  import { runParity } from './app/queries/<component>-olap-translation';
-  import { getMooseUtils } from '@514labs/moose-lib';
-  const { client } = await getMooseUtils();
-  const result = await runParity(
-    { /* same params as the test case curl */ },
-    client,
-  );
-  console.log(JSON.stringify(result));
-" | jq -S '.' > actual.json
-```
-
-2. Extract the expected response from the test case file:
-
-```bash
-awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
-  moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md \
-  | jq -S '.' > expected.json
-```
-
-3. Diff:
-
-```bash
-diff expected.json actual.json
-```
-
-4. If there are differences, check:
-   - Column names (case-sensitive in ClickHouse)
-   - Data types (timestamps, decimals, integers vs floats)
-   - Sort order (add explicit `ORDER BY` if needed)
-   - Missing rows (seed slice too small — re-seed with a larger `--limit`)
-
-**Done when:** `diff` produces no output for every test case. Once all test cases pass, Phase 1 is complete — proceed to Phase 2.
-</GuideStepper.Checkpoint>
+    :::include /shared/guides/performant-dashboards/phase-1-checkpoints.mdx
 
   </GuideStepper.Step>
 
@@ -428,149 +201,7 @@ diff expected.json actual.json
       - The MooseStack source table model files referenced in the parity query (e.g. `moosestack/app/models/*.ts`)
     </GuideStepper.AtAGlance>
 
-    <GuideStepper.Checkpoint
-  id="phase-2-serving-table-design"
-  title="Serving table design"
->
-Goal: define the serving table's **grain**, **columns**, and **orderByFields**. This table will be populated by the Materialized View and becomes the table your API reads from.
-
-Steps:
-
-1. **Output columns**: take the final `SELECT` list from the Phase 1 parity query function. Those columns become the serving table schema.
-2. **Grain**: decide what uniquely identifies one row (e.g. `merchant_id` + `day`). This is the table's grain.
-3. **orderByFields**: start with the grain columns, then append the most common filter/group-by fields from your access patterns.
-4. Record the grain, columns, and `orderByFields` in `context-map.md`.
-
-Example (adapt to your component — do not copy names literally):
-
-If your parity query selects `merchant_id, merchant_name, day, total_orders, fulfilled_orders, fulfillment_rate`, then the serving table mirrors those columns and the `orderByFields` match the grain:
-
-```ts
-// File: moosestack/app/models/<ServingTable>-mv.ts
-
-import { OlapTable, Int64 } from "@514labs/moose-lib";
-
-interface ServingTableSchema {
-  merchant_id: string;
-  merchant_name: string;
-  day: Date;
-  total_orders: Int64;
-  fulfilled_orders: Int64;
-  fulfillment_rate: number;
-}
-
-export const ServingTable = new OlapTable<ServingTableSchema>("<ServingTable>", {
-  orderByFields: ["merchant_id", "day"],
-});
-```
-
-**Done when:** `context-map.md` documents the grain, column list, and `orderByFields`. You have a clear mapping from every parity query output column to a serving table column.
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-2-materialized-view-plan"
-  title="Materialized View plan"
->
-Goal: decide how data flows into the serving table before writing code.
-
-Rule of thumb:
-
-- **Single MV** — 1 source table, no CTEs, straightforward aggregation
-- **Staged pipeline** — multiple CTEs, 3+ joined tables, or cascading aggregations (create intermediate staging tables/MVs that feed the final serving table)
-
-Everything not driven by request parameters belongs in write-time MVs. Only truly dynamic filters (from the API request) stay in the final read query.
-
-Steps:
-
-1. Decide single MV vs staged pipeline using the heuristic above. If it is ambiguous, present both options with tradeoffs and ask.
-2. List every source table model that must be imported and included in `selectTables`.
-3. Sketch the `selectStatement` logic: which joins, aggregations, and transformations move from read-time to write-time.
-4. Record the MV plan in `context-map.md`: chosen approach (single or staged), source table list, and a summary of the write-time logic.
-
-**Done when:** `context-map.md` contains the MV plan — approach, source table list, and a description of the write-time logic. You should be able to implement the MV from this plan alone.
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-2-implement-serving-table-mv"
-  title="Implement the serving table + MV"
->
-Goal: write the MooseStack file that defines the serving table and the MV that populates it.
-
-Steps:
-
-1. Put the serving table and MV definition in the same file: `moosestack/app/models/<ServingTable>-mv.ts`.
-2. Ensure column names and types align exactly between the MV `selectStatement` output and the serving table schema.
-3. If implementing a staged pipeline, ensure intermediate tables/views also align.
-4. Use the `sql` tagged template literal to build the `selectStatement`.
-5. Import every source table from the paths listed in `context-map.md` and include them in `selectTables`.
-6. Record the file path in `context-map.md`.
-
-Example (adapt to your component — do not copy names literally):
-
-```ts
-// File: moosestack/app/models/<ServingTable>-mv.ts
-
-import { Int64, MaterializedView, OlapTable, sql } from "@514labs/moose-lib";
-import { SourceTableA } from "./SourceTableA.model";
-import { SourceTableB } from "./SourceTableB.model";
-
-// ... serving table interface and OlapTable definition from Checkpoint 1 ...
-
-export const ServingMV = new MaterializedView<ServingTableSchema>({
-  selectStatement: sql`
-    SELECT
-      a.id,
-      b.name,
-      toDate(a.created_at) AS day,
-      count() AS total,
-      sumIf(1, a.status = 'complete') AS completed
-    FROM ${SourceTableA} a
-    JOIN ${SourceTableB} b ON b.id = a.ref_id
-    GROUP BY a.id, b.name, day
-  `,
-  targetTable: ServingTable,
-  materializedViewName: "<ServingTable>MV",
-  selectTables: [SourceTableA, SourceTableB],
-});
-```
-
-**Done when:** the file compiles and is saved. The file path is recorded in `context-map.md`.
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-2-verification"
-  title="Verification"
->
-Goal: confirm the serving table and MV are created and populated correctly.
-
-Steps:
-
-1. Save your files and watch the `moose dev` logs for successful creation:
-
-```
-[INFO] Created table: <ServingTable>
-[INFO] Created materialized view: <ServingTable>MV
-```
-
-If you see errors, check:
-- Column names match between the `selectStatement` and the serving table schema
-- Column types from `selectTables` align with the casts/expressions in the `selectStatement`
-- Every source table in `selectTables` exists and is registered
-
-2. Verify the serving table is populated. The `moose dev` server automatically runs the `selectStatement` when the MV is created — do not backfill manually.
-
-```bash
-# Row count
-moose query -q "SELECT count() FROM <ServingTable> FINAL"
-
-# Spot-check a slice that matches a Phase 1 test case
-moose query -q "SELECT * FROM <ServingTable> FINAL WHERE <filter_from_test_case> LIMIT 5"
-```
-
-3. Confirm the serving table has data for every Phase 1 test case time window. If rows are missing, check the MV logic and source table data.
-
-**Done when:** `moose dev` logs show no errors, the serving table has rows, and spot-checks against Phase 1 test case filters return data. Proceed to Phase 3.
-</GuideStepper.Checkpoint>
+    :::include /shared/guides/performant-dashboards/phase-2-checkpoints.mdx
 
   </GuideStepper.Step>
 
@@ -587,180 +218,7 @@ moose query -q "SELECT * FROM <ServingTable> FINAL WHERE <filter_from_test_case>
       - `moosestack/query-layer/` — the Query Layer source copied in the step above
     </GuideStepper.AtAGlance>
 
-    <GuideStepper.Checkpoint
-  id="phase-3-install-query-layer"
-  title="Install Query Layer source"
->
-If you haven't already, run the following command to copy the Query Layer source code into your project:
-
-```bash
-pnpm dlx tiged 514-labs/query-layer/src ./query-layer
-```
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-3-define-implement-query-model"
-  title="Define and implement the QueryModel"
->
-Goal: map the existing endpoint contract to a QueryModel and implement it.
-
-Steps:
-
-1. Identify the QueryModel requirements from the existing contract:
-   - **Dimensions:** fields the UI groups by (e.g. `merchantName`, `day`)
-   - **Metrics:** aggregates the UI needs (e.g. `totalOrders`, `fulfillmentRate`)
-   - **Filters:** request params + allowed operators (e.g. `merchantId in`, `day gte/lte`)
-   - **Sortable:** sortable fields + any tie-breakers
-2. Create `moosestack/app/query-models/<name>.model.ts` with `defineQueryModel(...)` over the serving table.
-3. Map the serving table columns to those requirements, keeping field names aligned with the existing API contract.
-
-```ts
-// File: moosestack/app/query-models/orderFulfillment.model.ts
-
-import { sql } from "@514labs/moose-lib";
-import { defineQueryModel } from "../query-layer";
-import { OrderFulfillmentServing } from "../models/OrderFulfillmentServing.model";
-
-export const orderFulfillmentModel = defineQueryModel({
-  table: OrderFulfillmentServing,
-
-  // Dimensions: fields users can group by
-  dimensions: {
-    merchantName: { column: "merchant_name" },
-    day: { column: "day" },
-  },
-
-  // Metrics: aggregations users can request
-  metrics: {
-    totalOrders: { agg: sql`sum(total_orders)` },
-    fulfilledOrders: { agg: sql`sum(fulfilled_orders)` },
-    fulfillmentRate: {
-      agg: sql`round(100 * sum(fulfilled_orders) / nullIf(sum(total_orders), 0), 2)`
-    },
-  },
-
-  // Filters: fields users can filter on
-  filters: {
-    merchantId: { column: "merchant_id", operators: ["eq", "in"] as const },
-    day: { column: "day", operators: ["gte", "lte"] as const },
-  },
-
-  // Sortable: fields users can sort by
-  sortable: ["merchantName", "day", "totalOrders", "fulfillmentRate"] as const,
-});
-```
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-3-wire-handler"
-  title="Wire the handler"
->
-Goal: rewire your existing query handler function to call the QueryModel and map results back to the exact response shape.
-
-Steps:
-
-1. Build a QueryModel request from your endpoint inputs (filters, sort, pagination).
-2. Execute the QueryModel against ClickHouse using the `query` method.
-3. Map the QueryModel results back to the exact response shape the endpoint already produces.
-
-```ts
-// File: moosestack/app/apis/orderFulfillment.api.ts
-
-import { getMooseUtils } from "@514labs/moose-lib";
-import { orderFulfillmentModel } from "../query-models/orderFulfillment.model";
-
-interface OrderFulfillmentRequest {
-  merchantId?: string;
-  startDate?: string;
-  endDate?: string;
-  limit?: number;
-  offset?: number;
-  orderBy?: "merchantName" | "day" | "totalOrders" | "fulfillmentRate";
-}
-
-export async function getOrderFulfillment(
-  request: OrderFulfillmentRequest,
-) {
-  const { client } = await getMooseUtils();
-
-  return await orderFulfillmentModel.query(
-    {
-      dimensions: ["merchantName", "day"],
-      metrics: ["totalOrders", "fulfilledOrders", "fulfillmentRate"],
-      filters: {
-        ...(request.merchantId && { merchantId: { eq: request.merchantId } }),
-        ...(request.startDate && { day: { gte: request.startDate } }),
-        ...(request.endDate && { day: { lte: request.endDate } }),
-      },
-      sortBy: request.orderBy ?? "merchantName",
-      sortDir: "ASC",
-      limit: request.limit ?? 100,
-      offset: request.offset ?? 0,
-    },
-    client.query,
-  );
-}
-```
-
-**Integration point:** In your existing backend handler (Express, Fastify, Next.js, etc.), replace the OLTP query call with a call to this new function and return the result:
-
-```ts
-// In your existing backend handler (e.g. Express route)
-import { getOrderFulfillment } from "moosestack/app/apis/orderFulfillment.api";
-
-app.post("/api/order-fulfillment", async (req, res) => {
-  const result = await getOrderFulfillment(req.body);
-  res.json(result); // Same response shape as before
-});
-```
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-3-verification"
-  title="Verification"
->
-Goal: verify the endpoint response matches the saved Phase 1 fixtures.
-
-Steps:
-
-1. Restart your backend with the updated handler so the endpoint now reads from ClickHouse via the QueryModel.
-2. Run a saved Phase 1 test case by copying the `curl` request from:
-   - `moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md`
-3. Save the live endpoint response:
-
-```bash
-# Paste the curl from the test case file and redirect the JSON response:
-<PASTE_CURL_HERE> | jq -S '.' > localhost-result.json
-```
-
-4. Extract the expected response JSON from the same test case file:
-
-```bash
-awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
-  moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md \
-  | jq -S '.' > expected.json
-```
-
-5. Compare:
-
-```bash
-diff expected.json localhost-result.json
-```
-
-Repeat for every recorded test case. If differences remain, fix the smallest possible issue (sorting, rounding/casting, date bucketing) and re-run.
-
-**Optional: Verify performance improvement**
-
-Measure response time for your heaviest test case (replace `test-case-heaviest.json` with the file you want to benchmark):
-
-```bash
-time curl -s -X POST http://localhost:4000/api/order-fulfillment \
-  -H "Content-Type: application/json" \
-  -d @test-case-heaviest.request.json
-```
-
-Verify the response time is significantly improved compared to the original OLTP query.
-</GuideStepper.Checkpoint>
+    :::include /shared/guides/performant-dashboards/phase-3-checkpoints.mdx
 
   </GuideStepper.Step>
 </GuideStepper>
