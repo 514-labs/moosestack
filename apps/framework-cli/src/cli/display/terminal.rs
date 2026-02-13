@@ -5,7 +5,7 @@
 //! terminal state during CLI operations.
 
 use super::{
-    context::{tui_channel, DisplayMessage},
+    context::{tui_channel, DisplayMessage, InfrastructureChangeType},
     message::MessageType,
 };
 use crossterm::{
@@ -282,11 +282,42 @@ pub fn write_styled_line(
 ) -> IoResult<()> {
     // Check for TUI context - route messages to TUI if available
     if let Some(sender) = tui_channel() {
-        sender.send(DisplayMessage::Message {
-            message_type: MessageType::Info,
-            action: styled_text.text.clone(),
-            details: message.to_string(),
-        });
+        // Detect infrastructure changes by prefix and color
+        let change_type = match (styled_text.text.as_str(), styled_text.foreground) {
+            (text, Some(Color::Green)) if text.starts_with("+ ") => {
+                Some(InfrastructureChangeType::Added)
+            }
+            (text, Some(Color::Red)) if text.starts_with("- ") => {
+                Some(InfrastructureChangeType::Removed)
+            }
+            (text, Some(Color::Yellow)) if text.starts_with("~ ") => {
+                Some(InfrastructureChangeType::Updated)
+            }
+            _ => None,
+        };
+
+        // Route infrastructure changes with semantic type, others as generic messages
+        if let Some(change_type) = change_type {
+            sender.send(DisplayMessage::InfrastructureChange {
+                change_type,
+                action: styled_text.text.clone(),
+                details: message.to_string(),
+            });
+        } else {
+            // Infer message type from color for non-infrastructure messages
+            let message_type = match styled_text.foreground {
+                Some(Color::Green) => MessageType::Success,
+                Some(Color::Red) => MessageType::Error,
+                Some(Color::Yellow) => MessageType::Warning,
+                Some(Color::Cyan) | None => MessageType::Info,
+                _ => MessageType::Info,
+            };
+            sender.send(DisplayMessage::Message {
+                message_type,
+                action: styled_text.text.clone(),
+                details: message.to_string(),
+            });
+        }
         return Ok(());
     }
 

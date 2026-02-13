@@ -106,7 +106,6 @@ pub static IS_DEV_MODE: AtomicBool = AtomicBool::new(false);
 /// Used in TUI mode where the terminal is managed by ratatui and any direct
 /// writes to stdout/stderr would corrupt the display.
 pub static SUPPRESS_DISPLAY: AtomicBool = AtomicBool::new(false);
-
 pub const README_PREFIX: &str = r#"
 This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the
 [`Moose CLI`](https://github.com/514-labs/moose/tree/main/apps/framework-cli).
