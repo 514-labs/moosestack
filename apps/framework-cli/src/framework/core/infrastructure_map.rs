@@ -52,6 +52,7 @@ use crate::framework::core::lifecycle_filter;
 use crate::framework::languages::SupportedLanguages;
 use crate::framework::python::datamodel_config::load_main_py;
 use crate::framework::scripts::Workflow;
+use crate::framework::typescript::parser::ensure_typescript_compiled;
 use crate::infrastructure::olap::clickhouse::codec_expressions_are_equivalent;
 use crate::infrastructure::olap::clickhouse::config::DEFAULT_DATABASE_NAME;
 use crate::infrastructure::olap::clickhouse::queries::ClickhouseEngine;
@@ -3147,6 +3148,11 @@ impl InfrastructureMap {
         resolve_credentials: bool,
     ) -> anyhow::Result<Self> {
         let partial = if project.language == SupportedLanguages::Typescript {
+            // Ensure TypeScript is compiled before loading infrastructure.
+            // This is silent - dev mode has its own explicit compilation messaging.
+            ensure_typescript_compiled(project)
+                .context("Failed to compile TypeScript before loading infrastructure")?;
+
             let process = crate::framework::typescript::export_collectors::collect_from_index(
                 project,
                 &project.project_location,
