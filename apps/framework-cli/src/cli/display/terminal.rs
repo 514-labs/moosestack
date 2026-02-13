@@ -8,7 +8,6 @@ use super::{
     context::{tui_channel, DisplayMessage},
     message::MessageType,
 };
-use crate::utilities::constants::SUPPRESS_DISPLAY;
 use crossterm::{
     execute,
     style::{
@@ -16,7 +15,6 @@ use crossterm::{
     },
 };
 use std::io::{stderr, stdout, Result as IoResult};
-use std::sync::atomic::Ordering;
 
 /// Width of the action column in terminal output
 pub const ACTION_WIDTH: usize = 15;
@@ -282,19 +280,13 @@ pub fn write_styled_line(
     show_timestamps: bool,
     quiet_stdout: bool,
 ) -> IoResult<()> {
-    // Check for TUI context first - route messages to TUI if available
+    // Check for TUI context - route messages to TUI if available
     if let Some(sender) = tui_channel() {
-        // Convert styled text to plain message for TUI
         sender.send(DisplayMessage::Message {
             message_type: MessageType::Info,
             action: styled_text.text.clone(),
             details: message.to_string(),
         });
-        return Ok(());
-    }
-
-    // In TUI mode, suppress all direct terminal writes.
-    if SUPPRESS_DISPLAY.load(Ordering::Relaxed) {
         return Ok(());
     }
 

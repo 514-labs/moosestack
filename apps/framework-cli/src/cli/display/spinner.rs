@@ -9,7 +9,6 @@ use super::{
     context::{tui_channel, DisplayMessage},
     terminal::TerminalComponent,
 };
-use crate::utilities::constants::SUPPRESS_DISPLAY;
 use crossterm::{
     cursor::{position, MoveTo, RestorePosition, SavePosition},
     execute, queue,
@@ -444,10 +443,9 @@ pub fn with_spinner_completion<F, R>(
 where
     F: FnOnce() -> R,
 {
-    let suppressed = SUPPRESS_DISPLAY.load(Ordering::Relaxed);
     let has_tui = tui_channel().is_some();
 
-    let sp = if activate && !suppressed && !has_tui && stdout().is_terminal() {
+    let sp = if activate && !has_tui && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
         let _ = spinner.start();
         Some(spinner)
@@ -460,7 +458,7 @@ where
     if let Some(mut spinner) = sp {
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
-    } else if activate && !suppressed && !has_tui {
+    } else if activate && !has_tui {
         // In non-TTY mode (e.g., CI), still print the completion message
         // so tests can detect when operations complete
         println!("✓ {completion_message}");
@@ -570,10 +568,9 @@ pub async fn with_spinner_completion_async<F, R>(
 where
     F: Future<Output = R>,
 {
-    let suppressed = SUPPRESS_DISPLAY.load(Ordering::Relaxed);
     let has_tui = tui_channel().is_some();
 
-    let sp = if activate && !suppressed && !has_tui && stdout().is_terminal() {
+    let sp = if activate && !has_tui && stdout().is_terminal() {
         let mut spinner = SpinnerComponent::new(message);
         let _ = spinner.start();
         Some(spinner)
@@ -586,7 +583,7 @@ where
     if let Some(mut spinner) = sp {
         let _ = spinner.done(completion_message);
         let _ = spinner.cleanup();
-    } else if activate && !suppressed && !has_tui {
+    } else if activate && !has_tui {
         // In non-TTY mode (e.g., CI), still print the completion message
         // so tests can detect when operations complete
         println!("✓ {completion_message}");
