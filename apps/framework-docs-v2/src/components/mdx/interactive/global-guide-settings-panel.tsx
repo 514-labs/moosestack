@@ -11,10 +11,13 @@ import { GlobalGuideCustomizer } from "./global-guide-customizer";
 const FIELD_LABELS: Record<string, string> = {
   language: "Language",
   os: "OS",
-  sources: "Sources",
+  sources: "Source Systems",
   monorepo: "Monorepo",
   existingApp: "Existing app",
 };
+
+// Fields to hide from display (still stored in settings)
+const HIDDEN_FIELDS = ["monorepo", "existingApp"];
 
 // Value to display label mapping for proper capitalization
 const VALUE_LABELS: Record<string, string> = {
@@ -75,27 +78,29 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
           </span>
         </div>
         <div className="flex flex-col gap-2 w-full">
-          {Object.entries(settings).map(([key, value]) => {
-            // Format display value with proper labels
-            const displayValue =
-              Array.isArray(value) ?
-                value.map((v) => VALUE_LABELS[v] || v).join(", ")
-              : VALUE_LABELS[value as string] || value;
+          {Object.entries(settings)
+            .filter(([key]) => !HIDDEN_FIELDS.includes(key))
+            .map(([key, value]) => {
+              // Format display value with proper labels
+              const displayValue =
+                Array.isArray(value) ?
+                  value.map((v) => VALUE_LABELS[v] || v).join(", ")
+                : VALUE_LABELS[value as string] || value;
 
-            return (
-              <div
-                key={key}
-                className="flex items-center justify-between text-xs"
-              >
-                <span className="text-muted-foreground">
-                  {FIELD_LABELS[key] || key}:
-                </span>
-                <Badge variant="secondary" className="font-normal text-xs">
-                  {displayValue}
-                </Badge>
-              </div>
-            );
-          })}
+              return (
+                <div
+                  key={key}
+                  className="flex items-center justify-between text-xs"
+                >
+                  <span className="text-muted-foreground">
+                    {FIELD_LABELS[key] || key}:
+                  </span>
+                  <Badge variant="secondary" className="font-normal text-xs">
+                    {displayValue}
+                  </Badge>
+                </div>
+              );
+            })}
         </div>
         <div className="flex gap-2 w-full">
           <Button
