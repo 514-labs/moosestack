@@ -10,7 +10,9 @@ const createWithVercelToolbar = require("@vercel/toolbar/plugins/next");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {},
+  experimental: {
+    turbo: {},
+  },
 
   reactStrictMode: true,
   pageExtensions: ["js", "jsx", "ts", "tsx", "md", "mdx"],
