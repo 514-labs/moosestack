@@ -24,6 +24,7 @@ catalog:
   mermaid: "11.12.0"
   mocha: "10.8.2"
   next: "16.1.6"
+  next-mdx-remote: "6.0.0"
   posthog-node: "5.21.0"
   ts-node: "10.9.2"
   typescript: "5.9.3"

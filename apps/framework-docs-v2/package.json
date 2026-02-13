@@ -57,7 +57,7 @@
     "mermaid": "catalog:",
     "motion": "^12.23.12",
     "next": "catalog:",
-    "next-mdx-remote": "^6.0.0",
+    "next-mdx-remote": "catalog:",
     "next-sitemap": "^4.2.3",
     "next-themes": "^0.2.1",
     "posthog-js": "^1.233.1",
