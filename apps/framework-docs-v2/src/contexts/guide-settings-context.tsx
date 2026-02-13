@@ -10,6 +10,7 @@ import {
 interface GuideSettingsContextType {
   settings: GuideSettings | null;
   updateSettings: (settings: GuideSettings) => void;
+  reloadSettings: () => void;
   isConfigured: boolean;
   showCustomizer: boolean;
   setShowCustomizer: (show: boolean) => void;
@@ -56,6 +57,11 @@ export function GuideSettingsProvider({
     saveGuideSettings(newSettings);
   };
 
+  const reloadSettings = () => {
+    const stored = getGuideSettings();
+    setSettings(stored);
+  };
+
   const isConfigured =
     isClient && settings !== null && Object.keys(settings).length > 0;
 
@@ -64,6 +70,7 @@ export function GuideSettingsProvider({
       value={{
         settings,
         updateSettings,
+        reloadSettings,
         isConfigured,
         showCustomizer,
         setShowCustomizer,
