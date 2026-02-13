@@ -11,7 +11,8 @@ import { GlobalGuideCustomizer } from "./global-guide-customizer";
 const FIELD_LABELS: Record<string, string> = {
   language: "Language",
   os: "OS",
-  sources: "Source Systems",
+  sources: "Sources",
+  sourceDatabase: "Sources", // Legacy key for backwards compatibility
   monorepo: "Monorepo",
   existingApp: "Existing app",
 };
