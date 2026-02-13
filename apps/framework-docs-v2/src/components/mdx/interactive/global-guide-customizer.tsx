@@ -104,7 +104,8 @@ export function GlobalGuideCustomizer({
               persist
               globalSetting
             />
-            <SelectField
+            {/* Hidden for now - not used in current guides */}
+            {/* <SelectField
               id="monorepo"
               label="Project Structure"
               options={[
@@ -125,7 +126,7 @@ export function GlobalGuideCustomizer({
               defaultValue="no"
               persist
               globalSetting
-            />
+            /> */}
           </CustomizeGrid>
         </div>
         <DialogFooter className="flex-col sm:flex-row gap-3">

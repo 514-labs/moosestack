@@ -110,7 +110,7 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
             onClick={() => setShowCustomizer(true)}
             className="flex-1"
           >
-            Change
+            Configure
           </Button>
         </div>
       </div>
