@@ -2,7 +2,7 @@
   "name": "pulimi-test",
   "main": "index.ts",
   "devDependencies": {
-    "@types/node": "catalog:"
+    "@types/node": "^20.19.33"
   },
   "dependencies": {
     "@pulumi/pulumi": "^3.0.0",
