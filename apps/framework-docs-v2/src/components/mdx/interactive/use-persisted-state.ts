@@ -125,7 +125,14 @@ export function usePersistedState<T>(
     // Skip on first render to avoid polluting URL with defaults
     if (isFirstRenderRef.current) {
       isFirstRenderRef.current = false;
-      return;
+      const urlValue = getValueFromURL<T>(key);
+      // Only skip if URL already had the value or value is default
+      if (
+        urlValue !== null ||
+        JSON.stringify(value) === JSON.stringify(defaultValue)
+      ) {
+        return;
+      }
     }
 
     try {
@@ -135,7 +142,10 @@ export function usePersistedState<T>(
       }
 
       // Update URL param (for deep linking)
-      updateURLParam(key, JSON.stringify(value));
+      updateURLParam(
+        key,
+        typeof value === "string" ? value : JSON.stringify(value),
+      );
 
       // Dispatch custom event for same-page synchronization
       if (storageKey) {
@@ -225,12 +235,16 @@ export function clearInteractiveState(): void {
     }
   }
 
-  storageKeysToRemove.forEach((key) => localStorage.removeItem(key));
+  storageKeysToRemove.forEach((key) => {
+    localStorage.removeItem(key);
+  });
 
   // Clear only the URL params that correspond to interactive state
   try {
     const url = new URL(window.location.href);
-    urlParamsToRemove.forEach((paramKey) => url.searchParams.delete(paramKey));
+    urlParamsToRemove.forEach((paramKey) => {
+      url.searchParams.delete(paramKey);
+    });
     window.history.replaceState({}, "", url.toString());
   } catch {
     // Ignore URL update errors
