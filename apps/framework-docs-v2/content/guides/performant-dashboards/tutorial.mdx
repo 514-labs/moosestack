@@ -6,9 +6,6 @@ languages: ["typescript"]
 
 import {
   Callout,
-  CustomizePanel,
-  CustomizeGrid,
-  SelectField,
   ConditionalContent,
   CommunityCallout,
 } from "@/components/mdx";
@@ -37,50 +34,6 @@ By the end of this guide you'll have:
   existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app).
 </Callout>
 
-<CustomizePanel
-  mode="wizard"
-  title="What's your setup?"
-  description="Select the database you use today so we can show the right way to replicate this data into ClickHouse"
-  fieldIds={["source-database", "os", "language"]}
-  fieldLabels={{
-    "source-database": "Database",
-    "os": "OS",
-    "language": "Language"
-  }}
-  summaryPlacement="sticky-top"
->
-  <CustomizeGrid columns={1}>
-    <SelectField
-      id="source-database"
-      label="Source database"
-      options={[
-        { value: "sqlserver", label: "SQL Server" },
-        { value: "postgres", label: "Postgres" },
-      ]}
-      defaultValue="postgres"
-      persist
-    />
-    <SelectField
-      id="os"
-      label="Operating System"
-      options={[
-        { value: "macos", label: "macOS or Linux" },
-        { value: "windows", label: "Windows (WSL 2)" },
-      ]}
-      defaultValue="macos"
-      persist
-    />
-    <SelectField
-      id="language"
-      label="Language"
-      options={[
-        { value: "typescript", label: "TypeScript" },
-      ]}
-      defaultValue="typescript"
-      persist
-    />
-  </CustomizeGrid>
-</CustomizePanel>
 
 You'll work through:
 
