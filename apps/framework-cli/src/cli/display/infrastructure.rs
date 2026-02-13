@@ -626,6 +626,8 @@ pub fn show_olap_changes(olap_changes: &[OlapChange]) {
                     details: message.clone(),
                 });
             } else {
+                // Log for consistency with TUI path
+                error!("Validation error: {}", message.replace('\n', " "));
                 eprintln!("{}", message);
             }
         }
