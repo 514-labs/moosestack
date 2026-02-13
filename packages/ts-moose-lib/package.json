@@ -66,6 +66,7 @@
     "chai": "^4.3.7",
     "eslint": "^8.46.0",
     "mocha": "^10.2.0",
+    "ts-node": "^10.9.1",
     "tsup": "^8.4.0"
   },
   "peerDependencies": {
