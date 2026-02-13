@@ -1682,38 +1682,114 @@ pub async fn top_command_handler(
 
             let lang = routines::docs::resolve_language(docs_args.lang.as_deref(), &settings)?;
 
-            let result = match &docs_args.command {
-                Some(DocsCommands::Browse {}) => {
-                    routines::docs::browse_docs(lang, docs_args.raw, docs_args.web).await
+            // Validate flag combinations
+            if docs_args.claude.is_some() && docs_args.web {
+                return Err(RoutineFailure::error(Message::new(
+                    "Docs".to_string(),
+                    "--claude and --web cannot be used together".to_string(),
+                )));
+            }
+
+            let result = if let Some(ref instruction) = docs_args.claude {
+                // Handle --claude flag: fetch raw content and pipe to claude CLI
+                if docs_args.command.is_some() {
+                    return Err(RoutineFailure::error(Message::new(
+                        "Docs".to_string(),
+                        "--claude cannot be used with subcommands (browse, search)".to_string(),
+                    )));
                 }
-                Some(DocsCommands::Search { query }) => {
-                    routines::docs::search_toc(query, docs_args.raw).await
-                }
-                None if docs_args.slug.is_none() => {
-                    routines::docs::show_toc(docs_args.expand, docs_args.raw, lang).await
-                }
-                None => {
-                    let slug = docs_args.slug.as_deref().unwrap_or_default().to_string();
+
+                let slug = docs_args.slug.as_deref().map(|s| {
                     // Split on # to separate slug from section anchor
-                    let (page_slug, section) = match slug.split_once('#') {
-                        Some((s, anchor)) => (s.to_string(), Some(anchor.to_string())),
-                        None => (slug, None),
-                    };
-                    if docs_args.web {
-                        // For --web, pass the full slug including any #anchor
-                        let web_slug = match &section {
-                            Some(anchor) => format!("{}#{}", page_slug, anchor),
-                            None => page_slug,
+                    match s.split_once('#') {
+                        Some((page, _)) => page,
+                        None => s,
+                    }
+                });
+
+                let section = docs_args
+                    .slug
+                    .as_deref()
+                    .and_then(|s| s.split_once('#').map(|(_, anchor)| anchor));
+
+                let content = routines::docs::fetch_raw_content(slug, lang, section).await?;
+
+                // Spawn claude CLI with the instruction
+                use std::io::Write;
+                use std::process::{Command, Stdio};
+
+                let mut child = Command::new("claude")
+                    .arg(instruction)
+                    .stdin(Stdio::piped())
+                    .spawn()
+                    .map_err(|e| {
+                        RoutineFailure::error(Message::new(
+                            "Docs".to_string(),
+                            format!("Failed to spawn claude command: {}. Make sure the claude CLI is installed and in your PATH.", e),
+                        ))
+                    })?;
+
+                if let Some(mut stdin) = child.stdin.take() {
+                    stdin.write_all(content.as_bytes()).map_err(|e| {
+                        RoutineFailure::error(Message::new(
+                            "Docs".to_string(),
+                            format!("Failed to write to claude stdin: {}", e),
+                        ))
+                    })?;
+                }
+
+                let status = child.wait().map_err(|e| {
+                    RoutineFailure::error(Message::new(
+                        "Docs".to_string(),
+                        format!("Failed to wait for claude process: {}", e),
+                    ))
+                })?;
+
+                if !status.success() {
+                    return Err(RoutineFailure::error(Message::new(
+                        "Docs".to_string(),
+                        format!("claude command failed with exit code: {}", status),
+                    )));
+                }
+
+                Ok(RoutineSuccess::success(Message::new(
+                    "Docs".to_string(),
+                    "Documentation piped to claude successfully".to_string(),
+                )))
+            } else {
+                match &docs_args.command {
+                    Some(DocsCommands::Browse {}) => {
+                        routines::docs::browse_docs(lang, docs_args.raw, docs_args.web).await
+                    }
+                    Some(DocsCommands::Search { query }) => {
+                        routines::docs::search_toc(query, docs_args.raw).await
+                    }
+                    None if docs_args.slug.is_none() => {
+                        routines::docs::show_toc(docs_args.expand, docs_args.raw, lang).await
+                    }
+                    None => {
+                        let slug = docs_args.slug.as_deref().unwrap_or_default().to_string();
+                        // Split on # to separate slug from section anchor
+                        let (page_slug, section) = match slug.split_once('#') {
+                            Some((s, anchor)) => (s.to_string(), Some(anchor.to_string())),
+                            None => (slug, None),
                         };
-                        routines::docs::open_in_browser(&web_slug)
-                    } else {
-                        routines::docs::fetch_page(
-                            &page_slug,
-                            lang,
-                            docs_args.raw,
-                            section.as_deref(),
-                        )
-                        .await
+                        if docs_args.web {
+                            // For --web, pass the full slug including any #anchor
+                            let web_slug = match &section {
+                                Some(anchor) => format!("{}#{}", page_slug, anchor),
+                                None => page_slug,
+                            };
+                            routines::docs::open_in_browser(&web_slug)
+                        } else {
+                            routines::docs::fetch_page(
+                                &page_slug,
+                                lang,
+                                docs_args.raw,
+                                section.as_deref(),
+                            )
+                            .await
+                        }
                     }
                 }
             };

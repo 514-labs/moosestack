@@ -1700,6 +1700,38 @@ async fn browse_guide_page(
     }
 }
 
+// ── Claude Integration ──────────────────────────────────────────────────────
+
+/// Fetch raw documentation content as a String for piping to external tools.
+///
+/// This function is used when the `--claude` flag is provided to pipe
+/// documentation content to the claude CLI tool.
+pub async fn fetch_raw_content(
+    slug: Option<&str>,
+    lang: DocsLanguage,
+    section: Option<&str>,
+) -> Result<String, RoutineFailure> {
+    if let Some(page_slug) = slug {
+        let content = fetch_page_content(page_slug, lang).await?;
+        let content = strip_images(&content);
+
+        if let Some(anchor) = section {
+            extract_section(&content, anchor).ok_or_else(|| {
+                RoutineFailure::error(Message::new(
+                    "Docs".to_string(),
+                    format!("Section '{}' not found in {}", anchor, page_slug),
+                ))
+            })
+        } else {
+            Ok(content)
+        }
+    } else {
+        // No slug provided, return TOC
+        let content = fetch_toc_content().await?;
+        Ok(content)
+    }
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

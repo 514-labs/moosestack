@@ -515,6 +515,10 @@ Guide sections (guides are large — navigate to specific sections):
   moose docs guides/chat-in-your-app#setup          View just the Setup section
   moose docs guides/performant-dashboards --web     Open full guide in the browser
 
+Claude integration (pipe docs to claude CLI):
+  moose docs <slug> --claude \"execute this step\"
+  moose docs guides/performant-dashboards#prepare --claude \"explain this\"
+
 Slugs are case-insensitive. Run `moose docs` to see all available slugs.")]
 pub struct DocsArgs {
     #[command(subcommand)]
@@ -538,6 +542,10 @@ pub struct DocsArgs {
     /// Open documentation page in your web browser instead of printing
     #[arg(long, global = true)]
     pub web: bool,
+
+    /// Pipe documentation to claude CLI with the given instruction
+    #[arg(long, global = true, value_name = "INSTRUCTION")]
+    pub claude: Option<String>,
 }
 
 /// Subcommands for the docs command
