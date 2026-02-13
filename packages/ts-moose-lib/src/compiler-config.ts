@@ -53,13 +53,31 @@ export const DEFAULT_OUT_DIR = ".moose/compiled";
 
 /**
  * Read the user's tsconfig.json and extract the outDir setting.
+ * Supports JSONC (JSON with Comments) by evaluating as JavaScript
+ * (JSON with comments is valid JS in ES2019+).
+ *
+ * Security note: This uses eval-like behavior (new Function), which means
+ * malicious code in tsconfig.json would execute. This is acceptable because:
+ * - The user controls their own tsconfig.json
+ * - Same trust model as running `tsc` or any other tool that processes the file
+ * - If you clone and run untrusted code, you're already at risk
+ *
  * Returns the outDir if specified, or null if not.
  */
 export function readUserOutDir(
   projectRoot: string = process.cwd(),
 ): string | null {
   try {
-    const tsconfig = require(path.join(projectRoot, "tsconfig.json"));
+    let content = readFileSync(
+      path.join(projectRoot, "tsconfig.json"),
+      "utf-8",
+    );
+    // Strip UTF-8 BOM if present
+    if (content.charCodeAt(0) === 0xfeff) {
+      content = content.slice(1);
+    }
+    // eslint-disable-next-line no-eval
+    const tsconfig = eval(`(${content})`);
     return tsconfig.compilerOptions?.outDir || null;
   } catch {
     return null;
