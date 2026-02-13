@@ -215,7 +215,6 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
       source={processedSource}
       components={components}
       options={{
-        blockJS: false,
         mdxOptions: {
           remarkPlugins: [remarkGfm, remarkGuideStepperMarkers],
           rehypePlugins: [
