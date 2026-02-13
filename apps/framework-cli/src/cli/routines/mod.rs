@@ -715,6 +715,7 @@ pub async fn start_development_mode(
         settings.clone(),
         processing_coordinator.clone(),
         watcher_shutdown_rx,
+        None, // No TUI resource updates in non-TUI mode
     )?;
 
     // Log MCP server status
