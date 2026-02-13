@@ -121,4 +121,5 @@ Boreal's project creation experience gets a major overhaul this week with a comp
 
 ### Improvements
 
+- Enable typescript-mcp template for Boreal one-click deploy: The `typescript-mcp` template now supports Boreal one-click deploy. During provisioning, Boreal automatically runs `moose generate hash-token --json` to populate `MCP_API_KEY` and `MCP_API_TOKEN`, so MCP projects are deployment-ready out of the box. ([@onelesd](https://github.com/onelesd))
 - Warm node pool for faster deployment scheduling: A cluster-level warm pool now keeps a configurable number of GKE Autopilot nodes pre-provisioned with low-priority placeholder pods. When a new Moose deployment is created, it can be scheduled onto an already-provisioned node rather than waiting for node spin-up. Pod anti-affinity rules ensure org-level isolation in multi-tenant clusters, and pod disruption budgets protect running deployments during cluster maintenance. ([@jmsuzuki](https://github.com/jmsuzuki))
