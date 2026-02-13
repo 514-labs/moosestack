@@ -31,6 +31,7 @@ function dispatchStateChange<T>(key: string, value: T): void {
 
 /**
  * Read value from URL search params
+ * Attempts JSON parse first, falls back to raw string if parsing fails
  */
 function getValueFromURL<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
@@ -39,10 +40,16 @@ function getValueFromURL<T>(key: string): T | null {
     const params = new URLSearchParams(window.location.search);
     const value = params.get(key);
     if (value !== null) {
-      return JSON.parse(value) as T;
+      try {
+        // Try JSON parse first (for objects/arrays)
+        return JSON.parse(value) as T;
+      } catch {
+        // If JSON parse fails, return raw string
+        return value as T;
+      }
     }
   } catch {
-    // Ignore parsing errors, return null
+    // Ignore URL parsing errors
   }
 
   return null;
@@ -93,24 +100,29 @@ export function usePersistedState<T>(
     }
 
     // Priority 2: Check localStorage
-    if (storageKey) {
-      try {
-        const stored = localStorage.getItem(storageKey);
-        if (stored !== null) {
-          return JSON.parse(stored) as T;
-        }
-      } catch {
-        // Ignore parsing errors, use default
+    try {
+      const stored = localStorage.getItem(storageKey!);
+      if (stored !== null) {
+        return JSON.parse(stored) as T;
       }
+    } catch {
+      // Ignore parsing errors, use default
     }
 
     // Priority 3: Use default
     return defaultValue;
   });
 
-  // Sync to localStorage and URL when value changes
+  // Sync to localStorage and URL when value changes (skip initial mount)
   useEffect(() => {
     if (!persist || !key || typeof window === "undefined") {
+      return;
+    }
+
+    // Skip on initial mount - only sync when value actually changes
+    const isInitialMount =
+      JSON.stringify(value) === JSON.stringify(defaultValue);
+    if (isInitialMount) {
       return;
     }
 
@@ -130,14 +142,15 @@ export function usePersistedState<T>(
     } catch {
       // Ignore storage errors (quota exceeded, etc.)
     }
-  }, [persist, key, storageKey, value]);
+  }, [persist, key, storageKey, value, defaultValue]);
 
-  // Listen for changes from other components/tabs
+  // Listen for changes from other components/tabs and browser navigation
   useEffect(() => {
-    if (!persist || !storageKey || typeof window === "undefined") {
+    if (!persist || !storageKey || !key || typeof window === "undefined") {
       return;
     }
 
+    // Handle storage events from other tabs
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === storageKey && event.newValue !== null) {
         try {
@@ -148,9 +161,21 @@ export function usePersistedState<T>(
       }
     };
 
+    // Handle browser back/forward navigation (popstate)
+    const handlePopState = () => {
+      const urlValue = getValueFromURL<T>(key);
+      if (urlValue !== null) {
+        setValue(urlValue);
+      }
+    };
+
     window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, [persist, storageKey]);
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [persist, storageKey, key]);
 
   // Wrapped setter that handles both direct values and updater functions
   const setPersistedValue = useCallback((newValue: T | ((prev: T) => T)) => {
@@ -167,11 +192,12 @@ export function usePersistedState<T>(
 }
 
 /**
- * Helper to clear all interactive component state from localStorage
+ * Helper to clear all interactive component state from localStorage and URL
  */
 export function clearInteractiveState(): void {
   if (typeof window === "undefined") return;
 
+  // Clear localStorage
   const keysToRemove: string[] = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -181,4 +207,17 @@ export function clearInteractiveState(): void {
   }
 
   keysToRemove.forEach((key) => localStorage.removeItem(key));
+
+  // Also clear URL params to prevent stale state from being restored
+  try {
+    const url = new URL(window.location.href);
+    const paramsToDelete: string[] = [];
+    url.searchParams.forEach((_value, paramKey) => {
+      paramsToDelete.push(paramKey);
+    });
+    paramsToDelete.forEach((paramKey) => url.searchParams.delete(paramKey));
+    window.history.replaceState({}, "", url.toString());
+  } catch {
+    // Ignore URL update errors
+  }
 }
