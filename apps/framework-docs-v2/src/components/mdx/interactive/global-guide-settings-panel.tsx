@@ -69,7 +69,7 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
     <>
       <div
         className={cn(
-          "fixed bottom-6 left-6 z-30 shadow-lg w-[calc(var(--sidebar-width)-2rem)] flex flex-col items-start gap-3 rounded-lg border bg-card px-4 py-3",
+          "fixed bottom-6 left-6 z-30 shadow-lg max-w-sm flex flex-col items-start gap-3 rounded-lg border bg-card px-4 py-3",
         )}
       >
         <div className="flex items-center gap-2 flex-wrap">
@@ -78,7 +78,7 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
             Your Stack
           </span>
         </div>
-        <div className="flex flex-wrap gap-2 w-full">
+        <div className="flex flex-col gap-2 w-full">
           {Object.entries(settings)
             .filter(([key]) => !HIDDEN_FIELDS.includes(key))
             .map(([key, value]) => {
@@ -89,13 +89,17 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
                 : VALUE_LABELS[value as string] || value;
 
               return (
-                <Badge
+                <div
                   key={key}
-                  variant="secondary"
-                  className="font-normal text-xs"
+                  className="flex items-center justify-between text-xs"
                 >
-                  {displayValue}
-                </Badge>
+                  <span className="text-muted-foreground">
+                    {FIELD_LABELS[key] || key}:
+                  </span>
+                  <Badge variant="secondary" className="font-normal text-xs">
+                    {displayValue}
+                  </Badge>
+                </div>
               );
             })}
         </div>
