@@ -1,0 +1,36 @@
+---
+title: Moose Dev
+description: Local development environment for MooseStack
+order: 1
+---
+
+import { Callout } from "@/components/mdx";
+
+# Moose Dev
+
+The `moose dev` command starts a local development environment with hot-reload, containerized infrastructure (ClickHouse, Redpanda, Temporal, Redis), and automatic schema synchronization.
+
+## What Happens When You Run `moose dev`
+
+1. **Infrastructure starts** - Docker containers spin up for ClickHouse, Redpanda, Redis, and Temporal
+2. **Code compiles** - Your data models, streams, and functions are compiled and validated
+3. **Schema syncs** - Tables, views, and topics are created/updated in local infrastructure
+4. **Server starts** - The Moose runtime serves your APIs and processes data
+5. **File watcher activates** - Changes to your code trigger automatic reloads
+
+## Key Capabilities
+
+| Capability | Description |
+|:-----------|:------------|
+| **Hot Reload** | Code changes are detected and applied without restarting |
+| **Local Infrastructure** | Full ClickHouse, Redpanda, Redis, and Temporal stack |
+| **Schema Sync** | Tables and topics are created/updated automatically |
+| **External Table Mirroring** | Optionally mirror remote tables for local development |
+
+<Callout type="info" title="Configuration Reference">
+For detailed configuration options including lifecycle hooks, Docker extensions, and networking, see [Dev Environment Configuration](/moosestack/configuration/dev-environment).
+</Callout>
+
+## Development Topics
+
+- **[CDC Managed Tables](/moosestack/dev/cdc-managed-tables)** - Work locally with tables managed by CDC pipelines like ClickPipes, PeerDB, or Debezium

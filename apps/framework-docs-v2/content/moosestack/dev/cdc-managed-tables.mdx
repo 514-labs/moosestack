@@ -1,0 +1,565 @@
+---
+title: Building on CDC-Enabled ClickHouse
+description: Get started with Moose when your ClickHouse database has tables managed by CDC pipelines like ClickPipes, PeerDB, or Debezium
+order: 2
+---
+
+import { Callout, LanguageTabs, LanguageTabContent } from "@/components/mdx";
+
+# Building on CDC-Enabled ClickHouse
+
+This guide walks you through setting up a Moose project on top of an existing ClickHouse database that uses CDC (Change Data Capture) pipelines—ClickPipes, PeerDB, Debezium, or similar tools—to replicate data from external sources.
+
+## What You'll Learn
+
+By the end of this guide, you'll understand how to:
+
+1. **Bootstrap a Moose project** from an existing ClickHouse database
+2. **Work with externally managed tables** that CDC services control
+3. **Develop locally** with realistic sample data from production
+4. **Keep your models in sync** as upstream schemas evolve
+
+## Prerequisites
+
+- A ClickHouse database with CDC-replicated tables
+- Your ClickHouse connection URL (e.g., `https://user:pass@host:8443/database`)
+- Node.js 20+ (TypeScript) or Python 3.10+ (Python)
+
+---
+
+## Step 1: Initialize Your Project
+
+The fastest way to get started is with `moose init --from-remote`. This single command:
+
+- Creates a new Moose project
+- Connects to your ClickHouse and introspects all tables
+- Generates type-safe models for every table
+- Automatically detects PeerDB-managed tables (via `_peerdb_*` columns) and marks them as `EXTERNALLY_MANAGED`. Tables managed by other CDC tools (ClickPipes, Debezium, etc.) can be manually marked with `lifeCycle: LifeCycle.EXTERNALLY_MANAGED`
+- Saves your connection config to `moose.config.toml`
+- Stores credentials securely in your OS keychain
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```bash
+moose init my-analytics-app --from-remote "https://user:pass@host:8443/database" --language typescript
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```bash
+moose init my-analytics-app --from-remote "https://user:pass@host:8443/database" --language python
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+You'll see output like:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```
+        Created my-analytics-app from typescript-empty template
+        Success Project created at my-analytics-app
+     Connecting to remote ClickHouse...
+  Introspecting tables in 'database'...
+         Config Wrote [dev.remote_clickhouse] to moose.config.toml (host: host, database: database)
+       Keychain Stored credentials securely for project 'my-analytics-app'
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```
+        Created my-analytics-app from python-empty template
+        Success Project created at my-analytics-app
+     Connecting to remote ClickHouse...
+  Introspecting tables in 'database'...
+         Config Wrote [dev.remote_clickhouse] to moose.config.toml (host: host, database: database)
+       Keychain Stored credentials securely for project 'my-analytics-app'
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+<Callout type="info" title="What About Interactive Setup?">
+If you don't want to put credentials in the command, run without the URL:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```bash
+moose init my-analytics-app --from-remote --language typescript
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```bash
+moose init my-analytics-app --from-remote --language python
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+Moose will prompt you for host, username, password, and database interactively.
+</Callout>
+
+After initialization, navigate into your project and install dependencies:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```bash
+cd my-analytics-app
+npm install
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```bash
+cd my-analytics-app
+pip install -e .
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+---
+
+## Step 2: Understanding Externally Managed Tables
+
+Open your project and look at the generated files. You'll find your tables split into two categories:
+
+### Regular Tables (in your main file)
+
+Tables that Moose fully manages—you control the schema, and Moose creates/migrates them:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```ts filename="app/index.ts"
+import { OlapTable } from "@514labs/moose-lib";
+
+export interface analytics_events {
+  id: string;
+  event_type: string;
+  timestamp: string;
+}
+
+export const AnalyticsEventsTable = new OlapTable<analytics_events>("analytics_events", {
+  orderByFields: ["timestamp", "id"],
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```py filename="app/main.py"
+from datetime import datetime
+from pydantic import BaseModel
+from moose_lib import OlapTable, OlapConfig
+
+class AnalyticsEvents(BaseModel):
+    id: str
+    event_type: str
+    timestamp: datetime
+
+analytics_events_table = OlapTable[AnalyticsEvents]("analytics_events", OlapConfig(
+    order_by_fields=["timestamp", "id"],
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Externally Managed Tables (in a separate file)
+
+Tables where an external process (your CDC pipeline) owns the schema. Moose generates these in a dedicated file:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```ts filename="app/externalModels.ts"
+// AUTO-GENERATED FILE. DO NOT EDIT.
+// This file will be replaced when you run `moose db pull`.
+
+import typia from "typia";
+import { OlapTable, LifeCycle, ClickHouseEngines } from "@514labs/moose-lib";
+
+export interface users {
+  id: string & typia.tags.Format<"uuid">;
+  email: string;
+  name: string;
+  created_at: string & typia.tags.Format<"date-time">;
+  // PeerDB metadata columns (added by CDC)
+  _peerdb_synced_at: string & typia.tags.Format<"date-time">;
+  _peerdb_is_deleted: number;
+  _peerdb_version: number;
+}
+
+export const UsersTable = new OlapTable<users>("users", {
+  orderByFields: ["id"],
+  engine: ClickHouseEngines.ReplacingMergeTree,
+  ver: "_peerdb_version",
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,  // <-- Key difference
+});
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```py filename="app/external_models.py"
+# AUTO-GENERATED FILE. DO NOT EDIT.
+# This file will be replaced when you run `moose db pull`.
+
+from datetime import datetime
+from pydantic import BaseModel
+from moose_lib import OlapTable, OlapConfig, LifeCycle, ReplacingMergeTreeEngine
+
+class Users(BaseModel):
+    id: str
+    email: str
+    name: str
+    created_at: datetime
+    # PeerDB metadata columns (added by CDC)
+    _peerdb_synced_at: datetime
+    _peerdb_is_deleted: int
+    _peerdb_version: int
+
+users_table = OlapTable[Users]("users", OlapConfig(
+    order_by_fields=["id"],
+    engine=ReplacingMergeTreeEngine(ver="_peerdb_version"),
+    life_cycle=LifeCycle.EXTERNALLY_MANAGED,  # <-- Key difference
+))
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+### What Does `EXTERNALLY_MANAGED` Mean?
+
+The `lifeCycle: LifeCycle.EXTERNALLY_MANAGED` setting tells Moose:
+
+| Moose Behavior | Regular Tables | Externally Managed |
+|:---------------|:---------------|:-------------------|
+| **Creates table in production** | Yes | No |
+| **Runs migrations** | Yes | No |
+| **Generates type-safe models** | Yes | Yes |
+| **Allows building views/APIs on top** | Yes | Yes |
+| **You edit the schema** | Yes | No (regenerated by `db pull`) |
+
+In short: Moose gives you all the developer experience benefits (types, autocomplete, views, APIs) without touching the tables your CDC pipeline owns.
+
+<Callout type="warning" title="Don't Edit External Models Directly">
+The `externalModels.ts` / `external_models.py` file is regenerated every time you run `moose db pull`. Any manual changes will be overwritten. If you need to customize how a table is modeled, move it to your main file and remove `EXTERNALLY_MANAGED`.
+</Callout>
+
+---
+
+## Step 3: Local Development Setup
+
+Now let's configure how Moose handles these external tables during local development. Open your `moose.config.toml`:
+
+```toml filename="moose.config.toml"
+# This was auto-generated by moose init --from-remote
+[dev.remote_clickhouse]
+host = "your-clickhouse-host.example.com"
+port = 8443
+database = "production_db"
+use_ssl = true
+protocol = "http"
+```
+
+### Creating Local Mirror Tables
+
+When you run `moose dev`, Moose creates the schema for externally managed tables in your local ClickHouse, but they start out empty. To populate them with sample data from your remote ClickHouse for local development, enable local mirrors:
+
+```toml filename="moose.config.toml"
+[dev.externally_managed.tables]
+# Create local copies of external tables
+create_local_mirrors = true
+
+# Seed with sample data from remote (0 = empty tables)
+sample_size = 1000
+
+# Re-seed on every moose dev start (false = only if missing)
+refresh_on_startup = false
+```
+
+### Configuration Options Explained
+
+| Option | Default | Description |
+|:-------|:--------|:------------|
+| `create_local_mirrors` | `false` | When `true`, Moose creates local tables matching your external table schemas |
+| `sample_size` | `0` | Number of rows to copy from remote for each table. Set to `0` for schema-only (empty tables) |
+| `refresh_on_startup` | `false` | When `true`, drops and recreates mirrors on every `moose dev` start. When `false`, only creates if missing |
+
+### When Does Seeding Happen?
+
+Understanding when data is pulled is important for your workflow:
+
+| Scenario | What Happens |
+|:---------|:-------------|
+| **First `moose dev` run** | Mirror tables created, `sample_size` rows seeded from remote |
+| **Subsequent runs (`refresh_on_startup = false`)** | Nothing—existing local data preserved |
+| **Subsequent runs (`refresh_on_startup = true`)** | Tables dropped, recreated, and reseeded |
+| **Remote unreachable** | Tables created from local model definitions, no data seeded |
+
+### Materialized Views and Sample Data
+
+Here's something important to understand: **Materialized Views only process new data as it arrives**.
+
+In production, your CDC pipeline continuously inserts data, which triggers your materialized views. But locally, you have static seeded data—the MV won't retroactively process it.
+
+**Solutions for local MV development:**
+
+1. **Seed enough data** - Set `sample_size` high enough to have meaningful test data in your base tables
+
+2. **Use `refresh_on_startup = true`** - This re-inserts data on each startup, triggering MVs (but slower startup)
+
+3. **Manually trigger with `moose seed`** - Insert test data while `moose dev` is running (requires the local dev server to be up):
+   ```bash
+   moose seed clickhouse --limit 100
+   ```
+
+4. **Test MVs with direct inserts** - During development, insert test rows manually to trigger MV logic
+
+<Callout type="info" title="Production Behavior">
+In production, this isn't an issue—CDC continuously streams data, and your MVs process it in real-time.
+</Callout>
+
+---
+
+## Step 4: Running Local Development
+
+With your config set up, start the dev server:
+
+```bash
+moose dev
+```
+
+### First Run with Credentials
+
+If credentials aren't in your keychain (e.g., you manually edited the config), Moose prompts you:
+
+```
+Credentials Remote ClickHouse credentials required:
+            Host:     your-clickhouse-host.example.com
+            Database: production_db
+
+Enter username (default: default)
+> your_username
+
+Enter password
+> ********
+
+Keychain Stored credentials securely for project 'my-analytics-app'
+```
+
+Credentials are stored in your OS keychain and reused automatically on subsequent runs—no additional configuration needed.
+
+### What Happens on Startup
+
+1. **Local infrastructure starts** — Docker containers for ClickHouse, Redpanda, etc.
+2. **External tables detected** — credentials resolved from OS keychain (you'll be prompted if missing)
+3. **Remote schema compared** — local mirrors created if `create_local_mirrors = true`
+4. **Data seeded** (if `sample_size > 0` and remote is reachable)
+5. **Dev server starts** at `http://localhost:4000`
+
+### Developing Locally
+
+Now you can build on top of your CDC data:
+
+- **Create views** that aggregate or transform external table data
+- **Build APIs** that query across managed and external tables
+- **Test queries** against realistic sample data
+- **Iterate quickly** with hot-reload—no production impact
+
+---
+
+## Step 5: Syncing Schema Changes
+
+CDC pipelines evolve. Your DBA adds columns, the CDC service updates metadata fields, or new tables appear. When this happens, your local models need to sync.
+
+### Manual Sync
+
+Run `moose db pull` to refresh your external models:
+
+```bash
+moose db pull
+```
+
+This:
+- Connects to your remote ClickHouse (using saved credentials)
+- Introspects current schemas for all externally managed tables
+- Regenerates `externalModels.ts` / `external_models.py`
+- Adds any new tables that appeared in the remote database
+
+### Example: A New Column Appears
+
+Say your CDC pipeline starts syncing a new `phone` column to the `users` table:
+
+```
+     Connecting to remote ClickHouse...
+  Introspecting remote tables...
+External models refreshed (3 table(s))
+```
+
+Your external models file now includes the new column:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```ts filename="app/externalModels.ts"
+export interface users {
+  id: string;
+  email: string;
+  name: string;
+  phone: string;  // <-- New column!
+  created_at: string;
+  // ...
+}
+```
+
+TypeScript immediately catches any code that now needs updating.
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```py filename="app/external_models.py"
+class Users(BaseModel):
+    id: str
+    email: str
+    name: str
+    phone: str  # <-- New column!
+    created_at: datetime
+    # ...
+```
+
+Pydantic will validate data against the updated schema automatically.
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+### Automatic Sync on Dev Start
+
+For active development where schemas change frequently, auto-sync on startup:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```toml filename="moose.config.toml"
+[http_server_config]
+on_first_start_script = "moose db pull"
+
+[watcher_config]
+# Prevent reload loop from generated file changes
+ignore_patterns = ["app/externalModels.ts"]
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```toml filename="moose.config.toml"
+[http_server_config]
+on_first_start_script = "moose db pull"
+
+[watcher_config]
+# Prevent reload loop from generated file changes
+ignore_patterns = ["app/external_models.py"]
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+Now every `moose dev` starts by pulling the latest schemas.
+
+---
+
+## Complete Configuration Reference
+
+Here's a full `moose.config.toml` for a CDC-based project:
+
+<LanguageTabs>
+  <LanguageTabContent value="typescript">
+
+```toml filename="moose.config.toml"
+language = "typescript"
+
+# Remote ClickHouse connection (auto-generated by moose init --from-remote)
+[dev.remote_clickhouse]
+host = "abc123.us-east-1.aws.clickhouse.cloud"
+port = 8443
+database = "production"
+use_ssl = true
+protocol = "http"
+
+# Local development with external tables
+[dev.externally_managed.tables]
+create_local_mirrors = true
+sample_size = 500
+refresh_on_startup = false
+
+# Auto-sync schemas on startup
+[http_server_config]
+on_first_start_script = "moose db pull"
+
+# Don't trigger reloads on generated files
+[watcher_config]
+ignore_patterns = ["app/externalModels.ts"]
+```
+
+  </LanguageTabContent>
+  <LanguageTabContent value="python">
+
+```toml filename="moose.config.toml"
+language = "python"
+
+# Remote ClickHouse connection (auto-generated by moose init --from-remote)
+[dev.remote_clickhouse]
+host = "abc123.us-east-1.aws.clickhouse.cloud"
+port = 8443
+database = "production"
+use_ssl = true
+protocol = "http"
+
+# Local development with external tables
+[dev.externally_managed.tables]
+create_local_mirrors = true
+sample_size = 500
+refresh_on_startup = false
+
+# Auto-sync schemas on startup
+[http_server_config]
+on_first_start_script = "moose db pull"
+
+# Don't trigger reloads on generated files
+[watcher_config]
+ignore_patterns = ["app/external_models.py"]
+```
+
+  </LanguageTabContent>
+</LanguageTabs>
+
+---
+
+## Quick Reference
+
+| Task | Command |
+|:-----|:--------|
+| Start new project from existing ClickHouse | `moose init my-app --from-remote <URL> --language <typescript\|python>` |
+| Sync external models after schema change | `moose db pull` |
+| Start local development | `moose dev` |
+| Seed more data locally | `moose seed clickhouse --limit 1000` |
+
+---
+
+## Next Steps
+
+- [External Tables Reference](/moosestack/olap/external-tables) - Deep dive into `EXTERNALLY_MANAGED` lifecycle
+- [Materialized Views](/moosestack/olap/model-materialized-view) - Build real-time aggregations on CDC data
+- [APIs & Web Apps](/moosestack/apis) - Expose your data through type-safe endpoints

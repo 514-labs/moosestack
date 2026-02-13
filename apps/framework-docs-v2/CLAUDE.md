@@ -11,8 +11,8 @@ Next.js 15 documentation site for MooseStack with language-specific content (Typ
 ### Setup
 **IMPORTANT**: This is a monorepo workspace package. Always install dependencies from the monorepo root:
 ```bash
-cd /Users/timdelisle/Dev/moose  # Navigate to monorepo root
-pnpm install                     # Install all workspace dependencies
+cd <monorepo-root>  # Navigate to monorepo root
+pnpm install        # Install all workspace dependencies
 ```
 
 Never run `pnpm install` from `apps/framework-docs-v2/` directly, as this will break the monorepo workspace setup.
@@ -179,7 +179,7 @@ POSTHOG_PROJECT_ID=<from PostHog settings>
 
 ## Important Context
 
-- **Monorepo integration**: This app is part of the larger MooseStack monorepo at `/Users/timdelisle/Dev/moose/`. Dependencies must be installed from the monorepo root using `pnpm install`, never from this workspace package directly.
+- **Monorepo integration**: This app is part of the larger MooseStack monorepo. Dependencies must be installed from the monorepo root using `pnpm install`, never from this workspace package directly.
 - **Static generation**: All pages use `generateStaticParams` for SSG, but API routes remain dynamic
 - **Search is static**: Pagefind provides client-side search without server dependency
 - **No TypeScript/Python URL prefixes**: Unlike earlier versions, URLs don't have `/typescript` or `/python` prefixes. Language switching handled via context.
