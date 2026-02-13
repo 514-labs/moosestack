@@ -1499,6 +1499,24 @@ pub async fn top_command_handler(
 
             let result = match &workflow_args.command {
                 Some(WorkflowCommands::Run { name, input }) => {
+                    // For TypeScript projects, ensure compilation is done before loading infrastructure
+                    if project.language == SupportedLanguages::Typescript {
+                        display::show_message_wrapper(
+                            MessageType::Info,
+                            Message {
+                                action: "Compiling".to_string(),
+                                details: "TypeScript...".to_string(),
+                            },
+                        );
+
+                        if let Err(e) = routines::run_initial_typescript_compilation(&project) {
+                            return Err(RoutineFailure::error(Message {
+                                action: "Compile".to_string(),
+                                details: format!("TypeScript compilation failed: {}", e),
+                            }));
+                        }
+                    }
+
                     run_workflow(&project, name, input.clone()).await
                 }
                 Some(WorkflowCommands::List { json }) => {
@@ -1574,6 +1592,24 @@ pub async fn top_command_handler(
                 machine_id.clone(),
                 HashMap::new(),
             );
+
+            // For TypeScript projects, ensure compilation is done before loading infrastructure
+            if project.language == SupportedLanguages::Typescript {
+                display::show_message_wrapper(
+                    MessageType::Info,
+                    Message {
+                        action: "Compiling".to_string(),
+                        details: "TypeScript...".to_string(),
+                    },
+                );
+
+                if let Err(e) = routines::run_initial_typescript_compilation(&project) {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Compile".to_string(),
+                        details: format!("TypeScript compilation failed: {}", e),
+                    }));
+                }
+            }
 
             // Use resolve_clickhouse_url for env var fallback (db pull only needs ClickHouse, not Redis)
             let resolved_from_flag_or_env = resolve_clickhouse_url(clickhouse_url.as_deref());
@@ -1668,6 +1704,25 @@ pub async fn top_command_handler(
         }
         Commands::Seed(seed_args) => {
             let project = load_project(commands)?;
+
+            // For TypeScript projects, ensure compilation is done before loading infrastructure
+            if project.language == SupportedLanguages::Typescript {
+                display::show_message_wrapper(
+                    MessageType::Info,
+                    Message {
+                        action: "Compiling".to_string(),
+                        details: "TypeScript...".to_string(),
+                    },
+                );
+
+                if let Err(e) = routines::run_initial_typescript_compilation(&project) {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Compile".to_string(),
+                        details: format!("TypeScript compilation failed: {}", e),
+                    }));
+                }
+            }
+
             seed_data::handle_seed_command(seed_args, &project).await
         }
         Commands::Truncate { tables, all, rows } => {
@@ -1683,6 +1738,25 @@ pub async fn top_command_handler(
                 schema_registry,
             } => {
                 let project = load_project(commands)?;
+
+                // For TypeScript projects, ensure compilation is done before loading infrastructure
+                if project.language == SupportedLanguages::Typescript {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message {
+                            action: "Compiling".to_string(),
+                            details: "TypeScript...".to_string(),
+                        },
+                    );
+
+                    if let Err(e) = routines::run_initial_typescript_compilation(&project) {
+                        return Err(RoutineFailure::error(Message {
+                            action: "Compile".to_string(),
+                            details: format!("TypeScript compilation failed: {}", e),
+                        }));
+                    }
+                }
+
                 let path = path.as_deref().unwrap_or(match project.language {
                     SupportedLanguages::Typescript => "app/external-topics",
                     SupportedLanguages::Python => "app/external_topics",

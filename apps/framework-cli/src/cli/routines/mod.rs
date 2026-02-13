@@ -174,8 +174,9 @@ pub fn run_initial_typescript_compilation(project: &Project) -> Result<(), Strin
     );
 
     // Don't pass outDir - let moose-tspc read from tsconfig or use default
-    let output = std::process::Command::new("npx")
-        .arg("moose-tspc")
+    // Call moose-tspc directly (bin from @514labs/moose-lib) instead of npx
+    // since npx would try to find a standalone package named "moose-tspc"
+    let output = std::process::Command::new("moose-tspc")
         .current_dir(&project.project_location)
         .env("MOOSE_SOURCE_DIR", &project.source_dir)
         .env("PATH", bin_path)

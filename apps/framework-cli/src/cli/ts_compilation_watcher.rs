@@ -4,7 +4,7 @@
 /// and triggering infrastructure updates based on compilation events. It replaces file watching
 /// for TypeScript projects to enable incremental compilation.
 ///
-/// The watcher spawns `npx moose-tspc --watch` as a long-running process and parses its
+/// The watcher spawns `moose-tspc --watch` as a long-running process and parses its
 /// JSON output to detect compilation events.
 ///
 /// ## JSON Event Protocol:
@@ -71,24 +71,25 @@ impl CompileEvent {
 /// Spawns the tspc --watch process
 /// Respects user's tsconfig.json outDir if specified, otherwise uses .moose/compiled
 fn spawn_tspc_watch(project: &Project) -> Result<Child, TsCompilationWatcherError> {
-    let mut command = Command::new("npx");
-    // Don't pass outDir - let moose-tspc read from tsconfig or use default
-    command
-        .arg("moose-tspc")
-        .arg("--watch")
-        .current_dir(&project.project_location)
-        .env("MOOSE_SOURCE_DIR", &project.source_dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    // Add node_modules/.bin to PATH
+    // Add node_modules/.bin to PATH first so we can call moose-tspc directly
     let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
     let bin_path = format!(
         "{}/node_modules/.bin:{}",
         project.project_location.display(),
         path
     );
-    command.env("PATH", bin_path);
+
+    // Call moose-tspc directly (bin from @514labs/moose-lib) instead of npx
+    // since npx would try to find a standalone package named "moose-tspc"
+    let mut command = Command::new("moose-tspc");
+    // Don't pass outDir - let moose-tspc read from tsconfig or use default
+    command
+        .arg("--watch")
+        .current_dir(&project.project_location)
+        .env("MOOSE_SOURCE_DIR", &project.source_dir)
+        .env("PATH", bin_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     command
         .spawn()
