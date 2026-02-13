@@ -456,6 +456,8 @@ async fn create_external_mirrors(
 /// * `metrics` - Arc wrapped Metrics instance for monitoring
 /// * `redis_client` - Arc and Mutex wrapped RedisClient for caching
 /// * `settings` - Reference to application Settings
+/// * `enable_mcp` - Whether to enable the MCP server
+/// * `enable_tui` - Whether to enable the interactive TUI mode
 ///
 /// # Returns
 /// * `anyhow::Result<()>` - Success or error result
@@ -465,7 +467,20 @@ pub async fn start_development_mode(
     redis_client: Arc<RedisClient>,
     settings: &Settings,
     enable_mcp: bool,
+    enable_tui: bool,
 ) -> anyhow::Result<()> {
+    // TUI mode: launch interactive terminal interface
+    if enable_tui {
+        display::show_message_wrapper(
+            MessageType::Info,
+            Message {
+                action: "TUI".to_string(),
+                details: "Launching interactive terminal interface...".to_string(),
+            },
+        );
+        return dev_tui::run_dev_tui(project, metrics, redis_client, settings, enable_mcp).await;
+    }
+
     display::show_message_wrapper(
         MessageType::Info,
         Message {

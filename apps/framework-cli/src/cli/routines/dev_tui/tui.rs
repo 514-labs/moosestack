@@ -4,9 +4,6 @@
 //! It includes panic hooks to ensure the terminal is always restored to
 //! a usable state even if the application crashes.
 
-// TODO(PR5): Remove this allow once mod.rs entry point uses Tui
-#![allow(dead_code)]
-
 use super::app::DevTuiApp;
 use super::event::EventHandler;
 use super::ui;

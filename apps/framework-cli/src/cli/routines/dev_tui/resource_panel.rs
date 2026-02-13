@@ -281,11 +281,9 @@ impl ChangeType {
 /// Sender for resource updates
 pub type ResourceUpdateSender = mpsc::UnboundedSender<ResourceUpdate>;
 /// Receiver for resource updates
-#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub type ResourceUpdateReceiver = mpsc::UnboundedReceiver<ResourceUpdate>;
 
 /// Create a new resource update channel
-#[allow(dead_code)] // TODO(PR5): Remove once entry point uses this
 pub fn resource_update_channel() -> (ResourceUpdateSender, ResourceUpdateReceiver) {
     mpsc::unbounded_channel()
 }

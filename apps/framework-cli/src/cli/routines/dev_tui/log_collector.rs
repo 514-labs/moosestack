@@ -4,9 +4,6 @@
 //! from various sources (file watcher, web server, infrastructure changes, etc.)
 //! for display in the TUI.
 
-// TODO(PR5): Remove this allow once mod.rs uses these types
-#![allow(dead_code)]
-
 use super::app::{LogEntry, LogLevel, LogSource};
 use tokio::sync::mpsc;
 
