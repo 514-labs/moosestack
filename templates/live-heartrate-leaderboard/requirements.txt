@@ -5,5 +5,5 @@ python-dateutil>=2.8.2
 kafka-python-ng==2.2.2
 clickhouse-connect==0.7.16
 requests>=2.31.0
-moose-cli==0.6.309
-moose-lib==0.6.309
+moose-cli==0.6.390
+moose-lib==0.6.390
