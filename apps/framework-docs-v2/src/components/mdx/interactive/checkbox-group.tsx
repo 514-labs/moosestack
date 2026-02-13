@@ -1,10 +1,18 @@
 "use client";
 
-import { Suspense, createContext, useContext, ReactNode } from "react";
+import {
+  Suspense,
+  createContext,
+  useContext,
+  ReactNode,
+  useState,
+  useEffect,
+} from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { usePersistedState } from "./use-persisted-state";
+import { getSetting, updateSetting } from "@/lib/guide-settings";
 
 interface CheckboxOption {
   value: string;
@@ -21,6 +29,8 @@ interface CheckboxGroupProps {
   options: CheckboxOption[];
   /** Whether to persist selections to localStorage */
   persist?: boolean;
+  /** Use global guide settings storage instead of individual field storage */
+  globalSetting?: boolean;
   /** Additional CSS classes */
   className?: string;
   /** Optional conditional content that shows based on selections */
@@ -52,6 +62,7 @@ function CheckboxGroupInner({
   label,
   options,
   persist = false,
+  globalSetting = false,
   className,
   children,
   onChange,
@@ -61,11 +72,30 @@ function CheckboxGroupInner({
     .filter((opt) => opt.defaultChecked)
     .map((opt) => opt.value);
 
-  const [checkedValues, setCheckedValues] = usePersistedState<string[]>(
-    id,
+  // For global settings, use useState + useEffect to load from global storage
+  const [globalValues, setGlobalValues] = useState<string[]>(() => {
+    if (!globalSetting || !id) return defaultChecked;
+    const stored = getSetting(id as any);
+    return (stored as string[]) ?? defaultChecked;
+  });
+
+  // For non-global settings, use the existing usePersistedState hook
+  const [localValues, setLocalValues] = usePersistedState<string[]>(
+    globalSetting ? undefined : id,
     defaultChecked,
-    persist,
+    persist && !globalSetting,
   );
+
+  // Update global storage when globalValues changes
+  useEffect(() => {
+    if (globalSetting && id) {
+      updateSetting(id as any, globalValues as any);
+    }
+  }, [globalSetting, id, globalValues]);
+
+  // Choose which value/setter to use based on globalSetting
+  const checkedValues = globalSetting ? globalValues : localValues;
+  const setCheckedValues = globalSetting ? setGlobalValues : setLocalValues;
 
   const handleCheckChange = (optionValue: string, checked: boolean) => {
     const newValues =

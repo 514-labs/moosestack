@@ -11,7 +11,7 @@ import { GlobalGuideCustomizer } from "./global-guide-customizer";
 const FIELD_LABELS: Record<string, string> = {
   language: "Language",
   os: "OS",
-  sourceDatabase: "Database",
+  sources: "Sources",
   monorepo: "Monorepo",
   existingApp: "Existing app",
 };
@@ -51,23 +51,27 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
         <div className="flex items-center gap-2 flex-wrap">
           <IconSettings className="h-4 w-4 text-muted-foreground" />
           <span className="text-xs font-medium text-muted-foreground">
-            Guide config
+            Your Stack
           </span>
         </div>
         <div className="flex flex-col gap-2 w-full">
-          {Object.entries(settings).map(([key, value]) => (
-            <div
-              key={key}
-              className="flex items-center justify-between text-xs"
-            >
-              <span className="text-muted-foreground">
-                {FIELD_LABELS[key] || key}:
-              </span>
-              <Badge variant="secondary" className="font-normal text-xs">
-                {value}
-              </Badge>
-            </div>
-          ))}
+          {Object.entries(settings).map(([key, value]) => {
+            const displayValue =
+              Array.isArray(value) ? value.join(", ") : value;
+            return (
+              <div
+                key={key}
+                className="flex items-center justify-between text-xs"
+              >
+                <span className="text-muted-foreground">
+                  {FIELD_LABELS[key] || key}:
+                </span>
+                <Badge variant="secondary" className="font-normal text-xs">
+                  {displayValue}
+                </Badge>
+              </div>
+            );
+          })}
         </div>
         <div className="flex gap-2 w-full">
           <Button
