@@ -7,7 +7,7 @@
     "dev": "moose-cli dev"
   },
   "dependencies": {
-    "@514labs/moose-lib": "0.6.309",
+    "@514labs/moose-lib": "0.6.390",
     "@octokit/rest": "^21.1.1",
     "axios": "^1.7.7",
     "dotenv": "^16.4.7",
@@ -16,7 +16,7 @@
     "moose-objects": "workspace:*"
   },
   "devDependencies": {
-    "@514labs/moose-cli": "0.6.309",
+    "@514labs/moose-cli": "0.6.390",
     "@types/node": "^20.19.33",
     "@octokit/types": "^14.1.0"
   },
