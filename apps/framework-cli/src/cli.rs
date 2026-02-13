@@ -639,6 +639,24 @@ pub async fn top_command_handler(
                     })
                 })?;
 
+            // For TypeScript projects, ensure compilation is done before loading infrastructure
+            if project_arc.language == SupportedLanguages::Typescript {
+                display::show_message_wrapper(
+                    MessageType::Info,
+                    Message {
+                        action: "Compiling".to_string(),
+                        details: "TypeScript...".to_string(),
+                    },
+                );
+
+                if let Err(e) = routines::run_initial_typescript_compilation(&project_arc) {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Compile".to_string(),
+                        details: format!("TypeScript compilation failed: {}", e),
+                    }));
+                }
+            }
+
             debug!("Loading InfrastructureMap from user code");
             // Don't resolve credentials for moose check - avoids baking into Docker
             let infra_map = InfrastructureMap::load_from_user_code(&project_arc, false)
@@ -1174,6 +1192,26 @@ pub async fn top_command_handler(
 
             check_project_name(&project.name())?;
 
+            // For TypeScript projects, ensure compilation is done before loading infrastructure
+            if project.language == SupportedLanguages::Typescript {
+                if !*json {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message {
+                            action: "Compiling".to_string(),
+                            details: "TypeScript...".to_string(),
+                        },
+                    );
+                }
+
+                if let Err(e) = routines::run_initial_typescript_compilation(&project) {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Compile".to_string(),
+                        details: format!("TypeScript compilation failed: {}", e),
+                    }));
+                }
+            }
+
             let result = routines::remote_plan(&project, url, token, clickhouse_url, *json).await;
 
             result.map_err(|e| {
@@ -1214,6 +1252,24 @@ pub async fn top_command_handler(
             );
 
             check_project_name(&project.name())?;
+
+            // For TypeScript projects, ensure compilation is done before loading infrastructure
+            if project.language == SupportedLanguages::Typescript {
+                display::show_message_wrapper(
+                    MessageType::Info,
+                    Message {
+                        action: "Compiling".to_string(),
+                        details: "TypeScript...".to_string(),
+                    },
+                );
+
+                if let Err(e) = routines::run_initial_typescript_compilation(&project) {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Compile".to_string(),
+                        details: format!("TypeScript compilation failed: {}", e),
+                    }));
+                }
+            }
 
             // Resolve URLs from flags or env vars
             let (resolved_clickhouse_url, resolved_redis_url) =
@@ -1334,6 +1390,26 @@ pub async fn top_command_handler(
                 machine_id.clone(),
                 HashMap::new(),
             );
+
+            // For TypeScript projects, ensure compilation is done before loading infrastructure
+            if project_arc.language == SupportedLanguages::Typescript {
+                if !*json {
+                    display::show_message_wrapper(
+                        MessageType::Info,
+                        Message {
+                            action: "Compiling".to_string(),
+                            details: "TypeScript...".to_string(),
+                        },
+                    );
+                }
+
+                if let Err(e) = routines::run_initial_typescript_compilation(&project_arc) {
+                    return Err(RoutineFailure::error(Message {
+                        action: "Compile".to_string(),
+                        details: format!("TypeScript compilation failed: {}", e),
+                    }));
+                }
+            }
 
             let res = ls(&project_arc, _type.as_deref(), name.as_deref(), *json).await;
 

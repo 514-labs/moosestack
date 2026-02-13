@@ -165,7 +165,7 @@ async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisCli
 /// exist for the dmv2-serializer.
 ///
 /// Respects user's tsconfig.json outDir if specified, otherwise uses .moose/compiled
-fn run_initial_typescript_compilation(project: &Project) -> Result<(), String> {
+pub fn run_initial_typescript_compilation(project: &Project) -> Result<(), String> {
     let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
     let bin_path = format!(
         "{}/node_modules/.bin:{}",
