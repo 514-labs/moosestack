@@ -95,12 +95,6 @@ pub static QUIET_STDOUT: AtomicBool = AtomicBool::new(false);
 /// This is set once at startup based on CLI flags
 pub static SHOW_TIMING: AtomicBool = AtomicBool::new(false);
 
-/// Global flag to completely suppress all display output (stdout and stderr)
-/// When true, show_message_impl and related display functions become no-ops.
-/// Used in TUI mode where the terminal is managed by ratatui and any direct
-/// writes to stdout/stderr would corrupt the display.
-pub static SUPPRESS_DISPLAY: AtomicBool = AtomicBool::new(false);
-
 pub const README_PREFIX: &str = r#"
 This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the
 [`Moose CLI`](https://github.com/514-labs/moose/tree/main/apps/framework-cli).
