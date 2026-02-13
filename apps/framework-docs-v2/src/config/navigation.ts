@@ -1263,11 +1263,25 @@ const guidesNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "guides/performant-dashboards",
-    title: "Improving the Performance of Your Dashboards",
+    title: "Improving Performance",
     description:
       "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
     icon: IconChartLine,
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/performant-dashboards/overview",
+        title: "Overview",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/performant-dashboards/tutorial",
+        title: "Tutorial",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",
@@ -1277,6 +1291,26 @@ const guidesNavigationConfig: NavigationConfig = [
       "Build a data-aware chat on top of your ClickHouse database with Next.js and MooseStack.",
     icon: IconMessageChatbot,
     languages: ["typescript", "python"],
+    children: [
+      {
+        type: "page",
+        slug: "guides/chat-in-your-app/overview",
+        title: "Overview",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/chat-in-your-app/build",
+        title: "Build",
+        languages: ["typescript", "python"],
+      },
+      {
+        type: "page",
+        slug: "guides/chat-in-your-app/tutorial",
+        title: "Tutorial",
+        languages: ["typescript", "python"],
+      },
+    ],
   },
   {
     type: "page",

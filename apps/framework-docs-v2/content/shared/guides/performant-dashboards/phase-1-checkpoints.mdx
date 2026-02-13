@@ -14,48 +14,44 @@ Steps:
    - the **verbatim** JSON response — this must come from actually calling the running endpoint, not from approximation
 5. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days). You will seed your local ClickHouse to match this window after identifying the source tables in Checkpoint 2.
 
-Use this template (keep only the request method that matches your endpoint):
+Create a file for each test case with this structure:
 
-````md
-# Test case: <short-name>
+**File:** `moosestack/context/dashboard-migration/<component>/test-cases/01-example.md`
 
-## Request (curl)
+**Request (curl):**
 
 ```bash
 # Method: GET|POST
 # Path: /api/<endpoint>
 # Expected: HTTP 200
 # Auth: Bearer token via $API_TOKEN (do not paste secrets)
-# Notes: <timezone/order/pagination assumptions if relevant>
 
 # Set once in your shell:
 # export API_BASE_URL="http://localhost:4000"
 # export API_TOKEN="..."
 
-# GET (query params)
+# GET example (query params)
 curl -sS -G "$API_BASE_URL/api/<endpoint>" \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   --data-urlencode "param1=value1" \
-  --data-urlencode "param2=value2" \
   | jq .
 
-# POST (JSON body)
+# POST example (JSON body)
 curl -sS -X POST "$API_BASE_URL/api/<endpoint>" \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"param1": "value1", "param2": "value2"}' \
+  -d '{"param1": "value1"}' \
   | jq .
 ```
 
-## Expected response
+**Expected response (paste verbatim JSON from running endpoint):**
 
 ```json
 {
-  "REPLACE_ME": "paste the full JSON response body here (verbatim from the running endpoint)"
+  "example": "replace with actual response"
 }
 ```
-````
 
 **Done when:** 2–5 test case files exist under `test-cases/`, each with a runnable curl command and the actual JSON response from the OLTP endpoint. Record the file paths in `context-map.md`.
 </GuideStepper.Checkpoint>
