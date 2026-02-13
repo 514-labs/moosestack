@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "moose": "workspace:*",
-    "fastify": "^5.6.2",
+    "fastify": "^5.7.3",
     "ts-patch": "^3.3.0",
     "tsconfig-paths": "^4.2.0",
     "typia": "^10.1.0"
