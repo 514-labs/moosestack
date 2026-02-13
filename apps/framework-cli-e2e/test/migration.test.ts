@@ -237,8 +237,71 @@ describe("typescript template tests - migration", () => {
 
       testLogger.info("\n--- Testing drift detection ---");
 
-      // Generate migration plan (captures current DB state as "expected")
+      // IMPORTANT: Stop outer moose dev before this test to prevent interference.
+      // The outer dev and inner app share the same _MOOSE_STATE table, which causes
+      // the outer dev to drop tables when it syncs (since it has no models defined).
+      // The Docker containers (ClickHouse, etc.) will keep running.
+      testLogger.info("Stopping outer moose dev to prevent state conflicts...");
+      if (outerMooseProcess && !outerMooseProcess.killed) {
+        outerMooseProcess.kill("SIGTERM");
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        testLogger.info(
+          "✓ Outer moose dev stopped (Docker containers still running)",
+        );
+      }
+
+      // First, ensure tables exist by generating and applying initial migration
+      // (This makes the test self-contained and not dependent on previous tests)
+      testLogger.info("Setting up initial state...");
+
+      // Check if tables already exist (from previous tests)
+      const client = createClient(CLICKHOUSE_CONFIG);
+      const tablesCheck = await client.query({
+        query: "SHOW TABLES",
+        format: "JSONEachRow",
+      });
+      const existingTables: any[] = await tablesCheck.json();
+      const tableNames = existingTables.map((t: any) => t.name);
+
+      if (!tableNames.includes("Bar")) {
+        testLogger.info("Tables don't exist, creating initial migration...");
+        // Generate initial migration plan
+        const genResult = await execAsync(
+          `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
+          {
+            cwd: innerMooseDir,
+          },
+        );
+        testLogger.info("Generate output:", genResult.stdout);
+        // Apply it to create the tables
+        const migrateResult = await execAsync(
+          `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
+          {
+            cwd: innerMooseDir,
+          },
+        );
+        testLogger.info("Migrate output:", migrateResult.stdout);
+
+        // Verify tables were created
+        const tablesAfter = await client.query({
+          query: "SHOW TABLES",
+          format: "JSONEachRow",
+        });
+        const tablesAfterList: any[] = await tablesAfter.json();
+        testLogger.info(
+          "Tables after initial migration:",
+          tablesAfterList.map((t: any) => t.name),
+        );
+
+        testLogger.info("✓ Initial tables created");
+      } else {
+        testLogger.info("✓ Tables already exist from previous tests");
+      }
+
+      // Now generate a NEW migration plan (should be empty since tables match code)
+      // This captures the current DB state as "expected"
       testLogger.info("Generating migration plan...");
+
       await execAsync(
         `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
         {
@@ -249,9 +312,9 @@ describe("typescript template tests - migration", () => {
 
       // NOW manually modify the database BEFORE applying the migration
       testLogger.info("Manually modifying database to create drift...");
-      const client = createClient(CLICKHOUSE_CONFIG);
+
       await client.command({
-        query: "ALTER TABLE Bar ADD COLUMN drift_column String",
+        query: `ALTER TABLE ${CLICKHOUSE_CONFIG.database}.Bar ADD COLUMN drift_column String`,
       });
       testLogger.info("✓ Added drift_column to Bar table");
 

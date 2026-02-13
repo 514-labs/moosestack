@@ -4369,6 +4369,45 @@ SETTINGS enable_mixed_granularity_parts = 1, index_granularity = 8192, index_gra
     }
 
     #[test]
+    fn test_remove_default_sql_generation() {
+        use crate::infrastructure::olap::clickhouse::model::ClickHouseColumn;
+
+        // When removing a DEFAULT, the column should have default: None
+        // and removing_default should be true
+        let ch_col = ClickHouseColumn {
+            name: "status".to_string(),
+            column_type: ClickHouseColumnType::String,
+            required: true,
+            primary_key: false,
+            unique: false,
+            default: None, // No default after removal
+            materialized: None,
+            comment: None,
+            ttl: None,
+            codec: None,
+        };
+
+        let sqls = build_modify_column_sql(
+            "test_db",
+            "test_table",
+            &ch_col,
+            true, // removing_default
+            false,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+
+        // Should have 2 statements: REMOVE DEFAULT + the main MODIFY COLUMN
+        assert!(!sqls.is_empty());
+        assert_eq!(
+            sqls[0],
+            "ALTER TABLE `test_db`.`test_table` MODIFY COLUMN `status` REMOVE DEFAULT"
+        );
+    }
+
+    #[test]
     fn test_remove_materialized_sql_generation() {
         use crate::infrastructure::olap::clickhouse::model::ClickHouseColumn;
 

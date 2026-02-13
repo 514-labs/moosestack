@@ -641,7 +641,7 @@ pub async fn top_command_handler(
 
             debug!("Loading InfrastructureMap from user code");
             // Don't resolve credentials for moose check - avoids baking into Docker
-            let infra_map = InfrastructureMap::load_from_user_code(&project_arc, false)
+            let infra_map = InfrastructureMap::load_from_user_code(&project_arc, false, false)
                 .await
                 .map_err(|e| {
                     RoutineFailure::error(Message {

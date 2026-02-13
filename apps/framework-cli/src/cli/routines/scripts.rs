@@ -124,7 +124,7 @@ pub async fn run_workflow_and_get_run_ids(
     input: Option<String>,
 ) -> Result<WorkflowStartInfo, RoutineFailure> {
     // Resolve credentials for workflows that may interact with S3 tables
-    let infra_map = InfrastructureMap::load_from_user_code(project, true)
+    let infra_map = InfrastructureMap::load_from_user_code(project, true, false)
         .await
         .map_err(|e| {
             RoutineFailure::new(

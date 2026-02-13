@@ -3143,15 +3143,23 @@ impl InfrastructureMap {
     ///
     /// # Returns
     /// A Result containing the infrastructure map or an error
+    ///
+    /// # Arguments
+    /// * `project` - The project configuration
+    /// * `resolve_credentials` - Whether to resolve credentials from environment
+    /// * `skip_compilation` - Skip TypeScript compilation (use when watcher already compiled)
     pub async fn load_from_user_code(
         project: &Project,
         resolve_credentials: bool,
+        skip_compilation: bool,
     ) -> anyhow::Result<Self> {
         let partial = if project.language == SupportedLanguages::Typescript {
             // Ensure TypeScript is compiled before loading infrastructure.
-            // This is silent - dev mode has its own explicit compilation messaging.
-            ensure_typescript_compiled(project)
-                .context("Failed to compile TypeScript before loading infrastructure")?;
+            // Skip if called from watcher context (compilation already done by moose-tspc --watch).
+            if !skip_compilation {
+                ensure_typescript_compiled(project)
+                    .context("Failed to compile TypeScript before loading infrastructure")?;
+            }
 
             let process = crate::framework::typescript::export_collectors::collect_from_index(
                 project,
@@ -4721,6 +4729,60 @@ mod diff_tests {
                 assert_eq!(a.default.as_deref(), Some("now()"));
             }
             _ => panic!("Expected Updated change"),
+        }
+    }
+
+    #[test]
+    fn test_column_default_removal() {
+        // Test that removing a DEFAULT value (Some -> None) is detected as a change
+        let mut before = create_test_table("test", "1.0");
+        let mut after = create_test_table("test", "1.0");
+
+        // Column with a DEFAULT value
+        before.columns.push(Column {
+            name: "status".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: Some("'pending'".to_string()), // Has DEFAULT
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        });
+
+        // Same column without DEFAULT value
+        after.columns.push(Column {
+            name: "status".to_string(),
+            data_type: ColumnType::String,
+            required: true,
+            unique: false,
+            primary_key: false,
+            default: None, // No DEFAULT
+            annotations: vec![],
+            comment: None,
+            ttl: None,
+            codec: None,
+            materialized: None,
+        });
+
+        let diff = compute_table_columns_diff(&before, &after);
+        assert_eq!(diff.len(), 1, "Expected one change for DEFAULT removal");
+        match &diff[0] {
+            ColumnChange::Updated {
+                before: b,
+                after: a,
+            } => {
+                assert_eq!(
+                    b.default.as_deref(),
+                    Some("'pending'"),
+                    "Before should have DEFAULT"
+                );
+                assert_eq!(a.default, None, "After should have no DEFAULT");
+            }
+            _ => panic!("Expected Updated change for DEFAULT removal"),
         }
     }
 

@@ -526,7 +526,7 @@ async fn db_pull_with_client(
 
     debug!("Loading InfrastructureMap from user code (DMV2)");
     // Don't resolve credentials for code generation - only needs structure
-    let infra_map = InfrastructureMap::load_from_user_code(project, false)
+    let infra_map = InfrastructureMap::load_from_user_code(project, false, false)
         .await
         .map_err(|e| {
             RoutineFailure::error(Message::new(

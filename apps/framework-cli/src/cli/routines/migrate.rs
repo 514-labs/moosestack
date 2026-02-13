@@ -637,7 +637,7 @@ pub async fn execute_migration(
         let current_tables = &current_infra_map.tables;
 
         // Load target state from current code with credentials resolved for migration DDL
-        let target_infra_map = InfrastructureMap::load_from_user_code(project, true)
+        let target_infra_map = InfrastructureMap::load_from_user_code(project, true, false)
             .await
             .map_err(|e| {
                 RoutineFailure::new(

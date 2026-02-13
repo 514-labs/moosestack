@@ -581,7 +581,7 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (_, plan) = plan_changes(&*state_storage, &project).await?;
+    let (_, plan) = plan_changes(&*state_storage, &project, false).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -981,7 +981,7 @@ pub async fn start_production_mode(
         .build()
         .await?;
 
-    let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
+    let (current_state, plan) = plan_changes(&*state_storage, &project, false).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
     let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;
@@ -1168,7 +1168,7 @@ async fn legacy_remote_plan_logic(
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
     debug!("Loading InfrastructureMap from user code");
-    let local_infra_map = InfrastructureMap::load_from_user_code(project, true).await?;
+    let local_infra_map = InfrastructureMap::load_from_user_code(project, true, false).await?;
 
     // Use existing implementation
     let target_url = prepend_base_url(base_url.as_deref(), "admin/plan");
@@ -1287,7 +1287,8 @@ pub async fn remote_plan(
     clickhouse_url: &Option<String>,
     json: bool,
 ) -> anyhow::Result<()> {
-    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
+    let local_infra_map =
+        crate::framework::core::plan::load_target_infrastructure(project, false).await?;
 
     // Determine remote source based on provided arguments
     let remote_infra_map = if let Some(clickhouse_url) = clickhouse_url {
@@ -1483,7 +1484,8 @@ pub async fn remote_gen_migration(
 ) -> anyhow::Result<MigrationPlanWithBeforeAfter> {
     use anyhow::Context;
 
-    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
+    let local_infra_map =
+        crate::framework::core::plan::load_target_infrastructure(project, false).await?;
 
     // Get remote infrastructure map based on source type
     let remote_infra_map = match remote {
@@ -1634,7 +1636,8 @@ pub async fn remote_refresh(
     base_url: &Option<String>,
     token: &Option<String>,
 ) -> anyhow::Result<RoutineSuccess> {
-    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
+    let local_infra_map =
+        crate::framework::core::plan::load_target_infrastructure(project, false).await?;
 
     // Get authentication token - prioritize command line parameter, then env var, then project config
     let auth_token = token

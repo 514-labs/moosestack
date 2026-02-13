@@ -268,7 +268,8 @@ async fn watch(
                         "Infrastructure changes processed successfully",
                         async {
                             let plan_result = with_timing_async("Planning", async {
-                                framework::core::plan::plan_changes(&**state_storage, &project).await
+                                // skip_compilation: false - Python doesn't need TS compilation
+                                framework::core::plan::plan_changes(&**state_storage, &project, false).await
                             })
                             .await;
 

@@ -259,9 +259,11 @@ async fn watch(
                                         "Infrastructure changes processed successfully",
                                         async {
                                             let plan_result = with_timing_async("Planning", async {
+                                                // skip_compilation: true - watcher already compiled via moose-tspc --watch
                                                 framework::core::plan::plan_changes(
                                                     &**state_storage,
                                                     &project_clone,
+                                                    true,
                                                 )
                                                 .await
                                             })
