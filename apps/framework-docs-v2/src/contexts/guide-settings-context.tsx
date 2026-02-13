@@ -32,7 +32,18 @@ export function GuideSettingsProvider({
   useEffect(() => {
     setIsClient(true);
     const stored = getGuideSettings();
-    setSettings(stored);
+
+    // Migrate old multi-select sources to single-select
+    if (stored && Array.isArray(stored.sources)) {
+      const migrated = {
+        ...stored,
+        sources: stored.sources[0] || "postgres",
+      };
+      saveGuideSettings(migrated);
+      setSettings(migrated);
+    } else {
+      setSettings(stored);
+    }
 
     // Show customizer if no settings exist
     if (!stored || Object.keys(stored).length === 0) {
