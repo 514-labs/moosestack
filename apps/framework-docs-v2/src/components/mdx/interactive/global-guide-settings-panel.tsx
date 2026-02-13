@@ -16,6 +16,26 @@ const FIELD_LABELS: Record<string, string> = {
   existingApp: "Existing app",
 };
 
+// Value to display label mapping for proper capitalization
+const VALUE_LABELS: Record<string, string> = {
+  // Languages
+  typescript: "TypeScript",
+  python: "Python",
+  // Operating Systems
+  macos: "macOS",
+  windows: "Windows",
+  // Sources
+  postgres: "Postgres",
+  sqlserver: "SQL Server",
+  mysql: "MySQL",
+  api: "REST APIs",
+  kafka: "Kafka",
+  s3: "S3 / Parquet",
+  // Monorepo
+  yes: "Yes",
+  no: "No",
+};
+
 /**
  * GlobalGuideSettingsPanel - Persistent settings panel for guide customization
  *
@@ -56,8 +76,12 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
         </div>
         <div className="flex flex-col gap-2 w-full">
           {Object.entries(settings).map(([key, value]) => {
+            // Format display value with proper labels
             const displayValue =
-              Array.isArray(value) ? value.join(", ") : value;
+              Array.isArray(value) ?
+                value.map((v) => VALUE_LABELS[v] || v).join(", ")
+              : VALUE_LABELS[value as string] || value;
+
             return (
               <div
                 key={key}

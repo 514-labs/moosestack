@@ -92,11 +92,11 @@ export function GlobalGuideCustomizer({
               label="Sources"
               options={[
                 { value: "postgres", label: "Postgres", defaultChecked: true },
-                { value: "mysql", label: "MySQL" },
                 { value: "sqlserver", label: "SQL Server" },
-                { value: "api", label: "REST APIs" },
-                { value: "kafka", label: "Kafka" },
-                { value: "s3", label: "S3 / Parquet" },
+                // { value: "mysql", label: "MySQL" },
+                // { value: "api", label: "REST APIs" },
+                // { value: "kafka", label: "Kafka" },
+                // { value: "s3", label: "S3 / Parquet" },
               ]}
               persist
               globalSetting
