@@ -187,6 +187,12 @@ export function buildDocBreadcrumbs(
       return { label: segment.title };
     }
 
+    // Defensive check: ensure page exists and has required properties
+    if (!segment.page || !segment.page.title || !segment.page.slug) {
+      console.error("Invalid nav trail segment:", segment);
+      return { label: "Unknown" };
+    }
+
     const href = `/${segment.page.slug}`;
     return {
       label: segment.page.title,
