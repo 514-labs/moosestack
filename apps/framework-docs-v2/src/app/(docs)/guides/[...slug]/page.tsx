@@ -13,9 +13,8 @@ import { DocBreadcrumbs } from "@/components/navigation/doc-breadcrumbs";
 import { DynamicGuideBuilder } from "@/components/guides/dynamic-guide-builder";
 import { MarkdownMenu } from "@/components/markdown-menu";
 
-// Use dynamic rendering (SSR) instead of static generation for guides
-// TODO: Fix MDX SSG compilation for complex nested components
-export const dynamic = "force-dynamic";
+// Force static generation despite searchParams access
+export const dynamic = "force-static";
 
 interface PageProps {
   params: Promise<{
