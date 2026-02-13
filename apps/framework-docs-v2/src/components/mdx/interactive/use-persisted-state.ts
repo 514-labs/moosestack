@@ -116,23 +116,20 @@ export function usePersistedState<T>(
     return defaultValue;
   });
 
-  // Sync to localStorage and URL when value changes (skip initial mount)
+  // Sync to localStorage and URL when value changes (skip initial mount with defaults)
   useEffect(() => {
     if (!persist || !key || typeof window === "undefined") {
       return;
     }
 
-    // Skip on first render to avoid polluting URL with defaults
+    // Skip on first render ONLY if value equals default (avoid polluting URL with defaults)
     if (isFirstRenderRef.current) {
       isFirstRenderRef.current = false;
-      const urlValue = getValueFromURL<T>(key);
-      // Only skip if URL already had the value or value is default
-      if (
-        urlValue !== null ||
-        JSON.stringify(value) === JSON.stringify(defaultValue)
-      ) {
+      // Skip only if value is the default value
+      if (JSON.stringify(value) === JSON.stringify(defaultValue)) {
         return;
       }
+      // If value came from URL, we still need to sync to localStorage and dispatch
     }
 
     try {
@@ -154,7 +151,7 @@ export function usePersistedState<T>(
     } catch {
       // Ignore storage errors (quota exceeded, etc.)
     }
-  }, [persist, key, storageKey, value]);
+  }, [persist, key, storageKey, value, defaultValue]);
 
   // Listen for changes from other components/tabs and browser navigation
   useEffect(() => {
