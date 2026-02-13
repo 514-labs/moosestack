@@ -37,7 +37,7 @@
     "@headlessui/react": "^1.7.18",
     "@heroicons/react": "^2.1.1",
     "@sentry/nextjs": "^7.106.0",
-    "@types/node": "^20",
+    "@types/node": "catalog:",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
     "react": "^19.0.1",

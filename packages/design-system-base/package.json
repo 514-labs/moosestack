@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@sentry/nextjs": "^7.106.0",
-    "@types/node": "^20.14.5",
+    "@types/node": "catalog:",
     "autoprefixer": "^10.0.1",
     "eslint": "catalog:",
     "eslint-config-next": "catalog:",

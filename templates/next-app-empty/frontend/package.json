@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "typescript": "~5.9.2",
-    "@types/node": "^20",
+    "@types/node": "^20.19.33",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@tailwindcss/postcss": "^4",

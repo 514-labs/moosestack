@@ -82,7 +82,7 @@
     "@tailwindcss/typography": "^0.5.19",
     "@types/hast": "catalog:",
     "@types/html-to-text": "^9.0.4",
-    "@types/node": "^20",
+    "@types/node": "catalog:",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.16",

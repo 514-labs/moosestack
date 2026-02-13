@@ -17,7 +17,7 @@
     "typia": "^9.6.1"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "^20.19.33",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
