@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@514labs/moose-cli": "0.6.309",
-    "@types/node": "^20.12.12",
+    "@types/node": "^20.19.33",
     "@octokit/types": "^14.1.0"
   },
   "files": [
