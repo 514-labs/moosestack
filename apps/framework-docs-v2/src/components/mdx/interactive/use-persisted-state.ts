@@ -87,6 +87,9 @@ export function usePersistedState<T>(
   // Build full storage key
   const storageKey = key ? `${STORAGE_KEY_PREFIX}-${key}` : undefined;
 
+  // Track if this is the first render
+  const [isFirstRender, setIsFirstRender] = useState(true);
+
   // Initialize state - check URL params first, then localStorage, then default
   const [value, setValue] = useState<T>(() => {
     if (!persist || !key || typeof window === "undefined") {
@@ -119,10 +122,9 @@ export function usePersistedState<T>(
       return;
     }
 
-    // Skip on initial mount - only sync when value actually changes
-    const isInitialMount =
-      JSON.stringify(value) === JSON.stringify(defaultValue);
-    if (isInitialMount) {
+    // Skip on first render to avoid polluting URL with defaults
+    if (isFirstRender) {
+      setIsFirstRender(false);
       return;
     }
 
@@ -142,7 +144,7 @@ export function usePersistedState<T>(
     } catch {
       // Ignore storage errors (quota exceeded, etc.)
     }
-  }, [persist, key, storageKey, value, defaultValue]);
+  }, [persist, key, storageKey, value, isFirstRender]);
 
   // Listen for changes from other components/tabs and browser navigation
   useEffect(() => {
@@ -198,24 +200,25 @@ export function clearInteractiveState(): void {
   if (typeof window === "undefined") return;
 
   // Clear localStorage
-  const keysToRemove: string[] = [];
+  const storageKeysToRemove: string[] = [];
+  const urlParamsToRemove: string[] = [];
+
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
     if (key?.startsWith(STORAGE_KEY_PREFIX)) {
-      keysToRemove.push(key);
+      storageKeysToRemove.push(key);
+      // Extract the param key (without prefix) for URL cleanup
+      const paramKey = key.substring(STORAGE_KEY_PREFIX.length + 1); // +1 for the hyphen
+      urlParamsToRemove.push(paramKey);
     }
   }
 
-  keysToRemove.forEach((key) => localStorage.removeItem(key));
+  storageKeysToRemove.forEach((key) => localStorage.removeItem(key));
 
-  // Also clear URL params to prevent stale state from being restored
+  // Clear only the URL params that correspond to interactive state
   try {
     const url = new URL(window.location.href);
-    const paramsToDelete: string[] = [];
-    url.searchParams.forEach((_value, paramKey) => {
-      paramsToDelete.push(paramKey);
-    });
-    paramsToDelete.forEach((paramKey) => url.searchParams.delete(paramKey));
+    urlParamsToRemove.forEach((paramKey) => url.searchParams.delete(paramKey));
     window.history.replaceState({}, "", url.toString());
   } catch {
     // Ignore URL update errors
