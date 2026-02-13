@@ -515,6 +515,9 @@ Guide sections (guides are large — navigate to specific sections):
   moose docs guides/chat-in-your-app#setup          View just the Setup section
   moose docs guides/performant-dashboards --web     Open full guide in the browser
 
+Example: use with your AI client
+  moose docs --raw guides/chat-in-your-app#setup | claude \"do this step, ask me any questions you need to execute\"
+
 Slugs are case-insensitive. Run `moose docs` to see all available slugs.")]
 pub struct DocsArgs {
     #[command(subcommand)]

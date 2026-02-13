@@ -476,6 +476,16 @@ moose docs guides/chat-in-your-app#setup
 ```
 If the section is not found, available sections are listed. When using `browse` on a guide page, a secondary section picker is shown.
 
+#### Use with AI Clients
+
+The `--raw` flag outputs unformatted markdown, making it easy to pipe documentation to AI clients for processing:
+
+```bash
+moose docs --raw guides/chat-in-your-app#setup | claude "do this step, ask me any questions you need to execute"
+```
+
+This pattern works with any AI client that accepts stdin, allowing you to get AI assistance on specific documentation sections.
+
 ### Feedback
 Submit feedback, report bugs, or join the community.
 ```bash
