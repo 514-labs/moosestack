@@ -12,6 +12,17 @@ pub enum DisplayContext {
     Tui(DisplaySender),
 }
 
+/// Type of infrastructure change for semantic display
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InfrastructureChangeType {
+    /// Addition of new infrastructure (green/+)
+    Added,
+    /// Removal of infrastructure (red/-)
+    Removed,
+    /// Update to existing infrastructure (yellow/~)
+    Updated,
+}
+
 /// Messages that can be displayed
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // Fields will be read in TUI integration
@@ -28,6 +39,11 @@ pub enum DisplayMessage {
     },
     InfrastructureDetail {
         lines: Vec<String>,
+    },
+    InfrastructureChange {
+        change_type: InfrastructureChangeType,
+        action: String,
+        details: String,
     },
     SpinnerCompletion {
         message: String,
