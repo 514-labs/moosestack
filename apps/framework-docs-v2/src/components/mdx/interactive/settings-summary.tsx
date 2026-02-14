@@ -38,6 +38,8 @@ export function SettingsSummary({
   heading = "Guide config",
   buttonText = "Change",
 }: SettingsSummaryProps): React.JSX.Element {
+  // TODO: Handle mobile layout - sidebar is hidden/different width on mobile
+  // Consider using responsive width classes or adjusting position for mobile
   return (
     <div
       className={cn(
