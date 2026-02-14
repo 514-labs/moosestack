@@ -7,7 +7,7 @@
  * This matches the storage pattern used by usePersistedState with namespace: "global"
  */
 
-const STORAGE_KEY_PREFIX = "moose-docs-guide-settings";
+export const STORAGE_KEY_PREFIX = "moose-docs-guide-settings";
 
 export interface GuideSettings {
   language?: "typescript" | "python";
