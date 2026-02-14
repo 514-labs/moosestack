@@ -23,6 +23,22 @@ export { GUIDE_SETTINGS_LABELS, GUIDE_SETTINGS_VALUE_LABELS };
 export const STORAGE_KEY_PREFIX = "moose-docs-guide-settings";
 
 /**
+ * Normalize field ID from kebab-case to camelCase for GuideSettings compatibility
+ * Used to map page-level field IDs (e.g., "source-database") to global setting keys (e.g., "sourceDatabase")
+ */
+export function normalizeFieldId(fieldId: string): GuideSettingId | null {
+  const normalized = fieldId.replace(/-([a-z])/g, (_, letter) =>
+    letter.toUpperCase(),
+  );
+
+  const allSettingIds = GUIDE_SETTINGS_CONFIG.map((config) => config.id);
+
+  return allSettingIds.includes(normalized) ?
+      (normalized as GuideSettingId)
+    : null;
+}
+
+/**
  * Validate a setting value against its expected type
  */
 function isValidSetting(key: GuideSettingId, value: unknown): value is string {
