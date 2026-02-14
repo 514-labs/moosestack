@@ -126,7 +126,7 @@ function ConditionalContentInner({
         handleStateChange,
       );
     };
-  }, [whenId, pageStorageKey, globalStorageKey]);
+  }, [whenId]);
 
   // Determine if content should be visible
   const isVisible = (() => {
