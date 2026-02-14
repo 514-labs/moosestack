@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   INTERACTIVE_STATE_CHANGE_EVENT,
-  STORAGE_KEY_PREFIX_PAGE_PAGE,
+  STORAGE_KEY_PREFIX_PAGE,
   useStorageSync,
   type InteractiveStateChangeDetail,
 } from "./use-persisted-state";
