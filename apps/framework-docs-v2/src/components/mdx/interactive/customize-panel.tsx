@@ -7,6 +7,29 @@ import {
   STORAGE_KEY_PREFIX_PAGE,
   STORAGE_KEY_PREFIX_GLOBAL,
 } from "./use-persisted-state";
+import { getSetting, GuideSettings } from "@/lib/guide-settings";
+
+/**
+ * Normalize field ID to match GuideSettings interface keys
+ * Converts kebab-case to camelCase for compatibility with global settings
+ */
+function normalizeFieldId(fieldId: string): keyof GuideSettings | null {
+  const normalized = fieldId.replace(/-([a-z])/g, (_, letter) =>
+    letter.toUpperCase(),
+  );
+
+  const validKeys: (keyof GuideSettings)[] = [
+    "language",
+    "os",
+    "sourceDatabase",
+    "monorepo",
+    "existingApp",
+  ];
+
+  return validKeys.includes(normalized as keyof GuideSettings) ?
+      (normalized as keyof GuideSettings)
+    : null;
+}
 
 interface CustomizePanelProps {
   /** Panel title (default: "Customize this tutorial") */
@@ -55,11 +78,27 @@ function getSelections(fieldIds: string[]): Record<string, string> | null {
 
     // Fall back to localStorage - check both page and global storage
     try {
+      // Check page-level storage (uses field ID as-is)
       const pageKey = `${STORAGE_KEY_PREFIX_PAGE}-${fieldId}`;
-      const globalKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${fieldId}`;
+      let stored = localStorage.getItem(pageKey);
 
-      const stored =
-        localStorage.getItem(pageKey) || localStorage.getItem(globalKey);
+      // Check global storage (may need field ID normalization)
+      if (!stored) {
+        const normalizedKey = normalizeFieldId(fieldId);
+        if (normalizedKey) {
+          const globalValue = getSetting(normalizedKey);
+          if (globalValue !== null && globalValue !== undefined) {
+            selections[fieldId] = globalValue;
+            hasAny = true;
+            continue;
+          }
+        }
+
+        // Fallback: check global storage with kebab-case key
+        const globalKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${fieldId}`;
+        stored = localStorage.getItem(globalKey);
+      }
+
       if (stored) {
         selections[fieldId] = JSON.parse(stored);
         hasAny = true;
