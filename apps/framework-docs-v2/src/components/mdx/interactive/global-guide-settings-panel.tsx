@@ -5,39 +5,10 @@ import { usePathname } from "next/navigation";
 import { useGuideSettings } from "@/contexts/guide-settings-context";
 import { GlobalGuideCustomizer } from "./global-guide-customizer";
 import { SettingsSummary } from "./settings-summary";
-
-const FIELD_LABELS: Record<string, string> = {
-  language: "Language",
-  os: "OS",
-  sourceDatabase: "Database",
-  monorepo: "Monorepo",
-  existingApp: "Existing app",
-};
-
-// Map raw values to display labels
-const VALUE_LABELS: Record<string, Record<string, string>> = {
-  language: {
-    typescript: "TypeScript",
-    python: "Python",
-  },
-  os: {
-    macos: "macOS",
-    windows: "Windows",
-  },
-  sourceDatabase: {
-    postgres: "Postgres",
-    sqlserver: "SQL Server",
-    none: "None",
-  },
-  monorepo: {
-    yes: "Monorepo",
-    no: "Single repo",
-  },
-  existingApp: {
-    yes: "Existing app",
-    no: "New app",
-  },
-};
+import {
+  GUIDE_SETTINGS_LABELS,
+  GUIDE_SETTINGS_VALUE_LABELS,
+} from "@/lib/guide-settings";
 
 /**
  * GlobalGuideSettingsPanel - Persistent settings panel for guide customization
@@ -78,14 +49,14 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
     if (key === "monorepo" || key === "existingApp") return;
 
     // Map value to display label
-    const displayValue = VALUE_LABELS[key]?.[value] || value;
+    const displayValue = GUIDE_SETTINGS_VALUE_LABELS[key]?.[value] || value;
     filteredSelections[key] = displayValue;
   });
 
   return (
     <SettingsSummary
       selections={filteredSelections}
-      labels={FIELD_LABELS}
+      labels={GUIDE_SETTINGS_LABELS}
       onChangeSettings={() => setShowCustomizer(true)}
       heading="Your Stack"
       buttonText="Configure"
