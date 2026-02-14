@@ -9,6 +9,28 @@ import {
 } from "./use-persisted-state";
 import { getSetting, GuideSettings } from "@/lib/guide-settings";
 
+/**
+ * Normalize field ID to match GuideSettings interface keys
+ * Converts kebab-case to camelCase for compatibility with global settings
+ */
+function normalizeFieldId(fieldId: string): keyof GuideSettings | null {
+  const normalized = fieldId.replace(/-([a-z])/g, (_, letter) =>
+    letter.toUpperCase(),
+  );
+
+  const validKeys: (keyof GuideSettings)[] = [
+    "language",
+    "os",
+    "sourceDatabase",
+    "monorepo",
+    "existingApp",
+  ];
+
+  return validKeys.includes(normalized as keyof GuideSettings) ?
+      (normalized as keyof GuideSettings)
+    : null;
+}
+
 interface ConditionalContentProps {
   /** ID of the SelectField or CheckboxGroup to watch */
   whenId: string;
@@ -42,11 +64,14 @@ function ConditionalContentInner({
 
     const readStoredValue = () => {
       try {
-        // Priority 1: Check global guide settings
-        const globalValue = getSetting(whenId as keyof GuideSettings);
-        if (globalValue !== null && globalValue !== undefined) {
-          setCurrentValue(globalValue);
-          return;
+        // Priority 1: Check global guide settings (normalize key for compatibility)
+        const normalizedKey = normalizeFieldId(whenId);
+        if (normalizedKey) {
+          const globalValue = getSetting(normalizedKey);
+          if (globalValue !== null && globalValue !== undefined) {
+            setCurrentValue(globalValue);
+            return;
+          }
         }
 
         // Priority 2: Check local storage (both page and global)
