@@ -47,7 +47,7 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
 
   return (
     <SettingsSummary
-      selections={settings}
+      selections={settings as Record<string, string>}
       labels={FIELD_LABELS}
       onChangeSettings={() => setShowCustomizer(true)}
     />

@@ -220,31 +220,34 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     <MDXRemote
       source={processedSource}
       components={components}
-      options={{
-        blockJS: false,
-        mdxOptions: {
-          remarkPlugins: [remarkGfm, remarkGuideStepperMarkers],
-          rehypePlugins: [
-            rehypeSlug,
-            [rehypeAutolinkHeadings, { behavior: "wrap" }],
-            // Extract meta attributes BEFORE rehype-pretty-code consumes them
-            rehypeCodeMeta,
-            [
-              rehypePrettyCode,
-              {
-                theme: {
-                  light: "github-light",
-                  dark: "github-dark",
+      options={
+        {
+          blockJS: false,
+          mdxOptions: {
+            remarkPlugins: [remarkGfm, remarkGuideStepperMarkers],
+            rehypePlugins: [
+              rehypeSlug,
+              [rehypeAutolinkHeadings, { behavior: "wrap" }],
+              // Extract meta attributes BEFORE rehype-pretty-code consumes them
+              rehypeCodeMeta,
+              [
+                rehypePrettyCode,
+                {
+                  theme: {
+                    light: "github-light",
+                    dark: "github-dark",
+                  },
+                  keepBackground: false,
+                  defaultLang: "plaintext",
                 },
-                keepBackground: false,
-                defaultLang: "plaintext",
-              },
+              ],
+              // Restore custom meta attributes AFTER rehype-pretty-code
+              rehypeRestoreCodeMeta,
             ],
-            // Restore custom meta attributes AFTER rehype-pretty-code
-            rehypeRestoreCodeMeta,
-          ],
-        },
-      }}
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any
+      }
     />
   );
 }
