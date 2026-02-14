@@ -262,6 +262,60 @@ export function usePersistedState<T>(
 }
 
 /**
+ * Hook to sync state with localStorage across tabs and same-page components.
+ * Handles both cross-tab (storage event) and same-page (custom event) synchronization.
+ *
+ * @param storageKey - Full storage key to watch
+ * @param onValueChange - Callback when value changes from storage/events
+ * @param deps - Dependency array for useEffect
+ */
+export function useStorageSync<T>(
+  storageKey: string | undefined,
+  onValueChange: (value: T | null) => void,
+  deps: React.DependencyList = [],
+): void {
+  useEffect(() => {
+    if (!storageKey || typeof window === "undefined") return;
+
+    // Listen for storage changes from other tabs
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === storageKey) {
+        if (event.newValue === null) {
+          onValueChange(null);
+        } else {
+          try {
+            const value = JSON.parse(event.newValue) as T;
+            onValueChange(value);
+          } catch {
+            // Ignore parsing errors
+          }
+        }
+      }
+    };
+
+    // Listen for same-page state changes via custom event
+    const handleStateChange = (event: Event) => {
+      const customEvent = event as CustomEvent<InteractiveStateChangeDetail<T>>;
+      if (customEvent.detail?.key === storageKey) {
+        onValueChange(customEvent.detail.value);
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(
+        INTERACTIVE_STATE_CHANGE_EVENT,
+        handleStateChange,
+      );
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey, ...deps]);
+}
+
+/**
  * Helper to clear all interactive component state from localStorage and URL
  */
 export function clearInteractiveState(): void {

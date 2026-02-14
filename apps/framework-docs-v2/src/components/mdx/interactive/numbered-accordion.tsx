@@ -9,12 +9,9 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import {
-  INTERACTIVE_STATE_CHANGE_EVENT,
-  type InteractiveStateChangeDetail,
-} from "./use-persisted-state";
+import { STORAGE_KEY_PREFIX_PAGE, useStorageSync } from "./use-persisted-state";
 
-const STORAGE_KEY_PREFIX = "moose-docs-interactive";
+const STORAGE_KEY_PREFIX = STORAGE_KEY_PREFIX_PAGE;
 
 interface NumberedAccordionItemProps {
   /** Unique ID for this accordion item (used for visibility control) */
@@ -103,41 +100,20 @@ function NumberedAccordionInner({
 
     // Initial read
     readStoredValues();
-
-    // Listen for storage changes from other tabs
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === storageKey) {
-        // Reset to empty if key was removed, otherwise read the new value
-        if (event.newValue === null) {
-          setControlledVisibleItems([]);
-        } else {
-          readStoredValues();
-        }
-      }
-    };
-
-    // Listen for same-page state changes via custom event
-    const handleStateChange = (event: Event) => {
-      const customEvent = event as CustomEvent<InteractiveStateChangeDetail>;
-      if (customEvent.detail?.key === storageKey) {
-        const value = customEvent.detail.value;
-        if (Array.isArray(value)) {
-          setControlledVisibleItems(value as string[]);
-        }
-      }
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener(
-        INTERACTIVE_STATE_CHANGE_EVENT,
-        handleStateChange,
-      );
-    };
   }, [controlledBy]);
+
+  // Sync with storage changes (cross-tab and same-page)
+  useStorageSync<string[]>(
+    controlledBy ? `${STORAGE_KEY_PREFIX}-${controlledBy}` : undefined,
+    (value) => {
+      if (value === null) {
+        setControlledVisibleItems([]);
+      } else if (Array.isArray(value)) {
+        setControlledVisibleItems(value);
+      }
+    },
+    [controlledBy],
+  );
 
   // Determine visible items
   const visibleItems = directVisibleItems || controlledVisibleItems;
