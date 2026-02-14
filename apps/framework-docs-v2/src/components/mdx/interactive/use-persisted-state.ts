@@ -274,6 +274,10 @@ export function useStorageSync<T>(
   onValueChange: (value: T | null) => void,
   deps: React.DependencyList = [],
 ): void {
+  // Use ref to avoid stale closure issues
+  const onValueChangeRef = useRef(onValueChange);
+  onValueChangeRef.current = onValueChange;
+
   useEffect(() => {
     if (!storageKey || typeof window === "undefined") return;
 
@@ -281,11 +285,11 @@ export function useStorageSync<T>(
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key === storageKey) {
         if (event.newValue === null) {
-          onValueChange(null);
+          onValueChangeRef.current(null);
         } else {
           try {
             const value = JSON.parse(event.newValue) as T;
-            onValueChange(value);
+            onValueChangeRef.current(value);
           } catch {
             // Ignore parsing errors
           }
@@ -297,7 +301,7 @@ export function useStorageSync<T>(
     const handleStateChange = (event: Event) => {
       const customEvent = event as CustomEvent<InteractiveStateChangeDetail<T>>;
       if (customEvent.detail?.key === storageKey) {
-        onValueChange(customEvent.detail.value);
+        onValueChangeRef.current(customEvent.detail.value);
       }
     };
 
@@ -311,7 +315,6 @@ export function useStorageSync<T>(
         handleStateChange,
       );
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey, ...deps]);
 }
 
