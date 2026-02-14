@@ -24,7 +24,7 @@ interface GlobalGuideCustomizerProps {
 export function GlobalGuideCustomizer({
   open,
   onClose,
-}: GlobalGuideCustomizerProps): React.JSX.Element {
+}: GlobalGuideCustomizerProps): React.JSX.Element | null {
   const { updateSettings, setShowCustomizer } = useGuideSettings();
 
   const handleContinue = () => {
@@ -48,7 +48,7 @@ export function GlobalGuideCustomizer({
       onClose={handleClose}
       buttonText="Continue to guides"
     >
-      <CustomizeGrid columns={1}>
+      <CustomizeGrid>
         <SelectField
           id="language"
           label="Language"
