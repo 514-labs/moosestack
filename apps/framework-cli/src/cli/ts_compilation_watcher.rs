@@ -201,6 +201,9 @@ pub async fn spawn_and_await_initial_compile(
                             continue;
                         } else if event.is_compile_error() {
                             display_compilation_errors(&event);
+                            // Kill the child process to avoid resource leak
+                            let _ = child.kill();
+                            let _ = child.wait();
                             return Err(TsCompilationWatcherError::InitialCompilationFailed(
                                 format!("{} error(s)", event.errors),
                             ));
@@ -217,6 +220,9 @@ pub async fn spawn_and_await_initial_compile(
                 }
             }
             None => {
+                // Kill the child process to avoid resource leak
+                let _ = child.kill();
+                let _ = child.wait();
                 return Err(TsCompilationWatcherError::ReadError(
                     "tspc process closed stdout before initial compilation completed".into(),
                 ));

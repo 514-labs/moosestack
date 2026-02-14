@@ -142,7 +142,8 @@ RUN npx moose check
 
 # Pre-compile TypeScript with moose plugins (typia, compilerPlugin)
 # This eliminates ts-node overhead at runtime for faster worker startup
-# Use npx here since we're in the Docker container after npm install
+# Explicitly pass .moose/compiled as outDir to ensure a consistent path
+# in the Docker image, regardless of any outDir in the user's tsconfig.json
 RUN MOOSE_SOURCE_DIR='{}' npx moose-tspc .moose/compiled
 
 # Set environment variable to use pre-compiled JavaScript at runtime
