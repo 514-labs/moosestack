@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense } from "react";
 import {
   Select,
   SelectContent,
@@ -10,8 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { usePersistedState } from "./use-persisted-state";
-import { getSetting, updateSetting } from "@/lib/guide-settings";
+import { usePersistedState, type PersistOptions } from "./use-persisted-state";
 
 interface SelectOption {
   value: string;
@@ -31,9 +30,9 @@ interface SelectFieldProps {
   value?: string;
   /** Callback when selection changes */
   onChange?: (value: string) => void;
-  /** Whether to persist selection to localStorage */
-  persist?: boolean;
-  /** Use global guide settings storage instead of individual field storage */
+  /** Whether to persist selection to localStorage (can be boolean or PersistOptions) */
+  persist?: boolean | PersistOptions;
+  /** @deprecated Use persist={{ namespace: "global" }} instead */
   globalSetting?: boolean;
   /** Additional CSS classes */
   className?: string;
@@ -53,36 +52,22 @@ function SelectFieldInner({
   className,
   placeholder = "Select an option",
 }: SelectFieldProps) {
-  // For global settings, use useState + useEffect to load from global storage
-  const [globalValue, setGlobalValue] = useState<string>(() => {
-    if (!globalSetting || !id) return defaultValue ?? options[0]?.value ?? "";
-    const stored = getSetting(id as any);
-    return stored ?? defaultValue ?? options[0]?.value ?? "";
-  });
+  // Normalize persist options (handle legacy globalSetting prop)
+  const persistOptions: boolean | PersistOptions =
+    globalSetting ? { namespace: "global", syncToUrl: false } : persist;
 
-  // For non-global settings, use the existing usePersistedState hook
+  // Use unified persistence hook
   const [internalValue, setInternalValue] = usePersistedState<string>(
-    globalSetting ? undefined : id,
+    id,
     defaultValue ?? options[0]?.value ?? "",
-    persist && !globalSetting,
+    persistOptions,
   );
-
-  // Update global storage when globalValue changes
-  useEffect(() => {
-    if (globalSetting && id) {
-      updateSetting(id as any, globalValue as any);
-    }
-  }, [globalSetting, id, globalValue]);
-
-  // Choose which value/setter to use based on globalSetting
-  const currentInternalValue = globalSetting ? globalValue : internalValue;
-  const setCurrentValue = globalSetting ? setGlobalValue : setInternalValue;
 
   // Validate that the internal value exists in options (in case options changed)
   const validOptionValues = options.map((o) => o.value);
-  const isValidInternalValue = validOptionValues.includes(currentInternalValue);
+  const isValidInternalValue = validOptionValues.includes(internalValue);
   const validatedInternalValue =
-    isValidInternalValue ? currentInternalValue : (
+    isValidInternalValue ? internalValue : (
       (defaultValue ?? options[0]?.value ?? "")
     );
 
@@ -91,7 +76,7 @@ function SelectFieldInner({
 
   const handleChange = (newValue: string) => {
     if (controlledValue === undefined) {
-      setCurrentValue(newValue);
+      setInternalValue(newValue);
     }
     onChange?.(newValue);
   };
