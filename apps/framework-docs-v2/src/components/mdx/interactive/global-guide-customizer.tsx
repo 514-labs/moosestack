@@ -5,6 +5,7 @@ import { FullPageCustomizer } from "./full-page-customizer";
 import { CustomizeGrid } from "./customize-grid";
 import { SelectField } from "./select-field";
 import { useGuideSettings } from "@/contexts/guide-settings-context";
+import { VISIBLE_SETTINGS } from "@/config/guide-settings-config";
 
 interface GlobalGuideCustomizerProps {
   open: boolean;
@@ -14,12 +15,9 @@ interface GlobalGuideCustomizerProps {
 /**
  * GlobalGuideCustomizer - Modal for configuring global guide settings
  *
- * Manages settings that apply across all guide pages:
- * - Language (TypeScript/Python)
- * - Operating System (macOS/Windows)
- * - Source Database (Postgres/SQL Server/None)
- * - Monorepo (Yes/No)
- * - Existing App (Yes/No)
+ * Automatically renders all visible settings from the guide settings config.
+ * To add a new setting, just add it to GUIDE_SETTINGS_CONFIG in:
+ * @see src/config/guide-settings-config.ts
  */
 export function GlobalGuideCustomizer({
   open,
@@ -49,58 +47,17 @@ export function GlobalGuideCustomizer({
       buttonText="Continue to guides"
     >
       <CustomizeGrid>
-        <SelectField
-          id="language"
-          label="Language"
-          options={[
-            { value: "typescript", label: "TypeScript" },
-            { value: "python", label: "Python" },
-          ]}
-          defaultValue="typescript"
-          persist={{ namespace: "global", syncToUrl: false }}
-        />
-        <SelectField
-          id="os"
-          label="Operating System"
-          options={[
-            { value: "macos", label: "macOS or Linux" },
-            { value: "windows", label: "Windows (WSL 2)" },
-          ]}
-          defaultValue="macos"
-          persist={{ namespace: "global", syncToUrl: false }}
-        />
-        <SelectField
-          id="sourceDatabase"
-          label="Source Database"
-          options={[
-            { value: "postgres", label: "Postgres" },
-            { value: "sqlserver", label: "SQL Server" },
-            { value: "none", label: "Starting from scratch" },
-          ]}
-          defaultValue="postgres"
-          persist={{ namespace: "global", syncToUrl: false }}
-        />
-        {/* Hidden for now - not used in current guides */}
-        {/* <SelectField
-          id="monorepo"
-          label="Project Structure"
-          options={[
-            { value: "yes", label: "Monorepo" },
-            { value: "no", label: "Single repo" },
-          ]}
-          defaultValue="no"
-          persist={{ namespace: "global", syncToUrl: false }}
-        />
-        <SelectField
-          id="existingApp"
-          label="Application Setup"
-          options={[
-            { value: "yes", label: "Add to existing app" },
-            { value: "no", label: "New app" },
-          ]}
-          defaultValue="no"
-          persist={{ namespace: "global", syncToUrl: false }}
-        /> */}
+        {VISIBLE_SETTINGS.map((setting) => (
+          <SelectField
+            key={setting.id}
+            id={setting.id}
+            label={setting.label}
+            options={setting.options}
+            defaultValue={setting.defaultValue}
+            persist={{ namespace: "global", syncToUrl: false }}
+            placeholder={setting.description}
+          />
+        ))}
       </CustomizeGrid>
     </FullPageCustomizer>
   );
