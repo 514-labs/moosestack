@@ -5,12 +5,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   INTERACTIVE_STATE_CHANGE_EVENT,
-  STORAGE_KEY_PREFIX_PAGE,
+  STORAGE_KEY_PREFIX_PAGE_PAGE,
   useStorageSync,
   type InteractiveStateChangeDetail,
 } from "./use-persisted-state";
-
-const STORAGE_KEY_PREFIX = STORAGE_KEY_PREFIX_PAGE;
 
 interface CodeVariant {
   /** Unique value for this variant */
@@ -55,7 +53,7 @@ function TabbedCodeInner({
   useEffect(() => {
     if (!syncKey || typeof window === "undefined") return;
 
-    const storageKey = `${STORAGE_KEY_PREFIX}-tabbed-${syncKey}`;
+    const storageKey = `${STORAGE_KEY_PREFIX_PAGE}-tabbed-${syncKey}`;
 
     // Read initial value from storage
     try {
@@ -73,7 +71,7 @@ function TabbedCodeInner({
 
   // Sync with storage changes (cross-tab and same-page)
   useStorageSync<string>(
-    syncKey ? `${STORAGE_KEY_PREFIX}-tabbed-${syncKey}` : undefined,
+    syncKey ? `${STORAGE_KEY_PREFIX_PAGE}-tabbed-${syncKey}` : undefined,
     (value) => {
       if (
         value !== null &&
@@ -91,7 +89,7 @@ function TabbedCodeInner({
 
     // Persist to localStorage if syncKey is provided
     if (syncKey && typeof window !== "undefined") {
-      const storageKey = `${STORAGE_KEY_PREFIX}-tabbed-${syncKey}`;
+      const storageKey = `${STORAGE_KEY_PREFIX_PAGE}-tabbed-${syncKey}`;
       try {
         localStorage.setItem(storageKey, JSON.stringify(value));
         // Dispatch custom event for same-page synchronization
