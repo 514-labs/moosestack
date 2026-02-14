@@ -1,6 +1,6 @@
 "use client";
 
-import React, { ReactNode, useState, useEffect } from "react";
+import React, { ReactNode, useState, useEffect, useMemo } from "react";
 import { FullPageCustomizer } from "./full-page-customizer";
 import { SettingsSummary } from "./settings-summary";
 import {
@@ -107,17 +107,17 @@ export function CustomizePanel({
   const [isClient, setIsClient] = useState(false);
 
   // Stabilize fieldIds to avoid unnecessary re-runs when array reference changes
-  const fieldIdsKey = fieldIds?.join(",") || "";
+  const fieldIdsKey = useMemo(() => fieldIds?.join(",") || "", [fieldIds]);
 
   // Check for existing selections on mount
   useEffect(() => {
     setIsClient(true);
-    if (fieldIds && fieldIds.length > 0) {
-      const existingSelections = getSelections(fieldIds);
+    if (fieldIdsKey) {
+      const ids = fieldIdsKey.split(",");
+      const existingSelections = getSelections(ids);
       setSelections(existingSelections);
       setShowCustomizer(!existingSelections); // Show customizer if no selections
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldIdsKey]); // Depend on stringified version, not array reference
 
   // SSR/initial render - show nothing to avoid hydration mismatch
