@@ -80,7 +80,8 @@ export function GlobalGuideCustomizer({
           defaultValue="postgres"
           persist={{ namespace: "global", syncToUrl: false }}
         />
-        <SelectField
+        {/* Hidden for now - not used in current guides */}
+        {/* <SelectField
           id="monorepo"
           label="Project Structure"
           options={[
@@ -99,7 +100,7 @@ export function GlobalGuideCustomizer({
           ]}
           defaultValue="no"
           persist={{ namespace: "global", syncToUrl: false }}
-        />
+        /> */}
       </CustomizeGrid>
     </FullPageCustomizer>
   );
