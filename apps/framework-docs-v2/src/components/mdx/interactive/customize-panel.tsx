@@ -179,7 +179,10 @@ export function CustomizePanel({
           // Re-check selections after user makes changes
           const newSelections = getSelections(fieldIds);
           setSelections(newSelections);
-          setShowCustomizer(false);
+          // Only close if selections exist, otherwise keep customizer open
+          if (newSelections) {
+            setShowCustomizer(false);
+          }
         }}
         onClose={() => {
           // Dismiss customizer - check selections to avoid empty state
