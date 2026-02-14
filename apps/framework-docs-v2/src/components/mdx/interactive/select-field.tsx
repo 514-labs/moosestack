@@ -56,6 +56,13 @@ function SelectFieldInner({
   const persistOptions: boolean | PersistOptions =
     globalSetting ? { namespace: "global", syncToUrl: false } : persist;
 
+  // Warn in development when deprecated prop is used
+  if (process.env.NODE_ENV !== "production" && globalSetting) {
+    console.warn(
+      `SelectField: The 'globalSetting' prop is deprecated. Use persist={{ namespace: "global", syncToUrl: false }} instead.`,
+    );
+  }
+
   // Use unified persistence hook
   const [internalValue, setInternalValue] = usePersistedState<string>(
     id,
