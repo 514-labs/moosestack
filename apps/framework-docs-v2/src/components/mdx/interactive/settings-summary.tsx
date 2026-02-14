@@ -38,12 +38,10 @@ export function SettingsSummary({
   heading = "Guide config",
   buttonText = "Change",
 }: SettingsSummaryProps): React.JSX.Element {
-  // TODO: Handle mobile layout - sidebar is hidden/different width on mobile
-  // Consider using responsive width classes or adjusting position for mobile
   return (
     <div
       className={cn(
-        "fixed bottom-6 left-6 z-30 shadow-lg backdrop-blur-md bg-background/95 w-[calc(var(--sidebar-width)-2rem)] flex flex-col items-start gap-3 rounded-lg border px-4 py-3",
+        "fixed bottom-6 left-6 z-30 shadow-lg backdrop-blur-md bg-background/95 w-full max-w-xs lg:w-[calc(var(--sidebar-width)-2rem)] flex flex-col items-start gap-3 rounded-lg border px-4 py-3",
         className,
       )}
     >
