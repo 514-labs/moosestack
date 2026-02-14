@@ -1,0 +1,206 @@
+name: Build Template Docker Images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "templates/**"
+
+  workflow_dispatch:
+    inputs:
+      template:
+        type: string
+        description: "Specific template to rebuild (e.g. 'python-fastapi'), or 'all' to rebuild everything. Leave empty to auto-detect from latest commit."
+        required: false
+        default: ""
+      build_all:
+        type: boolean
+        description: "Build all templates"
+        required: false
+        default: false
+
+jobs:
+  detect-changes:
+    name: Detect Changed Templates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      templates: ${{ steps.set-matrix.outputs.templates }}
+      has_templates: ${{ steps.set-matrix.outputs.has_templates }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed templates
+        id: set-matrix
+        run: |
+          # All templates that support Docker builds
+          ALL_TEMPLATES=(
+            "typescript"
+            "typescript-empty"
+            "typescript-fastify"
+            "typescript-express"
+            "typescript-mcp"
+            "typescript-migrate-test"
+            "ads-b"
+            "ads-b-frontend"
+            "python"
+            "python-tests"
+            "python-empty"
+            "python-fastapi"
+            "python-fastapi-client-only"
+            "python-experimental"
+            "python-cluster"
+          )
+
+          MANUAL_INPUT="${{ inputs.template }}"
+          BUILD_ALL="${{ inputs.build_all }}"
+
+          if [ "$BUILD_ALL" = "true" ]; then
+            # Build all templates (manual dispatch only)
+            CHANGED=("${ALL_TEMPLATES[@]}")
+          elif [ -n "$MANUAL_INPUT" ]; then
+            # Build a specific template (manual dispatch)
+            CHANGED=("$MANUAL_INPUT")
+          else
+            # Auto-detect which templates changed since the previous commit
+            CHANGED=()
+            for tmpl in "${ALL_TEMPLATES[@]}"; do
+              if git diff --name-only HEAD~1 HEAD -- "templates/$tmpl/" | grep -q .; then
+                CHANGED+=("$tmpl")
+              fi
+            done
+          fi
+
+          if [ ${#CHANGED[@]} -eq 0 ]; then
+            echo "No template changes detected"
+            echo "has_templates=false" >> "$GITHUB_OUTPUT"
+            echo 'templates=[]' >> "$GITHUB_OUTPUT"
+          else
+            echo "Changed templates: ${CHANGED[*]}"
+            echo "has_templates=true" >> "$GITHUB_OUTPUT"
+            # Build JSON array
+            JSON=$(printf '%s\n' "${CHANGED[@]}" | jq -R . | jq -sc .)
+            echo "templates=$JSON" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-push:
+    name: Build ${{ matrix.template }}
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_templates == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        template: ${{ fromJson(needs.detect-changes.outputs.templates) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Moose CLI
+        run: |
+          TEMPLATE="${{ matrix.template }}"
+
+          # Detect the CLI version the template expects
+          # Check package.json (TypeScript) then requirements.txt (Python)
+          CLI_VERSION=""
+          while IFS= read -r -d '' pkg; do
+            CLI_VERSION=$(python3 -c "import json; print(json.load(open('$pkg')).get('devDependencies',{}).get('@514labs/moose-cli',''))" 2>/dev/null)
+            if [ -n "$CLI_VERSION" ]; then break; fi
+          done < <(find "templates/$TEMPLATE" -name "package.json" -not -path "*/node_modules/*" -print0)
+
+          if [ -z "$CLI_VERSION" ]; then
+            while IFS= read -r -d '' req; do
+              CLI_VERSION=$(grep 'moose-cli==' "$req" 2>/dev/null | sed 's/moose-cli==//' || true)
+              if [ -n "$CLI_VERSION" ]; then break; fi
+            done < <(find "templates/$TEMPLATE" -name "requirements.txt" -not -path "*/.venv/*" -print0)
+          fi
+
+          if [ -z "$CLI_VERSION" ]; then
+            echo "ERROR: Could not detect CLI version from template $TEMPLATE"
+            exit 1
+          fi
+
+          echo "Detected CLI version: $CLI_VERSION"
+          echo "CLI_VERSION=$CLI_VERSION" >> "$GITHUB_ENV"
+
+          # Download CLI binary from GCS
+          DOWNLOAD_URL="https://downloads.fiveonefour.com/stable/$CLI_VERSION/x86_64-unknown-linux-gnu/moose-cli"
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -fLo /usr/local/bin/moose "$DOWNLOAD_URL"
+          chmod +x /usr/local/bin/moose
+          moose --version
+
+      - name: Init template
+        run: |
+          cd /tmp
+          moose init test-app ${{ matrix.template }}
+
+      - name: Build Docker images
+        run: |
+          cd /tmp/test-app
+          TEMPLATE="${{ matrix.template }}"
+
+          # Find all moose projects (monorepos may have multiple)
+          # Use process substitution to keep the loop in the main shell so
+          # set -e is inherited and build failures are not silently swallowed.
+          while IFS= read -r -d '' config; do
+            MOOSE_DIR=$(dirname "$config")
+            echo "Building moose project at: $MOOSE_DIR"
+            (cd "$MOOSE_DIR" && moose build --docker --amd64)
+
+            # For subdirectory projects, append the subpath to the image name
+            if [ "$MOOSE_DIR" = "." ]; then
+              IMAGE_NAME="$TEMPLATE"
+            else
+              SUBPATH=$(echo "$MOOSE_DIR" | sed 's|^\./||' | tr '/' '-')
+              IMAGE_NAME="$TEMPLATE-$SUBPATH"
+            fi
+
+            # Re-tag with a unique name so subsequent builds don't overwrite
+            docker tag moose-df-deployment-x86_64-unknown-linux-gnu:latest "moose-template-build:$IMAGE_NAME"
+            echo "$IMAGE_NAME" >> /tmp/built-images.txt
+          done < <(find . -name "moose.config.toml" -not -path "./.moose/*" -print0)
+
+      - name: Auth with GCP
+        uses: "google-github-actions/auth@v2"
+        with:
+          service_account: "mbs-439@moose-hosting-node.iam.gserviceaccount.com"
+          workload_identity_provider: "projects/724152421890/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-repos"
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Tag and push Docker images
+        run: |
+          VERSION="${{ env.CLI_VERSION }}"
+          SHORT_SHA="${{ github.sha }}"
+          SHORT_SHA="${SHORT_SHA:0:7}"
+          DOCKER_REPO="us-central1-docker.pkg.dev/moose-hosting-node/hosting/moose-templates"
+
+          if [ ! -f /tmp/built-images.txt ]; then
+            echo "ERROR: No moose projects found in template"
+            exit 1
+          fi
+
+          while read -r IMAGE_NAME; do
+            # Tag with CLI version + short SHA for traceability
+            docker tag "moose-template-build:$IMAGE_NAME" "$DOCKER_REPO/$IMAGE_NAME:$VERSION-$SHORT_SHA"
+            docker push "$DOCKER_REPO/$IMAGE_NAME:$VERSION-$SHORT_SHA"
+
+            # On main, also tag as latest
+            if [ "${{ github.ref_name }}" = "main" ]; then
+              docker tag "moose-template-build:$IMAGE_NAME" "$DOCKER_REPO/$IMAGE_NAME:latest"
+              docker push "$DOCKER_REPO/$IMAGE_NAME:latest"
+            fi
+          done < /tmp/built-images.txt
