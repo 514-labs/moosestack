@@ -11,8 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { STORAGE_KEY_PREFIX_PAGE, useStorageSync } from "./use-persisted-state";
 
-const STORAGE_KEY_PREFIX = STORAGE_KEY_PREFIX_PAGE;
-
 interface NumberedAccordionItemProps {
   /** Unique ID for this accordion item (used for visibility control) */
   id: string;
@@ -84,7 +82,7 @@ function NumberedAccordionInner({
   useEffect(() => {
     if (!controlledBy || typeof window === "undefined") return;
 
-    const storageKey = `${STORAGE_KEY_PREFIX}-${controlledBy}`;
+    const storageKey = `${STORAGE_KEY_PREFIX_PAGE}-${controlledBy}`;
 
     const readStoredValues = () => {
       try {
@@ -104,7 +102,7 @@ function NumberedAccordionInner({
 
   // Sync with storage changes (cross-tab and same-page)
   useStorageSync<string[]>(
-    controlledBy ? `${STORAGE_KEY_PREFIX}-${controlledBy}` : undefined,
+    controlledBy ? `${STORAGE_KEY_PREFIX_PAGE}-${controlledBy}` : undefined,
     (value) => {
       if (value === null) {
         setControlledVisibleItems([]);
