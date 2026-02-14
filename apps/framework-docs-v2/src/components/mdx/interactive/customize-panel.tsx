@@ -142,12 +142,25 @@ export function CustomizePanel({
   const [isClient, setIsClient] = useState(false);
 
   // Get global customizer state to avoid overlapping dialogs
-  const guideSettings = useGuideSettings?.() || {
-    showCustomizer: false,
-    isConfigured: false,
-    settings: null,
-    setShowCustomizer: () => {},
+  // Use try-catch to handle SSG where provider isn't available
+  let guideSettings: {
+    showCustomizer: boolean;
+    isConfigured: boolean;
+    settings: any;
+    setShowCustomizer: (show: boolean) => void;
   };
+
+  try {
+    guideSettings = useGuideSettings();
+  } catch {
+    // During SSG, provider isn't available - use defaults
+    guideSettings = {
+      showCustomizer: false,
+      isConfigured: false,
+      settings: null,
+      setShowCustomizer: () => {},
+    };
+  }
 
   // Stabilize fieldIds to avoid unnecessary re-runs when array reference changes
   const fieldIdsKey = useMemo(() => fieldIds?.join(",") || "", [fieldIds]);
