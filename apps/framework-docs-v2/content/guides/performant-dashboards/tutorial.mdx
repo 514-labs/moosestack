@@ -1,0 +1,225 @@
+---
+title: Tutorial
+description: Step-by-step guide to migrating your dashboard to ClickHouse
+languages: ["typescript"]
+---
+
+import {
+  Callout,
+  CustomizePanel,
+  CustomizeGrid,
+  SelectField,
+  ConditionalContent,
+  CommunityCallout,
+} from "@/components/mdx";
+
+## Tutorial: Migrate Your Dashboard to ClickHouse
+
+This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices.
+
+Your source database (Postgres or SQL Server) remains your transactional system of record, and your application continues writing to it as usual. CDC (ClickPipes or Debezium) streams changes into ClickHouse in real time so dashboards can read from ClickHouse instead of competing with OLTP workloads.
+
+MooseStack is where you define your ClickHouse analytics layer **in code**. You’ll build views/materializations on top of the CDC-replicated raw tables and keep your existing dashboard APIs and request/response contracts the same—only the backing queries change.
+
+By the end of this guide you’ll have:
+
+1. A real-time replication pipeline feeding production ClickHouse from your source database.
+2. A MooseStack project that defines ClickHouse resources (views, materialized views, serving tables) on top of the CDC-replicated raw tables, plus the query/API handlers your dashboard will call.
+3. A local dev workflow for evolving those resources safely, and a Boreal-backed deploy workflow with preview environments + migration plans so you can validate changes before merging to `main`.
+
+<Callout
+  type="info"
+  title="Starting from scratch?"
+  href="/guides/chat-in-your-app"
+  ctaLabel="Get started"
+>
+  If you’re building a new dashboard or data-connected chat (not migrating an
+  existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app).
+</Callout>
+
+### Customize this tutorial
+
+<CustomizePanel
+  title="Where does your current data live?"
+  description="Select the database you use today so we can show the right way to replicate this data into ClickHouse"
+>
+  <CustomizeGrid columns={1}>
+    <SelectField
+      id="source-database"
+      label="Source database"
+      options={[
+        { value: "sqlserver", label: "SQL Server" },
+        { value: "postgres", label: "Postgres" },
+      ]}
+      defaultValue="postgres"
+      persist
+    />
+    <SelectField
+      id="os"
+      label="Operating System"
+      options={[
+        { value: "macos", label: "macOS or Linux" },
+        { value: "windows", label: "Windows (WSL 2)" },
+      ]}
+      defaultValue="macos"
+      persist
+    />
+    <SelectField
+      id="language"
+      label="Language"
+      options={[
+        { value: "typescript", label: "TypeScript" },
+      ]}
+      defaultValue="typescript"
+      persist
+    />
+  </CustomizeGrid>
+</CustomizePanel>
+
+You'll work through:
+
+<ConditionalContent whenId="source-database" whenValue="postgres">
+
+1. [Set up ClickHouse Cloud ClickPipes](#set-up-clickhouse-cloud-clickpipes-postgres-cdc) to replicate your Postgres tables into ClickHouse.
+2. [Add MooseStack to your repo](#add-moosestack-to-your-project) and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
+3. [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get preview environments and migration plans.
+4. [Migrate one dashboard component](#migrate-a-dashboard-component-to-clickhouse) using ClickHouse-native resources (views, materialized views, serving tables).
+5. [Go to production](#going-to-production) using the preview environment and reviewed migrations.
+</ConditionalContent>
+
+<ConditionalContent whenId="source-database" whenValue="sqlserver">
+1. [Add MooseStack to your repo](#add-moosestack-to-your-project) (you’ll define the Debezium ingest pipeline in this project).
+2. [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get preview environments and migration plans.
+3. [Prepare your local dev environment](#prepare-your-local-development-environment) to work with ClickHouse.
+4. [Set up Debezium CDC](#set-up-change-data-capture-cdc) to stream SQL Server changes into ClickHouse via your MooseStack ingest API.
+5. [Migrate one dashboard component](#migrate-a-dashboard-component-to-clickhouse) using ClickHouse-native resources (views, materialized views, serving tables).
+6. [Go to production](#going-to-production) using the preview environment and reviewed migrations.
+</ConditionalContent>
+
+<Callout type="info" title="AI-assisted Development">
+  We recommend using an AI copilot to accelerate the migration to handle complex
+  query translations. However, you can complete every step manually if you
+  prefer. Any AI-enabled editor (Claude Code, Cursor, Codex, Opencode, GitHub
+  Copilot, Windsurf, etc.) will work. Editors that support MCPs can make this
+  workflow even faster.
+</Callout>
+
+<CommunityCallout title="Want Python Examples?">
+This guide is written for TypeScript developers, but Python developers can follow along. The concepts translate directly, and MooseStack supports both languages. If you'd like Python-specific examples, let us know in our Slack community and we'll prioritize creating them.
+</CommunityCallout>
+
+<ConditionalContent whenId="source-database" whenValue="postgres">
+### Set up ClickHouse Cloud ClickPipes (Postgres CDC)
+
+ClickPipes is a managed service from ClickHouse Cloud that mirrors changes from Postgres into ClickHouse in real time. If you're already using ClickPipes and your replicated tables are present in ClickHouse, you can skip this step.
+
+Set up ClickPipes first so the replicated raw tables exist in ClickHouse:
+
+- [Create a new ClickHouse Cloud Account](https://auth.clickhouse.cloud/u/signup)
+- [Docs for Setting up ClickPipes CDC with Postgres](https://clickhouse.com/docs/cloud/reference/billing/clickpipes/postgres-cdc)
+
+<Callout type="info" title="ClickPipes owns the raw tables">
+ClickPipes creates and manages the replicated raw tables in ClickHouse. MooseStack reads from those tables and creates its own ClickHouse resources (views, materialized views, serving tables) alongside them. MooseStack does not rewrite or migrate ClickPipes-owned tables.
+
+In MooseStack, you’ll treat ClickPipes tables as **externally managed**. See [External Tables](/moosestack/olap/external-tables).
+
+</Callout>
+
+<CommunityCallout type="info" title="Not using ClickPipes?">
+  If your CDC provider lands tables in ClickHouse (for example, Debezium,
+  Supabase Live, or a custom pipeline), you can follow the same workflow: pull
+  the table schemas into code as external models, then build ClickHouse-native
+  views/materializations on top. If you want help mapping your setup to
+  MooseStack, join the [MooseStack
+  community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg).
+</CommunityCallout>
+
+Once your ClickPipes pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project**](#add-moosestack-to-your-project). In that step, you’ll initialize `moosestack/` and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
+
+</ConditionalContent>
+
+:::include /shared/guides/performant-dashboards/add-moosestack-to-your-project.mdx
+
+:::include /shared/guides/performant-dashboards/deploy-your-moosestack-project-to-boreal.mdx
+
+:::include /shared/guides/performant-dashboards/prepare-your-local-development-environment.mdx
+
+:::include /shared/guides/performant-dashboards/set-up-change-data-capture-cdc.mdx
+
+### Migrate a dashboard component to ClickHouse
+
+In this section, you'll take an existing dashboard component that's currently served by an OLTP-backed API endpoint and switch it to an OLAP-backed implementation (ClickHouse + MooseStack). Concretely, you'll update the existing backend handler so it reads from the ClickHouse tables you've just built, instead of querying your OLTP database.
+
+The rest of your application stays the same: routing, auth, request/response contracts, and frontend behavior. For each component you migrate, you'll add a small function in your MooseStack project that builds and runs the ClickHouse query, importing your `OlapTable` objects so column access is type-safe. Then you'll repoint the existing API handler to call that new OLAP function in place of the original OLTP query logic.
+
+This guide follows a three-phase migration pattern:
+
+1. **Parity (raw translation)**: Do a direct, SQL-for-SQL translation of your OLTP logic into ClickHouse so the endpoint returns the same result as the original OLTP endpoint. The goal here is correctness, not perfect OLAP code.
+2. **Precompute (make it OLAP-native)**: Refactor that raw query by shifting joins and upfront transformations to Materialized Views and prepared tables. This makes reads cheaper and the model easier to extend.
+3. **Serve (semantic/query layer)**: Layer a query/semantic model over those prepared tables so defining dashboard metrics, group-bys, filters, and other controls becomes clean, reusable, and maintainable, so you don't have to rewrite raw dynamic SQL in every handler.
+
+#### (Recommended) Build a copilot context pack
+
+Copy the starter kit to create a dedicated workspace to compile all the context your copilot needs to migrate each component. It includes a template for a `context-map.md` file (a worksheet that tracks the location of relevant files in your codebase for each component) and a full example to help your copilot complete each phase of the migration.
+
+```bash
+pnpm dlx tiged 514-labs/moosestack/examples/dashboard-migration moosestack/context
+```
+
+As you complete each phase of this guide, you will attach the required input files in your initial prompt to your copilot. From there, the copilot will update the workspace files as it completes the steps in this guide. 
+
+Pick a specific dashboard component or report to migrate. You'll work through one component at a time.
+
+<GuideStepper id="performant-dashboards-migration" persist>
+  <GuideStepper.Step
+    id="phase-1"
+    number={1}
+    title="Parity translation (OLTP → ClickHouse parity function)"
+    summary="Translate your existing endpoint logic directly to ClickHouse and prove output parity."
+  >
+    <GuideStepper.AtAGlance title="Attach context files to your prompt">
+      - `moosestack/context/dashboard-migration/<component>/` — the context directory for this component
+      - The API specification for the endpoint
+      - Your existing backend endpoint handler (e.g. Express route, Fastify handler) that serves the dashboard data
+      - The OLTP query file(s) that the handler calls (e.g. SQL builder, ORM query, raw query function)
+    </GuideStepper.AtAGlance>
+
+    :::include /shared/guides/performant-dashboards/phase-1-checkpoints.mdx
+
+  </GuideStepper.Step>
+
+  <GuideStepper.Step
+    id="phase-2"
+    number={2}
+    title="Performance optimization (Materialized Views)"
+    summary="Move expensive read-time logic into serving tables and materialized views."
+  >
+    <GuideStepper.AtAGlance title="Attach context files to your prompt">
+      - `moosestack/context/dashboard-migration/<component>/` — the context directory (context map, test cases from Phase 1)
+      - The unoptimized parity query from Phase 1 (e.g. `moosestack/app/queries/<component>-olap-translation.ts`)
+      - The MooseStack source table model files referenced in the parity query (e.g. `moosestack/app/models/*.ts`)
+    </GuideStepper.AtAGlance>
+
+    :::include /shared/guides/performant-dashboards/phase-2-checkpoints.mdx
+
+  </GuideStepper.Step>
+
+  <GuideStepper.Step
+    id="phase-3"
+    number={3}
+    title="Serve the materialized view to your frontend"
+    summary="Expose the serving table via Query Layer and preserve the existing API contract."
+  >
+    <GuideStepper.AtAGlance title="Attach context files to your prompt">
+      - `moosestack/context/dashboard-migration/<component>/` — the context directory (test cases, context map)
+      - `moosestack/app/models/<ServingTable>-mv.ts` — the serving table and MV file from Phase 2
+      - Your existing backend endpoint handler that currently calls the OLTP or parity query (e.g. Express route, Fastify handler)
+      - `moosestack/query-layer/` — the Query Layer source copied in the step above
+    </GuideStepper.AtAGlance>
+
+    :::include /shared/guides/performant-dashboards/phase-3-checkpoints.mdx
+
+  </GuideStepper.Step>
+</GuideStepper>
+
+:::include /shared/guides/performant-dashboards/going-to-production.mdx
