@@ -4,7 +4,7 @@ import { Suspense, createContext, useContext, ReactNode } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { usePersistedState } from "./use-persisted-state";
+import { usePersistedState, type PersistOptions } from "./use-persisted-state";
 
 interface CheckboxOption {
   value: string;
@@ -19,8 +19,8 @@ interface CheckboxGroupProps {
   label: string;
   /** Available checkbox options */
   options: CheckboxOption[];
-  /** Whether to persist selections to localStorage */
-  persist?: boolean;
+  /** Persistence options: boolean (backwards compat) or PersistOptions object */
+  persist?: boolean | PersistOptions;
   /** Additional CSS classes */
   className?: string;
   /** Optional conditional content that shows based on selections */
