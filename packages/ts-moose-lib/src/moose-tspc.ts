@@ -269,9 +269,10 @@ function runWatchCompilation(moduleSystem: ModuleSystem): void {
       errorCount = 0;
       warningCount = 0;
       emitEvent({ event: "compile_start" });
-    } else if (/^Found\s+(\d+)\s+error(?:s)?\b/.test(line)) {
+    } else if (/(?:^|\]\s*)Found\s+(\d+)\s+error(?:s)?\b/.test(line)) {
       // Compilation complete - parse error count from tsc summary line only
-      const match = line.match(/^Found\s+(\d+)\s+error(?:s)?\b/);
+      // The regex handles optional tsc watch-mode timestamp prefix like "[12:00:00 AM] Found 0 errors."
+      const match = line.match(/(?:^|\]\s*)Found\s+(\d+)\s+error(?:s)?\b/);
       if (match) {
         errorCount = parseInt(match[1], 10);
       }

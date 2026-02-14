@@ -493,17 +493,17 @@ async fn watch(
                                                             let mut infra_ptr =
                                                                 infrastructure_map.write().await;
                                                             *infra_ptr = plan_result.target_infra_map;
+                                                            Ok(())
                                                         }
                                                         Err(e) => {
-                                                            return Err(e.into());
+                                                            Err(e.into())
                                                         }
                                                     }
                                                 }
                                                 Err(e) => {
-                                                    return Err(e.into());
+                                                    Err(e.into())
                                                 }
                                             }
-                                            Ok(())
                                         },
                                         {
                                             use crate::utilities::constants::SHOW_TIMING;
