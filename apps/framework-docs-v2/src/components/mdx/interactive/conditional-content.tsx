@@ -3,11 +3,11 @@
 import { Suspense, ReactNode, useState, useEffect } from "react";
 import {
   INTERACTIVE_STATE_CHANGE_EVENT,
+  STORAGE_KEY_PREFIX_PAGE,
+  STORAGE_KEY_PREFIX_GLOBAL,
   type InteractiveStateChangeDetail,
 } from "./use-persisted-state";
 import { getSetting, GuideSettings } from "@/lib/guide-settings";
-
-const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 
 interface ConditionalContentProps {
   /** ID of the SelectField or CheckboxGroup to watch */
@@ -33,10 +33,12 @@ function ConditionalContentInner({
     null,
   );
 
+  // Check both page and global storage keys
+  const pageStorageKey = `${STORAGE_KEY_PREFIX_PAGE}-${whenId}`;
+  const globalStorageKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${whenId}`;
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    const storageKey = `${STORAGE_KEY_PREFIX}-${whenId}`;
 
     const readStoredValue = () => {
       try {
@@ -47,8 +49,10 @@ function ConditionalContentInner({
           return;
         }
 
-        // Priority 2: Check local storage (for per-page settings)
-        const stored = localStorage.getItem(storageKey);
+        // Priority 2: Check local storage (both page and global)
+        const stored =
+          localStorage.getItem(pageStorageKey) ||
+          localStorage.getItem(globalStorageKey);
         if (stored !== null) {
           const value = JSON.parse(stored);
           setCurrentValue(value);
@@ -61,9 +65,9 @@ function ConditionalContentInner({
     // Initial read
     readStoredValue();
 
-    // Listen for storage changes from other tabs
+    // Listen for storage changes from other tabs (both page and global keys)
     const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === storageKey) {
+      if (event.key === pageStorageKey || event.key === globalStorageKey) {
         // Reset to null if key was removed, otherwise read the new value
         if (event.newValue === null) {
           setCurrentValue(null);
@@ -75,34 +79,29 @@ function ConditionalContentInner({
 
     window.addEventListener("storage", handleStorageChange);
 
-    // Listen for same-page state changes via custom event
+    // Listen for same-page state changes via custom event (matches either key)
     const handleStateChange = (event: Event) => {
       const customEvent = event as CustomEvent<InteractiveStateChangeDetail>;
-      if (customEvent.detail?.key === storageKey) {
+      if (
+        customEvent.detail?.key === pageStorageKey ||
+        customEvent.detail?.key === globalStorageKey
+      ) {
         setCurrentValue(customEvent.detail.value as string | string[] | null);
       }
     };
 
     window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
 
-    // Listen for global guide settings changes
-    const handleGlobalSettingsChange = (event: StorageEvent) => {
-      if (event.key === "moose-docs-guide-settings") {
-        readStoredValue();
-      }
-    };
-
-    window.addEventListener("storage", handleGlobalSettingsChange);
+    // Note: handleStorageChange now covers both page and global storage
 
     return () => {
       window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("storage", handleGlobalSettingsChange);
       window.removeEventListener(
         INTERACTIVE_STATE_CHANGE_EVENT,
         handleStateChange,
       );
     };
-  }, [whenId]);
+  }, [whenId, pageStorageKey, globalStorageKey]);
 
   // Determine if content should be visible
   const isVisible = (() => {

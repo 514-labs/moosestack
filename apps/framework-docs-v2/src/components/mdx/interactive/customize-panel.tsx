@@ -3,6 +3,10 @@
 import React, { ReactNode, useState, useEffect } from "react";
 import { FullPageCustomizer } from "./full-page-customizer";
 import { SettingsSummary } from "./settings-summary";
+import {
+  STORAGE_KEY_PREFIX_PAGE,
+  STORAGE_KEY_PREFIX_GLOBAL,
+} from "./use-persisted-state";
 
 interface CustomizePanelProps {
   /** Panel title (default: "Customize this tutorial") */
@@ -21,6 +25,10 @@ interface CustomizePanelProps {
 
 /**
  * Get current selections from URL params or localStorage
+ * Batch-read multiple fields at once for checking if wizard should show
+ *
+ * Note: Uses same storage pattern as usePersistedState for consistency.
+ * Checks both page-level and global storage.
  */
 function getSelections(fieldIds: string[]): Record<string, string> | null {
   if (typeof window === "undefined") return null;
@@ -45,9 +53,13 @@ function getSelections(fieldIds: string[]): Record<string, string> | null {
       continue;
     }
 
-    // Fall back to localStorage
+    // Fall back to localStorage - check both page and global storage
     try {
-      const stored = localStorage.getItem(`moose-docs-interactive-${fieldId}`);
+      const pageKey = `${STORAGE_KEY_PREFIX_PAGE}-${fieldId}`;
+      const globalKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${fieldId}`;
+
+      const stored =
+        localStorage.getItem(pageKey) || localStorage.getItem(globalKey);
       if (stored) {
         selections[fieldId] = JSON.parse(stored);
         hasAny = true;
@@ -94,15 +106,19 @@ export function CustomizePanel({
   );
   const [isClient, setIsClient] = useState(false);
 
+  // Stabilize fieldIds to avoid unnecessary re-runs when array reference changes
+  const fieldIdsKey = fieldIds?.join(",") || "";
+
   // Check for existing selections on mount
   useEffect(() => {
     setIsClient(true);
-    if (fieldIds.length > 0) {
+    if (fieldIds && fieldIds.length > 0) {
       const existingSelections = getSelections(fieldIds);
       setSelections(existingSelections);
       setShowCustomizer(!existingSelections); // Show customizer if no selections
     }
-  }, [fieldIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fieldIdsKey]); // Depend on stringified version, not array reference
 
   // SSR/initial render - show nothing to avoid hydration mismatch
   if (!isClient) {
@@ -122,8 +138,16 @@ export function CustomizePanel({
           setShowCustomizer(false);
         }}
         onClose={() => {
-          // Dismiss customizer without saving
-          setShowCustomizer(false);
+          // Dismiss customizer - check selections to avoid empty state
+          const currentSelections = getSelections(fieldIds);
+          if (currentSelections) {
+            setSelections(currentSelections);
+            setShowCustomizer(false);
+          } else {
+            // If no selections exist, keep customizer open (user must configure)
+            // Alternatively, could set some defaults here
+            setShowCustomizer(true);
+          }
         }}
         canContinue={true} // Allow continue even if not all fields set (user can use defaults)
       >
