@@ -160,45 +160,6 @@ async fn maybe_warmup_connections(project: &Project, redis_client: &Arc<RedisCli
     }
 }
 
-/// Runs the initial TypeScript compilation using moose-tspc.
-/// This is called before plan_changes in dev mode to ensure compiled artifacts
-/// exist for the dmv2-serializer.
-///
-/// Respects user's tsconfig.json outDir if specified, otherwise uses .moose/compiled
-pub fn run_initial_typescript_compilation(project: &Project) -> Result<(), String> {
-    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
-    let bin_path = format!(
-        "{}/node_modules/.bin:{}",
-        project.project_location.display(),
-        path
-    );
-
-    // Don't pass outDir - let moose-tspc read from tsconfig or use default
-    // Call moose-tspc directly (bin from @514labs/moose-lib) instead of npx
-    // since npx would try to find a standalone package named "moose-tspc"
-    let output = std::process::Command::new("moose-tspc")
-        .current_dir(&project.project_location)
-        .env("MOOSE_SOURCE_DIR", &project.source_dir)
-        .env("PATH", bin_path)
-        .output()
-        .map_err(|e| format!("Failed to run moose-tspc: {}", e))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Check if output was generated despite errors (noEmitOnError: false)
-        let compiled_index = get_compiled_index_path(project);
-        if compiled_index.exists() {
-            // Compilation succeeded with warnings
-            debug!("TypeScript compiled with warnings: {}", stderr);
-            Ok(())
-        } else {
-            Err(format!("TypeScript compilation failed: {}", stderr))
-        }
-    }
-}
-
 pub mod auth;
 pub mod build;
 pub mod clean;
@@ -537,28 +498,18 @@ pub async fn start_development_mode(
 
     let webapp_update_channel = web_server.spawn_webapp_update_listener(web_apps).await;
 
-    // For TypeScript projects, run initial compilation before planning
-    // This ensures dmv2-serializer can use compiled output instead of ts-node
-    if project.language == SupportedLanguages::Typescript {
-        display::show_message_wrapper(
-            MessageType::Info,
-            Message {
-                action: "Compiling".to_string(),
-                details: "TypeScript...".to_string(),
-            },
-        );
-
-        let compile_result = run_initial_typescript_compilation(&project);
-        match compile_result {
-            Ok(()) => {
-                display::show_message_wrapper(
-                    MessageType::Success,
-                    Message {
-                        action: "Compiled".to_string(),
-                        details: "TypeScript successfully".to_string(),
-                    },
-                );
-            }
+    // For TypeScript projects, spawn tspc --watch early and wait for initial compilation.
+    // This serves dual purpose:
+    // 1. Compiles TypeScript so dmv2-serializer can use compiled output
+    // 2. Starts the watch process that will be used for incremental compilation
+    //
+    // The handle is stored and passed to TsCompilationWatcher::start() later.
+    // This avoids running tspc twice (one-off + watch) and prevents the bug where
+    // the watcher's initial compile_complete would trigger a duplicate plan_changes.
+    let ts_compile_handle = if project.language == SupportedLanguages::Typescript {
+        use crate::cli::ts_compilation_watcher::spawn_and_await_initial_compile;
+        match spawn_and_await_initial_compile(&project) {
+            Ok(handle) => Some(handle),
             Err(e) => {
                 // Log warning but continue - ts-node fallback will be used
                 warn!("Initial TypeScript compilation failed: {}", e);
@@ -570,9 +521,12 @@ pub async fn start_development_mode(
                             .to_string(),
                     },
                 );
+                None
             }
         }
-    }
+    } else {
+        None
+    };
 
     // Create state storage once based on project configuration
     let state_storage = StateStorageBuilder::from_config(&project)
@@ -785,6 +739,9 @@ pub async fn start_development_mode(
     let state_storage = Arc::new(state_storage);
     match project.language {
         SupportedLanguages::Typescript => {
+            // Pass the handle from spawn_and_await_initial_compile() if we have one.
+            // This continues watching the already-running tspc process instead of
+            // spawning a new one, and ensures we don't trigger duplicate plan_changes.
             let ts_watcher = TsCompilationWatcher::new();
             ts_watcher.start(
                 project.clone(),
@@ -797,6 +754,7 @@ pub async fn start_development_mode(
                 settings.clone(),
                 processing_coordinator.clone(),
                 watcher_shutdown_rx,
+                ts_compile_handle,
             )?;
         }
         SupportedLanguages::Python => {

@@ -237,19 +237,6 @@ describe("typescript template tests - migration", () => {
 
       testLogger.info("\n--- Testing drift detection ---");
 
-      // IMPORTANT: Stop outer moose dev before this test to prevent interference.
-      // The outer dev and inner app share the same _MOOSE_STATE table, which causes
-      // the outer dev to drop tables when it syncs (since it has no models defined).
-      // The Docker containers (ClickHouse, etc.) will keep running.
-      testLogger.info("Stopping outer moose dev to prevent state conflicts...");
-      if (outerMooseProcess && !outerMooseProcess.killed) {
-        outerMooseProcess.kill("SIGTERM");
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        testLogger.info(
-          "✓ Outer moose dev stopped (Docker containers still running)",
-        );
-      }
-
       // First, ensure tables exist by generating and applying initial migration
       // (This makes the test self-contained and not dependent on previous tests)
       testLogger.info("Setting up initial state...");

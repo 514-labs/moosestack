@@ -12,9 +12,18 @@
 /// - `{"event": "compile_complete", "errors": 0, "warnings": 2}` - Successful compilation
 /// - `{"event": "compile_error", "errors": 3, "diagnostics": [...]}` - Compilation failed
 ///
+/// ## Usage Pattern:
+/// 1. Call `spawn_and_await_initial_compile()` to start tspc and wait for initial compilation
+/// 2. After initial compilation succeeds, call `plan_changes()` in the main flow
+/// 3. Call `start()` to begin background watching for subsequent changes
+///
+/// This pattern ensures only ONE `plan_changes` call for initial startup (avoiding the bug
+/// where a redundant plan_changes in the watcher could drop tables created by other processes).
+///
 /// ## Main Components:
 /// - `TsCompilationWatcher`: The main struct that initializes and starts the compilation watching process
 /// - `CompileEvent`: JSON structure for parsing compilation events
+/// - `InitialCompileHandle`: Handle returned by initial compilation, passed to start()
 use crate::framework;
 use crate::framework::core::infrastructure_map::{ApiChange, InfrastructureMap};
 use display::with_timing_async;
@@ -40,6 +49,19 @@ use crate::project::Project;
 pub enum TsCompilationWatcherError {
     #[error("Failed to spawn tspc process: {0}")]
     SpawnError(std::io::Error),
+    #[error("Initial compilation failed: {0}")]
+    InitialCompilationFailed(String),
+    #[error("Failed to read from tspc process: {0}")]
+    ReadError(String),
+}
+
+/// Handle returned by `spawn_and_await_initial_compile()`.
+/// Contains the running tspc process and event channel for continued watching.
+pub struct InitialCompileHandle {
+    /// The running moose-tspc --watch child process
+    pub child: Child,
+    /// Channel receiver for tspc stdout lines (for background watching)
+    pub line_rx: tokio::sync::mpsc::Receiver<String>,
 }
 
 /// JSON event structure from moose-tspc --watch
@@ -96,6 +118,113 @@ fn spawn_tspc_watch(project: &Project) -> Result<Child, TsCompilationWatcherErro
         .map_err(TsCompilationWatcherError::SpawnError)
 }
 
+/// Spawns `moose-tspc --watch` and waits for the initial compilation to complete.
+///
+/// This function blocks until the first `compile_complete` event is received,
+/// then returns a handle that can be passed to `TsCompilationWatcher::start()`
+/// for continued background watching.
+///
+/// The caller should call `plan_changes()` after this returns successfully,
+/// then call `start()` to begin background watching.
+pub fn spawn_and_await_initial_compile(
+    project: &Project,
+) -> Result<InitialCompileHandle, TsCompilationWatcherError> {
+    debug!(
+        "Spawning moose-tspc --watch for initial compilation: {:?}",
+        project.app_dir().display()
+    );
+
+    show_message!(MessageType::Info, {
+        Message {
+            action: "Compiling".to_string(),
+            details: "TypeScript...".to_string(),
+        }
+    });
+
+    // Spawn tspc --watch process
+    let mut child = spawn_tspc_watch(project)?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| TsCompilationWatcherError::ReadError("Failed to capture stdout".into()))?;
+
+    // Read stderr in a separate thread to avoid blocking
+    let stderr = child.stderr.take();
+    if let Some(stderr) = stderr {
+        let stderr_reader = BufReader::new(stderr);
+        std::thread::spawn(move || {
+            for line in stderr_reader.lines().map_while(Result::ok) {
+                if !line.trim().is_empty() {
+                    debug!("[tspc stderr] {}", line);
+                }
+            }
+        });
+    }
+
+    // Create a channel for stdout lines
+    let (line_tx, mut line_rx) = tokio::sync::mpsc::channel::<String>(100);
+
+    // Spawn a thread to read stdout lines and send them through the channel
+    let reader = BufReader::new(stdout);
+    std::thread::spawn(move || {
+        for line in reader.lines() {
+            match line {
+                Ok(line) => {
+                    if line_tx.blocking_send(line).is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Error reading from tspc stdout: {}", e);
+                    break;
+                }
+            }
+        }
+    });
+
+    // Wait for initial compile_complete event (blocking)
+    loop {
+        // Use blocking_recv since we're in a sync context
+        match line_rx.blocking_recv() {
+            Some(line) => {
+                if line.trim().is_empty() {
+                    continue;
+                }
+
+                debug!("[tspc initial] {}", line);
+
+                match serde_json::from_str::<CompileEvent>(&line) {
+                    Ok(event) => {
+                        if event.is_compile_start() {
+                            // Initial compilation starting, continue waiting
+                            continue;
+                        } else if event.is_compile_error() {
+                            display_compilation_errors(&event);
+                            return Err(TsCompilationWatcherError::InitialCompilationFailed(
+                                format!("{} error(s)", event.errors),
+                            ));
+                        } else if event.is_compile_complete() {
+                            display_compilation_success(&event);
+                            // Initial compilation done! Return handle for continued watching.
+                            return Ok(InitialCompileHandle { child, line_rx });
+                        }
+                    }
+                    Err(_) => {
+                        // Not JSON, might be diagnostic output
+                        debug!("[tspc] non-JSON output: {}", line);
+                    }
+                }
+            }
+            None => {
+                return Err(TsCompilationWatcherError::ReadError(
+                    "tspc process closed stdout before initial compilation completed".into(),
+                ));
+            }
+        }
+    }
+}
+
 /// Display compilation errors to the user
 fn display_compilation_errors(event: &CompileEvent) {
     show_message!(MessageType::Error, {
@@ -135,6 +264,10 @@ fn display_compilation_success(event: &CompileEvent) {
 ///
 /// This function runs in a loop, parsing JSON events from tspc and triggering
 /// infrastructure planning when compilation completes successfully.
+///
+/// If `initial_handle` is provided, uses the existing tspc process from
+/// `spawn_and_await_initial_compile()` and skips initial compilation handling.
+/// Otherwise, spawns a new tspc process and handles initial compilation.
 #[allow(clippy::too_many_arguments)]
 async fn watch(
     project: Arc<Project>,
@@ -149,59 +282,73 @@ async fn watch(
     settings: Settings,
     processing_coordinator: ProcessingCoordinator,
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+    initial_handle: Option<InitialCompileHandle>,
 ) -> Result<(), anyhow::Error> {
     debug!(
         "Starting TypeScript compilation watcher for project: {:?}",
         project.app_dir().display()
     );
 
-    // Spawn tspc --watch process
-    let mut child = spawn_tspc_watch(&project)?;
+    // If we received an initial_handle, initial compilation was already done
+    // by spawn_and_await_initial_compile(), so we start watching for changes only.
+    let initial_compilation_done = initial_handle.is_some();
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| anyhow::anyhow!("Failed to capture stdout from tspc"))?;
+    // Either use the provided handle from spawn_and_await_initial_compile,
+    // or spawn a new tspc process
+    let mut line_rx = if let Some(handle) = initial_handle {
+        // Initial compilation already done, use the existing channel
+        // We hold onto the child process handle implicitly (it's moved into the handle)
+        // The process keeps running as long as we read from line_rx
+        let InitialCompileHandle {
+            child: _child,
+            line_rx,
+        } = handle;
+        line_rx
+    } else {
+        // Spawn tspc --watch process fresh
+        let mut child = spawn_tspc_watch(&project)?;
 
-    // We'll read stderr in a separate thread to avoid blocking
-    let stderr = child.stderr.take();
-    if let Some(stderr) = stderr {
-        let stderr_reader = BufReader::new(stderr);
-        std::thread::spawn(move || {
-            for line in stderr_reader.lines().map_while(Result::ok) {
-                if !line.trim().is_empty() {
-                    // Forward stderr for debugging
-                    debug!("[tspc stderr] {}", line);
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to capture stdout from tspc"))?;
+
+        // We'll read stderr in a separate thread to avoid blocking
+        let stderr = child.stderr.take();
+        if let Some(stderr) = stderr {
+            let stderr_reader = BufReader::new(stderr);
+            std::thread::spawn(move || {
+                for line in stderr_reader.lines().map_while(Result::ok) {
+                    if !line.trim().is_empty() {
+                        debug!("[tspc stderr] {}", line);
+                    }
                 }
-            }
-        });
-    }
+            });
+        }
 
-    // Create a channel for stdout lines
-    // Use a standard mpsc channel since we're reading from a blocking thread
-    let (line_tx, mut line_rx) = tokio::sync::mpsc::channel::<String>(100);
+        // Create a channel for stdout lines
+        let (line_tx, line_rx) = tokio::sync::mpsc::channel::<String>(100);
 
-    // Spawn a thread to read stdout lines and send them through the channel
-    let reader = BufReader::new(stdout);
-    std::thread::spawn(move || {
-        for line in reader.lines() {
-            match line {
-                Ok(line) => {
-                    if line_tx.blocking_send(line).is_err() {
-                        // Channel closed, stop reading
+        // Spawn a thread to read stdout lines and send them through the channel
+        let reader = BufReader::new(stdout);
+        std::thread::spawn(move || {
+            for line in reader.lines() {
+                match line {
+                    Ok(line) => {
+                        if line_tx.blocking_send(line).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Error reading from tspc stdout: {}", e);
                         break;
                     }
                 }
-                Err(e) => {
-                    error!("Error reading from tspc stdout: {}", e);
-                    break;
-                }
             }
-        }
-    });
+        });
 
-    // Track if this is the first compilation (initial startup)
-    let mut is_initial_compilation = true;
+        line_rx
+    };
 
     show_message!(MessageType::Info, {
         Message {
@@ -212,6 +359,10 @@ async fn watch(
             ),
         }
     });
+
+    // Track if we've seen the first compilation in this watcher session.
+    // If initial_compilation_done is true, we start as "already seen first".
+    let mut seen_first_compile = initial_compilation_done;
 
     loop {
         tokio::select! {
@@ -234,7 +385,9 @@ async fn watch(
                         match serde_json::from_str::<CompileEvent>(&line) {
                             Ok(event) => {
                                 if event.is_compile_start() {
-                                    if !is_initial_compilation {
+                                    // Always show "Compiling" for incremental builds
+                                    // (we skip it during initial startup which is handled separately)
+                                    if seen_first_compile {
                                         show_message!(MessageType::Info, {
                                             Message {
                                                 action: "Compiling".to_string(),
@@ -244,12 +397,29 @@ async fn watch(
                                     }
                                 } else if event.is_compile_error() {
                                     display_compilation_errors(&event);
-                                    // Don't trigger infrastructure changes on error
-                                    is_initial_compilation = false;
+                                    // Mark that we've seen the first compile event
+                                    seen_first_compile = true;
                                 } else if event.is_compile_complete() {
+                                    // Skip processing for the very first compile_complete if we spawned
+                                    // tspc fresh (initial_compilation_done was false). In that case,
+                                    // start_development_mode already called plan_changes() after the
+                                    // initial compilation, so we don't want to trigger a duplicate.
+                                    //
+                                    // If initial_compilation_done was true (handle passed in),
+                                    // spawn_and_await_initial_compile() consumed the initial event,
+                                    // so ALL events here are incremental and should trigger plan_changes.
+                                    if !seen_first_compile {
+                                        // This is the first compile_complete in legacy mode.
+                                        // Display success but DON'T trigger plan_changes.
+                                        display_compilation_success(&event);
+                                        seen_first_compile = true;
+                                        continue;
+                                    }
+
+                                    // Show success message for incremental builds
                                     display_compilation_success(&event);
 
-                                    // Trigger infrastructure planning
+                                    // Trigger infrastructure planning for incremental changes
                                     let _processing_guard =
                                         processing_coordinator.begin_processing().await;
 
@@ -376,8 +546,6 @@ async fn watch(
                                             });
                                         }
                                     }
-
-                                    is_initial_compilation = false;
                                 }
                             }
                             Err(_) => {
@@ -397,9 +565,9 @@ async fn watch(
         }
     }
 
-    // Clean up the child process
-    let _ = child.kill();
-    let _ = child.wait();
+    // Note: The child process is cleaned up automatically when InitialCompileHandle
+    // (which owns _child) is dropped, or when the reader thread ends.
+    // We don't need explicit cleanup here.
 
     Ok(())
 }
@@ -408,6 +576,15 @@ async fn watch(
 ///
 /// This struct provides the main interface for starting the TypeScript compilation watching process.
 /// It should be used instead of FileWatcher for TypeScript projects to enable incremental compilation.
+///
+/// ## Recommended Usage Pattern
+///
+/// For best results, use the two-phase initialization:
+/// 1. Call `spawn_and_await_initial_compile()` early to start tspc and wait for initial compilation
+/// 2. After initial compilation succeeds, call `plan_changes()` in the main flow
+/// 3. Call `start()` with the returned handle to begin background watching
+///
+/// This ensures only ONE `plan_changes` call for initial startup.
 pub struct TsCompilationWatcher;
 
 impl TsCompilationWatcher {
@@ -418,8 +595,8 @@ impl TsCompilationWatcher {
 
     /// Starts the TypeScript compilation watching process.
     ///
-    /// This method spawns `tspc --watch` and monitors its output for compilation events.
-    /// When compilation completes successfully, it triggers infrastructure planning and execution.
+    /// This method monitors tspc output for compilation events and triggers
+    /// infrastructure planning and execution when compilation completes.
     ///
     /// # Arguments
     /// * `project` - The project configuration
@@ -432,6 +609,9 @@ impl TsCompilationWatcher {
     /// * `settings` - CLI settings configuration
     /// * `processing_coordinator` - Coordinator for synchronizing with MCP tools
     /// * `shutdown_rx` - Receiver to listen for shutdown signal
+    /// * `initial_handle` - Optional handle from `spawn_and_await_initial_compile()`.
+    ///   If provided, continues watching the already-running tspc process.
+    ///   If None, spawns a new tspc process (legacy behavior).
     #[allow(clippy::too_many_arguments)]
     pub fn start(
         &self,
@@ -447,6 +627,7 @@ impl TsCompilationWatcher {
         settings: Settings,
         processing_coordinator: ProcessingCoordinator,
         shutdown_rx: tokio::sync::watch::Receiver<bool>,
+        initial_handle: Option<InitialCompileHandle>,
     ) -> Result<(), std::io::Error> {
         // Move everything into the spawned task
         let watch_task = async move {
@@ -461,6 +642,7 @@ impl TsCompilationWatcher {
                 settings,
                 processing_coordinator,
                 shutdown_rx,
+                initial_handle,
             )
             .await
         };
