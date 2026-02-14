@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { IconSettings } from "@tabler/icons-react";
@@ -23,8 +24,14 @@ const FIELD_LABELS: Record<string, string> = {
  * Always visible across all guide pages once configured.
  */
 export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
+  const pathname = usePathname();
   const { settings, isConfigured, showCustomizer, setShowCustomizer } =
     useGuideSettings();
+
+  // Don't show panel on guides index page
+  if (pathname === "/guides") {
+    return null;
+  }
 
   // Show customizer modal on first visit
   if (showCustomizer) {
