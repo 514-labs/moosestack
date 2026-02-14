@@ -667,6 +667,81 @@ jobs:
           build-args: |
             FRAMEWORK_VERSION=${{ needs.version.outputs.version }}
 
+  build-template-docker-images:
+    name: Build Template Docker Image (${{ matrix.template }})
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    if: ${{ !inputs.dry-run }}
+    needs:
+      - version
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - typescript
+          - typescript-tests
+          - typescript-empty
+          - typescript-fastify
+          - typescript-express
+          - typescript-cluster
+          - typescript-mcp
+          - typescript-migrate-test
+          - next-app-empty
+          - github-dev-trends
+          - brainwaves
+          - ads-b
+          - ads-b-frontend
+          - python
+          - python-tests
+          - python-empty
+          - python-fastapi
+          - python-fastapi-client-only
+          - python-experimental
+          - python-cluster
+          - live-heartrate-leaderboard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Moose CLI
+        run: npm install -g @514labs/moose-cli@latest
+
+      - name: Init template
+        run: |
+          cd /tmp
+          moose init test-app ${{ matrix.template }}
+
+      - name: Build Docker image
+        run: |
+          cd /tmp/test-app
+          moose build --docker --amd64
+
+      - name: Auth with GCP
+        uses: "google-github-actions/auth@v2"
+        with:
+          service_account: "github-actions@extended-ward-415018.iam.gserviceaccount.com"
+          workload_identity_provider: "projects/167275965848/locations/global/workloadIdentityPools/github/providers/github-actions-repos"
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Tag and push Docker image
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          DOCKER_REPO="us-central1-docker.pkg.dev/moose-hosting-node/moose-templates"
+          docker tag moose-df-deployment-x86_64-unknown-linux-gnu:latest "$DOCKER_REPO/${{ matrix.template }}:$VERSION"
+          docker push "$DOCKER_REPO/${{ matrix.template }}:$VERSION"
+
   notify-slack-on-failure:
     needs:
       [
@@ -677,6 +752,7 @@ jobs:
         release-python,
         publish-npm-base,
         build-and-publish-fullstack-image,
+        build-template-docker-images,
       ]
     runs-on: ubuntu-latest
     # Add explicit permissions
