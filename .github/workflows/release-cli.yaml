@@ -667,6 +667,128 @@ jobs:
           build-args: |
             FRAMEWORK_VERSION=${{ needs.version.outputs.version }}
 
+  build-template-docker-images:
+    name: Build Template Docker Image (${{ matrix.template }})
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    if: ${{ !inputs.dry-run }}
+    needs:
+      - version
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        template:
+          - typescript
+          - typescript-tests
+          - typescript-empty
+          - typescript-fastify
+          - typescript-express
+          - typescript-cluster
+          - typescript-mcp
+          - typescript-migrate-test
+          - next-app-empty
+          - github-dev-trends
+          - brainwaves
+          - ads-b
+          - ads-b-frontend
+          - python
+          - python-tests
+          - python-empty
+          - python-fastapi
+          - python-fastapi-client-only
+          - python-experimental
+          - python-cluster
+          - live-heartrate-leaderboard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Moose CLI
+        run: |
+          TEMPLATE="${{ matrix.template }}"
+
+          # Detect the CLI version the template expects
+          # Check package.json (TypeScript) then requirements.txt (Python)
+          CLI_VERSION=""
+          for pkg in $(find templates/$TEMPLATE -name "package.json" -not -path "*/node_modules/*"); do
+            CLI_VERSION=$(python3 -c "import json; print(json.load(open('$pkg')).get('devDependencies',{}).get('@514labs/moose-cli',''))" 2>/dev/null)
+            if [ -n "$CLI_VERSION" ]; then break; fi
+          done
+
+          if [ -z "$CLI_VERSION" ]; then
+            CLI_VERSION=$(grep 'moose-cli==' templates/$TEMPLATE/requirements.txt 2>/dev/null | sed 's/moose-cli==//' || true)
+          fi
+
+          if [ -z "$CLI_VERSION" ]; then
+            echo "ERROR: Could not detect CLI version from template $TEMPLATE"
+            exit 1
+          fi
+
+          echo "Detected CLI version: $CLI_VERSION"
+
+          # Download CLI binary from GCS
+          DOWNLOAD_URL="https://downloads.fiveonefour.com/stable/$CLI_VERSION/x86_64-unknown-linux-gnu/moose-cli"
+          echo "Downloading from: $DOWNLOAD_URL"
+          curl -fLo /usr/local/bin/moose "$DOWNLOAD_URL"
+          chmod +x /usr/local/bin/moose
+          moose --version
+
+      - name: Init template
+        run: |
+          cd /tmp
+          moose init test-app ${{ matrix.template }}
+
+      - name: Build Docker images
+        run: |
+          cd /tmp/test-app
+          TEMPLATE="${{ matrix.template }}"
+          BUILT_IMAGES=""
+
+          # Find all moose projects (monorepos may have multiple)
+          find . -name "moose.config.toml" -not -path "./.moose/*" | while read -r config; do
+            MOOSE_DIR=$(dirname "$config")
+            echo "Building moose project at: $MOOSE_DIR"
+            (cd "$MOOSE_DIR" && moose build --docker --amd64)
+
+            # For subdirectory projects, append the subpath to the image name
+            if [ "$MOOSE_DIR" = "." ]; then
+              IMAGE_NAME="$TEMPLATE"
+            else
+              SUBPATH=$(echo "$MOOSE_DIR" | sed 's|^\./||' | tr '/' '-')
+              IMAGE_NAME="$TEMPLATE-$SUBPATH"
+            fi
+
+            # Re-tag with a unique name so subsequent builds don't overwrite
+            docker tag moose-df-deployment-x86_64-unknown-linux-gnu:latest "moose-template-build:$IMAGE_NAME"
+            echo "$IMAGE_NAME" >> /tmp/built-images.txt
+          done
+
+      - name: Auth with GCP
+        uses: "google-github-actions/auth@v2"
+        with:
+          service_account: "mbs-439@moose-hosting-node.iam.gserviceaccount.com"
+          workload_identity_provider: "projects/724152421890/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-repos"
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Tag and push Docker images
+        run: |
+          VERSION="latest"
+          DOCKER_REPO="us-central1-docker.pkg.dev/moose-hosting-node/moose-templates"
+
+          while read -r IMAGE_NAME; do
+            REMOTE_TAG="$DOCKER_REPO/$IMAGE_NAME:$VERSION"
+            echo "Pushing: $REMOTE_TAG"
+            docker tag "moose-template-build:$IMAGE_NAME" "$REMOTE_TAG"
+            docker push "$REMOTE_TAG"
+          done < /tmp/built-images.txt
+
   notify-slack-on-failure:
     needs:
       [
@@ -677,6 +799,7 @@ jobs:
         release-python,
         publish-npm-base,
         build-and-publish-fullstack-image,
+        build-template-docker-images,
       ]
     runs-on: ubuntu-latest
     # Add explicit permissions
