@@ -21,9 +21,13 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
   const { settings, isConfigured, showCustomizer, setShowCustomizer } =
     useGuideSettings();
 
-  // Don't show panel on guides index page (normalize trailing slash)
+  // Only show on guide pages (paths starting with /guides/ but not the index)
   const normalizedPath = pathname.replace(/\/$/, ""); // Remove trailing slash
-  if (normalizedPath === "/guides") {
+  const isGuidesIndex = normalizedPath === "/guides";
+  const isGuidePage = normalizedPath.startsWith("/guides/");
+
+  // Don't show on guides index or non-guide pages
+  if (isGuidesIndex || !isGuidePage) {
     return null;
   }
 
