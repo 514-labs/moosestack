@@ -8,6 +8,10 @@ pub mod processing_coordinator;
 pub mod routines;
 use crate::cli::routines::seed_data;
 pub mod settings;
+/// TypeScript compilation watcher: runs `moose-tspc --watch`, parses compile events,
+/// and triggers infrastructure planning/execution on successful incremental builds.
+/// Used in dev mode for TypeScript projects; see `TsCompilationWatcher` and
+/// `spawn_and_await_initial_compile`.
 pub mod ts_compilation_watcher;
 pub mod watcher;
 use super::metrics::Metrics;

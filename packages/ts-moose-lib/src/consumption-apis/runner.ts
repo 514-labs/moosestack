@@ -1,4 +1,5 @@
 import http from "http";
+import * as path from "path";
 import { getClickhouseClient } from "../commons";
 import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
 import * as jose from "jose";
@@ -94,7 +95,9 @@ const apiHandler = async (
   // Always use compiled JavaScript
   const sourceDir = getSourceDir();
   const outDir = getOutDir();
-  const actualApisDir = `${process.cwd()}/${outDir}/${sourceDir}/apis/`;
+  const outRoot =
+    path.isAbsolute(outDir) ? outDir : path.join(process.cwd(), outDir);
+  const actualApisDir = path.join(outRoot, sourceDir, "apis");
 
   const apis = await getApis();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {

@@ -1301,7 +1301,8 @@ const loadIndex = async () => {
 
   // Clear require cache for compiled directory to pick up changes
   const outDir = getOutDir();
-  const compiledDir = `${process.cwd()}/${outDir}`;
+  const compiledDir =
+    path.isAbsolute(outDir) ? outDir : path.join(process.cwd(), outDir);
   Object.keys(require.cache).forEach((key) => {
     if (key.startsWith(compiledDir)) {
       delete require.cache[key];

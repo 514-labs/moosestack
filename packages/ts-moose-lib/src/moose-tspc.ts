@@ -221,8 +221,8 @@ function runWatchCompilation(moduleSystem: ModuleSystem): void {
     "--preserveWatchOutput",
   ];
   if (shouldAddOutDir) {
-    // Insert --outDir before the watch flags
-    tspcArgs.splice(4, 0, "--outDir", outDir);
+    // Insert --outDir after --rootDir and "." so rootDir is not clobbered
+    tspcArgs.splice(6, 0, "--outDir", outDir);
   }
 
   // Spawn tspc in watch mode
@@ -269,9 +269,9 @@ function runWatchCompilation(moduleSystem: ModuleSystem): void {
       errorCount = 0;
       warningCount = 0;
       emitEvent({ event: "compile_start" });
-    } else if (line.includes("Found") && line.includes("error")) {
-      // Compilation complete - parse error count
-      const match = line.match(/Found (\d+) error/);
+    } else if (/^Found\s+(\d+)\s+error(?:s)?\b/.test(line)) {
+      // Compilation complete - parse error count from tsc summary line only
+      const match = line.match(/^Found\s+(\d+)\s+error(?:s)?\b/);
       if (match) {
         errorCount = parseInt(match[1], 10);
       }

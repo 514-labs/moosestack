@@ -512,12 +512,12 @@ pub async fn start_development_mode(
     // The handle is stored and passed to TsCompilationWatcher::start() later.
     // This avoids running tspc twice (one-off + watch) and prevents the bug where
     // the watcher's initial compile_complete would trigger a duplicate plan_changes.
+    // For TypeScript, initial compilation is required (no ts-node fallback). Fail fast if it fails.
     let ts_compile_handle = if project.language == SupportedLanguages::Typescript {
         use crate::cli::ts_compilation_watcher::spawn_and_await_initial_compile;
         match spawn_and_await_initial_compile(&project).await {
             Ok(handle) => Some(handle),
             Err(e) => {
-                // Compilation failed - this will likely cause issues when loading infrastructure
                 error!("Initial TypeScript compilation failed: {}", e);
                 display::show_message_wrapper(
                     MessageType::Error,
@@ -526,7 +526,7 @@ pub async fn start_development_mode(
                         details: format!("TypeScript compilation failed: {}", e),
                     },
                 );
-                None
+                return Err(e.into());
             }
         }
     } else {
@@ -894,6 +894,7 @@ pub async fn start_production_mode(
                             details: "TypeScript compilation failed".to_string(),
                         },
                     );
+                    return Err(anyhow::anyhow!("TypeScript compilation failed: {}", stderr));
                 }
             }
             Err(e) => {
@@ -906,6 +907,7 @@ pub async fn start_production_mode(
                             .to_string(),
                     },
                 );
+                return Err(anyhow::anyhow!("Failed to run moose-tspc: {}", e));
             }
         }
     }

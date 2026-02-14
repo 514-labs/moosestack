@@ -101,7 +101,8 @@ export function getCompiledIndexPath(
 ): string {
   const outDir = getOutDir(projectRoot);
   const sourceDir = getSourceDir();
-  return path.join(projectRoot, outDir, sourceDir, "index.js");
+  // Resolve so that absolute outDir from tsconfig is handled correctly
+  return path.resolve(projectRoot, outDir, sourceDir, "index.js");
 }
 
 /**

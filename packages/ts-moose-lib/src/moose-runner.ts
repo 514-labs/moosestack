@@ -12,7 +12,6 @@ import { runScripts } from "./scripts/runner";
 
 import { Command } from "commander";
 
-// Import the StreamingFunctionArgs type
 import type { StreamingFunctionArgs } from "./streaming-functions/runner";
 
 const program = new Command();
