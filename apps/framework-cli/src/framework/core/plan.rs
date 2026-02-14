@@ -549,7 +549,6 @@ pub fn infra_changes_to_operations(
 /// * `Result<InfrastructureMap, PlanningError>` - The target infrastructure map with resolved credentials
 pub async fn load_target_infrastructure(
     project: &Project,
-    skip_compilation: bool,
 ) -> Result<InfrastructureMap, PlanningError> {
     let json_path = Path::new(".moose/infrastructure_map.json");
     let mut target_infra_map = if project.is_production && json_path.exists() {
@@ -566,8 +565,7 @@ pub async fn load_target_infrastructure(
         }
 
         // Resolve credentials at runtime for dev/prod mode
-        // skip_compilation is used in dev mode when moose-tspc --watch already compiled
-        InfrastructureMap::load_from_user_code(project, true, skip_compilation).await?
+        InfrastructureMap::load_from_user_code(project, true).await?
     };
 
     // ALWAYS resolve runtime credentials at runtime in prod mode
@@ -688,10 +686,9 @@ pub async fn load_reconciled_infrastructure<T: OlapOperations + Sync>(
 pub async fn plan_changes(
     state_storage: &dyn StateStorage,
     project: &Project,
-    skip_compilation: bool,
 ) -> Result<(InfrastructureMap, InfraPlan), PlanningError> {
     // Load target state from project code
-    let target_infra_map = load_target_infrastructure(project, skip_compilation).await?;
+    let target_infra_map = load_target_infrastructure(project).await?;
 
     // Load and reconcile current state
     let olap_client = clickhouse::create_client(project.clickhouse_config.clone());

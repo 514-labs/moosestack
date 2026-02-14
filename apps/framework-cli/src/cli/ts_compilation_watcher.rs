@@ -120,13 +120,13 @@ fn spawn_tspc_watch(project: &Project) -> Result<Child, TsCompilationWatcherErro
 
 /// Spawns `moose-tspc --watch` and waits for the initial compilation to complete.
 ///
-/// This function blocks until the first `compile_complete` event is received,
+/// This async function waits until the first `compile_complete` event is received,
 /// then returns a handle that can be passed to `TsCompilationWatcher::start()`
 /// for continued background watching.
 ///
 /// The caller should call `plan_changes()` after this returns successfully,
 /// then call `start()` to begin background watching.
-pub fn spawn_and_await_initial_compile(
+pub async fn spawn_and_await_initial_compile(
     project: &Project,
 ) -> Result<InitialCompileHandle, TsCompilationWatcherError> {
     debug!(
@@ -166,6 +166,7 @@ pub fn spawn_and_await_initial_compile(
     let (line_tx, mut line_rx) = tokio::sync::mpsc::channel::<String>(100);
 
     // Spawn a thread to read stdout lines and send them through the channel
+    // (we need a thread because BufReader is blocking)
     let reader = BufReader::new(stdout);
     std::thread::spawn(move || {
         for line in reader.lines() {
@@ -183,10 +184,9 @@ pub fn spawn_and_await_initial_compile(
         }
     });
 
-    // Wait for initial compile_complete event (blocking)
+    // Wait for initial compile_complete event (async)
     loop {
-        // Use blocking_recv since we're in a sync context
-        match line_rx.blocking_recv() {
+        match line_rx.recv().await {
             Some(line) => {
                 if line.trim().is_empty() {
                     continue;
@@ -295,15 +295,11 @@ async fn watch(
 
     // Either use the provided handle from spawn_and_await_initial_compile,
     // or spawn a new tspc process
-    let mut line_rx = if let Some(handle) = initial_handle {
+    // We keep the child handle to properly clean it up on shutdown
+    let (child_process, mut line_rx) = if let Some(handle) = initial_handle {
         // Initial compilation already done, use the existing channel
-        // We hold onto the child process handle implicitly (it's moved into the handle)
-        // The process keeps running as long as we read from line_rx
-        let InitialCompileHandle {
-            child: _child,
-            line_rx,
-        } = handle;
-        line_rx
+        let InitialCompileHandle { child, line_rx } = handle;
+        (Some(child), line_rx)
     } else {
         // Spawn tspc --watch process fresh
         let mut child = spawn_tspc_watch(&project)?;
@@ -347,7 +343,7 @@ async fn watch(
             }
         });
 
-        line_rx
+        (Some(child), line_rx)
     };
 
     show_message!(MessageType::Info, {
@@ -429,11 +425,11 @@ async fn watch(
                                         "Infrastructure changes processed successfully",
                                         async {
                                             let plan_result = with_timing_async("Planning", async {
-                                                // skip_compilation: true - watcher already compiled via moose-tspc --watch
+                                                // IS_DEV_MODE is set, so ensure_typescript_compiled is a no-op
+                                                // (moose-tspc --watch already compiled)
                                                 framework::core::plan::plan_changes(
                                                     &**state_storage,
                                                     &project_clone,
-                                                    true,
                                                 )
                                                 .await
                                             })
@@ -565,9 +561,12 @@ async fn watch(
         }
     }
 
-    // Note: The child process is cleaned up automatically when InitialCompileHandle
-    // (which owns _child) is dropped, or when the reader thread ends.
-    // We don't need explicit cleanup here.
+    // Clean up the child process on shutdown
+    if let Some(mut child) = child_process {
+        debug!("Killing moose-tspc process on watcher shutdown");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 
     Ok(())
 }

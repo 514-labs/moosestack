@@ -223,6 +223,19 @@ pub fn get_compiled_index_path(project: &Project) -> std::path::PathBuf {
 /// This should be called before loading TypeScript infrastructure to ensure
 /// compiled artifacts exist for the dmv2-serializer.
 pub fn ensure_typescript_compiled(project: &Project) -> Result<(), TypescriptParsingError> {
+    use crate::utilities::constants::IS_DEV_MODE;
+    use std::sync::atomic::Ordering;
+
+    // In dev mode, tspc --watch handles compilation. We don't need to run tspc ourselves
+    // because spawn_and_await_initial_compile() already started it and the watcher keeps
+    // it running for incremental compilation.
+    if IS_DEV_MODE.load(Ordering::Relaxed) {
+        debug!(
+            "Skipping ensure_typescript_compiled: tspc --watch is handling compilation in dev mode"
+        );
+        return Ok(());
+    }
+
     let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
     let bin_path = format!(
         "{}/node_modules/.bin:{}",

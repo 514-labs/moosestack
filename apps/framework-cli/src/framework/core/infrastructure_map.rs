@@ -3151,15 +3151,13 @@ impl InfrastructureMap {
     pub async fn load_from_user_code(
         project: &Project,
         resolve_credentials: bool,
-        skip_compilation: bool,
     ) -> anyhow::Result<Self> {
         let partial = if project.language == SupportedLanguages::Typescript {
             // Ensure TypeScript is compiled before loading infrastructure.
-            // Skip if called from watcher context (compilation already done by moose-tspc --watch).
-            if !skip_compilation {
-                ensure_typescript_compiled(project)
-                    .context("Failed to compile TypeScript before loading infrastructure")?;
-            }
+            // In dev mode, this is a no-op because tspc --watch handles compilation.
+            // For CLI commands, this runs moose-tspc to compile.
+            ensure_typescript_compiled(project)
+                .context("Failed to compile TypeScript before loading infrastructure")?;
 
             let process = crate::framework::typescript::export_collectors::collect_from_index(
                 project,

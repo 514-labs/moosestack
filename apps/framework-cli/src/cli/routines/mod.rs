@@ -467,6 +467,12 @@ pub async fn start_development_mode(
     settings: &Settings,
     enable_mcp: bool,
 ) -> anyhow::Result<()> {
+    // Set global flag so ensure_typescript_compiled knows to skip
+    // (tspc --watch handles compilation in dev mode)
+    use crate::utilities::constants::IS_DEV_MODE;
+    use std::sync::atomic::Ordering;
+    IS_DEV_MODE.store(true, Ordering::Relaxed);
+
     display::show_message_wrapper(
         MessageType::Info,
         Message {
@@ -508,17 +514,16 @@ pub async fn start_development_mode(
     // the watcher's initial compile_complete would trigger a duplicate plan_changes.
     let ts_compile_handle = if project.language == SupportedLanguages::Typescript {
         use crate::cli::ts_compilation_watcher::spawn_and_await_initial_compile;
-        match spawn_and_await_initial_compile(&project) {
+        match spawn_and_await_initial_compile(&project).await {
             Ok(handle) => Some(handle),
             Err(e) => {
-                // Log warning but continue - ts-node fallback will be used
-                warn!("Initial TypeScript compilation failed: {}", e);
+                // Compilation failed - this will likely cause issues when loading infrastructure
+                error!("Initial TypeScript compilation failed: {}", e);
                 display::show_message_wrapper(
-                    MessageType::Warning,
+                    MessageType::Error,
                     Message {
-                        action: "Warning".to_string(),
-                        details: "TypeScript compilation failed, falling back to ts-node"
-                            .to_string(),
+                        action: "Error".to_string(),
+                        details: format!("TypeScript compilation failed: {}", e),
                     },
                 );
                 None
@@ -535,7 +540,7 @@ pub async fn start_development_mode(
         .build()
         .await?;
 
-    let (_, plan) = plan_changes(&*state_storage, &project, false).await?;
+    let (_, plan) = plan_changes(&*state_storage, &project).await?;
 
     let externally_managed: Vec<_> = plan
         .target_infra_map
@@ -939,7 +944,7 @@ pub async fn start_production_mode(
         .build()
         .await?;
 
-    let (current_state, plan) = plan_changes(&*state_storage, &project, false).await?;
+    let (current_state, plan) = plan_changes(&*state_storage, &project).await?;
     maybe_warmup_connections(&project, &redis_client).await;
 
     let execute_migration_yaml = project.features.ddl_plan && std::fs::exists(MIGRATION_FILE)?;
@@ -1126,7 +1131,7 @@ async fn legacy_remote_plan_logic(
 ) -> anyhow::Result<()> {
     // Build the inframap from the local project
     debug!("Loading InfrastructureMap from user code");
-    let local_infra_map = InfrastructureMap::load_from_user_code(project, true, false).await?;
+    let local_infra_map = InfrastructureMap::load_from_user_code(project, true).await?;
 
     // Use existing implementation
     let target_url = prepend_base_url(base_url.as_deref(), "admin/plan");
@@ -1245,8 +1250,7 @@ pub async fn remote_plan(
     clickhouse_url: &Option<String>,
     json: bool,
 ) -> anyhow::Result<()> {
-    let local_infra_map =
-        crate::framework::core::plan::load_target_infrastructure(project, false).await?;
+    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
 
     // Determine remote source based on provided arguments
     let remote_infra_map = if let Some(clickhouse_url) = clickhouse_url {
@@ -1442,8 +1446,7 @@ pub async fn remote_gen_migration(
 ) -> anyhow::Result<MigrationPlanWithBeforeAfter> {
     use anyhow::Context;
 
-    let local_infra_map =
-        crate::framework::core::plan::load_target_infrastructure(project, false).await?;
+    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
 
     // Get remote infrastructure map based on source type
     let remote_infra_map = match remote {
@@ -1594,8 +1597,7 @@ pub async fn remote_refresh(
     base_url: &Option<String>,
     token: &Option<String>,
 ) -> anyhow::Result<RoutineSuccess> {
-    let local_infra_map =
-        crate::framework::core::plan::load_target_infrastructure(project, false).await?;
+    let local_infra_map = crate::framework::core::plan::load_target_infrastructure(project).await?;
 
     // Get authentication token - prioritize command line parameter, then env var, then project config
     let auth_token = token

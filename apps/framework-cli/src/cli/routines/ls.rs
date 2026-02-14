@@ -328,7 +328,7 @@ pub async fn ls(
     json: bool,
 ) -> Result<RoutineSuccess, RoutineFailure> {
     // Don't resolve credentials for ls command - only inspects structure
-    let infra_map = InfrastructureMap::load_from_user_code(project, false, false)
+    let infra_map = InfrastructureMap::load_from_user_code(project, false)
         .await
         .map_err(|e| {
             RoutineFailure::new(
