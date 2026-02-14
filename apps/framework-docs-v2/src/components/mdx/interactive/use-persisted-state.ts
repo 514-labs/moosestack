@@ -320,6 +320,10 @@ export function useStorageSync<T>(
 
 /**
  * Helper to clear all interactive component state from localStorage and URL
+ *
+ * NOTE: Only clears page-level interactive state (STORAGE_KEY_PREFIX_PAGE).
+ * Does NOT clear global guide settings (STORAGE_KEY_PREFIX_GLOBAL) as those
+ * are user preferences that should persist.
  */
 export function clearInteractiveState(): void {
   if (typeof window === "undefined") return;
@@ -330,17 +334,11 @@ export function clearInteractiveState(): void {
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (
-      key?.startsWith(STORAGE_KEY_PREFIX_PAGE) ||
-      key?.startsWith(STORAGE_KEY_PREFIX_GLOBAL)
-    ) {
+    // Only clear page-level interactive state, not global guide settings
+    if (key?.startsWith(STORAGE_KEY_PREFIX_PAGE)) {
       storageKeysToRemove.push(key);
       // Extract the param key (without prefix) for URL cleanup
-      const prefix =
-        key?.startsWith(STORAGE_KEY_PREFIX_GLOBAL) ?
-          STORAGE_KEY_PREFIX_GLOBAL
-        : STORAGE_KEY_PREFIX_PAGE;
-      const paramKey = key.substring(prefix.length + 1); // +1 for the hyphen
+      const paramKey = key.substring(STORAGE_KEY_PREFIX_PAGE.length + 1); // +1 for the hyphen
       urlParamsToRemove.push(paramKey);
     }
   }
