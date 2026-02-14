@@ -1,11 +1,13 @@
 /**
  * Global guide settings management
  *
- * Provides utilities for storing and retrieving guide customization settings
- * that persist across all guide pages.
+ * Settings are stored in individual localStorage keys (one per setting)
+ * using the pattern: moose-docs-guide-settings-{key}
+ *
+ * This matches the storage pattern used by usePersistedState with namespace: "global"
  */
 
-const STORAGE_KEY = "moose-docs-guide-settings";
+const STORAGE_KEY_PREFIX = "moose-docs-guide-settings";
 
 export interface GuideSettings {
   language?: "typescript" | "python";
@@ -16,64 +18,80 @@ export interface GuideSettings {
 }
 
 /**
- * Get current guide settings from localStorage
+ * Get current guide settings from localStorage (reads from individual keys)
  */
 export function getGuideSettings(): GuideSettings | null {
   if (typeof window === "undefined") return null;
 
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return null;
-    return JSON.parse(stored);
+    const settings: GuideSettings = {};
+    const keys: (keyof GuideSettings)[] = [
+      "language",
+      "os",
+      "sourceDatabase",
+      "monorepo",
+      "existingApp",
+    ];
+
+    for (const key of keys) {
+      const storageKey = `${STORAGE_KEY_PREFIX}-${key}`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored !== null) {
+        try {
+          settings[key] = JSON.parse(stored) as any;
+        } catch {
+          // Ignore parsing errors
+        }
+      }
+    }
+
+    return Object.keys(settings).length > 0 ? settings : null;
   } catch {
     return null;
   }
 }
 
 /**
- * Save guide settings to localStorage
+ * Get a single setting value (reads from individual key)
  */
-export function saveGuideSettings(settings: GuideSettings): void {
-  if (typeof window === "undefined") return;
+export function getSetting<K extends keyof GuideSettings>(
+  key: K,
+): GuideSettings[K] | null {
+  if (typeof window === "undefined") return null;
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  } catch (error) {
-    console.error("Failed to save guide settings:", error);
+    const storageKey = `${STORAGE_KEY_PREFIX}-${key}`;
+    const stored = localStorage.getItem(storageKey);
+    if (stored !== null) {
+      return JSON.parse(stored) as GuideSettings[K];
+    }
+  } catch {
+    // Ignore parsing errors
   }
+
+  return null;
 }
 
 /**
- * Clear guide settings from localStorage
+ * Clear all guide settings from localStorage
  */
 export function clearGuideSettings(): void {
   if (typeof window === "undefined") return;
 
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    const keys: (keyof GuideSettings)[] = [
+      "language",
+      "os",
+      "sourceDatabase",
+      "monorepo",
+      "existingApp",
+    ];
+
+    for (const key of keys) {
+      const storageKey = `${STORAGE_KEY_PREFIX}-${key}`;
+      localStorage.removeItem(storageKey);
+    }
   } catch (error) {
     console.error("Failed to clear guide settings:", error);
   }
-}
-
-/**
- * Get a single setting value
- */
-export function getSetting<K extends keyof GuideSettings>(
-  key: K,
-): GuideSettings[K] | null {
-  const settings = getGuideSettings();
-  return settings?.[key] ?? null;
-}
-
-/**
- * Update a single setting value
- */
-export function updateSetting<K extends keyof GuideSettings>(
-  key: K,
-  value: GuideSettings[K],
-): void {
-  const settings = getGuideSettings() || {};
-  settings[key] = value;
-  saveGuideSettings(settings);
 }

@@ -1,15 +1,10 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import {
-  GuideSettings,
-  getGuideSettings,
-  saveGuideSettings,
-} from "@/lib/guide-settings";
+import { GuideSettings, getGuideSettings } from "@/lib/guide-settings";
 
 interface GuideSettingsContextType {
   settings: GuideSettings | null;
-  updateSettings: (settings: GuideSettings) => void;
   isConfigured: boolean;
   showCustomizer: boolean;
   setShowCustomizer: (show: boolean) => void;
@@ -24,11 +19,11 @@ export function GuideSettingsProvider({
 }: {
   children: React.ReactNode;
 }) {
-  const [settings, setSettings] = useState<GuideSettings | null>(null);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [isClient, setIsClient] = useState(false);
+  const [settings, setSettings] = useState<GuideSettings | null>(null);
 
-  // Load settings on mount
+  // Load settings on mount and re-check when customizer closes
   useEffect(() => {
     setIsClient(true);
     const stored = getGuideSettings();
@@ -40,10 +35,13 @@ export function GuideSettingsProvider({
     }
   }, []);
 
-  const updateSettings = (newSettings: GuideSettings) => {
-    setSettings(newSettings);
-    saveGuideSettings(newSettings);
-  };
+  // Re-read settings when customizer closes
+  useEffect(() => {
+    if (!showCustomizer && isClient) {
+      const stored = getGuideSettings();
+      setSettings(stored);
+    }
+  }, [showCustomizer, isClient]);
 
   const isConfigured =
     isClient && settings !== null && Object.keys(settings).length > 0;
@@ -52,7 +50,6 @@ export function GuideSettingsProvider({
     <GuideSettingsContext.Provider
       value={{
         settings,
-        updateSettings,
         isConfigured,
         showCustomizer,
         setShowCustomizer,
