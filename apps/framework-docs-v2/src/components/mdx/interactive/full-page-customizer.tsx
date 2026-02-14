@@ -54,7 +54,7 @@ export function FullPageCustomizer({
     <Dialog
       open={true}
       onOpenChange={(open) => {
-        if (!open && onClose) onClose();
+        if (!open) onClose?.();
       }}
     >
       <DialogContent className="sm:max-w-2xl">
