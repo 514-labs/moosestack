@@ -18,7 +18,7 @@ export function GuideSettingsProvider({
   children,
 }: {
   children: React.ReactNode;
-}) {
+}): React.JSX.Element {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [settings, setSettings] = useState<GuideSettings | null>(null);
