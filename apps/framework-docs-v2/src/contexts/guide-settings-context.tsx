@@ -60,7 +60,7 @@ export function GuideSettingsProvider({
   );
 }
 
-export function useGuideSettings() {
+export function useGuideSettings(): GuideSettingsContextType {
   const context = useContext(GuideSettingsContext);
   if (context === undefined) {
     throw new Error(
