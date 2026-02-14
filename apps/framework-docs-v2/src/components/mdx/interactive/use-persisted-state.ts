@@ -142,30 +142,31 @@ export function usePersistedState<T>(
     return defaultValue;
   });
 
-  // Sync to localStorage and URL when value changes (skip initial mount with defaults)
+  // Sync to localStorage and URL when value changes
   useEffect(() => {
     if (!persist || !key || typeof window === "undefined") {
       return;
     }
 
-    // Skip on first render ONLY if value equals default (avoid polluting URL with defaults)
+    const isFirstRender = isFirstRenderRef.current;
+    const isDefaultValue =
+      JSON.stringify(value) === JSON.stringify(defaultValue);
+
     if (isFirstRenderRef.current) {
       isFirstRenderRef.current = false;
-      // Skip only if value is the default value
-      if (JSON.stringify(value) === JSON.stringify(defaultValue)) {
-        return;
-      }
-      // If value came from URL, we still need to sync to localStorage and dispatch
     }
 
     try {
-      // Update localStorage
+      // Always update localStorage (even for defaults - needed for cross-page persistence)
       if (storageKey) {
         localStorage.setItem(storageKey, JSON.stringify(value));
       }
 
-      // Update URL param (for deep linking) - only if syncToUrl is enabled
-      if (opts.syncToUrl) {
+      // Update URL param ONLY if:
+      // - syncToUrl is enabled AND
+      // - (it's not first render OR it's not the default value)
+      // This avoids URL pollution with defaults while keeping localStorage persistence
+      if (opts.syncToUrl && (!isFirstRender || !isDefaultValue)) {
         updateURLParam(
           key,
           typeof value === "string" ? value : JSON.stringify(value),
@@ -179,7 +180,7 @@ export function usePersistedState<T>(
     } catch {
       // Ignore storage errors (quota exceeded, etc.)
     }
-  }, [persist, key, storageKey, value, defaultValue]);
+  }, [persist, key, storageKey, value, defaultValue, opts.syncToUrl]);
 
   // Listen for changes from other components/tabs and browser navigation
   useEffect(() => {
