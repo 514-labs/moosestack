@@ -18,6 +18,48 @@ export interface GuideSettings {
 }
 
 /**
+ * Display labels for guide setting fields
+ * Single source of truth for field labels across all components
+ */
+export const GUIDE_SETTINGS_LABELS: Record<keyof GuideSettings, string> = {
+  language: "Language",
+  os: "OS",
+  sourceDatabase: "Database",
+  monorepo: "Monorepo",
+  existingApp: "Existing app",
+};
+
+/**
+ * Display labels for setting values
+ */
+export const GUIDE_SETTINGS_VALUE_LABELS: Record<
+  keyof GuideSettings,
+  Record<string, string>
+> = {
+  language: {
+    typescript: "TypeScript",
+    python: "Python",
+  },
+  os: {
+    macos: "macOS",
+    windows: "Windows",
+  },
+  sourceDatabase: {
+    postgres: "Postgres",
+    sqlserver: "SQL Server",
+    none: "None",
+  },
+  monorepo: {
+    yes: "Monorepo",
+    no: "Single repo",
+  },
+  existingApp: {
+    yes: "Existing app",
+    no: "New app",
+  },
+};
+
+/**
  * Valid values for each setting field
  */
 const VALID_VALUES: Record<keyof GuideSettings, string[]> = {
