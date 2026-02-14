@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const STORAGE_KEY_PREFIX_PAGE = "moose-docs-interactive";
-const STORAGE_KEY_PREFIX_GLOBAL = "moose-docs-guide-settings";
+// Storage key prefixes (exported for use in other components)
+export const STORAGE_KEY_PREFIX_PAGE = "moose-docs-interactive";
+export const STORAGE_KEY_PREFIX_GLOBAL = "moose-docs-guide-settings";
 
 // Custom event name for same-page state updates
 export const INTERACTIVE_STATE_CHANGE_EVENT = "moose-interactive-state-change";
