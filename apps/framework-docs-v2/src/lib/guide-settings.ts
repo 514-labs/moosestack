@@ -7,77 +7,28 @@
  * This matches the storage pattern used by usePersistedState with namespace: "global"
  */
 
+import {
+  type GuideSettings,
+  type GuideSettingId,
+  GUIDE_SETTINGS_LABELS,
+  GUIDE_SETTINGS_VALUE_LABELS,
+  VALID_VALUES,
+  GUIDE_SETTINGS_CONFIG,
+} from "@/config/guide-settings-config";
+
+// Re-export types and constants for backward compatibility
+export type { GuideSettings, GuideSettingId };
+export { GUIDE_SETTINGS_LABELS, GUIDE_SETTINGS_VALUE_LABELS };
+
 export const STORAGE_KEY_PREFIX = "moose-docs-guide-settings";
-
-export interface GuideSettings {
-  language?: "typescript" | "python";
-  os?: "macos" | "windows";
-  sourceDatabase?: "postgres" | "sqlserver" | "none";
-  monorepo?: "yes" | "no";
-  existingApp?: "yes" | "no";
-}
-
-/**
- * Display labels for guide setting fields
- * Single source of truth for field labels across all components
- */
-export const GUIDE_SETTINGS_LABELS: Record<keyof GuideSettings, string> = {
-  language: "Language",
-  os: "OS",
-  sourceDatabase: "Database",
-  monorepo: "Monorepo",
-  existingApp: "Existing app",
-};
-
-/**
- * Display labels for setting values
- */
-export const GUIDE_SETTINGS_VALUE_LABELS: Record<
-  keyof GuideSettings,
-  Record<string, string>
-> = {
-  language: {
-    typescript: "TypeScript",
-    python: "Python",
-  },
-  os: {
-    macos: "macOS",
-    windows: "Windows",
-  },
-  sourceDatabase: {
-    postgres: "Postgres",
-    sqlserver: "SQL Server",
-    none: "None",
-  },
-  monorepo: {
-    yes: "Monorepo",
-    no: "Single repo",
-  },
-  existingApp: {
-    yes: "Existing app",
-    no: "New app",
-  },
-};
-
-/**
- * Valid values for each setting field
- */
-const VALID_VALUES: Record<keyof GuideSettings, string[]> = {
-  language: ["typescript", "python"],
-  os: ["macos", "windows"],
-  sourceDatabase: ["postgres", "sqlserver", "none"],
-  monorepo: ["yes", "no"],
-  existingApp: ["yes", "no"],
-};
 
 /**
  * Validate a setting value against its expected type
  */
-function isValidSetting<K extends keyof GuideSettings>(
-  key: K,
-  value: unknown,
-): value is GuideSettings[K] {
-  return typeof value === "string" && VALID_VALUES[key].includes(value);
+function isValidSetting(key: GuideSettingId, value: unknown): value is string {
+  return (
+    typeof value === "string" && Boolean(VALID_VALUES[key]?.includes(value))
+  );
 }
 
 /**
@@ -88,22 +39,16 @@ export function getGuideSettings(): GuideSettings | null {
 
   try {
     const settings: GuideSettings = {};
-    const keys: (keyof GuideSettings)[] = [
-      "language",
-      "os",
-      "sourceDatabase",
-      "monorepo",
-      "existingApp",
-    ];
 
-    for (const key of keys) {
-      const storageKey = `${STORAGE_KEY_PREFIX}-${key}`;
+    // Iterate over all configured settings
+    for (const config of GUIDE_SETTINGS_CONFIG) {
+      const storageKey = `${STORAGE_KEY_PREFIX}-${config.id}`;
       const stored = localStorage.getItem(storageKey);
       if (stored !== null) {
         try {
           const parsed = JSON.parse(stored);
-          if (isValidSetting(key, parsed)) {
-            settings[key] = parsed;
+          if (isValidSetting(config.id, parsed)) {
+            settings[config.id] = parsed;
           }
         } catch {
           // Ignore parsing errors
@@ -120,9 +65,7 @@ export function getGuideSettings(): GuideSettings | null {
 /**
  * Get a single setting value (reads from individual key)
  */
-export function getSetting<K extends keyof GuideSettings>(
-  key: K,
-): GuideSettings[K] | null {
+export function getSetting(key: GuideSettingId): string | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -148,16 +91,9 @@ export function clearGuideSettings(): void {
   if (typeof window === "undefined") return;
 
   try {
-    const keys: (keyof GuideSettings)[] = [
-      "language",
-      "os",
-      "sourceDatabase",
-      "monorepo",
-      "existingApp",
-    ];
-
-    for (const key of keys) {
-      const storageKey = `${STORAGE_KEY_PREFIX}-${key}`;
+    // Clear all configured settings
+    for (const config of GUIDE_SETTINGS_CONFIG) {
+      const storageKey = `${STORAGE_KEY_PREFIX}-${config.id}`;
       localStorage.removeItem(storageKey);
     }
   } catch (error) {

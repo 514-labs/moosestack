@@ -147,7 +147,7 @@ export function CustomizePanel({
   className,
   fieldIds = [],
   fieldLabels = {},
-}: CustomizePanelProps): React.JSX.Element {
+}: CustomizePanelProps): React.JSX.Element | null {
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [selections, setSelections] = useState<Record<string, string> | null>(
     null,
