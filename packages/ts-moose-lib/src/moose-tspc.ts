@@ -250,29 +250,37 @@ function runWatchCompilation(moduleSystem: ModuleSystem): void {
   });
 
   // Parse tspc output line by line
+  // Pattern matching approach inspired by tsc-watch (github.com/gilamran/tsc-watch)
+  // which also parses tsc stdout to detect compilation events
   let buffer = "";
 
-  const processLine = (line: string) => {
-    // TypeScript watch mode outputs these key messages:
-    // "Starting compilation in watch mode..."
-    // "File change detected. Starting incremental compilation..."
-    // "Found X errors. Watching for file changes."
-    // Error lines: "path(line,col): error TSxxxx: message"
-    // Warning lines: "path(line,col): warning TSxxxx: message"
+  // Strip ANSI escape codes for reliable pattern matching (standard regex pattern)
+  const stripAnsi = (str: string) =>
+    str.replace(
+      /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?[\u0007])|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g,
+      "",
+    );
 
-    if (
-      line.includes("Starting compilation in watch mode") ||
-      line.includes("Starting incremental compilation")
-    ) {
+  // tsc watch mode patterns (with timestamp prefix like "12:00:00 AM - ")
+  const compilationStartedRegex =
+    /Starting compilation in watch mode|Starting incremental compilation/;
+  const compilationCompleteRegex =
+    /Found\s+(\d+)\s+error(?:s)?\..*Watching for file changes/;
+  const diagnosticRegex = /\(\d+,\d+\):\s*(error|warning)\s+TS\d+:/;
+
+  const processLine = (line: string) => {
+    const cleanLine = stripAnsi(line);
+
+    if (compilationStartedRegex.test(cleanLine)) {
       // New compilation cycle starting
       currentDiagnostics = [];
       errorCount = 0;
       warningCount = 0;
       emitEvent({ event: "compile_start" });
-    } else if (/Found\s+(\d+)\s+error(?:s)?\./.test(line)) {
+    } else if (compilationCompleteRegex.test(cleanLine)) {
       // Compilation complete - parse error count from tsc summary line
       // Format: "12:00:00 AM - Found 0 errors. Watching for file changes."
-      const match = line.match(/Found\s+(\d+)\s+error(?:s)?\./);
+      const match = cleanLine.match(/Found\s+(\d+)\s+error(?:s)?\./);
       if (match) {
         errorCount = parseInt(match[1], 10);
       }
@@ -302,12 +310,12 @@ function runWatchCompilation(moduleSystem: ModuleSystem): void {
           diagnostics: warningCount > 0 ? currentDiagnostics : undefined,
         });
       }
-    } else if (line.match(/\(\d+,\d+\):\s*(error|warning)\s+TS\d+:/)) {
-      // This is a diagnostic line
-      currentDiagnostics.push(line.trim());
-      if (line.includes(": error ")) {
+    } else if (diagnosticRegex.test(cleanLine)) {
+      // This is a diagnostic line (error or warning)
+      currentDiagnostics.push(cleanLine.trim());
+      if (cleanLine.includes(": error ")) {
         errorCount++;
-      } else if (line.includes(": warning ")) {
+      } else if (cleanLine.includes(": warning ")) {
         warningCount++;
       }
     }
