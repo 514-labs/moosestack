@@ -18,6 +18,27 @@ export interface GuideSettings {
 }
 
 /**
+ * Valid values for each setting field
+ */
+const VALID_VALUES: Record<keyof GuideSettings, string[]> = {
+  language: ["typescript", "python"],
+  os: ["macos", "windows"],
+  sourceDatabase: ["postgres", "sqlserver", "none"],
+  monorepo: ["yes", "no"],
+  existingApp: ["yes", "no"],
+};
+
+/**
+ * Validate a setting value against its expected type
+ */
+function isValidSetting<K extends keyof GuideSettings>(
+  key: K,
+  value: unknown,
+): value is GuideSettings[K] {
+  return typeof value === "string" && VALID_VALUES[key].includes(value);
+}
+
+/**
  * Get current guide settings from localStorage (reads from individual keys)
  */
 export function getGuideSettings(): GuideSettings | null {
@@ -38,7 +59,10 @@ export function getGuideSettings(): GuideSettings | null {
       const stored = localStorage.getItem(storageKey);
       if (stored !== null) {
         try {
-          settings[key] = JSON.parse(stored) as any;
+          const parsed = JSON.parse(stored);
+          if (isValidSetting(key, parsed)) {
+            settings[key] = parsed;
+          }
         } catch {
           // Ignore parsing errors
         }
@@ -63,7 +87,10 @@ export function getSetting<K extends keyof GuideSettings>(
     const storageKey = `${STORAGE_KEY_PREFIX}-${key}`;
     const stored = localStorage.getItem(storageKey);
     if (stored !== null) {
-      return JSON.parse(stored) as GuideSettings[K];
+      const parsed = JSON.parse(stored);
+      if (isValidSetting(key, parsed)) {
+        return parsed;
+      }
     }
   } catch {
     // Ignore parsing errors
