@@ -14,6 +14,31 @@ const FIELD_LABELS: Record<string, string> = {
   existingApp: "Existing app",
 };
 
+// Map raw values to display labels
+const VALUE_LABELS: Record<string, Record<string, string>> = {
+  language: {
+    typescript: "TypeScript",
+    python: "Python",
+  },
+  os: {
+    macos: "macOS",
+    windows: "Windows",
+  },
+  sourceDatabase: {
+    postgres: "Postgres",
+    sqlserver: "SQL Server",
+    none: "None",
+  },
+  monorepo: {
+    yes: "Monorepo",
+    no: "Single repo",
+  },
+  existingApp: {
+    yes: "Existing app",
+    no: "New app",
+  },
+};
+
 /**
  * GlobalGuideSettingsPanel - Persistent settings panel for guide customization
  *
@@ -45,11 +70,24 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
     return null;
   }
 
+  // Filter out unused fields and map values to display labels
+  const filteredSelections: Record<string, string> = {};
+  Object.entries(settings as Record<string, string>).forEach(([key, value]) => {
+    // Skip fields that aren't currently used in guides
+    if (key === "monorepo" || key === "existingApp") return;
+
+    // Map value to display label
+    const displayValue = VALUE_LABELS[key]?.[value] || value;
+    filteredSelections[key] = displayValue;
+  });
+
   return (
     <SettingsSummary
-      selections={settings as Record<string, string>}
+      selections={filteredSelections}
       labels={FIELD_LABELS}
       onChangeSettings={() => setShowCustomizer(true)}
+      heading="Your Stack"
+      buttonText="Configure"
     />
   );
 }

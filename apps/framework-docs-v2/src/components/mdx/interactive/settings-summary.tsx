@@ -11,6 +11,8 @@ interface SettingsSummaryProps {
   labels?: Record<string, string>;
   onChangeSettings: () => void;
   className?: string;
+  heading?: string;
+  buttonText?: string;
 }
 
 /**
@@ -33,6 +35,8 @@ export function SettingsSummary({
   labels = {},
   onChangeSettings,
   className,
+  heading = "Guide config",
+  buttonText = "Change",
 }: SettingsSummaryProps): React.JSX.Element {
   return (
     <div
@@ -44,7 +48,7 @@ export function SettingsSummary({
       <div className="flex items-center gap-2 flex-wrap">
         <IconSettings className="h-4 w-4 text-muted-foreground" />
         <span className="text-xs font-medium text-muted-foreground">
-          Guide config
+          {heading}
         </span>
       </div>
       <div className="flex flex-col gap-2 w-full">
@@ -64,7 +68,7 @@ export function SettingsSummary({
           onClick={onChangeSettings}
           className="flex-1"
         >
-          Change
+          {buttonText}
         </Button>
       </div>
     </div>
