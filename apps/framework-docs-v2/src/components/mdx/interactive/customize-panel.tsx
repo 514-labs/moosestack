@@ -164,6 +164,11 @@ export function CustomizePanel({
     return <div className="min-h-[60vh]" />;
   }
 
+  // No fieldIds configured - render children directly (no customization needed)
+  if (!fieldIds || fieldIds.length === 0) {
+    return <div className={className}>{children}</div>;
+  }
+
   // Show full-page customizer if no selections or user clicked "Change"
   if (showCustomizer) {
     return (
