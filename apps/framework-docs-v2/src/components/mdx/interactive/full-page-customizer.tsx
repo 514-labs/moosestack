@@ -19,6 +19,7 @@ interface FullPageCustomizerProps {
   onContinue: () => void;
   canContinue?: boolean;
   onClose?: () => void;
+  buttonText?: string;
 }
 
 /**
@@ -47,6 +48,7 @@ export function FullPageCustomizer({
   onContinue,
   canContinue = true,
   onClose,
+  buttonText = "Continue to tutorial",
 }: FullPageCustomizerProps): React.JSX.Element {
   return (
     <Dialog
@@ -68,7 +70,7 @@ export function FullPageCustomizer({
             className="w-full sm:w-auto"
             size="lg"
           >
-            Continue to tutorial
+            {buttonText}
             <IconArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </DialogFooter>

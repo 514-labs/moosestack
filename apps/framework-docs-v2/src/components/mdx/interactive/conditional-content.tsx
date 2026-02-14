@@ -42,7 +42,7 @@ function ConditionalContentInner({
       try {
         // Priority 1: Check global guide settings
         const globalValue = getSetting(whenId as keyof GuideSettings);
-        if (globalValue !== null) {
+        if (globalValue !== null && globalValue !== undefined) {
           setCurrentValue(globalValue);
           return;
         }
