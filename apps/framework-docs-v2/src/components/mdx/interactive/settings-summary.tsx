@@ -37,7 +37,12 @@ export function SettingsSummary({
   className,
   heading = "Guide config",
   buttonText = "Change",
-}: SettingsSummaryProps): React.JSX.Element {
+}: SettingsSummaryProps): React.JSX.Element | null {
+  // Don't render if no selections
+  if (Object.keys(selections).length === 0) {
+    return null;
+  }
+
   return (
     <div
       className={cn(

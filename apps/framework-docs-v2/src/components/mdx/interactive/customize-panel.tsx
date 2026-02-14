@@ -67,9 +67,14 @@ function getSelections(fieldIds: string[]): Record<string, string> | null {
     const urlValue = params.get(fieldId);
     if (urlValue) {
       try {
-        selections[fieldId] = JSON.parse(urlValue);
-        hasAny = true;
+        const parsed = JSON.parse(urlValue);
+        // Only store if it's a string value
+        if (typeof parsed === "string") {
+          selections[fieldId] = parsed;
+          hasAny = true;
+        }
       } catch {
+        // If JSON parse fails, use raw string value
         selections[fieldId] = urlValue;
         hasAny = true;
       }
@@ -100,11 +105,15 @@ function getSelections(fieldIds: string[]): Record<string, string> | null {
       }
 
       if (stored) {
-        selections[fieldId] = JSON.parse(stored);
-        hasAny = true;
+        const parsed = JSON.parse(stored);
+        // Only store if it's a string value
+        if (typeof parsed === "string") {
+          selections[fieldId] = parsed;
+          hasAny = true;
+        }
       }
     } catch {
-      // Ignore errors
+      // Ignore parsing errors - silently skip invalid values
     }
   }
 
@@ -161,7 +170,7 @@ export function CustomizePanel({
 
   // SSR/initial render - show nothing to avoid hydration mismatch
   if (!isClient) {
-    return <div className="min-h-[60vh]" />;
+    return null;
   }
 
   // No fieldIds configured - render children directly (no customization needed)
@@ -185,16 +194,10 @@ export function CustomizePanel({
           }
         }}
         onClose={() => {
-          // Dismiss customizer - check selections to avoid empty state
+          // Allow dismissal even without selections
           const currentSelections = getSelections(fieldIds);
-          if (currentSelections) {
-            setSelections(currentSelections);
-            setShowCustomizer(false);
-          } else {
-            // If no selections exist, keep customizer open (user must configure)
-            // Alternatively, could set some defaults here
-            setShowCustomizer(true);
-          }
+          setSelections(currentSelections);
+          setShowCustomizer(false);
         }}
         canContinue={true} // Allow continue even if not all fields set (user can use defaults)
       >
@@ -204,7 +207,7 @@ export function CustomizePanel({
   }
 
   // Has selections - show summary in bottom-left
-  if (selections) {
+  if (selections && Object.keys(selections).length > 0) {
     return (
       <SettingsSummary
         selections={selections}
@@ -215,6 +218,6 @@ export function CustomizePanel({
     );
   }
 
-  // Fallback - shouldn't reach here
-  return <div className="min-h-[60vh]" />;
+  // No selections - user dismissed customizer, show nothing (they can use defaults)
+  return null;
 }

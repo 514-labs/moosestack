@@ -44,9 +44,9 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
 
   // Filter out unused fields and map values to display labels
   const filteredSelections: Record<string, string> = {};
-  Object.entries(settings as Record<string, string>).forEach(([key, value]) => {
-    // Skip fields that aren't currently used in guides
-    if (key === "monorepo" || key === "existingApp") return;
+  Object.entries(settings).forEach(([key, value]) => {
+    // Skip undefined values, unused fields, or fields not in guides
+    if (!value || key === "monorepo" || key === "existingApp") return;
 
     // Map value to display label
     const displayValue = GUIDE_SETTINGS_VALUE_LABELS[key]?.[value] || value;
