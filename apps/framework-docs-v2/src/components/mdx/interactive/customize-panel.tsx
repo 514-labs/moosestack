@@ -7,29 +7,8 @@ import {
   STORAGE_KEY_PREFIX_PAGE,
   STORAGE_KEY_PREFIX_GLOBAL,
 } from "./use-persisted-state";
-import { getSetting, GuideSettings } from "@/lib/guide-settings";
-
-/**
- * Normalize field ID to match GuideSettings interface keys
- * Converts kebab-case to camelCase for compatibility with global settings
- */
-function normalizeFieldId(fieldId: string): keyof GuideSettings | null {
-  const normalized = fieldId.replace(/-([a-z])/g, (_, letter) =>
-    letter.toUpperCase(),
-  );
-
-  const validKeys: (keyof GuideSettings)[] = [
-    "language",
-    "os",
-    "sourceDatabase",
-    "monorepo",
-    "existingApp",
-  ];
-
-  return validKeys.includes(normalized as keyof GuideSettings) ?
-      (normalized as keyof GuideSettings)
-    : null;
-}
+import { getSetting, normalizeFieldId } from "@/lib/guide-settings";
+import { useGuideSettings } from "@/contexts/guide-settings-context";
 
 interface CustomizePanelProps {
   /** Panel title (default: "Customize this tutorial") */
@@ -81,31 +60,39 @@ function getSelections(fieldIds: string[]): Record<string, string> | null {
       continue;
     }
 
-    // Fall back to localStorage - check both page and global storage
+    // Fall back to localStorage - prioritize page-level, then global
     try {
-      // Check page-level storage (uses field ID as-is)
+      // Priority 1: Check page-level storage (allows per-page overrides)
       const pageKey = `${STORAGE_KEY_PREFIX_PAGE}-${fieldId}`;
-      let stored = localStorage.getItem(pageKey);
+      const pageStored = localStorage.getItem(pageKey);
 
-      // Check global storage (may need field ID normalization)
-      if (!stored) {
-        const normalizedKey = normalizeFieldId(fieldId);
-        if (normalizedKey) {
-          const globalValue = getSetting(normalizedKey);
-          if (globalValue !== null && globalValue !== undefined) {
-            selections[fieldId] = globalValue;
-            hasAny = true;
-            continue;
-          }
+      if (pageStored) {
+        const parsed = JSON.parse(pageStored);
+        // Only store if it's a string value
+        if (typeof parsed === "string") {
+          selections[fieldId] = parsed;
+          hasAny = true;
+          continue;
         }
-
-        // Fallback: check global storage with kebab-case key
-        const globalKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${fieldId}`;
-        stored = localStorage.getItem(globalKey);
       }
 
-      if (stored) {
-        const parsed = JSON.parse(stored);
+      // Priority 2: Check global storage (fallback to user's global preferences)
+      const normalizedKey = normalizeFieldId(fieldId);
+      if (normalizedKey) {
+        const globalValue = getSetting(normalizedKey);
+        if (globalValue !== null && globalValue !== undefined) {
+          selections[fieldId] = globalValue;
+          hasAny = true;
+          continue;
+        }
+      }
+
+      // Priority 3: Check global storage with raw kebab-case key (legacy support)
+      const globalKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${fieldId}`;
+      const globalStored = localStorage.getItem(globalKey);
+
+      if (globalStored) {
+        const parsed = JSON.parse(globalStored);
         // Only store if it's a string value
         if (typeof parsed === "string") {
           selections[fieldId] = parsed;
@@ -154,6 +141,14 @@ export function CustomizePanel({
   );
   const [isClient, setIsClient] = useState(false);
 
+  // Get global customizer state to avoid overlapping dialogs
+  const guideSettings = useGuideSettings?.() || {
+    showCustomizer: false,
+    isConfigured: false,
+    settings: null,
+    setShowCustomizer: () => {},
+  };
+
   // Stabilize fieldIds to avoid unnecessary re-runs when array reference changes
   const fieldIdsKey = useMemo(() => fieldIds?.join(",") || "", [fieldIds]);
 
@@ -164,9 +159,12 @@ export function CustomizePanel({
       const ids = fieldIdsKey.split(",");
       const existingSelections = getSelections(ids);
       setSelections(existingSelections);
-      setShowCustomizer(!existingSelections); // Show customizer if no selections
+      // Only show customizer if:
+      // 1. No selections exist (neither page-level nor global)
+      // 2. Global customizer is not currently showing (prevents overlap)
+      setShowCustomizer(!existingSelections && !guideSettings.showCustomizer);
     }
-  }, [fieldIdsKey]); // Depend on stringified version, not array reference
+  }, [fieldIdsKey, guideSettings.showCustomizer]); // Also depend on global customizer state
 
   // SSR/initial render - show nothing to avoid hydration mismatch
   if (!isClient) {

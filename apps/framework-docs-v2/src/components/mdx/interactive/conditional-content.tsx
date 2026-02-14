@@ -7,29 +7,7 @@ import {
   STORAGE_KEY_PREFIX_GLOBAL,
   type InteractiveStateChangeDetail,
 } from "./use-persisted-state";
-import { getSetting, GuideSettings } from "@/lib/guide-settings";
-
-/**
- * Normalize field ID to match GuideSettings interface keys
- * Converts kebab-case to camelCase for compatibility with global settings
- */
-function normalizeFieldId(fieldId: string): keyof GuideSettings | null {
-  const normalized = fieldId.replace(/-([a-z])/g, (_, letter) =>
-    letter.toUpperCase(),
-  );
-
-  const validKeys: (keyof GuideSettings)[] = [
-    "language",
-    "os",
-    "sourceDatabase",
-    "monorepo",
-    "existingApp",
-  ];
-
-  return validKeys.includes(normalized as keyof GuideSettings) ?
-      (normalized as keyof GuideSettings)
-    : null;
-}
+import { getSetting, normalizeFieldId } from "@/lib/guide-settings";
 
 interface ConditionalContentProps {
   /** ID of the SelectField or CheckboxGroup to watch */
@@ -57,29 +35,40 @@ function ConditionalContentInner({
 
   // Check both page and global storage keys
   const pageStorageKey = `${STORAGE_KEY_PREFIX_PAGE}-${whenId}`;
-  const globalStorageKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${whenId}`;
+
+  // For global storage, use normalized (camelCase) key if this field maps to a global setting
+  const normalizedFieldId = normalizeFieldId(whenId);
+  const globalStorageKey =
+    normalizedFieldId ?
+      `${STORAGE_KEY_PREFIX_GLOBAL}-${normalizedFieldId}`
+    : `${STORAGE_KEY_PREFIX_GLOBAL}-${whenId}`;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const readStoredValue = () => {
       try {
-        // Priority 1: Check global guide settings (normalize key for compatibility)
-        const normalizedKey = normalizeFieldId(whenId);
-        if (normalizedKey) {
-          const globalValue = getSetting(normalizedKey);
+        // Priority 1: Check page-level localStorage (allows per-page overrides)
+        const pageStored = localStorage.getItem(pageStorageKey);
+        if (pageStored !== null) {
+          const value = JSON.parse(pageStored);
+          setCurrentValue(value);
+          return;
+        }
+
+        // Priority 2: Check global guide settings (fallback to user's global preferences)
+        if (normalizedFieldId) {
+          const globalValue = getSetting(normalizedFieldId);
           if (globalValue !== null && globalValue !== undefined) {
             setCurrentValue(globalValue);
             return;
           }
         }
 
-        // Priority 2: Check local storage (both page and global)
-        const stored =
-          localStorage.getItem(pageStorageKey) ||
-          localStorage.getItem(globalStorageKey);
-        if (stored !== null) {
-          const value = JSON.parse(stored);
+        // Priority 3: Check global storage with raw key (legacy support)
+        const globalStored = localStorage.getItem(globalStorageKey);
+        if (globalStored !== null) {
+          const value = JSON.parse(globalStored);
           setCurrentValue(value);
         }
       } catch {
