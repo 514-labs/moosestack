@@ -57,8 +57,7 @@ export function GlobalGuideCustomizer({
             { value: "python", label: "Python" },
           ]}
           defaultValue="typescript"
-          persist
-          globalSetting
+          persist={{ namespace: "global", syncToUrl: false }}
         />
         <SelectField
           id="os"
@@ -68,8 +67,7 @@ export function GlobalGuideCustomizer({
             { value: "windows", label: "Windows (WSL 2)" },
           ]}
           defaultValue="macos"
-          persist
-          globalSetting
+          persist={{ namespace: "global", syncToUrl: false }}
         />
         <SelectField
           id="sourceDatabase"
@@ -80,8 +78,7 @@ export function GlobalGuideCustomizer({
             { value: "none", label: "Starting from scratch" },
           ]}
           defaultValue="postgres"
-          persist
-          globalSetting
+          persist={{ namespace: "global", syncToUrl: false }}
         />
         <SelectField
           id="monorepo"
@@ -91,8 +88,7 @@ export function GlobalGuideCustomizer({
             { value: "no", label: "Single repo" },
           ]}
           defaultValue="no"
-          persist
-          globalSetting
+          persist={{ namespace: "global", syncToUrl: false }}
         />
         <SelectField
           id="existingApp"
@@ -102,8 +98,7 @@ export function GlobalGuideCustomizer({
             { value: "no", label: "New app" },
           ]}
           defaultValue="no"
-          persist
-          globalSetting
+          persist={{ namespace: "global", syncToUrl: false }}
         />
       </CustomizeGrid>
     </FullPageCustomizer>
