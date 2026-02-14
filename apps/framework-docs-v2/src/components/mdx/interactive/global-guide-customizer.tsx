@@ -25,7 +25,7 @@ export function GlobalGuideCustomizer({
   open,
   onClose,
 }: GlobalGuideCustomizerProps): React.JSX.Element | null {
-  const { updateSettings, setShowCustomizer } = useGuideSettings();
+  const { setShowCustomizer } = useGuideSettings();
 
   const handleContinue = () => {
     // Settings are automatically saved via SelectField persist prop
