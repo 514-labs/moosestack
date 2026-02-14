@@ -5,6 +5,8 @@ import { FullPageCustomizer } from "./full-page-customizer";
 import { CustomizeGrid } from "./customize-grid";
 import { SelectField } from "./select-field";
 import { useGuideSettings } from "@/contexts/guide-settings-context";
+import { GuideSettings } from "@/lib/guide-settings";
+import { STORAGE_KEY_PREFIX_GLOBAL } from "./use-persisted-state";
 
 interface GlobalGuideCustomizerProps {
   open: boolean;
@@ -28,7 +30,42 @@ export function GlobalGuideCustomizer({
   const { updateSettings, setShowCustomizer } = useGuideSettings();
 
   const handleContinue = () => {
-    // Settings are automatically saved via SelectField persist prop
+    // Settings are saved individually by SelectField components
+    // We need to read them back and consolidate into context
+    if (typeof window !== "undefined") {
+      try {
+        const consolidatedSettings: GuideSettings = {};
+
+        // Read each setting from its individual storage key
+        const settingKeys: (keyof GuideSettings)[] = [
+          "language",
+          "os",
+          "sourceDatabase",
+          "monorepo",
+          "existingApp",
+        ];
+
+        for (const key of settingKeys) {
+          const storageKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${key}`;
+          const stored = localStorage.getItem(storageKey);
+          if (stored !== null) {
+            try {
+              consolidatedSettings[key] = JSON.parse(stored) as any;
+            } catch {
+              // Ignore parsing errors
+            }
+          }
+        }
+
+        // Update context with consolidated settings
+        if (Object.keys(consolidatedSettings).length > 0) {
+          updateSettings(consolidatedSettings);
+        }
+      } catch (error) {
+        console.error("Failed to consolidate settings:", error);
+      }
+    }
+
     setShowCustomizer(false);
     if (onClose) onClose();
   };
