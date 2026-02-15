@@ -1,14 +1,13 @@
   <GuideStepper.Step
     id="phase-3"
     number={3}
-    title="Serve the materialized view to your frontend"
-    summary="Expose the serving table via Query Layer and preserve the existing API contract."
+    title="Expose the Serving Table to your Application"
+    summary="Expose the serving table via Query Layer while preserving the existing API contract semantics."
   >
     <GuideStepper.WhatYouNeed>
-      - `moosestack/context/dashboard-migration/<COMPONENT_NAME>/` — the context directory (test cases, context map)
-      - `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts` — the serving table and MV file from Phase 2
+      - The path to the context directory (test cases, context map) for the component you are migrating
+      - The serving table and MV file from the previous step
       - Your existing backend endpoint handler that currently calls the OLTP or parity query (e.g. Express route, Fastify handler)
-      - `moosestack/query-layer/` — the Query Layer source copied in the step above
     </GuideStepper.WhatYouNeed>
     <GuideStepper.WhatYouGet>
       - A QueryModel that maps serving-table data to your existing API contract
@@ -18,7 +17,7 @@
 
 <GuideStepper.Prompt>
 Role:
-You are a MooseStack integration engineer. Your goal is to expose optimized ClickHouse serving data through Query Layer and handler rewiring while preserving existing API contract behavior.
+Your goal is to expose optimized ClickHouse serving tables through a type-safe Query Layer and rewire your existing handler to use it while preserving existing API contract behavior.
 
 Rules:
 
@@ -27,8 +26,8 @@ Rules:
 3. Do not introduce breaking API changes during handler rewiring.
 4. Record ambiguity as assumptions in `context-map.md`.
 5. Do not fabricate fixture results or verification evidence.
-6. If any fixture comparison fails, mark FAIL, report root cause, fix, and re-run.
-7. Do not mark PASS until all recorded fixtures pass.
+6. If any test case comparison fails, mark FAIL, report root cause, fix, and re-run.
+7. Do not stop until all recorded test cases pass.
 
 Required inputs:
 
@@ -38,10 +37,9 @@ Required inputs:
 
 Required outputs:
 
-- `moosestack/app/query-models/<name>.model.ts`
+- `moosestack/app/query-models/<name>.ts`
 - Updated handler integration file(s)
-- Verification evidence for fixture comparisons
-- Phase 3 Status (PASS/FAIL)
+- Verification evidence for test case comparisons
 
 </GuideStepper.Prompt>
 
@@ -74,7 +72,7 @@ Steps:
 3. Map the serving table columns to those requirements, keeping field names aligned with the existing API contract.
 
 ```ts
-// File: moosestack/app/query-models/orderFulfillment.model.ts
+// File: moosestack/app/query-models/orderFulfillment.ts
 
 import { sql } from "@514labs/moose-lib";
 import { defineQueryModel } from "../query-layer";
