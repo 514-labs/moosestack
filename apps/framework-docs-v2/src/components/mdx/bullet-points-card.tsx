@@ -5,6 +5,7 @@ import Link from "next/link";
 import React from "react";
 
 export type BulletStyle = "default" | "number" | "check" | "x";
+export type BulletPointLinkVariant = "default" | "emphasized";
 
 export interface BasicBulletPoint {
   title: string;
@@ -13,6 +14,7 @@ export interface BasicBulletPoint {
     text: string;
     href: string;
     external?: boolean;
+    variant?: BulletPointLinkVariant;
   };
 }
 
@@ -110,7 +112,12 @@ export function BulletPointContent({
             (point.link.external ?
               <Link
                 href={point.link.href}
-                className="text-primary hover:underline transition-colors inline-flex items-center gap-1"
+                className={cn(
+                  "transition-colors inline-flex items-center gap-1",
+                  point.link.variant === "emphasized" ?
+                    "text-primary font-semibold underline decoration-2 underline-offset-2 hover:decoration-[3px]"
+                  : "text-primary hover:underline",
+                )}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -119,7 +126,12 @@ export function BulletPointContent({
               </Link>
             : <Link
                 href={point.link.href}
-                className="text-primary hover:underline transition-colors inline-flex items-center gap-1"
+                className={cn(
+                  "transition-colors inline-flex items-center gap-1",
+                  point.link.variant === "emphasized" ?
+                    "text-primary font-semibold underline decoration-2 underline-offset-2 hover:decoration-[3px]"
+                  : "text-primary hover:underline",
+                )}
               >
                 {point.link.text}
               </Link>)}
