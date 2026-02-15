@@ -942,6 +942,12 @@ const moosestackNavigationConfig: NavigationConfig = [
         title: "Minimum Requirements",
         languages: ["typescript", "python"],
       },
+      {
+        type: "page",
+        slug: "moosestack/help/windows-setup",
+        title: "Windows Setup",
+        languages: ["typescript", "python"],
+      },
     ],
   },
   {

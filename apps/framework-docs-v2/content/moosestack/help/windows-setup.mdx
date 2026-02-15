@@ -1,0 +1,153 @@
+---
+title: Windows Setup
+description: Set up MooseStack on Windows using WSL2
+order: 3
+category: help
+---
+
+# Windows Setup (WSL2)
+
+MooseStack runs on Windows through the Windows Subsystem for Linux (WSL2). This guide walks you through setting up a complete development environment.
+
+## Prerequisites
+
+Before you begin, ensure your system meets these requirements:
+
+- **Windows 10 or 11**: Windows 10 version 2004 (build 19041) or later, or Windows 11. See Microsoft's [WSL prerequisites](https://learn.microsoft.com/en-us/windows/wsl/install).
+- **Hardware virtualization**: VT-x/AMD-V enabled in BIOS, and at least 4 GB RAM (Docker). See Microsoft's [WSL containers guide](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers).
+- **Internet access**: Required to download Ubuntu and packages.
+- **Docker Desktop**: Used to run MooseStack's local containers.
+- *(Optional)* **Windows Terminal**: Recommended for a better terminal experience. See [Microsoft's guidance](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl).
+
+## Step 1: Enable WSL 2 and Install Ubuntu
+
+1. Open PowerShell as Administrator (right-click Start menu, choose **PowerShell (Admin)**).
+2. Run:
+
+   ```shell
+   wsl --install
+   ```
+
+3. If prompted, restart your computer to complete the installation.
+4. If `wsl --install` only shows help text:
+
+   1. List available distros:
+
+      ```shell
+      wsl --list --online
+      ```
+
+   2. Install Ubuntu explicitly:
+
+      ```shell
+      wsl --install -d Ubuntu
+      ```
+
+5. Complete Ubuntu's first-time setup. After reboot, Windows should automatically launch Ubuntu. If it doesn't open, launch **Ubuntu** from the Start menu.
+6. Create your Linux user. You'll be prompted to create a UNIX username and password for Ubuntu (separate from your Windows credentials). You won't see characters as you type the password—this is normal.
+7. Verify you're on WSL2. In PowerShell (not the Ubuntu shell), run:
+
+   ```shell
+   wsl -l -v
+   ```
+
+   If your Ubuntu distro shows version `1`, upgrade it:
+
+   ```shell
+   wsl --set-version Ubuntu 2
+   ```
+
+## Step 2: Update Linux Packages
+
+Now that Ubuntu is running in WSL, update its package lists and upgrade installed packages:
+
+1. In the Ubuntu terminal, run:
+
+   ```shell
+   sudo apt update && sudo apt upgrade -y
+   ```
+
+2. (Optional) Install basic tools:
+
+   ```shell
+   sudo apt install -y build-essential curl git
+   ```
+
+## Step 3: Install and Configure Docker
+
+MooseStack uses Docker containers under the hood for components like ClickHouse and Redpanda. On Windows, the recommended way to run Docker with WSL2 is via **Docker Desktop**.
+
+### Install Docker Desktop
+
+1. Download **Docker Desktop for Windows** from [Docker](https://www.docker.com/products/docker-desktop/) and run the installer. During installation, it may prompt to enable WSL2 features if not already enabled.
+2. Launch Docker Desktop. In the taskbar, you'll see the Docker whale icon (it may take a few seconds to start up the first time).
+
+### Configure Docker Desktop with WSL2
+
+1. **Enable WSL2 backend**: In Docker Desktop, open **Settings**. Under **General**, ensure **"Use the WSL 2-based engine"** is checked.
+2. **Integrate with Ubuntu**: In **Resources > WSL Integration**, enable integration for **Ubuntu** (or the distro you installed).
+3. **Allocate sufficient resources**: MooseStack needs at least **2.5 GB** of Docker memory. In **Resources**, set memory to 3–4 GB to be safe.
+4. **Apply settings**: Click **Apply & Restart** if you changed any settings.
+
+### Test Docker inside WSL
+
+In the Ubuntu terminal, run:
+
+```shell
+docker --version
+docker run hello-world
+```
+
+The `hello-world` container should print a "Hello from Docker!" message and exit. You can also run `docker ps` to confirm the Docker daemon is reachable from WSL (it should show no containers running).
+
+<Callout type="warning" title="Troubleshooting Docker">
+  If `docker run hello-world` fails, ensure Docker Desktop is running and WSL integration is enabled for your distro. Also verify Ubuntu is using WSL2 (Docker won't work with WSL1).
+</Callout>
+
+## Step 4: Install Node.js inside WSL2
+
+You need to install Node.js inside the WSL2 Ubuntu environment—not the Windows version of Node.js. The recommended approach is to use **nvm** (Node Version Manager), which makes it easy to install and switch between Node.js versions.
+
+<Callout type="warning" title="Don't use the Windows Node.js installer">
+  If you download Node.js from nodejs.org using the default Windows installer, it installs Node.js on Windows, not inside your WSL2 Linux environment. MooseStack needs Node.js available in the Ubuntu terminal.
+</Callout>
+
+1. In your Ubuntu terminal, install nvm (see [nvm releases](https://github.com/nvm-sh/nvm/releases) for the latest version):
+
+   ```shell
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+   ```
+
+   <Callout type="info" title="Latest nvm version">
+     Check the [nvm releases page](https://github.com/nvm-sh/nvm/releases) for the most current version tag and update the URL accordingly.
+   </Callout>
+
+2. Close and reopen your terminal (or run `source ~/.bashrc`) to load nvm.
+
+3. Install Node.js 22 (LTS):
+
+   ```shell
+   nvm install 22
+   ```
+
+4. Verify the installation:
+
+   ```shell
+   node --version
+   ```
+
+   You should see a version like `v22.x.x`.
+
+<Callout type="info" title="Why nvm?">
+  Using nvm lets you easily switch Node.js versions and keeps your installation isolated to your user account. It's the approach recommended by Microsoft for [Node.js development on WSL](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl#install-nvm-nodejs-and-npm).
+</Callout>
+
+## Step 5: Install MooseStack
+
+You now have a working Ubuntu instance on your Windows machine with Docker and Node.js installed. Continue with the [MooseStack installation](/moosestack/getting-started/quickstart)—just make sure to run all commands in the Ubuntu terminal, not PowerShell or Command Prompt.
+
+## Tips for Windows Development
+
+- **Use VS Code with WSL**: Install the [WSL extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl) for VS Code to edit files directly in your WSL environment.
+- **File system performance**: Keep your MooseStack projects in the Linux filesystem (`/home/youruser/`) rather than `/mnt/c/` for better performance.
+- **Windows Terminal**: Use [Windows Terminal](https://apps.microsoft.com/store/detail/windows-terminal/9N0DX20HK701) for a modern terminal experience with tabs and better WSL integration.
