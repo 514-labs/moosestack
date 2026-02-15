@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useGuideSettings } from "@/contexts/guide-settings-context";
 import { GlobalGuideCustomizer } from "./global-guide-customizer";
 import { SettingsSummary } from "./settings-summary";
+import { Button } from "@/components/ui/button";
+import { IconSettings } from "@tabler/icons-react";
 import {
   GUIDE_SETTINGS_LABELS,
   GUIDE_SETTINGS_CHIP_LABELS,
@@ -58,12 +60,28 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
   });
 
   return (
-    <SettingsSummary
-      selections={filteredSelections}
-      labels={GUIDE_SETTINGS_LABELS}
-      onChangeSettings={() => setShowCustomizer(true)}
-      heading="Your Stack"
-      buttonText="Configure"
-    />
+    <>
+      {/* Compact button for smaller screens (< lg) */}
+      <div className="fixed bottom-6 left-6 z-30 lg:hidden">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowCustomizer(true)}
+          className="shadow-lg backdrop-blur-md bg-background/95 gap-2"
+        >
+          <IconSettings className="h-4 w-4" />
+          Configure Guide
+        </Button>
+      </div>
+
+      {/* Full panel for larger screens (lg+) */}
+      <SettingsSummary
+        selections={filteredSelections}
+        labels={GUIDE_SETTINGS_LABELS}
+        onChangeSettings={() => setShowCustomizer(true)}
+        heading="Your Stack"
+        buttonText="Configure"
+      />
+    </>
   );
 }

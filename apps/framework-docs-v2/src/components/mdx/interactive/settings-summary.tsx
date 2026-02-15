@@ -46,7 +46,7 @@ export function SettingsSummary({
   return (
     <div
       className={cn(
-        "fixed bottom-6 left-6 z-30 shadow-lg backdrop-blur-md bg-background/95 w-full max-w-xs lg:w-[calc(var(--sidebar-width)-2rem)] flex flex-col items-start gap-3 rounded-lg border px-4 py-3",
+        "fixed bottom-6 left-6 z-30 hidden lg:flex shadow-lg backdrop-blur-md bg-background/95 w-full max-w-xs lg:w-[calc(var(--sidebar-width)-2rem)] flex-col items-start gap-3 rounded-lg border px-4 py-3",
         className,
       )}
     >
