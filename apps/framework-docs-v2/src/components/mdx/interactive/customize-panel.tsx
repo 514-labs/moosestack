@@ -144,12 +144,18 @@ export function CustomizePanel({
   // Get global customizer state to avoid overlapping dialogs
   // Use optional version for SSG compatibility (doesn't throw when provider missing)
   const guideSettingsOrNull = useGuideSettingsOptional();
-  const guideSettings = guideSettingsOrNull ?? {
-    showCustomizer: false,
-    isConfigured: false,
-    settings: null,
-    setShowCustomizer: () => {},
-  };
+
+  // Memoize fallback to prevent infinite re-renders when provider is unavailable
+  const fallbackSettings = useMemo(
+    () => ({
+      showCustomizer: false,
+      isConfigured: false,
+      settings: null,
+      setShowCustomizer: () => {},
+    }),
+    [],
+  );
+  const guideSettings = guideSettingsOrNull ?? fallbackSettings;
 
   // Stabilize fieldIds to avoid unnecessary re-runs when array reference changes
   const fieldIdsKey = useMemo(() => fieldIds?.join(",") || "", [fieldIds]);
