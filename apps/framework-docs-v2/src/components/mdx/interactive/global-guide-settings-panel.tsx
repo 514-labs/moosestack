@@ -11,6 +11,7 @@ import {
   GUIDE_SETTINGS_LABELS,
   GUIDE_SETTINGS_CHIP_LABELS,
 } from "@/lib/guide-settings";
+import { GUIDE_SETTINGS_CONFIG } from "@/config/guide-settings-config";
 
 /**
  * GlobalGuideSettingsPanel - Persistent settings panel for guide customization
@@ -49,10 +50,15 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
   }
 
   // Filter out unused fields and map values to display labels
+  // Use config's visible flag to determine which settings to show
+  const visibleSettingIds = new Set<string>(
+    GUIDE_SETTINGS_CONFIG.filter((c) => c.visible !== false).map((c) => c.id),
+  );
+
   const filteredSelections: Record<string, string> = {};
   Object.entries(settings).forEach(([key, value]) => {
-    // Skip undefined values, unused fields, or fields not in guides
-    if (!value || key === "monorepo" || key === "existingApp") return;
+    // Skip undefined values or settings marked as not visible in config
+    if (!value || !visibleSettingIds.has(key)) return;
 
     // Map value to chip label (uses shorter labels when available)
     const chipLabelMap =
