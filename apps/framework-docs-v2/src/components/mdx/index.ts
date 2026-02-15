@@ -64,6 +64,8 @@ export {
   GuideStepperStep,
   GuideStepperCheckpoint,
   GuideStepperAtAGlance,
+  GuideStepperWhatYouNeed,
+  GuideStepperWhatYouGet,
   GuideStepperPrompt,
   VerticalProgressSteps,
   VerticalProgressStepItem,

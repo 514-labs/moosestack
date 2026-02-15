@@ -1,0 +1,125 @@
+---
+title: February 12, 2026
+description: Release notes for February 12, 2026
+---
+
+import { Callout } from "@/components/mdx";
+
+# February 12, 2026
+
+Boreal's project creation experience gets a major overhaul this week with a completely redesigned multi-step wizard. On the CLI side, a new `moose docs` command brings interactive documentation browsing directly into the terminal, remote ClickHouse support simplifies working with cloud-hosted databases in development, and `moose generate dockerfile` enables CI-friendly Docker workflows without a running daemon.
+
+<Callout type="info" title="Highlights">
+* **New:** Boreal project creation flow revamp with multi-step wizard
+* **New:** Interactive `moose docs` command with browsing, search, and section navigation
+* **New:** Remote ClickHouse dev support with keychain credential storage
+* **New:** `moose generate dockerfile` subcommand for customizable Docker builds
+</Callout>
+
+## Moose
+
+### New Features
+
+**Interactive `moose docs` command with browsing, search, and section navigation** ([@oatsandsugar](https://github.com/oatsandsugar))
+  Browse MooseStack documentation directly from the CLI. Interactive picker for humans, raw markdown output for AI copilots and agents needing context.
+
+  Section-level navigation extracts specific parts of long guides without downloading entire pages — useful for focused context in agentic workflows. Language preferences persist across sessions.
+
+  ```bash
+  # Browse documentation interactively and open in browser
+  moose docs browse --web
+
+  # Search across all documentation
+  moose docs search "materialized view"
+
+  # Pipe content to other tools or LLMs
+  moose docs guides/performant-dashboards#prepare-your-local-development-environment --raw | claude "execute this step"
+  ```
+
+  Run `moose docs --help` to see all available options.
+
+  Docs: [CLI Reference](/moosestack/moose-cli)
+
+**Remote ClickHouse dev support with keychain credential storage** ([@callicles](https://github.com/callicles))
+  Connect your local development environment to a remote ClickHouse instance using a new `[dev.remote_clickhouse]` configuration section in `moose.config.toml`. Connection details like host, port, and database are stored in the config file (safe to commit), while credentials are securely resolved from your OS keychain. On first use, the CLI prompts for username and password and stores them in the keychain with automatic rollback if the write partially fails.
+
+  This enables `moose dev` to introspect and generate code from externally managed tables — such as PeerDB CDC tables or cloud-hosted databases — without requiring a local ClickHouse instance. The config resolver validates connection parameters, defaults ports based on protocol (8443 for HTTPS, 8123 for HTTP), and constructs a fully authenticated client automatically.
+
+  ```toml
+  # moose.config.toml — safe to commit (no credentials)
+  [dev.remote_clickhouse]
+  host = "my-project-db.clickhouse.cloud"
+  port = 8443
+  protocol = "https"
+  database = "default"
+  # Username and password resolved from OS keychain at runtime
+  ```
+
+  ```bash
+  # First run prompts for credentials and stores them in the keychain
+  moose dev
+  # > Enter ClickHouse username: default
+  # > Enter ClickHouse password: ********
+  # > Credentials stored in keychain
+
+  # Subsequent runs resolve credentials automatically
+  moose dev
+  ```
+
+  This release also fixes code generation for externally managed tables with UUID-style names and adds support for hyphens in ClickHouse identifiers (e.g., `my-project-db-main`), which are common in cloud-hosted environments. Cluster names containing hyphens are now properly backtick-quoted in generated SQL.
+
+  Docs: [Dev Environment Configuration](/moosestack/configuration/dev-environment)
+
+**`moose generate dockerfile` subcommand for Dockerfile customization** ([@jmsuzuki](https://github.com/jmsuzuki))
+  Generate the Dockerfile that Moose will use for `moose build --docker`, making it easy to inspect or customize the build output before building an image. This is useful when you need to tweak the generated Dockerfile or check it into your repo as part of your workflow. The command requires `custom_dockerfile = true` in your config and respects the `dockerfile_path` setting for the output location.
+
+  ```toml
+  # moose.config.toml
+  [docker_config]
+  custom_dockerfile = true          # Required for generate dockerfile
+  dockerfile_path = "./Dockerfile"  # Optional, defaults to project root
+  # Environment variable overrides:
+  # MOOSE_DOCKER_CONFIG__CUSTOM_DOCKERFILE=true
+  # MOOSE_DOCKER_CONFIG__DOCKERFILE_PATH=./Dockerfile
+  ```
+
+  ```bash
+  # Generate the Dockerfile without building an image (no Docker daemon needed)
+  moose generate dockerfile
+
+  # Customize the generated Dockerfile if needed, then build separately
+  docker build -t my-moose-app .
+
+  # Or use moose build --docker to generate and build in one step
+  moose build --docker
+  ```
+
+  Docs: [Docker Configuration](/moosestack/configuration/docker-configuration)
+
+### Improvements
+
+- Plain-text `/llm.txt` endpoint for LLM documentation discovery: Added `.txt` documentation endpoints alongside existing `.md` endpoints for broader LLM tool compatibility. The `/llm.txt` root endpoint provides a table of contents with links to individual `.txt` pages accessible at `/api/llm-txt/<slug>`. Both use the same content cleaning and language filtering as the `.md` endpoints. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Show short aliases for all CLI commands in help output: All CLI commands now display their short aliases in `moose --help` (e.g., `init [aliases: i]`, `dev [aliases: d]`, `build [aliases: b]`). ([@oatsandsugar](https://github.com/oatsandsugar))
+- Add optional email prompt to moose feedback command: The `moose feedback` command now supports a `--email` flag or interactive prompt for providing contact information. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Improved code syntax highlighting with GitHub theme: Replaced the Vitesse Light/Dark syntax highlighting theme with GitHub Light/Dark across all documentation pages. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Add application logging documentation with TS/Python examples: New "Application Logging" section in the observability docs explaining how Moose captures `stdout`/`stderr` from your application code and emits structured JSON logs with automatic span field inclusion. Includes tabbed TypeScript and Python examples showing `console.log`/`print` and structured logging patterns. The prior "Logging" heading has been renamed to "Infrastructure Logging" to distinguish the two. Docs: [Observability](/moosestack/metrics) ([@LucioFranco](https://github.com/LucioFranco))
+- Add explicit Node.js installation instructions for WSL2: Added a dedicated step-by-step guide for installing Node.js via `nvm` inside WSL2 Ubuntu, with a warning against using the Windows Node.js installer which installs to the Windows filesystem and causes path conflicts inside WSL. Covers `nvm install`, `nvm use`, and verification steps. ([@oatsandsugar](https://github.com/oatsandsugar))
+- Interactive guide stepper with checkpoint prompts: Documentation guides now feature an interactive multi-phase stepper component with progress tracking, nested checkpoints, and a "Copy Prompt" action that generates context-aware prompts for AI-assisted development workflows. The performant dashboards guide has been refactored into this new format with reusable MDX partials for each phase. Docs: [Performant Dashboards Guide](/guides/performant-dashboards) ([@okane16](https://github.com/okane16))
+
+### Bug Fixes
+
+- Fix workflow polling generating excessive history events: Fixed overly aggressive continue-as-new polling in both Python and TypeScript workflows. The previous implementation used background polling that checked event limits continuously, but each check itself created workflow history events — compounding the problem for long-running workflows. The runtime now checks continue-as-new once before starting each task, with `continue_from_task` pointing to the next unexecuted task to avoid duplicate runs on resume. The original raw workflow input is also threaded through to `continue_as_new` to prevent double-serialization on restart. ([@DatGuyJonathan](https://github.com/DatGuyJonathan))
+
+## Boreal
+
+### New Features
+
+**Project creation flow revamp** ([@groy-514](https://github.com/groy-514))
+  The project creation experience has been completely redesigned with a new multi-step wizard. The flow now starts with an origin picker featuring template browsing with search and featured templates alongside GitHub repo import. The project configuration step auto-discovers `moose.config.toml` locations in your repository, and a new infrastructure step provides a services summary with a right-hand "Customize" panel for storage, streaming, and workflow configuration.
+
+  Infrastructure selection uses a new expandable radio group with "Managed" and "External" badges, and external ClickHouse/Kafka connections must be tested and validated before proceeding. Environment variables can now be edited and validated inline during infrastructure configuration. Step transitions use `framer-motion` animations, and the deployment step only renders UI on failure — showing an error card with a Back action — instead of displaying an "initializing" spinner. GitHub account linking is no longer required to begin the template configuration flow.
+
+### Improvements
+
+- Enable typescript-mcp template for Boreal one-click deploy: The `typescript-mcp` template now supports Boreal one-click deploy. During provisioning, Boreal automatically runs `moose generate hash-token --json` to populate `MCP_API_KEY` and `MCP_API_TOKEN`, so MCP projects are deployment-ready out of the box. ([@onelesd](https://github.com/onelesd))
+- Warm node pool for faster deployment scheduling: A cluster-level warm pool now keeps a configurable number of GKE Autopilot nodes pre-provisioned with low-priority placeholder pods. When a new Moose deployment is created, it can be scheduled onto an already-provisioned node rather than waiting for node spin-up. Pod anti-affinity rules ensure org-level isolation in multi-tenant clusters, and pod disruption budgets protect running deployments during cluster maintenance. ([@jmsuzuki](https://github.com/jmsuzuki))

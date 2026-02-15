@@ -1,3 +1,50 @@
+  <GuideStepper.Step
+    id="phase-3"
+    number={3}
+    title="Serve the materialized view to your frontend"
+    summary="Expose the serving table via Query Layer and preserve the existing API contract."
+  >
+    <GuideStepper.WhatYouNeed>
+      - `moosestack/context/dashboard-migration/<COMPONENT_NAME>/` — the context directory (test cases, context map)
+      - `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts` — the serving table and MV file from Phase 2
+      - Your existing backend endpoint handler that currently calls the OLTP or parity query (e.g. Express route, Fastify handler)
+      - `moosestack/query-layer/` — the Query Layer source copied in the step above
+    </GuideStepper.WhatYouNeed>
+    <GuideStepper.WhatYouGet>
+      - A QueryModel that maps serving-table data to your existing API contract
+      - Handler integration that switches reads from OLTP/parity logic to Query Layer
+      - Fixture-based verification that response behavior remains intact
+    </GuideStepper.WhatYouGet>
+
+<GuideStepper.Prompt>
+Role:
+You are a MooseStack integration engineer. Your goal is to expose optimized ClickHouse serving data through Query Layer and handler rewiring while preserving existing API contract behavior.
+
+Rules:
+
+1. Validate required inputs once at start and list any missing input.
+2. Preserve request shape, response shape, ordering, and types.
+3. Do not introduce breaking API changes during handler rewiring.
+4. Record ambiguity as assumptions in `context-map.md`.
+5. Do not fabricate fixture results or verification evidence.
+6. If any fixture comparison fails, mark FAIL, report root cause, fix, and re-run.
+7. Do not mark PASS until all recorded fixtures pass.
+
+Required inputs:
+
+- Serving table and MV file path
+- Existing handler path
+- Request/response contract path
+
+Required outputs:
+
+- `moosestack/app/query-models/<name>.model.ts`
+- Updated handler integration file(s)
+- Verification evidence for fixture comparisons
+- Phase 3 Status (PASS/FAIL)
+
+</GuideStepper.Prompt>
+
 <GuideStepper.Checkpoint
   id="phase-3-install-query-layer"
   title="Install Query Layer source"
@@ -7,6 +54,7 @@ If you haven't already, run the following command to copy the Query Layer source
 ```bash
 pnpm dlx tiged 514-labs/query-layer/src ./query-layer
 ```
+
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint
@@ -22,7 +70,7 @@ Steps:
    - **Metrics:** aggregates the UI needs (e.g. `totalOrders`, `fulfillmentRate`)
    - **Filters:** request params + allowed operators (e.g. `merchantId in`, `day gte/lte`)
    - **Sortable:** sortable fields + any tie-breakers
-2. Create `moosestack/app/query-models/<name>.model.ts` with `defineQueryModel(...)` over the serving table.
+2. Create `moosestack/app/query-models/<name>.ts` with `defineQueryModel(...)` over the serving table.
 3. Map the serving table columns to those requirements, keeping field names aligned with the existing API contract.
 
 ```ts
@@ -46,7 +94,7 @@ export const orderFulfillmentModel = defineQueryModel({
     totalOrders: { agg: sql`sum(total_orders)` },
     fulfilledOrders: { agg: sql`sum(fulfilled_orders)` },
     fulfillmentRate: {
-      agg: sql`round(100 * sum(fulfilled_orders) / nullIf(sum(total_orders), 0), 2)`
+      agg: sql`round(100 * sum(fulfilled_orders) / nullIf(sum(total_orders), 0), 2)`,
     },
   },
 
@@ -60,6 +108,7 @@ export const orderFulfillmentModel = defineQueryModel({
   sortable: ["merchantName", "day", "totalOrders", "fulfillmentRate"] as const,
 });
 ```
+
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint
@@ -89,9 +138,7 @@ interface OrderFulfillmentRequest {
   orderBy?: "merchantName" | "day" | "totalOrders" | "fulfillmentRate";
 }
 
-export async function getOrderFulfillment(
-  request: OrderFulfillmentRequest,
-) {
+export async function getOrderFulfillment(request: OrderFulfillmentRequest) {
   const { client } = await getMooseUtils();
 
   return await orderFulfillmentModel.query(
@@ -124,6 +171,7 @@ app.post("/api/order-fulfillment", async (req, res) => {
   res.json(result); // Same response shape as before
 });
 ```
+
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint
@@ -136,7 +184,7 @@ Steps:
 
 1. Restart your backend with the updated handler so the endpoint now reads from ClickHouse via the QueryModel.
 2. Run a saved Phase 1 test case by copying the `curl` request from:
-   - `moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md`
+   - `moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/01-<short-name>.md`
 3. Save the live endpoint response:
 
 ```bash
@@ -146,11 +194,11 @@ Steps:
 
 4. Extract the expected response JSON from the same test case file:
 
-```bash
+````bash
 awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
-  moosestack/context/dashboard-migration/<component>/test-cases/01-<short-name>.md \
+  moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/01-<short-name>.md \
   | jq -S '.' > expected.json
-```
+````
 
 5. Compare:
 
@@ -171,5 +219,6 @@ time curl -s -X POST http://localhost:4000/api/order-fulfillment \
 ```
 
 Verify the response time is significantly improved compared to the original OLTP query.
-</GuideStepper.Checkpoint>
 
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
