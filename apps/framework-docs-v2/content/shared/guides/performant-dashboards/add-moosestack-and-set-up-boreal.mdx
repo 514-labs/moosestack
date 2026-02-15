@@ -1,0 +1,339 @@
+<BulletPointsCard
+  title="Why deploy to Boreal now?"
+  bulletStyle="none"
+  bullets={[
+    {
+      title: "Preview Environments and Migration Planning",
+      description:
+        "When you open a feature branch and PR later in this guide, Boreal can automatically provision a preview environment and generate a migration plan for the code changes in your branch. This ensures your code changes are safe and you can apply them to your main ClickHouse database with confidence.",
+      link: {
+        text: "Sign Up for Boreal",
+        href: "https://boreal.cloud/sign-up",
+        external: true,
+        variant: "emphasized",
+      },
+    }
+  ]}
+/>
+
+<ConditionalContent whenId="os" whenValue="windows">
+  :::include /shared/prerequisites/wsl-setup.mdx
+</ConditionalContent>
+
+<GuideStepper id="add-moosestack-and-set-up-boreal-steps" persist>
+<GuideStepper.Step
+  id="add-moosestack-and-set-up-boreal-step-1-install-cli"
+  number={1}
+  title="Prerequisite: Install Moose CLI"
+  summary="Skip this step if `moose` is already available in your terminal."
+>
+<GuideStepper.WhatYouNeed>
+- Terminal access on your machine
+- Internet access to run the installer
+- Node.js v20+ installed
+- pnpm v8+ installed
+- Docker Desktop installed and running
+<ConditionalContent whenId="os" whenValue="windows">
+  - WSL2 set up
+</ConditionalContent>
+</GuideStepper.WhatYouNeed>
+
+<GuideStepper.WhatYouGet>
+  - `moose` CLI available in your terminal
+  - Local CLI ready for project initialization commands
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Prompt>
+  Install Moose CLI only if it is not already installed.
+</GuideStepper.Prompt>
+
+<GuideStepper.Checkpoint title="Install Moose CLI">
+
+```bash
+bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+```
+
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Restart your terminal">
+  MooseStack is installed globally, so you need to restart your terminal to make `moose` available.
+
+```bash
+source ~/.zshrc # or source ~/.bashrc if you're using bash
+```
+
+  <ConditionalContent whenId="os" whenValue="windows">
+  ```bash
+  source ~/.bashrc
+  ```
+</ConditionalContent>
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Verify Moose CLI is available">
+
+```bash
+moose --version
+```
+
+You should see:
+```txt
+moose X.X.X
+```
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step
+  id="add-moosestack-and-set-up-boreal-step-2"
+  number={2}
+  title="Add MooseStack to your monorepo"
+  summary="Initialize a new MooseStack project in your monorepo and wire it up to your existing application."
+>
+<GuideStepper.WhatYouNeed>
+- A monorepo with your existing app code
+- Root-level access to `pnpm-workspace.yaml` and `package.json`
+- A target directory where `moosestack/` should live
+<ConditionalContent whenId="source-database" whenValue="postgres"> 
+  - Your ClickHouse Cloud HTTPS connection string
+</ConditionalContent>
+</GuideStepper.WhatYouNeed>
+
+<GuideStepper.WhatYouGet>
+  - A `moosestack/` workspace package initialized for this guide 
+  - Monorepo workspace + pnpm config aligned for MooseStack dependencies 
+  - Importable `moosestack` package output (`dist`) for cross-workspace usage
+
+  <ConditionalContent whenId="source-database" whenValue="postgres">
+    - Generated, read-only TypeScript models for ClickPipes-owned tables
+  </ConditionalContent>
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Prompt>
+  Set up MooseStack in my monorepo by following the steps below:
+</GuideStepper.Prompt>
+
+<GuideStepper.Checkpoint title="Initialize MooseStack in your monorepo directory">
+First, decide where `moosestack/` should live in your monorepo. Then `cd` to that location and run:
+
+<ConditionalContent whenId="source-database" whenValue="sqlserver">
+```shell
+moose init moosestack typescript-empty
+```
+</ConditionalContent>
+
+<ConditionalContent whenId="source-database" whenValue="postgres">
+```shell
+moose init --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
+```
+
+Enter your ClickHouse Cloud HTTPS connection string when prompted.
+
+This creates `app/externalModels.ts` with generated TypeScript models for ClickPipes-owned tables.
+
+<Callout type="info" title="These ClickPipes tables are externally managed">
+ClickPipes owns these replicated tables, so MooseStack does not manage their lifecycle. This is reflected in the `OlapTable.lifeCycle: LifeCycle.EXTERNALLY_MANAGED` property in all introspected models in `app/externalModels.ts`.
+
+For details, see [External Tables](/moosestack/olap/external-tables).
+
+</Callout>
+
+</ConditionalContent>
+
+<Callout type="info" title="Different monorepo layouts">
+If your repo keeps packages under a folder like `packages/`, `cd packages` first (or update the `pnpm-workspace.yaml` entry in the next checkpoint to match where you created `moosestack/`).
+</Callout>
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Update root pnpm-workspace.yaml to include moosestack">
+Edit your root `pnpm-workspace.yaml` to include the `moosestack` directory:
+
+```yaml
+packages:
+  - . # Your main app (e.g., Next.js)
+  - moosestack # MooseStack project
+```
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Configure moosestack/package.json for workspace imports">
+Add or update these top-level fields in `moosestack/package.json` so other
+packages in your monorepo can import from `"moosestack"` cleanly. Leave the
+rest of the file unchanged.
+
+```json title="moosestack/package.json"
+{
+  "name": "moosestack",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  }
+}
+```
+
+</GuideStepper.Checkpoint>
+<GuideStepper.Checkpoint title="Build your MooseStack project">
+When you build your MooseStack project, it can be imported by other packages in your monorepo. You can run `pnpm -C moosestack build` to build your MooseStack project. Or run `moose dev` which will incrementally build your code whenever you make changes.
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Make consumer apps import compiled output (not source files)">
+In each app that uses MooseStack, depend on the workspace package by name and import from `"moosestack"` only:
+
+```json title="apps/<your-app>/package.json"
+{
+  "dependencies": {
+    "moosestack": "workspace:*"
+  }
+}
+```
+
+```ts
+import { someExport } from "moosestack";
+```
+
+Do **not** import from paths like `moosestack/src/...` or
+`../moosestack/src/...`.
+
+If your monorepo uses `tsconfig.paths`, make sure consumer apps do not map
+`"moosestack"` to `moosestack/src/*`, or TypeScript may bypass `dist`.
+
+<Callout type="info" title="Quick verification">
+From a consumer app directory, run:
+
+```bash
+node -p "require.resolve('moosestack')"
+```
+
+The resolved path should point to `moosestack/dist/...`, not
+`moosestack/src/...`.
+
+</Callout>
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Add pnpm.onlyBuiltDependencies to root package.json">
+Edit your root `package.json` to add the `pnpm.onlyBuiltDependencies` section
+(this ensures required native/built dependencies are handled correctly by
+PNPM):
+
+```json
+{
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@confluentinc/kafka-javascript",
+      "@514labs/kafka-javascript"
+    ]
+  }
+}
+```
+
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+
+<GuideStepper.Step id="add-moosestack-and-set-up-boreal-step-3" number={3} title="Create and configure your Boreal project" summary="Connect your repository, configure deployment settings, and capture the ClickHouse connection details used later in the guide.">
+<GuideStepper.WhatYouNeed>
+- Access to your GitHub repository and Boreal account
+- The MooseStack project root path in your repository
+- Optional ClickHouse connection details if using your own instance
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A Boreal project connected to your repository
+- A baseline deployment environment for main + preview branches
+- A ClickHouse HTTPS connection string for the next guide section
+</GuideStepper.WhatYouGet>
+<GuideStepper.Prompt>
+Set up Boreal for my MooseStack project by following the steps below:
+</GuideStepper.Prompt>
+
+<GuideStepper.Checkpoint title="Create New Boreal Project">
+Go to [boreal.cloud](https://boreal.cloud) and sign in to your account.
+
+From your account dashboard, click the `New Project` button to create a new project.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Define project details">
+![Project Details](/deployment/import-existing-project.png)
+
+On the “Import Existing Project” page, confirm the basic settings Boreal will use to build and deploy this repo:
+
+- `Name`: this field should contain the desired project name. By default it shows the repository name; update it if necessary.
+
+- `Project Root`: set the directory within the repository that contains your MooseStack project (for example, the folder that contains your Moose config like `project.toml`). If this is a monorepo, make sure you pick the specific subfolder for the app you’re deploying (e.g., `moosestack/`).
+
+Once these fields look correct, click `Next` to proceed.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Connect to your ClickHouse instance">
+**Only do this if you are connecting to your own ClickHouse instance.**
+
+![Configure ClickHouse Connection](/deployment/configure-clickhouse-connection.png)
+
+By default, Boreal provisions a managed ClickHouse instance for your project. If you already have one, provide its connection details to use it instead.
+
+Required connection details:
+
+- `Host` (e.g., your-instance.clickhouse.cloud)
+- `Port` (for ClickHouse Cloud this is commonly 8443)
+- `Username` (e.g. `default`)
+- `Password` (your ClickHouse password)
+- `Connection Name` (e.g., “Prod ClickHouse Cloud”) for reference
+
+<Callout type="info" title="Admin Role Required">
+  `Username`/`Password` must have the `admin` role to automatically create
+  preview databases for branches in your GitHub repo.
+</Callout>
+
+Test the connection before continuing. If it fails, fix the connection details
+and test again.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Set the main branch target database">
+
+**Only do this if you’re connecting your own ClickHouse instance.** Set the
+database name Boreal should use for your project’s main branch.
+
+![Set Main Branch](/deployment/set-main-db.png)
+
+By default, Boreal creates a new database for your project. This is the database where schema changes will be applied when you merge to your main GitHub branch.
+
+<ConditionalContent whenId="source-database" whenValue="postgres">
+Override this by selecting the ClickHouse Cloud database your ClickPipes write to.
+
+<Callout
+  type="info"
+  title="Boreal + ClickPipes: what Moose will (and won’t) change"
+>
+  ClickPipes owns the raw replicated tables, so Boreal will not rewrite them
+  when you deploy unless you remove
+  `OlapTable.lifeCycle = LifeCycle.EXTERNALLY_MANAGED`. In this guide, you add
+  Moose-managed resources (views, materialized views, serving tables), and
+  Boreal migrates them automatically during deployment.
+</Callout>
+</ConditionalContent>
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Complete deployment">
+Click `Deploy` to run the initial build and create the first deployment for this repo. This will redirect you to the `Deployments` page. Typically, it will take around 1-2 minutes to deploy.
+
+Once the deployment completes, you’ll be redirected to the project overview page.
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Save your ClickHouse connection string">
+For the next section, you will need to copy the ClickHouse HTTPS connection string. You can locate this by clicking on the `Database` button in the top right corner of your project overview dashboard, and then copying the ClickHouse HTTPS connection string located at the bottom of the panel.
+
+![Copy Connection String](/deployment/copy-connection-string.png)
+
+</GuideStepper.Checkpoint>
+
+</GuideStepper.Step>
+</GuideStepper>
+
+Once this section is complete, you’re ready to continue with local development
+and the component migration phases in the rest of the tutorial.

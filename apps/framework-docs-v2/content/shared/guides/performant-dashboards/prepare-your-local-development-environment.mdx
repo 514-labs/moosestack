@@ -1,15 +1,8 @@
-### Prepare your local development environment
-
-In this section you'll create a feature branch, run the Moose development server (`moose dev`) so ClickHouse and Redpanda run locally in Docker, and optionally install the MCP server and LSP so your copilot can query the database. Once this is done, you'll use the connection string you copied from Boreal to seed your local ClickHouse and start the migration (translating OLTP queries, adding materialized views, and wiring the API). PRs from this branch will get a Boreal preview environment automatically.
-
-If you are not already in a terminal, open a new terminal and navigate to your repository.
-
 <GuideStepper id="prepare-your-local-development-environment-steps" persist>
 <GuideStepper.Step id="prepare-your-local-development-environment-step-1" number={1} title="Run your Moose development server" summary="">
 <GuideStepper.WhatYouNeed>
-- A local clone of your project repository
+- A local clone of your project repository and a terminal open to it
 - Docker Desktop installed and running
-- A new feature branch for this migration work
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - A running local Moose environment via `moose dev`
@@ -81,11 +74,11 @@ be29be802bfb   docker.redpanda.com/redpandadata/redpanda:v24.3.11   "/entrypoint
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 
-<GuideStepper.Step id="prepare-your-local-development-environment-step-2" number={2} title="Set up developer and agent tooling (optional)" summary="Optional developer and agent tooling to help you get the most out of your development environment.">
+<GuideStepper.Step id="prepare-your-local-development-environment-step-2" number={2} title="Set up developer and agent tooling (recommended)" summary="Setup recommended tooling to help you get the most out of your development environment.">
 <GuideStepper.WhatYouNeed>
 - A running local Moose environment from Step 1
 - Your preferred editor/copilot setup
-- Optional access to MCP and LSP extensions
+- Recommended access to MCP and LSP extensions
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - Copilot access to local infra context through MooseDev MCP
@@ -114,6 +107,29 @@ Install the extension via your IDE marketplace:
   Nested SQL and SQL fragments will be incorrectly highlighted as errors. If you
   would like access to experiment with this feature, let us know!
 </Callout>
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+<GuideStepper.Step id="prepare-your-local-development-environment-step-3" number={3} title="Build a copilot context workspace (recommended)" summary="Create a dedicated workspace so your copilot has the right codebase context during migration.">
+<GuideStepper.WhatYouNeed>
+- Local environment running from Step 1
+- Recommended copilot workflow for migration tasks
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A reusable `moosestack/context` workspace for migration prompts
+- A `context-map.md` template to track relevant files per component
+- A reference example your copilot can follow during each phase
+</GuideStepper.WhatYouGet>
+
+<GuideStepper.Checkpoint title="Scaffold the copilot context workspace">
+Copy the starter kit to create a dedicated workspace that compiles the context your copilot needs to migrate each component.
+
+```bash
+pnpm dlx tiged 514-labs/moosestack/examples/dashboard-migration moosestack/context
+```
+
+If `moosestack/context` already exists and is non-empty, remove or rename it before running this command again.
+
+As you complete each phase of this guide, attach the required input files in your initial prompt to your copilot. The copilot can then update the workspace files as it completes each phase.
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 </GuideStepper>
