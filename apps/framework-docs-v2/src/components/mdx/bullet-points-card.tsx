@@ -134,7 +134,7 @@ function BulletPointCard({
   children,
   className,
   compact,
-  maxWidth = "max-w-3xl",
+  maxWidth = "w-full max-w-none",
 }: {
   children: React.ReactNode;
   className?: string;

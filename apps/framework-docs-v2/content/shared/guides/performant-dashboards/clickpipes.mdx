@@ -1,4 +1,3 @@
-<ConditionalContent whenId="source-database" whenValue="postgres">
 ### Set up ClickHouse Cloud ClickPipes (Postgres CDC)
 
 ClickPipes is a managed service from ClickHouse Cloud that mirrors changes from Postgres into ClickHouse in real time. If you're already using ClickPipes and your replicated tables are present in ClickHouse, you can skip this step.
@@ -25,5 +24,3 @@ In MooseStack, you’ll treat ClickPipes tables as **externally managed**. See [
 </CommunityCallout>
 
 Once your ClickPipes pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project and set up Boreal**](#add-moosestack-to-your-project-and-set-up-boreal). In that section, you’ll initialize `moosestack/`, run `moose db pull` to generate typed models for ClickPipes-owned tables, and connect your project to Boreal for preview deployments.
-
-</ConditionalContent>
