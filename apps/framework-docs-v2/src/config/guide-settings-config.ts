@@ -8,7 +8,11 @@
 export interface SettingOption {
   value: string;
   label: string;
-  /** Optional shorter label for chip/compact display contexts */
+  /**
+   * Optional shorter label for chip/compact display contexts
+   * TODO: Develop a rational truncation strategy for chip labels.
+   * Consider: max character limits, abbreviation patterns, mobile breakpoints
+   */
   chipLabel?: string;
 }
 
