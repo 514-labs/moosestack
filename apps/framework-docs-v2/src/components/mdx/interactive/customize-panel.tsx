@@ -172,12 +172,17 @@ export function CustomizePanel({
       const ids = fieldIdsKey.split(",");
       const existingSelections = getSelections(ids);
       setSelections(existingSelections);
-      // Only show customizer if:
-      // 1. No selections exist (neither page-level nor global)
-      // 2. Global customizer is not currently showing (prevents overlap)
-      setShowCustomizer(!existingSelections && !guideSettings.showCustomizer);
+
+      // If no selections exist, show page-level customizer and hide global one
+      // This prevents race condition where both try to show simultaneously
+      if (!existingSelections) {
+        guideSettings.setShowCustomizer(false); // Hide global customizer
+        setShowCustomizer(true); // Show page-level customizer
+      } else {
+        setShowCustomizer(false);
+      }
     }
-  }, [fieldIdsKey, guideSettings.showCustomizer]); // Also depend on global customizer state
+  }, [fieldIdsKey]); // Remove guideSettings.showCustomizer dependency to avoid loops
 
   // SSR/initial render - show nothing to avoid hydration mismatch
   if (!isClient) {
