@@ -8,6 +8,8 @@
 export interface SettingOption {
   value: string;
   label: string;
+  /** Optional shorter label for chip/compact display contexts */
+  chipLabel?: string;
 }
 
 export interface SettingConfig {
@@ -50,7 +52,7 @@ export const GUIDE_SETTINGS_CONFIG: SettingConfig[] = [
     id: "os",
     label: "Operating System",
     options: [
-      { value: "macos", label: "macOS or Linux" },
+      { value: "macos", label: "macOS or Linux", chipLabel: "macOS" },
       { value: "windows", label: "Windows (WSL 2)" },
     ],
     defaultValue: "macos",
@@ -112,6 +114,16 @@ export const GUIDE_SETTINGS_VALUE_LABELS = Object.fromEntries(
   GUIDE_SETTINGS_CONFIG.map((config) => [
     config.id,
     Object.fromEntries(config.options.map((opt) => [opt.value, opt.label])),
+  ]),
+) as Record<GuideSettingId, Record<string, string>>;
+
+// Chip labels use shorter labels when available (for compact display)
+export const GUIDE_SETTINGS_CHIP_LABELS = Object.fromEntries(
+  GUIDE_SETTINGS_CONFIG.map((config) => [
+    config.id,
+    Object.fromEntries(
+      config.options.map((opt) => [opt.value, opt.chipLabel || opt.label]),
+    ),
   ]),
 ) as Record<GuideSettingId, Record<string, string>>;
 

@@ -7,7 +7,7 @@ import { GlobalGuideCustomizer } from "./global-guide-customizer";
 import { SettingsSummary } from "./settings-summary";
 import {
   GUIDE_SETTINGS_LABELS,
-  GUIDE_SETTINGS_VALUE_LABELS,
+  GUIDE_SETTINGS_CHIP_LABELS,
 } from "@/lib/guide-settings";
 
 /**
@@ -52,8 +52,8 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
     // Skip undefined values, unused fields, or fields not in guides
     if (!value || key === "monorepo" || key === "existingApp") return;
 
-    // Map value to display label
-    const displayValue = GUIDE_SETTINGS_VALUE_LABELS[key]?.[value] || value;
+    // Map value to chip label (uses shorter labels when available)
+    const displayValue = GUIDE_SETTINGS_CHIP_LABELS[key]?.[value] || value;
     filteredSelections[key] = displayValue;
   });
 

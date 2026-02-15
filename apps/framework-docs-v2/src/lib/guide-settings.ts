@@ -12,13 +12,18 @@ import {
   type GuideSettingId,
   GUIDE_SETTINGS_LABELS,
   GUIDE_SETTINGS_VALUE_LABELS,
+  GUIDE_SETTINGS_CHIP_LABELS,
   VALID_VALUES,
   GUIDE_SETTINGS_CONFIG,
 } from "@/config/guide-settings-config";
 
 // Re-export types and constants for backward compatibility
 export type { GuideSettings, GuideSettingId };
-export { GUIDE_SETTINGS_LABELS, GUIDE_SETTINGS_VALUE_LABELS };
+export {
+  GUIDE_SETTINGS_LABELS,
+  GUIDE_SETTINGS_VALUE_LABELS,
+  GUIDE_SETTINGS_CHIP_LABELS,
+};
 
 export const STORAGE_KEY_PREFIX = "moose-docs-guide-settings";
 
