@@ -45,10 +45,6 @@ import {
 const execAsync = promisify(require("child_process").exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
-const MOOSE_LIB_PATH = path.resolve(
-  __dirname,
-  "../../../packages/ts-moose-lib",
-);
 const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
   "../../../templates/typescript-tests",
@@ -161,14 +157,12 @@ async function setupTestEnvironment(testName: string) {
   fs.cpSync(TEMPLATE_SOURCE_DIR, testProjectDir, { recursive: true });
   console.log("✓ Template copied");
 
-  // Update package.json name to ensure unique Docker project name and use local moose-lib
+  // Update package.json name to ensure unique Docker project name
   const packageJsonPath = path.join(testProjectDir, "package.json");
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
   packageJson.name = projectName;
-  packageJson.dependencies["@514labs/moose-lib"] = `file:${MOOSE_LIB_PATH}`;
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
   console.log(`✓ Updated package.json name to: ${projectName}`);
-  console.log(`✓ Updated package.json to use local moose-lib`);
 
   // Install dependencies
   console.log("Installing dependencies...");
