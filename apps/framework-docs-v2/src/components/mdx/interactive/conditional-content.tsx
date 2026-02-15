@@ -110,8 +110,6 @@ function ConditionalContentInner({
 
     window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
 
-    // Note: handleStorageChange now covers both page and global storage
-
     return () => {
       window.removeEventListener("storage", handleStorageChange);
       window.removeEventListener(
