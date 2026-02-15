@@ -31,6 +31,7 @@ import {
   GUIDE_STEPPER_PROMPT_MARKER,
   GUIDE_STEPPER_WHAT_YOU_GET_MARKER,
   GUIDE_STEPPER_WHAT_YOU_NEED_MARKER,
+  GUIDE_STEPPER_AT_A_GLANCE_MARKER,
   GUIDE_TYPE_PROP,
 } from "@/lib/remark-guide-stepper-markers";
 import { parseGuideStepperStepChildren } from "@/lib/guide-stepper-step-children-parser";
@@ -200,6 +201,14 @@ export interface GuideStepperWhatYouGetProps {
   __guideType?: typeof GUIDE_STEPPER_WHAT_YOU_GET_MARKER;
 }
 
+export interface GuideStepperAtAGlanceProps {
+  title?: string;
+  children: ReactNode;
+  __guideType?:
+    | typeof GUIDE_STEPPER_AT_A_GLANCE_MARKER
+    | typeof GUIDE_STEPPER_WHAT_YOU_NEED_MARKER;
+}
+
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
@@ -252,6 +261,12 @@ function GuideStepperWhatYouNeedComponent({
 function GuideStepperWhatYouGetComponent({
   children,
 }: GuideStepperWhatYouGetProps) {
+  return <>{children}</>;
+}
+
+function GuideStepperAtAGlanceComponent({
+  children,
+}: GuideStepperAtAGlanceProps) {
   return <>{children}</>;
 }
 
@@ -632,6 +647,7 @@ function GuideStepperRoot(props: GuideStepperProps) {
 export const GuideStepper = Object.assign(GuideStepperRoot, {
   Step: GuideStepperStepComponent,
   Checkpoint: GuideStepperCheckpointComponent,
+  AtAGlance: GuideStepperAtAGlanceComponent,
   WhatYouNeed: GuideStepperWhatYouNeedComponent,
   WhatYouGet: GuideStepperWhatYouGetComponent,
   Prompt: GuideStepperPromptComponent,
@@ -639,6 +655,7 @@ export const GuideStepper = Object.assign(GuideStepperRoot, {
 
 export { GuideStepperStepComponent as GuideStepperStep };
 export { GuideStepperCheckpointComponent as GuideStepperCheckpoint };
+export { GuideStepperAtAGlanceComponent as GuideStepperAtAGlance };
 export { GuideStepperWhatYouNeedComponent as GuideStepperWhatYouNeed };
 export { GuideStepperWhatYouGetComponent as GuideStepperWhatYouGet };
 export { GuideStepperPromptComponent as GuideStepperPrompt };

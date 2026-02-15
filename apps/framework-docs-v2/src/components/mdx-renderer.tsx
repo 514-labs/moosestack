@@ -40,6 +40,7 @@ import {
   GuideStepper,
   GuideStepperStep,
   GuideStepperCheckpoint,
+  GuideStepperAtAGlance,
   GuideStepperWhatYouNeed,
   GuideStepperWhatYouGet,
   GuideStepperPrompt,
@@ -93,6 +94,7 @@ const NumberedAccordionWithSubcomponents = Object.assign(NumberedAccordion, {
 const GuideStepperWithSubcomponents = Object.assign(GuideStepper, {
   Step: GuideStepperStep,
   Checkpoint: GuideStepperCheckpoint,
+  AtAGlance: GuideStepperAtAGlance,
   WhatYouNeed: GuideStepperWhatYouNeed,
   WhatYouGet: GuideStepperWhatYouGet,
   Prompt: GuideStepperPrompt,
@@ -198,6 +200,7 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     GuideStepper: GuideStepperWithSubcomponents,
     "GuideStepper.Step": GuideStepperStep,
     "GuideStepper.Checkpoint": GuideStepperCheckpoint,
+    "GuideStepper.AtAGlance": GuideStepperAtAGlance,
     "GuideStepper.WhatYouNeed": GuideStepperWhatYouNeed,
     "GuideStepper.WhatYouGet": GuideStepperWhatYouGet,
     "GuideStepper.Prompt": GuideStepperPrompt,

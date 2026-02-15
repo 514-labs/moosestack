@@ -63,6 +63,7 @@ export {
   GuideStepper,
   GuideStepperStep,
   GuideStepperCheckpoint,
+  GuideStepperAtAGlance,
   GuideStepperWhatYouNeed,
   GuideStepperWhatYouGet,
   GuideStepperPrompt,

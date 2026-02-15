@@ -6,6 +6,9 @@ export const GUIDE_STEPPER_STEP_MARKER = "step";
 export const GUIDE_STEPPER_CHECKPOINT_MARKER = "checkpoint";
 export const GUIDE_STEPPER_WHAT_YOU_NEED_MARKER = "what-you-need";
 export const GUIDE_STEPPER_WHAT_YOU_GET_MARKER = "what-you-get";
+// Backward-compatible alias for legacy MDX (<GuideStepper.AtAGlance />).
+export const GUIDE_STEPPER_AT_A_GLANCE_MARKER =
+  GUIDE_STEPPER_WHAT_YOU_NEED_MARKER;
 export const GUIDE_STEPPER_PROMPT_MARKER = "prompt";
 export const VERTICAL_PROGRESS_STEP_ITEM_MARKER = "vertical-progress-step-item";
 
@@ -20,6 +23,7 @@ export type GuideStepperMarker =
 export const GUIDE_STEPPER_TAG_MARKERS: Record<string, GuideStepperMarker> = {
   "GuideStepper.Step": GUIDE_STEPPER_STEP_MARKER,
   "GuideStepper.Checkpoint": GUIDE_STEPPER_CHECKPOINT_MARKER,
+  "GuideStepper.AtAGlance": GUIDE_STEPPER_AT_A_GLANCE_MARKER,
   "GuideStepper.WhatYouNeed": GUIDE_STEPPER_WHAT_YOU_NEED_MARKER,
   "GuideStepper.WhatYouGet": GUIDE_STEPPER_WHAT_YOU_GET_MARKER,
   "GuideStepper.Prompt": GUIDE_STEPPER_PROMPT_MARKER,
