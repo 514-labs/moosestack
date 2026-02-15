@@ -60,8 +60,8 @@ export function GlobalGuideCustomizer({
 
   return (
     <FullPageCustomizer
-      title="Customize guides"
-      description="Select your preferences to see relevant instructions across all guides"
+      title="What's your setup?"
+      description="Select your preferences so we can show you the most relevant instructions for your environment"
       onContinue={handleContinue}
       onClose={handleClose}
       buttonText="Continue to guides"
