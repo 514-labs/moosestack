@@ -94,13 +94,17 @@ function ConditionalContentInner({
     window.addEventListener("storage", handleStorageChange);
 
     // Listen for same-page state changes via custom event (matches either key)
+    // TODO: If CustomizePanel remains in use, add UI warning when page-level
+    // settings conflict with global settings (e.g., badge showing "Page override active")
     const handleStateChange = (event: Event) => {
       const customEvent = event as CustomEvent<InteractiveStateChangeDetail>;
       if (
         customEvent.detail?.key === pageStorageKey ||
         customEvent.detail?.key === globalStorageKey
       ) {
-        setCurrentValue(customEvent.detail.value as string | string[] | null);
+        // Re-evaluate priority chain to respect page → global → legacy order
+        // This ensures same-page updates behave consistently with cross-tab updates
+        readStoredValue();
       }
     };
 
