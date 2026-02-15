@@ -16,7 +16,6 @@ Before you begin, ensure your system meets these requirements:
 - **Windows 10 or 11**: Windows 10 version 2004 (build 19041) or later, or Windows 11. See Microsoft's [WSL prerequisites](https://learn.microsoft.com/en-us/windows/wsl/install).
 - **Hardware virtualization**: VT-x/AMD-V enabled in BIOS, and at least 4 GB RAM (Docker). See Microsoft's [WSL containers guide](https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-containers).
 - **Internet access**: Required to download Ubuntu and packages.
-- **Disk space**: 10–20 GB free for the Linux filesystem and Docker images.
 - **Docker Desktop**: Used to run MooseStack's local containers.
 - *(Optional)* **Windows Terminal**: Recommended for a better terminal experience. See [Microsoft's guidance](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl).
 
@@ -85,7 +84,7 @@ MooseStack uses Docker containers under the hood for components like ClickHouse 
 
 ### Configure Docker Desktop with WSL2
 
-1. **Enable WSL2 backend**: In Docker Desktop, open **Settings**. Under **General**, ensure **"Use the WSL 2 based engine"** is checked.
+1. **Enable WSL2 backend**: In Docker Desktop, open **Settings**. Under **General**, ensure **"Use the WSL 2-based engine"** is checked.
 2. **Integrate with Ubuntu**: In **Resources > WSL Integration**, enable integration for **Ubuntu** (or the distro you installed).
 3. **Allocate sufficient resources**: MooseStack needs at least **2.5 GB** of Docker memory. In **Resources**, set memory to 3–4 GB to be safe.
 4. **Apply settings**: Click **Apply & Restart** if you changed any settings.
@@ -99,7 +98,7 @@ docker --version
 docker run hello-world
 ```
 
-The `hello-world` container should print a "Hello from Docker!" message and exit. You can also run `docker ps` to confirm the Docker daemon is reachable from WSL.
+The `hello-world` container should print a "Hello from Docker!" message and exit. You can also run `docker ps` to confirm the Docker daemon is reachable from WSL (it should show no containers running).
 
 <Callout type="warning" title="Troubleshooting Docker">
   If `docker run hello-world` fails, ensure Docker Desktop is running and WSL integration is enabled for your distro. Also verify Ubuntu is using WSL2 (Docker won't work with WSL1).
@@ -113,18 +112,22 @@ You need to install Node.js inside the WSL2 Ubuntu environment—not the Windows
   If you download Node.js from nodejs.org using the default Windows installer, it installs Node.js on Windows, not inside your WSL2 Linux environment. MooseStack needs Node.js available in the Ubuntu terminal.
 </Callout>
 
-1. In your Ubuntu terminal, install nvm:
+1. In your Ubuntu terminal, install nvm (see [nvm releases](https://github.com/nvm-sh/nvm/releases) for the latest version):
 
    ```shell
    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
    ```
 
+   <Callout type="info" title="Latest nvm version">
+     Check the [nvm releases page](https://github.com/nvm-sh/nvm/releases) for the most current version tag and update the URL accordingly.
+   </Callout>
+
 2. Close and reopen your terminal (or run `source ~/.bashrc`) to load nvm.
 
-3. Install Node.js 20 (LTS):
+3. Install Node.js 22 (LTS):
 
    ```shell
-   nvm install 20
+   nvm install 22
    ```
 
 4. Verify the installation:
@@ -133,7 +136,7 @@ You need to install Node.js inside the WSL2 Ubuntu environment—not the Windows
    node --version
    ```
 
-   You should see a version like `v20.x.x`.
+   You should see a version like `v22.x.x`.
 
 <Callout type="info" title="Why nvm?">
   Using nvm lets you easily switch Node.js versions and keeps your installation isolated to your user account. It's the approach recommended by Microsoft for [Node.js development on WSL](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl#install-nvm-nodejs-and-npm).
