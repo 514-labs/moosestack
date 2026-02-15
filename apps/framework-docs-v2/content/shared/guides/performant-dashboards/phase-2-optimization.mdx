@@ -1,13 +1,13 @@
 <GuideStepper.Step
   id="phase-2"
   number={2}
-  title="Performance optimization (Materialized Views)"
-  summary="Move expensive read-time logic into serving tables and materialized views."
+  title="Optimize the ClickHouse query with Materialized Views (MVs)"
+  summary="Move expensive read-time logic into serving tables and MVs while preserving query semantics."
 >
     <GuideStepper.WhatYouNeed>
-      - `moosestack/context/dashboard-migration/<COMPONENT_NAME>/` — the context directory (context map, test cases from Phase 1)
-      - The unoptimized parity query from Phase 1 (e.g. `moosestack/app/queries/<COMPONENT_NAME>-olap-translation.ts`)
-      - The MooseStack source table model files referenced in the parity query (e.g. `moosestack/app/models/*.ts`)
+      - The path to the context directory (context map, test cases) from the previous step
+      - The unoptimized parity query function from the previous step
+      - The MooseStack source table model files referenced in the parity query function
     </GuideStepper.WhatYouNeed>
     <GuideStepper.WhatYouGet>
       - A serving-table schema aligned to request-time access patterns

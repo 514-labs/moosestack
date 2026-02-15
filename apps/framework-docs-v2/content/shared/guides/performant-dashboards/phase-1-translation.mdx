@@ -1,8 +1,8 @@
 <GuideStepper.Step
   id="phase-1"
   number={1}
-  title="Parity translation (OLTP → ClickHouse parity function)"
-  summary="Translate your existing endpoint logic directly to ClickHouse and prove output parity."
+  title="Parity Translation"
+  summary="Translate your existing dashboard's SQL or ORM query directly to ClickHouse SQL and prove output parity."
 >
     <GuideStepper.WhatYouNeed>
       - `moosestack/context/dashboard-migration/<component>/` — the context directory for this component
@@ -44,9 +44,9 @@ Required outputs:
 
 <GuideStepper.Checkpoint
   id="phase-1-capture-test-cases"
-  title="Capture test cases"
+  title="Capture 2-5 representative test cases"
 >
-Goal: capture 2–5 replayable test cases from the **existing** OLTP endpoint. These test cases will be used to validate correctness of the translated ClickHouse query you will write in the next checkpoint.
+Goal: capture 2–5 representative test cases from the **existing** OLTP endpoint. These test cases will be used to validate correctness of the translated ClickHouse query you will write in the next checkpoint.
 
 Steps:
 
