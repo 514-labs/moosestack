@@ -165,13 +165,16 @@ export function CustomizePanel({
       // If no selections exist, show page-level customizer and hide global one
       // This prevents race condition where both try to show simultaneously
       if (!existingSelections) {
-        guideSettings.setShowCustomizer(false); // Hide global customizer
+        // Guard against no-op fallback during SSG
+        if (typeof guideSettings.setShowCustomizer === "function") {
+          guideSettings.setShowCustomizer(false); // Hide global customizer
+        }
         setShowCustomizer(true); // Show page-level customizer
       } else {
         setShowCustomizer(false);
       }
     }
-  }, [fieldIdsKey]); // Remove guideSettings.showCustomizer dependency to avoid loops
+  }, [fieldIdsKey, guideSettings.setShowCustomizer]);
 
   // SSR/initial render - show nothing to avoid hydration mismatch
   if (!isClient) {
