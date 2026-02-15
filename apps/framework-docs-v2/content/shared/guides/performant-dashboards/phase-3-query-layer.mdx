@@ -70,7 +70,7 @@ Steps:
    - **Metrics:** aggregates the UI needs (e.g. `totalOrders`, `fulfillmentRate`)
    - **Filters:** request params + allowed operators (e.g. `merchantId in`, `day gte/lte`)
    - **Sortable:** sortable fields + any tie-breakers
-2. Create `moosestack/app/query-models/<name>.model.ts` with `defineQueryModel(...)` over the serving table.
+2. Create `moosestack/app/query-models/<name>.ts` with `defineQueryModel(...)` over the serving table.
 3. Map the serving table columns to those requirements, keeping field names aligned with the existing API contract.
 
 ```ts
