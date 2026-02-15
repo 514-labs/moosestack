@@ -8,7 +8,7 @@ import {
   STORAGE_KEY_PREFIX_GLOBAL,
 } from "./use-persisted-state";
 import { getSetting, normalizeFieldId } from "@/lib/guide-settings";
-import { useGuideSettings } from "@/contexts/guide-settings-context";
+import { useGuideSettingsOptional } from "@/contexts/guide-settings-context";
 
 interface CustomizePanelProps {
   /** Panel title (default: "Customize this tutorial") */
@@ -142,25 +142,14 @@ export function CustomizePanel({
   const [isClient, setIsClient] = useState(false);
 
   // Get global customizer state to avoid overlapping dialogs
-  // Use try-catch to handle SSG where provider isn't available
-  let guideSettings: {
-    showCustomizer: boolean;
-    isConfigured: boolean;
-    settings: any;
-    setShowCustomizer: (show: boolean) => void;
+  // Use optional version for SSG compatibility (doesn't throw when provider missing)
+  const guideSettingsOrNull = useGuideSettingsOptional();
+  const guideSettings = guideSettingsOrNull ?? {
+    showCustomizer: false,
+    isConfigured: false,
+    settings: null,
+    setShowCustomizer: () => {},
   };
-
-  try {
-    guideSettings = useGuideSettings();
-  } catch {
-    // During SSG, provider isn't available - use defaults
-    guideSettings = {
-      showCustomizer: false,
-      isConfigured: false,
-      settings: null,
-      setShowCustomizer: () => {},
-    };
-  }
 
   // Stabilize fieldIds to avoid unnecessary re-runs when array reference changes
   const fieldIdsKey = useMemo(() => fieldIds?.join(",") || "", [fieldIds]);

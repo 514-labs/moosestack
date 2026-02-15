@@ -69,3 +69,12 @@ export function useGuideSettings(): GuideSettingsContextType {
   }
   return context;
 }
+
+/**
+ * Optional version that returns null instead of throwing during SSG
+ * Use this when component might render outside of provider (e.g., SSG)
+ */
+export function useGuideSettingsOptional(): GuideSettingsContextType | null {
+  const context = useContext(GuideSettingsContext);
+  return context ?? null;
+}
