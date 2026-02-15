@@ -57,7 +57,7 @@ export const GUIDE_SETTINGS_CONFIG: SettingConfig[] = [
     label: "Operating System",
     options: [
       { value: "macos", label: "macOS or Linux", chipLabel: "macOS" },
-      { value: "windows", label: "Windows (WSL 2)" },
+      { value: "windows", label: "Windows (WSL 2)", chipLabel: "WSL 2" },
     ],
     defaultValue: "macos",
     description: "Your development environment",
