@@ -13,7 +13,7 @@ import {
   CommunityCallout,
 } from "@/components/mdx";
 
-## Tutorial: Migrate Your Dashboard to ClickHouse
+# Tutorial: Migrate Your Dashboard to ClickHouse
 
 This tutorial assumes you already have a dashboard or report running in production, and you want to make it faster using OLAP best practices.
 
@@ -27,6 +27,7 @@ By the end of this guide you’ll have:
 2. A MooseStack project that defines ClickHouse resources (views, materialized views, serving tables) on top of the CDC-replicated raw tables, plus the query/API handlers your dashboard will call.
 3. A local dev workflow for evolving those resources safely, and a Boreal-backed deploy workflow with preview environments + migration plans so you can validate changes before merging to `main`.
 
+
 <Callout
   type="info"
   title="Starting from scratch?"
@@ -37,7 +38,7 @@ By the end of this guide you’ll have:
   existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app).
 </Callout>
 
-### Customize this tutorial
+## Customize this tutorial
 
 <CustomizePanel
   title="Where does your current data live?"
@@ -76,24 +77,26 @@ By the end of this guide you’ll have:
   </CustomizeGrid>
 </CustomizePanel>
 
+<CommunityCallout title="Want Python Examples?">
+This guide is written for TypeScript developers, but Python developers can follow along. The concepts translate directly, and MooseStack supports both languages. If you'd like Python-specific examples, let us know in our Slack community and we'll prioritize creating them.
+</CommunityCallout>
+
 You'll work through:
 
 <ConditionalContent whenId="source-database" whenValue="postgres">
 
 1. [Set up ClickHouse Cloud ClickPipes](#set-up-clickhouse-cloud-clickpipes-postgres-cdc) to replicate your Postgres tables into ClickHouse.
-2. [Add MooseStack to your repo](#add-moosestack-to-your-project) and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
-3. [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get preview environments and migration plans.
-4. [Migrate one dashboard component](#migrate-a-dashboard-component-to-clickhouse) using ClickHouse-native resources (views, materialized views, serving tables).
-5. [Go to production](#going-to-production) using the preview environment and reviewed migrations.
+2. [Add MooseStack and set up Boreal](#add-moosestack-to-your-project-and-set-up-boreal) so your project is initialized and PRs get preview environments with migration plans.
+3. [Migrate one dashboard component](#migrate-a-dashboard-component-to-clickhouse) using ClickHouse-native resources (views, materialized views, serving tables).
+4. [Go to production](#going-to-production) using the preview environment and reviewed migrations.
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-1. [Add MooseStack to your repo](#add-moosestack-to-your-project) (you’ll define the Debezium ingest pipeline in this project).
-2. [Connect Boreal](#deploy-your-moosestack-project-to-boreal) so pull requests get preview environments and migration plans.
-3. [Prepare your local dev environment](#prepare-your-local-development-environment) to work with ClickHouse.
-4. [Set up Debezium CDC](#set-up-change-data-capture-cdc) to stream SQL Server changes into ClickHouse via your MooseStack ingest API.
-5. [Migrate one dashboard component](#migrate-a-dashboard-component-to-clickhouse) using ClickHouse-native resources (views, materialized views, serving tables).
-6. [Go to production](#going-to-production) using the preview environment and reviewed migrations.
+1. [Add MooseStack and set up Boreal](#add-moosestack-to-your-project-and-set-up-boreal) (you’ll define the Debezium ingest pipeline in this project, then connect deployments).
+2. [Prepare your local dev environment](#prepare-your-local-development-environment) to work with ClickHouse.
+3. [Set up Debezium CDC](#set-up-change-data-capture-cdc) to stream SQL Server changes into ClickHouse via your MooseStack ingest API.
+4. [Migrate one dashboard component](#migrate-a-dashboard-component-to-clickhouse) using ClickHouse-native resources (views, materialized views, serving tables).
+5. [Go to production](#going-to-production) using the preview environment and reviewed migrations.
 </ConditionalContent>
 
 <Callout type="info" title="AI-assisted Development">
@@ -104,44 +107,9 @@ You'll work through:
   workflow even faster.
 </Callout>
 
-<CommunityCallout title="Want Python Examples?">
-This guide is written for TypeScript developers, but Python developers can follow along. The concepts translate directly, and MooseStack supports both languages. If you'd like Python-specific examples, let us know in our Slack community and we'll prioritize creating them.
-</CommunityCallout>
+:::include /shared/guides/performant-dashboards/add-moosestack-and-set-up-boreal.mdx
 
-<ConditionalContent whenId="source-database" whenValue="postgres">
-### Set up ClickHouse Cloud ClickPipes (Postgres CDC)
-
-ClickPipes is a managed service from ClickHouse Cloud that mirrors changes from Postgres into ClickHouse in real time. If you're already using ClickPipes and your replicated tables are present in ClickHouse, you can skip this step.
-
-Set up ClickPipes first so the replicated raw tables exist in ClickHouse:
-
-- [Create a new ClickHouse Cloud Account](https://auth.clickhouse.cloud/u/signup)
-- [Docs for Setting up ClickPipes CDC with Postgres](https://clickhouse.com/docs/cloud/reference/billing/clickpipes/postgres-cdc)
-
-<Callout type="info" title="ClickPipes owns the raw tables">
-ClickPipes creates and manages the replicated raw tables in ClickHouse. MooseStack reads from those tables and creates its own ClickHouse resources (views, materialized views, serving tables) alongside them. MooseStack does not rewrite or migrate ClickPipes-owned tables.
-
-In MooseStack, you’ll treat ClickPipes tables as **externally managed**. See [External Tables](/moosestack/olap/external-tables).
-
-</Callout>
-
-<CommunityCallout type="info" title="Not using ClickPipes?">
-  If your CDC provider lands tables in ClickHouse (for example, Debezium,
-  Supabase Live, or a custom pipeline), you can follow the same workflow: pull
-  the table schemas into code as external models, then build ClickHouse-native
-  views/materializations on top. If you want help mapping your setup to
-  MooseStack, join the [MooseStack
-  community](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg).
-</CommunityCallout>
-
-Once your ClickPipes pipeline is running and you can see replicated tables in ClickHouse Cloud, continue to [**Add MooseStack to your Project**](#add-moosestack-to-your-project). In that step, you’ll initialize `moosestack/` and run `moose db pull` to generate typed models for the ClickPipes-owned tables.
-
-</ConditionalContent>
-
-:::include /shared/guides/performant-dashboards/add-moosestack-to-your-project.mdx
-
-:::include /shared/guides/performant-dashboards/deploy-your-moosestack-project-to-boreal.mdx
-
+## Develop with ClickHouse locally
 :::include /shared/guides/performant-dashboards/prepare-your-local-development-environment.mdx
 
 :::include /shared/guides/performant-dashboards/set-up-change-data-capture-cdc.mdx
