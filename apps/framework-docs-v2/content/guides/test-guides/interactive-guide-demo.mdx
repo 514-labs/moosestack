@@ -435,8 +435,8 @@ Check the steps as you complete them to track your progress:
 Use `GuideStepper` for multi-phase guides where each phase has sub-checkpoints.
 Each step now includes a **Copy Prompt** action that concatenates checkpoint
 content into markdown.
-`GuideStepper.AtAGlance` remains visible reference guidance and is not copied.
-Inside `GuideStepper.AtAGlance`, write regular markdown directly (no React tags required).
+`GuideStepper.WhatYouNeed` and `GuideStepper.WhatYouGet` remain visible step
+context and are not copied into the prompt.
 Checkpoints render as a shared vertical progress steps list by default.
 
 <GuideStepper id="demo-guide-stepper" persist>
@@ -446,13 +446,17 @@ Checkpoints render as a shared vertical progress steps list by default.
     title="Parity"
     summary="Translate existing logic first, then optimize."
   >
-    <GuideStepper.AtAGlance title="Before You Run Checkpoints">
+    <GuideStepper.WhatYouNeed>
       Attach these files to your copilot context before running checkpoints:
 
       - `context-map.md`
       - endpoint handler file
       - parity query file
-    </GuideStepper.AtAGlance>
+    </GuideStepper.WhatYouNeed>
+    <GuideStepper.WhatYouGet>
+      - A complete context packet attached to your prompt
+      - A repeatable parity verification path across captured fixtures
+    </GuideStepper.WhatYouGet>
 
     <GuideStepper.Checkpoint id="phase1-context" title="Collect context files">
       Gather endpoint handler, source queries, and 2-5 replayable test cases.
@@ -484,6 +488,15 @@ Checkpoints render as a shared vertical progress steps list by default.
     title="Precompute"
     summary="Move heavy joins/aggregations to write-time materializations."
   >
+    <GuideStepper.WhatYouNeed>
+      - The parity query and context files from phase 1
+      - Source-table models used by the parity path
+      - Target API access patterns (filters, group-bys, sort fields)
+    </GuideStepper.WhatYouNeed>
+    <GuideStepper.WhatYouGet>
+      - A serving table designed for request-time access
+      - A materialized view plan that keeps serving data precomputed
+    </GuideStepper.WhatYouGet>
     <GuideStepper.Checkpoint id="phase2-serving" title="Design serving table">
       Define read-friendly schema for request-time filters/grouping.
     </GuideStepper.Checkpoint>
@@ -570,13 +583,17 @@ Use the same vertical checklist UI outside `GuideStepper` in any guide section.
 
 <GuideStepper id="migration-steps" persist>
   <GuideStepper.Step id="phase-1" number={1} title="Parity" summary="Match existing API output.">
-    <GuideStepper.AtAGlance title="Attach Context Before Prompting">
+    <GuideStepper.WhatYouNeed>
       Attach these files to your copilot prompt:
 
       - `context-map.md`
       - endpoint handler
       - source query files
-    </GuideStepper.AtAGlance>
+    </GuideStepper.WhatYouNeed>
+    <GuideStepper.WhatYouGet>
+      - A scoped parity prompt with complete context
+      - A clear checkpoint plan for parity verification
+    </GuideStepper.WhatYouGet>
     <GuideStepper.Checkpoint id="phase-1-context" title="Prepare context">
       ::: include /shared/guides/<guide>/phase-1-context.mdx
     </GuideStepper.Checkpoint>

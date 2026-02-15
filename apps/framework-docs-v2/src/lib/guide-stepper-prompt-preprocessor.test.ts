@@ -18,20 +18,20 @@ Do the thing.
     expect(output).toContain("### Checkpoint 1");
   });
 
-  it("injects rawContent into GuideStepper.AtAGlance blocks", () => {
+  it("does not inject rawContent into GuideStepper.WhatYouNeed blocks", () => {
     const input = `
-<GuideStepper.AtAGlance>
+<GuideStepper.WhatYouNeed>
 Attach these files:
 
 - \`context-map.md\`
 - \`handler.ts\`
-</GuideStepper.AtAGlance>
+</GuideStepper.WhatYouNeed>
 `;
 
     const output = processGuideStepperPrompts(input);
 
-    expect(output).toContain("<GuideStepper.AtAGlance");
-    expect(output).toContain("rawContent={");
+    expect(output).toContain("<GuideStepper.WhatYouNeed>");
+    expect(output).not.toContain("rawContent={");
     expect(output).toContain("Attach these files:");
   });
 
