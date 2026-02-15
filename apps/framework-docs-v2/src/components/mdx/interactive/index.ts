@@ -36,11 +36,15 @@ export {
   GuideStepperStep,
   GuideStepperCheckpoint,
   GuideStepperAtAGlance,
+  GuideStepperWhatYouNeed,
+  GuideStepperWhatYouGet,
   GuideStepperPrompt,
   type GuideStepperProps,
   type GuideStepperStepProps,
   type GuideStepperCheckpointProps,
   type GuideStepperAtAGlanceProps,
+  type GuideStepperWhatYouNeedProps,
+  type GuideStepperWhatYouGetProps,
   type GuideStepperPromptProps,
 } from "./guide-stepper";
 export {

@@ -4,60 +4,105 @@ In this section you'll create a feature branch, run the Moose development server
 
 If you are not already in a terminal, open a new terminal and navigate to your repository.
 
-#### Step 1: Create a branch
+<GuideStepper id="prepare-your-local-development-environment-steps" persist>
+<GuideStepper.Step id="prepare-your-local-development-environment-step-1" number={1} title="Run your Moose development server" summary="">
+<GuideStepper.WhatYouNeed>
+- A local clone of your project repository
+- Docker Desktop installed and running
+- A new feature branch for this migration work
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A running local Moose environment via `moose dev`
+- Active local services (ClickHouse, Redpanda, and supporting containers)
+- A validated baseline before migration steps
+</GuideStepper.WhatYouGet>
 
-Create a new branch in your repo to isolate your changes. When you open a pull request from this branch, you’ll get a preview environment you can use to validate changes before merging.
-
-```shell
+<GuideStepper.Checkpoint title="Create a new branch">
+```bash 
 git checkout -b <your-branch-name>
 ```
 
-#### Step 2: Run your Moose development server
+Create a new branch in your repo to isolate your changes. When you open a pull request from this branch, you’ll get a preview environment you can use to validate changes before merging.
 
-Ensure Docker Desktop is running first.
+</GuideStepper.Checkpoint>
 
-![Docker Desktop](/docker-desktop.png)
+<GuideStepper.Checkpoint title="Ensure Docker Desktop is running"> 
+  ```bash
+  docker info >/dev/null 2>&1 || echo "Docker is not running. Start Docker Desktop (Mac/Windows) or Docker Engine (Linux), then retry."
+  ```
 
-Navigate to your MooseStack project directory and run the development server:
+If Docker is not running, start it using your OS-specific method and rerun the command.
+</GuideStepper.Checkpoint>
 
-```shell
-cd moosestack  # or wherever your moose project is
-pnpm install
-moose dev
-```
+<GuideStepper.Checkpoint title="Navigate to your MooseStack project directory and run the development server">
+  
+  ```bash 
+  moose dev
+  ```
+</GuideStepper.Checkpoint>
 
-If the development server runs correctly, you'll see a list of the available API endpoints print:
+<GuideStepper.Checkpoint title="Validate expected output">
 
-```
+```txt
 📍 Available Routes:
   Base URL: http://localhost:4000
 
-  Static Routes:
-  METHOD  ENDPOINT                                           DESCRIPTION
-  ------  --------                                           -----------
-  GET     /admin/inframap                                    Admin: Get infrastructure map
-  GET     /admin/reality-check                               Admin: Reality check - provides a diff when drift is detected between the running instance of moose and the db it is connected to
-  GET     /health                                            Health check endpoint
-  GET     /ready                                             Readiness check endpoint
+Static Routes:
+METHOD ENDPOINT DESCRIPTION
+
+---
+
+GET /admin/inframap Admin: Get infrastructure map
+GET /admin/reality-check Admin: Reality check - provides a diff when drift is detected between the running instance of moose and the db it is connected to
+GET /health Health check endpoint
+GET /ready Readiness check endpoint
 ...
 
 ```
+</GuideStepper.Checkpoint>
 
-And your local services will be running in Docker containers:
+<GuideStepper.Checkpoint title="Validate expected Docker Containers">
+```bash
+docker ps
+```
 
-![Docker Services](/docker-services.png)
+```txt
+CONTAINER ID   IMAGE                                                COMMAND                  CREATED              STATUS                        PORTS                                                                      NAMES
+340d98861d3b   temporalio/ui:2.21.3                                 "./start-ui-server.sh"   About a minute ago   Up 57 seconds                 0.0.0.0:8080->8080/tcp                                                     ts-temporal-ui-1
+2c8a8a75ced3   temporalio/admin-tools:1.22.3                        "tini -- sleep infin…"   About a minute ago   Up 57 seconds                                                                                            ts-temporal-admin-tools-1
+fcb835863466   temporalio/auto-setup:1.22.3                         "/etc/temporal/entry…"   About a minute ago   Up 57 seconds (healthy)       6933-6935/tcp, 6939/tcp, 7234-7235/tcp, 7239/tcp, 0.0.0.0:7233->7233/tcp   ts-temporal-1
+0c353274770e   clickhouse/clickhouse-server:25.8                    "/entrypoint.sh sh -…"   About a minute ago   Up 52 seconds (healthy)       0.0.0.0:9000->9000/tcp, 9009/tcp, 0.0.0.0:18123->8123/tcp                  ts-clickhousedb-1
+2affed488342   redis:latest                                         "docker-entrypoint.s…"   About a minute ago   Up About a minute             0.0.0.0:6379->6379/tcp                                                     ts-redis-1
+155ccd538cc7   postgres:13                                          "docker-entrypoint.s…"   About a minute ago   Up About a minute (healthy)   0.0.0.0:5432->5432/tcp                                                     ts-postgresql-1
+f5a144eeea5e   clickhouse/clickhouse-keeper:25.8                    "/entrypoint.sh sh -…"   About a minute ago   Up About a minute (healthy)   2181/tcp, 9181/tcp, 10181/tcp, 44444/tcp                                   ts-clickhouse-keeper-1
+be29be802bfb   docker.redpanda.com/redpandadata/redpanda:v24.3.11   "/entrypoint.sh redp…"   About a minute ago   Up About a minute (healthy)   8081-8082/tcp, 9092/tcp, 9644/tcp, 0.0.0.0:19092->19092/tcp                ts-redpanda-1
+```
 
-#### Step 3: Set up developer and agent tooling (optional)
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
 
-We optionally recommend setting up your development environment with the following add-ons to let your AI copilot query your local database, inspect infrastructure, and validate SQL directly. These are not required, but can help you get the most out of your development environment.
+<GuideStepper.Step id="prepare-your-local-development-environment-step-2" number={2} title="Set up developer and agent tooling (optional)" summary="Optional developer and agent tooling to help you get the most out of your development environment.">
+<GuideStepper.WhatYouNeed>
+- A running local Moose environment from Step 1
+- Your preferred editor/copilot setup
+- Optional access to MCP and LSP extensions
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- Copilot access to local infra context through MooseDev MCP
+- SQL validation/highlighting support in your editor via Moose LSP
+- Faster iteration with less manual context switching
+</GuideStepper.WhatYouGet>
 
-**[Moose Dev MCP server](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript)**:
-
+<GuideStepper.Checkpoint title="Connect your Copilot to the MooseDev MCP server">
 Lets your AI copilot query your local ClickHouse database, inspect logs, and explore infrastructure using natural language. Your copilot can verify query results, debug issues, and validate migrations without you copying/pasting commands.
 
 :::include /shared/prerequisites/install-mcp.mdx
 
-**Language Server (LSP) for MooseStack TypeScript**:
+[Read the full MooseDev MCP Docs](https://docs.fiveonefour.com/moosestack/moosedev-mcp?lang=typescript):
+
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Install the MooseStack Language Server (LSP)">
 The [Moose LSP for Typescript](https://github.com/514-labs/moosestack-lsp) enables SQL validation and syntax highlighting for `sql` strings in Typescript objects in your Moose project.
 Install the extension via your IDE marketplace:
 
@@ -69,3 +114,6 @@ Install the extension via your IDE marketplace:
   Nested SQL and SQL fragments will be incorrectly highlighted as errors. If you
   would like access to experiment with this feature, let us know!
 </Callout>
+</GuideStepper.Checkpoint>
+</GuideStepper.Step>
+</GuideStepper>

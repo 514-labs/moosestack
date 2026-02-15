@@ -26,13 +26,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  GUIDE_STEPPER_AT_A_GLANCE_MARKER,
   GUIDE_STEPPER_CHECKPOINT_MARKER,
   GUIDE_STEPPER_STEP_MARKER,
   GUIDE_STEPPER_PROMPT_MARKER,
+  GUIDE_STEPPER_WHAT_YOU_GET_MARKER,
+  GUIDE_STEPPER_WHAT_YOU_NEED_MARKER,
+  GUIDE_STEPPER_AT_A_GLANCE_MARKER,
   GUIDE_TYPE_PROP,
 } from "@/lib/remark-guide-stepper-markers";
+import { parseGuideStepperStepChildren } from "@/lib/guide-stepper-step-children-parser";
 import { cn } from "@/lib/utils";
+import { ConditionalContent } from "./conditional-content";
 import { MARKDOWN_CONTENT_CLASS } from "./markdown-content-class";
 import { usePersistedState } from "./use-persisted-state";
 import { VerticalProgressSteps } from "./vertical-progress-steps";
@@ -59,22 +63,6 @@ function isGuideStepperStepElement(
 ): node is ReactElement<GuideStepperStepProps> {
   if (!isValidElement(node)) return false;
   if (hasGuideTypeMarker(node, GUIDE_STEPPER_STEP_MARKER)) return true;
-  return false;
-}
-
-function isGuideStepperCheckpointElement(
-  node: ReactNode,
-): node is ReactElement<GuideStepperCheckpointProps> {
-  if (!isValidElement(node)) return false;
-  if (hasGuideTypeMarker(node, GUIDE_STEPPER_CHECKPOINT_MARKER)) return true;
-  return false;
-}
-
-function isGuideStepperAtAGlanceElement(
-  node: ReactNode,
-): node is ReactElement<GuideStepperAtAGlanceProps> {
-  if (!isValidElement(node)) return false;
-  if (hasGuideTypeMarker(node, GUIDE_STEPPER_AT_A_GLANCE_MARKER)) return true;
   return false;
 }
 
@@ -117,56 +105,6 @@ function getOpenStepIdsAfterCompletionToggle(
 ): string[] {
   if (!checked) return openStepIds;
   return openStepIds.filter((openStepId) => openStepId !== stepId);
-}
-
-function buildGuideStepPromptMarkdown(checkpointRawContents: string[]): string {
-  const segments = checkpointRawContents
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-
-  return segments.join("\n\n");
-}
-
-interface ParsedGuideStepperStepChildren {
-  checkpoints: ReactElement<GuideStepperCheckpointProps>[];
-  atAGlanceBlocks: ReactElement<GuideStepperAtAGlanceProps>[];
-  bodyChildren: ReactNode[];
-  checkpointTitles: string[];
-  promptToCopy: string;
-}
-
-function parseGuideStepperStepChildren(
-  children: ReactNode,
-): ParsedGuideStepperStepChildren {
-  const checkpoints: ReactElement<GuideStepperCheckpointProps>[] = [];
-  const atAGlanceBlocks: ReactElement<GuideStepperAtAGlanceProps>[] = [];
-  const bodyChildren: ReactNode[] = [];
-  const checkpointTitles: string[] = [];
-  const checkpointRawContents: string[] = [];
-
-  for (const child of Children.toArray(children)) {
-    if (isGuideStepperCheckpointElement(child)) {
-      checkpoints.push(child);
-      checkpointTitles.push(child.props.title);
-      checkpointRawContents.push(child.props.rawContent ?? "");
-      continue;
-    }
-
-    if (isGuideStepperAtAGlanceElement(child)) {
-      atAGlanceBlocks.push(child);
-      continue;
-    }
-
-    bodyChildren.push(child);
-  }
-
-  return {
-    checkpoints,
-    atAGlanceBlocks,
-    bodyChildren,
-    checkpointTitles,
-    promptToCopy: buildGuideStepPromptMarkdown(checkpointRawContents),
-  };
 }
 
 function calculateProgress(stepIds: string[], completedStepIds: string[]) {
@@ -253,11 +191,22 @@ export interface GuideStepperPromptProps {
   __guideType?: typeof GUIDE_STEPPER_PROMPT_MARKER;
   children: ReactNode;
 }
-export interface GuideStepperAtAGlanceProps {
-  rawContent?: string;
+export interface GuideStepperWhatYouNeedProps {
   children: ReactNode;
+  __guideType?: typeof GUIDE_STEPPER_WHAT_YOU_NEED_MARKER;
+}
+
+export interface GuideStepperWhatYouGetProps {
+  children: ReactNode;
+  __guideType?: typeof GUIDE_STEPPER_WHAT_YOU_GET_MARKER;
+}
+
+export interface GuideStepperAtAGlanceProps {
   title?: string;
-  __guideType?: typeof GUIDE_STEPPER_AT_A_GLANCE_MARKER;
+  children: ReactNode;
+  __guideType?:
+    | typeof GUIDE_STEPPER_AT_A_GLANCE_MARKER
+    | typeof GUIDE_STEPPER_WHAT_YOU_NEED_MARKER;
 }
 
 // ---------------------------------------------------------------------------
@@ -299,29 +248,26 @@ function GuideStepperCheckpointComponent({
 }
 
 function GuideStepperPromptComponent({ children }: GuideStepperPromptProps) {
-  return (
-    <div className={cn("space-y-3 text-sm", MARKDOWN_CONTENT_CLASS)}>
-      {children}
-    </div>
-  );
+  // Hidden on-page by design. Prompt text is consumed via rawContent for copy.
+  return <div className="hidden">{children}</div>;
+}
+
+function GuideStepperWhatYouNeedComponent({
+  children,
+}: GuideStepperWhatYouNeedProps) {
+  return <>{children}</>;
+}
+
+function GuideStepperWhatYouGetComponent({
+  children,
+}: GuideStepperWhatYouGetProps) {
+  return <>{children}</>;
 }
 
 function GuideStepperAtAGlanceComponent({
-  title = "Checkpoints At A Glance",
   children,
 }: GuideStepperAtAGlanceProps) {
-  return (
-    <div className="space-y-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </p>
-      <div
-        className={cn("text-sm text-muted-foreground", MARKDOWN_CONTENT_CLASS)}
-      >
-        {children}
-      </div>
-    </div>
-  );
+  return <>{children}</>;
 }
 
 // ---------------------------------------------------------------------------
@@ -341,16 +287,17 @@ function GuideStepperStepComponent({
 
   const {
     checkpoints,
-    atAGlanceBlocks,
+    whatYouNeedBlocks,
+    whatYouGetBlocks,
     bodyChildren,
-    checkpointTitles,
     promptToCopy,
   } = useMemo(() => parseGuideStepperStepChildren(children), [children]);
   const hasPromptToCopy = promptToCopy.trim().length > 0;
+  const hasWhatYouNeedSnapshot = whatYouNeedBlocks.length > 0;
+  const hasWhatYouGetSnapshot = whatYouGetBlocks.length > 0;
+  const hasStepSnapshot = hasWhatYouNeedSnapshot || hasWhatYouGetSnapshot;
   const hasStepContent =
-    checkpointTitles.length > 0 ||
-    bodyChildren.length > 0 ||
-    checkpoints.length > 0;
+    bodyChildren.length > 0 || checkpoints.length > 0 || hasStepSnapshot;
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -377,7 +324,7 @@ function GuideStepperStepComponent({
       }
       timeoutRef.current = setTimeout(() => setCopied(false), 2000);
     } catch (error) {
-      console.error("Failed to copy checkpoints prompt:", error);
+      console.error("Failed to copy step prompt:", error);
     }
   }, [hasPromptToCopy, promptToCopy]);
 
@@ -429,78 +376,113 @@ function GuideStepperStepComponent({
 
       <AccordionContent className="pt-1 pb-4">
         {hasStepContent && (
-          <Card className="overflow-hidden border-border/60 bg-muted/20">
-            <CardContent className="divide-y divide-border/60 p-0">
-              {checkpoints.length > 0 && (
-                <div className="flex items-center justify-between gap-3 bg-background/50 px-4 py-3">
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Step Actions
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Copy all checkpoint prompts for this step.
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-8 gap-1.5 px-2.5 text-xs transition-colors hover:bg-secondary/80 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
-                    onClick={handleCopyPrompt}
-                    disabled={!hasPromptToCopy}
-                  >
-                    {copied ?
-                      <IconCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                    : <IconCopy className="h-3.5 w-3.5" aria-hidden="true" />}
-                    <span aria-live="polite">
-                      {copied ? "Copied!" : "Copy Prompt"}
-                    </span>
-                  </Button>
-                </div>
-              )}
-
-              {checkpointTitles.length > 0 && (
-                <div className="px-4 py-4">
-                  {atAGlanceBlocks.length > 0 ?
-                    <div className="space-y-3">{atAGlanceBlocks}</div>
-                  : <div>
-                      <p className="mb-2 text-sm font-semibold leading-relaxed text-foreground/90">
-                        Checkpoints At A Glance
+          <Card className="space-y-4 bg-background/80 p-4">
+            <CardContent className="px-4">
+              {hasStepSnapshot ?
+                <div className="space-y-4 pb-4">
+                  {hasWhatYouNeedSnapshot && (
+                    <section>
+                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                        What you need
                       </p>
-                      <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                        {checkpointTitles.map((checkpointTitle) => (
-                          <li key={checkpointTitle}>{checkpointTitle}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  }
-                </div>
-              )}
+                      <div
+                        className={cn(
+                          "mt-2 text-sm",
+                          MARKDOWN_CONTENT_CLASS,
+                          "[&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5",
+                        )}
+                      >
+                        {whatYouNeedBlocks}
+                      </div>
+                    </section>
+                  )}
 
+                  {hasWhatYouNeedSnapshot && hasWhatYouGetSnapshot && (
+                    <div className="h-px bg-border/60" aria-hidden="true" />
+                  )}
+
+                  {hasWhatYouGetSnapshot && (
+                    <section>
+                      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                        What you get
+                      </p>
+                      <div
+                        className={cn(
+                          "mt-2 text-sm",
+                          MARKDOWN_CONTENT_CLASS,
+                          "[&_ol]:list-decimal [&_ol]:space-y-1 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5",
+                        )}
+                      >
+                        {whatYouGetBlocks}
+                      </div>
+                    </section>
+                  )}
+                </div>
+              : null}
               {bodyChildren.length > 0 && (
-                <div
-                  className={cn("space-y-3 px-4 py-4", MARKDOWN_CONTENT_CLASS)}
-                >
+                <div className={cn("space-y-3 px-4", MARKDOWN_CONTENT_CLASS)}>
                   {bodyChildren}
                 </div>
               )}
 
               {checkpoints.length > 0 && (
-                <div className="bg-background/80 px-4 py-4">
-                  <p className="mb-3 text-sm font-semibold leading-relaxed text-foreground/90">
-                    Checkpoints
-                  </p>
-                  <VerticalProgressSteps variant={checkpointVariant}>
-                    {checkpoints.map((checkpoint) => (
-                      <VerticalProgressSteps.Item
-                        key={checkpoint.props.id}
-                        id={checkpoint.props.id}
-                        title={checkpoint.props.title}
-                      >
-                        {checkpoint.props.children}
-                      </VerticalProgressSteps.Item>
-                    ))}
-                  </VerticalProgressSteps>
-                </div>
+                <section className="border-t border-border/60 pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                      Workflow
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-8 gap-1.5 px-2.5 text-xs transition-colors hover:bg-secondary/80 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
+                      onClick={handleCopyPrompt}
+                      disabled={!hasPromptToCopy}
+                    >
+                      {copied ?
+                        <IconCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                      : <IconCopy className="h-3.5 w-3.5" aria-hidden="true" />}
+                      <span aria-live="polite">
+                        {copied ? "Copied!" : "Copy AI Prompt"}
+                      </span>
+                    </Button>
+                  </div>
+                  <div className="mt-3">
+                    <VerticalProgressSteps variant={checkpointVariant}>
+                      {checkpoints.map(({ checkpoint, visibility }, index) => {
+                        const checkpointKey = `${checkpoint.props.id}-${index}`;
+
+                        if (!visibility) {
+                          return (
+                            <VerticalProgressSteps.Item
+                              key={checkpointKey}
+                              id={checkpoint.props.id}
+                              title={checkpoint.props.title}
+                            >
+                              {checkpoint.props.children}
+                            </VerticalProgressSteps.Item>
+                          );
+                        }
+
+                        return (
+                          <ConditionalContent
+                            key={checkpointKey}
+                            whenId={visibility.whenId}
+                            whenValue={visibility.whenValue}
+                            match={visibility.match}
+                            fallback={visibility.fallback}
+                          >
+                            <VerticalProgressSteps.Item
+                              id={checkpoint.props.id}
+                              title={checkpoint.props.title}
+                            >
+                              {checkpoint.props.children}
+                            </VerticalProgressSteps.Item>
+                          </ConditionalContent>
+                        );
+                      })}
+                    </VerticalProgressSteps>
+                  </div>
+                </section>
               )}
             </CardContent>
           </Card>
@@ -666,10 +648,14 @@ export const GuideStepper = Object.assign(GuideStepperRoot, {
   Step: GuideStepperStepComponent,
   Checkpoint: GuideStepperCheckpointComponent,
   AtAGlance: GuideStepperAtAGlanceComponent,
+  WhatYouNeed: GuideStepperWhatYouNeedComponent,
+  WhatYouGet: GuideStepperWhatYouGetComponent,
   Prompt: GuideStepperPromptComponent,
 });
 
 export { GuideStepperStepComponent as GuideStepperStep };
 export { GuideStepperCheckpointComponent as GuideStepperCheckpoint };
 export { GuideStepperAtAGlanceComponent as GuideStepperAtAGlance };
+export { GuideStepperWhatYouNeedComponent as GuideStepperWhatYouNeed };
+export { GuideStepperWhatYouGetComponent as GuideStepperWhatYouGet };
 export { GuideStepperPromptComponent as GuideStepperPrompt };

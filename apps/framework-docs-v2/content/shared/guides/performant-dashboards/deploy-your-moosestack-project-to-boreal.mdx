@@ -14,8 +14,20 @@ This guide uses Boreal to manage deployment of your MooseStack project to produc
   ]}
 />
 
-#### Step 1: Create New Boreal Project
+<GuideStepper id="deploy-your-moosestack-project-to-boreal-steps" persist>
+<GuideStepper.Step id="deploy-your-moosestack-project-to-boreal-step-1" number={1} title="Create New Boreal Project" summary="Set up a Boreal project connected to your repository and configure environments for deployment.">
+<GuideStepper.WhatYouNeed>
+- Access to your GitHub repository and Boreal account
+- The MooseStack project root path in your repository
+- Optional ClickHouse connection details if using your own instance
+</GuideStepper.WhatYouNeed>
+<GuideStepper.WhatYouGet>
+- A Boreal project connected to your repository
+- A baseline deployment environment for main + preview branches
+- A ClickHouse HTTPS connection string for the next guide section
+</GuideStepper.WhatYouGet>
 
+<GuideStepper.Checkpoint title="Create New Boreal Project">
 Go to [boreal.cloud](https://boreal.cloud) and sign in to your account. If you don't have an account, click the `Sign Up` button to create one.
 
 <Callout
@@ -31,8 +43,9 @@ Go to [boreal.cloud](https://boreal.cloud) and sign in to your account. If you d
 
 From your account dashboard, click the `New Project` button to create a new project.
 
-#### Step 2: Define project details
+</GuideStepper.Checkpoint>
 
+<GuideStepper.Checkpoint title="Define project details">
 ![Project Details](/deployment/import-existing-project.png)
 
 On the “Import Existing Project” page, confirm the basic settings Boreal will use to build and deploy this repo:
@@ -43,72 +56,72 @@ On the “Import Existing Project” page, confirm the basic settings Boreal wil
 
 Once these fields look correct, click `Next` to proceed.
 
-#### Step 3: Select data services
+</GuideStepper.Checkpoint>
 
-![Select Data Services](/deployment/configure-data-services.png)
-
-The next screen configures the data services your deploys will use. In practice, this sets:
-
-- where main-branch deployments apply schema changes, and
-- where pull-request preview environments provision isolated databases.
-
-You can accept the default managed services, or connect existing infrastructure.
-
-<ConditionalContent whenId="source-database" whenValue="postgres">
-Since you are using ClickHouse Cloud, select `Customize` to connect to your existing ClickHouse Cloud instance.
-
-#### Step 4: Configure ClickHouse connection
+<GuideStepper.Checkpoint title="Connect to your ClickHouse instance">
+**Only do this if you are connecting to your own ClickHouse instance.**
 
 ![Configure ClickHouse Connection](/deployment/configure-clickhouse-connection.png)
 
-If you chose `Customize`, open the ClickHouse configuration and select `Connect to existing ClickHouse instance`. Then fill out the form:
+By default, Boreal provisions a managed ClickHouse instance for your project. If you already have one, provide its connection details to use it instead.
 
-- `Host`: enter the hostname of your ClickHouse instance (e.g., your-instance.clickhouse.cloud).
-- `Port`: specify the port number (for ClickHouse Cloud this is commonly 8443).
-- `User & Password`: supply the credentials for your ClickHouse user.
+Required connection details:
+
+- `Host` (e.g., your-instance.clickhouse.cloud)
+- `Port` (for ClickHouse Cloud this is commonly 8443)
+- `Username` (e.g. `default`)
+- `Password` (your ClickHouse password)
+- `Connection Name` (e.g., “Prod ClickHouse Cloud”) for reference
 
 <Callout type="info" title="Admin Role Required">
-  This user must have the `admin` role. This is required in order to create
-  preview database instances for each preview environment.
+  `Username`/`Password` must have the `admin` role to automatically create
+  preview databases for branches in your GitHub repo.
 </Callout>
-- `Connection Name`: give this connection an identifiable name (e.g., “Prod
-ClickHouse Cloud”) for future reference.
 
-Click `Test Connection` to verify connectivity. If the test fails, fix the connection details before continuing.
+Test the connection before continuing. If it fails, fix the connection details
+and test again.
 
-If you intend to use this connection for other projects, toggle `Use as Default`.
+</GuideStepper.Checkpoint>
 
-Finally, click `Add connection` to finish the setup.
+<GuideStepper.Checkpoint title="Set the main branch target database">
 
-#### Step 5: Set the main-branch database target
+**Only do this if you’re connecting your own ClickHouse instance.** Set the
+database name Boreal should use for your project’s main branch.
 
 ![Set Main Branch](/deployment/set-main-db.png)
 
-Next, choose the database that `main` branch deployments should target. This is the primary ClickHouse database your MooseStack-defined resources will live in: when you merge changes into your repository’s main branch, schema changes will be applied here.
+By default, Boreal creates a new database for your project. This is the database where schema changes will be applied when you merge to your main GitHub branch.
+
+<ConditionalContent whenId="source-database" whenValue="postgres">
+Override this by selecting the ClickHouse Cloud database your ClickPipes write to.
 
 <Callout
   type="info"
   title="Boreal + ClickPipes: what Moose will (and won’t) change"
 >
-  If you're using ClickPipes, the replicated raw tables in ClickHouse are
-  created and managed by ClickPipes. Moose (and Boreal) creates and migrates
-  **Moose-defined** ClickHouse resources (views, materialized views, serving
-  tables) alongside them—Moose does not rewrite or manage ClickPipes-owned
-  tables. In your MooseStack project, model ClickPipes-owned tables as
-  `EXTERNALLY_MANAGED` in a dedicated file like
-  `app/clickpipesExternalModels.ts` (generated via `moose db pull`).
+  ClickPipes owns the raw replicated tables, so Boreal will not rewrite them
+  when you deploy unless you remove
+  `OlapTable.lifeCycle = LifeCycle.EXTERNALLY_MANAGED`. In this guide, you add
+  Moose-managed resources (views, materialized views, serving tables), and
+  Boreal migrates them automatically during deployment.
 </Callout>
-
-In the database selector, choose the database you created in ClickHouse Cloud (the same one your CDC pipeline will write into).
-
 </ConditionalContent>
 
-#### Complete deployment
+</GuideStepper.Checkpoint>
 
+<GuideStepper.Checkpoint title="Complete deployment">
 Click `Deploy` to run the initial build and create the first deployment for this repo. This will redirect you to the `Deployments` page. Typically, it will take around 1-2 minutes to deploy.
 
 Once the deployment completes, you’ll be redirected to the project overview page.
 
+</GuideStepper.Checkpoint>
+
+<GuideStepper.Checkpoint title="Save your ClickHouse connection string">
 For the next section, you will need to copy the ClickHouse HTTPS connection string. You can locate this by clicking on the `Database` button in the top right corner of your project overview dashboard, and then copying the ClickHouse HTTPS connection string located at the bottom of the panel.
 
 ![Copy Connection String](/deployment/copy-connection-string.png)
+
+</GuideStepper.Checkpoint>
+
+</GuideStepper.Step>
+</GuideStepper>
