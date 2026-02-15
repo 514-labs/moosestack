@@ -5,7 +5,11 @@ import { FullPageCustomizer } from "./full-page-customizer";
 import { CustomizeGrid } from "./customize-grid";
 import { SelectField } from "./select-field";
 import { useGuideSettings } from "@/contexts/guide-settings-context";
-import { VISIBLE_SETTINGS } from "@/config/guide-settings-config";
+import {
+  VISIBLE_SETTINGS,
+  GUIDE_SETTINGS_CONFIG,
+} from "@/config/guide-settings-config";
+import { STORAGE_KEY_PREFIX } from "@/lib/guide-settings";
 
 interface GlobalGuideCustomizerProps {
   open: boolean;
@@ -26,7 +30,23 @@ export function GlobalGuideCustomizer({
   const { setShowCustomizer } = useGuideSettings();
 
   const handleContinue = () => {
-    // Settings are automatically saved via SelectField persist prop
+    // Ensure all defaults are persisted to localStorage before closing
+    // This prevents the wizard from reappearing when users accept defaults
+    if (typeof window !== "undefined") {
+      GUIDE_SETTINGS_CONFIG.forEach((setting) => {
+        const storageKey = `${STORAGE_KEY_PREFIX}-${setting.id}`;
+        const stored = localStorage.getItem(storageKey);
+
+        // Only write default if no value exists (don't overwrite user changes)
+        if (stored === null) {
+          localStorage.setItem(
+            storageKey,
+            JSON.stringify(setting.defaultValue),
+          );
+        }
+      });
+    }
+
     setShowCustomizer(false);
     if (onClose) onClose();
   };
