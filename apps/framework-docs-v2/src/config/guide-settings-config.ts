@@ -27,18 +27,33 @@ export interface SettingConfig {
   readonly defaultValue: string;
   /** Description/help text (optional) */
   readonly description?: string;
-  /** Whether to show this setting in the UI (useful for phasing out fields) */
+  /** Whether to show this setting in the customizer modal (default: true) */
   readonly visible?: boolean;
+  /** Whether to show this setting in the bottom-left "Your Stack" panel (default: true) */
+  readonly showInSummary?: boolean;
 }
 
 /**
  * Global Guide Settings Configuration
  *
  * Add new settings here - they'll automatically appear in:
- * - The customizer modal
- * - The settings summary panel
+ * - The customizer modal (controlled by `visible` flag)
+ * - The settings summary panel (controlled by `showInSummary` flag)
  * - TypeScript types
  * - Storage/retrieval functions
+ *
+ * Example: Setting shown in modal but hidden from summary panel
+ * {
+ *   id: "cdcTool",
+ *   label: "CDC Tool",
+ *   options: [
+ *     { value: "debezium", label: "Debezium" },
+ *     { value: "clickpipes", label: "ClickPipes" },
+ *   ],
+ *   defaultValue: "clickpipes",
+ *   visible: true,        // Shows in customizer modal
+ *   showInSummary: false, // Hidden from bottom-left panel
+ * }
  */
 export const GUIDE_SETTINGS_CONFIG = [
   {

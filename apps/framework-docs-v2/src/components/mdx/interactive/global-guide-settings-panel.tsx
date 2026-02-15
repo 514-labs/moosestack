@@ -50,15 +50,17 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
   }
 
   // Filter out unused fields and map values to display labels
-  // Use config's visible flag to determine which settings to show
-  const visibleSettingIds = new Set<string>(
-    GUIDE_SETTINGS_CONFIG.filter((c) => c.visible !== false).map((c) => c.id),
+  // Use config's showInSummary flag to determine which settings to show in panel
+  const summarySettingIds = new Set<string>(
+    GUIDE_SETTINGS_CONFIG.filter(
+      (c) => !("showInSummary" in c) || c.showInSummary !== false,
+    ).map((c) => c.id),
   );
 
   const filteredSelections: Record<string, string> = {};
   Object.entries(settings).forEach(([key, value]) => {
-    // Skip undefined values or settings marked as not visible in config
-    if (!value || !visibleSettingIds.has(key)) return;
+    // Skip undefined values or settings not meant for summary panel
+    if (!value || !summarySettingIds.has(key)) return;
 
     // Map value to chip label (uses shorter labels when available)
     const chipLabelMap =
