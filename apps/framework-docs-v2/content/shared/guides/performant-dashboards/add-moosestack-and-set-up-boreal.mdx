@@ -55,7 +55,7 @@ bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
   MooseStack is installed globally, so you need to restart your terminal to make `moose` available.
 
 ```bash
-source ~/.zshrc
+source ~/.zshrc # or source ~/.bashrc if you're using bash
 ```
 
   <ConditionalContent whenId="os" whenValue="windows">
@@ -67,13 +67,14 @@ source ~/.zshrc
 
 <GuideStepper.Checkpoint title="Verify Moose CLI is available">
 
-````bash
+```bash
 moose --version
+```
 
 You should see:
 ```txt
 moose X.X.X
-````
+```
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
@@ -109,7 +110,9 @@ moose X.X.X
 First, decide where `moosestack/` should live in your monorepo. Then `cd` to that location and run:
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-  ```shell moose init moosestack typescript-empty ```
+```shell
+moose init moosestack typescript-empty
+```
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue="postgres">
