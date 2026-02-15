@@ -5,7 +5,7 @@ ClickPipes is a managed service from ClickHouse Cloud that mirrors changes from 
 Set up ClickPipes first so the replicated raw tables exist in ClickHouse:
 
 - [Create a new ClickHouse Cloud Account](https://auth.clickhouse.cloud/u/signup)
-- [Docs for Setting up ClickPipes CDC with Postgres](https://clickhouse.com/docs/cloud/reference/billing/clickpipes/postgres-cdc)
+- [Docs for Setting up ClickPipes CDC with Postgres](https://clickhouse.com/docs/integrations/clickpipes/postgres)
 
 <Callout type="info" title="ClickPipes owns the raw tables">
 ClickPipes creates and manages the replicated raw tables in ClickHouse. MooseStack reads from those tables and creates its own ClickHouse resources (views, materialized views, serving tables) alongside them. MooseStack does not rewrite or migrate ClickPipes-owned tables.

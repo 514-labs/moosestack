@@ -81,7 +81,7 @@ export function BulletIcon({
         </div>
       );
     default:
-      return null;
+      return <div className={cn(baseIconClasses, "w-0 h-0")} />;
   }
 }
 

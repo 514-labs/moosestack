@@ -1,12 +1,17 @@
 <BulletPointsCard
   title="Why deploy to Boreal now?"
-  bulletStyle="check"
+  bulletStyle="none"
   bullets={[
     {
       title: "Preview Environments and Migration Planning",
       description:
         "When you open a feature branch and PR later in this guide, Boreal can automatically provision a preview environment and generate a migration plan for the code changes in your branch. This ensures your code changes are safe and you can apply them to your main ClickHouse database with confidence.",
-    },
+      link: {
+        text: "Sign Up for Boreal",
+        href: "https://boreal.cloud/sign-up",
+        external: true,
+      },
+    }
   ]}
 />
 
@@ -33,8 +38,8 @@
 </GuideStepper.WhatYouNeed>
 
 <GuideStepper.WhatYouGet>
-  - `moose` available in your terminal - Local CLI ready for project
-  initialization commands
+  - `moose` CLI available in your terminal
+  - Local CLI ready for project initialization commands
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Prompt>
@@ -122,7 +127,7 @@ Enter your ClickHouse Cloud HTTPS connection string when prompted.
 This creates `app/externalModels.ts` with generated TypeScript models for ClickPipes-owned tables.
 
 <Callout type="info" title="These ClickPipes tables are externally managed">
-ClickPipes owns these replicated tables, so MooseStack does not manage their lifecycle. This is reflected the `OlapTable.lifeCycle: LifeCycle.EXTERNALLY_MANAGED` property in all introspected models in `app/externalModels.ts`.
+ClickPipes owns these replicated tables, so MooseStack does not manage their lifecycle. This is reflected in the `OlapTable.lifeCycle: LifeCycle.EXTERNALLY_MANAGED` property in all introspected models in `app/externalModels.ts`.
 
 For details, see [External Tables](/moosestack/olap/external-tables).
 
@@ -240,18 +245,7 @@ Set up Boreal for my MooseStack project by following the steps below:
 </GuideStepper.Prompt>
 
 <GuideStepper.Checkpoint title="Create New Boreal Project">
-Go to [boreal.cloud](https://boreal.cloud) and sign in to your account. If you don't have an account, click the `Sign Up` button to create one.
-
-<Callout
-  type="info"
-  title="Don't have a Boreal account?"
-  ctaLabel="Sign Up"
-  href="https://boreal.cloud/sign-up"
->
-  If you don't have a Boreal account, go to [boreal.cloud](https://boreal.cloud)
-  and sign up for an account. Once you're signed up, you'll land on the
-  `Projects` page.
-</Callout>
+Go to [boreal.cloud](https://boreal.cloud) and sign in to your account.
 
 From your account dashboard, click the `New Project` button to create a new project.
 

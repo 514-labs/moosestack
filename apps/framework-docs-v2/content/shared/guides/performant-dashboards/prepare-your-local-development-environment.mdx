@@ -1,8 +1,7 @@
 <GuideStepper id="prepare-your-local-development-environment-steps" persist>
 <GuideStepper.Step id="prepare-your-local-development-environment-step-1" number={1} title="Run your Moose development server" summary="">
 <GuideStepper.WhatYouNeed>
-- A local clone of your project repository
-- A terminal session open to your project repository
+- A local clone of your project repository and a terminal open to it
 - Docker Desktop installed and running
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
@@ -75,11 +74,11 @@ be29be802bfb   docker.redpanda.com/redpandadata/redpanda:v24.3.11   "/entrypoint
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
 
-<GuideStepper.Step id="prepare-your-local-development-environment-step-2" number={2} title="Set up developer and agent tooling" summary="Setup recommended tooling to help you get the most out of your development environment.">
+<GuideStepper.Step id="prepare-your-local-development-environment-step-2" number={2} title="Set up developer and agent tooling (recommended)" summary="Setup recommended tooling to help you get the most out of your development environment.">
 <GuideStepper.WhatYouNeed>
 - A running local Moose environment from Step 1
 - Your preferred editor/copilot setup
-- Optional access to MCP and LSP extensions
+- Recommended access to MCP and LSP extensions
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - Copilot access to local infra context through MooseDev MCP
@@ -110,10 +109,10 @@ Install the extension via your IDE marketplace:
 </Callout>
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>
-<GuideStepper.Step id="prepare-your-local-development-environment-step-3" number={3} title="Build a copilot context workspace" summary="Create a dedicated workspace so your copilot has the right codebase context during migration.">
+<GuideStepper.Step id="prepare-your-local-development-environment-step-3" number={3} title="Build a copilot context workspace (recommended)" summary="Create a dedicated workspace so your copilot has the right codebase context during migration.">
 <GuideStepper.WhatYouNeed>
 - Local environment running from Step 1
-- Optional copilot workflow for migration tasks
+- Recommended copilot workflow for migration tasks
 </GuideStepper.WhatYouNeed>
 <GuideStepper.WhatYouGet>
 - A reusable `moosestack/context` workspace for migration prompts
@@ -127,6 +126,8 @@ Copy the starter kit to create a dedicated workspace that compiles the context y
 ```bash
 pnpm dlx tiged 514-labs/moosestack/examples/dashboard-migration moosestack/context
 ```
+
+If `moosestack/context` already exists and is non-empty, remove or rename it before running this command again.
 
 As you complete each phase of this guide, attach the required input files in your initial prompt to your copilot. The copilot can then update the workspace files as it completes each phase.
 </GuideStepper.Checkpoint>
