@@ -171,55 +171,13 @@ As you complete each phase of this guide, you will attach the required input fil
 Pick a specific dashboard component or report to migrate. You'll work through one component at a time.
 
 <GuideStepper id="performant-dashboards-migration" persist>
-  <GuideStepper.Step
-    id="phase-1"
-    number={1}
-    title="Parity translation (OLTP → ClickHouse parity function)"
-    summary="Translate your existing endpoint logic directly to ClickHouse and prove output parity."
-  >
-    <GuideStepper.AtAGlance title="Attach context files to your prompt">
-      - `moosestack/context/dashboard-migration/<component>/` — the context directory for this component
-      - The API specification for the endpoint
-      - Your existing backend endpoint handler (e.g. Express route, Fastify handler) that serves the dashboard data
-      - The OLTP query file(s) that the handler calls (e.g. SQL builder, ORM query, raw query function)
-    </GuideStepper.AtAGlance>
 
-    :::include /shared/guides/performant-dashboards/phase-1-checkpoints.mdx
+    :::include /shared/guides/performant-dashboards/phase-1-translation.mdx
 
-  </GuideStepper.Step>
+    :::include /shared/guides/performant-dashboards/phase-2-optimization.mdx
 
-  <GuideStepper.Step
-    id="phase-2"
-    number={2}
-    title="Performance optimization (Materialized Views)"
-    summary="Move expensive read-time logic into serving tables and materialized views."
-  >
-    <GuideStepper.AtAGlance title="Attach context files to your prompt">
-      - `moosestack/context/dashboard-migration/<component>/` — the context directory (context map, test cases from Phase 1)
-      - The unoptimized parity query from Phase 1 (e.g. `moosestack/app/queries/<component>-olap-translation.ts`)
-      - The MooseStack source table model files referenced in the parity query (e.g. `moosestack/app/models/*.ts`)
-    </GuideStepper.AtAGlance>
+    :::include /shared/guides/performant-dashboards/phase-3-query-layer.mdx
 
-    :::include /shared/guides/performant-dashboards/phase-2-checkpoints.mdx
-
-  </GuideStepper.Step>
-
-  <GuideStepper.Step
-    id="phase-3"
-    number={3}
-    title="Serve the materialized view to your frontend"
-    summary="Expose the serving table via Query Layer and preserve the existing API contract."
-  >
-    <GuideStepper.AtAGlance title="Attach context files to your prompt">
-      - `moosestack/context/dashboard-migration/<component>/` — the context directory (test cases, context map)
-      - `moosestack/app/models/<ServingTable>-mv.ts` — the serving table and MV file from Phase 2
-      - Your existing backend endpoint handler that currently calls the OLTP or parity query (e.g. Express route, Fastify handler)
-      - `moosestack/query-layer/` — the Query Layer source copied in the step above
-    </GuideStepper.AtAGlance>
-
-    :::include /shared/guides/performant-dashboards/phase-3-checkpoints.mdx
-
-  </GuideStepper.Step>
 </GuideStepper>
 
 :::include /shared/guides/performant-dashboards/going-to-production.mdx

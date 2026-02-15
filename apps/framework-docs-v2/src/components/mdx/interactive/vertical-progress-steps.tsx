@@ -111,13 +111,13 @@ function VerticalProgressStepsRoot({
                 }
               </span>
 
-              <div className="max-w-prose space-y-2">
+              <div className="w-full min-w-0 space-y-2">
                 <p className="font-medium text-sm leading-relaxed">
                   {item.props.title}
                 </p>
                 <div
                   className={cn(
-                    "max-w-prose space-y-3 text-sm text-muted-foreground",
+                    "w-full min-w-0 space-y-3 text-sm text-muted-foreground",
                     MARKDOWN_CONTENT_CLASS,
                   )}
                 >

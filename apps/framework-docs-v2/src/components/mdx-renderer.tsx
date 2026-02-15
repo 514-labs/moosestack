@@ -41,6 +41,8 @@ import {
   GuideStepperStep,
   GuideStepperCheckpoint,
   GuideStepperAtAGlance,
+  GuideStepperWhatYouNeed,
+  GuideStepperWhatYouGet,
   GuideStepperPrompt,
   VerticalProgressSteps,
   VerticalProgressStepItem,
@@ -93,6 +95,8 @@ const GuideStepperWithSubcomponents = Object.assign(GuideStepper, {
   Step: GuideStepperStep,
   Checkpoint: GuideStepperCheckpoint,
   AtAGlance: GuideStepperAtAGlance,
+  WhatYouNeed: GuideStepperWhatYouNeed,
+  WhatYouGet: GuideStepperWhatYouGet,
   Prompt: GuideStepperPrompt,
 });
 const VerticalProgressStepsWithSubcomponents = Object.assign(
@@ -197,6 +201,8 @@ export async function MDXRenderer({ source }: MDXRendererProps) {
     "GuideStepper.Step": GuideStepperStep,
     "GuideStepper.Checkpoint": GuideStepperCheckpoint,
     "GuideStepper.AtAGlance": GuideStepperAtAGlance,
+    "GuideStepper.WhatYouNeed": GuideStepperWhatYouNeed,
+    "GuideStepper.WhatYouGet": GuideStepperWhatYouGet,
     "GuideStepper.Prompt": GuideStepperPrompt,
     VerticalProgressSteps: VerticalProgressStepsWithSubcomponents,
     "VerticalProgressSteps.Item": VerticalProgressStepItem,

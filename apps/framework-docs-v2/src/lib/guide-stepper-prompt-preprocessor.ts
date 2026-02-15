@@ -10,7 +10,7 @@
  */
 
 const GUIDE_STEPPER_BLOCK_REGEX =
-  /<GuideStepper\.(Checkpoint|Prompt|AtAGlance)\b([^>]*)>([\s\S]*?)<\/GuideStepper\.\1>/g;
+  /<GuideStepper\.(Checkpoint|Prompt)\b([^>]*)>([\s\S]*?)<\/GuideStepper\.\1>/g;
 
 interface Range {
   start: number;
@@ -81,7 +81,7 @@ export function processGuideStepperPrompts(content: string): string {
     }
 
     const fullBlock = match[0];
-    const componentName = match[1] as "Checkpoint" | "Prompt" | "AtAGlance";
+    const componentName = match[1] as "Checkpoint" | "Prompt";
     const propsString = match[2] ?? "";
     const innerContent = match[3] ?? "";
 
