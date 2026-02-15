@@ -13,8 +13,9 @@ import { cn } from "@/lib/utils";
 import { usePersistedState, type PersistOptions } from "./use-persisted-state";
 
 interface SelectOption {
-  value: string;
-  label: string;
+  readonly value: string;
+  readonly label: string;
+  readonly chipLabel?: string;
 }
 
 interface SelectFieldProps {
@@ -23,7 +24,7 @@ interface SelectFieldProps {
   /** Label displayed above the select */
   label: string;
   /** Available options to choose from */
-  options: SelectOption[];
+  options: readonly SelectOption[];
   /** Default selected value */
   defaultValue?: string;
   /** Controlled value (overrides persisted state) */

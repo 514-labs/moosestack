@@ -6,29 +6,29 @@
  */
 
 export interface SettingOption {
-  value: string;
-  label: string;
+  readonly value: string;
+  readonly label: string;
   /**
    * Optional shorter label for chip/compact display contexts
    * TODO: Develop a rational truncation strategy for chip labels.
    * Consider: max character limits, abbreviation patterns, mobile breakpoints
    */
-  chipLabel?: string;
+  readonly chipLabel?: string;
 }
 
 export interface SettingConfig {
   /** Unique ID for this setting (used as storage key) */
-  id: string;
+  readonly id: string;
   /** Display label for the setting */
-  label: string;
+  readonly label: string;
   /** Available options for this setting */
-  options: SettingOption[];
+  readonly options: readonly SettingOption[];
   /** Default value (must match one of the option values) */
-  defaultValue: string;
+  readonly defaultValue: string;
   /** Description/help text (optional) */
-  description?: string;
+  readonly description?: string;
   /** Whether to show this setting in the UI (useful for phasing out fields) */
-  visible?: boolean;
+  readonly visible?: boolean;
 }
 
 /**
@@ -40,7 +40,7 @@ export interface SettingConfig {
  * - TypeScript types
  * - Storage/retrieval functions
  */
-export const GUIDE_SETTINGS_CONFIG: SettingConfig[] = [
+export const GUIDE_SETTINGS_CONFIG = [
   {
     id: "language",
     label: "Language",
@@ -97,7 +97,7 @@ export const GUIDE_SETTINGS_CONFIG: SettingConfig[] = [
     description: "Whether you're adding Moose to an existing application",
     visible: false, // Hidden until needed in guides
   },
-];
+] as const satisfies readonly SettingConfig[];
 
 // Auto-generate TypeScript types from config
 export type GuideSettingId = (typeof GUIDE_SETTINGS_CONFIG)[number]["id"];
@@ -108,7 +108,7 @@ export type GuideSettings = {
 // Auto-generate helper maps
 export const GUIDE_SETTINGS_BY_ID = Object.fromEntries(
   GUIDE_SETTINGS_CONFIG.map((config) => [config.id, config]),
-) as Record<GuideSettingId, SettingConfig>;
+) as Record<GuideSettingId, (typeof GUIDE_SETTINGS_CONFIG)[number]>;
 
 export const GUIDE_SETTINGS_LABELS = Object.fromEntries(
   GUIDE_SETTINGS_CONFIG.map((config) => [config.id, config.label]),
@@ -126,7 +126,10 @@ export const GUIDE_SETTINGS_CHIP_LABELS = Object.fromEntries(
   GUIDE_SETTINGS_CONFIG.map((config) => [
     config.id,
     Object.fromEntries(
-      config.options.map((opt) => [opt.value, opt.chipLabel || opt.label]),
+      config.options.map((opt) => [
+        opt.value,
+        "chipLabel" in opt ? opt.chipLabel : opt.label,
+      ]),
     ),
   ]),
 ) as Record<GuideSettingId, Record<string, string>>;

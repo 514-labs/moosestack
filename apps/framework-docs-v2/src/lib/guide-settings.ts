@@ -36,7 +36,9 @@ export function normalizeFieldId(fieldId: string): GuideSettingId | null {
     letter.toUpperCase(),
   );
 
-  const allSettingIds = GUIDE_SETTINGS_CONFIG.map((config) => config.id);
+  const allSettingIds: readonly string[] = GUIDE_SETTINGS_CONFIG.map(
+    (config) => config.id,
+  );
 
   return allSettingIds.includes(normalized) ?
       (normalized as GuideSettingId)

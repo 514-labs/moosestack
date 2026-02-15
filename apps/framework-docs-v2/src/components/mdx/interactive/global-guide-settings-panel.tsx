@@ -55,7 +55,11 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
     if (!value || key === "monorepo" || key === "existingApp") return;
 
     // Map value to chip label (uses shorter labels when available)
-    const displayValue = GUIDE_SETTINGS_CHIP_LABELS[key]?.[value] || value;
+    const chipLabelMap =
+      GUIDE_SETTINGS_CHIP_LABELS[
+        key as keyof typeof GUIDE_SETTINGS_CHIP_LABELS
+      ];
+    const displayValue = chipLabelMap?.[value] || value;
     filteredSelections[key] = displayValue;
   });
 
