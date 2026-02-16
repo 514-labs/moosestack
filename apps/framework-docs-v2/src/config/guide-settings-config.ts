@@ -99,7 +99,8 @@ export const GUIDE_SETTINGS_CONFIG = [
     ],
     defaultValue: "no",
     description: "Whether you're using a monorepo setup",
-    visible: false, // Hidden until needed in guides
+    visible: false, // Hidden from customizer modal
+    showInSummary: false, // Hidden from bottom-left panel
   },
   {
     id: "existingApp",
@@ -110,7 +111,8 @@ export const GUIDE_SETTINGS_CONFIG = [
     ],
     defaultValue: "no",
     description: "Whether you're adding Moose to an existing application",
-    visible: false, // Hidden until needed in guides
+    visible: false, // Hidden from customizer modal
+    showInSummary: false, // Hidden from bottom-left panel
   },
 ] as const satisfies readonly SettingConfig[];
 
