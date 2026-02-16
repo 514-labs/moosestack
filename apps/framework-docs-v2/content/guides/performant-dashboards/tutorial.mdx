@@ -57,7 +57,7 @@ This guide is written for TypeScript developers, but Python developers can follo
 
 You'll work through:
 
-<ConditionalContent whenId="source-database" whenValue="postgres">
+<ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
 1. [Project Setup](#project-setup) to set up ClickHouse Cloud ClickPipes, initialize MooseStack, and configure Boreal preview environments.
 2. [Develop with ClickHouse locally](#develop-with-clickhouse-locally) to prepare your local environment, validate data flow, and migrate a dashboard component to ClickHouse.
 3. [Going to production](#going-to-production) using the preview environment and reviewed migrations.
@@ -79,7 +79,7 @@ You'll work through:
 
 ## Project Setup
 
-<ConditionalContent whenId="source-database" whenValue="postgres">
+<ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
 :::include /shared/guides/performant-dashboards/clickpipes.mdx
 </ConditionalContent>
 
