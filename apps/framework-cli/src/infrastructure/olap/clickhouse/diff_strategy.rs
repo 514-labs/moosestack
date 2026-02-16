@@ -225,8 +225,8 @@ pub fn nested_are_equivalent(
 
         // Recursively compare data types
         if !column_types_are_equivalent(
-            &actual_col.data_type,
-            &target_col.data_type,
+            &normalized_actual.data_type,
+            &normalized_target.data_type,
             ignore_low_cardinality,
         ) {
             return false;
@@ -335,10 +335,12 @@ pub fn normalize_column_for_low_cardinality_ignore(
     }
 
     let mut normalized = column.clone();
-    // Strip LowCardinality annotations
-    normalized
-        .annotations
-        .retain(|(key, _)| key != "LowCardinality");
+    // Strip LowCardinality annotations (only for String-typed columns)
+    if normalized.data_type == ColumnType::String {
+        normalized
+            .annotations
+            .retain(|(key, _)| key != "LowCardinality");
+    }
     normalized
 }
 
