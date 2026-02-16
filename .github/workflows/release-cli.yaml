@@ -504,39 +504,101 @@ jobs:
             echo "channel=stable" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download current index file
+      - name: Update index file with CAS retry
+        shell: bash
         run: |
-          if gsutil -q stat gs://downloads.fiveonefour.com/${{ steps.channel.outputs.channel }}/index.json; then
-            gsutil cp gs://downloads.fiveonefour.com/${{ steps.channel.outputs.channel }}/index.json index.json
-          else
-            echo '{"moose-cli":{"versions":[]}}' > index.json
-          fi
+          set -euo pipefail
 
-      - name: Update index file
-        run: |
-          # This jq command:
-          # 1. Ensures the moose-cli structure exists
-          # 2. Adds the new version entry to the versions array
-          # 3. Sorts all versions by date (newest first)
-          # 4. Limits the list to 10000 entries to prevent unlimited growth
-          if [ ! -f index.json ] || [ ! -s index.json ]; then
-            echo '{"moose-cli":{"versions":[]}}' > index.json
-          fi
+          OBJECT_URI="gs://downloads.fiveonefour.com/${{ steps.channel.outputs.channel }}/index.json"
+          MAX_ATTEMPTS=8
 
-          cat index.json | jq --arg version "${{ needs.version.outputs.version }}" \
+          for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+            echo "CAS update attempt ${attempt}/${MAX_ATTEMPTS} for ${OBJECT_URI}"
+
+            describe_status=0
+            describe_output=""
+            describe_err=""
+            describe_err_file="$(mktemp)"
+            describe_output="$(gcloud storage objects describe "${OBJECT_URI}" --format='value(generation)' 2>"${describe_err_file}")" || describe_status=$?
+            describe_err="$(cat "${describe_err_file}")"
+            rm -f "${describe_err_file}"
+
+            if [ "${describe_status}" -eq 0 ]; then
+              generation="$(echo "${describe_output}" | tr -d '[:space:]')"
+              if ! [[ "${generation}" =~ ^[0-9]+$ ]]; then
+                echo "Unexpected generation value from gcloud describe output: ${describe_output}"
+                if [ -n "${describe_err}" ]; then
+                  echo "${describe_err}"
+                fi
+                exit 1
+              fi
+
+              download_status=0
+              download_output="$(gcloud storage cp "${OBJECT_URI}" index.json 2>&1)" || download_status=$?
+              if [ "${download_status}" -ne 0 ]; then
+                echo "${download_output}"
+                if [ "${attempt}" -lt "${MAX_ATTEMPTS}" ]; then
+                  sleep_seconds=$((attempt * 2))
+                  echo "Failed to download current index file. Retrying in ${sleep_seconds}s..."
+                  sleep "${sleep_seconds}"
+                  continue
+                fi
+
+                echo "Failed to download current index file after ${MAX_ATTEMPTS} attempts."
+                exit 1
+              fi
+            elif echo "${describe_err}" | grep -Eq "No URLs matched|Not found|404"; then
+              generation=0
+              echo '{"moose-cli":{"versions":[]}}' > index.json
+            else
+              if [ -n "${describe_err}" ]; then
+                echo "${describe_err}"
+              fi
+              if [ -n "${describe_output}" ]; then
+                echo "${describe_output}"
+              fi
+              exit 1
+            fi
+
+            # This jq command:
+            # 1. Ensures the moose-cli structure exists
+            # 2. Adds the new version entry to the versions array
+            # 3. Sorts all versions by date (newest first)
+            # 4. Limits the list to 10000 entries to prevent unlimited growth
+            jq --arg version "${{ needs.version.outputs.version }}" \
               --arg date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-              'if .["moose-cli"] == null then . + {"moose-cli": {"versions": []}} else . end | .["moose-cli"].versions = (.["moose-cli"].versions | if . == null then [] else . end) | .["moose-cli"].versions = (.["moose-cli"].versions | map(select(.version != $version))) | .["moose-cli"].versions = ([{"version": $version, "date": $date}] + .["moose-cli"].versions) | .["moose-cli"].versions = (.["moose-cli"].versions | sort_by(.date) | reverse | .[0:10000])' > index.json.tmp
+              'if .["moose-cli"] == null then . + {"moose-cli": {"versions": []}} else . end | .["moose-cli"].versions = (.["moose-cli"].versions | if . == null then [] else . end) | .["moose-cli"].versions = (.["moose-cli"].versions | map(select(.version != $version))) | .["moose-cli"].versions = ([{"version": $version, "date": $date}] + .["moose-cli"].versions) | .["moose-cli"].versions = (.["moose-cli"].versions | sort_by(.date) | reverse | .[0:10000])' \
+              index.json > index.json.tmp
 
-      - name: Upload updated index file
-        run: |
-          gsutil cp index.json.tmp gs://downloads.fiveonefour.com/${{ steps.channel.outputs.channel }}/index.json
-          gcloud compute url-maps invalidate-cdn-cache bins-distribution-url-map --path="/${{ steps.channel.outputs.channel }}/index.json" --async
+            if upload_output="$(gcloud storage cp index.json.tmp "${OBJECT_URI}" --if-generation-match="${generation}" 2>&1)"; then
+              echo "Index updated successfully"
+              gcloud compute url-maps invalidate-cdn-cache bins-distribution-url-map --path="/${{ steps.channel.outputs.channel }}/index.json" --async
+              exit 0
+            fi
+
+            echo "${upload_output}"
+
+            if echo "${upload_output}" | grep -Eq "412|Precondition Failed|conditionNotMet"; then
+              if [ "${attempt}" -lt "${MAX_ATTEMPTS}" ]; then
+                sleep_seconds=$((attempt * 2))
+                echo "CAS conflict detected (412). Retrying in ${sleep_seconds}s..."
+                sleep "${sleep_seconds}"
+                continue
+              fi
+
+              echo "CAS conflict persisted after ${MAX_ATTEMPTS} attempts."
+              exit 1
+            fi
+
+            echo "Upload failed with non-retryable error."
+            exit 1
+          done
 
   release-python:
     name: Release Python Wheels
     runs-on: ubuntu-latest
     # cleanup-pypi commented out: job is disabled, skipped jobs cause dependents to skip
-    needs: [version, build-and-publish-binaries]  # cleanup-pypi
+    needs: [version, build-and-publish-binaries] # cleanup-pypi
     if: ${{ !inputs.dry-run && needs.version.outputs.is_ci_build == 'false' }}
     # Add explicit permissions
     permissions:
