@@ -14,6 +14,7 @@ Select a language below and watch the content change:
 <CustomizePanel
   title="Choose Your Language"
   description="The guide content below will update based on your selection."
+  fieldIds={["demo-language"]}
 >
   <CustomizeGrid columns={2}>
     <SelectField
@@ -172,6 +173,7 @@ Check the boxes below to reveal additional content sections:
 <CustomizePanel
   title="Feature Options"
   description="Enable features to see their documentation."
+  fieldIds={["demo-features"]}
 >
   <CustomizeGrid columns={2}>
     <CheckboxGroup
@@ -366,6 +368,7 @@ Check the steps as you complete them to track your progress:
 <CustomizePanel
   title="Tutorial Progress"
   description="Check steps to mark them complete and reveal content."
+  fieldIds={["tutorial-steps"]}
 >
   <CheckboxGroup
     id="tutorial-steps"
