@@ -225,8 +225,8 @@ pub fn nested_are_equivalent(
 
         // Recursively compare data types
         if !column_types_are_equivalent(
-            &actual_col.data_type,
-            &target_col.data_type,
+            &normalized_actual.data_type,
+            &normalized_target.data_type,
             ignore_low_cardinality,
         ) {
             return false;
@@ -335,10 +335,12 @@ pub fn normalize_column_for_low_cardinality_ignore(
     }
 
     let mut normalized = column.clone();
-    // Strip LowCardinality annotations
-    normalized
-        .annotations
-        .retain(|(key, _)| key != "LowCardinality");
+    // Strip LowCardinality annotations (only for String-typed columns)
+    if normalized.data_type == ColumnType::String {
+        normalized
+            .annotations
+            .retain(|(key, _)| key != "LowCardinality");
+    }
     normalized
 }
 
@@ -2836,7 +2838,7 @@ mod tests {
     }
 
     #[test]
-    fn test_column_types_are_equivalent_with_ignore_low_cardinality_disabled() {
+    fn test_column_types_are_equivalent_basic_types() {
         use crate::framework::core::infrastructure::table::{ColumnType, IntType};
 
         let string_type = ColumnType::String;
@@ -2851,7 +2853,7 @@ mod tests {
     }
 
     #[test]
-    fn test_column_types_are_equivalent_with_ignore_low_cardinality_enabled() {
+    fn test_column_types_are_equivalent_basic_types_with_flag_enabled() {
         use crate::framework::core::infrastructure::table::{ColumnType, IntType};
 
         let string_type = ColumnType::String;

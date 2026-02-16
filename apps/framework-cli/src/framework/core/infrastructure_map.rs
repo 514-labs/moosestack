@@ -1997,7 +1997,8 @@ impl InfrastructureMap {
                             table.name
                         );
                         // Record the blocked update in filtered_changes for user visibility
-                        let column_changes = compute_table_columns_diff(table, target_table, ignore_ops);
+                        let column_changes =
+                            compute_table_columns_diff(table, target_table, ignore_ops);
                         let order_by_change = OrderByChange {
                             before: table.order_by.clone(),
                             after: target_table.order_by.clone(),
@@ -3501,10 +3502,16 @@ fn columns_are_equivalent(
         ignore_ops.contains(&IgnorableOperation::IgnoreStringLowCardinalityDifferences);
 
     // Normalize columns if ignore flag is set
-    let normalized_before =
+    let mut normalized_before =
         normalize_column_for_low_cardinality_ignore(before, ignore_low_cardinality);
-    let normalized_after =
+    let mut normalized_after =
         normalize_column_for_low_cardinality_ignore(after, ignore_low_cardinality);
+
+    // If ModifyColumnTtl is ignored, treat both TTL values as equal by nulling them out
+    if ignore_ops.contains(&IgnorableOperation::ModifyColumnTtl) {
+        normalized_before.ttl = None;
+        normalized_after.ttl = None;
+    }
 
     // Check all non-data_type and non-ttl fields first
     if normalized_before.name != normalized_after.name
@@ -3619,6 +3626,8 @@ fn workflows_config_equal(a: &Workflow, b: &Workflow) -> bool {
 /// # Arguments
 /// * `before` - The original table
 /// * `after` - The modified table
+/// * `ignore_ops` - Operations to ignore during comparison (e.g., `IgnoreStringLowCardinalityDifferences`).
+///   Pass an empty slice to detect all differences.
 ///
 /// # Returns
 /// A vector of `ColumnChange` objects describing the differences
@@ -4851,7 +4860,7 @@ mod diff_tests {
             materialized: None,
         });
 
-        let diff = compute_table_columns_diff(&before, &after);
+        let diff = compute_table_columns_diff(&before, &after, &[]);
         assert_eq!(diff.len(), 1, "Expected one change for DEFAULT removal");
         match &diff[0] {
             ColumnChange::Updated {
@@ -6018,7 +6027,11 @@ mod diff_tests {
             materialized: None,
             ..base_col.clone()
         };
-        assert!(!columns_are_equivalent(&col_with_mat, &col_without_mat, &[]));
+        assert!(!columns_are_equivalent(
+            &col_with_mat,
+            &col_without_mat,
+            &[]
+        ));
     }
 
     #[test]
@@ -7346,7 +7359,6 @@ mod diff_orchestration_worker_tests {
         assert!(removed_found, "Python worker removal not detected");
         assert!(added_found, "Typescript worker addition not detected");
     }
-
 
     #[test]
     fn test_mask_credentials_for_json_export() {

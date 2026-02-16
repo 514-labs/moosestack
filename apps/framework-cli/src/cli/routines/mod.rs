@@ -652,7 +652,12 @@ pub async fn start_development_mode(
 
                     let changed = externally_managed.iter().any(|t| {
                         if let Some(remote_table) = tables.get(&t.name) {
-                            !compute_table_columns_diff(t, remote_table, &[]).is_empty()
+                            !compute_table_columns_diff(
+                                t,
+                                remote_table,
+                                &project.migration_config.ignore_operations,
+                            )
+                            .is_empty()
                                 || !remote_table.order_by_equals(t)
                                 || t.engine != remote_table.engine
                         } else {

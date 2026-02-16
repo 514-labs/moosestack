@@ -330,12 +330,14 @@ pub fn normalize_table_for_diff(table: &Table, ignore_ops: &[IgnorableOperation]
         }
     }
 
-    // Strip LowCardinality annotations if ignored
+    // Strip LowCardinality annotations if ignored (only for String-typed columns)
     if ignore_ops.contains(&IgnorableOperation::IgnoreStringLowCardinalityDifferences) {
         for column in &mut normalized.columns {
-            column
-                .annotations
-                .retain(|(key, _)| key != "LowCardinality");
+            if column.data_type == ColumnType::String {
+                column
+                    .annotations
+                    .retain(|(key, _)| key != "LowCardinality");
+            }
         }
     }
 
