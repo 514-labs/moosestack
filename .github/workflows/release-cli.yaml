@@ -520,7 +520,20 @@ jobs:
 
             if [ "${describe_status}" -eq 0 ]; then
               generation="${describe_output}"
-              gcloud storage cp "${OBJECT_URI}" index.json >/dev/null
+              download_status=0
+              download_output="$(gcloud storage cp "${OBJECT_URI}" index.json 2>&1)" || download_status=$?
+              if [ "${download_status}" -ne 0 ]; then
+                echo "${download_output}"
+                if [ "${attempt}" -lt "${MAX_ATTEMPTS}" ]; then
+                  sleep_seconds=$((attempt * 2))
+                  echo "Failed to download current index file. Retrying in ${sleep_seconds}s..."
+                  sleep "${sleep_seconds}"
+                  continue
+                fi
+
+                echo "Failed to download current index file after ${MAX_ATTEMPTS} attempts."
+                exit 1
+              fi
             elif echo "${describe_output}" | grep -Eq "No URLs matched|Not found|404"; then
               generation=0
               echo '{"moose-cli":{"versions":[]}}' > index.json
