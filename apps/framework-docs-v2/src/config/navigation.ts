@@ -1269,7 +1269,7 @@ const guidesNavigationConfig: NavigationConfig = [
   {
     type: "page",
     slug: "guides/performant-dashboards",
-    title: "Improving Performance",
+    title: "Improving the Performance of Your Dashboards",
     description:
       "Already have a dashboard or report running? Here's how to boost performance with OLAP best practices.",
     icon: IconChartLine,
