@@ -110,3 +110,5 @@ When working with MooseStack data models, ClickHouse schemas, queries, or config
 - Insert strategy (batching, async inserts, avoiding mutations)
 
 Each rule includes MooseStack TypeScript/Python examples. When reviewing or implementing ClickHouse-related code, read relevant rule files from `~/.claude/skills/moosestack-clickhouse-best-practices/rules/` and cite specific rules in your guidance.
+
+To install the skill: `npx skills add 514-labs/agent-skills`
