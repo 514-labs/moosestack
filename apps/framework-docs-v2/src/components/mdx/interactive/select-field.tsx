@@ -11,6 +11,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { usePersistedState, type PersistOptions } from "./use-persisted-state";
+import { URL_SYNCABLE_SETTINGS } from "@/config/guide-settings-config";
 
 interface SelectOption {
   readonly value: string;
@@ -53,14 +54,20 @@ function SelectFieldInner({
   className,
   placeholder = "Select an option",
 }: SelectFieldProps) {
+  // Determine if this field should sync to URL based on config
+  const shouldSyncToUrl = id ? URL_SYNCABLE_SETTINGS.has(id) : false;
+
   // Normalize persist options (handle legacy globalSetting prop)
   const persistOptions: boolean | PersistOptions =
-    globalSetting ? { namespace: "global", syncToUrl: false } : persist;
+    globalSetting ? { namespace: "global", syncToUrl: shouldSyncToUrl }
+    : typeof persist === "object" ? persist
+    : persist ? { syncToUrl: shouldSyncToUrl }
+    : false;
 
   // Warn in development when deprecated prop is used
   if (process.env.NODE_ENV !== "production" && globalSetting) {
     console.warn(
-      `SelectField: The 'globalSetting' prop is deprecated. Use persist={{ namespace: "global", syncToUrl: false }} instead.`,
+      `SelectField: The 'globalSetting' prop is deprecated. Use persist={{ namespace: "global" }} instead.`,
     );
   }
 

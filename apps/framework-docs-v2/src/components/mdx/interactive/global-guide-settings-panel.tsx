@@ -1,7 +1,7 @@
 "use client";
 
-import React from "react";
-import { usePathname } from "next/navigation";
+import React, { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useGuideSettings } from "@/contexts/guide-settings-context";
 import { GlobalGuideCustomizer } from "./global-guide-customizer";
 import { SettingsSummary } from "./settings-summary";
@@ -21,6 +21,7 @@ import { GUIDE_SETTINGS_CONFIG } from "@/config/guide-settings-config";
  */
 export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
   const pathname = usePathname();
+  const router = useRouter();
   const { settings, isConfigured, showCustomizer, setShowCustomizer } =
     useGuideSettings();
 
@@ -28,6 +29,21 @@ export function GlobalGuideSettingsPanel(): React.JSX.Element | null {
   const normalizedPath = pathname.replace(/\/$/, ""); // Remove trailing slash
   const isGuidesIndex = normalizedPath === "/guides";
   const isGuidePage = normalizedPath.startsWith("/guides/");
+
+  // Clear URL params when navigating to non-guide pages
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (!isGuidePage) {
+      const url = new URL(window.location.href);
+      const hasParams = url.searchParams.size > 0;
+
+      // Only clear if there are params to avoid unnecessary navigation
+      if (hasParams) {
+        router.replace(pathname);
+      }
+    }
+  }, [pathname, isGuidePage, router]);
 
   // Don't show on guides index or non-guide pages
   if (isGuidesIndex || !isGuidePage) {

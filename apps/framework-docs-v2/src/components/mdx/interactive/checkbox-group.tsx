@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { usePersistedState, type PersistOptions } from "./use-persisted-state";
+import { URL_SYNCABLE_SETTINGS } from "@/config/guide-settings-config";
 
 interface CheckboxOption {
   value: string;
@@ -61,10 +62,19 @@ function CheckboxGroupInner({
     .filter((opt) => opt.defaultChecked)
     .map((opt) => opt.value);
 
+  // Determine if this field should sync to URL based on config
+  const shouldSyncToUrl = id ? URL_SYNCABLE_SETTINGS.has(id) : false;
+
+  // Normalize persist options to include syncToUrl flag
+  const persistOptions: boolean | PersistOptions =
+    typeof persist === "object" ? persist
+    : persist ? { syncToUrl: shouldSyncToUrl }
+    : false;
+
   const [checkedValues, setCheckedValues] = usePersistedState<string[]>(
     id,
     defaultChecked,
-    persist,
+    persistOptions,
   );
 
   const handleCheckChange = (optionValue: string, checked: boolean) => {

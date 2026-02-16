@@ -31,6 +31,8 @@ export interface SettingConfig {
   readonly visible?: boolean;
   /** Whether to show this setting in the bottom-left "Your Stack" panel (default: true) */
   readonly showInSummary?: boolean;
+  /** Whether to sync this setting to URL params on guide pages (default: false) */
+  readonly syncToUrl?: boolean;
 }
 
 /**
@@ -66,6 +68,7 @@ export const GUIDE_SETTINGS_CONFIG = [
     defaultValue: "typescript",
     description: "Your preferred programming language",
     visible: true,
+    syncToUrl: true, // Global setting - appears in URL on guide pages
   },
   {
     id: "os",
@@ -77,6 +80,7 @@ export const GUIDE_SETTINGS_CONFIG = [
     defaultValue: "macos",
     description: "Your development environment",
     visible: true,
+    syncToUrl: true, // Global setting - appears in URL on guide pages
   },
   {
     id: "sourceDatabase",
@@ -89,6 +93,7 @@ export const GUIDE_SETTINGS_CONFIG = [
     defaultValue: "postgres",
     description: "Database you're migrating from or working with",
     visible: true,
+    syncToUrl: true, // Global setting - appears in URL on guide pages
   },
   {
     id: "monorepo",
@@ -161,4 +166,11 @@ export const VALID_VALUES = Object.fromEntries(
 // Get visible settings (for UI rendering)
 export const VISIBLE_SETTINGS = GUIDE_SETTINGS_CONFIG.filter(
   (config) => config.visible !== false,
+);
+
+// Get settings that should sync to URL (only global settings on guide pages)
+export const URL_SYNCABLE_SETTINGS = new Set(
+  GUIDE_SETTINGS_CONFIG.filter((config) => config.syncToUrl === true).map(
+    (config) => config.id,
+  ),
 );
