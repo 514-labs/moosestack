@@ -516,10 +516,23 @@ jobs:
             echo "CAS update attempt ${attempt}/${MAX_ATTEMPTS} for ${OBJECT_URI}"
 
             describe_status=0
-            describe_output="$(gcloud storage objects describe "${OBJECT_URI}" --format='value(generation)' 2>&1)" || describe_status=$?
+            describe_output=""
+            describe_err=""
+            describe_err_file="$(mktemp)"
+            describe_output="$(gcloud storage objects describe "${OBJECT_URI}" --format='value(generation)' 2>"${describe_err_file}")" || describe_status=$?
+            describe_err="$(cat "${describe_err_file}")"
+            rm -f "${describe_err_file}"
 
             if [ "${describe_status}" -eq 0 ]; then
-              generation="${describe_output}"
+              generation="$(echo "${describe_output}" | tr -d '[:space:]')"
+              if ! [[ "${generation}" =~ ^[0-9]+$ ]]; then
+                echo "Unexpected generation value from gcloud describe output: ${describe_output}"
+                if [ -n "${describe_err}" ]; then
+                  echo "${describe_err}"
+                fi
+                exit 1
+              fi
+
               download_status=0
               download_output="$(gcloud storage cp "${OBJECT_URI}" index.json 2>&1)" || download_status=$?
               if [ "${download_status}" -ne 0 ]; then
@@ -534,11 +547,16 @@ jobs:
                 echo "Failed to download current index file after ${MAX_ATTEMPTS} attempts."
                 exit 1
               fi
-            elif echo "${describe_output}" | grep -Eq "No URLs matched|Not found|404"; then
+            elif echo "${describe_err}" | grep -Eq "No URLs matched|Not found|404"; then
               generation=0
               echo '{"moose-cli":{"versions":[]}}' > index.json
             else
-              echo "${describe_output}"
+              if [ -n "${describe_err}" ]; then
+                echo "${describe_err}"
+              fi
+              if [ -n "${describe_output}" ]; then
+                echo "${describe_output}"
+              fi
               exit 1
             fi
 
@@ -547,10 +565,6 @@ jobs:
             # 2. Adds the new version entry to the versions array
             # 3. Sorts all versions by date (newest first)
             # 4. Limits the list to 10000 entries to prevent unlimited growth
-            if [ ! -s index.json ]; then
-              echo '{"moose-cli":{"versions":[]}}' > index.json
-            fi
-
             jq --arg version "${{ needs.version.outputs.version }}" \
               --arg date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
               'if .["moose-cli"] == null then . + {"moose-cli": {"versions": []}} else . end | .["moose-cli"].versions = (.["moose-cli"].versions | if . == null then [] else . end) | .["moose-cli"].versions = (.["moose-cli"].versions | map(select(.version != $version))) | .["moose-cli"].versions = ([{"version": $version, "date": $date}] + .["moose-cli"].versions) | .["moose-cli"].versions = (.["moose-cli"].versions | sort_by(.date) | reverse | .[0:10000])' \
