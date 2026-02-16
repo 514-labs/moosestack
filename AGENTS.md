@@ -104,7 +104,7 @@ Rust (CLI), TypeScript (libs/web), Python (lib), ClickHouse (OLAP), Redpanda/Kaf
 
 ## ClickHouse Best Practices
 
-When working with MooseStack data models, ClickHouse schemas, queries, or configurations, reference the `moosestack-clickhouse-best-practices` skill. This contains 28 rules covering:
+When working with MooseStack data models, ClickHouse schemas, queries, or configurations, reference the `moosestack-clickhouse-best-practices` skill. It contains rules covering:
 - Schema design (primary keys, data types, partitioning)
 - Query optimization (JOINs, materialized views, indices)
 - Insert strategy (batching, async inserts, avoiding mutations)
