@@ -6,9 +6,6 @@ languages: ["typescript"]
 
 import {
   Callout,
-  CustomizePanel,
-  CustomizeGrid,
-  SelectField,
   ConditionalContent,
   CommunityCallout,
   BulletPointsCard,
@@ -50,48 +47,9 @@ This guide gives a path to ship this as normal code, as part of your existing de
   href="/guides/chat-in-your-app"
   ctaLabel="Get started"
 >
-  If you’re building a new dashboard or data-connected chat (not migrating an
+  If you're building a new dashboard or data-connected chat (not migrating an
   existing dashboard), start with [Chat in Your App](/guides/chat-in-your-app).
 </Callout>
-
-## Customize this tutorial
-
-<CustomizePanel
-  title="Where does your current data live?"
-  description="Select the database you use today so we can show the right way to replicate this data into ClickHouse"
->
-  <CustomizeGrid columns={1}>
-    <SelectField
-      id="source-database"
-      label="Source database"
-      options={[
-        { value: "sqlserver", label: "SQL Server" },
-        { value: "postgres", label: "Postgres" },
-      ]}
-      defaultValue="postgres"
-      persist
-    />
-    <SelectField
-      id="os"
-      label="Operating System"
-      options={[
-        { value: "macos", label: "macOS or Linux" },
-        { value: "windows", label: "Windows (WSL 2)" },
-      ]}
-      defaultValue="macos"
-      persist
-    />
-    <SelectField
-      id="language"
-      label="Language"
-      options={[
-        { value: "typescript", label: "TypeScript" },
-      ]}
-      defaultValue="typescript"
-      persist
-    />
-  </CustomizeGrid>
-</CustomizePanel>
 
 <CommunityCallout title="Want Python Examples?">
 This guide is written for TypeScript developers, but Python developers can follow along. The concepts translate directly, and MooseStack supports both languages. If you'd like Python-specific examples, let us know in our Slack community and we'll prioritize creating them.
@@ -99,7 +57,7 @@ This guide is written for TypeScript developers, but Python developers can follo
 
 You'll work through:
 
-<ConditionalContent whenId="source-database" whenValue="postgres">
+<ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
 1. [Project Setup](#project-setup) to set up ClickHouse Cloud ClickPipes, initialize MooseStack, and configure Boreal preview environments.
 2. [Develop with ClickHouse locally](#develop-with-clickhouse-locally) to prepare your local environment, validate data flow, and migrate a dashboard component to ClickHouse.
 3. [Going to production](#going-to-production) using the preview environment and reviewed migrations.
@@ -121,7 +79,7 @@ You'll work through:
 
 ## Project Setup
 
-<ConditionalContent whenId="source-database" whenValue="postgres">
+<ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
 :::include /shared/guides/performant-dashboards/clickpipes.mdx
 </ConditionalContent>
 

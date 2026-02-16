@@ -92,7 +92,7 @@ moose X.X.X
 - A monorepo with your existing app code
 - Root-level access to `pnpm-workspace.yaml` and `package.json`
 - A target directory where `moosestack/` should live
-<ConditionalContent whenId="source-database" whenValue="postgres"> 
+<ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}> 
   - Your ClickHouse Cloud HTTPS connection string
 </ConditionalContent>
 </GuideStepper.WhatYouNeed>
@@ -102,7 +102,7 @@ moose X.X.X
   - Monorepo workspace + pnpm config aligned for MooseStack dependencies 
   - Importable `moosestack` package output (`dist`) for cross-workspace usage
 
-  <ConditionalContent whenId="source-database" whenValue="postgres">
+  <ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
     - Generated, read-only TypeScript models for ClickPipes-owned tables
   </ConditionalContent>
 </GuideStepper.WhatYouGet>
@@ -120,7 +120,7 @@ moose init moosestack typescript-empty
 ```
 </ConditionalContent>
 
-<ConditionalContent whenId="source-database" whenValue="postgres">
+<ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
 ```shell
 moose init --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
 ```
@@ -301,7 +301,7 @@ database name Boreal should use for your project’s main branch.
 
 By default, Boreal creates a new database for your project. This is the database where schema changes will be applied when you merge to your main GitHub branch.
 
-<ConditionalContent whenId="source-database" whenValue="postgres">
+<ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
 Override this by selecting the ClickHouse Cloud database your ClickPipes write to.
 
 <Callout

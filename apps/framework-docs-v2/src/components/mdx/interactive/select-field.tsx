@@ -10,11 +10,13 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { usePersistedState } from "./use-persisted-state";
+import { usePersistedState, type PersistOptions } from "./use-persisted-state";
+import { URL_SYNCABLE_SETTINGS } from "@/config/guide-settings-config";
 
 interface SelectOption {
-  value: string;
-  label: string;
+  readonly value: string;
+  readonly label: string;
+  readonly chipLabel?: string;
 }
 
 interface SelectFieldProps {
@@ -23,15 +25,17 @@ interface SelectFieldProps {
   /** Label displayed above the select */
   label: string;
   /** Available options to choose from */
-  options: SelectOption[];
+  options: readonly SelectOption[];
   /** Default selected value */
   defaultValue?: string;
   /** Controlled value (overrides persisted state) */
   value?: string;
   /** Callback when selection changes */
   onChange?: (value: string) => void;
-  /** Whether to persist selection to localStorage */
-  persist?: boolean;
+  /** Whether to persist selection to localStorage (can be boolean or PersistOptions) */
+  persist?: boolean | PersistOptions;
+  /** @deprecated Use persist={{ namespace: "global" }} instead */
+  globalSetting?: boolean;
   /** Additional CSS classes */
   className?: string;
   /** Placeholder text when no selection */
@@ -46,13 +50,32 @@ function SelectFieldInner({
   value: controlledValue,
   onChange,
   persist = false,
+  globalSetting = false,
   className,
   placeholder = "Select an option",
 }: SelectFieldProps) {
+  // Determine if this field should sync to URL based on config
+  const shouldSyncToUrl = id ? URL_SYNCABLE_SETTINGS.has(id) : false;
+
+  // Normalize persist options (handle legacy globalSetting prop)
+  const persistOptions: boolean | PersistOptions =
+    globalSetting ? { namespace: "global", syncToUrl: shouldSyncToUrl }
+    : typeof persist === "object" ? persist
+    : persist ? { syncToUrl: shouldSyncToUrl }
+    : false;
+
+  // Warn in development when deprecated prop is used
+  if (process.env.NODE_ENV !== "production" && globalSetting) {
+    console.warn(
+      `SelectField: The 'globalSetting' prop is deprecated. Use persist={{ namespace: "global" }} instead.`,
+    );
+  }
+
+  // Use unified persistence hook
   const [internalValue, setInternalValue] = usePersistedState<string>(
     id,
     defaultValue ?? options[0]?.value ?? "",
-    persist,
+    persistOptions,
   );
 
   // Validate that the internal value exists in options (in case options changed)

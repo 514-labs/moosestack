@@ -2,10 +2,22 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const STORAGE_KEY_PREFIX = "moose-docs-interactive";
+// Storage key prefixes (exported for use in other components)
+export const STORAGE_KEY_PREFIX_PAGE = "moose-docs-interactive";
+export const STORAGE_KEY_PREFIX_GLOBAL = "moose-docs-guide-settings";
 
 // Custom event name for same-page state updates
 export const INTERACTIVE_STATE_CHANGE_EVENT = "moose-interactive-state-change";
+
+// Persistence options
+export interface PersistOptions {
+  /** Storage scope: "page" for per-page settings, "global" for cross-page settings */
+  namespace?: "page" | "global";
+  /** Whether to sync this field to URL params for deep linking (default: false) */
+  syncToUrl?: boolean;
+  /** Whether to sync across tabs via storage events (default: true) */
+  syncCrossTabs?: boolean;
+}
 
 // Custom event detail type
 export interface InteractiveStateChangeDetail<T = string | string[] | null> {
@@ -71,21 +83,33 @@ function updateURLParam(key: string, value: string): void {
 }
 
 /**
- * Custom hook for persistent state with localStorage and URL support.
+ * Custom hook for persistent state with localStorage and optional URL support.
  * Provides automatic sync across components using the same key.
- * Priority order: URL params → localStorage → defaultValue
+ * Priority order: URL params (if enabled) → localStorage → defaultValue
  *
  * @param key - Unique identifier for this state (without prefix). If undefined, persistence is disabled.
  * @param defaultValue - Default value when no stored value exists
- * @param persist - Whether to actually persist to localStorage and URL (default: false)
+ * @param options - Persistence options (can pass boolean for backwards compat or PersistOptions object)
  */
 export function usePersistedState<T>(
   key: string | undefined,
   defaultValue: T,
-  persist: boolean = false,
+  options: boolean | PersistOptions = false,
 ): [T, (value: T | ((prev: T) => T)) => void] {
-  // Build full storage key
-  const storageKey = key ? `${STORAGE_KEY_PREFIX}-${key}` : undefined;
+  // Normalize options (backwards compat: boolean → { namespace: "page", syncToUrl: true })
+  const opts: PersistOptions =
+    typeof options === "boolean" ?
+      { namespace: "page", syncToUrl: options, syncCrossTabs: true }
+    : { namespace: "page", syncToUrl: false, syncCrossTabs: true, ...options };
+
+  const persist = typeof options === "boolean" ? options : true;
+
+  // Build full storage key based on namespace
+  const prefix =
+    opts.namespace === "global" ?
+      STORAGE_KEY_PREFIX_GLOBAL
+    : STORAGE_KEY_PREFIX_PAGE;
+  const storageKey = key ? `${prefix}-${key}` : undefined;
 
   // Track if this is the first render using a ref (doesn't cause re-render)
   const isFirstRenderRef = useRef(true);
@@ -96,10 +120,12 @@ export function usePersistedState<T>(
       return defaultValue;
     }
 
-    // Priority 1: Check URL params
-    const urlValue = getValueFromURL<T>(key);
-    if (urlValue !== null) {
-      return urlValue;
+    // Priority 1: Check URL params (only if syncToUrl is enabled)
+    if (opts.syncToUrl) {
+      const urlValue = getValueFromURL<T>(key);
+      if (urlValue !== null) {
+        return urlValue;
+      }
     }
 
     // Priority 2: Check localStorage
@@ -116,33 +142,36 @@ export function usePersistedState<T>(
     return defaultValue;
   });
 
-  // Sync to localStorage and URL when value changes (skip initial mount with defaults)
+  // Sync to localStorage and URL when value changes
   useEffect(() => {
     if (!persist || !key || typeof window === "undefined") {
       return;
     }
 
-    // Skip on first render ONLY if value equals default (avoid polluting URL with defaults)
+    const isFirstRender = isFirstRenderRef.current;
+    const isDefaultValue =
+      JSON.stringify(value) === JSON.stringify(defaultValue);
+
     if (isFirstRenderRef.current) {
       isFirstRenderRef.current = false;
-      // Skip only if value is the default value
-      if (JSON.stringify(value) === JSON.stringify(defaultValue)) {
-        return;
-      }
-      // If value came from URL, we still need to sync to localStorage and dispatch
     }
 
     try {
-      // Update localStorage
+      // Always update localStorage (even for defaults - needed for cross-page persistence)
       if (storageKey) {
         localStorage.setItem(storageKey, JSON.stringify(value));
       }
 
-      // Update URL param (for deep linking)
-      updateURLParam(
-        key,
-        typeof value === "string" ? value : JSON.stringify(value),
-      );
+      // Update URL param ONLY if:
+      // - syncToUrl is enabled AND
+      // - (it's not first render OR it's not the default value)
+      // This avoids URL pollution with defaults while keeping localStorage persistence
+      if (opts.syncToUrl && (!isFirstRender || !isDefaultValue)) {
+        updateURLParam(
+          key,
+          typeof value === "string" ? value : JSON.stringify(value),
+        );
+      }
 
       // Dispatch custom event for same-page synchronization
       if (storageKey) {
@@ -151,7 +180,7 @@ export function usePersistedState<T>(
     } catch {
       // Ignore storage errors (quota exceeded, etc.)
     }
-  }, [persist, key, storageKey, value, defaultValue]);
+  }, [persist, key, storageKey, value, defaultValue, opts.syncToUrl]);
 
   // Listen for changes from other components/tabs and browser navigation
   useEffect(() => {
@@ -159,44 +188,65 @@ export function usePersistedState<T>(
       return;
     }
 
-    // Handle storage events from other tabs
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === storageKey && event.newValue !== null) {
-        try {
-          setValue(JSON.parse(event.newValue) as T);
-        } catch {
-          // Ignore parsing errors
-        }
-      }
-    };
-
-    // Handle browser back/forward navigation (popstate)
-    const handlePopState = () => {
-      const urlValue = getValueFromURL<T>(key);
-      if (urlValue !== null) {
-        setValue(urlValue);
-      } else {
-        // URL param missing - check localStorage or use default
-        try {
-          const stored = localStorage.getItem(storageKey!);
-          if (stored !== null) {
-            setValue(JSON.parse(stored) as T);
-          } else {
-            setValue(defaultValue);
+    // Handle storage events from other tabs (only if cross-tab sync enabled)
+    const handleStorageChange =
+      opts.syncCrossTabs ?
+        (event: StorageEvent) => {
+          if (event.key === storageKey && event.newValue !== null) {
+            try {
+              setValue(JSON.parse(event.newValue) as T);
+            } catch {
+              // Ignore parsing errors
+            }
           }
-        } catch {
-          setValue(defaultValue);
         }
+      : null;
+
+    // Handle browser back/forward navigation (popstate) - only if URL sync enabled
+    const handlePopState =
+      opts.syncToUrl ?
+        () => {
+          const urlValue = getValueFromURL<T>(key);
+          if (urlValue !== null) {
+            setValue(urlValue);
+          } else {
+            // URL param missing - check localStorage or use default
+            try {
+              const stored = localStorage.getItem(storageKey!);
+              if (stored !== null) {
+                setValue(JSON.parse(stored) as T);
+              } else {
+                setValue(defaultValue);
+              }
+            } catch {
+              setValue(defaultValue);
+            }
+          }
+        }
+      : null;
+
+    if (handleStorageChange) {
+      window.addEventListener("storage", handleStorageChange);
+    }
+    if (handlePopState) {
+      window.addEventListener("popstate", handlePopState);
+    }
+    return () => {
+      if (handleStorageChange) {
+        window.removeEventListener("storage", handleStorageChange);
+      }
+      if (handlePopState) {
+        window.removeEventListener("popstate", handlePopState);
       }
     };
-
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener("popstate", handlePopState);
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("popstate", handlePopState);
-    };
-  }, [persist, storageKey, key, defaultValue]);
+  }, [
+    persist,
+    storageKey,
+    key,
+    defaultValue,
+    opts.syncToUrl,
+    opts.syncCrossTabs,
+  ]);
 
   // Wrapped setter that handles both direct values and updater functions
   const setPersistedValue = useCallback((newValue: T | ((prev: T) => T)) => {
@@ -213,7 +263,68 @@ export function usePersistedState<T>(
 }
 
 /**
+ * Hook to sync state with localStorage across tabs and same-page components.
+ * Handles both cross-tab (storage event) and same-page (custom event) synchronization.
+ *
+ * @param storageKey - Full storage key to watch
+ * @param onValueChange - Callback when value changes from storage/events
+ * @param deps - Dependency array for useEffect
+ */
+export function useStorageSync<T>(
+  storageKey: string | undefined,
+  onValueChange: (value: T | null) => void,
+  deps: React.DependencyList = [],
+): void {
+  // Use ref to avoid stale closure issues
+  const onValueChangeRef = useRef(onValueChange);
+  onValueChangeRef.current = onValueChange;
+
+  useEffect(() => {
+    if (!storageKey || typeof window === "undefined") return;
+
+    // Listen for storage changes from other tabs
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === storageKey) {
+        if (event.newValue === null) {
+          onValueChangeRef.current(null);
+        } else {
+          try {
+            const value = JSON.parse(event.newValue) as T;
+            onValueChangeRef.current(value);
+          } catch {
+            // Ignore parsing errors
+          }
+        }
+      }
+    };
+
+    // Listen for same-page state changes via custom event
+    const handleStateChange = (event: Event) => {
+      const customEvent = event as CustomEvent<InteractiveStateChangeDetail<T>>;
+      if (customEvent.detail?.key === storageKey) {
+        onValueChangeRef.current(customEvent.detail.value);
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
+
+    return () => {
+      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(
+        INTERACTIVE_STATE_CHANGE_EVENT,
+        handleStateChange,
+      );
+    };
+  }, [storageKey, ...deps]);
+}
+
+/**
  * Helper to clear all interactive component state from localStorage and URL
+ *
+ * NOTE: Only clears page-level interactive state (STORAGE_KEY_PREFIX_PAGE).
+ * Does NOT clear global guide settings (STORAGE_KEY_PREFIX_GLOBAL) as those
+ * are user preferences that should persist.
  */
 export function clearInteractiveState(): void {
   if (typeof window === "undefined") return;
@@ -224,10 +335,11 @@ export function clearInteractiveState(): void {
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
-    if (key?.startsWith(STORAGE_KEY_PREFIX)) {
+    // Only clear page-level interactive state, not global guide settings
+    if (key?.startsWith(STORAGE_KEY_PREFIX_PAGE)) {
       storageKeysToRemove.push(key);
       // Extract the param key (without prefix) for URL cleanup
-      const paramKey = key.substring(STORAGE_KEY_PREFIX.length + 1); // +1 for the hyphen
+      const paramKey = key.substring(STORAGE_KEY_PREFIX_PAGE.length + 1); // +1 for the hyphen
       urlParamsToRemove.push(paramKey);
     }
   }

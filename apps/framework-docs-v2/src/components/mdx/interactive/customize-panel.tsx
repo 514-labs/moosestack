@@ -1,17 +1,17 @@
 "use client";
 
-import React, { ReactNode } from "react";
+import React, { ReactNode, useState, useEffect, useMemo } from "react";
+import { FullPageCustomizer } from "./full-page-customizer";
+import { SettingsSummary } from "./settings-summary";
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+  STORAGE_KEY_PREFIX_PAGE,
+  STORAGE_KEY_PREFIX_GLOBAL,
+} from "./use-persisted-state";
+import { getSetting, normalizeFieldId } from "@/lib/guide-settings";
+import { useGuideSettingsOptional } from "@/contexts/guide-settings-context";
 
 interface CustomizePanelProps {
-  /** Panel title (default: "Customize") */
+  /** Panel title (default: "Customize this tutorial") */
   title?: string;
   /** Panel description text */
   description?: string;
@@ -19,49 +19,219 @@ interface CustomizePanelProps {
   children: ReactNode;
   /** Additional CSS classes */
   className?: string;
+  /** Field IDs to check for existing selections */
+  fieldIds?: string[];
+  /** Labels for fields to show in settings summary */
+  fieldLabels?: Record<string, string>;
 }
 
 /**
- * CustomizePanel - A styled container for guide customization options.
+ * Get current selections from URL params or localStorage
+ * Batch-read multiple fields at once for checking if wizard should show
  *
- * Matches the Figma "Customize" panel design with a dark background.
- * Use this as a wrapper for SelectField and CheckboxGroup components.
+ * Note: Uses same storage pattern as usePersistedState for consistency.
+ * Checks both page-level and global storage.
+ */
+function getSelections(fieldIds: string[]): Record<string, string> | null {
+  if (typeof window === "undefined") return null;
+
+  const selections: Record<string, string> = {};
+  let hasAny = false;
+
+  // Check URL params first
+  const params = new URLSearchParams(window.location.search);
+
+  for (const fieldId of fieldIds) {
+    // Try URL first
+    const urlValue = params.get(fieldId);
+    if (urlValue) {
+      try {
+        const parsed = JSON.parse(urlValue);
+        // Only store if it's a string value
+        if (typeof parsed === "string") {
+          selections[fieldId] = parsed;
+          hasAny = true;
+        }
+      } catch {
+        // If JSON parse fails, use raw string value
+        selections[fieldId] = urlValue;
+        hasAny = true;
+      }
+      continue;
+    }
+
+    // Fall back to localStorage - prioritize page-level, then global
+    try {
+      // Priority 1: Check page-level storage (allows per-page overrides)
+      const pageKey = `${STORAGE_KEY_PREFIX_PAGE}-${fieldId}`;
+      const pageStored = localStorage.getItem(pageKey);
+
+      if (pageStored) {
+        const parsed = JSON.parse(pageStored);
+        // Only store if it's a string value
+        if (typeof parsed === "string") {
+          selections[fieldId] = parsed;
+          hasAny = true;
+          continue;
+        }
+      }
+
+      // Priority 2: Check global storage (fallback to user's global preferences)
+      const normalizedKey = normalizeFieldId(fieldId);
+      if (normalizedKey) {
+        const globalValue = getSetting(normalizedKey);
+        if (globalValue !== null && globalValue !== undefined) {
+          selections[fieldId] = globalValue;
+          hasAny = true;
+          continue;
+        }
+      }
+
+      // Priority 3: Check global storage with raw kebab-case key (legacy support)
+      const globalKey = `${STORAGE_KEY_PREFIX_GLOBAL}-${fieldId}`;
+      const globalStored = localStorage.getItem(globalKey);
+
+      if (globalStored) {
+        const parsed = JSON.parse(globalStored);
+        // Only store if it's a string value
+        if (typeof parsed === "string") {
+          selections[fieldId] = parsed;
+          hasAny = true;
+        }
+      }
+    } catch {
+      // Ignore parsing errors - silently skip invalid values
+    }
+  }
+
+  return hasAny ? selections : null;
+}
+
+/**
+ * CustomizePanel - Wizard-style guide customization with persistent settings
+ *
+ * Shows a full-page modal on first visit for configuration, then displays
+ * a compact bottom-left summary panel with the selected options.
  *
  * @example
  * ```tsx
  * <CustomizePanel
- *   title="Customize"
- *   description="Select options to customize this guide."
+ *   title="Customize this tutorial"
+ *   description="Select your environment to see relevant instructions"
+ *   fieldIds={["source-database", "os", "language"]}
+ *   fieldLabels={{ "source-database": "Database", "os": "OS", "language": "Language" }}
  * >
- *   <CustomizeGrid columns={2}>
- *     <SelectField label="Language" options={[...]} />
- *     <SelectField label="Framework" options={[...]} />
- *   </CustomizeGrid>
+ *   <SelectField id="source-database" ... />
+ *   <SelectField id="os" ... />
+ *   <SelectField id="language" ... />
  * </CustomizePanel>
  * ```
  */
 export function CustomizePanel({
-  title = "Customize",
+  title = "Customize this tutorial",
   description,
   children,
   className,
-}: CustomizePanelProps): React.JSX.Element {
-  return (
-    <Card
-      className={cn(
-        "my-6 bg-muted/50 dark:bg-zinc-900/50 border-border/50",
-        className,
-      )}
-    >
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg font-semibold">{title}</CardTitle>
-        {description && (
-          <CardDescription className="text-muted-foreground">
-            {description}
-          </CardDescription>
-        )}
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">{children}</CardContent>
-    </Card>
+  fieldIds = [],
+  fieldLabels = {},
+}: CustomizePanelProps): React.JSX.Element | null {
+  const [showCustomizer, setShowCustomizer] = useState(false);
+  const [selections, setSelections] = useState<Record<string, string> | null>(
+    null,
   );
+  const [isClient, setIsClient] = useState(false);
+
+  // Get global customizer state to avoid overlapping dialogs
+  // Use optional version for SSG compatibility (doesn't throw when provider missing)
+  const guideSettingsOrNull = useGuideSettingsOptional();
+
+  // Memoize fallback to prevent infinite re-renders when provider is unavailable
+  const fallbackSettings = useMemo(
+    () => ({
+      showCustomizer: false,
+      isConfigured: false,
+      settings: null,
+      setShowCustomizer: () => {},
+    }),
+    [],
+  );
+  const guideSettings = guideSettingsOrNull ?? fallbackSettings;
+
+  // Stabilize fieldIds to avoid unnecessary re-runs when array reference changes
+  const fieldIdsKey = useMemo(() => fieldIds?.join(",") || "", [fieldIds]);
+
+  // Check for existing selections on mount
+  useEffect(() => {
+    setIsClient(true);
+    if (fieldIdsKey) {
+      const ids = fieldIdsKey.split(",");
+      const existingSelections = getSelections(ids);
+      setSelections(existingSelections);
+
+      // If no selections exist, show page-level customizer and hide global one
+      // This prevents race condition where both try to show simultaneously
+      if (!existingSelections) {
+        // Guard against no-op fallback during SSG
+        if (typeof guideSettings.setShowCustomizer === "function") {
+          guideSettings.setShowCustomizer(false); // Hide global customizer
+        }
+        setShowCustomizer(true); // Show page-level customizer
+      } else {
+        setShowCustomizer(false);
+      }
+    }
+  }, [fieldIdsKey, guideSettings.setShowCustomizer]);
+
+  // SSR/initial render - show nothing to avoid hydration mismatch
+  if (!isClient) {
+    return null;
+  }
+
+  // No fieldIds configured - render children directly (no customization needed)
+  if (!fieldIds || fieldIds.length === 0) {
+    return <div className={className}>{children}</div>;
+  }
+
+  // Show full-page customizer if no selections or user clicked "Change"
+  if (showCustomizer) {
+    return (
+      <FullPageCustomizer
+        title={title}
+        description={description}
+        onContinue={() => {
+          // Re-check selections after user makes changes
+          const newSelections = getSelections(fieldIds);
+          setSelections(newSelections);
+          // Only close if selections exist, otherwise keep customizer open
+          if (newSelections) {
+            setShowCustomizer(false);
+          }
+        }}
+        onClose={() => {
+          // Allow dismissal even without selections
+          const currentSelections = getSelections(fieldIds);
+          setSelections(currentSelections);
+          setShowCustomizer(false);
+        }}
+        canContinue={true} // Allow continue even if not all fields set (user can use defaults)
+      >
+        {children}
+      </FullPageCustomizer>
+    );
+  }
+
+  // Has selections - show summary in bottom-left
+  if (selections && Object.keys(selections).length > 0) {
+    return (
+      <SettingsSummary
+        selections={selections}
+        labels={fieldLabels}
+        onChangeSettings={() => setShowCustomizer(true)}
+        className={className}
+      />
+    );
+  }
+
+  // No selections - user dismissed customizer, show nothing (they can use defaults)
+  return null;
 }

@@ -5,10 +5,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import {
   INTERACTIVE_STATE_CHANGE_EVENT,
+  STORAGE_KEY_PREFIX_PAGE,
+  useStorageSync,
   type InteractiveStateChangeDetail,
 } from "./use-persisted-state";
-
-const STORAGE_KEY_PREFIX = "moose-docs-interactive";
 
 interface CodeVariant {
   /** Unique value for this variant */
@@ -53,7 +53,7 @@ function TabbedCodeInner({
   useEffect(() => {
     if (!syncKey || typeof window === "undefined") return;
 
-    const storageKey = `${STORAGE_KEY_PREFIX}-tabbed-${syncKey}`;
+    const storageKey = `${STORAGE_KEY_PREFIX_PAGE}-tabbed-${syncKey}`;
 
     // Read initial value from storage
     try {
@@ -67,53 +67,29 @@ function TabbedCodeInner({
     } catch {
       // Ignore parsing errors
     }
-
-    // Listen for changes from other tabs
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === storageKey && event.newValue !== null) {
-        try {
-          const value = JSON.parse(event.newValue) as string;
-          if (variants.some((v) => v.value === value)) {
-            setActiveTab(value);
-          }
-        } catch {
-          // Ignore parsing errors
-        }
-      }
-    };
-
-    // Listen for same-page state changes via custom event
-    const handleStateChange = (event: Event) => {
-      const customEvent = event as CustomEvent<InteractiveStateChangeDetail>;
-      if (customEvent.detail?.key === storageKey) {
-        const value = customEvent.detail.value;
-        if (
-          typeof value === "string" &&
-          variants.some((v) => v.value === value)
-        ) {
-          setActiveTab(value);
-        }
-      }
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener(INTERACTIVE_STATE_CHANGE_EVENT, handleStateChange);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener(
-        INTERACTIVE_STATE_CHANGE_EVENT,
-        handleStateChange,
-      );
-    };
   }, [syncKey, variants]);
+
+  // Sync with storage changes (cross-tab and same-page)
+  useStorageSync<string>(
+    syncKey ? `${STORAGE_KEY_PREFIX_PAGE}-tabbed-${syncKey}` : undefined,
+    (value) => {
+      if (
+        value !== null &&
+        typeof value === "string" &&
+        variants.some((v) => v.value === value)
+      ) {
+        setActiveTab(value);
+      }
+    },
+    [syncKey, variants],
+  );
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
 
     // Persist to localStorage if syncKey is provided
     if (syncKey && typeof window !== "undefined") {
-      const storageKey = `${STORAGE_KEY_PREFIX}-tabbed-${syncKey}`;
+      const storageKey = `${STORAGE_KEY_PREFIX_PAGE}-tabbed-${syncKey}`;
       try {
         localStorage.setItem(storageKey, JSON.stringify(value));
         // Dispatch custom event for same-page synchronization

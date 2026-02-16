@@ -3,10 +3,11 @@
 import { Suspense, ReactNode, useState, useEffect } from "react";
 import {
   INTERACTIVE_STATE_CHANGE_EVENT,
+  STORAGE_KEY_PREFIX_PAGE,
+  STORAGE_KEY_PREFIX_GLOBAL,
   type InteractiveStateChangeDetail,
 } from "./use-persisted-state";
-
-const STORAGE_KEY_PREFIX = "moose-docs-interactive";
+import { getSetting, normalizeFieldId } from "@/lib/guide-settings";
 
 interface ConditionalContentProps {
   /** ID of the SelectField or CheckboxGroup to watch */
@@ -32,16 +33,42 @@ function ConditionalContentInner({
     null,
   );
 
+  // Check both page and global storage keys
+  const pageStorageKey = `${STORAGE_KEY_PREFIX_PAGE}-${whenId}`;
+
+  // For global storage, use normalized (camelCase) key if this field maps to a global setting
+  const normalizedFieldId = normalizeFieldId(whenId);
+  const globalStorageKey =
+    normalizedFieldId ?
+      `${STORAGE_KEY_PREFIX_GLOBAL}-${normalizedFieldId}`
+    : `${STORAGE_KEY_PREFIX_GLOBAL}-${whenId}`;
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const storageKey = `${STORAGE_KEY_PREFIX}-${whenId}`;
-
     const readStoredValue = () => {
       try {
-        const stored = localStorage.getItem(storageKey);
-        if (stored !== null) {
-          const value = JSON.parse(stored);
+        // Priority 1: Check page-level localStorage (allows per-page overrides)
+        const pageStored = localStorage.getItem(pageStorageKey);
+        if (pageStored !== null) {
+          const value = JSON.parse(pageStored);
+          setCurrentValue(value);
+          return;
+        }
+
+        // Priority 2: Check global guide settings (fallback to user's global preferences)
+        if (normalizedFieldId) {
+          const globalValue = getSetting(normalizedFieldId);
+          if (globalValue !== null && globalValue !== undefined) {
+            setCurrentValue(globalValue);
+            return;
+          }
+        }
+
+        // Priority 3: Check global storage with raw key (legacy support)
+        const globalStored = localStorage.getItem(globalStorageKey);
+        if (globalStored !== null) {
+          const value = JSON.parse(globalStored);
           setCurrentValue(value);
         }
       } catch {
@@ -52,9 +79,9 @@ function ConditionalContentInner({
     // Initial read
     readStoredValue();
 
-    // Listen for storage changes from other tabs
+    // Listen for storage changes from other tabs (both page and global keys)
     const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === storageKey) {
+      if (event.key === pageStorageKey || event.key === globalStorageKey) {
         // Reset to null if key was removed, otherwise read the new value
         if (event.newValue === null) {
           setCurrentValue(null);
@@ -66,11 +93,18 @@ function ConditionalContentInner({
 
     window.addEventListener("storage", handleStorageChange);
 
-    // Listen for same-page state changes via custom event
+    // Listen for same-page state changes via custom event (matches either key)
+    // TODO: If CustomizePanel remains in use, add UI warning when page-level
+    // settings conflict with global settings (e.g., badge showing "Page override active")
     const handleStateChange = (event: Event) => {
       const customEvent = event as CustomEvent<InteractiveStateChangeDetail>;
-      if (customEvent.detail?.key === storageKey) {
-        setCurrentValue(customEvent.detail.value as string | string[] | null);
+      if (
+        customEvent.detail?.key === pageStorageKey ||
+        customEvent.detail?.key === globalStorageKey
+      ) {
+        // Re-evaluate priority chain to respect page → global → legacy order
+        // This ensures same-page updates behave consistently with cross-tab updates
+        readStoredValue();
       }
     };
 
