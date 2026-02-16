@@ -23,10 +23,11 @@ Rules:
 
 1. Validate required inputs once at start and list any missing input.
 2. Preserve current API contract and output semantics exactly.
-3. Record ambiguities and assumptions as an inline comment in the ClickHouse translation file.
-4. Do not fabricate test case data, expected outputs, or verification evidence.
-5. If any test case comparison fails, mark FAIL, report root cause, fix, and re-run.
-6. Do not mark PASS until all test case diffs are empty.
+3. Before writing ClickHouse SQL, extract and document the OLTP query semantics in `context-map.md` (source tables + joins, filters, parameter defaults, group-by/aggregations, and edge cases).
+4. Record ambiguities and assumptions as an inline comment in the ClickHouse translation file.
+5. Do not fabricate test case data, expected outputs, or verification evidence.
+6. If any test case comparison fails, mark FAIL, report root cause, fix, and re-run.
+7. Do not mark PASS until all test case diffs are empty.
 
 Required inputs:
 
@@ -38,6 +39,7 @@ Required outputs:
 
 - `moosestack/app/queries/<COMPONENT_NAME>-olap-translation.ts` with the ClickHouse translation of the OLTP query.
 - Updated `context-map.md` with the file path to the file that contains the ClickHouse translation of the OLTP query.
+- Updated `context-map.md` Phase 1 Notes with OLTP query semantics (tables, joins, filters, parameter defaults, aggregations, edge cases).
 - 2–5 test case files under `moosestack/context/dashboard-migration/<COMPONENT_NAME>/test-cases/` with the exact JSON response from the OLTP endpoint for each test case.
 - Test case verification evidence (`expected.json`, `actual.json`, `diff`)
 </GuideStepper.Prompt>
@@ -56,7 +58,9 @@ Steps:
 4. Each file must include:
    - the `curl` command (GET or POST)
    - the **verbatim** JSON response — this must come from actually calling the running endpoint, not from approximation
-5. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days). You will seed your local ClickHouse to match this window after identifying the source tables in Checkpoint 2.
+5. Choose requests that cover a reasonable recent time window (e.g. last 7–30 days) so parity validation uses a consistent, representative slice.
+
+For components that read `EXTERNALLY_MANAGED` tables, local data coverage is controlled in `moose.config.toml` via `[dev.remote_clickhouse]` and `[dev.externally_managed.tables]` (especially `sample_size`) rather than a Phase 1 seeding step.
 
 Copy the provided test case template (path: `context/migrations/test-case-template.md`) to create the test case files:
 
@@ -69,68 +73,6 @@ This checkpoint is complete when 2–5 test case files exist under `test-cases/`
 </GuideStepper.Checkpoint>
 
 <GuideStepper.Checkpoint
-  id="phase-1-oltp-semantics"
-  title="OLTP semantics"
->
-Goal: extract the query logic from the existing endpoint so you have a precise spec to translate.
-
-Steps:
-
-1. Locate the SQL query or stored procedure that powers the existing endpoint (typically in the backend handler or a database layer).
-2. Document:
-   - Source tables and join conditions (including join type)
-   - Filter clauses (including implicit tenancy, soft-delete, or RBAC filters)
-   - Parameter substitution rules and defaults
-   - Group-by / aggregation logic
-   - Edge cases (null handling, division by zero, missing rows)
-3. Record these findings in `context-map.md` under Phase 1 Notes.
-
-**Done when:** `context-map.md` lists every source table, the join graph, all filter/aggregation logic, and any edge cases. You should be able to write the ClickHouse translation from this spec alone.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
-  id="phase-1-seed-local-clickhouse"
-  title="Seed local ClickHouse"
->
-Goal: seed your local ClickHouse with enough production data to fully cover the test cases from Checkpoint 1. You now know the source tables (from Checkpoint 2) and the time windows and filter values (from Checkpoint 1).
-
-Prerequisites:
-
-- Dev server is running (`moose dev`)
-- Production ClickHouse HTTPS connection string is exported:
-
-```shell
-export CLICKHOUSE_PROD_URL="<YOUR_HTTPS_CONNECTION_STRING>"
-```
-
-The connection string should start with `https://` (for example, `https://username:password@host:8443/database`).
-
-Steps:
-
-1. For each source table from Checkpoint 2, generate and run a seed command that covers the test case time windows:
-
-```shell
-moose seed clickhouse \
-  --connection-string "$CLICKHOUSE_PROD_URL" \
-  --table <TABLE_NAME> \
-  --order-by '<TIMESTAMP_COLUMN> DESC' \
-  --limit 100000
-```
-
-2. Verify the seeded data covers every test case:
-
-```shell
-moose query -q "SELECT min(<TIMESTAMP_COLUMN>), max(<TIMESTAMP_COLUMN>), count() FROM <TABLE_NAME> FINAL"
-```
-
-If any test case falls outside the seeded range, re-seed with a larger `--limit` or use `--all`.
-
-**Done when:** every source table has local data that spans the time windows used in all Checkpoint 1 test cases.
-
-</GuideStepper.Checkpoint>
-
-<GuideStepper.Checkpoint
   id="phase-1-clickhouse-parity-function"
   title="ClickHouse parity function"
 >
@@ -138,14 +80,20 @@ Goal: write a direct translation of the OLTP query into ClickHouse SQL that retu
 
 Steps:
 
-1. Create `moosestack/app/queries/<COMPONENT_NAME>-olap-translation.ts`.
-2. Write a function that:
+1. Locate the SQL query (or stored procedure) that powers the existing endpoint and record OLTP semantics in `context-map.md` under Phase 1 Notes:
+   - Source tables and join conditions (including join type)
+   - Filter clauses (including implicit tenancy, soft-delete, or RBAC filters)
+   - Parameter substitution rules and defaults
+   - Group-by / aggregation logic
+   - Edge cases (null handling, division by zero, missing rows)
+2. Create `moosestack/app/queries/<COMPONENT_NAME>-olap-translation.ts`.
+3. Write a function that:
    - accepts the exact same parameters as the existing handler/query logic
    - builds the translated query using the `sql` tagged template literal
    - executes via the Moose ClickHouse client against local `moose dev`
-3. Preserve column names, types, and ordering exactly. Add explicit `ORDER BY` and casts where needed.
-4. Call out any ClickHouse-specific differences (null handling, decimal precision, timestamp bucketing) as comments in the code.
-5. Record the file path in `context-map.md`.
+4. Preserve column names, types, and ordering exactly. Add explicit `ORDER BY` and casts where needed.
+5. Call out any ClickHouse-specific differences (null handling, decimal precision, timestamp bucketing) as comments in the code.
+6. Record the file path in `context-map.md`.
 
 Refer to the [ClickHouse SQL reference](https://clickhouse.com/docs/en/sql-reference) as you translate.
 
@@ -188,7 +136,7 @@ export async function runParity(
 }
 ```
 
-**Done when:** the parity function compiles, runs against local `moose dev`, and returns results. The file path is recorded in `context-map.md`.
+**Done when:** `context-map.md` contains complete OLTP semantics, the parity function compiles and runs against local `moose dev`, and the translation file path is recorded in `context-map.md`.
 
 </GuideStepper.Checkpoint>
 
@@ -197,6 +145,8 @@ export async function runParity(
   title="Verification"
 >
 Goal: prove the parity function returns the exact same JSON as the OLTP endpoint for every test case.
+
+Iteration rule: treat Phase 1 as a red/green loop. If any `diff` is non-empty, revise the ClickHouse translation, re-run verification, and repeat until every test case diff is empty.
 
 Steps:
 
@@ -231,11 +181,16 @@ awk 'f{print} /^```json/{f=1; next} /^```$/{if(f){exit}}' \
 diff expected.json actual.json
 ```
 
-4. If there are differences, check:
+4. If `diff` is non-empty, debug and fix the translation:
    - Column names (case-sensitive in ClickHouse)
    - Data types (timestamps, decimals, integers vs floats)
    - Sort order (add explicit `ORDER BY` if needed)
-   - Missing rows (seed slice too small — re-seed with a larger `--limit`)
+   - Missing rows or availability mismatch for the selected test-case window:
+     - confirm local/source data coverage
+     - for `EXTERNALLY_MANAGED` tables, configure local mirrors in `moose.config.toml` (`[dev.remote_clickhouse]`, `[dev.externally_managed.tables]`, `sample_size`) and restart `moose dev`
+     - adjust the test window only if needed
+5. Re-run Steps 1-4 for the same test case until `diff` produces no output.
+6. Repeat Steps 1-5 for every recorded test case.
 
 **Done when:** `diff` produces no output for every test case. Once all test cases pass, Phase 1 is complete — proceed to Phase 2.
 
