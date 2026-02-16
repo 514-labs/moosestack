@@ -47,7 +47,7 @@ const tempTsconfigPath = path.join(projectRoot, "tsconfig.moose-build.json");
 // Determine outDir - CLI arg > tsconfig > default
 const userOutDir = readUserOutDir(projectRoot);
 const outDir = cliOutDir || userOutDir || DEFAULT_OUT_DIR;
-// Only add --outDir flag if user hasn't specified in tsconfig AND no CLI arg
+// add --outDir flag if user hasn't specified in tsconfig
 // (if CLI arg is provided, we always pass it explicitly)
 const shouldAddOutDir = cliOutDir !== undefined || !userOutDir;
 

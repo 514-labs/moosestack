@@ -36,13 +36,6 @@ pub fn run(
         )
         .env("MOOSE_SOURCE_DIR", &project.source_dir);
 
-    if binary_command == "consumption-apis"
-        || binary_command == "consumption-type-serializer"
-        || binary_command == "dmv2-serializer"
-    {
-        command.env("TS_NODE_COMPILER", "ts-patch/compiler");
-    }
-
     // Use pre-compiled JavaScript - ts-node is no longer used at runtime.
     // In dev mode with incremental compilation (TsCompilationWatcher), the tspc --watch
     // process compiles TypeScript before processes are started.
