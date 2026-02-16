@@ -12,6 +12,7 @@ import {
   IconCloud,
   IconSparkles,
   IconCode,
+  IconCompass,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { getNavVariant } from "@/lib/nav-variant";
@@ -29,6 +30,13 @@ export default function HomePage() {
         "The core framework for building data applications with OLAP, streaming, workflows, and APIs.",
       href: `/moosestack`,
       icon: IconDatabase,
+    },
+    {
+      title: "Guides",
+      description:
+        "Step-by-step guides for building real applications with MooseStack, from dashboards to chat.",
+      href: `/guides`,
+      icon: IconCompass,
     },
     {
       title: "Templates",
@@ -92,6 +100,7 @@ export default function HomePage() {
             "md:grid-cols-2": cardCount === 2,
             "md:grid-cols-3": cardCount === 3,
             "md:grid-cols-2 lg:grid-cols-4": cardCount === 4,
+            "md:grid-cols-3 lg:grid-cols-5": cardCount === 5,
           })}
         >
           {renderableSections.map((section) => {
