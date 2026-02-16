@@ -169,8 +169,8 @@ export const VISIBLE_SETTINGS = GUIDE_SETTINGS_CONFIG.filter(
 );
 
 // Get settings that should sync to URL (only global settings on guide pages)
-export const URL_SYNCABLE_SETTINGS = new Set(
-  GUIDE_SETTINGS_CONFIG.filter((config) => config.syncToUrl === true).map(
-    (config) => config.id,
-  ),
+export const URL_SYNCABLE_SETTINGS: Set<string> = new Set(
+  GUIDE_SETTINGS_CONFIG.filter(
+    (config) => "syncToUrl" in config && config.syncToUrl === true,
+  ).map((config) => config.id),
 );
