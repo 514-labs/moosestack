@@ -1,3 +1,4 @@
+use super::InfrastructureSignature;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -7,6 +8,10 @@ pub struct WebApp {
     pub mount_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<WebAppMetadata>,
+    #[serde(default)]
+    pub pulls_data_from: Vec<InfrastructureSignature>,
+    #[serde(default)]
+    pub pushes_data_to: Vec<InfrastructureSignature>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -21,6 +26,8 @@ impl WebApp {
             name,
             mount_path,
             metadata: None,
+            pulls_data_from: vec![],
+            pushes_data_to: vec![],
         }
     }
 
@@ -34,6 +41,8 @@ impl WebApp {
             name: self.name.clone(),
             mount_path: self.mount_path.clone(),
             metadata: self.metadata.as_ref().map(|m| m.to_proto()).into(),
+            pulls_data_from: self.pulls_data_from.iter().map(|s| s.to_proto()).collect(),
+            pushes_data_to: self.pushes_data_to.iter().map(|s| s.to_proto()).collect(),
             special_fields: Default::default(),
         }
     }
@@ -43,6 +52,18 @@ impl WebApp {
             name: proto.name.clone(),
             mount_path: proto.mount_path.clone(),
             metadata: proto.metadata.as_ref().map(WebAppMetadata::from_proto),
+            pulls_data_from: proto
+                .pulls_data_from
+                .iter()
+                .cloned()
+                .map(InfrastructureSignature::from_proto)
+                .collect(),
+            pushes_data_to: proto
+                .pushes_data_to
+                .iter()
+                .cloned()
+                .map(InfrastructureSignature::from_proto)
+                .collect(),
         }
     }
 }
@@ -89,4 +110,30 @@ pub fn diff_web_apps(
     }
 
     (added, removed, updated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn webapp_proto_roundtrip_preserves_lineage() {
+        let web_app = WebApp {
+            name: "lineageWebApp".to_string(),
+            mount_path: "/lineage".to_string(),
+            metadata: Some(WebAppMetadata {
+                description: Some("Lineage test".to_string()),
+            }),
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            }],
+        };
+
+        let proto = web_app.to_proto();
+        let roundtrip = WebApp::from_proto(&proto);
+        assert_eq!(roundtrip, web_app);
+    }
 }
