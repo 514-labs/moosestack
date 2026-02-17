@@ -43,7 +43,9 @@ import { MaterializedView } from "./sdk/materializedView";
 import { View } from "./sdk/view";
 import {
   getSourceDir,
-  shouldUseCompiled,
+  getCompiledIndexPath,
+  getOutDir,
+  hasCompiledArtifacts,
   loadModule,
 } from "../compiler-config";
 
@@ -93,26 +95,51 @@ function findSourceFiles(
 }
 
 /**
- * Checks for source files that exist but weren't loaded
+ * Strips the file extension from a path, returning the "stem".
+ * Handles compound extensions like .d.ts by stripping only the last extension.
+ */
+function pathStem(filePath: string): string {
+  const ext = path.extname(filePath);
+  return ext ? filePath.slice(0, -ext.length) : filePath;
+}
+
+/**
+ * Checks for source files that exist but weren't loaded.
+ *
+ * Since we now load pre-compiled JS from the outDir (e.g. .moose/compiled/app/),
+ * require.cache contains compiled paths, not source paths. We compare using
+ * path stems relative to each root: for source files relative to appDir, and
+ * for loaded files relative to compiledAppDir. This maps e.g.
+ *   source:   app/models.ts         -> stem "models"
+ *   compiled: .moose/compiled/app/models.js -> stem "models"
  */
 function findUnloadedFiles(): string[] {
-  const appDir = path.resolve(process.cwd(), getSourceDir());
+  const cwd = process.cwd();
+  const sourceDir = getSourceDir();
+  const appDir = path.resolve(cwd, sourceDir);
 
-  // Find all source files in the directory
+  // The compiled equivalent of appDir lives under outDir/sourceDir
+  const compiledAppDir = path.resolve(cwd, getOutDir(), sourceDir);
+
+  // Find all source files in the source directory
   const allSourceFiles = findSourceFiles(appDir);
 
-  // Get all loaded files from require.cache
-  const loadedFiles = new Set(
+  // Build a set of stems from require.cache entries under the compiled directory.
+  // e.g. ".moose/compiled/app/models.js" -> stem "models"
+  const loadedStems = new Set(
     Object.keys(require.cache)
-      .filter((key) => key.startsWith(appDir))
-      .map((key) => path.resolve(key)),
+      .filter((key) => key.startsWith(compiledAppDir))
+      .map((key) => pathStem(path.relative(compiledAppDir, key))),
   );
 
-  // Find files that exist but weren't loaded
+  // A source file is unloaded if its stem (relative to appDir) is not in loadedStems.
+  // e.g. "app/unloaded_table.ts" -> stem "unloaded_table" -> not in loadedStems
   const unloadedFiles = allSourceFiles
-    .map((file) => path.resolve(file))
-    .filter((file) => !loadedFiles.has(file))
-    .map((file) => path.relative(process.cwd(), file));
+    .filter((file) => {
+      const stem = pathStem(path.relative(appDir, file));
+      return !loadedStems.has(stem);
+    })
+    .map((file) => path.relative(cwd, file));
 
   return unloadedFiles;
 }
@@ -1272,47 +1299,45 @@ export const dumpMooseInternal = async () => {
 };
 
 const loadIndex = async () => {
-  // Check if we should use pre-compiled JavaScript.
-  // This checks MOOSE_USE_COMPILED=true AND verifies artifacts exist,
-  // providing automatic fallback to ts-node if compilation wasn't run.
-  const useCompiled = shouldUseCompiled();
+  // Always use pre-compiled JavaScript - no ts-node fallback.
+  // Compilation is handled by moose-tspc before this runs.
 
-  // In dev mode, clear registry and require.cache to support hot reloading.
-  // In production (compiled mode), skip clearing - code doesn't change.
-  if (!useCompiled) {
-    const registry = getMooseInternal();
-    registry.tables.clear();
-    registry.streams.clear();
-    registry.ingestApis.clear();
-    registry.apis.clear();
-    registry.sqlResources.clear();
-    registry.workflows.clear();
-    registry.webApps.clear();
-    registry.materializedViews.clear();
-    registry.views.clear();
-
-    // Clear require cache for app directory to pick up changes
-    const appDir = `${process.cwd()}/${getSourceDir()}`;
-    Object.keys(require.cache).forEach((key) => {
-      if (key.startsWith(appDir)) {
-        delete require.cache[key];
-      }
-    });
+  // Check if compiled artifacts exist
+  if (!hasCompiledArtifacts()) {
+    const outDir = getOutDir();
+    const sourceDir = getSourceDir();
+    throw new Error(
+      `Compiled artifacts not found at ${outDir}/${sourceDir}/index.js. ` +
+        `Run 'npx moose-tspc' to compile your TypeScript first.`,
+    );
   }
 
-  try {
-    // Load from compiled directory if available, otherwise TypeScript
-    const sourceDir = getSourceDir();
-    if (useCompiled) {
-      // In compiled mode, load pre-compiled JavaScript from .moose/compiled/
-      // Use dynamic loader that handles both CJS and ESM
-      await loadModule(
-        `${process.cwd()}/.moose/compiled/${sourceDir}/index.js`,
-      );
-    } else {
-      // In development mode, load TypeScript via ts-node
-      require(`${process.cwd()}/${sourceDir}/index.ts`);
+  // Clear registry and require.cache for hot reloading
+  const registry = getMooseInternal();
+  registry.tables.clear();
+  registry.streams.clear();
+  registry.ingestApis.clear();
+  registry.apis.clear();
+  registry.sqlResources.clear();
+  registry.workflows.clear();
+  registry.webApps.clear();
+  registry.materializedViews.clear();
+  registry.views.clear();
+
+  // Clear require cache for compiled directory to pick up changes
+  const outDir = getOutDir();
+  const compiledDir =
+    path.isAbsolute(outDir) ? outDir : path.join(process.cwd(), outDir);
+  Object.keys(require.cache).forEach((key) => {
+    if (key.startsWith(compiledDir)) {
+      delete require.cache[key];
     }
+  });
+
+  try {
+    // Load pre-compiled JavaScript from the configured outDir
+    const indexPath = getCompiledIndexPath();
+    await loadModule(indexPath);
   } catch (error) {
     let hint: string | undefined;
     let includeDetails = true;

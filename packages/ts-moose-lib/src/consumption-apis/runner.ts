@@ -1,4 +1,5 @@
 import http from "http";
+import * as path from "path";
 import { getClickhouseClient } from "../commons";
 import { MooseClient, QueryClient, getTemporalClient } from "./helpers";
 import * as jose from "jose";
@@ -7,7 +8,7 @@ import { Cluster } from "../cluster-utils";
 import { sql } from "../sqlHelpers";
 import { Client as TemporalClient } from "@temporalio/client";
 import { getApis, getWebApps } from "../dmv2/internal";
-import { getSourceDir, shouldUseCompiled } from "../compiler-config";
+import { getSourceDir, getOutDir } from "../compiler-config";
 import { setupStructuredConsole } from "../utils/structured-logging";
 
 interface ClickhouseConfig {
@@ -48,9 +49,9 @@ const toClientConfig = (config: ClickhouseConfig) => ({
   useSSL: config.useSSL ? "true" : "false",
 });
 
-const createPath = (apisDir: string, path: string, useCompiled: boolean) => {
-  const extension = useCompiled ? ".js" : ".ts";
-  return `${apisDir}${path}${extension}`;
+const createPath = (apisDir: string, path: string) => {
+  // Always use compiled JavaScript
+  return `${apisDir}${path}.js`;
 };
 
 const httpLogger = (
@@ -91,15 +92,12 @@ const apiHandler = async (
   enforceAuth: boolean,
   jwtConfig?: JwtConfig,
 ) => {
-  // Check if we should use compiled code
-  const useCompiled = shouldUseCompiled();
+  // Always use compiled JavaScript
   const sourceDir = getSourceDir();
-
-  // Adjust apisDir for compiled mode
-  const actualApisDir =
-    useCompiled ?
-      `${process.cwd()}/.moose/compiled/${sourceDir}/apis/`
-    : undefined;
+  const outDir = getOutDir();
+  const outRoot =
+    path.isAbsolute(outDir) ? outDir : path.join(process.cwd(), outDir);
+  const actualApisDir = path.join(outRoot, sourceDir, "apis");
 
   const apis = await getApis();
   return async (req: http.IncomingMessage, res: http.ServerResponse) => {
@@ -144,10 +142,7 @@ const apiHandler = async (
         return;
       }
 
-      const pathName =
-        actualApisDir ?
-          createPath(actualApisDir, fileName, useCompiled)
-        : fileName;
+      const pathName = createPath(actualApisDir, fileName);
       const paramsObject = Array.from(url.searchParams.entries()).reduce(
         (obj: { [key: string]: string[] | string }, [key, value]) => {
           const existingValue = obj[key];

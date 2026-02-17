@@ -543,6 +543,7 @@ pub fn infra_changes_to_operations(
 ///
 /// # Arguments
 /// * `project` - The project configuration
+/// * `skip_compilation` - Skip TypeScript compilation (use when watcher already compiled)
 ///
 /// # Returns
 /// * `Result<InfrastructureMap, PlanningError>` - The target infrastructure map with resolved credentials
@@ -678,6 +679,7 @@ pub async fn load_reconciled_infrastructure<T: OlapOperations + Sync>(
 /// # Arguments
 /// * `state_storage` - State storage implementation for loading the current infrastructure map
 /// * `project` - Project configuration for building the target infrastructure map
+/// * `skip_compilation` - Skip TypeScript compilation (use when watcher already compiled)
 ///
 /// # Returns
 /// * `Result<(InfrastructureMap, InfraPlan), PlanningError>` - The current state and infrastructure plan, or an error

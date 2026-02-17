@@ -1,16 +1,26 @@
 #!/usr/bin/env node
 /**
  * Pre-compiles TypeScript app code with moose compiler plugins and typia transforms.
- * Used during Docker build to eliminate ts-node overhead at runtime.
  *
- * Usage: moose-tspc [outDir]
- *   outDir: Output directory for compiled files (default: .moose/compiled)
+ * Usage: moose-tspc [outDir] [--watch]
+ *   outDir: Output directory for compiled files (optional, overrides tsconfig)
+ *   --watch: Enable watch mode for incremental compilation (outputs JSON events)
+ *
+ * Output directory is determined by (in priority order):
+ * 1. CLI argument (if provided) - used by Docker builds
+ * 2. User's tsconfig.json outDir setting (if specified)
+ * 3. Default: .moose/compiled
  *
  * This script creates a temporary tsconfig that extends the user's config and adds
  * the required moose compiler plugins, then runs tspc to compile with transforms.
+ *
+ * In watch mode, outputs JSON events to stdout for the Rust CLI to parse:
+ *   {"event": "compile_start"}
+ *   {"event": "compile_complete", "errors": 0, "warnings": 2}
+ *   {"event": "compile_error", "errors": 3, "diagnostics": [...]}
  */
-import { execFileSync } from "child_process";
-import { existsSync, writeFileSync, unlinkSync } from "fs";
+import { execFileSync, spawn } from "child_process";
+import { existsSync, writeFileSync, unlinkSync, mkdirSync } from "fs";
 import path from "path";
 import {
   MOOSE_COMPILER_PLUGINS,
@@ -18,83 +28,104 @@ import {
   detectModuleSystem,
   getModuleOptions,
   getSourceDir,
+  readUserOutDir,
+  DEFAULT_OUT_DIR,
+  type ModuleSystem,
 } from "./compiler-config";
 import { rewriteImportExtensions } from "./commons";
 
-const outDir = process.argv[2] || ".moose/compiled";
+// Parse command line arguments
+const args = process.argv.slice(2);
+const watchMode = args.includes("--watch");
+// CLI argument takes priority (for Docker builds), then tsconfig, then default
+const cliOutDir = args.find((arg) => !arg.startsWith("--"));
+
 const projectRoot = process.cwd();
 const tsconfigPath = path.join(projectRoot, "tsconfig.json");
 const tempTsconfigPath = path.join(projectRoot, "tsconfig.moose-build.json");
 
-if (!existsSync(tsconfigPath)) {
-  console.error("Error: tsconfig.json not found in", projectRoot);
-  process.exit(1);
+// Determine outDir - CLI arg > tsconfig > default
+const userOutDir = readUserOutDir(projectRoot);
+const outDir = cliOutDir || userOutDir || DEFAULT_OUT_DIR;
+// add --outDir flag if user hasn't specified in tsconfig
+// (if CLI arg is provided, we always pass it explicitly)
+const shouldAddOutDir = cliOutDir !== undefined || !userOutDir;
+
+/**
+ * JSON event protocol for watch mode communication with Rust CLI.
+ */
+interface CompileEvent {
+  event: "compile_start" | "compile_complete" | "compile_error";
+  errors?: number;
+  warnings?: number;
+  diagnostics?: string[];
 }
 
-console.log(`Compiling TypeScript to ${outDir}...`);
+/**
+ * Emit a JSON event to stdout for the Rust CLI to parse.
+ */
+function emitEvent(event: CompileEvent): void {
+  console.log(JSON.stringify(event));
+}
 
-try {
-  // Auto-detect module system from package.json
-  const moduleSystem = detectModuleSystem(projectRoot);
-  const moduleOptions = getModuleOptions(moduleSystem);
-
-  console.log(
-    `Using ${moduleSystem.toUpperCase()} module output (detected from package.json)...`,
-  );
-
-  // Create a temporary tsconfig that extends the user's config and adds plugins.
-  // We use extends (not spread) to properly inherit all user settings.
-  // Only override what's needed for moose compilation.
-  const buildTsconfig = {
+/**
+ * Create the build tsconfig with moose plugins.
+ */
+function createBuildTsconfig(
+  moduleOptions: ReturnType<typeof getModuleOptions>,
+) {
+  return {
     extends: "./tsconfig.json",
     compilerOptions: {
       ...MOOSE_COMPILER_OPTIONS,
       ...moduleOptions,
       plugins: [...MOOSE_COMPILER_PLUGINS],
       // Skip type checking of declaration files to avoid dual-package conflicts
-      // This must be in compilerOptions (not just CLI flag) to fully work
       skipLibCheck: true,
       skipDefaultLibCheck: true,
       // Additional settings to handle module resolution conflicts
       allowSyntheticDefaultImports: true,
-      // IMPORTANT: Build Safety Trade-off
-      // noEmitOnError: false allows JavaScript emission even with type errors.
-      // This is intentional for Docker builds to succeed even when TypeScript
-      // finds type issues. The trade-off is that type errors that could cause
-      // runtime failures will not block the build - they will be logged as
-      // warnings below. For strict type safety, users should run `npx tsc --noEmit`
-      // before building to catch type errors that could indicate runtime issues.
-      noEmitOnError: false,
+      // In watch mode, we want to block on errors (noEmitOnError: true)
+      // In build mode, we allow emission with errors for Docker builds
+      noEmitOnError: watchMode,
+      // Enable incremental compilation for faster rebuilds
+      incremental: true,
+      tsBuildInfoFile: path.join(outDir, ".tsbuildinfo"),
     },
   };
+}
 
-  // Write the temporary tsconfig
+/**
+ * Run a single compilation (non-watch mode).
+ */
+function runSingleCompilation(moduleSystem: ModuleSystem): void {
+  const moduleOptions = getModuleOptions(moduleSystem);
+  const buildTsconfig = createBuildTsconfig(moduleOptions);
+  // Override noEmitOnError for single compilation (allow errors)
+  buildTsconfig.compilerOptions.noEmitOnError = false;
+
   writeFileSync(tempTsconfigPath, JSON.stringify(buildTsconfig, null, 2));
   console.log("Created temporary tsconfig with moose plugins...");
 
-  // Use tspc (ts-patch compiler CLI) with the temporary tsconfig
-  // Include source maps for better error messages in production
-  // --rootDir . preserves directory structure (e.g., app/index.ts -> outDir/app/index.js)
-  // Note: skipLibCheck and noEmitOnError are in compilerOptions
+  // Build tspc arguments - only add --outDir if user hasn't specified one in tsconfig
+  const tspcArgs = [
+    "tspc",
+    "-p",
+    tempTsconfigPath,
+    "--rootDir",
+    ".",
+    "--sourceMap",
+    "--inlineSources",
+  ];
+  if (shouldAddOutDir) {
+    tspcArgs.push("--outDir", outDir);
+  }
+
   try {
-    execFileSync(
-      "npx",
-      [
-        "tspc",
-        "-p",
-        tempTsconfigPath,
-        "--outDir",
-        outDir,
-        "--rootDir",
-        ".",
-        "--sourceMap",
-        "--inlineSources",
-      ],
-      {
-        stdio: "inherit",
-        cwd: projectRoot,
-      },
-    );
+    execFileSync("npx", tspcArgs, {
+      stdio: "inherit",
+      cwd: projectRoot,
+    });
     console.log("TypeScript compilation complete.");
   } catch (compileError: any) {
     // TypeScript might exit with non-zero code even when noEmitOnError: false
@@ -109,9 +140,9 @@ try {
 
     if (existsSync(outputIndexPath)) {
       console.warn("");
-      console.warn("⚠️  BUILD SAFETY WARNING ⚠️");
+      console.warn("BUILD SAFETY WARNING");
       console.warn(
-        "═══════════════════════════════════════════════════════════════",
+        "===============================================================",
       );
       console.warn(
         "TypeScript detected type errors but JavaScript was still emitted.",
@@ -136,7 +167,7 @@ try {
         "deploying to production. Fix any errors that could cause runtime issues.",
       );
       console.warn(
-        "═══════════════════════════════════════════════════════════════",
+        "===============================================================",
       );
       console.warn("");
       console.log("TypeScript compilation complete (with type warnings).");
@@ -147,21 +178,227 @@ try {
   }
 
   // Post-process ESM output to add .js extensions to relative imports
-  // Node.js ESM requires explicit extensions which TypeScript doesn't add
   if (moduleSystem === "esm") {
     console.log("Post-processing ESM imports to add .js extensions...");
     const fullOutDir = path.join(projectRoot, outDir);
     rewriteImportExtensions(fullOutDir);
     console.log("ESM import rewriting complete.");
   }
+}
 
-  console.log("Compilation complete.");
+/**
+ * Run watch mode compilation with JSON event output.
+ * Uses tspc --watch and parses its output to emit structured events.
+ */
+function runWatchCompilation(moduleSystem: ModuleSystem): void {
+  const moduleOptions = getModuleOptions(moduleSystem);
+  const buildTsconfig = createBuildTsconfig(moduleOptions);
+
+  // Write the tsconfig (it stays for the duration of watch mode)
+  writeFileSync(tempTsconfigPath, JSON.stringify(buildTsconfig, null, 2));
+
+  // Ensure output directory exists for incremental build info
+  const fullOutDir = path.join(projectRoot, outDir);
+  if (!existsSync(fullOutDir)) {
+    mkdirSync(fullOutDir, { recursive: true });
+  }
+
+  // Track diagnostics between compilation cycles
+  let currentDiagnostics: string[] = [];
+  let errorCount = 0;
+  let warningCount = 0;
+
+  // Build tspc arguments - only add --outDir if user hasn't specified one in tsconfig
+  const tspcArgs = [
+    "tspc",
+    "-p",
+    tempTsconfigPath,
+    "--rootDir",
+    ".",
+    "--sourceMap",
+    "--inlineSources",
+    "--watch",
+    "--preserveWatchOutput",
+  ];
+  if (shouldAddOutDir) {
+    // Insert --outDir after --rootDir and "." so rootDir is not clobbered
+    tspcArgs.splice(6, 0, "--outDir", outDir);
+  }
+
+  // Spawn tspc in watch mode
+  const tspcProcess = spawn("npx", tspcArgs, {
+    cwd: projectRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  // Handle process termination
+  const cleanup = () => {
+    if (existsSync(tempTsconfigPath)) {
+      unlinkSync(tempTsconfigPath);
+    }
+    tspcProcess.kill();
+  };
+
+  process.on("SIGINT", () => {
+    cleanup();
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", () => {
+    cleanup();
+    process.exit(0);
+  });
+
+  // Parse tspc output line by line
+  // Pattern matching approach inspired by tsc-watch (github.com/gilamran/tsc-watch)
+  // which also parses tsc stdout to detect compilation events
+  let buffer = "";
+
+  // Strip ANSI escape codes for reliable pattern matching (standard regex pattern)
+  const stripAnsi = (str: string) =>
+    str.replace(
+      /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?[\u0007])|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g,
+      "",
+    );
+
+  // tsc watch mode patterns (with timestamp prefix like "12:00:00 AM - ")
+  const compilationStartedRegex =
+    /Starting compilation in watch mode|Starting incremental compilation/;
+  const compilationCompleteRegex =
+    /Found\s+(\d+)\s+error(?:s)?\..*Watching for file changes/;
+  const diagnosticRegex = /\(\d+,\d+\):\s*(error|warning)\s+TS\d+:/;
+
+  const processLine = (line: string) => {
+    const cleanLine = stripAnsi(line);
+
+    if (compilationStartedRegex.test(cleanLine)) {
+      // New compilation cycle starting
+      currentDiagnostics = [];
+      errorCount = 0;
+      warningCount = 0;
+      emitEvent({ event: "compile_start" });
+    } else if (compilationCompleteRegex.test(cleanLine)) {
+      // Compilation complete - parse error count from tsc summary line
+      // Format: "12:00:00 AM - Found 0 errors. Watching for file changes."
+      const match = cleanLine.match(/Found\s+(\d+)\s+error(?:s)?\./);
+      if (match) {
+        errorCount = parseInt(match[1], 10);
+      }
+
+      // Post-process ESM if successful
+      if (errorCount === 0 && moduleSystem === "esm") {
+        try {
+          rewriteImportExtensions(fullOutDir);
+        } catch (e) {
+          // Log but don't fail - import rewriting is best-effort
+          console.error("Warning: ESM import rewriting failed:", e);
+        }
+      }
+
+      if (errorCount > 0) {
+        emitEvent({
+          event: "compile_error",
+          errors: errorCount,
+          warnings: warningCount,
+          diagnostics: currentDiagnostics,
+        });
+      } else {
+        emitEvent({
+          event: "compile_complete",
+          errors: 0,
+          warnings: warningCount,
+          diagnostics: warningCount > 0 ? currentDiagnostics : undefined,
+        });
+      }
+    } else if (diagnosticRegex.test(cleanLine)) {
+      // This is a diagnostic line (error or warning)
+      currentDiagnostics.push(cleanLine.trim());
+      if (cleanLine.includes(": error ")) {
+        errorCount++;
+      } else if (cleanLine.includes(": warning ")) {
+        warningCount++;
+      }
+    }
+  };
+
+  tspcProcess.stdout.on("data", (data: Buffer) => {
+    buffer += data.toString();
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || ""; // Keep incomplete line in buffer
+    for (const line of lines) {
+      if (line.trim()) {
+        processLine(line);
+      }
+    }
+  });
+
+  tspcProcess.stderr.on("data", (data: Buffer) => {
+    // Forward stderr for debugging but don't parse it
+    process.stderr.write(data.toString());
+  });
+
+  tspcProcess.on("error", (err) => {
+    console.error("Failed to start tspc:", err);
+    cleanup();
+    process.exit(1);
+  });
+
+  tspcProcess.on("exit", (code) => {
+    cleanup();
+    if (code !== 0) {
+      process.exit(code || 1);
+    }
+  });
+}
+
+/**
+ * Write compile metadata to .moose/.compile-config.json
+ * This allows Rust CLI to know where compiled output is without duplicating logic
+ */
+function writeCompileConfig() {
+  const mooseDir = path.join(projectRoot, ".moose");
+  if (!existsSync(mooseDir)) {
+    mkdirSync(mooseDir, { recursive: true });
+  }
+  const configPath = path.join(mooseDir, ".compile-config.json");
+  writeFileSync(configPath, JSON.stringify({ outDir }, null, 2));
+}
+
+// Main execution
+if (!existsSync(tsconfigPath)) {
+  console.error("Error: tsconfig.json not found in", projectRoot);
+  process.exit(1);
+}
+
+try {
+  // Write compile config so Rust CLI knows where output is
+  writeCompileConfig();
+
+  // Auto-detect module system from package.json
+  const moduleSystem = detectModuleSystem(projectRoot);
+
+  if (watchMode) {
+    // Watch mode - run indefinitely with JSON event output
+    runWatchCompilation(moduleSystem);
+  } else {
+    // Single compilation mode
+    console.log(`Compiling TypeScript to ${outDir}...`);
+    console.log(
+      `Using ${moduleSystem.toUpperCase()} module output (detected from package.json)...`,
+    );
+    runSingleCompilation(moduleSystem);
+    console.log("Compilation complete.");
+
+    // Clean up the temporary tsconfig
+    if (existsSync(tempTsconfigPath)) {
+      unlinkSync(tempTsconfigPath);
+    }
+  }
 } catch (error) {
   console.error("Build process failed:", error);
-  process.exit(1);
-} finally {
   // Clean up the temporary tsconfig
   if (existsSync(tempTsconfigPath)) {
     unlinkSync(tempTsconfigPath);
   }
+  process.exit(1);
 }

@@ -8,6 +8,11 @@ pub mod processing_coordinator;
 pub mod routines;
 use crate::cli::routines::seed_data;
 pub mod settings;
+/// TypeScript compilation watcher: runs `moose-tspc --watch`, parses compile events,
+/// and triggers infrastructure planning/execution on successful incremental builds.
+/// Used in dev mode for TypeScript projects; see `TsCompilationWatcher` and
+/// `spawn_and_await_initial_compile`.
+pub mod ts_compilation_watcher;
 pub mod watcher;
 use super::metrics::Metrics;
 use crate::utilities::{constants, docker::DockerClient};
@@ -1591,6 +1596,7 @@ pub async fn top_command_handler(
         }
         Commands::Seed(seed_args) => {
             let project = load_project(commands)?;
+
             seed_data::handle_seed_command(seed_args, &project).await
         }
         Commands::Truncate { tables, all, rows } => {
@@ -1606,6 +1612,7 @@ pub async fn top_command_handler(
                 schema_registry,
             } => {
                 let project = load_project(commands)?;
+
                 let path = path.as_deref().unwrap_or(match project.language {
                     SupportedLanguages::Typescript => "app/external-topics",
                     SupportedLanguages::Python => "app/external_topics",

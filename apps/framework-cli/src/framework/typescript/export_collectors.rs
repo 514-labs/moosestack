@@ -1,20 +1,15 @@
 use super::bin;
-use crate::framework::consumption::model::ConsumptionQueryParam;
 use crate::framework::data_model::config::{ConfigIdentifier, DataModelConfig};
-use crate::framework::typescript::consumption::{extract_intput_param, extract_schema};
 use crate::project::Project;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tokio::io::AsyncReadExt;
 use tokio::process::Child;
-use tracing::debug;
 
 const EXPORT_SERIALIZER_BIN: &str = "export-serializer";
-const EXPORT_FUNC_TYPE_BIN: &str = "consumption-type-serializer";
 
 const EXPORT_CONFIG_PROCESS: &str = "Data model config";
-const EXPORT_FUNC_TYPE_PROCESS: &str = "API schema";
 
 #[derive(Debug, thiserror::Error)]
 #[error("Failed to run code")]
@@ -110,41 +105,4 @@ pub async fn get_data_model_configs(
             message: "Expected an object as the root of the exports".to_string(),
         }),
     }
-}
-
-pub async fn get_func_types(
-    file: &Path,
-    project: &Project,
-    project_path: &Path,
-) -> Result<(Vec<ConsumptionQueryParam>, Value, Option<String>), ExportCollectorError> {
-    let exports = collect_exports(
-        EXPORT_FUNC_TYPE_BIN,
-        EXPORT_FUNC_TYPE_PROCESS,
-        file,
-        project,
-        project_path,
-    )
-    .await?;
-
-    debug!("Schema for path {:?} {}", file, exports);
-
-    let (input_params, output_schema, version) = match exports {
-        Value::Object(mut map) => (
-            extract_intput_param(&map)?,
-            match map.remove("outputSchema") {
-                None => Value::Null,
-                Some(Value::Object(schema)) => extract_schema(&schema)?.clone(),
-                Some(_) => Err(ExportCollectorError::Other {
-                    message: "output schema must be an object".to_string(),
-                })?,
-            },
-            map.get("version")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-        ),
-        _ => Err(ExportCollectorError::Other {
-            message: "Expected an object as the root of the exports".to_string(),
-        })?,
-    };
-    Ok((input_params, output_schema, version))
 }

@@ -95,6 +95,12 @@ pub static QUIET_STDOUT: AtomicBool = AtomicBool::new(false);
 /// This is set once at startup based on CLI flags
 pub static SHOW_TIMING: AtomicBool = AtomicBool::new(false);
 
+/// Global flag indicating we're running in dev mode (`moose dev`).
+/// When true, `tspc --watch` is handling TypeScript compilation, so we don't need
+/// to run `ensure_typescript_compiled` ourselves.
+/// This is set once at the start of `start_development_mode`.
+pub static IS_DEV_MODE: AtomicBool = AtomicBool::new(false);
+
 pub const README_PREFIX: &str = r#"
 This is a [MooseJs](https://www.moosejs.com/) project bootstrapped with the
 [`Moose CLI`](https://github.com/514-labs/moose/tree/main/apps/framework-cli).

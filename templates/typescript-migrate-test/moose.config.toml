@@ -49,7 +49,9 @@ postgresql_version = "13"
 [supported_old_versions]
 
 [watcher_config]
-ignore_patterns = []
+# IMPORTANT: Ignore the migration subdirectory to prevent the outer app from
+# reacting to file changes in the inner app, which could cause table drops.
+ignore_patterns = ["migration/**"]
 
 [features]
 streaming_engine = false

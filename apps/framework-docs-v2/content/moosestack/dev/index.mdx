@@ -16,7 +16,7 @@ The `moose dev` command starts a local development environment with hot-reload, 
 2. **Code compiles** - Your data models, streams, and functions are compiled and validated
 3. **Schema syncs** - Tables, views, and topics are created/updated in local infrastructure
 4. **Server starts** - The Moose runtime serves your APIs and processes data
-5. **File watcher activates** - Changes to your code trigger automatic reloads
+5. **Watcher activates** - Changes to your code trigger automatic reloads (see [TypeScript compilation](#typescript-projects-compilation-and-hot-reload) for TypeScript behavior)
 
 ## Key Capabilities
 
@@ -26,6 +26,16 @@ The `moose dev` command starts a local development environment with hot-reload, 
 | **Local Infrastructure** | Full ClickHouse, Redpanda, Redis, and Temporal stack |
 | **Schema Sync** | Tables and topics are created/updated automatically |
 | **External Table Mirroring** | Optionally mirror remote tables for local development |
+
+### TypeScript projects: compilation and hot reload
+
+For **TypeScript** projects, `moose dev` uses a compilation-driven workflow:
+
+- **Initial compile** – Before planning or starting the server, Moose compiles your TypeScript once. The runtime loads **pre-compiled JavaScript** (we used to run TypeScript via ts-node at runtime; we no longer do). If this initial compilation fails, `moose dev` exits with an error.
+- **Incremental compilation (watch)** – The compiler runs in watch mode and watches your source files. When you save changes, it performs an incremental compile. Only **after a successful compile** does Moose run planning and apply infrastructure changes (tables, APIs, etc.). Compilation **errors** block reloads until fixed; **warnings** do not block reloads but are shown in the terminal.
+- **Output directory** – Compiled output is written to your `tsconfig.json` `outDir` if set, otherwise to `.moose/compiled`. Moose reads this directory when loading your app; do not delete it while `moose dev` is running.
+
+This replaces the previous file-watcher approach so that TypeScript benefits from incremental compilation and reloads only when the project compiles successfully.
 
 <Callout type="info" title="Configuration Reference">
 For detailed configuration options including lifecycle hooks, Docker extensions, and networking, see [Dev Environment Configuration](/moosestack/configuration/dev-environment).

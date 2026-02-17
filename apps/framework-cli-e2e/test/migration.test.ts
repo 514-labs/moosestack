@@ -36,6 +36,10 @@ import {
 const execAsync = promisify(require("child_process").exec);
 
 const CLI_PATH = path.resolve(__dirname, "../../../target/debug/moose-cli");
+const MOOSE_LIB_PATH = path.resolve(
+  __dirname,
+  "../../../packages/ts-moose-lib",
+);
 const TEMPLATE_SOURCE_DIR = path.resolve(
   __dirname,
   "../../../templates/typescript-migrate-test",
@@ -69,6 +73,31 @@ describe("typescript template tests - migration", () => {
     testLogger.info("\nCopying template to temp directory...");
     fs.cpSync(TEMPLATE_SOURCE_DIR, testProjectDir, { recursive: true });
     testLogger.info("✓ Template copied");
+
+    // Update package.json files to use local moose-lib
+    testLogger.info("\nUpdating package.json to use local moose-lib...");
+    const outerPackageJsonPath = path.join(outerMooseDir, "package.json");
+    const outerPackageJson = JSON.parse(
+      fs.readFileSync(outerPackageJsonPath, "utf-8"),
+    );
+    outerPackageJson.dependencies["@514labs/moose-lib"] =
+      `file:${MOOSE_LIB_PATH}`;
+    fs.writeFileSync(
+      outerPackageJsonPath,
+      JSON.stringify(outerPackageJson, null, 2),
+    );
+
+    const innerPackageJsonPath = path.join(innerMooseDir, "package.json");
+    const innerPackageJson = JSON.parse(
+      fs.readFileSync(innerPackageJsonPath, "utf-8"),
+    );
+    innerPackageJson.dependencies["@514labs/moose-lib"] =
+      `file:${MOOSE_LIB_PATH}`;
+    fs.writeFileSync(
+      innerPackageJsonPath,
+      JSON.stringify(innerPackageJson, null, 2),
+    );
+    testLogger.info("✓ package.json updated");
 
     // Install dependencies for outer moose app
     testLogger.info("\nInstalling dependencies for outer moose app...");
@@ -208,8 +237,58 @@ describe("typescript template tests - migration", () => {
 
       testLogger.info("\n--- Testing drift detection ---");
 
-      // Generate migration plan (captures current DB state as "expected")
+      // First, ensure tables exist by generating and applying initial migration
+      // (This makes the test self-contained and not dependent on previous tests)
+      testLogger.info("Setting up initial state...");
+
+      // Check if tables already exist (from previous tests)
+      const client = createClient(CLICKHOUSE_CONFIG);
+      const tablesCheck = await client.query({
+        query: "SHOW TABLES",
+        format: "JSONEachRow",
+      });
+      const existingTables: any[] = await tablesCheck.json();
+      const tableNames = existingTables.map((t: any) => t.name);
+
+      if (!tableNames.includes("Bar")) {
+        testLogger.info("Tables don't exist, creating initial migration...");
+        // Generate initial migration plan
+        const genResult = await execAsync(
+          `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
+          {
+            cwd: innerMooseDir,
+          },
+        );
+        testLogger.info("Generate output:", genResult.stdout);
+        // Apply it to create the tables
+        const migrateResult = await execAsync(
+          `"${CLI_PATH}" migrate --clickhouse-url "${CLICKHOUSE_URL}"`,
+          {
+            cwd: innerMooseDir,
+          },
+        );
+        testLogger.info("Migrate output:", migrateResult.stdout);
+
+        // Verify tables were created
+        const tablesAfter = await client.query({
+          query: "SHOW TABLES",
+          format: "JSONEachRow",
+        });
+        const tablesAfterList: any[] = await tablesAfter.json();
+        testLogger.info(
+          "Tables after initial migration:",
+          tablesAfterList.map((t: any) => t.name),
+        );
+
+        testLogger.info("✓ Initial tables created");
+      } else {
+        testLogger.info("✓ Tables already exist from previous tests");
+      }
+
+      // Now generate a NEW migration plan (should be empty since tables match code)
+      // This captures the current DB state as "expected"
       testLogger.info("Generating migration plan...");
+
       await execAsync(
         `"${CLI_PATH}" generate migration --clickhouse-url "${CLICKHOUSE_URL}" --save`,
         {
@@ -220,9 +299,9 @@ describe("typescript template tests - migration", () => {
 
       // NOW manually modify the database BEFORE applying the migration
       testLogger.info("Manually modifying database to create drift...");
-      const client = createClient(CLICKHOUSE_CONFIG);
+
       await client.command({
-        query: "ALTER TABLE Bar ADD COLUMN drift_column String",
+        query: `ALTER TABLE ${CLICKHOUSE_CONFIG.database}.Bar ADD COLUMN drift_column String`,
       });
       testLogger.info("✓ Added drift_column to Bar table");
 

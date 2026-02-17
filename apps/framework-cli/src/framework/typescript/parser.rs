@@ -3,6 +3,7 @@ use std::path::Path;
 use std::{env, fs};
 
 use serde_json::{json, Value};
+use tracing::debug;
 
 use crate::framework::data_model::parser::FileObjects;
 use crate::project::Project;
@@ -28,6 +29,9 @@ pub enum TypescriptParsingError {
     OtherError {
         message: String,
     },
+
+    #[error("TypeScript compilation failed: {0}")]
+    CompilationError(String),
 }
 
 pub async fn extract_data_model_from_file(
@@ -177,4 +181,92 @@ pub async fn extract_data_model_from_file(
     }
 
     Ok(serde_json::from_value(output_json)?)
+}
+
+/// Default output directory for compiled TypeScript code.
+pub const DEFAULT_OUT_DIR: &str = ".moose/compiled";
+
+/// Reads the outDir from .moose/.compile-config.json (written by moose-tspc).
+/// Falls back to default if the file doesn't exist.
+///
+/// This avoids duplicating the outDir resolution logic between Rust and TypeScript.
+/// moose-tspc is the source of truth for where it compiles to.
+fn read_compile_config_out_dir(project: &Project) -> Option<String> {
+    let config_path = project
+        .project_location
+        .join(".moose")
+        .join(".compile-config.json");
+
+    fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<Value>(&content).ok())
+        .and_then(|json| json.get("outDir")?.as_str().map(String::from))
+}
+
+/// Gets the path to the compiled index.js for a TypeScript project.
+/// Reads from .moose/.compile-config.json (written by moose-tspc) to know where output is.
+pub fn get_compiled_index_path(project: &Project) -> std::path::PathBuf {
+    let out_dir =
+        read_compile_config_out_dir(project).unwrap_or_else(|| DEFAULT_OUT_DIR.to_string());
+    project
+        .project_location
+        .join(&out_dir)
+        .join(&project.source_dir)
+        .join("index.js")
+}
+
+/// Ensures TypeScript is compiled before loading infrastructure.
+///
+/// Runs moose-tspc to compile TypeScript. Respects user's tsconfig.json outDir
+/// if specified, otherwise uses .moose/compiled.
+///
+/// This should be called before loading TypeScript infrastructure to ensure
+/// compiled artifacts exist for the dmv2-serializer.
+pub fn ensure_typescript_compiled(project: &Project) -> Result<(), TypescriptParsingError> {
+    use crate::utilities::constants::IS_DEV_MODE;
+    use std::sync::atomic::Ordering;
+
+    // In dev mode, tspc --watch handles compilation. We don't need to run tspc ourselves
+    // because spawn_and_await_initial_compile() already started it and the watcher keeps
+    // it running for incremental compilation.
+    if IS_DEV_MODE.load(Ordering::Relaxed) {
+        debug!(
+            "Skipping ensure_typescript_compiled: tspc --watch is handling compilation in dev mode"
+        );
+        return Ok(());
+    }
+
+    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin".to_string());
+    let bin_path = format!(
+        "{}/node_modules/.bin:{}",
+        project.project_location.display(),
+        path
+    );
+
+    // Don't pass outDir - let moose-tspc read from tsconfig or use default
+    // Call moose-tspc directly (bin from @514labs/moose-lib) instead of npx
+    // since npx would try to find a standalone package named "moose-tspc"
+    let output = std::process::Command::new("moose-tspc")
+        .current_dir(&project.project_location)
+        .env("MOOSE_SOURCE_DIR", &project.source_dir)
+        .env("PATH", bin_path)
+        .output()
+        .map_err(|e| {
+            TypescriptParsingError::CompilationError(format!("Failed to run moose-tspc: {}", e))
+        })?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Check if output was generated despite errors (noEmitOnError: false)
+        let compiled_index = get_compiled_index_path(project);
+        if compiled_index.exists() {
+            // Compilation succeeded with warnings
+            debug!("TypeScript compiled with warnings: {}", stderr);
+            Ok(())
+        } else {
+            Err(TypescriptParsingError::CompilationError(stderr.to_string()))
+        }
+    }
 }

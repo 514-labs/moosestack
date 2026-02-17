@@ -36,17 +36,12 @@ pub fn run(
         )
         .env("MOOSE_SOURCE_DIR", &project.source_dir);
 
-    if binary_command == "consumption-apis"
-        || binary_command == "consumption-type-serializer"
-        || binary_command == "dmv2-serializer"
-    {
-        command.env("TS_NODE_COMPILER", "ts-patch/compiler");
-    }
-
-    // In production mode, use pre-compiled JavaScript to avoid ts-node overhead
-    if project.is_production {
-        command.env("MOOSE_USE_COMPILED", "true");
-    }
+    // Use pre-compiled JavaScript - ts-node is no longer used at runtime.
+    // In dev mode with incremental compilation (TsCompilationWatcher), the tspc --watch
+    // process compiles TypeScript before processes are started.
+    // In production mode, compilation happens at startup.
+    // Compilation is required - if artifacts don't exist, loading will fail.
+    command.env("MOOSE_USE_COMPILED", "true");
 
     // Set IS_LOADING_INFRA_MAP=true only when loading infrastructure map
     // This allows mooseRuntimeEnv.get() to return markers for later resolution

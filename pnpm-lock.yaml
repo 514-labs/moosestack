@@ -767,9 +767,6 @@ importers:
       toml:
         specifier: 3.0.0
         version: 3.0.0
-      ts-node:
-        specifier: ^10.9.1
-        version: 10.9.2(@swc/core@1.15.0(@swc/helpers@0.5.17))(@types/node@20.12.13)(typescript@5.9.3)
       ts-patch:
         specifier: ^3.3.0
         version: 3.3.0
@@ -810,6 +807,9 @@ importers:
       mocha:
         specifier: ^10.2.0
         version: 10.8.2
+      ts-node:
+        specifier: ^10.9.1
+        version: 10.9.2(@swc/core@1.15.0(@swc/helpers@0.5.17))(@types/node@20.12.13)(typescript@5.9.3)
       tsup:
         specifier: ^8.4.0
         version: 8.5.0(@swc/core@1.15.0(@swc/helpers@0.5.17))(jiti@2.6.1)(postcss@8.5.6)(tsx@4.20.6)(typescript@5.9.3)(yaml@2.8.2)

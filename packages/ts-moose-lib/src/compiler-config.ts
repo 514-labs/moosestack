@@ -5,9 +5,7 @@ import path from "path";
  * Shared TypeScript compiler configuration for moose projects.
  * Used by both moose-runner.ts (runtime) and moose-tspc.ts (pre-compilation).
  *
- * This ensures identical compilation behavior between:
- * - Development: ts-node with plugins (dynamic compilation)
- * - Production: Pre-compiled JavaScript (via moose-tspc)
+ * Moose now always uses pre-compiled JavaScript - no ts-node fallback.
  */
 
 export const MOOSE_COMPILER_PLUGINS = [
@@ -40,15 +38,6 @@ export const MOOSE_MODULE_OPTIONS = {
   moduleResolution: "NodeNext",
 } as const;
 
-// Commands that require full plugin compilation (moose transforms + typia)
-export const COMMANDS_REQUIRING_PLUGINS = [
-  "consumption-apis",
-  "consumption-type-serializer",
-  "dmv2-serializer",
-  "streaming-functions",
-  "scripts",
-] as const;
-
 /**
  * Default source directory for user code.
  * Can be overridden via MOOSE_SOURCE_DIR environment variable.
@@ -58,44 +47,71 @@ export function getSourceDir(): string {
 }
 
 /**
+ * Default output directory for compiled code.
+ */
+export const DEFAULT_OUT_DIR = ".moose/compiled";
+
+/**
+ * Read the user's tsconfig.json and extract the outDir setting.
+ * Supports JSONC (JSON with Comments) by evaluating as JavaScript
+ * (JSON with comments is valid JS in ES2019+).
+ *
+ * Security note: This uses eval-like behavior (new Function), which means
+ * malicious code in tsconfig.json would execute. This is acceptable because:
+ * - The user controls their own tsconfig.json
+ * - Same trust model as running `tsc` or any other tool that processes the file
+ * - If you clone and run untrusted code, you're already at risk
+ *
+ * Returns the outDir if specified, or null if not.
+ */
+export function readUserOutDir(
+  projectRoot: string = process.cwd(),
+): string | null {
+  try {
+    let content = readFileSync(
+      path.join(projectRoot, "tsconfig.json"),
+      "utf-8",
+    );
+    // Strip UTF-8 BOM if present
+    if (content.charCodeAt(0) === 0xfeff) {
+      content = content.slice(1);
+    }
+    // eslint-disable-next-line no-eval
+    const tsconfig = eval(`(${content})`);
+    return tsconfig.compilerOptions?.outDir || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the output directory for compiled code.
+ * Uses user's tsconfig outDir if specified, otherwise defaults to .moose/compiled
+ */
+export function getOutDir(projectRoot: string = process.cwd()): string {
+  const userOutDir = readUserOutDir(projectRoot);
+  return userOutDir || DEFAULT_OUT_DIR;
+}
+
+/**
+ * Get the path to the compiled index.js file.
+ */
+export function getCompiledIndexPath(
+  projectRoot: string = process.cwd(),
+): string {
+  const outDir = getOutDir(projectRoot);
+  const sourceDir = getSourceDir();
+  // Resolve so that absolute outDir from tsconfig is handled correctly
+  return path.resolve(projectRoot, outDir, sourceDir, "index.js");
+}
+
+/**
  * Check if pre-compiled artifacts exist for the current project.
- * Used to determine whether to use compiled code or fall back to ts-node.
  */
 export function hasCompiledArtifacts(
   projectRoot: string = process.cwd(),
 ): boolean {
-  const sourceDir = getSourceDir();
-  const compiledIndexPath = path.join(
-    projectRoot,
-    ".moose",
-    "compiled",
-    sourceDir,
-    "index.js",
-  );
-  return existsSync(compiledIndexPath);
-}
-
-/**
- * Determine if we should use pre-compiled code.
- * Returns true if MOOSE_USE_COMPILED=true AND compiled artifacts exist.
- * This provides automatic fallback to ts-node if compilation wasn't run.
- */
-export function shouldUseCompiled(
-  projectRoot: string = process.cwd(),
-): boolean {
-  const envSaysCompiled = process.env.MOOSE_USE_COMPILED === "true";
-  if (!envSaysCompiled) {
-    return false;
-  }
-
-  const hasArtifacts = hasCompiledArtifacts(projectRoot);
-  if (!hasArtifacts) {
-    console.warn(
-      "[moose] MOOSE_USE_COMPILED=true but no compiled artifacts found at " +
-        `.moose/compiled/${getSourceDir()}/index.js. Falling back to ts-node.`,
-    );
-  }
-  return hasArtifacts;
+  return existsSync(getCompiledIndexPath(projectRoot));
 }
 
 /**
