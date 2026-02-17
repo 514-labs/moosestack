@@ -26,6 +26,7 @@ export interface DependencySignatures {
 export interface DependencyAnalysisResult {
   apiByKey: Map<string, DependencySignatures>;
   workflowByName: Map<string, DependencySignatures>;
+  webAppByName: Map<string, DependencySignatures>;
 }
 
 interface RegistryLike {
@@ -33,6 +34,7 @@ interface RegistryLike {
   streams: Map<string, any>;
   apis: Map<string, any>;
   workflows: Map<string, any>;
+  webApps: Map<string, any>;
 }
 
 interface RegistryIndex {
@@ -70,6 +72,7 @@ const WRITE_METHODS = new Set(["insert", "send", "publish", "emit", "write"]);
 const EMPTY_RESULT: DependencyAnalysisResult = {
   apiByKey: new Map<string, DependencySignatures>(),
   workflowByName: new Map<string, DependencySignatures>(),
+  webAppByName: new Map<string, DependencySignatures>(),
 };
 
 function isSourceFilePath(filePath: string): boolean {
@@ -1107,6 +1110,17 @@ function collectAnalysisFiles(registry: RegistryLike): string[] {
     }
   });
 
+  registry.webApps.forEach((webApp: any) => {
+    const sourceFile = webApp?.sourceFile;
+    if (
+      typeof sourceFile === "string" &&
+      fs.existsSync(sourceFile) &&
+      isSourceFilePath(sourceFile)
+    ) {
+      files.add(path.resolve(sourceFile));
+    }
+  });
+
   return [...files];
 }
 
@@ -1268,6 +1282,81 @@ function collectWorkflowEntries(
   return entries;
 }
 
+function collectWebAppEntries(
+  program: ts.Program,
+  checker: ts.TypeChecker,
+): Map<string, ts.Expression> {
+  const entries = new Map<string, ts.Expression>();
+
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isNewExpression(node) &&
+      node.arguments &&
+      node.arguments.length >= 2
+    ) {
+      const ctor = constructorNameFromNewExpression(node.expression, checker);
+      if (ctor === "WebApp") {
+        const tempCtx: AnalysisContext = {
+          checker,
+          registryIndex: {
+            tableIdsByName: new Map(),
+            topicIdsByName: new Map(),
+          },
+          symbolResourceCache: new Map(),
+          taskExpressionCache: new Map(),
+          functionCache: new Map(),
+        };
+        const name = resolveStaticString(node.arguments[0], tempCtx);
+        if (name && !entries.has(name)) {
+          entries.set(name, node.arguments[1]);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  for (const sourceFile of program.getSourceFiles()) {
+    if (sourceFile.fileName.includes("/node_modules/")) {
+      continue;
+    }
+    visit(sourceFile);
+  }
+
+  return entries;
+}
+
+function resolveWebAppRootFunctions(
+  expression: ts.Expression | undefined,
+  ctx: AnalysisContext,
+): ts.FunctionLikeDeclaration[] {
+  const roots = resolveFunctionNodesFromExpression(expression, ctx);
+  const objectLiteral = resolveObjectLiteralExpression(expression, ctx);
+  if (!objectLiteral) {
+    return roots;
+  }
+
+  const deduped = new Map<string, ts.FunctionLikeDeclaration>();
+  for (const root of roots) {
+    deduped.set(functionIdentity(root), root);
+  }
+
+  for (const propertyName of ["handle", "callback", "routing"]) {
+    const propertyExpression = getObjectPropertyExpression(
+      objectLiteral,
+      propertyName,
+    );
+    const propertyFunctions = resolveFunctionNodesFromExpression(
+      propertyExpression,
+      ctx,
+    );
+    for (const fn of propertyFunctions) {
+      deduped.set(functionIdentity(fn), fn);
+    }
+  }
+
+  return [...deduped.values()];
+}
+
 export function analyzeRegistryLineage(
   registry: RegistryLike,
 ): DependencyAnalysisResult {
@@ -1293,6 +1382,7 @@ export function analyzeRegistryLineage(
 
   const apiEntries = collectApiEntries(program, checker);
   const workflowEntries = collectWorkflowEntries(program, checker);
+  const webAppEntries = collectWebAppEntries(program, checker);
 
   const apiByKey = new Map<string, DependencySignatures>();
   const seenApiKeys = new Set<string>();
@@ -1334,5 +1424,17 @@ export function analyzeRegistryLineage(
     workflowByName.set(workflowName, analyzeFunctionGraph(roots, ctx));
   });
 
-  return { apiByKey, workflowByName };
+  const webAppByName = new Map<string, DependencySignatures>();
+  registry.webApps.forEach((webApp: any, webAppName: string) => {
+    const handlerExpression = webAppEntries.get(webAppName);
+    if (!handlerExpression) {
+      webAppByName.set(webAppName, { pullsDataFrom: [], pushesDataTo: [] });
+      return;
+    }
+
+    const roots = resolveWebAppRootFunctions(handlerExpression, ctx);
+    webAppByName.set(webAppName, analyzeFunctionGraph(roots, ctx));
+  });
+
+  return { apiByKey, workflowByName, webAppByName };
 }

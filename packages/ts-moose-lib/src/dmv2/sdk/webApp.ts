@@ -1,5 +1,6 @@
 import http from "http";
 import { getMooseInternal } from "../internal";
+import { getSourceLocationFromStack } from "../utils/stackTrace";
 
 export type WebAppHandler = (
   req: http.IncomingMessage,
@@ -39,6 +40,12 @@ export class WebApp {
   name: string;
   handler: WebAppHandler;
   config: WebAppConfig;
+  /** @internal Source file path where this web app was declared */
+  sourceFile?: string;
+  /** @internal Source line number where this web app was declared */
+  sourceLine?: number;
+  /** @internal Source column number where this web app was declared */
+  sourceColumn?: number;
   private _rawApp?: FrameworkApp;
 
   constructor(
@@ -48,6 +55,14 @@ export class WebApp {
   ) {
     this.name = name;
     this.config = config;
+
+    const stack = new Error().stack;
+    const location = getSourceLocationFromStack(stack);
+    if (location) {
+      this.sourceFile = location.file;
+      this.sourceLine = location.line;
+      this.sourceColumn = location.column;
+    }
 
     // Validate mountPath - it is required
     if (!this.config.mountPath) {
