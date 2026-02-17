@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Modular toolkit for building real-time analytical backends
+description: MooseStack is the OLAP-native agent harness for designing, validating, and shipping analytical systems as code
 order: 1
 category: getting-started
 ---
@@ -11,13 +11,15 @@ import { PathConfig } from "@/lib/path-config";
 
 # MooseStack
 
-<div className="flex items-center gap-4 my-8 flex-wrap">
+<div className="my-6 flex flex-wrap items-center gap-3">
   <IconBadge Icon="Rocket" label="5 minute setup" variant="moose" />
   <IconBadge Icon="Database" label="Pre-integrated ClickHouse, Redpanda, Temporal" variant="moose" />
   <IconBadge Icon="DeviceLaptop" label="Hot-reload development" variant="moose" />
 </div>
 
-Type-safe, code-first tooling for building real-time analytical backends--OLAP Databases, Data Streaming, ETL Workflows, Query APIs, and more.
+MooseStack is the OLAP-native agent harness for designing, validating, and shipping analytical systems as code.
+
+Iteratively define schemas, materialized views, streams, workflows, and APIs as code in a local dev runtime, then plan, test, and apply migrations to your production OLAP system.
 
 ## Get Started
 
@@ -110,7 +112,7 @@ redpanda_topic = Stream[DataModel]("TopicName", StreamConfig(
 ))
  
 # Create an ingest API endpoint
-ingest_api = IngestApi[DataModel]("post-api-route", IngestConfig(
+ingest_api = IngestApi[DataModel]("post-api-route", IngestApiConfig(
     destination=redpanda_topic,
 ))
  
@@ -124,7 +126,7 @@ def handler(client, params: QueryParams):
         "limit": params.limit,
     })
  
-analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=handler)
+analytics_api = Api[QueryParams, DataModel]("get-api-route", query_function=handler)
 ```
   </LanguageTabContent>
 </LanguageTabs>
@@ -420,4 +422,3 @@ analytics_api = Api[RequestParams, DataModel]("get-api-route", query_function=ha
 <Callout type="info" title="Managed Moose in Production" href="https://www.fiveonefour.com/boreal" ctaLabel="Boreal Cloud" compact>
   Want this managed in production for you? Check out Boreal Cloud (from the makers of the Moose Stack).
 </Callout>
-

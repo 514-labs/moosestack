@@ -1,0 +1,70 @@
+---
+title: auth
+description: Authenticate the 514 CLI agent harness and verify control plane session state.
+order: 1
+---
+
+# 514 auth
+
+Use `514 auth` to establish the trust boundary for the CLI agent harness.
+
+Once authenticated, every other command (`setup`, `link`, and follow-on workflow commands) can act on your cloud OLAP workloads with the correct account and project permissions.
+
+## Subcommands
+
+### Login
+
+Start browser-based sign-in.
+
+```bash
+514 auth login
+```
+
+Expected outcome:
+- Browser sign-in flow opens.
+- CLI receives a valid session.
+
+Recovery:
+- If browser launch fails, open: `https://www.fiveonefour.boreal.cloud/login`
+- Retry command: `514 auth login`
+
+### Whoami
+
+Show the currently authenticated account.
+
+```bash
+514 auth whoami
+```
+
+Expected outcome:
+- Prints account identity and confirms active session.
+
+Recovery:
+- If unauthenticated, run: `514 auth login`
+
+### Logout
+
+Clear local auth session for the current machine.
+
+```bash
+514 auth logout
+```
+
+Expected outcome:
+- Local session is removed.
+
+Recovery:
+- To authenticate again, run: `514 auth login`
+
+## Typical Flow
+
+```bash
+514 auth login
+514 auth whoami
+```
+
+## Related
+
+- [`514 setup`](/hosting/cli/setup)
+- [`514 link`](/hosting/cli/link)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

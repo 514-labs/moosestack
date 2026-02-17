@@ -20,11 +20,10 @@ import { CommandSearch } from "@/components/search/command-search";
 
 interface TopNavProps {
   stars: number | null;
-  showHosting: boolean;
   showAi: boolean;
 }
 
-export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
+export function TopNav({ stars, showAi }: TopNavProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
@@ -66,15 +65,11 @@ export function TopNav({ stars, showHosting, showAi }: TopNavProps) {
       href: "/moosestack",
       section: "moosestack",
     },
-    ...(showHosting ?
-      [
-        {
-          label: "Hosting",
-          href: "/hosting/overview",
-          section: "hosting" as DocumentationSection,
-        },
-      ]
-    : []),
+    {
+      label: "Hosting",
+      href: "/hosting",
+      section: "hosting",
+    },
     ...(showAi ?
       [
         {

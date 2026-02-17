@@ -1,0 +1,42 @@
+---
+title: link
+description: Link an existing local repository to a cloud OLAP project for CLI agent runs.
+order: 3
+---
+
+# 514 link
+
+Use `514 link` when your repository already exists locally and you need to associate it with a Fiveonefour project.
+
+In the agent harness model, `link` maps your local repo to the correct hosted workload target without forcing a fresh clone.
+
+## Syntax
+
+```bash
+514 link [options]
+```
+
+## Common Options
+
+- `--project <org>/<project>`: Explicit project slug override.
+- `--yes`: Auto-confirm safe prompts.
+- `--no-input`: Disable prompts; fail fast on missing required input.
+- `--force-relink`: Replace an existing repo-level link.
+
+## Example
+
+```bash
+514 link --project acme/analytics-api
+```
+
+Expected outcome:
+- Validates auth and local git repo context.
+- Resolves project and creates repo-level link metadata.
+- Keeps git remotes unchanged by default.
+
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 setup`](/hosting/cli/setup)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

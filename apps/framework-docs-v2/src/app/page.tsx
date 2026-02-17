@@ -14,22 +14,27 @@ import {
   IconCode,
   IconCompass,
 } from "@tabler/icons-react";
-import { cn } from "@/lib/utils";
 import { getNavVariant } from "@/lib/nav-variant";
 
 export default function HomePage() {
   // Use build-time variant (same approach as guides page)
   const variant = getNavVariant();
-  const showHosting = variant !== "base";
   const showAi = variant !== "base";
 
   const sections = [
     {
       title: "MooseStack",
       description:
-        "The core framework for building data applications with OLAP, streaming, workflows, and APIs.",
+        "Open-source, OLAP-native agent harness for designing, validating, and shipping analytical systems as code.",
       href: `/moosestack`,
       icon: IconDatabase,
+    },
+    {
+      title: "Hosting",
+      description:
+        "Managed cloud control plane that lets AI agents run, test, and monitor workloads consistently across preview branches and production deployments.",
+      href: `/hosting`,
+      icon: IconCloud,
     },
     {
       title: "Guides",
@@ -45,17 +50,6 @@ export default function HomePage() {
       href: `/templates`,
       icon: IconCode,
     },
-    ...(showHosting ?
-      [
-        {
-          title: "Hosting",
-          description:
-            "Deploy and host your MooseStack applications with our managed hosting platform.",
-          href: `/hosting/overview`,
-          icon: IconCloud,
-        },
-      ]
-    : []),
     ...(showAi ?
       [
         {
@@ -81,28 +75,15 @@ export default function HomePage() {
   // Filter sections to only include those that will actually render
   const renderableSections = sections.filter(shouldRenderSection);
 
-  // Calculate card count from actual rendered sections
-  const cardCount = renderableSections.length;
-
   return (
-    <div className="container mx-auto px-4 py-16">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-12">
+    <div className="container mx-auto px-4 py-12 md:py-16">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-10 text-center md:mb-12">
           <h1 className="text-4xl font-bold mb-4">Documentation</h1>
-          <p className="text-lg text-muted-foreground">
-            Choose a documentation section to get started
-          </p>
         </div>
 
-        <div
-          className={cn("grid grid-cols-1 gap-6", {
-            "md:grid-cols-1 md:max-w-md md:mx-auto": cardCount === 1,
-            "md:grid-cols-2": cardCount === 2,
-            "md:grid-cols-3": cardCount === 3,
-            "md:grid-cols-2 lg:grid-cols-4": cardCount === 4,
-            "md:grid-cols-3 lg:grid-cols-5": cardCount === 5,
-          })}
-        >
+        {/* Center the last card on md+ when count is odd */}
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:[&>*:last-child:nth-child(odd)]:mx-auto md:[&>*:last-child:nth-child(odd)]:max-w-md md:[&>*:last-child:nth-child(odd)]:col-span-2">
           {renderableSections.map((section) => {
             const Icon = section.icon;
             return (

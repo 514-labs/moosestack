@@ -1,0 +1,68 @@
+---
+title: setup
+description: Bootstrap a local agent workspace from an existing cloud OLAP project with 514 setup.
+order: 2
+---
+
+# 514 setup
+
+Use `514 setup <org>/<project>` to bootstrap a local workspace from an existing Fiveonefour project.
+
+This command is the main provisioning step in the CLI agent harness: it verifies cloud access, prepares local git state, and creates a runnable workspace that stays aligned with the hosted project lifecycle.
+
+## Syntax
+
+```bash
+514 setup <org>/<project> [options]
+```
+
+## Options
+
+- `--path <dir>`: Parent directory for clone destination.
+- `--dir-name <name>`: Local directory name override.
+- `--branch <name>`: Branch name to create.
+- `--no-branch`: Skip branch creation.
+- `--push`: Push created branch.
+- `--no-push`: Do not push branch.
+- `--run <install|dev|both|skip>`: Choose local follow-up action.
+- `--yes`: Auto-confirm safe prompts.
+- `--no-input`: Disable prompts and fail fast if required input is missing.
+
+## Interactive Example
+
+```bash
+514 setup acme/analytics-api
+```
+
+Expected flow:
+- Checks auth, git, project access, and remote readiness.
+- Prompts for destination path and folder name.
+- Shows planned git commands before mutating actions.
+- Optionally creates and pushes branch.
+- Optionally runs local setup actions so you can execute workloads immediately.
+
+## Non-Interactive Example
+
+```bash
+514 setup acme/analytics-api \
+  --path ~/dev \
+  --dir-name analytics-api \
+  --branch feature/add-orders-rollup \
+  --push \
+  --run both \
+  --yes \
+  --no-input
+```
+
+## Output Model
+
+- Check-only output: preflight validations with no mutation.
+- Planned commands: explicit command preview before running.
+- Mutating commands: clone, branch creation, and push actions.
+- Post-action verification: final paths, branch, and cloud preview route checks.
+
+## Related
+
+- [`514 auth`](/hosting/cli/auth)
+- [`514 link`](/hosting/cli/link)
+- [Setup failures](/hosting/troubleshooting/setup-failures)
