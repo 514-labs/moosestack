@@ -17,11 +17,11 @@ import {
 
 Slow dashboards are a database architecture problem. Running analytical queries (aggregations, wide scans, time-series breakdowns) on your transactional database degrades everything: dashboard latency, core app reliability, and your team's ability to ship new metrics without capacity planning.
 
-This guide walks you through adding a dedicated analytical layer ([ClickHouse](https://clickhouse.com)) alongside your existing OLTP database using [MooseStack](/moosestack), [514 hosting](https://boreal.cloud), and a supporting toolchain ([dev MCP server](/moosestack/moosedev-mcp), [language server](/moosestack/language-server), CLIs, and [ClickHouse skills](https://github.com/514-labs/agent-skills/)) that form an agent harness for AI-assisted migration. You keep your source database as the system of record, replicate the data your dashboards need via CDC, and rewire analytical reads to ClickHouse. Writes stay unchanged.
+This guide walks you through adding a dedicated analytical layer ([ClickHouse](https://clickhouse.com)) alongside your existing OLTP database, in order to drastically improve the performance of your dashboards. In order to accelerate your implementation, especially with AI coding agents, this guide utilizes [MooseStack](/moosestack), [514 hosting](https://boreal.cloud), and a supporting toolchain ([dev MCP server](/moosestack/moosedev-mcp), [language server](/moosestack/language-server), CLIs, and [ClickHouse skills](https://github.com/514-labs/agent-skills/)) that form an agent harness for AI-assisted migration. You keep your source database as the system of record, replicate the data your dashboards need via CDC, and rewire analytical reads to ClickHouse. Transactional CRUD stays unchanged.
 
 <ZoomImg light="/guides/performant-dashboards/marchitecture-light.png" dark="/guides/performant-dashboards/marchitecture-dark.png" alt="Architecture: Your App writes to OLTP, CDC replicates to ClickHouse OLAP, analytical reads rewired to ClickHouse, managed by Fiveonefour Hosting" />
 
-### What's supported today
+### Architectures covered by this guide
 
 | Source database | CDC method | App language |
 |---|---|---|
@@ -58,7 +58,7 @@ This guide walks you through adding a dedicated analytical layer ([ClickHouse](h
 </Callout>
 
 <CommunityCallout title="Need a different source or language?">
-We're adding support for more source databases (MySQL, MongoDB), CDC methods, and Python examples. If your stack isn't listed, join the community and tell us what you need. It helps us prioritize.
+We're adding guides for more source databases (MySQL, MongoDB), CDC methods, and Python examples. If your stack isn't listed, join the community and tell us what you need. It helps us prioritize.
 </CommunityCallout>
 
 ## Accelerating migrations with MooseStack: the agent harness for your analytical stack
