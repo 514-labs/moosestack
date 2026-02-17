@@ -5,7 +5,7 @@
 //! Components reference MCP resources for detailed information.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::framework::core::infrastructure::table::Metadata;
@@ -21,6 +21,8 @@ pub struct CompressedInfraMap {
     pub components: Vec<ComponentNode>,
     /// Connections between components showing data flow
     pub connections: Vec<Connection>,
+    #[serde(skip, default)]
+    connection_set: HashSet<Connection>,
     /// Summary statistics about the infrastructure
     pub stats: MapStats,
 }
@@ -41,7 +43,7 @@ pub struct ComponentNode {
 }
 
 /// Connection between two components showing data flow
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Connection {
     /// Source component ID
     pub from: String,
@@ -79,7 +81,7 @@ pub enum ComponentType {
 }
 
 /// Type of connection between components
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionType {
     /// Topic data is ingested into a table
@@ -115,6 +117,7 @@ impl CompressedInfraMap {
         Self {
             components: Vec::new(),
             connections: Vec::new(),
+            connection_set: HashSet::new(),
             stats: MapStats {
                 total_components: 0,
                 by_type: HashMap::new(),
@@ -134,13 +137,16 @@ impl CompressedInfraMap {
         self.components.push(component);
     }
 
+    fn ensure_connection_set(&mut self) {
+        if self.connection_set.is_empty() && !self.connections.is_empty() {
+            self.connection_set = self.connections.iter().cloned().collect();
+        }
+    }
+
     /// Add a connection to the map
     pub fn add_connection(&mut self, connection: Connection) {
-        if self.connections.iter().any(|existing| {
-            existing.from == connection.from
-                && existing.to == connection.to
-                && existing.connection_type == connection.connection_type
-        }) {
+        self.ensure_connection_set();
+        if !self.connection_set.insert(connection.clone()) {
             return;
         }
         self.stats.total_connections += 1;
@@ -540,6 +546,24 @@ mod tests {
         assert_eq!(map.stats.total_connections, 1);
         assert_eq!(map.get_outgoing_connections("api1").len(), 1);
         assert_eq!(map.get_incoming_connections("topic1").len(), 1);
+    }
+
+    #[test]
+    fn test_connection_dedup_after_deserialization() {
+        let mut map = CompressedInfraMap::new();
+        let connection = Connection {
+            from: "api1".to_string(),
+            to: "topic1".to_string(),
+            connection_type: ConnectionType::Produces,
+        };
+        map.add_connection(connection.clone());
+
+        let serialized = serde_json::to_string(&map).unwrap();
+        let mut deserialized: CompressedInfraMap = serde_json::from_str(&serialized).unwrap();
+        deserialized.add_connection(connection);
+
+        assert_eq!(deserialized.connections.len(), 1);
+        assert_eq!(deserialized.stats.total_connections, 1);
     }
 
     #[test]
