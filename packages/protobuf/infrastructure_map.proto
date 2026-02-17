@@ -505,6 +505,8 @@ message WebApp {
   string name = 1;
   string mount_path = 2;
   optional WebAppMetadata metadata = 3;
+  repeated InfrastructureSignature pulls_data_from = 4;
+  repeated InfrastructureSignature pushes_data_to = 5;
 }
 
 message WebAppMetadata {
