@@ -18,6 +18,14 @@
 <GuideStepper.Prompt>
 Convert the provided ClickHouse query function into OLAP-native serving tables and materialized views while preserving query semantics.
 
+Path resolution requirements (run first):
+
+1. Find the Moose project root (`<PROJECT_ROOT>`) by locating `moose.config.toml`.
+2. Determine the project package name (`<PROJECT_PACKAGE>`) from `<PROJECT_ROOT>/package.json` (`name`) when package-based imports are needed.
+3. Read `source_dir` from `moose.config.toml` and set `<SOURCE_DIR>` to that value (default to `app` if `source_dir` is not set).
+4. Use `<PROJECT_ROOT>/<SOURCE_DIR>/...` for code paths and `<PROJECT_ROOT>/context/...` for migration artifacts.
+5. Do not hardcode `moosestack/` or `app/` in resolved paths.
+
 Rules:
 
 1. Validate required inputs once at start and list any missing input.
@@ -25,9 +33,11 @@ Rules:
 3. If MV strategy is ambiguous, decide with tradeoffs and record the decision in `context-map.md`.
 4. Define the Materialized View using the `MaterializedView` object from `@514labs/moose-lib`.
 5. Ensure `MaterializedView.selectStatement` output aligns exactly with the `MaterializedView.targetTable` schema names and types.
-6. Do not fabricate verification evidence.
-7. If optimization validation fails, mark FAIL, report root cause, fix, and re-run.
-8. Do not mark PASS until serving tables are populated and query QA passes.
+6. Do not use `UNION`/`UNION ALL` inside `MaterializedView.selectStatement`.
+7. When combining multiple independent source branches, use a fan-in pattern with multiple `MaterializedView` objects that all write to the same `targetTable`.
+8. Do not fabricate verification evidence.
+9. If optimization validation fails, mark FAIL, report root cause, fix, and re-run.
+10. Do not mark PASS until serving tables are populated and query QA passes.
 
 Required inputs:
 
@@ -37,7 +47,7 @@ Required inputs:
 
 Required outputs:
 
-- `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts` with the serving table and Materialized View definitions.
+- `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts` with the serving table and Materialized View definitions.
 - Updated `context-map.md` with the file path to the file that defines the serving table and Materialized View.
 - Validation that the serving table and Materialized View are populated in the moose project infra map.
 - A ClickHouse SQL query that can be used to verify the serving table has been populated via the Materialized View.
@@ -48,7 +58,7 @@ Required outputs:
   id="phase-2-serving-table-design"
   title="Create + verify serving table"
 >
-Goal: define the MooseStack serving table (`OlapTable`) in `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`, register it, and verify the table is created before you wire the MV.
+Goal: define the MooseStack serving table (`OlapTable`) in `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`, register it, and verify the table is created before you wire the MV.
 
 Steps:
 
@@ -57,9 +67,9 @@ Steps:
 3. **Grain (row identity)**: decide which fields define one row in this serving table (for example, `merchant_id + day`). This is the core modeling decision for correctness and aggregation behavior.
 4. **`orderByFields` (storage/sort key)**: choose the primary sort key by starting with grain fields, then adding the most common filter/group-by fields from your access patterns.
 5. **Table engine (write/read semantics)**: select the engine from `ClickHouseEngines` (imported from `@514labs/moose-lib`) and set it explicitly on `OlapTable`. Use `ClickHouseEngines.MergeTree` by default for immutable aggregates; choose another `ClickHouseEngines.*` value only when your workload needs different semantics (for example, dedup/update behavior).
-6. Implement and save the serving table `OlapTable` definition in `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`.
-7. `export` the `ServingTable` object from `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`.
-8. From your root `index.ts` file, import `ServingTable` from `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`.
+6. Implement and save the serving table `OlapTable` definition in `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`.
+7. `export` the `ServingTable` object from `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`.
+8. From your root source entry file (usually `<PROJECT_ROOT>/<SOURCE_DIR>/index.ts`), import `ServingTable` from `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`.
 9. Save your files and monitor `moose dev` logs for table creation:
 
 ```
@@ -78,7 +88,7 @@ Example (adapt to your component — do not copy names literally):
 
 If your parity query selects `merchant_id, merchant_name, day, total_orders, fulfilled_orders, fulfillment_rate`, define the serving table first with those columns and the chosen `orderByFields`:
 
-```ts filename="moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts" copy
+```ts filename="<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts" copy
 import { ClickHouseEngines, Int64, OlapTable } from "@514labs/moose-lib";
 
 interface ServingTableSchema {
@@ -99,7 +109,7 @@ export const ServingTable = new OlapTable<ServingTableSchema>(
 );
 ```
 
-Once the table is created, record these design decisions as concise inline comments in `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`: schema intent, grain, `orderByFields` rationale, selected `ClickHouseEngines.*` value, and any assumptions/tradeoffs.
+Once the table is created, record these design decisions as concise inline comments in `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`: schema intent, grain, `orderByFields` rationale, selected `ClickHouseEngines.*` value, and any assumptions/tradeoffs.
 
 </GuideStepper.Checkpoint>
 
@@ -111,8 +121,9 @@ Goal: produce a concrete MV implementation plan (before coding) for how data wil
 
 Decision rule:
 
-- **Single MV**: use when the pipeline is simple (one source table, minimal joins, straightforward aggregation).
-- **Staged pipeline**: use when logic is complex (multiple CTEs, 3+ joined tables, heavy pre-aggregation, or transformations that are hard to reason about in one statement).
+- **Single MV**: use when one source branch can produce the serving-table rows (single source or tightly coupled joins).
+- **Fan-in (multiple MVs)**: use when data comes from multiple independent source branches that you might otherwise combine with `UNION ALL`. Create one MV per branch and point all MVs to the same serving table.
+- **Staged pipeline**: use when logic is complex (multiple CTEs, heavy pre-aggregation, or transformations that are hard to reason about in one statement) and requires intermediate resources.
 
 Design principle:
 Move non-request-driven work to write-time MVs. Keep only truly dynamic, request-time filters in the final read query.
@@ -120,13 +131,14 @@ Move non-request-driven work to write-time MVs. Keep only truly dynamic, request
 Steps:
 
 1. Start from the Phase 1 parity query and list which parts are static (precomputable) vs request-time dynamic.
-2. Choose **single MV** or **staged pipeline** using the rule above. If uncertain, write both options with tradeoffs and explicitly request a decision before implementing.
-3. List every source table model required for `selectTables`.
-4. Draft the planned `selectStatement` flow in plain language: joins, aggregations, derived columns, and where each transformation happens.
-5. In `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`, add a `TODO` comment block above the future `MaterializedView` definition that captures:
-   - chosen approach (`single` or `staged`)
-   - planned source tables (`selectTables`)
-   - planned transformation flow summary
+2. Choose **single MV**, **fan-in**, or **staged pipeline** using the rule above. If uncertain, write both options with tradeoffs and explicitly request a decision before implementing.
+3. List every source table model required for each MV branch's `selectTables`.
+4. Draft the planned `selectStatement` flow in plain language: joins, aggregations, derived columns, and where each transformation happens. For fan-in, provide one branch flow per MV.
+5. In `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`, add a `TODO` comment block above the future `MaterializedView` definition that captures:
+   - chosen approach (`single`, `fan-in`, or `staged`)
+   - planned MV list (name + branch purpose)
+   - planned source tables (`selectTables`) per MV branch
+   - planned transformation flow summary per MV branch
    - assumptions/tradeoffs
 
 **Done when:** `context-map.md` contains an implementation-ready MV plan that another engineer (or copilot) can follow without re-deriving architecture decisions.
@@ -137,21 +149,23 @@ Steps:
   id="phase-2-implement-serving-table-mv"
   title="Create + verify MV"
 >
-Goal: implement the MV plan in `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`, register the `MaterializedView`, and verify it creates and populates the serving table.
+Goal: implement the MV plan in `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`, register the `MaterializedView`, and verify it creates and populates the serving table.
 
 Steps:
 
-1. In `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`, keep the existing serving table and add a new `MaterializedView` object in the same file. Use the same name for the `MaterializedView` object as the serving table name, but append `_mv` to the end.
-2. Wire `targetTable` to the serving table from Checkpoint 1. The serving table is already defined in the file, so you can reference it directly.
-3. Add `selectTables` with every source model listed in the MV plan from Checkpoint 2. Ensure each source model is imported in the file.
-4. Implement `selectStatement` using `sql` with the exact transformation flow you planned (joins, aggregations, derived columns, aliases). Use the `sql` tagged template literal from `@514labs/moose-lib` to build the SQL statement.
-5. Make the `SELECT` output a strict contract match to the serving table schema: same column names, same order, and compatible data types.
+1. In `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`, keep the existing serving table and add `MaterializedView` object(s):
+   - **single/staged**: define one serving-table MV.
+   - **fan-in**: define one serving-table MV per source branch (each with a unique `materializedViewName`).
+2. Wire `targetTable` on every serving-table MV to the same serving table from Checkpoint 1.
+3. Add `selectTables` per MV branch with the source models from the MV plan. Ensure each source model is imported in the file.
+4. Implement each `selectStatement` using `sql` with the exact branch flow you planned. Do not combine branches with `UNION`/`UNION ALL`; use separate MVs for fan-in.
+5. Make each MV `SELECT` output a strict contract match to the serving table schema: same column names, same order, and compatible data types.
 6. If using a staged pipeline, define intermediate resources first and ensure each stage's output schema matches the next stage's input.
-7. `export` the instantiated `MaterializedView` object from `moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts`.
-8. Save your files and monitor `moose dev` logs for MV creation:
+7. `export` each instantiated `MaterializedView` object from `<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts`.
+8. Save your files and monitor `moose dev` logs for all MV creations:
 
 ```
-[INFO] Created materialized view: <SERVING_TABLE_NAME>_mv
+[INFO] Created materialized view: <SERVING_TABLE_NAME>_<BRANCH>_mv
 ```
 
 9. Verify the serving table is populated. `moose dev` automatically runs the MV `selectStatement` on creation (do not backfill manually at this stage).
@@ -169,13 +183,14 @@ moose query -q "SELECT * FROM <SERVING_TABLE_NAME> FINAL WHERE <filter_from_test
 - **Schema contract mismatch**: `selectStatement` output must match the serving table exactly (column names, order, and compatible types).
 - **MV naming and target wiring**: `materializedViewName` must differ from the serving table name and `targetTable` must be set correctly (`Materialized view name cannot be the same as the target table name.` / `Name of targetTable is not specified.`).
 - **Source dependency registration/order**: every table in `selectTables` must exist, be imported, and be registered before MV creation. Ordering issues can surface as `Cyclic dependency detected in OLAP changes`.
+- **Fan-in shape**: if your design needs multiple source branches, create multiple MVs targeting the same serving table; do not use `UNION`/`UNION ALL` in a single MV select statement.
 - **Static SQL requirement**: MV `selectStatement` must resolve to static SQL at build time. Dynamic SQL fails with `Dynamic SQL is not allowed in the select statement in view creation.`
 
 This checkpoint is complete when the serving table is populated with data for every Phase 1 test case time window. If rows are missing, check MV logic and source table data coverage.
 
 Reference Example:
 
-```ts filename="moosestack/app/models/<SERVING_TABLE_NAME>-mv.ts" copy
+```ts filename="<PROJECT_ROOT>/<SOURCE_DIR>/models/<SERVING_TABLE_NAME>-mv.ts" copy
 import { Int64, MaterializedView, OlapTable, sql } from "@514labs/moose-lib";
 import { SourceTableA } from "./SourceTableA.model";
 import { SourceTableB } from "./SourceTableB.model";
@@ -200,7 +215,7 @@ export const ServingMV = new MaterializedView<ServingTableSchema>({
 });
 ```
 
-**Done when:** `SERVING_TABLE_NAME_mv` is defined, exported, imported in `index.ts`, `moose dev` shows `[INFO] Created materialized view: <SERVING_TABLE_NAME>_mv`, and serving table spot-checks return data for your Phase 1 windows.
+**Done when:** one or more serving-table MVs are defined/exported/imported in `index.ts`, `moose dev` shows `[INFO] Created materialized view: ...` for each expected MV, and serving table spot-checks return data for your Phase 1 windows.
 
 </GuideStepper.Checkpoint>
 </GuideStepper.Step>

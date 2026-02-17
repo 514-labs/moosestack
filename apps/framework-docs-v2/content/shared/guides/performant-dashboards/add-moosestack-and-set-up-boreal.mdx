@@ -12,7 +12,7 @@
         external: true,
         variant: "emphasized",
       },
-    }
+    },
   ]}
 />
 
@@ -39,8 +39,8 @@
 </GuideStepper.WhatYouNeed>
 
 <GuideStepper.WhatYouGet>
-  - `moose` CLI available in your terminal
-  - Local CLI ready for project initialization commands
+  - `moose` CLI available in your terminal - Local CLI ready for project
+  initialization commands
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Prompt>
@@ -75,6 +75,7 @@ moose --version
 ```
 
 You should see:
+
 ```txt
 moose X.X.X
 ```
@@ -104,6 +105,7 @@ moose X.X.X
 
   <ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
     - Generated, read-only TypeScript models for ClickPipes-owned tables
+    - `moose.config.toml` seeded with `[dev.remote_clickhouse]` for remote schema sync and local mirror workflows
   </ConditionalContent>
 </GuideStepper.WhatYouGet>
 
@@ -115,9 +117,7 @@ moose X.X.X
 First, decide where `moosestack/` should live in your monorepo. Then `cd` to that location and run:
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-```shell
-moose init moosestack typescript-empty
-```
+  ```shell moose init moosestack typescript-empty ```
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
@@ -128,6 +128,23 @@ moose init --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescri
 Enter your ClickHouse Cloud HTTPS connection string when prompted.
 
 This creates `app/externalModels.ts` with generated TypeScript models for ClickPipes-owned tables.
+
+It also writes a `[dev.remote_clickhouse]` section to `moose.config.toml` so local commands (such as `moose db pull` and external-table mirror workflows) can resolve your remote ClickHouse host/database settings without requiring repeated URL input.
+
+```toml filename="moosestack/moose.config.toml"
+[dev.remote_clickhouse]
+host = "your-clickhouse-host.example.com"
+port = 8443
+database = "your_database"
+use_ssl = true
+protocol = "http"
+```
+
+<Callout type="info" title="Credentials are stored outside moose.config.toml">
+  `moose.config.toml` stores connection metadata only. Username/password are
+  stored securely in your OS keychain (or can be provided via
+  `MOOSE_REMOTE_CLICKHOUSE_USER` / `MOOSE_REMOTE_CLICKHOUSE_PASSWORD`).
+</Callout>
 
 <Callout type="info" title="These ClickPipes tables are externally managed">
 ClickPipes owns these replicated tables, so MooseStack does not manage their lifecycle. This is reflected in the `OlapTable.lifeCycle: LifeCycle.EXTERNALLY_MANAGED` property in all introspected models in `app/externalModels.ts`.
@@ -329,6 +346,8 @@ Once the deployment completes, you’ll be redirected to the project overview pa
 For the next section, you will need to copy the ClickHouse HTTPS connection string. You can locate this by clicking on the `Database` button in the top right corner of your project overview dashboard, and then copying the ClickHouse HTTPS connection string located at the bottom of the panel.
 
 ![Copy Connection String](/deployment/copy-connection-string.png)
+
+If you already ran `moose init --from-remote` in Step 2, your project should already have `[dev.remote_clickhouse]` populated in `moose.config.toml`, so you do not need to re-enter this URL for normal local workflows. Keep this connection string for backup, team onboarding, or one-off commands that explicitly require `--clickhouse-url`.
 
 </GuideStepper.Checkpoint>
 
