@@ -166,12 +166,15 @@ export async function getOrderFulfillment(request: OrderFulfillmentRequest) {
 }
 ```
 
-**Integration point:** In your existing backend handler (Express, Fastify, Next.js, etc.), replace the OLTP query call with a call to this new function and return the result:
+**Integration point:** Export `getOrderFulfillment` from your package main entry
+(for example, `<PROJECT_ROOT>/<SOURCE_DIR>/index.ts`). Then in your existing
+backend handler (Express, Fastify, Next.js, etc.), replace the OLTP query call
+with a call to this function and return the result:
 
 ```ts
 // In your existing backend handler (e.g. Express route)
-// Import from your actual project package + source_dir layout.
-import { getOrderFulfillment } from "<PROJECT_PACKAGE>/<SOURCE_DIR>/apis/orderFulfillment.api";
+// Import from your package root entrypoint.
+import { getOrderFulfillment } from "<PROJECT_PACKAGE>";
 
 app.post("/api/order-fulfillment", async (req, res) => {
   const result = await getOrderFulfillment(req.body);

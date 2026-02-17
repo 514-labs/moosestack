@@ -39,8 +39,8 @@
 </GuideStepper.WhatYouNeed>
 
 <GuideStepper.WhatYouGet>
-  - `moose` CLI available in your terminal - Local CLI ready for project
-  initialization commands
+  - `moose` CLI available in your terminal
+  - Local CLI ready for project initialization commands
 </GuideStepper.WhatYouGet>
 
 <GuideStepper.Prompt>
@@ -117,7 +117,9 @@ moose X.X.X
 First, decide where `moosestack/` should live in your monorepo. Then `cd` to that location and run:
 
 <ConditionalContent whenId="source-database" whenValue="sqlserver">
-  ```shell moose init moosestack typescript-empty ```
+```shell
+moose init moosestack typescript-empty
+```
 </ConditionalContent>
 
 <ConditionalContent whenId="source-database" whenValue={["postgres", "none"]}>
