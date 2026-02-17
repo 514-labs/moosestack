@@ -305,6 +305,14 @@ enum EngineConfig {
 
     #[serde(rename = "Kafka")]
     Kafka(Box<KafkaConfig>),
+
+    #[serde(rename = "Merge")]
+    Merge {
+        #[serde(alias = "sourceDatabase")]
+        source_database: String,
+        #[serde(alias = "tablesRegexp")]
+        tables_regexp: String,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -728,7 +736,7 @@ impl PartialInfrastructureMap {
                     .as_ref()
                     .map(|v_str| Version::from_string(v_str.clone()));
 
-                let engine = self.parse_engine(partial_table)?;
+                let engine = self.parse_engine(partial_table, default_database)?;
                 let engine_params_hash = Some(engine.non_alterable_params_hash());
 
                 // S3Queue settings should come directly from table_settings in the user code
@@ -817,9 +825,14 @@ impl PartialInfrastructureMap {
     /// For S3Queue engines, this method resolves runtime environment variable markers into actual values.
     /// This ensures secrets are resolved before the infrastructure diff is calculated, allowing credential
     /// rotation to trigger table recreation.
+    ///
+    /// For Merge engines, `currentDatabase()` in `source_database` is resolved to the actual
+    /// database name. ClickHouse resolves this function at table creation time and stores the
+    /// literal name, so we must resolve it on the desired-state side to avoid false diffs.
     fn parse_engine(
         &self,
         partial_table: &PartialTable,
+        default_database: &str,
     ) -> Result<ClickhouseEngine, DmV2LoadingError> {
         match &partial_table.engine_config {
             Some(EngineConfig::MergeTree {}) => Ok(ClickhouseEngine::MergeTree),
@@ -978,6 +991,23 @@ impl PartialInfrastructureMap {
                 group_name: config.group_name.clone(),
                 format: config.format.clone(),
             }),
+
+            Some(EngineConfig::Merge {
+                source_database,
+                tables_regexp,
+            }) => {
+                // Resolve currentDatabase() to the actual database name so the desired state
+                // matches what ClickHouse stores (it resolves this function at creation time).
+                let resolved_db = if source_database == "currentDatabase()" {
+                    default_database.to_string()
+                } else {
+                    source_database.clone()
+                };
+                Ok(ClickhouseEngine::Merge {
+                    source_database: resolved_db,
+                    tables_regexp: tables_regexp.clone(),
+                })
+            }
 
             None => Ok(ClickhouseEngine::MergeTree),
         }

@@ -160,6 +160,16 @@ class IngestPipeline(TypedMooseResource, Generic[T]):
                 if isinstance(config.table, OlapConfig)
                 else OlapConfig(life_cycle=config.life_cycle)
             )
+
+            # Validate that the engine is not read-only (Merge engine cannot be written to)
+            from moose_lib.blocks import MergeEngine
+
+            if isinstance(table_config.engine, MergeEngine):
+                raise ValueError(
+                    f'IngestPipeline "{name}": Cannot use Merge engine as a table destination. '
+                    f"The Merge engine is read-only and does not support INSERT operations."
+                )
+
             if config.version:
                 table_config.version = config.version
             table_config.metadata = table_metadata
