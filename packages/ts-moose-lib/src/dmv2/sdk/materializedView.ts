@@ -1,23 +1,16 @@
 import { ClickHouseEngines } from "../../dataModels/types";
 import { Sql, toStaticQuery } from "../../sqlHelpers";
-import { OlapConfig, OlapTable } from "./olapTable";
+import {
+  OlapConfig,
+  OlapTable,
+  TableReference,
+  formatTableReference,
+} from "./olapTable";
 import { View } from "./view";
 import { IJsonSchemaCollection } from "typia";
 import { Column } from "../../dataModels/dataModelTypes";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
-
-/**
- * Helper function to format a table reference as `database`.`table` or just `table`
- */
-function formatTableReference(table: OlapTable<any> | View): string {
-  const database =
-    table instanceof OlapTable ? table.config.database : undefined;
-  if (database) {
-    return `\`${database}\`.\`${table.name}\``;
-  }
-  return `\`${table.name}\``;
-}
 
 /**
  * Configuration options for creating a Materialized View.
@@ -27,7 +20,7 @@ export interface MaterializedViewConfig<T> {
   /** The SQL SELECT statement or `Sql` object defining the data to be materialized. Dynamic SQL (with parameters) is not allowed here. */
   selectStatement: string | Sql;
   /** An array of OlapTable or View objects that the `selectStatement` reads from. */
-  selectTables: (OlapTable<any> | View)[];
+  selectTables: (TableReference | View)[];
 
   /** @deprecated See {@link targetTable}
    *  The name for the underlying target OlapTable that stores the materialized data. */

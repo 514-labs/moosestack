@@ -626,6 +626,29 @@ type EngineConfig<T> =
 export type OlapConfig<T> = EngineConfig<T> | LegacyOlapConfig<T>;
 
 /**
+ * Non-generic interface for referencing an OlapTable or View by name,
+ * without depending on the table's row type parameter.
+ *
+ * Use this in signatures that only need the table identity (name and
+ * optional database), avoiding the invariance issues of OlapTable<T>.
+ */
+export interface TableReference {
+  name: string;
+  config?: { database?: string };
+}
+
+/**
+ * Format a table reference as `database`.`table` or just `table`.
+ */
+export function formatTableReference(table: TableReference): string {
+  const database = table.config?.database;
+  if (database) {
+    return `\`${database}\`.\`${table.name}\``;
+  }
+  return `\`${table.name}\``;
+}
+
+/**
  * Represents an OLAP (Online Analytical Processing) table, typically corresponding to a ClickHouse table.
  * Provides a typed interface for interacting with the table.
  *

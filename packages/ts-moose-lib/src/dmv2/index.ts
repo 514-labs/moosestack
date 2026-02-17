@@ -46,7 +46,13 @@ export type SimpleAggregated<
   _argType?: ArgType;
 };
 
-export { OlapTable, OlapConfig, S3QueueTableSettings } from "./sdk/olapTable";
+export {
+  OlapTable,
+  OlapConfig,
+  S3QueueTableSettings,
+  TableReference,
+  formatTableReference,
+} from "./sdk/olapTable";
 export { ClickHouseEngines } from "../dataModels/types";
 export {
   Stream,

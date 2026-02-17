@@ -1,19 +1,7 @@
 import { Sql, toStaticQuery } from "../../sqlHelpers";
-import { OlapTable } from "./olapTable";
+import { TableReference, formatTableReference } from "./olapTable";
 import { getMooseInternal, isClientOnlyMode } from "../internal";
 import { getSourceFileFromStack } from "../utils/stackTrace";
-
-/**
- * Helper function to format a table reference as `database`.`table` or just `table`
- */
-function formatTableReference(table: OlapTable<any> | View): string {
-  const database =
-    table instanceof OlapTable ? table.config.database : undefined;
-  if (database) {
-    return `\`${database}\`.\`${table.name}\``;
-  }
-  return `\`${table.name}\``;
-}
 
 /**
  * Represents a database View, defined by a SQL SELECT statement based on one or more base tables or other views.
@@ -33,7 +21,7 @@ export class View {
   sourceTables: string[];
 
   /** Optional metadata for the view */
-  metadata: { [key: string]: any };
+  metadata: { [key: string]: unknown };
 
   /**
    * Creates a new View instance.
@@ -45,8 +33,8 @@ export class View {
   constructor(
     name: string,
     selectStatement: string | Sql,
-    baseTables: (OlapTable<any> | View)[],
-    metadata?: { [key: string]: any },
+    baseTables: (TableReference | View)[],
+    metadata?: { [key: string]: unknown },
   ) {
     if (typeof selectStatement !== "string") {
       selectStatement = toStaticQuery(selectStatement);
