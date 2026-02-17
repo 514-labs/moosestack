@@ -19,6 +19,7 @@ class ClickHouseEngines(Enum):
     Distributed = "Distributed"
     IcebergS3 = "IcebergS3"
     Kafka = "Kafka"
+    Merge = "Merge"
     ReplicatedMergeTree = "ReplicatedMergeTree"
     ReplicatedReplacingMergeTree = "ReplicatedReplacingMergeTree"
     ReplicatedAggregatingMergeTree = "ReplicatedAggregatingMergeTree"
@@ -505,6 +506,48 @@ class KafkaEngine(EngineConfig):
             raise ValueError("Kafka engine requires 'group_name'")
         if not self.format:
             raise ValueError("Kafka engine requires 'format'")
+
+
+@dataclass
+class MergeEngine(EngineConfig):
+    """Configuration for Merge engine - virtual table that reads from multiple tables.
+
+    The Merge engine does not store data itself. It provides a unified view
+    over multiple tables matching a regex pattern within a database.
+
+    Args:
+        source_database: Database to scan for source tables
+            (literal name, currentDatabase(), or REGEXP(...))
+        tables_regexp: Regex pattern to match table names in the source database
+
+    Example:
+        >>> from moose_lib.blocks import MergeEngine
+        >>>
+        >>> all_events = OlapTable[Event](
+        ...     "all_events",
+        ...     OlapConfig(
+        ...         engine=MergeEngine(
+        ...             source_database="currentDatabase()",
+        ...             tables_regexp="^events_\\\\d+$",
+        ...         )
+        ...     )
+        ... )
+
+    Note:
+        - Merge engine is read-only; INSERT operations are not supported
+        - Cannot be used as a destination in IngestPipeline
+        - Does not support ORDER BY, PARTITION BY, or SAMPLE BY clauses
+    """
+
+    source_database: str
+    tables_regexp: str
+
+    def __post_init__(self):
+        """Validate required fields"""
+        if not self.source_database:
+            raise ValueError("Merge engine requires 'source_database'")
+        if not self.tables_regexp:
+            raise ValueError("Merge engine requires 'tables_regexp'")
 
 
 # ==========================

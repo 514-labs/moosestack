@@ -594,6 +594,39 @@ export type IcebergS3Config<T> = Omit<
 };
 
 /**
+ * Configuration for Merge engine - virtual table that reads from multiple tables
+ *
+ * The Merge engine does not store data itself. It provides a unified view
+ * over multiple tables matching a regex pattern within a database.
+ *
+ * @template T The data type of the records in the source tables.
+ *
+ * @example
+ * ```typescript
+ * const allEvents = new OlapTable<Event>("all_events", {
+ *   engine: ClickHouseEngines.Merge,
+ *   sourceDatabase: "currentDatabase()",
+ *   tablesRegexp: "^events_\\d+$",
+ * });
+ * ```
+ *
+ * @remarks
+ * - Merge engine is read-only; INSERT operations are not supported
+ * - Cannot be used as a destination in IngestPipeline
+ * - Does not support ORDER BY, PARTITION BY, or SAMPLE BY clauses
+ */
+export type MergeConfig<T> = Omit<
+  BaseOlapConfig<T>,
+  "orderByFields" | "orderByExpression" | "partitionBy" | "sampleByExpression"
+> & {
+  engine: ClickHouseEngines.Merge;
+  /** Database to scan for source tables (literal name, currentDatabase(), or REGEXP(...)) */
+  sourceDatabase: string;
+  /** Regex pattern to match table names in the source database */
+  tablesRegexp: string;
+};
+
+/**
  * Legacy configuration (backward compatibility) - defaults to MergeTree engine
  * @template T The data type of the records stored in the table.
  */
@@ -617,7 +650,8 @@ type EngineConfig<T> =
   | BufferConfig<T>
   | DistributedConfig<T>
   | IcebergS3Config<T>
-  | KafkaConfig<T>;
+  | KafkaConfig<T>
+  | MergeConfig<T>;
 
 /**
  * Union of all engine-specific configurations (new API)
