@@ -228,7 +228,7 @@ Guides use interactive MDX components (`SelectField`, `CheckboxGroup`, `Conditio
 
 ### Data Flow Overview
 
-```
+```text
 ┌─────────────────────┐     localStorage      ┌──────────────────────┐
 │  GlobalGuideCustomizer│ ──────────────────► │   ConditionalContent  │
 │  (wizard modal)      │  writes per-key:     │   (reads & renders)   │
@@ -284,6 +284,7 @@ Guides use interactive MDX components (`SelectField`, `CheckboxGroup`, `Conditio
 ### Adding a New Global Setting
 
 1. Add an entry to `GUIDE_SETTINGS_CONFIG` in `src/config/guide-settings-config.ts`:
+
    ```typescript
    {
      id: "newSetting",
@@ -298,6 +299,7 @@ Guides use interactive MDX components (`SelectField`, `CheckboxGroup`, `Conditio
      syncToUrl: false,      // Whether to include in URL params on guide pages
    },
    ```
+
 2. That's it — the wizard, summary panel, types, and storage all derive from this config automatically.
 3. Use `<ConditionalContent whenId="newSetting" whenValue="option1">` in MDX to show conditional content.
 
