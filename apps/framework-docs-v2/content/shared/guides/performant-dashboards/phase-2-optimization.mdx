@@ -35,9 +35,10 @@ Rules:
 5. Ensure `MaterializedView.selectStatement` output aligns exactly with the `MaterializedView.targetTable` schema names and types.
 6. Do not use `UNION`/`UNION ALL` inside `MaterializedView.selectStatement`.
 7. When combining multiple independent source branches, use a fan-in pattern with multiple `MaterializedView` objects that all write to the same `targetTable`.
-8. Do not fabricate verification evidence.
-9. If optimization validation fails, mark FAIL, report root cause, fix, and re-run.
-10. Do not mark PASS until serving tables are populated and query QA passes.
+8. In serving-table `OlapTable` schemas for this phase, do not use `Key<T>` column types or explicit primary-key annotations. Use plain column types and control sort behavior with `orderByFields` (or `orderByExpression`, but not both).
+9. Do not fabricate verification evidence.
+10. If optimization validation fails, mark FAIL, report root cause, fix, and re-run.
+11. Do not mark PASS until serving tables are populated and query QA passes.
 
 Required inputs:
 
@@ -63,7 +64,7 @@ Goal: define the MooseStack serving table (`OlapTable`) in `<PROJECT_ROOT>/<SOUR
 Steps:
 
 1. Only define an `OlapTable` object in this step. **Do not** define a `MaterializedView` object.
-2. **Serving-table schema (output of this checkpoint)**: define the `OlapTable` columns from the final `SELECT` output of the Phase 1 parity query. This schema is the canonical shape your downstream dashboard API will consume.
+2. **Serving-table schema (output of this checkpoint)**: define the `OlapTable` columns from the final `SELECT` output of the Phase 1 parity query. This schema is the canonical shape your downstream dashboard API will consume. Use plain TypeScript column types here; do not use `Key<T>` in this phase.
 3. **Grain (row identity)**: decide which fields define one row in this serving table (for example, `merchant_id + day`). This is the core modeling decision for correctness and aggregation behavior.
 4. **`orderByFields` (storage/sort key)**: choose the primary sort key by starting with grain fields, then adding the most common filter/group-by fields from your access patterns.
 5. **Table engine (write/read semantics)**: select the engine from `ClickHouseEngines` (imported from `@514labs/moose-lib`) and set it explicitly on `OlapTable`. Use `ClickHouseEngines.MergeTree` by default for immutable aggregates; choose another `ClickHouseEngines.*` value only when your workload needs different semantics (for example, dedup/update behavior).
@@ -80,6 +81,7 @@ Steps:
 
 - **Engine/order key config**: if you use `ClickHouseEngines.ReplacingMergeTree` (or `ReplicatedReplacingMergeTree`), ensure an `ORDER BY` is defined via `orderByFields`/`orderByExpression`. Look for errors like `ReplacingMergeTree requires an order by clause`.
 - **Mutually exclusive table config**: define only one of `orderByFields` or `orderByExpression`. `ts-moose-lib` rejects both at once (`Provide either orderByFields or orderByExpression, not both.`).
+- **Primary-key/sort-key mismatch**: avoid `Key<T>` columns in this phase. They can produce a primary key that does not match your selected sort key and fail with errors like `Primary key must be a prefix of the sorting key`.
 - **Identifier validity**: table/database identifiers must be valid (non-empty, allowed characters, no invalid prefix). CLI surfaces identifier validation errors during planning/apply.
 
 Do not continue until you see the table creation success message in the `moose dev` logs.
@@ -172,10 +174,10 @@ Steps:
 
 ```bash
 # Row count
-moose query -q "SELECT count() FROM <SERVING_TABLE_NAME> FINAL"
+moose query "SELECT count() FROM <SERVING_TABLE_NAME> FINAL"
 
 # Spot-check a slice that matches a Phase 1 test case
-moose query -q "SELECT * FROM <SERVING_TABLE_NAME> FINAL WHERE <filter_from_test_case> LIMIT 5"
+moose query "SELECT * FROM <SERVING_TABLE_NAME> FINAL WHERE <filter_from_test_case> LIMIT 5"
 ```
 
 10. If MV creation/population fails, check:
