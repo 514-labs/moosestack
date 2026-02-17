@@ -240,9 +240,10 @@ message View {
   optional Metadata metadata = 4;
 }
 
-// Duration for refresh intervals (stored as seconds)
+// Duration for refresh intervals (value + unit)
 message RefreshDuration {
-  uint64 seconds = 1;
+  uint64 value = 1;
+  string unit = 2;
 }
 
 // Refresh interval specification for refreshable MVs

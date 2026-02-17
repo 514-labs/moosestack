@@ -499,6 +499,15 @@ class SqlResourceConfig(BaseModel):
     metadata: Optional[dict] = None
 
 
+class DurationJson(BaseModel):
+    """Internal representation of a duration (value + unit) for serialization."""
+
+    model_config = model_config
+
+    value: int
+    unit: str
+
+
 class RefreshIntervalJson(BaseModel):
     """Internal representation of a refresh interval for serialization.
 
@@ -508,7 +517,8 @@ class RefreshIntervalJson(BaseModel):
     model_config = model_config
 
     type: Literal["every", "after"]
-    interval: int  # Interval in seconds
+    value: int
+    unit: str
 
 
 class RefreshConfigJson(BaseModel):
@@ -521,8 +531,8 @@ class RefreshConfigJson(BaseModel):
     model_config = model_config
 
     interval: RefreshIntervalJson
-    offset: Optional[int] = None  # Offset in seconds
-    randomize: Optional[int] = None  # Randomize window in seconds
+    offset: Optional[DurationJson] = None
+    randomize: Optional[DurationJson] = None
     depends_on: Optional[List[str]] = None
     append: Optional[bool] = None
 
@@ -607,38 +617,9 @@ class InfrastructureMap(BaseModel):
     unloaded_files: list[str] = []
 
 
-# Seconds per time unit lookup table
-_UNIT_TO_SECONDS = {
-    "second": 1,
-    "minute": 60,
-    "hour": 3600,
-    "day": 86400,
-    "week": 604800,
-}
-
-
-def _duration_to_seconds(value: int, unit: str) -> int:
-    """Convert a duration (value + unit) to seconds.
-
-    This is a simple lookup - no string parsing needed.
-
-    Args:
-        value: The numeric value of the duration.
-        unit: The time unit ('second', 'minute', 'hour', 'day', 'week').
-
-    Returns:
-        The duration in seconds.
-
-    Raises:
-        ValueError: If the unit is not recognized.
-    """
-    multiplier = _UNIT_TO_SECONDS.get(unit)
-    if multiplier is None:
-        raise ValueError(
-            f'Unknown time unit: "{unit}". '
-            f"Supported units: {', '.join(_UNIT_TO_SECONDS.keys())}"
-        )
-    return value * multiplier
+def _duration_to_json(value: int, unit: str) -> DurationJson:
+    """Convert a duration (value + unit) to its JSON representation."""
+    return DurationJson(value=value, unit=unit)
 
 
 def _map_sql_resource_ref(r: Any) -> InfrastructureSignatureJson:
@@ -1223,13 +1204,11 @@ def to_infra_map() -> dict:
             refresh_config_json = RefreshConfigJson(
                 interval=RefreshIntervalJson(
                     type=mv.refresh_config.interval.type,
-                    interval=_duration_to_seconds(
-                        mv.refresh_config.interval.value,
-                        mv.refresh_config.interval.unit,
-                    ),
+                    value=mv.refresh_config.interval.value,
+                    unit=mv.refresh_config.interval.unit,
                 ),
                 offset=(
-                    _duration_to_seconds(
+                    _duration_to_json(
                         mv.refresh_config.offset.value,
                         mv.refresh_config.offset.unit,
                     )
@@ -1237,18 +1216,14 @@ def to_infra_map() -> dict:
                     else None
                 ),
                 randomize=(
-                    _duration_to_seconds(
+                    _duration_to_json(
                         mv.refresh_config.randomize.value,
                         mv.refresh_config.randomize.unit,
                     )
                     if mv.refresh_config.randomize
                     else None
                 ),
-                depends_on=(
-                    mv.refresh_config.depends_on
-                    if mv.refresh_config.depends_on is not None
-                    else None
-                ),
+                depends_on=mv.refresh_config.depends_on,
                 append=mv.refresh_config.append,
             )
 

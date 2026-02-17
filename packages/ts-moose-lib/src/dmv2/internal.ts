@@ -552,8 +552,20 @@ interface SqlResourceJson {
  */
 interface RefreshIntervalJson {
   type: "every" | "after";
-  /** Interval as seconds for proto compatibility */
-  interval: number;
+  /** The numeric value of the interval */
+  value: number;
+  /** The time unit */
+  unit: string;
+}
+
+/**
+ * JSON representation of a duration (value + unit).
+ */
+interface DurationJson {
+  /** The numeric value */
+  value: number;
+  /** The time unit */
+  unit: string;
 }
 
 /**
@@ -561,10 +573,10 @@ interface RefreshIntervalJson {
  */
 interface RefreshConfigJson {
   interval: RefreshIntervalJson;
-  /** Offset in seconds */
-  offset?: number;
-  /** Randomize window in seconds */
-  randomize?: number;
+  /** Offset duration */
+  offset?: DurationJson;
+  /** Randomize window duration */
+  randomize?: DurationJson;
   dependsOn?: string[];
   append?: boolean;
 }
@@ -610,29 +622,13 @@ interface ViewJson {
 }
 
 /**
- * Seconds per time unit lookup table.
- * Used to convert structured Duration/RefreshInterval to seconds.
+ * Convert a Duration to its JSON representation.
  */
-const UNIT_TO_SECONDS: Record<string, number> = {
-  second: 1,
-  minute: 60,
-  hour: 3600,
-  day: 86400,
-  week: 604800,
-};
-
-/**
- * Convert a Duration (value + unit) to seconds.
- * This is a simple lookup - no string parsing needed.
- */
-function durationToSeconds(duration: { value: number; unit: string }): number {
-  const multiplier = UNIT_TO_SECONDS[duration.unit];
-  if (multiplier === undefined) {
-    throw new Error(
-      `Unknown time unit: "${duration.unit}". Supported units: ${Object.keys(UNIT_TO_SECONDS).join(", ")}`,
-    );
-  }
-  return duration.value * multiplier;
+function durationToJson(duration: {
+  value: number;
+  unit: string;
+}): DurationJson {
+  return { value: duration.value, unit: duration.unit };
 }
 
 /**
@@ -1318,15 +1314,16 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       refreshConfigJson = {
         interval: {
           type: mv.refreshConfig.interval.type,
-          interval: durationToSeconds(mv.refreshConfig.interval),
+          value: mv.refreshConfig.interval.value,
+          unit: mv.refreshConfig.interval.unit,
         },
         offset:
           mv.refreshConfig.offset ?
-            durationToSeconds(mv.refreshConfig.offset)
+            durationToJson(mv.refreshConfig.offset)
           : undefined,
         randomize:
           mv.refreshConfig.randomize ?
-            durationToSeconds(mv.refreshConfig.randomize)
+            durationToJson(mv.refreshConfig.randomize)
           : undefined,
         dependsOn: mv.refreshConfig.dependsOn,
         append: mv.refreshConfig.append,

@@ -111,80 +111,188 @@ where
     Option::<T>::deserialize(d).map(|opt| opt.unwrap_or_default())
 }
 
+/// Supported time units for refresh intervals.
+/// Maps directly to ClickHouse interval units.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimeUnit {
+    Second,
+    Minute,
+    Hour,
+    Day,
+    Week,
+    Month,
+    Year,
+}
+
+impl TimeUnit {
+    /// Convert to uppercase SQL string (e.g., "HOUR", "MINUTE")
+    pub fn to_sql(&self) -> &'static str {
+        match self {
+            TimeUnit::Second => "SECOND",
+            TimeUnit::Minute => "MINUTE",
+            TimeUnit::Hour => "HOUR",
+            TimeUnit::Day => "DAY",
+            TimeUnit::Week => "WEEK",
+            TimeUnit::Month => "MONTH",
+            TimeUnit::Year => "YEAR",
+        }
+    }
+
+    /// Parse from a string (case-insensitive)
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_uppercase().as_str() {
+            "SECOND" => Some(TimeUnit::Second),
+            "MINUTE" => Some(TimeUnit::Minute),
+            "HOUR" => Some(TimeUnit::Hour),
+            "DAY" => Some(TimeUnit::Day),
+            "WEEK" => Some(TimeUnit::Week),
+            "MONTH" => Some(TimeUnit::Month),
+            "YEAR" => Some(TimeUnit::Year),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for TimeUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_sql())
+    }
+}
+
+/// A duration specified as value + unit.
+/// Used for intervals, offsets, and randomization windows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Duration {
+    /// The numeric value
+    pub value: u64,
+    /// The time unit
+    pub unit: TimeUnit,
+}
+
+impl Duration {
+    /// Create a new duration
+    pub fn new(value: u64, unit: TimeUnit) -> Self {
+        Self { value, unit }
+    }
+
+    /// Format as ClickHouse SQL fragment (e.g., "1 HOUR", "30 MINUTE")
+    pub fn to_sql(&self) -> String {
+        format!("{} {}", self.value, self.unit.to_sql())
+    }
+
+    /// Convert to proto representation
+    pub fn to_proto(&self) -> ProtoRefreshDuration {
+        ProtoRefreshDuration {
+            value: self.value,
+            unit: self.unit.to_sql().to_lowercase(),
+            special_fields: Default::default(),
+        }
+    }
+
+    /// Create from proto representation
+    pub fn from_proto(proto: ProtoRefreshDuration) -> Option<Self> {
+        let unit = TimeUnit::parse(&proto.unit)?;
+        Some(Self {
+            value: proto.value,
+            unit,
+        })
+    }
+}
+
 /// Refresh interval specification for refreshable materialized views.
 ///
 /// ClickHouse supports two refresh modes:
-/// - `Every`: Periodic refresh at fixed intervals (REFRESH EVERY 1 hour)
-/// - `After`: Refresh after interval since last refresh completed (REFRESH AFTER 30 minutes)
+/// - `Every`: Periodic refresh at fixed intervals (REFRESH EVERY 1 HOUR)
+/// - `After`: Refresh after interval since last refresh completed (REFRESH AFTER 30 MINUTE)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum RefreshInterval {
     /// REFRESH EVERY <interval> - periodic refresh at fixed times
     #[serde(rename = "every")]
     Every {
-        /// Interval in seconds
-        interval: u64,
+        /// The interval value
+        value: u64,
+        /// The time unit
+        unit: TimeUnit,
     },
     /// REFRESH AFTER <interval> - refresh after interval since last refresh
     #[serde(rename = "after")]
     After {
-        /// Interval in seconds
-        interval: u64,
+        /// The interval value
+        value: u64,
+        /// The time unit
+        unit: TimeUnit,
     },
 }
 
 impl RefreshInterval {
-    /// Create an "EVERY" interval from seconds
-    pub fn every(seconds: u64) -> Self {
-        Self::Every { interval: seconds }
+    /// Create an "EVERY" interval
+    pub fn every(value: u64, unit: TimeUnit) -> Self {
+        Self::Every { value, unit }
     }
 
-    /// Create an "AFTER" interval from seconds
-    pub fn after(seconds: u64) -> Self {
-        Self::After { interval: seconds }
+    /// Create an "AFTER" interval
+    pub fn after(value: u64, unit: TimeUnit) -> Self {
+        Self::After { value, unit }
     }
 
-    /// Create an "EVERY" interval from hours
+    /// Create an "EVERY" interval in hours
     pub fn every_hours(hours: u64) -> Self {
         Self::Every {
-            interval: hours * 3600,
+            value: hours,
+            unit: TimeUnit::Hour,
         }
     }
 
-    /// Create an "EVERY" interval from minutes
+    /// Create an "EVERY" interval in minutes
     pub fn every_minutes(minutes: u64) -> Self {
         Self::Every {
-            interval: minutes * 60,
+            value: minutes,
+            unit: TimeUnit::Minute,
         }
     }
 
-    /// Create an "AFTER" interval from hours
+    /// Create an "AFTER" interval in hours
     pub fn after_hours(hours: u64) -> Self {
         Self::After {
-            interval: hours * 3600,
+            value: hours,
+            unit: TimeUnit::Hour,
         }
     }
 
-    /// Create an "AFTER" interval from minutes
+    /// Create an "AFTER" interval in minutes
     pub fn after_minutes(minutes: u64) -> Self {
         Self::After {
-            interval: minutes * 60,
+            value: minutes,
+            unit: TimeUnit::Minute,
+        }
+    }
+
+    /// Format as ClickHouse SQL fragment (e.g., "1 HOUR")
+    pub fn to_sql(&self) -> String {
+        match self {
+            RefreshInterval::Every { value, unit } | RefreshInterval::After { value, unit } => {
+                format!("{} {}", value, unit.to_sql())
+            }
         }
     }
 
     /// Convert to proto representation
     pub fn to_proto(&self) -> ProtoRefreshInterval {
         match self {
-            RefreshInterval::Every { interval } => ProtoRefreshInterval {
+            RefreshInterval::Every { value, unit } => ProtoRefreshInterval {
                 interval_type: Some(IntervalType::Every(ProtoRefreshDuration {
-                    seconds: *interval,
+                    value: *value,
+                    unit: unit.to_sql().to_lowercase(),
                     special_fields: Default::default(),
                 })),
                 special_fields: Default::default(),
             },
-            RefreshInterval::After { interval } => ProtoRefreshInterval {
+            RefreshInterval::After { value, unit } => ProtoRefreshInterval {
                 interval_type: Some(IntervalType::After(ProtoRefreshDuration {
-                    seconds: *interval,
+                    value: *value,
+                    unit: unit.to_sql().to_lowercase(),
                     special_fields: Default::default(),
                 })),
                 special_fields: Default::default(),
@@ -196,10 +304,12 @@ impl RefreshInterval {
     pub fn from_proto(proto: ProtoRefreshInterval) -> Option<Self> {
         match proto.interval_type {
             Some(IntervalType::Every(dur)) => Some(RefreshInterval::Every {
-                interval: dur.seconds,
+                value: dur.value,
+                unit: TimeUnit::parse(&dur.unit)?,
             }),
             Some(IntervalType::After(dur)) => Some(RefreshInterval::After {
-                interval: dur.seconds,
+                value: dur.value,
+                unit: TimeUnit::parse(&dur.unit)?,
             }),
             None => None,
         }
@@ -215,12 +325,12 @@ impl RefreshInterval {
 pub struct RefreshableConfig {
     /// The refresh interval (EVERY or AFTER)
     pub interval: RefreshInterval,
-    /// Optional offset from the interval start in seconds (OFFSET 5 minutes)
+    /// Optional offset from the interval start (OFFSET 5 MINUTE)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<u64>,
-    /// Optional randomization window in seconds (RANDOMIZE FOR 10 seconds)
+    pub offset: Option<Duration>,
+    /// Optional randomization window (RANDOMIZE FOR 10 SECOND)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub randomize: Option<u64>,
+    pub randomize: Option<Duration>,
     /// Other MVs this one depends on (DEPENDS ON other_mv1, other_mv2)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
@@ -245,20 +355,8 @@ impl RefreshableConfig {
     pub fn to_proto(&self) -> ProtoRefreshableConfig {
         ProtoRefreshableConfig {
             interval: MessageField::some(self.interval.to_proto()),
-            offset: self
-                .offset
-                .map(|secs| ProtoRefreshDuration {
-                    seconds: secs,
-                    special_fields: Default::default(),
-                })
-                .into(),
-            randomize: self
-                .randomize
-                .map(|secs| ProtoRefreshDuration {
-                    seconds: secs,
-                    special_fields: Default::default(),
-                })
-                .into(),
+            offset: self.offset.as_ref().map(|d| d.to_proto()).into(),
+            randomize: self.randomize.as_ref().map(|d| d.to_proto()).into(),
             depends_on: self.depends_on.clone(),
             append: self.append,
             special_fields: Default::default(),
@@ -274,8 +372,8 @@ impl RefreshableConfig {
 
         Some(Self {
             interval,
-            offset: proto.offset.into_option().map(|d| d.seconds),
-            randomize: proto.randomize.into_option().map(|d| d.seconds),
+            offset: proto.offset.into_option().and_then(Duration::from_proto),
+            randomize: proto.randomize.into_option().and_then(Duration::from_proto),
             depends_on: proto.depends_on,
             append: proto.append,
         })
@@ -446,41 +544,28 @@ impl MaterializedView {
         }
     }
 
-    /// Format seconds as a ClickHouse interval string (e.g., "1 HOUR", "30 MINUTE")
-    fn format_seconds(secs: u64) -> String {
-        if secs.is_multiple_of(86400) && secs >= 86400 {
-            format!("{} DAY", secs / 86400)
-        } else if secs.is_multiple_of(3600) && secs >= 3600 {
-            format!("{} HOUR", secs / 3600)
-        } else if secs.is_multiple_of(60) && secs >= 60 {
-            format!("{} MINUTE", secs / 60)
-        } else {
-            format!("{} SECOND", secs)
-        }
-    }
-
     /// Format the REFRESH clause for refreshable MVs
     fn format_refresh_clause(config: &RefreshableConfig) -> String {
         let mut parts = Vec::new();
 
         // Add interval type
         match &config.interval {
-            RefreshInterval::Every { interval } => {
-                parts.push(format!("EVERY {}", Self::format_seconds(*interval)));
+            RefreshInterval::Every { value, unit } => {
+                parts.push(format!("EVERY {} {}", value, unit.to_sql()));
             }
-            RefreshInterval::After { interval } => {
-                parts.push(format!("AFTER {}", Self::format_seconds(*interval)));
+            RefreshInterval::After { value, unit } => {
+                parts.push(format!("AFTER {} {}", value, unit.to_sql()));
             }
         }
 
         // Add optional OFFSET
-        if let Some(offset) = config.offset {
-            parts.push(format!("OFFSET {}", Self::format_seconds(offset)));
+        if let Some(offset) = &config.offset {
+            parts.push(format!("OFFSET {}", offset.to_sql()));
         }
 
         // Add optional RANDOMIZE FOR
-        if let Some(randomize) = config.randomize {
-            parts.push(format!("RANDOMIZE FOR {}", Self::format_seconds(randomize)));
+        if let Some(randomize) = &config.randomize {
+            parts.push(format!("RANDOMIZE FOR {}", randomize.to_sql()));
         }
 
         // Add optional DEPENDS ON
@@ -554,11 +639,11 @@ impl MaterializedView {
         match self.refreshable_config() {
             Some(config) => {
                 let interval_str = match &config.interval {
-                    RefreshInterval::Every { interval } => {
-                        format!("EVERY {}", Self::format_seconds(*interval))
+                    RefreshInterval::Every { value, unit } => {
+                        format!("EVERY {} {}", value, unit.to_sql())
                     }
-                    RefreshInterval::After { interval } => {
-                        format!("AFTER {}", Self::format_seconds(*interval))
+                    RefreshInterval::After { value, unit } => {
+                        format!("AFTER {} {}", value, unit.to_sql())
                     }
                 };
                 format!(
@@ -809,8 +894,8 @@ mod tests {
     #[test]
     fn test_refreshable_mv_create_sql_every() {
         let refresh_config = RefreshableConfig {
-            interval: RefreshInterval::every(3600), // 1 hour
-            offset: Some(300),                      // 5 minutes
+            interval: RefreshInterval::every(1, TimeUnit::Hour),
+            offset: Some(Duration::new(5, TimeUnit::Minute)),
             randomize: None,
             depends_on: Vec::new(),
             append: false,
@@ -834,9 +919,9 @@ mod tests {
     #[test]
     fn test_refreshable_mv_create_sql_after() {
         let refresh_config = RefreshableConfig {
-            interval: RefreshInterval::after(1800), // 30 minutes
+            interval: RefreshInterval::after(30, TimeUnit::Minute),
             offset: None,
-            randomize: Some(60), // 1 minute
+            randomize: Some(Duration::new(1, TimeUnit::Minute)),
             depends_on: vec!["other_mv".to_string()],
             append: true,
         };
@@ -858,7 +943,7 @@ mod tests {
 
     #[test]
     fn test_refreshable_mv_alter_refresh_sql() {
-        let refresh_config = RefreshableConfig::new(RefreshInterval::every(7200)); // 2 hours
+        let refresh_config = RefreshableConfig::new(RefreshInterval::every(2, TimeUnit::Hour));
 
         let mv = MaterializedView::new_refreshable(
             "hourly_stats_mv",
@@ -901,7 +986,7 @@ mod tests {
 
     #[test]
     fn test_materialized_view_is_refreshable() {
-        let refresh_config = RefreshableConfig::new(RefreshInterval::every(3600));
+        let refresh_config = RefreshableConfig::new(RefreshInterval::every(1, TimeUnit::Hour));
         let mv = MaterializedView::new_refreshable(
             "mv",
             "SELECT * FROM events",
@@ -932,7 +1017,7 @@ mod tests {
     #[test]
     fn test_refreshable_mv_data_lineage_with_depends_on() {
         let refresh_config = RefreshableConfig {
-            interval: RefreshInterval::every(3600),
+            interval: RefreshInterval::every(1, TimeUnit::Hour),
             offset: None,
             randomize: None,
             depends_on: vec!["other_mv".to_string(), "another_mv".to_string()],
@@ -1149,8 +1234,8 @@ mod tests {
     #[test]
     fn test_materialized_view_serde_refreshable() {
         let refresh_config = RefreshableConfig {
-            interval: RefreshInterval::every(3600),
-            offset: Some(300),
+            interval: RefreshInterval::every(1, TimeUnit::Hour),
+            offset: Some(Duration::new(5, TimeUnit::Minute)),
             randomize: None,
             depends_on: vec!["dep1".to_string()],
             append: true,
@@ -1175,21 +1260,67 @@ mod tests {
         assert!(deserialized.is_refreshable());
         assert!(!deserialized.is_incremental());
         let config = deserialized.refreshable_config().unwrap();
-        assert_eq!(config.offset, Some(300));
+        assert_eq!(config.offset, Some(Duration::new(5, TimeUnit::Minute)));
         assert_eq!(config.depends_on, vec!["dep1".to_string()]);
         assert!(config.append);
     }
 
     #[test]
-    fn test_format_seconds() {
-        // Test various duration formats
-        assert_eq!(MaterializedView::format_seconds(30), "30 SECOND");
-        assert_eq!(MaterializedView::format_seconds(60), "1 MINUTE");
-        assert_eq!(MaterializedView::format_seconds(90), "90 SECOND");
-        assert_eq!(MaterializedView::format_seconds(3600), "1 HOUR");
-        assert_eq!(MaterializedView::format_seconds(7200), "2 HOUR");
-        assert_eq!(MaterializedView::format_seconds(86400), "1 DAY");
-        assert_eq!(MaterializedView::format_seconds(172800), "2 DAY");
+    fn test_duration_to_sql() {
+        assert_eq!(Duration::new(30, TimeUnit::Second).to_sql(), "30 SECOND");
+        assert_eq!(Duration::new(1, TimeUnit::Minute).to_sql(), "1 MINUTE");
+        assert_eq!(Duration::new(1, TimeUnit::Hour).to_sql(), "1 HOUR");
+        assert_eq!(Duration::new(2, TimeUnit::Day).to_sql(), "2 DAY");
+        assert_eq!(Duration::new(1, TimeUnit::Month).to_sql(), "1 MONTH");
+        assert_eq!(Duration::new(1, TimeUnit::Year).to_sql(), "1 YEAR");
+    }
+
+    #[test]
+    fn test_refresh_interval_every_hours() {
+        let interval = RefreshInterval::every_hours(2);
+        assert_eq!(
+            interval,
+            RefreshInterval::Every {
+                value: 2,
+                unit: TimeUnit::Hour
+            }
+        );
+    }
+
+    #[test]
+    fn test_refresh_interval_every_minutes() {
+        let interval = RefreshInterval::every_minutes(15);
+        assert_eq!(
+            interval,
+            RefreshInterval::Every {
+                value: 15,
+                unit: TimeUnit::Minute
+            }
+        );
+    }
+
+    #[test]
+    fn test_refresh_interval_after_hours() {
+        let interval = RefreshInterval::after_hours(1);
+        assert_eq!(
+            interval,
+            RefreshInterval::After {
+                value: 1,
+                unit: TimeUnit::Hour
+            }
+        );
+    }
+
+    #[test]
+    fn test_refresh_interval_after_minutes() {
+        let interval = RefreshInterval::after_minutes(30);
+        assert_eq!(
+            interval,
+            RefreshInterval::After {
+                value: 30,
+                unit: TimeUnit::Minute
+            }
+        );
     }
 
     #[test]
@@ -1217,8 +1348,8 @@ mod tests {
             "sourceTables": ["events"],
             "targetTable": "hourly_stats",
             "refreshConfig": {
-                "interval": { "type": "every", "interval": 3600 },
-                "offset": 300,
+                "interval": { "type": "every", "value": 1, "unit": "hour" },
+                "offset": { "value": 5, "unit": "minute" },
                 "dependsOn": ["other_mv"],
                 "append": false
             }
@@ -1227,12 +1358,15 @@ mod tests {
         let mv: MaterializedView = serde_json::from_str(json).unwrap();
         assert!(mv.is_refreshable());
         let config = mv.refreshable_config().unwrap();
-        assert_eq!(config.offset, Some(300));
+        assert_eq!(config.offset, Some(Duration::new(5, TimeUnit::Minute)));
         assert_eq!(config.depends_on, vec!["other_mv".to_string()]);
         assert!(!config.append);
 
         match &config.interval {
-            RefreshInterval::Every { interval } => assert_eq!(*interval, 3600),
+            RefreshInterval::Every { value, unit } => {
+                assert_eq!(*value, 1);
+                assert_eq!(*unit, TimeUnit::Hour);
+            }
             _ => panic!("Expected Every interval"),
         }
     }
