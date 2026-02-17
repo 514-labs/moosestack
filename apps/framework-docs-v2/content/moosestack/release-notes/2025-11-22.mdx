@@ -7,12 +7,12 @@ import { Callout } from "@/components/mdx";
 
 # November 22, 2025
 
-This week brings powerful new tools for developers working with MooseStack: iterate on SQL queries faster with the new `moose query` command, scale your production deployments with ClickHouse cluster support, and seamlessly create Boreal projects from GitHub repositories.
+This week brings powerful new tools for developers working with MooseStack: iterate on SQL queries faster with the new `moose query` command, scale your production deployments with ClickHouse cluster support, and seamlessly create Fiveonefour hosting projects from GitHub repositories.
 
 <Callout type="info" title="Highlights">
 * **New:** [`moose query` CLI command](#moose-query-cli-command) for SQL exploration and code generation
 * **New:** [ClickHouse cluster support](#clickhouse-cluster-support) for distributed deployments
-* **New:** [Database performance metrics visualization](#database-performance-metrics-visualization) in Boreal project overview
+* **New:** [Database performance metrics visualization](#database-performance-metrics-visualization) in Fiveonefour hosting project overview
 </Callout>
 
 ## `moose query` CLI command
@@ -89,19 +89,19 @@ PR: [#2944](https://github.com/514-labs/moosestack/pull/2944)
 - Deterministic ordering in migration files ([#3007](https://github.com/514-labs/moosestack/pull/3007))
 - SQL parser SAMPLE BY clause extraction when TTL is present ([#3011](https://github.com/514-labs/moosestack/pull/3011))
 
-## Boreal: Database performance metrics visualization
+## Fiveonefour: Database performance metrics visualization
 
 View query latency (P95), throughput (rows/second), and storage usage directly in your project overview with weekly trends and 24-hour detailed views.
 
-**Why it matters:** Understanding your database performance is critical for optimizing data pipelines and catching issues before they impact users. The new metrics visualization surfaces ClickHouse query log data directly in the Boreal dashboard, showing you how your database performance changes over time. Weekly and daily charts now display consistent data with percentage change indicators, making it easy to spot trends and diagnose slowdowns.
+**Why it matters:** Understanding your database performance is critical for optimizing data pipelines and catching issues before they impact users. The new metrics visualization surfaces ClickHouse query log data directly in the Fiveonefour hosting dashboard, showing you how your database performance changes over time. Weekly and daily charts now display consistent data with percentage change indicators, making it easy to spot trends and diagnose slowdowns.
 
 ![Database performance metrics visualization](/moosestack/release-notes/boreal-hosting-telem.png)
 
-## Other Boreal Features and Improvements
+## Other Fiveonefour Features and Improvements
 
 - **Redpanda cluster metrics** – Added to monitoring dashboard
 
-## Boreal Bug Fixes
+## Fiveonefour Bug Fixes
 
 - **Branch selector** – Now displays all branches with scrollable interface (removed 10-item limit)
 - **Deployment status timestamps** – Now consistent across dashboard

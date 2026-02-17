@@ -33,7 +33,7 @@ const replicatedDedup = new OlapTable<Record>("dedup_records", {
   orderByFields: ["id"]
 });
 
-// For ClickHouse Cloud or Boreal (no parameters needed)
+// For ClickHouse Cloud or Fiveonefour (no parameters needed)
 const cloudReplicated = new OlapTable<Record>("cloud_records", {
   engine: ClickHouseEngines.ReplicatedMergeTree,
   orderByFields: ["id"]
@@ -75,7 +75,7 @@ replicated_dedup = OlapTable[Record]("dedup_records", OlapConfig(
     )
 ))
 
-# For ClickHouse Cloud or Boreal (no parameters needed)
+# For ClickHouse Cloud or Fiveonefour (no parameters needed)
 cloud_replicated = OlapTable[Record]("cloud_records", OlapConfig(
     order_by_fields=["id"],
     engine=ReplicatedMergeTreeEngine()

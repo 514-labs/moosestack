@@ -1,0 +1,57 @@
+---
+title: Fiveonefour hosting to local setup
+description: Practical workflow from Fiveonefour hosting project access to local development readiness.
+order: 1
+---
+
+# Fiveonefour hosting to local setup
+
+This workflow covers the adjacent steps around CLI commands that are required to complete local setup successfully.
+
+## 1. Confirm Fiveonefour hosting access
+
+- Sign in: `https://www.boreal.cloud/sign-in`
+- Confirm target project exists and you have access.
+
+## 2. Confirm GitHub integration access
+
+- Open GitHub app installations: `https://github.com/settings/installations`
+- Verify the relevant org/repo is authorized for Fiveonefour.
+
+## 3. Choose destination path intentionally
+
+- Prefer an explicit parent directory for predictable clones.
+- Avoid non-empty destination directories unless intentionally reusing them.
+
+## 4. Use branch names that pass validation
+
+Recommended format:
+
+```txt
+feature/<kebab-summary>
+```
+
+Examples:
+- `feature/add-orders-rollup`
+- `feature/fix-ingest-timeout`
+
+## 5. Push and verify preview routing
+
+- If setup created a branch, push it when prompted.
+- Verify preview/deployment status in Fiveonefour hosting project UI.
+
+## 6. Verify local state
+
+Run from repository root:
+
+```bash
+git status
+```
+
+Then continue with your local development loop.
+
+## Related
+
+- [CLI: setup](/hosting/cli/setup)
+- [CLI: link](/hosting/cli/link)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

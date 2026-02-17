@@ -7,7 +7,7 @@ import { Callout } from "@/components/mdx";
 
 # January 9, 2026
 
-This release focuses on developer experience and debugging tools. New payload logging helps trace data through pipelines, and Boreal adds colorblind-friendly themes and improved GitHub OAuth for preview environments.
+This release focuses on developer experience and debugging tools. New payload logging helps trace data through pipelines, and Fiveonefour adds colorblind-friendly themes and improved GitHub OAuth for preview environments.
 
 <Callout type="info" title="Highlights">
 * **New:** [Add --log-payloads flag for debugging data flow in development](#add---log-payloads-flag-for-debugging-data-flow-in-development)
@@ -57,7 +57,7 @@ When using ClickHouse clusters, databases are now automatically created on all c
 - Fix SQL formatting preserving ClickHouse type casing to prevent UNKNOWN_TYPE errors: Fixed an issue where the SQL parser was converting ClickHouse data types to uppercase (e.g., INT64, STRING) instead of preserving the correct PascalCase format (Int64, String). This was causing UNKNOWN_TYPE errors when ClickHouse couldn't recognize the incorrectly formatted types. SQL formatting now properly preserves ClickHouse type casing, preventing these database errors. [#3172](https://github.com/514-labs/moosestack/pull/3172)
 - Fix StripDateIntersection with optional fields: Fixed a bug where the StripDateIntersection utility type failed to properly handle optional fields in TypeScript data models. This resolves issues with optional DateTime fields in data model definitions that could cause schema generation or type validation errors. [#3166](https://github.com/514-labs/moosestack/pull/3166)
 
-## Boreal
+## Fiveonefour
 
 ### Add colorblind-friendly theme support with toggle
 

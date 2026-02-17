@@ -8,7 +8,7 @@ interface IconBadgeProps {
     | React.FC<React.SVGProps<SVGSVGElement>>
     | string;
   label: string;
-  variant?: "moose" | "boreal" | "sloan" | "default";
+  variant?: "moose" | "fiveonefour" | "sloan" | "default";
   rounded?: "md" | "full";
   className?: string;
 }

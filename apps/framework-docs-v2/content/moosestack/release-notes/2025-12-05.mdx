@@ -9,14 +9,14 @@ import { Callout } from "@/components/mdx";
 
 Flexible Streaming Ingest, Web App Integration, and Infra Visibility Upgrades. This two-week release pushes MooseStack forward on three fronts: flexible high-volume ingestion, developer experience for full-stack apps, and operational visibility.
 
-Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming, IcebergS3 for data lake integration, and powerful modeling tools like materialized columns and per-column codecs. Meanwhile, Boreal added storage visualizations so teams can see how their data grows.
+Moose gained the ability to handle arbitrary JSON ingest, Kafka-backed streaming, IcebergS3 for data lake integration, and powerful modeling tools like materialized columns and per-column codecs. Meanwhile, Fiveonefour added storage visualizations so teams can see how their data grows.
 
 <Callout type="info" title="Highlights">
 * **New:** [Kafka engine support](#kafka-engine-support-for-streaming-ingestion) for real-time ClickHouse ingestion
 * **New:** [IcebergS3 engine](#icebergs3-engine-for-data-lake-storage) for Apache Iceberg data lake integration
 * **New:** [Materialized columns](#materialized-columns-in-data-models) for precomputed fields at ingestion time
 * **New:** [Fastify web app template](#fastify-web-app-template) with automatic async initialization
-* **New:** [Boreal database storage visualization](#database-storage-visualization-experimental) for capacity planning
+* **New:** [Fiveonefour database storage visualization](#database-storage-visualization-experimental) for capacity planning
 </Callout>
 
 ## Moose
@@ -113,7 +113,7 @@ PR: [#3068](https://github.com/514-labs/moosestack/pull/3068), [#3061](https://g
 - **LowCardinality columns in peek/query** – `moose peek` and `moose query` failed on tables with [`LowCardinality(String)`](https://clickhouse.com/docs/sql-reference/data-types/lowcardinality) columns. Switched to HTTP-based ClickHouse client which supports all column types. [#3025](https://github.com/514-labs/moosestack/pull/3025)
 - **DateTime precision preservation** – JavaScript Date objects drop microseconds/nanoseconds. Added `DateTimeString` and `DateTime64String<P>` types that keep timestamps as strings to preserve full precision. [#3018](https://github.com/514-labs/moosestack/pull/3018)
 
-## Boreal
+## Fiveonefour
 
 ### Database storage visualization (experimental)
 

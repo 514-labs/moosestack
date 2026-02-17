@@ -61,7 +61,7 @@ export const archivedOrders = new OlapTable<ArchivedOrder>("archived_orders", {
 PR: [#2908](https://github.com/514-labs/moosestack/pull/2908) | Docs: [S3 engine](/moosestack/olap/model-table#direct-s3-access-s3) | [ClickHouse S3 docs](https://clickhouse.com/docs/en/engines/table-engines/integrations/s3)
 
 ## Distributed tables for cluster fan-out
-Beta (self-hosted only): Not supported on Boreal or ClickHouse Cloud.
+Beta (self-hosted only): Not supported on Fiveonefour or ClickHouse Cloud.
 You can now model ClickHouse Distributed engines in MooseOLAP TypeScript and Python projects. Plans capture the cluster, target database/table, and optional sharding key, while validation checks that the referenced local tables exist on every node before executing migrations.
 
 ```ts filename="distributedEvents.ts" copy
@@ -123,7 +123,7 @@ PR: [#2876](https://github.com/514-labs/moosestack/pull/2876) | Docs: [Multi-dat
 - **Per-table databases** – The migration planner now respects `database` overrides, auto-creates configured databases, and blocks accidental moves between them. Docs: [Multi-database setup](/moosestack/olap/model-table#multi-database-setup) | PR [#2876](https://github.com/514-labs/moosestack/pull/2876)
 - **Runtime S3Queue credentials** – Environment variable markers resolve at deploy time for S3Queue sources, keeping AWS keys out of source. Docs: [Streaming from S3](/moosestack/olap/model-table#streaming-from-s3-s3queue) | PR [#2875](https://github.com/514-labs/moosestack/pull/2875)
 
-## Boreal
+## Fiveonefour
 - Blog redesign.
 - Fixed the redirect loop after deleting an organization so users land back on the create-org screen instead of bouncing between routes.
 
