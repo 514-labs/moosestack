@@ -25,6 +25,8 @@ import {
   ClickHouseCodec,
   LifeCycle,
   ClickHouseTTL,
+  MaterializedView,
+  sql,
 } from "@514labs/moose-lib";
 
 /**
@@ -1018,6 +1020,76 @@ export const fullyManagedSettingsTable = new OlapTable<LifeCycleTestData>(
     // lifeCycle defaults to FULLY_MANAGED
   },
 );
+
+/** =======MaterializedView LifeCycle Tests========= */
+
+/**
+ * Source table for MV lifecycle tests.
+ * This table acts as the source that MVs SELECT from.
+ */
+export const mvLifeCycleSourceTable = new OlapTable<LifeCycleTestData>(
+  "MvLifeCycleSource",
+  {
+    orderByFields: ["id", "timestamp"],
+  },
+);
+
+/**
+ * MV aggregation result interface
+ */
+interface MvLifeCycleAggregated {
+  category: string;
+  totalRows: number & typia.tags.Type<"int64">;
+}
+
+const mvSourceColumns = mvLifeCycleSourceTable.columns<LifeCycleTestData>();
+
+/**
+ * EXTERNALLY_MANAGED MV - Moose should not create, update, or delete this MV
+ */
+export const externallyManagedMV = new MaterializedView<MvLifeCycleAggregated>({
+  materializedViewName: "ExternallyManagedMVTest",
+  tableName: "ExternallyManagedMVTarget",
+  orderByFields: ["category"],
+  selectStatement: sql`SELECT
+    ${mvSourceColumns.category} as category,
+    count() as totalRows
+  FROM ${mvLifeCycleSourceTable}
+  GROUP BY category`,
+  selectTables: [mvLifeCycleSourceTable],
+  lifeCycle: LifeCycle.EXTERNALLY_MANAGED,
+});
+
+/**
+ * DELETION_PROTECTED MV - Moose can create but not drop or update this MV
+ */
+export const deletionProtectedMV = new MaterializedView<MvLifeCycleAggregated>({
+  materializedViewName: "DeletionProtectedMVTest",
+  tableName: "DeletionProtectedMVTarget",
+  orderByFields: ["category"],
+  selectStatement: sql`SELECT
+    ${mvSourceColumns.category} as category,
+    count() as totalRows
+  FROM ${mvLifeCycleSourceTable}
+  GROUP BY category`,
+  selectTables: [mvLifeCycleSourceTable],
+  lifeCycle: LifeCycle.DELETION_PROTECTED,
+});
+
+/**
+ * FULLY_MANAGED MV (default) - Moose has full lifecycle control
+ */
+export const fullyManagedMV = new MaterializedView<MvLifeCycleAggregated>({
+  materializedViewName: "FullyManagedMVTest",
+  tableName: "FullyManagedMVTarget",
+  orderByFields: ["category"],
+  selectStatement: sql`SELECT
+    ${mvSourceColumns.category} as category,
+    count() as totalRows
+  FROM ${mvLifeCycleSourceTable}
+  GROUP BY category`,
+  selectTables: [mvLifeCycleSourceTable],
+});
 
 /** =======Column Comments Test========= */
 // Test that TSDoc comments are extracted and propagated to ClickHouse column comments

@@ -552,6 +552,8 @@ interface MaterializedViewJson {
   targetDatabase?: string;
   /** Optional metadata for the materialized view (e.g., description, source file) */
   metadata?: { [key: string]: any };
+  /** Lifecycle management setting for the materialized view. */
+  lifeCycle?: string;
 }
 
 /**
@@ -1232,6 +1234,7 @@ export const toInfraMap = (registry: typeof moose_internal) => {
       targetTable: mv.targetTable.name,
       targetDatabase: mv.targetTable.config.database,
       metadata: mv.metadata,
+      lifeCycle: mv.lifeCycle,
     };
   });
 

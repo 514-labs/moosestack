@@ -72,7 +72,7 @@ use crate::{
 ///
 /// This enum controls the behavior when there are differences between code definitions
 /// and the actual database schema or structure.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum LifeCycle {
     /// Full automatic management (default behavior).
@@ -95,6 +95,19 @@ impl LifeCycle {
     // not implementing the Default trait to avoid accidentally setting this value
     pub fn default_for_deserialization() -> LifeCycle {
         LifeCycle::FullyManaged
+    }
+
+    /// Deserializes a LifeCycle value, treating JSON `null` as `FullyManaged`.
+    ///
+    /// The standard `#[serde(default)]` only handles absent fields, not explicit `null`.
+    /// Python's Pydantic serializes `None` as `null` (via `exclude_none=False`), so we
+    /// need this to avoid deserialization errors for MVs without an explicit lifecycle.
+    pub fn deserialize_with_null_as_default<'de, D>(deserializer: D) -> Result<LifeCycle, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Option::<LifeCycle>::deserialize(deserializer)
+            .map(|opt| opt.unwrap_or(LifeCycle::FullyManaged))
     }
 
     /// Returns true if this lifecycle protects the table from being dropped.

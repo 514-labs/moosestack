@@ -157,3 +157,79 @@ export function getTableChanges(
 
   return results;
 }
+
+/**
+ * Check if a materialized view was added (Created)
+ */
+export function hasMvAdded(plan: PlanOutput, mvName: string): boolean {
+  if (!plan.changes?.olap_changes) return false;
+
+  return plan.changes.olap_changes.some((change) => {
+    const mvChange = change.MaterializedView;
+    if (!mvChange?.Added) return false;
+    return mvChange.Added.name === mvName;
+  });
+}
+
+/**
+ * Check if a materialized view was removed (Dropped)
+ */
+export function hasMvRemoved(plan: PlanOutput, mvName: string): boolean {
+  if (!plan.changes?.olap_changes) return false;
+
+  return plan.changes.olap_changes.some((change) => {
+    const mvChange = change.MaterializedView;
+    if (!mvChange?.Removed) return false;
+    return mvChange.Removed.name === mvName;
+  });
+}
+
+/**
+ * Check if a materialized view was updated
+ */
+export function hasMvUpdated(plan: PlanOutput, mvName: string): boolean {
+  if (!plan.changes?.olap_changes) return false;
+
+  return plan.changes.olap_changes.some((change) => {
+    const mvChange = change.MaterializedView;
+    if (!mvChange?.Updated) return false;
+    return (
+      mvChange.Updated.before?.name === mvName ||
+      mvChange.Updated.after?.name === mvName
+    );
+  });
+}
+
+/**
+ * Get all materialized view changes for a specific MV name
+ */
+export function getMvChanges(
+  plan: PlanOutput,
+  mvName: string,
+): Array<{ type: string; details: Record<string, unknown> }> {
+  const results: Array<{ type: string; details: Record<string, unknown> }> = [];
+
+  if (!plan.changes?.olap_changes) return results;
+
+  for (const change of plan.changes.olap_changes) {
+    const mvChange = change.MaterializedView;
+    if (!mvChange) continue;
+
+    let matches = false;
+    if (mvChange.Added) {
+      matches = mvChange.Added.name === mvName;
+    } else if (mvChange.Removed) {
+      matches = mvChange.Removed.name === mvName;
+    } else if (mvChange.Updated) {
+      matches =
+        mvChange.Updated.before?.name === mvName ||
+        mvChange.Updated.after?.name === mvName;
+    }
+
+    if (matches) {
+      results.push({ type: "MaterializedView", details: mvChange });
+    }
+  }
+
+  return results;
+}
