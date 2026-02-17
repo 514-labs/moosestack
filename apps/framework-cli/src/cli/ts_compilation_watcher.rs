@@ -128,7 +128,7 @@ fn spawn_tspc_watch(project: &Project) -> Result<Child, TsCompilationWatcherErro
 /// then call `start()` to begin background watching.
 pub async fn spawn_and_await_initial_compile(
     project: &Project,
-) -> Result<InitialCompileHandle, TsCompilationWatcherError> {
+) -> Result<Option<InitialCompileHandle>, TsCompilationWatcherError> {
     debug!(
         "Spawning moose-tspc --watch for initial compilation: {:?}",
         project.app_dir().display()
@@ -210,7 +210,7 @@ pub async fn spawn_and_await_initial_compile(
                         } else if event.is_compile_complete() {
                             display_compilation_success(&event);
                             // Initial compilation done! Return handle for continued watching.
-                            return Ok(InitialCompileHandle { child, line_rx });
+                            return Ok(Some(InitialCompileHandle { child, line_rx }));
                         }
                     }
                     Err(_) => {
@@ -220,12 +220,14 @@ pub async fn spawn_and_await_initial_compile(
                 }
             }
             None => {
-                // Kill the child process to avoid resource leak
+                // moose-tspc exited without producing any JSON events.
+                // This means the installed version doesn't support --watch
+                // (it interpreted --watch as an outDir argument, ran a single
+                // compilation, and exited). Fall back to FileWatcher.
+                warn!("moose-tspc exited without JSON events, --watch not supported; falling back to single compilation");
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(TsCompilationWatcherError::ReadError(
-                    "tspc process closed stdout before initial compilation completed".into(),
-                ));
+                return Ok(None);
             }
         }
     }
