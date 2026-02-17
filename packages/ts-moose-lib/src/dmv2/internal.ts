@@ -526,6 +526,8 @@ interface WebAppJson {
   name: string;
   mountPath: string;
   metadata?: { description?: string };
+  pullsDataFrom: InfrastructureSignatureJson[];
+  pushesDataTo: InfrastructureSignatureJson[];
 }
 
 interface SqlResourceJson {
@@ -1261,10 +1263,13 @@ export const toInfraMap = (registry: typeof moose_internal) => {
   });
 
   registry.webApps.forEach((webApp) => {
+    const webAppLineage = lineage.webAppByName.get(webApp.name);
     webApps[webApp.name] = {
       name: webApp.name,
       mountPath: webApp.config.mountPath || "/",
       metadata: webApp.config.metadata,
+      pullsDataFrom: webAppLineage?.pullsDataFrom ?? [],
+      pushesDataTo: webAppLineage?.pushesDataTo ?? [],
     };
   });
 

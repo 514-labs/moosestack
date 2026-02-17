@@ -437,6 +437,10 @@ struct PartialWebApp {
     pub name: String,
     pub mount_path: String,
     pub metadata: Option<Metadata>,
+    #[serde(default)]
+    pub pulls_data_from: Vec<InfrastructureSignature>,
+    #[serde(default)]
+    pub pushes_data_to: Vec<InfrastructureSignature>,
 }
 
 /// Specifies a write destination for data ingestion.
@@ -1450,6 +1454,8 @@ impl PartialInfrastructureMap {
                             description: m.description.clone(),
                         }
                     }),
+                    pulls_data_from: partial_webapp.pulls_data_from.clone(),
+                    pushes_data_to: partial_webapp.pushes_data_to.clone(),
                 };
                 (partial_webapp.name.clone(), webapp)
             })
@@ -1524,6 +1530,40 @@ mod tests {
         );
         assert_eq!(
             workflow.pushes_data_to(),
+            [InfrastructureSignature::Topic {
+                id: "OrdersEvents".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn deserializes_webapp_lineage_from_camel_case_fields() {
+        let payload = json!({
+            "webApps": {
+                "lineageWebApp": {
+                    "name": "lineageWebApp",
+                    "mountPath": "/lineage",
+                    "pullsDataFrom": [{ "kind": "Table", "id": "Orders" }],
+                    "pushesDataTo": [{ "kind": "Topic", "id": "OrdersEvents" }]
+                }
+            }
+        });
+
+        let partial: PartialInfrastructureMap =
+            serde_json::from_value(payload).expect("payload should deserialize");
+        let web_apps = partial.convert_web_apps();
+        let web_app = web_apps
+            .get("lineageWebApp")
+            .expect("web app should be converted");
+
+        assert_eq!(
+            web_app.pulls_data_from,
+            [InfrastructureSignature::Table {
+                id: "Orders".to_string(),
+            }]
+        );
+        assert_eq!(
+            web_app.pushes_data_to,
             [InfrastructureSignature::Topic {
                 id: "OrdersEvents".to_string(),
             }]

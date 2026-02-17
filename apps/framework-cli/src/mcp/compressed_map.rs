@@ -399,6 +399,22 @@ fn add_web_apps(compressed: &mut CompressedInfraMap, infra_map: &InfrastructureM
             name: web_app.name.clone(),
             source_file: String::new(), // Web apps don't have source file tracking
         });
+
+        for source in &web_app.pulls_data_from {
+            compressed.add_connection(Connection {
+                from: source.id().to_string(),
+                to: key.clone(),
+                connection_type: ConnectionType::PullsFrom,
+            });
+        }
+
+        for target in &web_app.pushes_data_to {
+            compressed.add_connection(Connection {
+                from: key.clone(),
+                to: target.id().to_string(),
+                connection_type: ConnectionType::PushesTo,
+            });
+        }
     }
 }
 
@@ -488,6 +504,7 @@ pub fn build_compressed_map(infra_map: &InfrastructureMap) -> CompressedInfraMap
 mod tests {
     use super::*;
     use crate::framework::core::infrastructure::api_endpoint::{APIType, ApiEndpoint, Method};
+    use crate::framework::core::infrastructure::web_app::WebApp;
     use crate::framework::core::infrastructure::InfrastructureSignature;
     use crate::framework::core::infrastructure_map::{PrimitiveSignature, PrimitiveTypes};
     use crate::framework::languages::SupportedLanguages;
@@ -667,6 +684,37 @@ mod tests {
         assert!(compressed.connections.iter().any(|connection| {
             connection.from == "lineage_workflow"
                 && connection.to == "WorkflowTarget"
+                && connection.connection_type == ConnectionType::PushesTo
+        }));
+    }
+
+    #[test]
+    fn test_webapp_lineage_connections_are_included() {
+        let mut infra_map = InfrastructureMap::default();
+        let web_app = WebApp {
+            name: "lineage_webapp".to_string(),
+            mount_path: "/lineage".to_string(),
+            metadata: None,
+            pulls_data_from: vec![InfrastructureSignature::Table {
+                id: "WebAppSource".to_string(),
+            }],
+            pushes_data_to: vec![InfrastructureSignature::Topic {
+                id: "WebAppTarget".to_string(),
+            }],
+        };
+        infra_map
+            .web_apps
+            .insert("lineage_webapp".to_string(), web_app);
+
+        let compressed = build_compressed_map(&infra_map);
+        assert!(compressed.connections.iter().any(|connection| {
+            connection.from == "WebAppSource"
+                && connection.to == "lineage_webapp"
+                && connection.connection_type == ConnectionType::PullsFrom
+        }));
+        assert!(compressed.connections.iter().any(|connection| {
+            connection.from == "lineage_webapp"
+                && connection.to == "WebAppTarget"
                 && connection.connection_type == ConnectionType::PushesTo
         }));
     }
