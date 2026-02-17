@@ -1,0 +1,57 @@
+---
+title: Trigger deployment
+description: Trigger a deployment from a linked repository by pushing your branch to GitHub.
+order: 2
+---
+
+# Trigger deployment
+
+Use this workflow after your repository is linked and your branch contains changes ready for a cloud deployment.
+
+A new deployment is automatically triggered when you push a branch. You do not need to run an explicit deploy command in `514` CLI.
+
+Branch to preview mapping:
+- Each pushed branch gets a preview environment.
+- Additional pushes to that branch update the same preview environment.
+- Different branches create different previews, which makes branch-level validation explicit.
+
+## 1. Confirm local repo state
+
+From repository root:
+
+```bash
+git status
+```
+
+Make sure the target branch is checked out and includes the commits you want deployed.
+
+## 2. Push the branch
+
+```bash
+git push -u origin <branch-name>
+```
+
+If your branch already tracks origin, use:
+
+```bash
+git push
+```
+
+## 3. Verify deployment status
+
+- Confirm `git push` completed successfully.
+- Open your Fiveonefour project page and confirm build progress.
+- Validate the preview URL for the same branch before merging.
+
+## 4. Troubleshoot failed deploys
+
+- Re-run after resolving local build or auth issues.
+- Confirm project linkage and permissions.
+- Re-check branch protection and required checks in GitHub.
+
+## Related
+
+- [Cloud to local setup](/hosting/workflow/cloud-to-local-setup)
+- [`514 setup`](/hosting/cli/setup)
+- [`514 link`](/hosting/cli/link)
+- [Setup failures](/hosting/troubleshooting/setup-failures)

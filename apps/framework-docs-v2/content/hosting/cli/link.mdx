@@ -1,12 +1,14 @@
 ---
 title: link
-description: Link an existing local repository to a Fiveonefour project.
+description: Link an existing local repository to a cloud OLAP project for CLI agent runs.
 order: 3
 ---
 
 # 514 link
 
 Use `514 link` when your repository already exists locally and you need to associate it with a Fiveonefour project.
+
+In the agent harness model, `link` maps your local repo to the correct hosted workload target without forcing a fresh clone.
 
 ## Syntax
 
@@ -29,7 +31,7 @@ Use `514 link` when your repository already exists locally and you need to assoc
 
 Expected outcome:
 - Validates auth and local git repo context.
-- Resolves project and creates repo-level link.
+- Resolves project and creates repo-level link metadata.
 - Keeps git remotes unchanged by default.
 
 ## Note
