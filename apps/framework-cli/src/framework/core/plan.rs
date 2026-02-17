@@ -29,6 +29,40 @@ use std::collections::HashSet;
 use std::path::Path;
 use tracing::{debug, error, info};
 
+/// Filter sets used by `reconcile_with_reality` to decide which unmapped database
+/// objects to adopt into the infrastructure map.
+///
+/// During reconciliation, objects found in the database but absent from the stored
+/// infrastructure map are considered "unmapped". We only adopt unmapped objects whose
+/// IDs appear in these sets, avoiding accidental management of external objects.
+///
+/// Typically computed from the *target* infrastructure map (what the local code defines)
+/// so that pre-existing database objects matching the desired end-state are detected as
+/// "already exists" rather than ignored.
+#[derive(Debug, Clone)]
+pub struct ReconciliationFilter {
+    pub table_ids: HashSet<String>,
+    pub sql_resource_ids: HashSet<String>,
+    pub materialized_view_ids: HashSet<String>,
+    pub view_ids: HashSet<String>,
+}
+
+impl ReconciliationFilter {
+    /// Build a filter from an infrastructure map, using its resource identifiers.
+    pub fn from_infra_map(infra_map: &InfrastructureMap) -> Self {
+        Self {
+            table_ids: infra_map
+                .tables
+                .values()
+                .map(|t| t.id(&infra_map.default_database))
+                .collect(),
+            sql_resource_ids: infra_map.sql_resources.keys().cloned().collect(),
+            materialized_view_ids: infra_map.materialized_views.keys().cloned().collect(),
+            view_ids: infra_map.views.keys().cloned().collect(),
+        }
+    }
+}
+
 /// Errors that can occur during the planning process.
 #[derive(Debug, thiserror::Error)]
 pub enum PlanningError {
@@ -123,11 +157,8 @@ pub async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
 ///
 /// # Arguments
 /// * `project` - The project configuration
-/// * `infra_map` - The infrastructure map to update
-/// * `target_table_ids` - Tables to include from unmapped tables (tables in DB but not in current inframap). Only unmapped tables with names in this set will be added to the reconciled inframap.
-/// * `target_sql_resource_ids` - SQL resources to include from unmapped SQL resources.
-/// * `target_materialized_view_ids` - Materialized views to include from unmapped MVs.
-/// * `target_view_ids` - Views to include from unmapped views.
+/// * `current_infra_map` - The infrastructure map to update
+/// * `filter` - Determines which unmapped database objects to adopt (see [`ReconciliationFilter`])
 /// * `olap_client` - The OLAP client to use for checking reality
 ///
 /// # Returns
@@ -135,10 +166,7 @@ pub async fn normalize_infra_map_for_comparison<T: OlapOperations + Sync>(
 pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     project: &Project,
     current_infra_map: &InfrastructureMap,
-    target_table_ids: &HashSet<String>,
-    target_sql_resource_ids: &HashSet<String>,
-    target_materialized_view_ids: &HashSet<String>,
-    target_view_ids: &HashSet<String>,
+    filter: &ReconciliationFilter,
     olap_client: T,
 ) -> Result<InfrastructureMap, PlanningError> {
     info!("Reconciling infrastructure map with actual database state");
@@ -285,10 +313,10 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
         }
     }
     // Add unmapped tables (tables that exist in DB but not in current infrastructure map).
-    // We only adopt tables whose IDs are in target_table_ids to avoid accidentally managing
-    // external tables. For planning, target_table_ids contains the desired end-state tables,
+    // We only adopt tables whose IDs are in the filter to avoid accidentally managing
+    // external tables. For planning, the filter contains the desired end-state tables,
     // so we'll adopt pre-existing tables that match our target (detecting "already exists").
-    // For status queries, target_table_ids contains currently-managed tables only.
+    // For status queries, the filter contains currently-managed tables only.
     for unmapped_table in discrepancies.unmapped_tables {
         // Canonicalize tables from reality check to ensure they satisfy all invariants
         // (order_by fallback, array nullability, primary_key clearing for unsupported engines)
@@ -304,7 +332,7 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
                 format!("{}{}", reconciled_map.default_database, table_name_version)
             }
         };
-        if target_table_ids.contains(&id) {
+        if filter.table_ids.contains(&id) {
             reconciled_map.tables.insert(
                 unmapped_table.id(&reconciled_map.default_database),
                 unmapped_table,
@@ -327,12 +355,12 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     }
 
     // Add unmapped SQL resources (exist in database but not in current infrastructure map).
-    // Same filtering logic as unmapped tables—only adopt resources in target_sql_resource_ids
+    // Same filtering logic as unmapped tables—only adopt resources in filter.sql_resource_ids
     // to avoid managing external views/materialized views.
     for unmapped_sql_resource in discrepancies.unmapped_sql_resources {
         let name = &unmapped_sql_resource.name;
 
-        if target_sql_resource_ids.contains(name) {
+        if filter.sql_resource_ids.contains(name) {
             debug!(
                 "Adding unmapped SQL resource found in reality to infrastructure map: {}",
                 name
@@ -380,12 +408,12 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     }
 
     // Add unmapped MVs (exist in database but not in current infrastructure map).
-    // Same filtering logic as unmapped tables/SQL resources—only adopt MVs in target_materialized_view_ids
+    // Same filtering logic as unmapped tables/SQL resources—only adopt MVs in filter
     // to avoid managing external materialized views.
     for unmapped_mv in discrepancies.unmapped_materialized_views {
         let name = &unmapped_mv.name;
 
-        if target_materialized_view_ids.contains(name) {
+        if filter.materialized_view_ids.contains(name) {
             debug!(
                 "Adding unmapped materialized view found in reality to infrastructure map: {}",
                 name
@@ -433,12 +461,12 @@ pub async fn reconcile_with_reality<T: OlapOperations + Sync>(
     }
 
     // Add unmapped views (exist in database but not in current infrastructure map).
-    // Same filtering logic as unmapped tables/SQL resources—only adopt views in target_view_ids
+    // Same filtering logic as unmapped tables/SQL resources—only adopt views in filter
     // to avoid managing external views.
     for unmapped_view in discrepancies.unmapped_views {
         let name = &unmapped_view.name;
 
-        if target_view_ids.contains(name) {
+        if filter.view_ids.contains(name) {
             debug!(
                 "Adding unmapped view found in reality to infrastructure map: {}",
                 name
@@ -592,34 +620,26 @@ pub async fn load_target_infrastructure(
 /// This function loads the persisted state from storage, then reconciles it with the actual
 /// database state to handle any manual changes or drift.
 ///
-/// # Why `target_table_ids` and `target_sql_resource_ids` are required
+/// # Why a `ReconciliationFilter` is required
 ///
-/// During reconciliation, we discover "unmapped" tables—tables that exist in the database but
-/// are not in the current infrastructure map. We need to decide which of these to adopt into
-/// the reconciled state. The caller provides the filter criteria because different use cases
-/// need different behavior:
+/// During reconciliation, we discover "unmapped" objects — objects that exist in the database
+/// but are not in the current infrastructure map. We need to decide which of these to adopt.
+/// The caller provides a [`ReconciliationFilter`] because different use cases need different
+/// behavior:
 ///
-/// - **Planning (`plan_changes`)**: Passes **target** infrastructure IDs. This handles the edge
-///   case where a table exists in the DB (e.g., manually created or from a previous deployment)
-///   but isn't in our current state. By adopting tables that match our target, the diff will
-///   correctly show "table already exists" instead of "create table" (which would fail).
+/// - **Planning / Migration**: Filter contains **target** (local code) IDs. This handles
+///   the case where a table exists in the DB (e.g., manually created or from a previous
+///   deployment) but isn't in our stored state. By adopting objects that match the target,
+///   the diff will correctly show "already exists" instead of "create" (which would fail).
 ///
-/// - **Status/Admin endpoints**: Passes **current** managed IDs. We only want to show and
-///   reconcile tables that Moose is actively managing, not external tables that happen to
-///   exist in the same database.
-///
-/// We cannot simply compute these IDs from the loaded map because:
-/// 1. For planning, we need the *target* IDs which aren't available until after loading
-/// 2. Different callers have legitimately different filtering requirements
+/// - **Status/Admin endpoints**: Filter contains **current** managed IDs. We only want to
+///   reconcile objects that Moose is actively managing, not external objects in the same DB.
 ///
 /// # Arguments
 /// * `project` - The project configuration
 /// * `storage` - State storage implementation
 /// * `olap_client` - Client for querying actual database state
-/// * `target_table_ids` - Filter for unmapped tables: only adopt tables whose IDs are in this set
-/// * `target_sql_resource_ids` - Filter for unmapped SQL resources: only adopt resources in this set
-/// * `target_materialized_view_ids` - Filter for unmapped materialized views: only adopt MVs in this set
-/// * `target_view_ids` - Filter for unmapped views: only adopt views in this set
+/// * `filter` - Determines which unmapped database objects to adopt (see [`ReconciliationFilter`])
 ///
 /// # Returns
 /// * `Result<InfrastructureMap, PlanningError>` - The reconciled current state
@@ -627,10 +647,7 @@ pub async fn load_reconciled_infrastructure<T: OlapOperations + Sync>(
     project: &Project,
     storage: &dyn StateStorage,
     olap_client: T,
-    target_table_ids: &HashSet<String>,
-    target_sql_resource_ids: &HashSet<String>,
-    target_materialized_view_ids: &HashSet<String>,
-    target_view_ids: &HashSet<String>,
+    filter: &ReconciliationFilter,
 ) -> Result<InfrastructureMap, PlanningError> {
     let current_infra_map = storage.load_infrastructure_map().await?;
 
@@ -645,16 +662,7 @@ pub async fn load_reconciled_infrastructure<T: OlapOperations + Sync>(
 
     // Reconcile the current map with reality before diffing, but only if OLAP is enabled
     let reconciled_map = if project.features.olap {
-        reconcile_with_reality(
-            project,
-            &current_map_or_empty,
-            target_table_ids,
-            target_sql_resource_ids,
-            target_materialized_view_ids,
-            target_view_ids,
-            olap_client,
-        )
-        .await?
+        reconcile_with_reality(project, &current_map_or_empty, filter, olap_client).await?
     } else {
         debug!("OLAP disabled, skipping reality check reconciliation");
         current_map_or_empty
@@ -692,30 +700,10 @@ pub async fn plan_changes(
 
     // Load and reconcile current state
     let olap_client = clickhouse::create_client(project.clickhouse_config.clone());
-    let target_table_ids: HashSet<String> = target_infra_map
-        .tables
-        .values()
-        .map(|t| t.id(&target_infra_map.default_database))
-        .collect();
-    let target_sql_resource_ids: HashSet<String> =
-        target_infra_map.sql_resources.keys().cloned().collect();
-    let target_materialized_view_ids: HashSet<String> = target_infra_map
-        .materialized_views
-        .keys()
-        .cloned()
-        .collect();
-    let target_view_ids: HashSet<String> = target_infra_map.views.keys().cloned().collect();
+    let filter = ReconciliationFilter::from_infra_map(&target_infra_map);
 
-    let reconciled_map = load_reconciled_infrastructure(
-        project,
-        state_storage,
-        olap_client,
-        &target_table_ids,
-        &target_sql_resource_ids,
-        &target_materialized_view_ids,
-        &target_view_ids,
-    )
-    .await?;
+    let reconciled_map =
+        load_reconciled_infrastructure(project, state_storage, olap_client, &filter).await?;
 
     // Normalize SQL in both maps for comparison only (don't mutate originals).
     // We normalize at comparison time rather than storing normalized SQL because
@@ -928,17 +916,19 @@ mod tests {
         assert_eq!(discrepancies.unmapped_tables.len(), 1);
         assert_eq!(discrepancies.unmapped_tables[0].name, "unmapped_table");
 
-        let mut target_ids = HashSet::new();
+        let empty_filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
 
-        // Test 1: Empty target_ids = no managed tables, so unmapped tables are filtered out
+        // Test 1: Empty filter = no managed tables, so unmapped tables are filtered out
         // External tables are not accidentally included
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
+            &empty_filter,
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
@@ -947,20 +937,24 @@ mod tests {
         .await
         .unwrap();
 
-        // With empty target_ids, the unmapped table should NOT be added (external table)
+        // With empty filter, the unmapped table should NOT be added (external table)
         assert_eq!(reconciled.tables.len(), 0);
 
-        target_ids.insert("test_unmapped_table_1_0_0".to_string());
+        let mut table_ids = HashSet::new();
+        table_ids.insert("test_unmapped_table_1_0_0".to_string());
+        let filter_with_table = ReconciliationFilter {
+            table_ids,
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
 
-        // Test 2: Non-empty target_ids = only include if in set
+        // Test 2: Non-empty filter = only include if in set
         // This is the behavior used by `moose dev`, `moose prod`, etc.
         let reconciled = reconcile_with_reality(
             &project,
             &infra_map,
-            &target_ids,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
+            &filter_with_table,
             MockOlapClient {
                 tables: vec![table.clone()],
                 sql_resources: vec![],
@@ -969,7 +963,7 @@ mod tests {
         .await
         .unwrap();
 
-        // When target_ids contains the table ID, it's included
+        // When filter contains the table ID, it's included
         assert_eq!(reconciled.tables.len(), 1);
     }
 
@@ -1012,20 +1006,18 @@ mod tests {
             sql_resources: vec![],
         };
 
-        let target_table_ids = HashSet::new();
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
 
         // Reconcile the infrastructure map
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &target_table_ids,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            reconcile_mock_client,
-        )
-        .await
-        .unwrap();
+        let reconciled =
+            reconcile_with_reality(&project, &infra_map, &filter, reconcile_mock_client)
+                .await
+                .unwrap();
 
         // The reconciled map should have no tables
         assert_eq!(reconciled.tables.len(), 0);
@@ -1096,19 +1088,17 @@ mod tests {
             sql_resources: vec![],
         };
 
-        let target_table_ids = HashSet::new();
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
         // Reconcile the infrastructure map
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &target_table_ids,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            reconcile_mock_client,
-        )
-        .await
-        .unwrap();
+        let reconciled =
+            reconcile_with_reality(&project, &infra_map, &filter, reconcile_mock_client)
+                .await
+                .unwrap();
 
         // The reconciled map should have one table with the extra column
         assert_eq!(reconciled.tables.len(), 1);
@@ -1158,19 +1148,17 @@ mod tests {
             sql_resources: vec![],
         };
 
-        let target_table_ids = HashSet::new();
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
         // Reconcile the infrastructure map
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &target_table_ids,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            reconcile_mock_client,
-        )
-        .await
-        .unwrap();
+        let reconciled =
+            reconcile_with_reality(&project, &infra_map, &filter, reconcile_mock_client)
+                .await
+                .unwrap();
 
         // The reconciled map should be unchanged
         assert_eq!(reconciled.tables.len(), 1);
@@ -1223,17 +1211,16 @@ mod tests {
             sql_resources: vec![],
         };
 
-        let reconciled = reconcile_with_reality(
-            &project,
-            &loaded_map,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            mock_client,
-        )
-        .await
-        .unwrap();
+        let empty_filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
+
+        let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
+            .await
+            .unwrap();
 
         assert_eq!(
             reconciled.default_database, CUSTOM_DB_NAME,
@@ -1285,17 +1272,16 @@ mod tests {
             sql_resources: vec![],
         };
 
-        let reconciled = reconcile_with_reality(
-            &project,
-            &loaded_map,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            mock_client,
-        )
-        .await
-        .unwrap();
+        let empty_filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
+
+        let reconciled = reconcile_with_reality(&project, &loaded_map, &empty_filter, mock_client)
+            .await
+            .unwrap();
 
         // After reconciliation, the database name should be set from the project config
         assert_eq!(
@@ -1392,17 +1378,15 @@ mod tests {
         let project = create_test_project();
 
         // Reconcile the infrastructure map
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            mock_client,
-        )
-        .await
-        .unwrap();
+        let empty_filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
+        let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
+            .await
+            .unwrap();
 
         // The reconciled map should preserve cluster_name from the infra map
         assert_eq!(reconciled.tables.len(), 1);
@@ -1456,17 +1440,15 @@ mod tests {
         let project = create_test_project();
 
         // Reconcile the infrastructure map
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            mock_client,
-        )
-        .await
-        .unwrap();
+        let empty_filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
+        let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
+            .await
+            .unwrap();
 
         // The reconciled map should still have the table
         assert_eq!(reconciled.tables.len(), 1);
@@ -1510,18 +1492,16 @@ mod tests {
         let infra_map = InfrastructureMap::default();
         let project = create_test_project();
 
-        // Empty target_sql_resource_ids means no managed resources - external resources are filtered out
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            &HashSet::new(),
-            mock_client,
-        )
-        .await
-        .unwrap();
+        // Empty filter means no managed resources - external resources are filtered out
+        let empty_filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids: HashSet::new(),
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
+        let reconciled = reconcile_with_reality(&project, &infra_map, &empty_filter, mock_client)
+            .await
+            .unwrap();
 
         // Empty filter = no managed resources, so unmapped SQL resource is NOT included (external)
         assert_eq!(reconciled.sql_resources.len(), 0);
@@ -1563,20 +1543,18 @@ mod tests {
         let project = create_test_project();
 
         // Only include view_a in the filter
-        let mut target_sql_resource_ids = HashSet::new();
-        target_sql_resource_ids.insert(view_a.name.clone());
+        let mut sql_resource_ids = HashSet::new();
+        sql_resource_ids.insert(view_a.name.clone());
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids,
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
 
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &HashSet::new(),
-            &target_sql_resource_ids,
-            &HashSet::new(),
-            &HashSet::new(),
-            mock_client,
-        )
-        .await
-        .unwrap();
+        let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
+            .await
+            .unwrap();
 
         // Only view_a should be included, view_b should be filtered out
         assert_eq!(reconciled.sql_resources.len(), 1);
@@ -1624,20 +1602,18 @@ mod tests {
             .insert(existing_view.name.clone(), existing_view.clone());
 
         let project = create_test_project();
-        let mut target_sql_resource_ids = HashSet::new();
-        target_sql_resource_ids.insert(existing_view.name.clone());
+        let mut sql_resource_ids = HashSet::new();
+        sql_resource_ids.insert(existing_view.name.clone());
+        let filter = ReconciliationFilter {
+            table_ids: HashSet::new(),
+            sql_resource_ids,
+            materialized_view_ids: HashSet::new(),
+            view_ids: HashSet::new(),
+        };
 
-        let reconciled = reconcile_with_reality(
-            &project,
-            &infra_map,
-            &HashSet::new(),
-            &target_sql_resource_ids,
-            &HashSet::new(),
-            &HashSet::new(),
-            mock_client,
-        )
-        .await
-        .unwrap();
+        let reconciled = reconcile_with_reality(&project, &infra_map, &filter, mock_client)
+            .await
+            .unwrap();
 
         // The view should be updated to match reality
         assert_eq!(reconciled.sql_resources.len(), 1);
