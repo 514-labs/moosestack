@@ -68,7 +68,7 @@ export function TopNav({ stars, showAi }: TopNavProps) {
     {
       label: "Hosting",
       href: "/hosting",
-      section: "hosting" as DocumentationSection,
+      section: "hosting",
     },
     ...(showAi ?
       [

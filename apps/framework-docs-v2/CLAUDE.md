@@ -90,7 +90,6 @@ Navigation is **manually configured** in `src/config/navigation.ts`, NOT auto-ge
 Visibility controlled via Vercel Toolbar flags:
 - `show-draft-guides`: Internal WIP guides (not ready for external users)
 - `show-beta-guides`: Guides ready for select external preview
-- `show-hosting-section`: Legacy Hosting visibility flag (Hosting is public by default)
 - `show-ai-section`: AI tab visibility
 - `show-copy-as-markdown`: Copy page as markdown button
 - `show-linear-integration`: Linear integration on guide pages

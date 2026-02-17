@@ -17,14 +17,6 @@ export const GET = createFlagsDiscoveryEndpoint(async () => {
   // Fallback to static definitions
   return {
     definitions: {
-      "show-hosting-section": {
-        description: "Show Hosting section in top navigation",
-        origin: "https://us.i.posthog.com",
-        options: [
-          { value: false, label: "Off" },
-          { value: true, label: "On" },
-        ],
-      },
       "show-ai-section": {
         description: "Show AI section in top navigation",
         origin: "https://us.i.posthog.com",
